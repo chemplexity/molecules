@@ -1285,6 +1285,98 @@ function pairedTerminalMultipleBondLeafFanDescriptor(coords, centerAtomId, heavy
 }
 
 /**
+ * Builds a terminal hetero fan descriptor for trigonal acid-like centers with
+ * one terminal multiple-bond hetero leaf and one terminal single-bond hetero
+ * leaf. Both terminal leaves are moved around the fixed support atom so
+ * carboxyl/acid fans can recover a readable 120-degree spread.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Three-coordinate fan center atom id.
+ * @param {Array<{bond: object, neighborAtomId: string}>} heavyBonds - Visible heavy bonds at the center.
+ * @param {Array<{bond: object, neighborAtomId: string}>} terminalMultipleBondLeaves - Movable terminal multiple-bond leaves.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that must not move.
+ * @returns {object|null} Fan descriptor, or null when unsupported.
+ */
+function pairedTerminalHeteroLeafFanDescriptor(layoutGraph, coords, centerAtomId, heavyBonds, terminalMultipleBondLeaves, frozenAtomIds) {
+  if (terminalMultipleBondLeaves.length !== 1) {
+    return null;
+  }
+
+  const terminalMultipleLeafAtomId = terminalMultipleBondLeaves[0].neighborAtomId;
+  const terminalSingleHeteroLeaves = heavyBonds.filter(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return (
+      neighborAtomId !== terminalMultipleLeafAtomId
+      && !bond.aromatic
+      && (bond.order ?? 1) === 1
+      && neighborAtom
+      && neighborAtom.element !== 'C'
+      && neighborAtom.element !== 'H'
+      && neighborAtom.heavyDegree === 1
+      && !(frozenAtomIds instanceof Set && frozenAtomIds.has(neighborAtomId))
+    );
+  });
+  if (terminalSingleHeteroLeaves.length !== 1) {
+    return null;
+  }
+
+  const leafAtomIds = [terminalMultipleLeafAtomId, terminalSingleHeteroLeaves[0].neighborAtomId];
+  if (leafAtomIds.some(leafAtomId => !coords.has(leafAtomId))) {
+    return null;
+  }
+
+  const fixedBonds = heavyBonds.filter(({ neighborAtomId }) => !leafAtomIds.includes(neighborAtomId));
+  if (fixedBonds.length !== 1) {
+    return null;
+  }
+  const fixedNeighborId = fixedBonds[0].neighborAtomId;
+  const centerPosition = coords.get(centerAtomId);
+  const fixedNeighborPosition = coords.get(fixedNeighborId);
+  if (!centerPosition || !fixedNeighborPosition) {
+    return null;
+  }
+
+  const neighborAtomIds = [fixedNeighborId, ...leafAtomIds];
+  const currentPenalty = terminalMultipleBondLeafFanPenalty(coords, centerAtomId, neighborAtomIds);
+  if (terminalMultipleBondLeafFanMaxDeviation(coords, centerAtomId, neighborAtomIds) <= TERMINAL_MULTIPLE_BOND_BALANCED_FAN_TOLERANCE + TIDY_IMPROVEMENT_EPSILON) {
+    return null;
+  }
+
+  const fixedNeighborAngle = angleOf(sub(fixedNeighborPosition, centerPosition));
+  const targetAngles = [
+    fixedNeighborAngle + (2 * Math.PI) / 3,
+    fixedNeighborAngle - (2 * Math.PI) / 3
+  ];
+  const currentAngles = new Map(
+    leafAtomIds.map(leafAtomId => [
+      leafAtomId,
+      angleOf(sub(coords.get(leafAtomId), centerPosition))
+    ])
+  );
+  const leafTargets = assignTerminalMultipleBondLeafTargets(leafAtomIds, currentAngles, targetAngles);
+  if (!leafTargets) {
+    return null;
+  }
+
+  const targetPenalty = terminalMultipleBondLeafFanPenaltyFromAngles([
+    fixedNeighborAngle,
+    ...leafTargets.map(({ targetAngle }) => targetAngle)
+  ]);
+  if (targetPenalty > currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+    return null;
+  }
+
+  return {
+    centerAtomId,
+    neighborAtomIds,
+    leafTargets,
+    currentPenalty,
+    targetPenalty,
+    movesTerminalSingleHeteroLeaf: true
+  };
+}
+
+/**
  * Returns a local terminal multiple-bond fan descriptor for a three-coordinate
  * center whose movable terminal hetero leaves can improve a trigonal spread.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1317,6 +1409,17 @@ function terminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId
     );
   });
   if (terminalMultipleBondLeaves.length === 1) {
+    const pairedTerminalHeteroDescriptor = pairedTerminalHeteroLeafFanDescriptor(
+      layoutGraph,
+      coords,
+      centerAtomId,
+      heavyBonds,
+      terminalMultipleBondLeaves,
+      frozenAtomIds
+    );
+    if (pairedTerminalHeteroDescriptor) {
+      return pairedTerminalHeteroDescriptor;
+    }
     return singleTerminalMultipleBondLeafFanDescriptor(
       layoutGraph,
       coords,
@@ -1413,7 +1516,7 @@ function localNonbondedClearanceWithOverrides(layoutGraph, coords, atomId, candi
  * @param {object} descriptor - Terminal multiple-bond fan descriptor.
  * @param {Map<string, {x: number, y: number}>} targetPositions - Full-length exact target positions.
  * @param {number} bondLength - Target bond length.
- * @param {{force?: boolean}} [options] - Compression options.
+ * @param {{force?: boolean, bondValidationClasses?: Map<string, string>}} [options] - Compression options.
  * @returns {Map<string, {x: number, y: number}>|null} Compressed target positions, or null.
  */
 function compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, descriptor, targetPositions, bondLength, options = {}) {
@@ -1457,7 +1560,10 @@ function compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, 
       for (const [candidateAtomId, candidateTargetPosition] of candidatePositions) {
         candidateCoords.set(candidateAtomId, candidateTargetPosition);
       }
-      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
       if (candidateAudit.ok !== true) {
         continue;
       }
@@ -1982,7 +2088,7 @@ function terminalMultipleBondLeafFanBlockerReliefTargetPositions(
   return bestTargetPositions;
 }
 
-function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coords, descriptor, bondLength) {
+function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coords, descriptor, bondLength, bondValidationClasses = null) {
   if (descriptor.leafTargets.length !== 1) {
     return null;
   }
@@ -2007,7 +2113,7 @@ function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coor
     const candidatePosition = add(centerPosition, fromAngle(currentAngle + rotation * fraction, radius));
     const candidateCoords = new Map(coords);
     candidateCoords.set(leafAtomId, candidatePosition);
-    if (auditLayout(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
+    if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
       continue;
     }
     const penalty = terminalMultipleBondLeafFanPenalty(
@@ -2122,11 +2228,13 @@ function isSaturatedBridgeheadTerminalHeteroAnchor(layoutGraph, anchorAtomId, an
  * @param {object} [options] - Hook options.
  * @param {number} [options.bondLength] - Target bond length.
  * @param {Set<string>|null} [options.frozenAtomIds] - Frozen atoms that must not move.
+ * @param {Map<string, string>|null} [options.bondValidationClasses] - Per-bond validation classes for audit-safe compressed candidates.
  * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Adjusted coordinates and move count.
  */
 export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const frozenAtomIds = options.frozenAtomIds ?? null;
+  const bondValidationClasses = options.bondValidationClasses ?? null;
   const threshold = bondLength * 0.55;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
@@ -2143,13 +2251,15 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       continue;
     }
 
-    const balancedSupportReliefCoords = terminalMultipleBondBalancedSupportReliefCoords(
-      layoutGraph,
-      coords,
-      descriptor,
-      bondLength,
-      frozenAtomIds
-    );
+    const balancedSupportReliefCoords = descriptor.movesTerminalSingleHeteroLeaf === true
+      ? null
+      : terminalMultipleBondBalancedSupportReliefCoords(
+          layoutGraph,
+          coords,
+          descriptor,
+          bondLength,
+          frozenAtomIds
+        );
     if (balancedSupportReliefCoords) {
       for (const [atomId, nextPosition] of balancedSupportReliefCoords) {
         const previousPosition = coords.get(atomId);
@@ -2199,7 +2309,10 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       exactCandidateCoords.set(leafAtomId, targetPosition);
     }
     let usedCompressedTargetPositions = false;
-    const exactCandidateAuditOk = auditLayout(layoutGraph, exactCandidateCoords, { bondLength }).ok === true;
+    const exactCandidateAuditOk = auditLayout(layoutGraph, exactCandidateCoords, {
+      bondLength,
+      bondValidationClasses
+    }).ok === true;
     if (!exactCandidateAuditOk) {
       const compressedTargetPositions = compressedTerminalMultipleBondLeafTargetPositions(
         layoutGraph,
@@ -2207,7 +2320,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
         descriptor,
         targetPositions,
         bondLength,
-        { force: true }
+        { force: true, bondValidationClasses }
       );
       if (compressedTargetPositions) {
         targetPositions = compressedTargetPositions;
@@ -2253,7 +2366,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
         descriptor,
         targetPositions,
         bondLength,
-        { force: false }
+        { force: false, bondValidationClasses }
       );
       if (compressedTargetPositions) {
         targetPositions = compressedTargetPositions;
@@ -2275,7 +2388,8 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
         layoutGraph,
         coords,
         descriptor,
-        bondLength
+        bondLength,
+        bondValidationClasses
       );
       if (!backoffTargetPositions) {
         continue;
@@ -2300,6 +2414,9 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
     const candidateCoords = new Map(coords);
     for (const [leafAtomId, targetPosition] of targetPositions) {
       candidateCoords.set(leafAtomId, targetPosition);
+    }
+    if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
+      continue;
     }
     const candidatePenalty = terminalMultipleBondLeafFanPenalty(
       candidateCoords,
@@ -2333,7 +2450,8 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
         layoutGraph,
         coords,
         descriptor,
-        bondLength
+        bondLength,
+        bondValidationClasses
       );
       if (!backoffTargetPositions) {
         continue;
@@ -2352,6 +2470,175 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
   }
 
   nudges += runHiddenHydrogenTerminalMultipleBondFanTidy(layoutGraph, coords, bondLength, atomGrid, frozenAtomIds);
+
+  return { coords, nudges };
+}
+
+/**
+ * Finds compressed target positions for an acid-like terminal hetero fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} descriptor - Paired terminal hetero leaf descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, string>|null} bondValidationClasses - Per-bond validation classes for layout audit.
+ * @returns {Map<string, {x: number, y: number}>|null} Candidate leaf targets, or null when none are audit-clean.
+ */
+function pairedTerminalHeteroLeafCompressedTargetPositions(layoutGraph, coords, descriptor, bondLength, bondValidationClasses) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition || descriptor.movesTerminalSingleHeteroLeaf !== true) {
+    return null;
+  }
+
+  const exactTargetPositions = new Map();
+  for (const { leafAtomId, targetAngle } of descriptor.leafTargets) {
+    const leafPosition = coords.get(leafAtomId);
+    if (!leafPosition) {
+      return null;
+    }
+    exactTargetPositions.set(leafAtomId, add(centerPosition, fromAngle(targetAngle, distance(centerPosition, leafPosition))));
+  }
+  const exactCandidateCoords = new Map(coords);
+  for (const [leafAtomId, targetPosition] of exactTargetPositions) {
+    exactCandidateCoords.set(leafAtomId, targetPosition);
+  }
+  if (
+    auditLayout(layoutGraph, exactCandidateCoords, { bondLength, bondValidationClasses }).ok === true
+    && terminalMultipleBondLeafFanPenalty(
+      exactCandidateCoords,
+      descriptor.centerAtomId,
+      descriptor.neighborAtomIds
+    ) < descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+  ) {
+    return exactTargetPositions;
+  }
+
+  const compressionFactors = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5];
+  let bestCandidate = null;
+
+  for (const firstFactor of compressionFactors) {
+    for (const secondFactor of compressionFactors) {
+      const targetPositions = new Map();
+      const factors = [firstFactor, secondFactor];
+      let valid = true;
+      for (let index = 0; index < descriptor.leafTargets.length; index++) {
+        const { leafAtomId, targetAngle } = descriptor.leafTargets[index];
+        const leafPosition = coords.get(leafAtomId);
+        if (!leafPosition) {
+          valid = false;
+          break;
+        }
+        targetPositions.set(leafAtomId, add(centerPosition, fromAngle(targetAngle, distance(centerPosition, leafPosition) * factors[index])));
+      }
+      if (!valid) {
+        continue;
+      }
+
+      const candidateCoords = new Map(coords);
+      for (const [leafAtomId, targetPosition] of targetPositions) {
+        candidateCoords.set(leafAtomId, targetPosition);
+      }
+      if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
+        continue;
+      }
+
+      const penalty = terminalMultipleBondLeafFanPenalty(
+        candidateCoords,
+        descriptor.centerAtomId,
+        descriptor.neighborAtomIds
+      );
+      if (penalty >= descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      const clearance = terminalMultipleBondLeafReliefClearance(
+        layoutGraph,
+        coords,
+        descriptor,
+        targetPositions
+      );
+      const candidate = {
+        targetPositions,
+        penalty,
+        clearance,
+        compression: Math.abs(1 - firstFactor) + Math.abs(1 - secondFactor)
+      };
+      if (
+        !bestCandidate
+        || candidate.penalty < bestCandidate.penalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+        || (
+          Math.abs(candidate.penalty - bestCandidate.penalty) <= TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+          && candidate.clearance > bestCandidate.clearance + TIDY_IMPROVEMENT_EPSILON
+        )
+        || (
+          Math.abs(candidate.penalty - bestCandidate.penalty) <= TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+          && Math.abs(candidate.clearance - bestCandidate.clearance) <= TIDY_IMPROVEMENT_EPSILON
+          && candidate.compression < bestCandidate.compression - TIDY_IMPROVEMENT_EPSILON
+        )
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  return bestCandidate?.targetPositions ?? null;
+}
+
+/**
+ * Retouches acid-like terminal hetero pairs on trigonal centers by moving the
+ * single-bond and multiple-bond terminal hetero leaves together. This is used
+ * as a final presentation pass when a nearby macrocycle blocks one exact
+ * trigonal slot and the paired leaves need a compressed but still wider fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {{bondLength?: number, bondValidationClasses?: Map<string, string>}} [options] - Retouch options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Retouched coordinates and nudge count.
+ */
+export function runPairedTerminalHeteroLeafFanTidy(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const bondValidationClasses = options.bondValidationClasses ?? null;
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  let nudges = 0;
+
+  for (const centerAtomId of coords.keys()) {
+    const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+    const terminalMultipleBondLeaves = heavyBonds.filter(({ bond, neighborAtomId }) => {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return (
+        !bond.aromatic
+        && (bond.order ?? 1) >= 2
+        && neighborAtom
+        && neighborAtom.element !== 'C'
+        && neighborAtom.heavyDegree === 1
+      );
+    });
+    const descriptor = pairedTerminalHeteroLeafFanDescriptor(
+      layoutGraph,
+      coords,
+      centerAtomId,
+      heavyBonds,
+      terminalMultipleBondLeaves,
+      null
+    );
+    if (!descriptor) {
+      continue;
+    }
+    const targetPositions = pairedTerminalHeteroLeafCompressedTargetPositions(
+      layoutGraph,
+      coords,
+      descriptor,
+      bondLength,
+      bondValidationClasses
+    );
+    if (!targetPositions) {
+      continue;
+    }
+    for (const [leafAtomId, targetPosition] of targetPositions) {
+      coords.set(leafAtomId, targetPosition);
+    }
+    nudges++;
+  }
 
   return { coords, nudges };
 }

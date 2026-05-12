@@ -20,7 +20,10 @@ import {
   runRingChainSideBranchExitRetouch,
   runRingChainUnitProjectionRetouch
 } from './cleanup/presentation/ring-chain-unit-projection-retouch.js';
-import { runLargeMoleculeResidualRetouch } from './cleanup/presentation/large-molecule-residual-retouch.js';
+import {
+  runLargeMoleculeResidualRetouch,
+  runMacrocycleRingFanAngleRetouch
+} from './cleanup/presentation/large-molecule-residual-retouch.js';
 import {
   buildCleanupTelemetry,
   buildStageTelemetryFromCleanupTelemetry,
@@ -364,6 +367,89 @@ function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) {
     }
   }
   return !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false));
+}
+
+/**
+ * Returns the center/leaf pair for a terminal hetero atom joined by a multiple bond.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} bond - Candidate covalent bond descriptor.
+ * @returns {{leafAtomId: string, centerAtomId: string}|null} Terminal multiple-bond endpoint pair.
+ */
+function terminalMultipleBondLeafEndpoint(layoutGraph, bond) {
+  if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    return null;
+  }
+  const firstAtom = layoutGraph.atoms.get(bond.a);
+  const secondAtom = layoutGraph.atoms.get(bond.b);
+  if (!firstAtom || !secondAtom) {
+    return null;
+  }
+  const firstIsLeaf = firstAtom.element !== 'C' && firstAtom.element !== 'H' && firstAtom.heavyDegree === 1;
+  const secondIsLeaf = secondAtom.element !== 'C' && secondAtom.element !== 'H' && secondAtom.heavyDegree === 1;
+  if (firstIsLeaf === secondIsLeaf) {
+    return null;
+  }
+  return firstIsLeaf
+    ? { leafAtomId: bond.a, centerAtomId: bond.b }
+    : { leafAtomId: bond.b, centerAtomId: bond.a };
+}
+
+/**
+ * Shortens stretched terminal multiple-bond leaves along their current bond axis.
+ * The move is accepted only when final audit metrics do not worsen and the
+ * bond-length deviation improves, so compressed clearance fixes remain intact.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Final coordinate map.
+ * @param {object} placement - Placement result with bond-validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean}} Retouch result.
+ */
+function maybeSnapStretchedTerminalMultipleBondLeaves(layoutGraph, finalCoords, placement, bondLength) {
+  let candidateCoords = null;
+  for (const bond of layoutGraph.bonds.values()) {
+    const endpoint = terminalMultipleBondLeafEndpoint(layoutGraph, bond);
+    if (!endpoint) {
+      continue;
+    }
+    const coords = candidateCoords ?? finalCoords;
+    const centerPosition = coords.get(endpoint.centerAtomId);
+    const leafPosition = coords.get(endpoint.leafAtomId);
+    if (!centerPosition || !leafPosition) {
+      continue;
+    }
+    const dx = leafPosition.x - centerPosition.x;
+    const dy = leafPosition.y - centerPosition.y;
+    const currentLength = Math.hypot(dx, dy);
+    if (currentLength <= bondLength * 1.05 || currentLength <= 1e-9) {
+      continue;
+    }
+    candidateCoords ??= cloneCoords(finalCoords);
+    candidateCoords.set(endpoint.leafAtomId, {
+      x: centerPosition.x + (dx / currentLength) * bondLength,
+      y: centerPosition.y + (dy / currentLength) * bondLength
+    });
+  }
+  if (!candidateCoords) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  const baseAudit = auditLayout(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
+    return { coords: finalCoords, changed: false };
+  }
+  const improvesFailureCount = candidateAudit.bondLengthFailureCount < baseAudit.bondLengthFailureCount;
+  const improvesDeviation = candidateAudit.maxBondLengthDeviation < baseAudit.maxBondLengthDeviation - PRESENTATION_METRIC_EPSILON;
+  if (!improvesFailureCount && !improvesDeviation) {
+    return { coords: finalCoords, changed: false };
+  }
+  return { coords: candidateCoords, changed: true };
 }
 
 function isPreferredFinalDivalentContinuationRetouch(layoutGraph, baseCoords, candidateCoords, baseAudit, candidateAudit) {
@@ -1055,6 +1141,42 @@ export function runPipeline(molecule, options = {}) {
         }
       );
     }
+  }
+  if (
+    familySummary.primaryFamily === 'macrocycle'
+    && familySummary.mixedMode
+    && (layoutGraph.traits.heavyAtomCount ?? 0) >= 100
+    && (layoutGraph.traits.ringCount ?? 0) >= 8
+  ) {
+    const macrocycleRingFanAngleRetouch = runMacrocycleRingFanAngleRetouch(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (macrocycleRingFanAngleRetouch.changed) {
+      finalCoords = macrocycleRingFanAngleRetouch.coords;
+      finalCoordsModified = true;
+      onStep?.(
+        'Macrocycle Ring Fan Angle Retouch',
+        'Tiny ring-atom nudges reduce distorted macrocycle junction fans while preserving final audit quality.',
+        cloneCoords(finalCoords),
+        {
+          movedAtomCount: macrocycleRingFanAngleRetouch.movedAtomIds.length,
+          passes: macrocycleRingFanAngleRetouch.passes,
+          maxDeviationBefore: macrocycleRingFanAngleRetouch.maxDeviationBefore,
+          maxDeviationAfter: macrocycleRingFanAngleRetouch.maxDeviationAfter
+        }
+      );
+    }
+  }
+  const stretchedTerminalMultipleBondSnap = maybeSnapStretchedTerminalMultipleBondLeaves(
+    layoutGraph,
+    finalCoords,
+    placement,
+    normalizedOptions.bondLength
+  );
+  if (stretchedTerminalMultipleBondSnap.changed) {
+    finalCoords = stretchedTerminalMultipleBondSnap.coords;
+    finalCoordsModified = true;
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

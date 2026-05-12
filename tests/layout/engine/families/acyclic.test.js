@@ -176,8 +176,8 @@ describe('layout/engine/families/acyclic', () => {
       const separations = sortedHeavyNeighborSeparations(graph, coords, siliconAtomId);
       assert.deepEqual(
         separations.map(separation => Number(separation.toFixed(2))),
-        [80, 80, 80, 120],
-        `expected ${siliconAtomId} to spread heavy neighbors evenly across the open side, got ${separations.map(separation => separation.toFixed(2)).join(', ')} degrees`
+        [90, 90, 90, 90],
+        `expected ${siliconAtomId} to keep heavy neighbors on projected orthogonal slots, got ${separations.map(separation => separation.toFixed(2)).join(', ')} degrees`
       );
     }
 

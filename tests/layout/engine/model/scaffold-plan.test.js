@@ -147,6 +147,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the hydroxy keto oxadiazole template for carbonyl-fused bridged cores', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1CC2(O)C(C)CC3=C(N=CO3)C1C2=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-keto-oxadiazole-bridged-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the cyanoacyl azabicyclo template for N-acyl compact cages', () => {
     const graph = createLayoutGraph(parseSMILES('O=C(C#N)N1CC2CC1C2'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);

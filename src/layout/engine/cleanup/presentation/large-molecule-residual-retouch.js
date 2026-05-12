@@ -46,6 +46,38 @@ const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT = 0.02;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT = 0.2;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT = 0.05;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS = 100;
+const RING_FAN_ANGLE_POLISH_MAX_PASSES = 20;
+const RING_FAN_ANGLE_POLISH_CENTER_SCAN_LIMIT = 10;
+const RING_FAN_ANGLE_POLISH_DIRECTION_COUNT = 12;
+const RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES = 25;
+const RING_FAN_ANGLE_POLISH_MIN_MAX_IMPROVEMENT = Math.PI / 180;
+const RING_FAN_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT = 0.015;
+const RING_FAN_ANGLE_POLISH_WORST_TOLERANCE = Math.PI / 180;
+const RING_FAN_ANGLE_POLISH_BOND_DEVIATION_TOLERANCE = 0.04;
+const RING_FAN_ANGLE_POLISH_AGGREGATE_NEIGHBOR_WEIGHT = 0.45;
+const RING_FAN_ANGLE_POLISH_SOFT_CONTACT_FACTOR = 0.85;
+const RING_FAN_ANGLE_POLISH_SOFT_CONTACT_MIN_PENALTY_IMPROVEMENT = 0.001;
+const RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_PASSES = 4;
+const RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_DEVIATION_SLACK = Math.PI / 18;
+const RING_FAN_ANGLE_POLISH_CONTACT_LEAF_TOTAL_SLACK = 0.75;
+const RING_FAN_ANGLE_POLISH_STEP_FACTORS = Object.freeze([0.045, 0.027, 0.015, 0.01]);
+const RING_FAN_ANGLE_POLISH_CONTACT_LEAF_BACKOFF_FACTORS = Object.freeze([0.9, 0.8, 0.7, 0.6, 0.55, 0.5]);
+const RING_FAN_ANGLE_POLISH_CONTACT_LEAF_ANGLE_OFFSETS = Object.freeze([
+  Math.PI / 18,
+  -Math.PI / 18,
+  Math.PI / 12,
+  -Math.PI / 12,
+  Math.PI / 9,
+  -Math.PI / 9,
+  Math.PI / 6,
+  -Math.PI / 6,
+  Math.PI / 4,
+  -Math.PI / 4,
+  Math.PI / 3,
+  -Math.PI / 3,
+  Math.PI / 2,
+  -Math.PI / 2
+]);
 const EXACT_THREE_HEAVY_PROTECTION_INITIAL_TOTAL_THRESHOLD = 1e-10;
 const EXACT_THREE_HEAVY_PROTECTION_RETRY_TOTAL_THRESHOLD = 0.09;
 const EXACT_THREE_HEAVY_PROTECTION_RETRY_CENTER_LIMIT = 4;
@@ -1390,6 +1422,925 @@ function finalAnglePolishSelectionIsBetter(candidate, incumbent) {
     return false;
   }
   return candidate.score.angularDistortionTotal + RETOUCH_SCORE_EPSILON < incumbent.score.angularDistortionTotal;
+}
+
+function ringFanAnglePolishAuditOptions(bondLength, bondValidationClasses) {
+  return bondValidationClasses
+    ? { bondLength, bondValidationClasses }
+    : { bondLength };
+}
+
+function ringFanAnglePolishCenter(layoutGraph, coords, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || !coords.has(atomId)) {
+    return null;
+  }
+  if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0) {
+    return null;
+  }
+  const covalentBonds = visibleHeavyCovalentBonds(layoutGraph, coords, atomId);
+  if (covalentBonds.length !== 3) {
+    return null;
+  }
+  const centerScore = measureLocalAngleDeviation(layoutGraph, coords, atomId);
+  if (!centerScore || centerScore.totalDeviation <= 0) {
+    return null;
+  }
+  return centerScore;
+}
+
+function ringFanAnglePolishScore(layoutGraph, coords) {
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+  const centers = [];
+  for (const atomId of coords.keys()) {
+    const center = ringFanAnglePolishCenter(layoutGraph, coords, atomId);
+    if (!center) {
+      continue;
+    }
+    totalDeviation += center.totalDeviation;
+    maxDeviation = Math.max(maxDeviation, (center.maxDeviationDegrees * Math.PI) / 180);
+    if (center.maxDeviationDegrees > RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES) {
+      centers.push(center);
+    }
+  }
+  centers.sort((first, second) => {
+    if (Math.abs(second.maxDeviationDegrees - first.maxDeviationDegrees) > 1e-9) {
+      return second.maxDeviationDegrees - first.maxDeviationDegrees;
+    }
+    return second.totalDeviation - first.totalDeviation;
+  });
+  return {
+    totalDeviation,
+    maxDeviation,
+    maxDeviationDegrees: (maxDeviation * 180) / Math.PI,
+    centers
+  };
+}
+
+function ringFanAnglePolishScoreImproves(candidateScore, incumbentScore) {
+  if (candidateScore.maxDeviation + RING_FAN_ANGLE_POLISH_MIN_MAX_IMPROVEMENT < incumbentScore.maxDeviation) {
+    return true;
+  }
+  return (
+    candidateScore.maxDeviation <= incumbentScore.maxDeviation + RING_FAN_ANGLE_POLISH_WORST_TOLERANCE
+    && candidateScore.totalDeviation + RING_FAN_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT < incumbentScore.totalDeviation
+  );
+}
+
+function ringFanAnglePolishAuditAllows(candidateAudit, incumbentAudit, bondLength) {
+  if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (incumbentAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  return candidateAudit.maxBondLengthDeviation <= (
+    incumbentAudit.maxBondLengthDeviation + bondLength * RING_FAN_ANGLE_POLISH_BOND_DEVIATION_TOLERANCE
+  );
+}
+
+function ringFanAnglePolishTopologicalDistance(layoutGraph, firstAtomId, secondAtomId, maxDepth) {
+  const pairKey = atomPairKey(firstAtomId, secondAtomId);
+  layoutGraph._ringFanAnglePolishTopologicalDistanceCache ??= new Map();
+  const cachedDistance = layoutGraph._ringFanAnglePolishTopologicalDistanceCache.get(pairKey);
+  if (cachedDistance != null) {
+    return cachedDistance;
+  }
+
+  let frontier = [firstAtomId];
+  const seenAtomIds = new Set([firstAtomId]);
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    const nextFrontier = [];
+    for (const atomId of frontier) {
+      for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+        if (neighborAtomId === secondAtomId) {
+          layoutGraph._ringFanAnglePolishTopologicalDistanceCache.set(pairKey, depth);
+          return depth;
+        }
+        if (!seenAtomIds.has(neighborAtomId)) {
+          seenAtomIds.add(neighborAtomId);
+          nextFrontier.push(neighborAtomId);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  layoutGraph._ringFanAnglePolishTopologicalDistanceCache.set(pairKey, Number.POSITIVE_INFINITY);
+  return Number.POSITIVE_INFINITY;
+}
+
+function ringFanAnglePolishVisibleHeavyAtomIds(layoutGraph, coords) {
+  const atomIds = [];
+  for (const atomId of coords.keys()) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (atom?.visible !== false && atom?.element !== 'H') {
+      atomIds.push(atomId);
+    }
+  }
+  return atomIds;
+}
+
+function ringFanAnglePolishSoftContactScore(layoutGraph, coords, bondLength, focusAtomIds = null) {
+  const threshold = bondLength * RING_FAN_ANGLE_POLISH_SOFT_CONTACT_FACTOR;
+  const allAtomIds = ringFanAnglePolishVisibleHeavyAtomIds(layoutGraph, coords);
+  const focusSet = focusAtomIds ? new Set(focusAtomIds) : null;
+  const scannedAtomIds = focusSet
+    ? [...focusSet].filter(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom?.visible !== false && atom?.element !== 'H' && coords.has(atomId);
+    })
+    : allAtomIds;
+
+  let contactCount = 0;
+  let penalty = 0;
+  let minDistance = Number.POSITIVE_INFINITY;
+  const seenPairKeys = new Set();
+  for (const firstAtomId of scannedAtomIds) {
+    const firstPosition = coords.get(firstAtomId);
+    if (!firstPosition) {
+      continue;
+    }
+    for (const secondAtomId of allAtomIds) {
+      if (firstAtomId === secondAtomId) {
+        continue;
+      }
+      const pairKey = atomPairKey(firstAtomId, secondAtomId);
+      if (seenPairKeys.has(pairKey) || layoutGraph.bondByAtomPair.has(pairKey)) {
+        continue;
+      }
+      seenPairKeys.add(pairKey);
+      const secondPosition = coords.get(secondAtomId);
+      if (!secondPosition) {
+        continue;
+      }
+      const dx = firstPosition.x - secondPosition.x;
+      const dy = firstPosition.y - secondPosition.y;
+      if (Math.abs(dx) >= threshold || Math.abs(dy) >= threshold) {
+        continue;
+      }
+      if (ringFanAnglePolishTopologicalDistance(layoutGraph, firstAtomId, secondAtomId, 3) <= 3) {
+        continue;
+      }
+      const distance = Math.hypot(
+        dx,
+        dy
+      );
+      if (distance >= threshold) {
+        continue;
+      }
+      const deficit = threshold - distance;
+      contactCount++;
+      penalty += deficit * deficit;
+      minDistance = Math.min(minDistance, distance);
+    }
+  }
+
+  return {
+    contactCount,
+    penalty,
+    minDistance
+  };
+}
+
+function ringFanAnglePolishSoftContactEntries(layoutGraph, coords, bondLength) {
+  const threshold = bondLength * RING_FAN_ANGLE_POLISH_SOFT_CONTACT_FACTOR;
+  const atomIds = ringFanAnglePolishVisibleHeavyAtomIds(layoutGraph, coords);
+  const entries = [];
+
+  for (let firstIndex = 0; firstIndex < atomIds.length; firstIndex++) {
+    const firstAtomId = atomIds[firstIndex];
+    const firstPosition = coords.get(firstAtomId);
+    if (!firstPosition) {
+      continue;
+    }
+    for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
+      const secondAtomId = atomIds[secondIndex];
+      const pairKey = atomPairKey(firstAtomId, secondAtomId);
+      if (layoutGraph.bondByAtomPair.has(pairKey)) {
+        continue;
+      }
+      const secondPosition = coords.get(secondAtomId);
+      if (!secondPosition) {
+        continue;
+      }
+      const dx = firstPosition.x - secondPosition.x;
+      const dy = firstPosition.y - secondPosition.y;
+      if (Math.abs(dx) >= threshold || Math.abs(dy) >= threshold) {
+        continue;
+      }
+      if (ringFanAnglePolishTopologicalDistance(layoutGraph, firstAtomId, secondAtomId, 3) <= 3) {
+        continue;
+      }
+      const distance = Math.hypot(dx, dy);
+      if (distance >= threshold) {
+        continue;
+      }
+      entries.push({
+        firstAtomId,
+        secondAtomId,
+        distance
+      });
+    }
+  }
+
+  entries.sort((first, second) => first.distance - second.distance);
+  return entries;
+}
+
+function ringFanAnglePolishSoftContactScoreIsBetter(candidateScore, incumbentScore) {
+  if (candidateScore.contactCount !== incumbentScore.contactCount) {
+    return candidateScore.contactCount < incumbentScore.contactCount;
+  }
+  if (candidateScore.penalty + RING_FAN_ANGLE_POLISH_SOFT_CONTACT_MIN_PENALTY_IMPROVEMENT < incumbentScore.penalty) {
+    return true;
+  }
+  return candidateScore.minDistance > incumbentScore.minDistance + 1e-6;
+}
+
+function ringFanAnglePolishSoftContactDelta(candidateScore, incumbentScore) {
+  let minDistanceDelta = 0;
+  if (candidateScore.contactCount === 0 && incumbentScore.contactCount > 0) {
+    minDistanceDelta = Number.POSITIVE_INFINITY;
+  } else if (candidateScore.contactCount > 0 && incumbentScore.contactCount === 0) {
+    minDistanceDelta = Number.NEGATIVE_INFINITY;
+  } else if (candidateScore.contactCount > 0 || incumbentScore.contactCount > 0) {
+    minDistanceDelta = candidateScore.minDistance - incumbentScore.minDistance;
+  }
+  return {
+    contactCount: candidateScore.contactCount - incumbentScore.contactCount,
+    penalty: candidateScore.penalty - incumbentScore.penalty,
+    minDistance: minDistanceDelta
+  };
+}
+
+function ringFanAnglePolishSoftContactDeltaIsBetter(candidateDelta, incumbentDelta) {
+  if (candidateDelta.contactCount !== incumbentDelta.contactCount) {
+    return candidateDelta.contactCount < incumbentDelta.contactCount;
+  }
+  if (Math.abs(candidateDelta.penalty - incumbentDelta.penalty) > RING_FAN_ANGLE_POLISH_SOFT_CONTACT_MIN_PENALTY_IMPROVEMENT) {
+    return candidateDelta.penalty < incumbentDelta.penalty;
+  }
+  return candidateDelta.minDistance > incumbentDelta.minDistance + 1e-6;
+}
+
+function ringFanAnglePolishTerminalLeafAnchor(layoutGraph, leafAtomId) {
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !leafAtom
+    || leafAtom.element === 'H'
+    || leafAtom.heavyDegree !== 1
+    || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    || layoutGraph.fixedCoords.has(leafAtomId)
+  ) {
+    return null;
+  }
+
+  const heavyNeighborAtomIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(leafAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom?.element !== 'H') {
+      heavyNeighborAtomIds.push(neighborAtomId);
+    }
+  }
+  if (heavyNeighborAtomIds.length !== 1) {
+    return null;
+  }
+  return heavyNeighborAtomIds[0];
+}
+
+function ringFanAnglePolishAnchorHasPairedTerminalHeteroLeaves(layoutGraph, anchorAtomId) {
+  let terminalHeteroLeafCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (
+      neighborAtom
+      && neighborAtom.element !== 'C'
+      && neighborAtom.element !== 'H'
+      && neighborAtom.heavyDegree === 1
+      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+    ) {
+      terminalHeteroLeafCount++;
+    }
+  }
+  return terminalHeteroLeafCount >= 2;
+}
+
+function ringFanAnglePolishContactLeafDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  const seenLeafAtomIds = new Set();
+  for (const contact of ringFanAnglePolishSoftContactEntries(layoutGraph, coords, bondLength)) {
+    for (const [leafAtomId, targetAtomId] of [
+      [contact.firstAtomId, contact.secondAtomId],
+      [contact.secondAtomId, contact.firstAtomId]
+    ]) {
+      if (seenLeafAtomIds.has(leafAtomId)) {
+        continue;
+      }
+      const anchorAtomId = ringFanAnglePolishTerminalLeafAnchor(layoutGraph, leafAtomId);
+      if (!anchorAtomId || !coords.has(anchorAtomId) || !coords.has(targetAtomId)) {
+        continue;
+      }
+      seenLeafAtomIds.add(leafAtomId);
+      descriptors.push({
+        leafAtomId,
+        anchorAtomId,
+        targetAtomId,
+        distance: contact.distance,
+        allowRotation: !ringFanAnglePolishAnchorHasPairedTerminalHeteroLeaves(layoutGraph, anchorAtomId)
+      });
+    }
+  }
+  return descriptors;
+}
+
+function ringFanAnglePolishBackedOffLeafCoords(coords, descriptor, factor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!anchorPosition || !leafPosition) {
+    return coords;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  candidateCoords.set(descriptor.leafAtomId, {
+    x: anchorPosition.x + (leafPosition.x - anchorPosition.x) * factor,
+    y: anchorPosition.y + (leafPosition.y - anchorPosition.y) * factor
+  });
+  return candidateCoords;
+}
+
+function ringFanAnglePolishRotatedLeafCoords(coords, descriptor, angle) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!anchorPosition || !leafPosition) {
+    return coords;
+  }
+  const radius = Math.hypot(
+    leafPosition.x - anchorPosition.x,
+    leafPosition.y - anchorPosition.y
+  );
+  if (radius <= 1e-9) {
+    return coords;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  candidateCoords.set(descriptor.leafAtomId, {
+    x: anchorPosition.x + Math.cos(angle) * radius,
+    y: anchorPosition.y + Math.sin(angle) * radius
+  });
+  return candidateCoords;
+}
+
+function ringFanAnglePolishContactLeafAngles(coords, descriptor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  const targetPosition = coords.get(descriptor.targetAtomId);
+  if (!anchorPosition || !leafPosition || !targetPosition) {
+    return [];
+  }
+
+  const currentAngle = Math.atan2(
+    leafPosition.y - anchorPosition.y,
+    leafPosition.x - anchorPosition.x
+  );
+  const targetAwayAngle = Math.atan2(
+    anchorPosition.y - targetPosition.y,
+    anchorPosition.x - targetPosition.x
+  );
+  return [
+    targetAwayAngle,
+    ...RING_FAN_ANGLE_POLISH_CONTACT_LEAF_ANGLE_OFFSETS.map(offset => currentAngle + offset)
+  ];
+}
+
+function ringFanAnglePolishContactLeafSelectionIsBetter(candidate, incumbent) {
+  if (ringFanAnglePolishSoftContactScoreIsBetter(candidate.softContactScore, incumbent.softContactScore)) {
+    return true;
+  }
+  if (ringFanAnglePolishSoftContactScoreIsBetter(incumbent.softContactScore, candidate.softContactScore)) {
+    return false;
+  }
+  if (candidate.score.maxDeviation + RETOUCH_SCORE_EPSILON < incumbent.score.maxDeviation) {
+    return true;
+  }
+  if (incumbent.score.maxDeviation + RETOUCH_SCORE_EPSILON < candidate.score.maxDeviation) {
+    return false;
+  }
+  return candidate.score.totalDeviation + RETOUCH_SCORE_EPSILON < incumbent.score.totalDeviation;
+}
+
+function ringFanAnglePolishContactLeafCandidateAllowed(candidateScore, currentScore) {
+  return (
+    candidateScore.maxDeviation <= currentScore.maxDeviation + RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_DEVIATION_SLACK
+    && candidateScore.totalDeviation <= currentScore.totalDeviation + RING_FAN_ANGLE_POLISH_CONTACT_LEAF_TOTAL_SLACK
+  );
+}
+
+function runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, inputCoords, inputScore, inputAudit, bondLength, auditOptions) {
+  let coords = inputCoords;
+  let currentScore = inputScore;
+  let currentAudit = inputAudit;
+  let currentSoftContactScore = ringFanAnglePolishSoftContactScore(layoutGraph, coords, bondLength);
+  const movedAtomIds = new Set();
+  let passes = 0;
+
+  while (passes < RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_PASSES && currentSoftContactScore.contactCount > 0) {
+    const descriptors = ringFanAnglePolishContactLeafDescriptors(layoutGraph, coords, bondLength);
+    let bestCandidate = null;
+
+    for (const descriptor of descriptors) {
+      const candidateCoordsList = [
+        ...RING_FAN_ANGLE_POLISH_CONTACT_LEAF_BACKOFF_FACTORS.map(factor =>
+          ringFanAnglePolishBackedOffLeafCoords(coords, descriptor, factor)
+        )
+      ];
+      if (descriptor.allowRotation) {
+        candidateCoordsList.push(
+          ...ringFanAnglePolishContactLeafAngles(coords, descriptor).map(angle =>
+            ringFanAnglePolishRotatedLeafCoords(coords, descriptor, angle)
+          )
+        );
+      }
+
+      for (const candidateCoords of candidateCoordsList) {
+        const candidateScore = ringFanAnglePolishScore(layoutGraph, candidateCoords);
+        if (!ringFanAnglePolishContactLeafCandidateAllowed(candidateScore, currentScore)) {
+          continue;
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, auditOptions);
+        if (!ringFanAnglePolishAuditAllows(candidateAudit, currentAudit, bondLength)) {
+          continue;
+        }
+        const candidateSoftContactScore = ringFanAnglePolishSoftContactScore(layoutGraph, candidateCoords, bondLength);
+        if (!ringFanAnglePolishSoftContactScoreIsBetter(candidateSoftContactScore, currentSoftContactScore)) {
+          continue;
+        }
+        const candidate = {
+          atomIds: [descriptor.leafAtomId],
+          coords: candidateCoords,
+          score: candidateScore,
+          audit: candidateAudit,
+          softContactScore: candidateSoftContactScore
+        };
+        if (!bestCandidate || ringFanAnglePolishContactLeafSelectionIsBetter(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    coords = bestCandidate.coords;
+    currentScore = bestCandidate.score;
+    currentAudit = bestCandidate.audit;
+    currentSoftContactScore = bestCandidate.softContactScore;
+    for (const atomId of bestCandidate.atomIds) {
+      movedAtomIds.add(atomId);
+    }
+    passes++;
+  }
+
+  return {
+    coords,
+    score: currentScore,
+    audit: currentAudit,
+    movedAtomIds: [...movedAtomIds],
+    passes
+  };
+}
+
+function ringFanAnglePolishSelectionIsBetter(candidate, incumbent) {
+  if (candidate.score.maxDeviation + RETOUCH_SCORE_EPSILON < incumbent.score.maxDeviation) {
+    return true;
+  }
+  if (incumbent.score.maxDeviation + RETOUCH_SCORE_EPSILON < candidate.score.maxDeviation) {
+    return false;
+  }
+  if (candidate.score.totalDeviation + RETOUCH_SCORE_EPSILON < incumbent.score.totalDeviation) {
+    return true;
+  }
+  if (incumbent.score.totalDeviation + RETOUCH_SCORE_EPSILON < candidate.score.totalDeviation) {
+    return false;
+  }
+  return ringFanAnglePolishSoftContactDeltaIsBetter(candidate.softContactDelta, incumbent.softContactDelta);
+}
+
+function translatedSingleAtomCoords(coords, atomId, dx, dy) {
+  const position = coords.get(atomId);
+  if (!position) {
+    return coords;
+  }
+  const candidateCoords = cloneCoords(coords);
+  candidateCoords.set(atomId, {
+    x: position.x + dx,
+    y: position.y + dy
+  });
+  return candidateCoords;
+}
+
+function translatedMultiAtomCoords(coords, translations) {
+  const candidateCoords = cloneCoords(coords);
+  for (const { atomId, dx, dy } of translations) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, {
+      x: position.x + dx,
+      y: position.y + dy
+    });
+  }
+  return candidateCoords;
+}
+
+function unitVectorBetween(firstPosition, secondPosition) {
+  const dx = secondPosition.x - firstPosition.x;
+  const dy = secondPosition.y - firstPosition.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= 1e-9) {
+    return null;
+  }
+  return {
+    x: dx / length,
+    y: dy / length
+  };
+}
+
+function ringFanAnglePolishPairEntries(coords, center) {
+  const centerPosition = coords.get(center.atomId);
+  if (!centerPosition) {
+    return [];
+  }
+  const pairEntries = [];
+  for (let firstIndex = 0; firstIndex < center.covalentBonds.length; firstIndex++) {
+    const firstAtomId = center.covalentBonds[firstIndex].neighborAtomId;
+    const firstPosition = coords.get(firstAtomId);
+    if (!firstPosition) {
+      continue;
+    }
+    const firstAngle = angleOf(sub(firstPosition, centerPosition));
+    for (let secondIndex = firstIndex + 1; secondIndex < center.covalentBonds.length; secondIndex++) {
+      const secondAtomId = center.covalentBonds[secondIndex].neighborAtomId;
+      const secondPosition = coords.get(secondAtomId);
+      if (!secondPosition) {
+        continue;
+      }
+      const separation = angularDifference(firstAngle, angleOf(sub(secondPosition, centerPosition)));
+      pairEntries.push({
+        firstAtomId,
+        secondAtomId,
+        separation,
+        signedDeviation: separation - (2 * Math.PI) / 3,
+        deviation: Math.abs(separation - (2 * Math.PI) / 3)
+      });
+    }
+  }
+  pairEntries.sort((first, second) => second.deviation - first.deviation);
+  return pairEntries;
+}
+
+function ringFanAnglePolishDirectedCandidateCoords(coords, center, pair, step) {
+  const centerPosition = coords.get(center.atomId);
+  const firstPosition = coords.get(pair.firstAtomId);
+  const secondPosition = coords.get(pair.secondAtomId);
+  if (!centerPosition || !firstPosition || !secondPosition) {
+    return [];
+  }
+
+  const midpoint = {
+    x: (firstPosition.x + secondPosition.x) / 2,
+    y: (firstPosition.y + secondPosition.y) / 2
+  };
+  const midpointUnit = unitVectorBetween(centerPosition, midpoint);
+  const edgeUnit = unitVectorBetween(firstPosition, secondPosition);
+  if (!midpointUnit || !edgeUnit) {
+    return [];
+  }
+
+  const directionSign = pair.separation < (2 * Math.PI) / 3 ? 1 : -1;
+  return [
+    translatedSingleAtomCoords(
+      coords,
+      center.atomId,
+      midpointUnit.x * step * directionSign,
+      midpointUnit.y * step * directionSign
+    ),
+    translatedSingleAtomCoords(
+      coords,
+      center.atomId,
+      -midpointUnit.x * step * directionSign,
+      -midpointUnit.y * step * directionSign
+    ),
+    translatedMultiAtomCoords(coords, [
+      {
+        atomId: pair.firstAtomId,
+        dx: -edgeUnit.x * step * directionSign,
+        dy: -edgeUnit.y * step * directionSign
+      },
+      {
+        atomId: pair.secondAtomId,
+        dx: edgeUnit.x * step * directionSign,
+        dy: edgeUnit.y * step * directionSign
+      }
+    ]),
+    translatedMultiAtomCoords(coords, [
+      {
+        atomId: pair.firstAtomId,
+        dx: edgeUnit.x * step * directionSign,
+        dy: edgeUnit.y * step * directionSign
+      },
+      {
+        atomId: pair.secondAtomId,
+        dx: -edgeUnit.x * step * directionSign,
+        dy: -edgeUnit.y * step * directionSign
+      }
+    ])
+  ];
+}
+
+function addRingFanAnglePolishTranslation(translations, translationWeights, atomId, dx, dy, weight) {
+  const current = translations.get(atomId) ?? { x: 0, y: 0 };
+  current.x += dx * weight;
+  current.y += dy * weight;
+  translations.set(atomId, current);
+  translationWeights.set(atomId, (translationWeights.get(atomId) ?? 0) + weight);
+}
+
+function ringFanAnglePolishAggregateCandidate(layoutGraph, coords, centers, step) {
+  const translations = new Map();
+  const translationWeights = new Map();
+  const movedAtomIds = new Set();
+
+  for (const center of centers) {
+    const [pair] = ringFanAnglePolishPairEntries(coords, center);
+    if (!pair || pair.deviation <= 1e-9) {
+      continue;
+    }
+    const centerPosition = coords.get(center.atomId);
+    const firstPosition = coords.get(pair.firstAtomId);
+    const secondPosition = coords.get(pair.secondAtomId);
+    if (!centerPosition || !firstPosition || !secondPosition) {
+      continue;
+    }
+
+    const midpoint = {
+      x: (firstPosition.x + secondPosition.x) / 2,
+      y: (firstPosition.y + secondPosition.y) / 2
+    };
+    const midpointUnit = unitVectorBetween(centerPosition, midpoint);
+    const edgeUnit = unitVectorBetween(firstPosition, secondPosition);
+    if (!midpointUnit || !edgeUnit) {
+      continue;
+    }
+
+    const directionSign = pair.signedDeviation < 0 ? 1 : -1;
+    const weight = Math.min(pair.deviation / (Math.PI / 3), 1);
+    const centerAtom = layoutGraph.atoms.get(center.atomId);
+    if (centerAtom?.element !== 'H' && !layoutGraph.fixedCoords.has(center.atomId)) {
+      addRingFanAnglePolishTranslation(
+        translations,
+        translationWeights,
+        center.atomId,
+        midpointUnit.x * step * directionSign,
+        midpointUnit.y * step * directionSign,
+        weight
+      );
+      movedAtomIds.add(center.atomId);
+    }
+
+    for (const [atomId, direction] of [
+      [pair.firstAtomId, -1],
+      [pair.secondAtomId, 1]
+    ]) {
+      const atom = layoutGraph.atoms.get(atomId);
+      if (!atom || atom.element === 'H' || layoutGraph.fixedCoords.has(atomId)) {
+        continue;
+      }
+      addRingFanAnglePolishTranslation(
+        translations,
+        translationWeights,
+        atomId,
+        edgeUnit.x * step * direction * directionSign * RING_FAN_ANGLE_POLISH_AGGREGATE_NEIGHBOR_WEIGHT,
+        edgeUnit.y * step * direction * directionSign * RING_FAN_ANGLE_POLISH_AGGREGATE_NEIGHBOR_WEIGHT,
+        weight
+      );
+      movedAtomIds.add(atomId);
+    }
+  }
+
+  if (movedAtomIds.size === 0) {
+    return null;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  for (const [atomId, translation] of translations) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const weight = Math.max(1, translationWeights.get(atomId) ?? 1);
+    candidateCoords.set(atomId, {
+      x: position.x + translation.x / weight,
+      y: position.y + translation.y / weight
+    });
+  }
+
+  return {
+    atomIds: [...movedAtomIds],
+    coords: candidateCoords
+  };
+}
+
+function ringFanAnglePolishMovableAtomIds(layoutGraph, centers) {
+  const atomIds = [];
+  const seenAtomIds = new Set();
+  for (const center of centers) {
+    for (const atomId of [center.atomId, ...center.covalentBonds.map(({ neighborAtomId }) => neighborAtomId)]) {
+      if (seenAtomIds.has(atomId) || layoutGraph.fixedCoords.has(atomId)) {
+        continue;
+      }
+      const atom = layoutGraph.atoms.get(atomId);
+      if (!atom || atom.element === 'H') {
+        continue;
+      }
+      seenAtomIds.add(atomId);
+      atomIds.push(atomId);
+    }
+  }
+  return atomIds;
+}
+
+/**
+ * Polishes distorted three-bond fans embedded inside macrocycle ring systems.
+ * Branch-rotation cleanup cannot move these centers because every ring bond is
+ * still connected through an alternate cycle. This pass uses tiny individual
+ * atom translations and accepts them only when the final audit stays clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {object} [options] - Retouch options.
+ * @param {number} [options.bondLength] - Target bond length.
+ * @param {Map<string, string>|null} [options.bondValidationClasses] - Optional bond-validation classes.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], passes: number, maxDeviationBefore: number, maxDeviationAfter: number}} Retouch result.
+ */
+export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const bondValidationClasses = options.bondValidationClasses ?? null;
+  const auditOptions = ringFanAnglePolishAuditOptions(bondLength, bondValidationClasses);
+  let coords = cloneCoords(inputCoords);
+  let currentScore = ringFanAnglePolishScore(layoutGraph, coords);
+  const initialScore = currentScore;
+  let currentAudit = auditLayout(layoutGraph, coords, auditOptions);
+  const movedAtomIds = new Set();
+  let passes = 0;
+
+  while (
+    passes < RING_FAN_ANGLE_POLISH_MAX_PASSES
+    && currentScore.maxDeviationDegrees > RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES
+  ) {
+    const centers = currentScore.centers.slice(0, RING_FAN_ANGLE_POLISH_CENTER_SCAN_LIMIT);
+    const movableAtomIds = ringFanAnglePolishMovableAtomIds(layoutGraph, centers);
+    let bestCandidate = null;
+
+    const evaluateCandidateCoords = (candidateCoords, movedAtomIds) => {
+      const candidateScore = ringFanAnglePolishScore(layoutGraph, candidateCoords);
+      if (!ringFanAnglePolishScoreImproves(candidateScore, currentScore)) {
+        return;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, auditOptions);
+      if (!ringFanAnglePolishAuditAllows(candidateAudit, currentAudit, bondLength)) {
+        return;
+      }
+      const currentSoftContactScore = ringFanAnglePolishSoftContactScore(layoutGraph, coords, bondLength, movedAtomIds);
+      const candidateSoftContactScore = ringFanAnglePolishSoftContactScore(layoutGraph, candidateCoords, bondLength, movedAtomIds);
+      const candidate = {
+        atomIds: movedAtomIds,
+        coords: candidateCoords,
+        score: candidateScore,
+        softContactDelta: ringFanAnglePolishSoftContactDelta(candidateSoftContactScore, currentSoftContactScore),
+        audit: candidateAudit
+      };
+      if (!bestCandidate || ringFanAnglePolishSelectionIsBetter(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    };
+
+    for (const atomId of movableAtomIds) {
+      const position = coords.get(atomId);
+      if (!position) {
+        continue;
+      }
+      for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
+        const step = bondLength * stepFactor;
+        for (let directionIndex = 0; directionIndex < RING_FAN_ANGLE_POLISH_DIRECTION_COUNT; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / RING_FAN_ANGLE_POLISH_DIRECTION_COUNT;
+          const candidateCoords = translatedSingleAtomCoords(
+            coords,
+            atomId,
+            Math.cos(angle) * step,
+            Math.sin(angle) * step
+          );
+          evaluateCandidateCoords(candidateCoords, [atomId]);
+        }
+      }
+    }
+
+    for (const center of centers) {
+      for (const pair of ringFanAnglePolishPairEntries(coords, center).slice(0, 2)) {
+        for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
+          const step = bondLength * stepFactor;
+          for (const candidateCoords of ringFanAnglePolishDirectedCandidateCoords(coords, center, pair, step)) {
+            evaluateCandidateCoords(candidateCoords, [center.atomId, pair.firstAtomId, pair.secondAtomId]);
+          }
+        }
+      }
+    }
+
+    for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
+      const candidate = ringFanAnglePolishAggregateCandidate(
+        layoutGraph,
+        coords,
+        centers,
+        bondLength * stepFactor
+      );
+      if (candidate) {
+        evaluateCandidateCoords(candidate.coords, candidate.atomIds);
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    coords = bestCandidate.coords;
+    currentScore = bestCandidate.score;
+    currentAudit = bestCandidate.audit;
+    for (const atomId of bestCandidate.atomIds) {
+      movedAtomIds.add(atomId);
+    }
+    passes++;
+  }
+
+  const softContactLeafRetouch = runMacrocycleRingFanSoftContactLeafRetouch(
+    layoutGraph,
+    coords,
+    currentScore,
+    currentAudit,
+    bondLength,
+    auditOptions
+  );
+  if (softContactLeafRetouch.passes > 0) {
+    coords = softContactLeafRetouch.coords;
+    currentScore = softContactLeafRetouch.score;
+    currentAudit = softContactLeafRetouch.audit;
+    for (const atomId of softContactLeafRetouch.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    passes += softContactLeafRetouch.passes;
+  }
+
+  if (passes === 0) {
+    return {
+      changed: false,
+      coords: inputCoords,
+      movedAtomIds: [],
+      passes: 0,
+      maxDeviationBefore: initialScore.maxDeviationDegrees,
+      maxDeviationAfter: initialScore.maxDeviationDegrees
+    };
+  }
+  return {
+    changed: true,
+    coords,
+    movedAtomIds: [...movedAtomIds],
+    passes,
+    maxDeviationBefore: initialScore.maxDeviationDegrees,
+    maxDeviationAfter: currentScore.maxDeviationDegrees
+  };
 }
 
 function runFinalAnglePolish(

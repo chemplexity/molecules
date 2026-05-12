@@ -342,6 +342,19 @@ describe('layout/engine/templates/match', () => {
     assert.notEqual(withoutOxadiazoleMatch?.id, 'azabicyclo-ketone-oxadiazole-core');
   });
 
+  it('matches hydroxy keto oxadiazole bridged cores only with alcohol and carbonyl context', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1CC2(O)C(C)CC3=C(N=CO3)C1C2=O'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'hydroxy-keto-oxadiazole-bridged-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('CCC1CC2(O)C(C)CC3=C(N=CO3)C1C2'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(
+      withoutCarbonylGraph,
+      buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged')
+    );
+    assert.notEqual(withoutCarbonylMatch?.id, 'hydroxy-keto-oxadiazole-bridged-core');
+  });
+
   it('matches cyanoacyl azabicyclo cages only when the N-acyl context is present', () => {
     const graph = createLayoutGraph(parseSMILES('O=C(C#N)N1CC2CC1C2'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
@@ -387,6 +400,16 @@ describe('layout/engine/templates/match', () => {
       buildRingCandidate(withoutSideChainGraph, withoutSideChainGraph.ringSystems[0], 'bridged')
     );
     assert.notEqual(withoutSideChainMatch?.id, 'aminonitrile-oxabicyclobutane-core');
+  });
+
+  it('matches cyclopropane azabicyclic enone cores only with carbonyl context', () => {
+    const graph = createLayoutGraph(parseSMILES('CCOCC1=CC(=O)C2CCNC1C1CC21'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'cyclopropane-azabicyclic-enone-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('CCOCC1=CCC2CCNC1C1CC21'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutCarbonylMatch?.id, 'cyclopropane-azabicyclic-enone-core');
   });
 
   it('matches hydroxy aminomethyl bicyclo ketone cores only with alcohol and carbonyl context', () => {
@@ -438,6 +461,12 @@ describe('layout/engine/templates/match', () => {
     const withoutGemDimethylGraph = createLayoutGraph(parseSMILES('CC1CC2COC(C)C(C1)C(C)C2CCO'), { suppressH: true });
     const withoutGemDimethylMatch = findTemplateMatch(withoutGemDimethylGraph, buildRingCandidate(withoutGemDimethylGraph, withoutGemDimethylGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutGemDimethylMatch?.id, 'bridged-oxadecalin-core');
+  });
+
+  it('matches the cyclobutane-capped oxadecalin scaffold too', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2(C1)C(C)CC1CCCC2CCO1'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'cyclobutane-oxadecalin-core');
   });
 
   it('matches the bridged pyrrolizidine dione cage scaffold too', () => {
@@ -560,6 +589,21 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'benzoxathiobicyclo-core');
   });
 
+  it('matches the cyclobutane thiophene cage scaffold too', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1=C2C3CC(CC)(C3)C2=CS1'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'cyclobutane-thiophene-core');
+  });
+
+  it('matches the oxygen-bridged bisindole lactam scaffold too', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('[H][C@@]12C[C@H](<C(=O)OOC>)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'),
+      { suppressH: true }
+    );
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'oxygen-bridged-bisindole-lactam-core');
+  });
+
   it('matches the porphyrin core as a macrocycle template and can promote it over a bridged heuristic', () => {
     const graph = createLayoutGraph(parseSMILES('C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2'));
     const strictMacrocycleMatch = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'macrocycle'));
@@ -568,6 +612,15 @@ describe('layout/engine/templates/match', () => {
     const promotedMatch = findTemplateMatchIgnoringFamily(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(promotedMatch.id, 'porphine');
     assert.equal(promotedMatch.family, 'macrocycle');
+  });
+
+  it('matches the calixarene guanidine core as a macrocycle template', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O'),
+      { suppressH: true }
+    );
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'macrocycle'));
+    assert.equal(match.id, 'calixarene-guanidine-core');
   });
 
   it('matches trans-polyene macrolides only when the annotated macrocycle alkenes are E', () => {

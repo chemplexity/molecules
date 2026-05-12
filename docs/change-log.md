@@ -2,6 +2,25 @@
 
 ## 2026-05-11
 
+- Carry projected four-slot turns through sulfone-adjacent tert-butyl carbons so C8 methyl fans stay orthogonal.
+- Add an ammonium cyanomethyl oxatricyclo template so compact ether cages avoid pinched oxetane lanes.
+- Snap aryl sulfonamide linker roots onto exact ring-outward axes while rotating downstream sulfone fans clear of neighboring substituents.
+- Add a cyclopropane azabicyclic enone template so compact bridged lanes render without crossed seven-ring paths.
+- Add an oxygen-bridged bisindole lactam template so dense fused cores avoid folded bridge crossings.
+- Polish crowded macrocycle ring-junction fans with bounded single-atom and aggregate nudges after cleanup, then back off crowded terminal leaves to reduce soft contacts.
+- Retouch paired terminal acid hetero leaves so crowded macrocycle carboxyl fans stay trigonal.
+- Add a hydroxy keto oxadiazole template so compact bridged carbonyl cores keep exterior carbonyl exits.
+- Add a cyclobutane thiophene template so compact sulfur cages keep a square fused cap.
+- Keep acyclic silane and quaternary ammonium branches on projected four-slot fans.
+- Add a calixarene macrocycle template so bridged aryl bowls keep regular benzene walls.
+- Add a cyclobutane oxadecalin template so compact tricyclic ether cages render without crossed bridged lanes.
+- Add an aminomethyl oxabicyclobutane template so compact ammonium ether cages align bridge atoms and avoid sidechain crossings.
+- Add an alkylidene oxime bicyclohexane template so compact theta rings avoid generic fallback crossings.
+- Shorten stretched terminal multiple-bond leaves after final cleanup when doing so improves audit metrics.
+- Add an imino oxazocine lactam template so compact formamido bridged lactams keep separated ring lanes.
+- Add an aryl phosphite spiro template so compact polyaryl phosphite bridges render without crossed aryl edges.
+- Add a hydroxy amino oxabicyclic acetal template so compact polyhydroxy cages avoid flattened shared bridges.
+- Balance small acyclic branches during hidden-hydrogen fan repairs without disturbing protected small-ring exits.
 - Add a hydroxy aminomethyl bicyclic ketone template so compact ammonium ketone cages avoid generic bridged fallback.
 - Keep displayed hidden stereohydrogens outside fused steroid ring faces before optimizing nearby atom clearance.
 

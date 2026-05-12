@@ -56,6 +56,7 @@ const OMITTED_H_FAN_RESCUE_MIN_DEVIATION = (Math.PI / 18) ** 2;
 const OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT = 1e-6;
 const OMITTED_H_FAN_MAX_TETRAHEDRAL_WORSENING = 0.05;
 const OMITTED_H_FAN_MAX_VISIBLE_TRIGONAL_WORSENING = 0.05;
+const OMITTED_H_FAN_ACYCLIC_BALANCE_HEAVY_ATOM_LIMIT = 4;
 const OMITTED_H_FAN_COLLATERAL_HEAVY_ATOM_LIMIT = 24;
 const OMITTED_H_FAN_COLLATERAL_ROTATIONS = [
   -(Math.PI / 36),
@@ -1790,6 +1791,113 @@ function buildOmittedHydrogenFanRootDescriptor(layoutGraph, coords, centerAtomId
 }
 
 /**
+ * Builds a small non-ring branch descriptor that may be rotated to balance a hidden-H fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hidden-H fan center atom id.
+ * @param {string} rootAtomId - Candidate acyclic neighbor root atom id.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that may not move.
+ * @returns {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[], omittedHydrogenAcyclicBalance: boolean}|null} Movable branch descriptor.
+ */
+function buildOmittedHydrogenFanAcyclicBalanceDescriptor(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds) {
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (!rootAtom || rootAtom.element === 'H' || rootAtom.aromatic || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0) {
+    return null;
+  }
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+  if (
+    subtreeAtomIds.length === 0 ||
+    subtreeAtomIds.length >= coords.size ||
+    subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)) ||
+    (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds))
+  ) {
+    return null;
+  }
+  let heavyAtomCount = 0;
+  for (const atomId of subtreeAtomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom || atom.element === 'H') {
+      continue;
+    }
+    if (atom.chirality || atom.aromatic || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+      return null;
+    }
+    heavyAtomCount++;
+  }
+  if (heavyAtomCount === 0 || heavyAtomCount > OMITTED_H_FAN_ACYCLIC_BALANCE_HEAVY_ATOM_LIMIT) {
+    return null;
+  }
+  return {
+    anchorAtomId: centerAtomId,
+    rootAtomId,
+    subtreeAtomIds,
+    omittedHydrogenAcyclicBalance: true
+  };
+}
+
+/**
+ * Returns the midpoint angle across the larger angular gap between two rays.
+ * @param {number} firstAngle - First ray angle in radians.
+ * @param {number} secondAngle - Second ray angle in radians.
+ * @returns {number} Midpoint angle in radians.
+ */
+function largerArcMidpoint(firstAngle, secondAngle) {
+  const ccwDelta = ((secondAngle - firstAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+  if (ccwDelta >= Math.PI) {
+    return wrapAngle(firstAngle + ccwDelta / 2);
+  }
+  return wrapAngle(secondAngle + (Math.PI * 2 - ccwDelta) / 2);
+}
+
+/**
+ * Collects small acyclic branch rotations that split the open side of a hidden-H three-heavy fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Seed coordinate map.
+ * @param {string} centerAtomId - Hidden-H fan center atom id.
+ * @param {string[]} neighborAtomIds - Visible heavy neighbors around the center.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that may not move.
+ * @returns {Array<{coords: Map<string, {x: number, y: number}>, descriptor: {anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}, rotation: number}>} Balance variants.
+ */
+function collectOmittedHydrogenFanAcyclicBalanceVariants(layoutGraph, coords, centerAtomId, neighborAtomIds, frozenAtomIds) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition || neighborAtomIds.length !== 3) {
+    return [];
+  }
+  const variants = [];
+  for (const rootAtomId of neighborAtomIds) {
+    const descriptor = buildOmittedHydrogenFanAcyclicBalanceDescriptor(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds);
+    if (!descriptor) {
+      continue;
+    }
+    const fixedNeighborAtomIds = neighborAtomIds.filter(neighborAtomId => neighborAtomId !== rootAtomId);
+    const fixedPositions = fixedNeighborAtomIds.map(neighborAtomId => coords.get(neighborAtomId));
+    const rootPosition = coords.get(rootAtomId);
+    if (!rootPosition || fixedPositions.some(position => !position)) {
+      continue;
+    }
+    const targetAngle = largerArcMidpoint(
+      angleOf(sub(fixedPositions[0], centerPosition)),
+      angleOf(sub(fixedPositions[1], centerPosition))
+    );
+    const rootRotation = wrapAngle(targetAngle - angleOf(sub(rootPosition, centerPosition)));
+    if (Math.abs(rootRotation) <= 1e-9) {
+      continue;
+    }
+    const overrides = rotateRigidDescriptorPositions(coords, descriptor, rootRotation);
+    const candidateCoords = materializeOverrideCoords(coords, overrides);
+    if (!candidateCoords) {
+      continue;
+    }
+    variants.push({
+      coords: candidateCoords,
+      descriptor,
+      rotation: rootRotation
+    });
+  }
+  return variants;
+}
+
+/**
  * Counts heavy atoms in a rigid descriptor subtree.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{subtreeAtomIds: string[]}} descriptor - Rigid subtree descriptor.
@@ -1895,7 +2003,7 @@ function isBalancedOmittedHydrogenFanCandidate(candidate) {
  * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Repaired attached-ring descriptor.
  * @param {string[]} targetNeighborAtomIds - Three heavy neighbors around the fan center.
  * @param {Set<string>} focusAtomIds - Local atom focus for presentation metrics.
- * @param {{audit: object, bondLength: number, hiddenHydrogenPenalty: number, presentationPenalty: number, tetrahedralPenalty: number, visibleTrigonalPenalty: number, visibleBondCrossingCount: number}} baseState - Baseline score state.
+ * @param {{audit: object, bondLength: number, hiddenHydrogenPenalty: number, presentationPenalty: number, smallRingExteriorPenalty: number, tetrahedralPenalty: number, visibleTrigonalPenalty: number, visibleBondCrossingCount: number}} baseState - Baseline score state.
  * @param {number} nudges - Number of logical candidate moves.
  * @returns {object|null} Candidate score, or null when rejected.
  */
@@ -1928,6 +2036,10 @@ function scoreOmittedHydrogenFanCandidate(layoutGraph, coords, descriptor, targe
   if (visibleBondCrossingCount > baseState.visibleBondCrossingCount) {
     return null;
   }
+  const smallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords);
+  if (smallRingExteriorPenalty > baseState.smallRingExteriorPenalty + 1e-6) {
+    return null;
+  }
 
   const targetFanDeviation = measureOmittedHydrogenFanDeviationAtCenter(coords, descriptor.anchorAtomId, targetNeighborAtomIds);
   const readability = measureRingSubstituentReadability(layoutGraph, coords);
@@ -1950,6 +2062,7 @@ function scoreOmittedHydrogenFanCandidate(layoutGraph, coords, descriptor, targe
     omittedHydrogenTrigonalPenalty: hiddenHydrogenPenalty,
     omittedHydrogenTargetFanMaxDeviation: targetFanDeviation?.maxDeviation ?? Number.POSITIVE_INFINITY,
     ringExteriorBondOutwardPenalty: measureRingExteriorBondOutwardPenalty(layoutGraph, coords),
+    smallRingExteriorPenalty,
     terminalRingLeafOutwardPenalty: measureTerminalCarbonRingLeafOutwardPenalty(layoutGraph, coords),
     trigonalDistortionPenalty: measureAttachedRingTrigonalDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
     tetrahedralDistortionPenalty,
@@ -2043,18 +2156,64 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
     tetrahedralPenalty: measureTetrahedralDistortion(layoutGraph, coords).totalDeviation,
     visibleTrigonalPenalty: measureTrigonalDistortion(layoutGraph, coords).totalDeviation,
     visibleBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, coords),
+    smallRingExteriorPenalty: measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords),
     presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords, {
       includeSmallRingExteriorPenalty: false
     })
   };
   let bestCandidate = null;
 
+  /**
+   * Tries small acyclic sibling rotations after a ring-root hidden-H repair seed.
+   * @param {Map<string, {x: number, y: number}>} seedCoords - Seed coordinate map.
+   * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Primary ring-root repair descriptor.
+   * @param {string[]} targetNeighborAtomIds - Three heavy neighbors around the fan center.
+   * @param {Set<string>} focusAtomIds - Local atom focus for presentation metrics.
+   * @param {number} nudges - Number of logical moves already used.
+   * @returns {boolean} True when the balance candidate is resolved enough to stop searching.
+   */
+  const considerAcyclicBalanceVariants = (seedCoords, descriptor, targetNeighborAtomIds, focusAtomIds, nudges) => {
+    for (const balanceVariant of collectOmittedHydrogenFanAcyclicBalanceVariants(layoutGraph, seedCoords, descriptor.anchorAtomId, targetNeighborAtomIds, frozenAtomIds)) {
+      const balanceFocusAtomIds = expandFocusAtomIds(
+        layoutGraph,
+        new Set([...focusAtomIds, balanceVariant.descriptor.rootAtomId, ...balanceVariant.descriptor.subtreeAtomIds])
+      );
+      const balanceScore = scoreOmittedHydrogenFanCandidate(
+        layoutGraph,
+        balanceVariant.coords,
+        descriptor,
+        targetNeighborAtomIds,
+        balanceFocusAtomIds,
+        baseState,
+        nudges + 1
+      );
+      if (balanceScore) {
+        balanceScore.omittedHydrogenAcyclicBalance = true;
+      }
+      if (balanceScore && (!bestCandidate || isBetterAttachedRingCandidate(balanceScore, bestCandidate))) {
+        bestCandidate = balanceScore;
+        if (isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   const visitSeedCoords = (seedCoords, descriptor, targetNeighborAtomIds, focusAtomIds, nudges, visitOptions = {}) => {
     let shouldStop = false;
     const seedScore = scoreOmittedHydrogenFanCandidate(layoutGraph, seedCoords, descriptor, targetNeighborAtomIds, focusAtomIds, baseState, nudges);
     if (seedScore && (!bestCandidate || isBetterAttachedRingCandidate(seedScore, bestCandidate))) {
       bestCandidate = seedScore;
-      shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate);
+      shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate);
+    }
+
+    if (!shouldStop) {
+      shouldStop = considerAcyclicBalanceVariants(seedCoords, descriptor, targetNeighborAtomIds, focusAtomIds, nudges);
+    }
+
+    if (!shouldStop && bestCandidate) {
+      shouldStop = isBalancedOmittedHydrogenFanCandidate(bestCandidate);
     }
 
     const snappedLeafCoords = snapTerminalCarbonRingLeavesToOutward(layoutGraph, seedCoords);
@@ -2063,6 +2222,9 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
       if (snappedLeafScore && (!bestCandidate || isBetterAttachedRingCandidate(snappedLeafScore, bestCandidate))) {
         bestCandidate = snappedLeafScore;
         shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate);
+      }
+      if (!shouldStop) {
+        shouldStop = considerAcyclicBalanceVariants(snappedLeafCoords, descriptor, targetNeighborAtomIds, focusAtomIds, nudges + 1);
       }
     }
 
@@ -2075,6 +2237,9 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
       if (compressedLeafScore && (!bestCandidate || isBetterAttachedRingCandidate(compressedLeafScore, bestCandidate))) {
         bestCandidate = compressedLeafScore;
         shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate);
+      }
+      if (!shouldStop) {
+        shouldStop = considerAcyclicBalanceVariants(compressedLeafCoords, descriptor, targetNeighborAtomIds, focusAtomIds, nudges + 1);
       }
       if (shouldStop) {
         return true;
@@ -2096,6 +2261,9 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
         if (isResolvedOmittedHydrogenFanCandidate(bestCandidate)) {
           return true;
         }
+      }
+      if (considerAcyclicBalanceVariants(variant.coords, descriptor, targetNeighborAtomIds, focusAtomIds, variant.nudges)) {
+        return true;
       }
     }
     return false;
@@ -4733,7 +4901,30 @@ function omittedHydrogenTrigonalWins(candidate, incumbent) {
       typeof candidate.ringExteriorBondOutwardPenalty !== 'number' ||
       typeof incumbent.ringExteriorBondOutwardPenalty !== 'number' ||
       candidate.ringExteriorBondOutwardPenalty <= incumbent.ringExteriorBondOutwardPenalty + 1e-6) &&
+    (boundedFanRescue ||
+      typeof candidate.smallRingExteriorPenalty !== 'number' ||
+      typeof incumbent.smallRingExteriorPenalty !== 'number' ||
+      candidate.smallRingExteriorPenalty <= incumbent.smallRingExteriorPenalty + 1e-6) &&
     (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - 1e-6
+  );
+}
+
+function omittedHydrogenAcyclicBalanceWins(candidate, incumbent) {
+  return (
+    !!incumbent &&
+    candidate.omittedHydrogenAcyclicBalance === true &&
+    candidate.omittedHydrogenAttachedRingFan === true &&
+    candidate.overlapCount === incumbent.overlapCount &&
+    (candidate.visibleBondCrossingCount ?? 0) <= (incumbent.visibleBondCrossingCount ?? 0) &&
+    Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6 &&
+    (candidate.smallRingExteriorPenalty ?? 0) <= (incumbent.smallRingExteriorPenalty ?? 0) + 1e-6 &&
+    (candidate.ringExteriorBondOutwardPenalty ?? 0) <= (incumbent.ringExteriorBondOutwardPenalty ?? 0) + 1e-6 &&
+    (candidate.terminalRingLeafOutwardPenalty ?? 0) <= (incumbent.terminalRingLeafOutwardPenalty ?? 0) + 1e-6 &&
+    candidate.visibleTrigonalPenalty <= incumbent.visibleTrigonalPenalty + 1e-6 &&
+    candidate.tetrahedralDistortionPenalty <= incumbent.tetrahedralDistortionPenalty + 1e-6 &&
+    (candidate.omittedHydrogenTargetFanMaxDeviation ?? Number.POSITIVE_INFINITY) <=
+      (incumbent.omittedHydrogenTargetFanMaxDeviation ?? Number.POSITIVE_INFINITY) + 1e-6 &&
+    (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT
   );
 }
 
@@ -4745,6 +4936,8 @@ function boundedOmittedHydrogenFanRescueWins(candidate, incumbent) {
     (candidate.visibleBondCrossingCount ?? 0) <= (incumbent.visibleBondCrossingCount ?? 0) &&
     (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT &&
     (candidate.omittedHydrogenTargetFanMaxDeviation ?? Number.POSITIVE_INFINITY) <= ((5 * Math.PI) / 36) ** 2 + 1e-9 &&
+    (candidate.rootOutwardPenalty ?? 0) <= (incumbent.rootOutwardPenalty ?? 0) + 1e-6 &&
+    (candidate.smallRingExteriorPenalty ?? 0) <= (incumbent.smallRingExteriorPenalty ?? 0) + 1e-6 &&
     (candidate.ringExteriorBondOutwardPenalty ?? 0) <= (Math.PI / 6) ** 2 + 1e-9 &&
     (candidate.terminalRingLeafOutwardPenalty ?? 0) <= (Math.PI / 9) ** 2 + 1e-9
   );
@@ -4764,6 +4957,9 @@ function omittedHydrogenTrigonalHolds(candidate, incumbent) {
     (typeof candidate.ringExteriorBondOutwardPenalty !== 'number' ||
       typeof incumbent.ringExteriorBondOutwardPenalty !== 'number' ||
       Math.abs(candidate.ringExteriorBondOutwardPenalty - incumbent.ringExteriorBondOutwardPenalty) <= 1e-6) &&
+    (typeof candidate.smallRingExteriorPenalty !== 'number' ||
+      typeof incumbent.smallRingExteriorPenalty !== 'number' ||
+      Math.abs(candidate.smallRingExteriorPenalty - incumbent.smallRingExteriorPenalty) <= 1e-6) &&
     (candidate.omittedHydrogenTrigonalPenalty ?? 0) > (incumbent.omittedHydrogenTrigonalPenalty ?? 0) + 1e-6
   );
 }
@@ -4832,6 +5028,7 @@ function isBetterAttachedRingCandidate(candidate, incumbent) {
     trigonalBisectorWins(candidate, incumbent) ||
     ringExteriorBondOutwardWins(candidate, incumbent) ||
     terminalRingLeafOutwardWins(candidate, incumbent) ||
+    omittedHydrogenAcyclicBalanceWins(candidate, incumbent) ||
     omittedHydrogenTrigonalWins(candidate, incumbent) ||
     trigonalDistortionWins(candidate, incumbent) ||
     readabilityFailureWins(candidate, incumbent) ||

@@ -776,9 +776,10 @@ test('browser layout keeps the tetrazole-linked C13 fan bounded without collapsi
     assert.equal(signature.audit.severeOverlapCount, 0, `expected ${browserName} to avoid severe overlaps`);
     assert.equal(signature.visibleHeavyBondCrossingCount, 0, `expected ${browserName} to avoid visible heavy-bond crossings`);
     assert.ok(Array.isArray(signature.tetrazoleC13Angles), `expected ${browserName} to report C13 angles`);
-    for (const angle of signature.tetrazoleC13Angles) {
-      assert.ok(Math.abs(angle - 120) <= 25 + 1e-6, `expected ${browserName} C13 fan within bounded relief, got ${angle.toFixed(2)}`);
-    }
+    assert.ok(
+      Math.min(...signature.tetrazoleC13Angles) >= 105 - 1e-6 && Math.max(...signature.tetrazoleC13Angles) <= 145 + 1e-6,
+      `expected ${browserName} C13 fan to stay open and bounded, got ${signature.tetrazoleC13Angles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
     assert.ok(Array.isArray(signature.tetrazoleC12Angles), `expected ${browserName} to report C12 angles`);
     assert.ok(
       Math.min(...signature.tetrazoleC12Angles) >= 70,

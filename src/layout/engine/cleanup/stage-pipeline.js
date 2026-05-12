@@ -45,6 +45,7 @@ import {
   hasRingTerminalHeteroTidyNeed,
   measureRingTerminalHeteroOutwardPenalty,
   measureTerminalMultipleBondLeafFanPenalty,
+  runPairedTerminalHeteroLeafFanTidy,
   runRingTerminalHeteroTidy,
   runTerminalMultipleBondLeafFanTidy
 } from './presentation/ring-terminal-hetero.js';
@@ -814,28 +815,44 @@ export function buildCleanupStageGraph(context) {
       },
       transformFn(parentCoords, inputContext) {
         const result = runTerminalMultipleBondLeafFanTidy(layoutGraph, parentCoords, { bondLength });
-        const collateralRootRetidy = runOmittedHydrogenDirectRingHubCollateralRootRetidy(layoutGraph, result.coords, {
+        const pairedTerminalHeteroResult = runPairedTerminalHeteroLeafFanTidy(layoutGraph, result.coords, {
+          bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        const pairedRetouchedResult = pairedTerminalHeteroResult.nudges > 0
+          ? {
+              ...result,
+              coords: pairedTerminalHeteroResult.coords,
+              nudges: (result.nudges ?? 0) + pairedTerminalHeteroResult.nudges
+            }
+          : result;
+        const collateralRootRetidy = runOmittedHydrogenDirectRingHubCollateralRootRetidy(layoutGraph, pairedRetouchedResult.coords, {
           bondLength,
           frozenAtomIds: placement.frozenAtomIds
         });
         const retouchedResult = collateralRootRetidy.changed === true
           ? {
-              ...result,
+              ...pairedRetouchedResult,
               coords: collateralRootRetidy.coords,
-              nudges: (result.nudges ?? 0) + collateralRootRetidy.nudges,
+              nudges: (pairedRetouchedResult.nudges ?? 0) + collateralRootRetidy.nudges,
               changed: true,
               omittedHydrogenDirectRingHubCollateralRootNudges: collateralRootRetidy.nudges
             }
-          : result;
+          : pairedRetouchedResult;
         if ((retouchedResult.nudges ?? 0) <= 0) {
           return null;
         }
         const [label, description] = HOOK_STEP_META['ring-presentation-tidy'];
+        const strategiesRun = ['terminal-multiple-bond-leaf'];
+        if (pairedTerminalHeteroResult.nudges > 0) {
+          strategiesRun.push('paired-terminal-hetero-leaf');
+        }
+        if (collateralRootRetidy.changed === true) {
+          strategiesRun.push('omitted-h-collateral-root');
+        }
         inputContext.onStep?.(label, description, inputContext.copyCoords(retouchedResult.coords), {
           nudges: retouchedResult.nudges,
-          strategiesRun: collateralRootRetidy.changed === true
-            ? ['terminal-multiple-bond-leaf', 'omitted-h-collateral-root']
-            : ['terminal-multiple-bond-leaf'],
+          strategiesRun,
           finalRetouch: true
         });
         return retouchedResult;

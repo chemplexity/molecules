@@ -2322,6 +2322,32 @@ function rootProjectedTetrahedralAngleSets() {
 }
 
 /**
+ * Returns whether an acyclic four-coordinate heteroatom should reserve the
+ * same projected slots as crowded tetrahedral carbon centers. Quaternary
+ * ammonium and tetravalent silane centers have no hidden hydrogens to absorb
+ * bad 2D fan choices, so their four visible ligands need explicit slot
+ * separation even when several ligands continue into longer chains.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate center atom ID.
+ * @returns {boolean} True when the center should use four projected slots.
+ */
+function isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  return Boolean(
+    layoutGraph
+    && atom
+    && !atom.aromatic
+    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && atom.heavyDegree === 4
+    && atom.degree === 4
+    && (
+      atom.element === 'Si'
+      || (atom.element === 'N' && (atom.charge ?? 0) > 0)
+    )
+  );
+}
+
+/**
  * Returns whether an atom has a direct cross-like hypervalent heavy neighbor.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate atom ID.
@@ -2350,7 +2376,9 @@ export function hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) {
  * placement rules. Besides terminal leaves, linear branches, and crowded
  * multi-ring roots, centers bearing a cross-like hypervalent branch use the
  * same slots so late sulfur/phosphorus orthogonalization does not collide with
- * neighboring branches.
+ * neighboring branches. Fully substituted acyclic ammonium and silane centers
+ * also opt in because their four visible ligands otherwise collapse into
+ * sequential zig-zag branch slots.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom ID.
  * @returns {boolean} True when the center qualifies for projected-tetrahedral placement.
@@ -2404,8 +2432,13 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
     }
   }
 
-  return heavySingleBondCount === 4 && (
-    presentationCriticalLeafCount >= 2
+  if (heavySingleBondCount !== 4) {
+    return false;
+  }
+
+  return (
+    isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, atomId)
+    || presentationCriticalLeafCount >= 2
     || (attachedRingRootCount >= 2 && terminalHeavyLeafCount >= 1)
     || (attachedRingRootCount >= 2 && hasConjugatedTrigonalNeighbor)
     || attachedRingRootCount >= 3
@@ -2636,8 +2669,9 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     return [];
   }
   const hasCrossLikeNeighbor = hasCrossLikeHypervalentNeighbor(layoutGraph, anchorAtomId);
+  const isFourCoordinateHeteroSlotCenter = isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, anchorAtomId);
   if (placedNeighborIds.length === 0) {
-    return hasCrossLikeNeighbor && inBatchNeighborIds.length === 4 && deferredHeavyNeighborIds.length === 0
+    return (hasCrossLikeNeighbor || isFourCoordinateHeteroSlotCenter) && inBatchNeighborIds.length === 4 && deferredHeavyNeighborIds.length === 0
       ? rootProjectedTetrahedralAngleSets()
       : [];
   }
@@ -2702,7 +2736,12 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     && inBatchNeighborIds.length > 1
     && placedNeighborIds.length + inBatchNeighborIds.length === 4
     && deferredHeavyNeighborCount === 0;
-  if (inBatchNeighborIds.length > 1 && !isProjectedLeafBatch && !isCrossLikeProjectedRemainingBatch) {
+  const isFourCoordinateHeteroProjectedRemainingBatch =
+    isFourCoordinateHeteroSlotCenter
+    && inBatchNeighborIds.length > 1
+    && placedNeighborIds.length + inBatchNeighborIds.length === 4
+    && deferredHeavyNeighborCount === 0;
+  if (inBatchNeighborIds.length > 1 && !isProjectedLeafBatch && !isCrossLikeProjectedRemainingBatch && !isFourCoordinateHeteroProjectedRemainingBatch) {
     return [];
   }
   const shouldReserveOppositeSlotForDeferredLeaves =

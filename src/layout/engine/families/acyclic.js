@@ -360,10 +360,88 @@ function terminalFluorineLeafCount(layoutGraph, atomId) {
 }
 
 /**
+ * Counts terminal carbon leaves attached by single bonds to a center.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Center atom ID.
+ * @returns {number} Terminal carbon leaf count.
+ */
+function terminalCarbonLeafCount(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  let carbonLeafCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (
+      neighborAtom?.element === 'C'
+      && neighborAtom.heavyDegree === 1
+      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+    ) {
+      carbonLeafCount++;
+    }
+  }
+  return carbonLeafCount;
+}
+
+/**
+ * Returns whether a center is directly attached to a cross-like hypervalent
+ * neighbor through a single covalent bond.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom ID.
+ * @returns {boolean} True when a neighboring sulfur/phosphorus-like center wants cross geometry.
+ */
+function hasCrossLikeHypervalentSingleNeighbor(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    return describeCrossLikeHypervalentCenter(layoutGraph, neighborAtomId) != null;
+  });
+}
+
+/**
+ * Returns whether a quaternary carbon should carry the existing projected
+ * tetrahedral branch slots through the acyclic backbone. Tert-butyl-like
+ * groups attached to a sulfone/phosphoryl cross otherwise get one methyl on
+ * the backbone zig-zag, leaving the remaining methyls in collapsed side slots.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate carbon atom ID.
+ * @returns {boolean} True when the carbon should use a 90-degree projected turn.
+ */
+function isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  return Boolean(
+    layoutGraph
+    && atom
+    && atom.element === 'C'
+    && !atom.aromatic
+    && atom.heavyDegree === 4
+    && atom.degree === 4
+    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && terminalCarbonLeafCount(layoutGraph, atomId) >= 3
+    && hasCrossLikeHypervalentSingleNeighbor(layoutGraph, atomId)
+  );
+}
+
+/**
  * Returns whether a backbone center should use projected-tetrahedral
  * continuation geometry instead of the default 120-degree zig-zag. Acyclic
  * CF2 chain centers need the backbone bonds to take two projected slots before
  * their terminal fluorine leaves are assigned to the remaining quadrants.
+ * Tert-butyl-like carbons attached to cross-like hypervalent centers need the
+ * same projected turn so the backbone methyl does not collapse the remaining
+ * carbon leaves into uneven 80-degree side gaps.
+ * Fully substituted acyclic silanes and ammonium centers need the same
+ * projection so visible off-backbone ligands do not collapse into the
+ * remaining branch fan.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
  * @param {string|null|undefined} atomId - Center backbone atom ID.
@@ -375,11 +453,29 @@ function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomI
     return false;
   }
   const atom = layoutGraph.atoms.get(atomId);
-  return supportsProjectedTetrahedralGeometry(layoutGraph, atomId)
-    && atom?.element === 'C'
-    && terminalFluorineLeafCount(layoutGraph, atomId) >= 2
-    && bondOrderBetween(layoutGraph, previousAtomId, atomId) === 1
-    && bondOrderBetween(layoutGraph, atomId, nextAtomId) === 1;
+  if (
+    !supportsProjectedTetrahedralGeometry(layoutGraph, atomId)
+    || bondOrderBetween(layoutGraph, previousAtomId, atomId) !== 1
+    || bondOrderBetween(layoutGraph, atomId, nextAtomId) !== 1
+  ) {
+    return false;
+  }
+
+  if (atom?.element === 'C') {
+    return (
+      terminalFluorineLeafCount(layoutGraph, atomId) >= 2
+      || isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId)
+    );
+  }
+
+  return (
+    atom?.heavyDegree === 4
+    && atom.degree === 4
+    && (
+      atom.element === 'Si'
+      || (atom.element === 'N' && (atom.charge ?? 0) > 0)
+    )
+  );
 }
 
 /**

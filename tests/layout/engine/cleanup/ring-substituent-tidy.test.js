@@ -235,6 +235,26 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.ok(Math.abs(afterSecondAngle - (2 * Math.PI) / 3) < 1e-6);
   });
 
+  it('snaps aryl sulfonamide linker roots outward while rotating the downstream fan clear', () => {
+    const smiles = 'CC(C)NC1=CC(=CC=C1C=CCCC1=CC(F)=C([N-]S(C)(=O)=O)C(C=C)=C1)C(C)(C)C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const c19ExitDeviation = ringOutwardDeviation(result.layoutGraph, result.coords, 'C19', 'N20');
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(c19ExitDeviation < 1e-6, `expected C19-N20 to follow the exact aromatic outward axis, got ${c19ExitDeviation.toFixed(6)} rad`);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C17', 'C19', 'N20') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'N20', 'C19', 'C25') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C19', 'N20', 'S21') - (2 * Math.PI) / 3) < 1e-6);
+  });
+
   it('assigns a continuous soft penalty to aromatic substituents even below the hard readability cutoff', () => {
     const smiles = 'COc1ccccc1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

@@ -1057,6 +1057,22 @@ function isRootAnchoredSubtreeDescriptor(descriptor) {
   return descriptor.supportsRootAnchoredOverlapRepair === true;
 }
 
+/**
+ * Returns whether a linked non-ring hetero substituent should judge ring-exit
+ * readability from the immediate anchor-to-root bond instead of the downstream
+ * branch centroid.
+ * @param {object} descriptor - Dynamic tidy descriptor.
+ * @returns {boolean} True when the root bond is the readability direction.
+ */
+function scoresImmediateRootOutwardDeviation(descriptor) {
+  return Boolean(
+    descriptor.supportsRootAnchoredOverlapRepair === true
+    && descriptor.isRingSystemSubstituent !== true
+    && descriptor.prefersIdealOutwardGeometry === true
+    && descriptor.rootRotatingAtomIds.length > 0
+  );
+}
+
 function shouldReplaceTidyeableDescriptor(candidate, incumbent) {
   const candidateRootAnchored = (candidate.rootRotatingAtomIds?.length ?? 0) > 0;
   const incumbentRootAnchored = (incumbent.rootRotatingAtomIds?.length ?? 0) > 0;
@@ -1676,6 +1692,111 @@ function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descr
 }
 
 /**
+ * Builds an exact immediate-root outward candidate for divalent hetero linkers
+ * that lead into a compact non-ring subtree. The root atom is snapped onto the
+ * ring's outward ray, then the downstream subtree is allowed to rotate around
+ * that root so exact ring-exit geometry does not force a nearby overlap.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {AtomGrid} atomGrid - Spatial grid for the current coordinates.
+ * @param {object} descriptor - Dynamic tidy descriptor.
+ * @param {object} baseCandidate - Current descriptor score.
+ * @param {number} bondLength - Target bond length.
+ * @param {string[]} allAtomIds - All placed atom ids.
+ * @param {object|null} [bondIntersectionContext] - Optional cached crossing context.
+ * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
+ * @returns {object|null} Best exact linked-subtree candidate, or null.
+ */
+function buildExactRootOutwardLinkedSubtreeCandidate(
+  layoutGraph,
+  coords,
+  atomGrid,
+  descriptor,
+  baseCandidate,
+  bondLength,
+  allAtomIds,
+  bondIntersectionContext = null,
+  subtreeContext = null
+) {
+  if (
+    !scoresImmediateRootOutwardDeviation(descriptor)
+    || descriptor.outwardAngles.length === 0
+  ) {
+    return null;
+  }
+
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return null;
+  }
+
+  const baseRootOutwardDeviation = bestOutwardDeviation(anchorPosition, rootPosition, descriptor.outwardAngles);
+  if (!(baseRootOutwardDeviation > TIDY_ANGLE_EPSILON)) {
+    return null;
+  }
+
+  const bondDistance = Math.hypot(rootPosition.x - anchorPosition.x, rootPosition.y - anchorPosition.y);
+  if (bondDistance <= TIDY_ATOM_EPSILON) {
+    return null;
+  }
+
+  const currentForwardAngle = angleOf(sub(rootPosition, anchorPosition));
+  let bestCandidate = null;
+  for (const targetAngle of descriptor.outwardAngles) {
+    const nextRootPosition = add(anchorPosition, fromAngle(targetAngle, bondDistance));
+    const rootSnapRotation = targetAngle - currentForwardAngle;
+    for (const downstreamRotation of STANDARD_ROTATION_ANGLES) {
+      const overridePositions = new Map([
+        [descriptor.rootAtomId, nextRootPosition]
+      ]);
+      for (const atomId of descriptor.rootRotatingAtomIds) {
+        const currentPosition = coords.get(atomId);
+        if (!currentPosition) {
+          continue;
+        }
+        const snappedRelativePosition = rotate(sub(currentPosition, rootPosition), rootSnapRotation);
+        overridePositions.set(atomId, add(nextRootPosition, rotate(snappedRelativePosition, downstreamRotation)));
+      }
+
+      const candidate = {
+        ...buildCandidateScore(
+          layoutGraph,
+          coords,
+          atomGrid,
+          descriptor,
+          overridePositions,
+          bondLength,
+          allAtomIds,
+          bondIntersectionContext,
+          subtreeContext
+        ),
+        angleDelta: angularDifference(currentForwardAngle, targetAngle) + Math.abs(downstreamRotation),
+        overridePositions,
+        rootAnchored: false
+      };
+      const candidateRootOutwardDeviation = bestOutwardDeviation(anchorPosition, nextRootPosition, descriptor.outwardAngles);
+      if (
+        !Number.isFinite(candidateRootOutwardDeviation)
+        || candidateRootOutwardDeviation > TIDY_ANGLE_EPSILON
+        || candidate.insideRingCount > baseCandidate.insideRingCount
+        || candidate.outwardFailureCount > baseCandidate.outwardFailureCount
+        || candidate.crossingCount > baseCandidate.crossingCount
+        || candidate.overlapCost > baseCandidate.overlapCost + TIDY_ATOM_EPSILON
+        || candidate.anchorDistortion > baseCandidate.anchorDistortion + TIDY_ATOM_EPSILON
+      ) {
+        continue;
+      }
+      if (isBetterCandidate(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  return bestCandidate;
+}
+
+/**
  * Builds an exact outward-root candidate for direct-attached ring-system
  * substituents. These cases should judge exactness from the actual
  * anchor-to-root bond direction, not the downstream ring centroid.
@@ -1854,6 +1975,7 @@ function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, override
     ? outwardAnglesForAnchorWithOverrides(layoutGraph, coords, descriptor.reverseAnchorAtomId, overridePositions)
     : [];
   const representativePosition = ringSubstituentRepresentativePosition(coords, descriptor.representativeAtomIds, overridePositions);
+  const scoreImmediateRootOutwardDeviation = scoresImmediateRootOutwardDeviation(descriptor);
   const reverseRepresentativePosition = descriptor.isRingSystemSubstituent
     ? ringSubstituentRepresentativePosition(coords, descriptor.reverseRepresentativeAtomIds, overridePositions)
     : null;
@@ -1868,6 +1990,11 @@ function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, override
         bestOutwardDeviation(anchorPosition, rootPosition, forwardOutwardAngles)
         ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation
       )
+    : scoreImmediateRootOutwardDeviation
+      ? (
+          bestOutwardDeviation(anchorPosition, rootPosition, forwardOutwardAngles)
+          ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation
+        )
     : (
         bestOutwardDeviation(anchorPosition, representativePosition, forwardOutwardAngles)
         ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation
@@ -2793,6 +2920,17 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         bondIntersectionContext,
         subtreeContext
       );
+      const exactRootOutwardLinkedSubtreeCandidate = buildExactRootOutwardLinkedSubtreeCandidate(
+        layoutGraph,
+        coords,
+        atomGrid,
+        dynamicDescriptor,
+        baseCandidate,
+        bondLength,
+        allAtomIds,
+        bondIntersectionContext,
+        subtreeContext
+      );
       const shouldUseExactIdealLeafCandidate =
         exactIdealLeafCandidate
         && exactIdealLeafCandidate.insideRingCount === 0
@@ -2811,6 +2949,13 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       }
       if (exactDirectAttachedRingSystemRootCandidate && isBetterCandidate(exactDirectAttachedRingSystemRootCandidate, bestCandidate)) {
         bestCandidate = exactDirectAttachedRingSystemRootCandidate;
+      }
+      if (
+        exactRootOutwardLinkedSubtreeCandidate
+        && shouldAcceptCandidate(exactRootOutwardLinkedSubtreeCandidate, baseCandidate, dynamicDescriptor)
+        && isBetterCandidate(exactRootOutwardLinkedSubtreeCandidate, bestCandidate)
+      ) {
+        bestCandidate = exactRootOutwardLinkedSubtreeCandidate;
       }
       if (dynamicDescriptor.rootRotatingAtomIds.length > 0) {
         const rootAnchoredSearch = visitPresentationDescriptorCandidates(layoutGraph, coords, dynamicDescriptor, {

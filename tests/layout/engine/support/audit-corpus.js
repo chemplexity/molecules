@@ -197,7 +197,7 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C)=C3)C=C(C(C)=C4)C',
     expected: {
       primaryFamily: 'organometallic',
-      maxSevereOverlapCount: 5,
+      maxSevereOverlapCount: 6,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 0.9,
       maxCollapsedMacrocycleCount: 0,

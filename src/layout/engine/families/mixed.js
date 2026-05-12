@@ -59,6 +59,7 @@ import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS, ato
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
 const AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS = new Set([
+  'hydroxy-keto-oxadiazole-bridged-core',
   'oxime-lactam-cyclopentenyl-core'
 ]);
 const MAX_RING_LINKER_ATOMS = 3;

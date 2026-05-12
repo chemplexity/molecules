@@ -43,6 +43,7 @@ const ARRANGEMENT_COST_TIE_EPSILON = 1e-12;
 const TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT = 0.25;
 const FUTURE_ATTACHED_RING_PREVIEW_WEIGHT = 20;
 const FUTURE_ATTACHED_RING_PREVIEW_CLEARANCE_FACTOR = 0.85;
+const PROJECTED_HETERO_SLOT_BATCH_MAX_TOTAL_SUBTREE_SIZE = 12;
 const ORTHOGONAL_SLOT_PERMUTATIONS = [
   [0, 1, 2, 3],
   [0, 1, 3, 2],
@@ -118,6 +119,48 @@ function isSmallProjectedTetrahedralLeafBatch(layoutGraph, anchorAtomId, primary
   });
 }
 
+/**
+ * Returns whether a fully substituted acyclic Si/N+ center should bypass the
+ * large-component greedy shortcut for a small local child batch. These centers
+ * need their visible ligands assigned together so branch order cannot reuse an
+ * occupied projected quadrant.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Center atom ID being evaluated.
+ * @param {string[]} primaryNeighborIds - Child atom IDs awaiting placement.
+ * @param {Array<{childAtomId: string, subtreeSize: number}>} childDescriptors - Child subtree descriptors.
+ * @returns {boolean} True when the local heteroatom batch should be scored exhaustively.
+ */
+function isSmallProjectedHeteroSlotBatch(layoutGraph, anchorAtomId, primaryNeighborIds, childDescriptors) {
+  if (
+    primaryNeighborIds.length < 2
+    || primaryNeighborIds.length > 3
+    || !supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
+  ) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph?.atoms.get(anchorAtomId);
+  if (
+    !anchorAtom
+    || anchorAtom.aromatic
+    || anchorAtom.degree !== 4
+    || anchorAtom.heavyDegree !== 4
+    || (
+      anchorAtom.element !== 'Si'
+      && !(anchorAtom.element === 'N' && (anchorAtom.charge ?? 0) > 0)
+    )
+  ) {
+    return false;
+  }
+
+  const totalSubtreeSize = childDescriptors.reduce((sum, descriptor) => sum + descriptor.subtreeSize, 0);
+  return totalSubtreeSize <= PROJECTED_HETERO_SLOT_BATCH_MAX_TOTAL_SUBTREE_SIZE
+    && primaryNeighborIds.every(childAtomId => {
+      const atom = layoutGraph.atoms.get(childAtomId);
+      return !!atom && atom.element !== 'H';
+    });
+}
+
 function isOmittedHydrogenVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds) {
   return (
     primaryNeighborIds.length === 2
@@ -146,6 +189,9 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
     return true;
   }
   if (isSmallProjectedTetrahedralLeafBatch(layoutGraph, anchorAtomId, primaryNeighborIds, childDescriptors)) {
+    return false;
+  }
+  if (isSmallProjectedHeteroSlotBatch(layoutGraph, anchorAtomId, primaryNeighborIds, childDescriptors)) {
     return false;
   }
   if (isOmittedHydrogenVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds)) {
