@@ -651,7 +651,23 @@ export function buildCleanupStageGraph(context) {
           });
         }
 
-        const stereoCleanup = enforceAcyclicEZStereo(layoutGraph, presentationResult.coords, {
+        const presentationProjectedBranchClearance = runProjectedTetrahedralBranchClearance(layoutGraph, presentationResult.coords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        if (presentationProjectedBranchClearance.nudges > 0) {
+          const [label, description] = HOOK_STEP_META['projected-tetrahedral-branch-clearance'];
+          inputContext.onStep?.(label, description, inputContext.copyCoords(presentationProjectedBranchClearance.coords), {
+            nudges: presentationProjectedBranchClearance.nudges,
+            presentationRetouch: true
+          });
+        }
+        const stereoInputCoords = presentationProjectedBranchClearance.nudges > 0
+          ? presentationProjectedBranchClearance.coords
+          : presentationResult.coords;
+
+        const stereoCleanup = enforceAcyclicEZStereo(layoutGraph, stereoInputCoords, {
           bondLength
         });
         inputContext.onStep?.(
@@ -674,7 +690,7 @@ export function buildCleanupStageGraph(context) {
           symmetrySnaps: symmetryTidy.snappedCount,
           junctionSnaps: symmetryTidy.junctionSnapCount,
           reflections: stereoCleanup.reflections,
-          hookNudges: presentationResult.nudges ?? 0,
+          hookNudges: (presentationResult.nudges ?? 0) + (presentationProjectedBranchClearance.nudges ?? 0),
           strategiesRun: presentationResult.strategiesRun ?? [],
           usedAttachedRingFallback: presentationResult.usedAttachedRingFallback === true,
           presentationPenalty: presentationResult.presentationPenalty,

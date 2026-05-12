@@ -1,6 +1,7 @@
 /** @module cleanup/presentation/diaryl-omitted-h-fan */
 
 import { findSevereOverlaps, measureDivalentContinuationDistortion } from '../../audit/invariants.js';
+import { cloneCoords } from '../../geometry/transforms.js';
 import { add, angleOf, angularDifference, rotate, sub } from '../../geometry/vec2.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
@@ -32,9 +33,6 @@ const COUPLED_RELIEF_ROTATIONS = Object.freeze([
 const MAX_COUPLED_RELIEF_HEAVY_ATOMS = 28;
 const TIDY_EPSILON = 1e-6;
 
-function cloneCoords(coords) {
-  return new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
-}
 
 function heavyCovalentNeighborIds(layoutGraph, atomId) {
   const neighborIds = [];

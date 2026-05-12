@@ -7,17 +7,17 @@ import {
   measureLayoutState,
   measureOverlapState
 } from '../audit/invariants.js';
-import { CLEANUP_EPSILON, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
+import { CLEANUP_EPSILON, ORTHOGONAL_HYPERVALENT_ELEMENTS, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { computeRotatableSubtrees, runLocalCleanup, runSpiroSmallRingExteriorCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
+import { visibleHeavyCovalentBonds } from './bond-utils.js';
 
 const PROTECTED_BACKBONE_MAX_BOND_DEVIATION = 0.05;
 const NONIMPROVING_TRIGONAL_WORSENING_LIMIT = 0.05;
 const EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT = 0.05;
 const EXACT_DIVALENT_CONTINUATION_WORSENING_LIMIT = 0.05;
 const EXACT_RING_ROOT_FAN_WORSENING_LIMIT = 0.05;
-const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
 
 /**
  * Returns whether the layout graph contains any atom that could have an
@@ -122,21 +122,6 @@ function trigonalDistortionWorsening(baseState, candidate) {
   );
 }
 
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  const bonds = [];
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
-      continue;
-    }
-    bonds.push({ bond, neighborAtomId });
-  }
-  return bonds;
-}
 
 function shouldProtectExactMultipleBondTrigonalFan(layoutGraph, coords, atomId) {
   const atom = layoutGraph.atoms.get(atomId);

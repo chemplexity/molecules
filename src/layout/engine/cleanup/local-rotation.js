@@ -1,6 +1,6 @@
 /** @module cleanup/local-rotation */
 
-import { CLEANUP_EPSILON, DISTANCE_EPSILON, atomPairKey } from '../constants.js';
+import { CLEANUP_EPSILON, DISTANCE_EPSILON, IDEAL_DIVALENT_CONTINUATION_ELEMENTS, ORTHOGONAL_HYPERVALENT_ELEMENTS, TERMINAL_HETERO_BRANCH_ELEMENTS, atomPairKey } from '../constants.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
@@ -19,6 +19,7 @@ import {
   isPlanarDivalentNitrogenContinuationPair
 } from '../placement/branch-placement/angle-selection.js';
 import { FINE_ROTATION_ANGLES } from './rotation-candidates.js';
+import { visibleHeavyCovalentBonds } from './bond-utils.js';
 const LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT = 5;
 const LOCAL_RING_TRIGONAL_HETERO_DISTORTION_WEIGHT = 12;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
@@ -31,9 +32,6 @@ const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
 const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
 const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
 const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
-const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
-const TERMINAL_HETERO_BRANCH_ELEMENTS = new Set(['N', 'O', 'S', 'Se', 'F', 'Cl', 'Br', 'I']);
-const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
 const ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT = 8;
 const SPIRO_SMALL_RING_EXTERIOR_SPREAD_WEIGHT = 8;
 const SPIRO_SMALL_RING_EXTERIOR_ROTATION_FRACTIONS = Object.freeze([0.5, 0.4, 0.25, 0.2, 0.15]);
@@ -2167,22 +2165,6 @@ function shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, atomId, bas
     && hasRingNeighbor
     && baseDistortion <= CLEANUP_EPSILON
   );
-}
-
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  const bonds = [];
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
-      continue;
-    }
-    bonds.push({ bond, neighborAtomId });
-  }
-  return bonds;
 }
 
 /**

@@ -159,6 +159,15 @@ export function atomPairKey(firstAtomId, secondAtomId) {
     : `${secondAtomId}:${firstAtomId}`;
 }
 
+/** Elements that form orthogonal hypervalent centers (S, P, Se, As, Si). */
+export const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
+
+/** Elements that prefer ideal divalent continuation angles (120°). */
+export const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
+
+/** Terminal hetero branch elements that prefer compact placement. */
+export const TERMINAL_HETERO_BRANCH_ELEMENTS = new Set(['N', 'O', 'S', 'Se', 'F', 'Cl', 'Br', 'I']);
+
 /** Rescue/tuning knobs for multi-metal organometallic cluster placement. */
 export const ORGANOMETALLIC_RESCUE_LIMITS = Object.freeze({
   frameworkMinMetalCount: 4,

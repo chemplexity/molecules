@@ -7,14 +7,15 @@ import {
   findSevereOverlaps,
   findVisibleHeavyBondCrossings
 } from '../../audit/invariants.js';
-import { atomPairKey, SEVERE_OVERLAP_FACTOR } from '../../constants.js';
-import { rotateAround } from '../../geometry/transforms.js';
+import { atomPairKey, IDEAL_DIVALENT_CONTINUATION_ELEMENTS, SEVERE_OVERLAP_FACTOR } from '../../constants.js';
+import { cloneCoords, rotateAround } from '../../geometry/transforms.js';
 import { angleOf, angularDifference, sub, wrapAngle } from '../../geometry/vec2.js';
 import {
   isExactVisibleTrigonalBisectorEligible,
   isPlanarDivalentNitrogenContinuationPair
 } from '../../placement/branch-placement/angle-selection.js';
 import { collectCutSubtree } from '../subtree-utils.js';
+import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 
 const MAX_RETOUCH_PASSES = 8;
 const MAX_ANGLE_RETOUCH_PASSES = 40;
@@ -96,7 +97,6 @@ const ANGLE_RELIEF_FINE_STEPS = [
 ];
 const FINAL_ANGLE_POLISH_FINE_STEPS = [Math.PI / 144, -Math.PI / 144];
 const RETOUCH_SCORE_EPSILON = 1e-9;
-const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 const ROTATION_STEPS = [
   Math.PI / 12,
   -Math.PI / 12,
@@ -117,9 +117,6 @@ const ROTATION_STEPS = [
   Math.PI
 ];
 
-function cloneCoords(coords) {
-  return new Map([...coords].map(([atomId, position]) => [atomId, { x: position.x, y: position.y }]));
-}
 
 function visibleHeavyAtomCount(layoutGraph, atomIds) {
   let count = 0;
@@ -132,20 +129,6 @@ function visibleHeavyAtomCount(layoutGraph, atomIds) {
   return count;
 }
 
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  const bonds = [];
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (neighborAtom?.element !== 'H' && coords.has(neighborAtomId)) {
-      bonds.push({ bond, neighborAtomId });
-    }
-  }
-  return bonds;
-}
 
 function isVisibleLayoutAtom(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);

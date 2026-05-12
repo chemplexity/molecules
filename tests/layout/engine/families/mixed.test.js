@@ -1348,10 +1348,16 @@ describe('layout/engine/families/mixed', () => {
       finalLandscapeOrientation: true
     });
     const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
     const firstRingRootDeviation = bestLocalRingDeviation(graph, result.coords, 'C14', 'C6');
     const secondRingRootDeviation = bestLocalRingDeviation(graph, result.coords, 'C20', 'C6');
+    const c6Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C6', graph);
 
     assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      c6Separations[0] > (7 * Math.PI) / 18 && c6Separations[c6Separations.length - 1] < (2 * Math.PI) / 3,
+      `expected the C6 diaryl center to avoid a pinched projected gap, got ${c6Separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
     assert.ok(
       firstRingRootDeviation < 1e-6,
       `expected the first phenyl root to keep an exact aromatic outward exit, got ${((firstRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`
@@ -4204,6 +4210,7 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.ok(
       Math.abs(distance(result.coords.get('P5'), result.coords.get('C7')) - targetBondLength) < 1e-6,
       'expected direct-attached ring refinement to preserve the P5-C7 parent-side bond length'
@@ -4226,6 +4233,19 @@ describe('layout/engine/families/mixed', () => {
         `expected ${centerAtomId} aryl ethyl exit to stay at 120 degrees`
       );
     }
+    const terminalEthylClearance = distance(result.coords.get('C34'), result.coords.get('C2'));
+    assert.ok(
+      terminalEthylClearance > targetBondLength * 0.9,
+      `expected C34 terminal ethyl branch to clear the propyl tail after exact root retouch, got ${terminalEthylClearance.toFixed(2)}`
+    );
+    assert.ok(
+      distance(result.coords.get('C34'), result.coords.get('C3')) > targetBondLength * 0.9,
+      'expected C34 terminal ethyl branch to clear the adjacent propyl backbone'
+    );
+    assert.ok(
+      distance(result.coords.get('C34'), result.coords.get('C4')) > targetBondLength * 0.9,
+      'expected C34 terminal ethyl branch to clear the phosphine-side propyl backbone'
+    );
   });
 
   it('mirrors compact fused-bridged child rings outside the parent face', () => {

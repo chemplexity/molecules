@@ -2,19 +2,49 @@
 
 import { auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
-import { CLEANUP_EPSILON, PRESENTATION_METRIC_EPSILON } from '../../constants.js';
+import { CLEANUP_EPSILON, PRESENTATION_METRIC_EPSILON, atomPairKey } from '../../constants.js';
 import { angleOf, angularDifference, sub, wrapAngle } from '../../geometry/vec2.js';
 import { rotateAround } from '../../geometry/transforms.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
 import { collectCutSubtree } from '../subtree-utils.js';
+import { visibleHeavyCovalentBonds } from '../bond-utils.js';
+import { measureTerminalMultipleBondLeafFanPenalty } from './ring-terminal-hetero.js';
 
 const IDEAL_TRIGONAL_ANGLE = (2 * Math.PI) / 3;
 const MIN_ROOT_DEVIATION = 0.1;
 const MAX_TERMINAL_ROOT_HEAVY_ATOMS = 3;
 const MAX_LINKED_RING_ROOT_HEAVY_ATOMS = 80;
+const MAX_RING_BLOCKER_RELIEF_HEAVY_ATOMS = 12;
 const MAX_RELIEF_HEAVY_ATOMS = 4;
 const MAX_INTERNAL_RELIEF_HEAVY_ATOMS = 8;
+const SOFT_CONTACT_CLEARANCE_FACTOR = 0.9;
 const RELIEF_ROTATIONS = [-Math.PI / 12, Math.PI / 12, -Math.PI / 6, Math.PI / 6];
+const RING_BLOCKER_RELIEF_ROTATIONS = Object.freeze([
+  -Math.PI / 6,
+  Math.PI / 6,
+  -Math.PI / 3,
+  Math.PI / 3,
+  -Math.PI / 2,
+  Math.PI / 2,
+  (-2 * Math.PI) / 3,
+  (2 * Math.PI) / 3
+]);
+const ROOT_SUBTREE_LEAF_ROTATIONS = Object.freeze([
+  (-2 * Math.PI) / 3,
+  -25 * Math.PI / 36,
+  -13 * Math.PI / 18,
+  -3 * Math.PI / 4,
+  -7 * Math.PI / 9,
+  -5 * Math.PI / 6,
+  (2 * Math.PI) / 3,
+  25 * Math.PI / 36,
+  13 * Math.PI / 18,
+  3 * Math.PI / 4,
+  7 * Math.PI / 9,
+  5 * Math.PI / 6,
+  -Math.PI,
+  Math.PI
+]);
 const INTERNAL_RELIEF_ROTATIONS = Object.freeze([
   -Math.PI / 36,
   Math.PI / 36,
@@ -48,21 +78,6 @@ function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
 }
 
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  const bonds = [];
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
-      continue;
-    }
-    bonds.push({ bond, neighborAtomId });
-  }
-  return bonds;
-}
 
 function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.reduce((count, atomId) => (
@@ -158,7 +173,10 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
       rootSubtreeAtomIds,
       allowsInternalRelief: isLinkedRingRoot
     };
-    if (rootDeviation(coords, descriptor) > MIN_ROOT_DEVIATION) {
+    if (
+      rootDeviation(coords, descriptor) > MIN_ROOT_DEVIATION
+      || rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, descriptor) > 0
+    ) {
       descriptors.push(descriptor);
     }
   }
@@ -212,6 +230,50 @@ function collectReliefDescriptor(layoutGraph, coords, rootAtomId, parentAtomId, 
   return { rootAtomId, parentAtomId, subtreeAtomIds };
 }
 
+function collectRingBlockerReliefDescriptors(layoutGraph, coords, blockerAtomId, protectedAtomIds, frozenAtomIds) {
+  const descriptors = [];
+  const descriptorKeys = new Set();
+  for (const ring of layoutGraph.atomToRings.get(blockerAtomId) ?? []) {
+    const ringAtomIds = new Set(ring.atomIds ?? []);
+    for (const ringAtomId of ringAtomIds) {
+      if (protectedAtomIds.has(ringAtomId) || frozenAtomIds?.has(ringAtomId)) {
+        continue;
+      }
+      for (const bond of layoutGraph.bondsByAtomId.get(ringAtomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const parentAtomId = otherBondAtomId(bond, ringAtomId);
+        if (ringAtomIds.has(parentAtomId) || protectedAtomIds.has(parentAtomId) || frozenAtomIds?.has(parentAtomId)) {
+          continue;
+        }
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ringAtomId, parentAtomId)]
+          .filter(atomId => coords.has(atomId));
+        if (
+          subtreeAtomIds.length === 0
+          || !subtreeAtomIds.includes(blockerAtomId)
+          || subtreeAtomIds.includes(parentAtomId)
+          || subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId))
+          || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RING_BLOCKER_RELIEF_HEAVY_ATOMS
+        ) {
+          continue;
+        }
+        const descriptorKey = `${ringAtomId}:${parentAtomId}`;
+        if (descriptorKeys.has(descriptorKey)) {
+          continue;
+        }
+        descriptorKeys.add(descriptorKey);
+        descriptors.push({
+          rootAtomId: ringAtomId,
+          parentAtomId,
+          subtreeAtomIds
+        });
+      }
+    }
+  }
+  return descriptors;
+}
+
 function rotateReliefSubtree(coords, descriptor, rotation) {
   const pivot = coords.get(descriptor.parentAtomId);
   const nextCoords = new Map(coords);
@@ -219,6 +281,23 @@ function rotateReliefSubtree(coords, descriptor, rotation) {
     nextCoords.set(atomId, rotateAround(coords.get(atomId), pivot, rotation));
   }
   return nextCoords;
+}
+
+/**
+ * Counts visible heavy-bond crossings touching a corrected root subtree.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @returns {number} Crossing count involving the root subtree.
+ */
+function rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, targetDescriptor) {
+  const rootSubtreeAtomIds = new Set(targetDescriptor.rootSubtreeAtomIds);
+  return findVisibleHeavyBondCrossings(layoutGraph, coords)
+    .filter(crossing =>
+      (crossing.firstAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId))
+      || (crossing.secondAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId))
+    )
+    .length;
 }
 
 /**
@@ -299,6 +378,15 @@ function parentFanDeviation(layoutGraph, coords, parentAtomId) {
     }
   }
   return maxDeviation;
+}
+
+function terminalMultipleBondLeafFanRegression(layoutGraph, candidateCoords, baseCoords) {
+  const candidatePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, candidateCoords);
+  const basePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, baseCoords);
+  return Math.max(
+    (candidatePenalty.maxDeviation ?? 0) - (basePenalty.maxDeviation ?? 0),
+    (candidatePenalty.totalDeviation ?? 0) - (basePenalty.totalDeviation ?? 0)
+  );
 }
 
 /**
@@ -434,6 +522,341 @@ function relieveCompactOverlaps(layoutGraph, coords, targetDescriptor, options) 
   return null;
 }
 
+function relieveExactRootRingBlockerOverlaps(layoutGraph, coords, targetDescriptor, baseAudit, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const protectedAtomIds = new Set([
+    targetDescriptor.centerAtomId,
+    targetDescriptor.firstRingNeighborAtomId,
+    targetDescriptor.secondRingNeighborAtomId,
+    ...targetDescriptor.rootSubtreeAtomIds
+  ]);
+  const descriptorKeys = new Set();
+  const descriptors = [];
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    const overlapPairs = [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ];
+    for (const [protectedAtomId, blockerAtomId] of overlapPairs) {
+      if (!protectedAtomIds.has(protectedAtomId) || protectedAtomIds.has(blockerAtomId)) {
+        continue;
+      }
+      for (const descriptor of collectRingBlockerReliefDescriptors(
+        layoutGraph,
+        coords,
+        blockerAtomId,
+        protectedAtomIds,
+        options.frozenAtomIds ?? null
+      )) {
+        const descriptorKey = `${descriptor.rootAtomId}:${descriptor.parentAtomId}`;
+        if (descriptorKeys.has(descriptorKey)) {
+          continue;
+        }
+        descriptorKeys.add(descriptorKey);
+        descriptors.push(descriptor);
+      }
+    }
+  }
+  let best = null;
+  for (const descriptor of descriptors) {
+    for (const rotation of RING_BLOCKER_RELIEF_ROTATIONS) {
+      const candidateCoords = rotateReliefSubtree(coords, descriptor, rotation);
+      if (rootDeviation(candidateCoords, targetDescriptor) > PRESENTATION_METRIC_EPSILON) {
+        continue;
+      }
+      if (terminalMultipleBondLeafFanRegression(layoutGraph, candidateCoords, coords) > PRESENTATION_METRIC_EPSILON) {
+        continue;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (candidateAudit.ok !== true || auditPenalty(candidateAudit) > auditPenalty(baseAudit)) {
+        continue;
+      }
+      const fanDeviation = parentFanDeviation(layoutGraph, candidateCoords, descriptor.parentAtomId);
+      const clearance = rootSubtreeMinimumClearance(layoutGraph, candidateCoords, targetDescriptor);
+      const score = auditPenalty(candidateAudit) + fanDeviation * 1_000 + Math.abs(rotation) - clearance;
+      if (!best || score < best.score - CLEANUP_EPSILON) {
+        best = {
+          coords: candidateCoords,
+          score
+        };
+      }
+    }
+  }
+  return best?.coords ?? null;
+}
+
+/**
+ * Returns root-subtree atoms whose visual clearance can be improved without
+ * moving the corrected exact root slot itself.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @returns {string[]} Visible heavy atoms to use for soft-clearance scoring.
+ */
+function rootSubtreeClearanceAtomIds(layoutGraph, coords, targetDescriptor) {
+  const heavySubtreeAtomIds = targetDescriptor.rootSubtreeAtomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && atom.element !== 'H' && coords.has(atomId);
+  });
+  const downstreamAtomIds = heavySubtreeAtomIds.filter(atomId => atomId !== targetDescriptor.rootAtomId);
+  return downstreamAtomIds.length > 0 ? downstreamAtomIds : heavySubtreeAtomIds;
+}
+
+/**
+ * Measures the minimum non-bonded clearance from a corrected root subtree to
+ * the rest of the visible heavy-atom graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @returns {number} Minimum visible non-bonded distance.
+ */
+function rootSubtreeMinimumClearance(layoutGraph, coords, targetDescriptor) {
+  const protectedAtomIds = new Set([targetDescriptor.centerAtomId, ...targetDescriptor.rootSubtreeAtomIds]);
+  let minimumClearance = Number.POSITIVE_INFINITY;
+  const searchAtomIds = rootSubtreeClearanceAtomIds(layoutGraph, coords, targetDescriptor);
+  for (const rootAtomId of searchAtomIds) {
+    const rootPosition = coords.get(rootAtomId);
+    for (const [otherAtomId, otherPosition] of coords) {
+      if (protectedAtomIds.has(otherAtomId) || layoutGraph.bondedPairSet.has(atomPairKey(rootAtomId, otherAtomId))) {
+        continue;
+      }
+      const otherAtom = layoutGraph.atoms.get(otherAtomId);
+      if (!otherAtom || otherAtom.element === 'H') {
+        continue;
+      }
+      minimumClearance = Math.min(minimumClearance, Math.hypot(rootPosition.x - otherPosition.x, rootPosition.y - otherPosition.y));
+    }
+  }
+  return minimumClearance;
+}
+
+/**
+ * Collects soft non-bonded contacts created around a corrected terminal-root
+ * subtree. These are below the visual-clearance floor but may still pass the
+ * hard overlap audit.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @param {number} bondLength - Standard bond length.
+ * @returns {{rootAtomId: string, otherAtomId: string, distance: number}[]} Soft contact records.
+ */
+function rootSubtreeSoftContacts(layoutGraph, coords, targetDescriptor, bondLength) {
+  const protectedAtomIds = new Set([targetDescriptor.centerAtomId, ...targetDescriptor.rootSubtreeAtomIds]);
+  const threshold = bondLength * SOFT_CONTACT_CLEARANCE_FACTOR;
+  const contacts = [];
+  for (const rootAtomId of rootSubtreeClearanceAtomIds(layoutGraph, coords, targetDescriptor)) {
+    const rootPosition = coords.get(rootAtomId);
+    if (!rootPosition) {
+      continue;
+    }
+    for (const [otherAtomId, otherPosition] of coords) {
+      if (protectedAtomIds.has(otherAtomId) || layoutGraph.bondedPairSet.has(atomPairKey(rootAtomId, otherAtomId))) {
+        continue;
+      }
+      const otherAtom = layoutGraph.atoms.get(otherAtomId);
+      if (!otherAtom || otherAtom.element === 'H') {
+        continue;
+      }
+      const clearance = Math.hypot(rootPosition.x - otherPosition.x, rootPosition.y - otherPosition.y);
+      if (clearance < threshold - CLEANUP_EPSILON) {
+        contacts.push({ rootAtomId, otherAtomId, distance: clearance });
+      }
+    }
+  }
+  return contacts.sort((firstContact, secondContact) => firstContact.distance - secondContact.distance);
+}
+
+/**
+ * Finds small downstream pieces of a corrected root subtree that can rotate
+ * around an internal single bond without moving the exact root slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms to avoid.
+ * @returns {{rootAtomId: string, parentAtomId: string, subtreeAtomIds: string[]}[]} Relief descriptors.
+ */
+function collectRootSubtreeLeafReliefDescriptors(layoutGraph, coords, targetDescriptor, frozenAtomIds) {
+  const descriptors = [];
+  const descriptorKeys = new Set();
+  const rootSubtreeAtomIds = new Set(targetDescriptor.rootSubtreeAtomIds);
+  const protectedAtomIds = new Set([
+    targetDescriptor.centerAtomId,
+    targetDescriptor.rootAtomId,
+    targetDescriptor.firstRingNeighborAtomId,
+    targetDescriptor.secondRingNeighborAtomId
+  ]);
+  for (const atomId of targetDescriptor.rootSubtreeAtomIds) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      for (const [rootAtomId, parentAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+        if (
+          protectedAtomIds.has(rootAtomId)
+          || !rootSubtreeAtomIds.has(rootAtomId)
+          || !rootSubtreeAtomIds.has(parentAtomId)
+        ) {
+          continue;
+        }
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)]
+          .filter(subtreeAtomId => coords.has(subtreeAtomId));
+        if (
+          subtreeAtomIds.length === 0
+          || subtreeAtomIds.includes(parentAtomId)
+          || subtreeAtomIds.some(subtreeAtomId =>
+            frozenAtomIds?.has(subtreeAtomId)
+            || protectedAtomIds.has(subtreeAtomId)
+            || !rootSubtreeAtomIds.has(subtreeAtomId)
+            || (layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0
+          )
+          || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
+        ) {
+          continue;
+        }
+        const descriptorKey = `${rootAtomId}:${parentAtomId}`;
+        if (descriptorKeys.has(descriptorKey)) {
+          continue;
+        }
+        descriptorKeys.add(descriptorKey);
+        descriptors.push({ rootAtomId, parentAtomId, subtreeAtomIds });
+      }
+    }
+  }
+  return descriptors;
+}
+
+/**
+ * Clears crossings and soft contacts by rotating a terminal piece inside the
+ * root subtree while keeping the root atom on its corrected exact slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map after exact root cleanup.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @param {object} baseAudit - Audit before the exact root move.
+ * @param {object} options - Retouch options.
+ * @returns {Map<string, {x: number, y: number}>|null} Repaired coordinates, if found.
+ */
+function relieveRootSubtreeInternalLeafContacts(layoutGraph, coords, targetDescriptor, baseAudit, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const currentCrossingCount = rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, targetDescriptor);
+  const currentClearance = rootSubtreeMinimumClearance(layoutGraph, coords, targetDescriptor);
+  const hasSoftContact = rootSubtreeSoftContacts(layoutGraph, coords, targetDescriptor, bondLength).length > 0;
+  if (currentCrossingCount === 0 && !hasSoftContact) {
+    return null;
+  }
+  let best = null;
+  for (const descriptor of collectRootSubtreeLeafReliefDescriptors(
+    layoutGraph,
+    coords,
+    targetDescriptor,
+    options.frozenAtomIds ?? null
+  )) {
+    for (const rotation of ROOT_SUBTREE_LEAF_ROTATIONS) {
+      const candidateCoords = rotateReliefSubtree(coords, descriptor, rotation);
+      if (rootDeviation(candidateCoords, targetDescriptor) > PRESENTATION_METRIC_EPSILON) {
+        continue;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (candidateAudit.ok !== true || auditPenalty(candidateAudit) > auditPenalty(baseAudit)) {
+        continue;
+      }
+      const crossingCount = rootSubtreeVisibleBondCrossingCount(layoutGraph, candidateCoords, targetDescriptor);
+      if (crossingCount > currentCrossingCount) {
+        continue;
+      }
+      const clearance = rootSubtreeMinimumClearance(layoutGraph, candidateCoords, targetDescriptor);
+      if (crossingCount === currentCrossingCount && clearance <= currentClearance + CLEANUP_EPSILON) {
+        continue;
+      }
+      const fanDeviation = parentFanDeviation(layoutGraph, candidateCoords, descriptor.parentAtomId);
+      const score = auditPenalty(candidateAudit) + crossingCount * 1_000_000 + fanDeviation * 1_000 - clearance;
+      if (!best || score < best.score - CLEANUP_EPSILON) {
+        best = {
+          coords: candidateCoords,
+          score
+        };
+      }
+    }
+  }
+  return best?.coords ?? null;
+}
+
+/**
+ * Clears soft contacts created by an exact terminal-root snap by rotating a
+ * compact non-ring blocker branch while preserving the corrected root angle.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map after exact root cleanup.
+ * @param {object} targetDescriptor - Corrected terminal-root descriptor.
+ * @param {object} baseAudit - Audit before the exact root move.
+ * @param {object} options - Retouch options.
+ * @returns {Map<string, {x: number, y: number}>|null} Repaired coordinates, if found.
+ */
+function relieveRootSubtreeSoftContacts(layoutGraph, coords, targetDescriptor, baseAudit, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const contacts = rootSubtreeSoftContacts(layoutGraph, coords, targetDescriptor, bondLength);
+  if (contacts.length === 0) {
+    return null;
+  }
+  const clearanceTarget = bondLength * SOFT_CONTACT_CLEARANCE_FACTOR;
+  const currentClearance = rootSubtreeMinimumClearance(layoutGraph, coords, targetDescriptor);
+  const protectedAtomIds = new Set([targetDescriptor.centerAtomId, ...targetDescriptor.rootSubtreeAtomIds]);
+  let best = null;
+  for (const contact of contacts) {
+    const blockerAtomId = contact.otherAtomId;
+    if (protectedAtomIds.has(blockerAtomId)) {
+      continue;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(blockerAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const parentAtomId = bond.a === blockerAtomId ? bond.b : bond.a;
+      const descriptor = collectReliefDescriptor(
+        layoutGraph,
+        coords,
+        blockerAtomId,
+        parentAtomId,
+        protectedAtomIds,
+        options.frozenAtomIds ?? null
+      );
+      if (!descriptor) {
+        continue;
+      }
+      for (const rotation of RELIEF_ROTATIONS) {
+        const candidateCoords = rotateReliefSubtree(coords, descriptor, rotation);
+        if (rootDeviation(candidateCoords, targetDescriptor) > PRESENTATION_METRIC_EPSILON) {
+          continue;
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: options.bondValidationClasses
+        });
+        if (candidateAudit.ok !== true || auditPenalty(candidateAudit) > auditPenalty(baseAudit)) {
+          continue;
+        }
+        const clearance = rootSubtreeMinimumClearance(layoutGraph, candidateCoords, targetDescriptor);
+        if (clearance < clearanceTarget - CLEANUP_EPSILON || clearance <= currentClearance + CLEANUP_EPSILON) {
+          continue;
+        }
+        const fanDeviation = parentFanDeviation(layoutGraph, candidateCoords, descriptor.parentAtomId);
+        const score = clearance * 100 - fanDeviation;
+        if (!best || score > best.score + CLEANUP_EPSILON) {
+          best = {
+            coords: candidateCoords,
+            score
+          };
+        }
+      }
+    }
+  }
+  return best?.coords ?? null;
+}
+
 /**
  * Clears secondary clashes created by an exact linked-ring root by rotating a
  * compact acyclic branch inside the moved subtree while preserving the root.
@@ -506,6 +929,45 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
     if (!exactCoords) {
       continue;
     }
+    const exactAudit = auditLayout(layoutGraph, exactCoords, {
+      bondLength,
+      bondValidationClasses: options.bondValidationClasses
+    });
+    let exactReliefCoords = null;
+    if (exactAudit.ok === true && auditPenalty(exactAudit) <= auditPenalty(baseAudit)) {
+      exactReliefCoords = exactCoords;
+    } else {
+      exactReliefCoords = relieveExactRootRingBlockerOverlaps(layoutGraph, exactCoords, descriptor, baseAudit, options);
+    }
+    if (exactReliefCoords) {
+      let exactCandidateCoords = (
+        relieveRootSubtreeInternalLeafContacts(layoutGraph, exactReliefCoords, descriptor, baseAudit, options)
+        ?? exactReliefCoords
+      );
+      const exactCandidateAudit = auditLayout(layoutGraph, exactCandidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (exactCandidateAudit.ok === true) {
+        exactCandidateCoords = relieveRootSubtreeSoftContacts(layoutGraph, exactCandidateCoords, descriptor, baseAudit, options) ?? exactCandidateCoords;
+      }
+      const finalExactAudit = auditLayout(layoutGraph, exactCandidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (
+        finalExactAudit.ok === true
+        && auditPenalty(finalExactAudit) <= auditPenalty(baseAudit)
+        && rootDeviation(exactCandidateCoords, descriptor) <= PRESENTATION_METRIC_EPSILON
+      ) {
+        return {
+          coords: exactCandidateCoords,
+          nudges: 1,
+          linkedRootNudges: descriptor.allowsInternalRelief ? 1 : 0,
+          changed: true
+        };
+      }
+    }
     const cleanup = runUnifiedCleanup(layoutGraph, exactCoords, {
       ...options.cleanupOptions,
       bondLength,
@@ -518,14 +980,26 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
       bondLength,
       bondValidationClasses: options.bondValidationClasses
     });
-    const candidateCoords = cleanupAudit.ok === true
+    const cleanupReliefCoords = cleanupAudit.ok === true
       ? cleanup.coords
       : (
         relieveLinkedRootInternalOverlaps(layoutGraph, cleanup.coords, descriptor, baseAudit, options)
         ?? relieveCompactOverlaps(layoutGraph, cleanup.coords, descriptor, options)
       );
+    let candidateCoords = (
+      relieveRootSubtreeInternalLeafContacts(layoutGraph, exactCoords, descriptor, baseAudit, options)
+      ?? relieveRootSubtreeInternalLeafContacts(layoutGraph, cleanupReliefCoords ?? cleanup.coords, descriptor, baseAudit, options)
+      ?? cleanupReliefCoords
+    );
     if (!candidateCoords) {
       continue;
+    }
+    const softContactAudit = auditLayout(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: options.bondValidationClasses
+    });
+    if (softContactAudit.ok === true) {
+      candidateCoords = relieveRootSubtreeSoftContacts(layoutGraph, candidateCoords, descriptor, baseAudit, options) ?? candidateCoords;
     }
     const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
       bondLength,

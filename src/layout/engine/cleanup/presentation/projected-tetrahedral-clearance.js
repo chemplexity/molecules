@@ -6,6 +6,7 @@ import { CLEANUP_EPSILON, DISTANCE_EPSILON, PRESENTATION_METRIC_EPSILON } from '
 import { angleOf, angularDifference, sub, wrapAngle } from '../../geometry/vec2.js';
 import { rotateAround } from '../../geometry/transforms.js';
 import { collectCutSubtree } from '../subtree-utils.js';
+import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 
 const IDEAL_PROJECTED_SLOT_ANGLE = Math.PI / 2;
 const IDEAL_PROJECTED_OPPOSITE_ANGLE = Math.PI;
@@ -16,6 +17,8 @@ const MIN_SAFE_BRANCH_BEND = (7 * Math.PI) / 12;
 const MAX_SAFE_BRANCH_BEND = (5 * Math.PI) / 6;
 const MAX_BRANCH_CLEARANCE_HEAVY_ATOMS = 24;
 const RESOLVED_OVERLAP_CLEARANCE_FACTOR = 0.7;
+const MIN_PROJECTED_FAN_RELIEF_DEVIATION = Math.PI / 12;
+const MIN_PROJECTED_FAN_RELIEF_IMPROVEMENT = 1e-4;
 const BRANCH_CLEARANCE_ROTATION_STEPS = [
   Math.PI / 12,
   -Math.PI / 12,
@@ -28,22 +31,17 @@ const BRANCH_CLEARANCE_ROTATION_STEPS = [
   Math.PI / 6,
   -Math.PI / 6
 ];
+const PROJECTED_FAN_RELIEF_ROTATION_STEPS = [
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9)
+];
 
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  const bonds = [];
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
-      continue;
-    }
-    bonds.push({ bond, neighborAtomId });
-  }
-  return bonds;
-}
 
 function projectedCenterPenalty(coords, centerAtomId, neighborAtomIds) {
   const centerPosition = coords.get(centerAtomId);
@@ -160,9 +158,20 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
     });
   }
 
+  const attachedRingRootCount = records.filter(record => record.isAttachedRingRoot).length;
+  const hasCationDialkylNitrogenBranch = records.some(record => (
+    !record.isAttachedRingRoot
+    && record.element === 'N'
+    && record.heavyDegree === 2
+  ));
+  const acyclicCarbonContinuationCount = records.filter(record => (
+    !record.isAttachedRingRoot
+    && record.element === 'C'
+    && record.heavyDegree > 1
+  )).length;
   if (
-    records.filter(record => record.isAttachedRingRoot).length < 2
-    || !records.some(record => !record.isAttachedRingRoot && record.element === 'N' && record.heavyDegree === 2)
+    attachedRingRootCount < 2
+    || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)
   ) {
     return null;
   }
@@ -550,10 +559,171 @@ function findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, opt
   return bestCandidate;
 }
 
+function rotateCenterSubtree(coords, descriptor, record, rotation) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition) {
+    return null;
+  }
+  const candidateCoords = new Map(coords);
+  for (const atomId of record.subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, rotateAround(position, centerPosition, rotation));
+  }
+  return candidateCoords;
+}
+
+function applyProjectedFanReliefRotations(coords, descriptor, rotations) {
+  let candidateCoords = coords;
+  for (const { record, rotation } of rotations) {
+    const rotatedCoords = rotateCenterSubtree(candidateCoords, descriptor, record, rotation);
+    if (!rotatedCoords) {
+      return null;
+    }
+    candidateCoords = rotatedCoords;
+  }
+  return candidateCoords;
+}
+
+function scoreProjectedFanReliefCandidate(candidate) {
+  return (
+    candidate.centerPenalty.maxDeviation * 1000
+    + candidate.centerPenalty.totalDeviation * 100
+    + candidate.totalRotation
+    + candidate.movedHeavyAtomCount * CLEANUP_EPSILON
+  );
+}
+
+function findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  let bestCandidate = null;
+  for (const centerAtomId of inputCoords.keys()) {
+    const descriptor = collectDirectSlotCenterDescriptor(
+      layoutGraph,
+      inputCoords,
+      centerAtomId,
+      options.frozenAtomIds ?? null
+    );
+    if (!descriptor || descriptor.penalty.maxDeviation < MIN_PROJECTED_FAN_RELIEF_DEVIATION) {
+      continue;
+    }
+
+    for (let firstIndex = 0; firstIndex < descriptor.records.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < descriptor.records.length; secondIndex++) {
+        const firstRecord = descriptor.records[firstIndex];
+        const secondRecord = descriptor.records[secondIndex];
+        for (const firstRotation of PROJECTED_FAN_RELIEF_ROTATION_STEPS) {
+          for (const secondRotation of PROJECTED_FAN_RELIEF_ROTATION_STEPS) {
+            const candidateCoords = applyProjectedFanReliefRotations(inputCoords, descriptor, [
+              { record: firstRecord, rotation: firstRotation },
+              { record: secondRecord, rotation: secondRotation }
+            ]);
+            if (!candidateCoords) {
+              continue;
+            }
+            const centerPenalty = projectedCenterPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
+            if (
+              !centerPenalty
+              || centerPenalty.totalDeviation > descriptor.penalty.totalDeviation - MIN_PROJECTED_FAN_RELIEF_IMPROVEMENT
+              || centerPenalty.maxDeviation > descriptor.penalty.maxDeviation + PRESENTATION_METRIC_EPSILON
+            ) {
+              continue;
+            }
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+              bondLength,
+              bondValidationClasses: options.bondValidationClasses
+            });
+            if (!auditCountsAcceptCleanCandidate(candidateAudit, baseAudit)) {
+              continue;
+            }
+            const candidate = {
+              coords: candidateCoords,
+              audit: candidateAudit,
+              centerPenalty,
+              descriptors: [
+                { subtreeAtomIds: firstRecord.subtreeAtomIds },
+                { subtreeAtomIds: secondRecord.subtreeAtomIds }
+              ],
+              rotations: [firstRotation, secondRotation],
+              totalRotation: Math.abs(firstRotation) + Math.abs(secondRotation),
+              movedHeavyAtomCount: firstRecord.heavyAtomCount + secondRecord.heavyAtomCount
+            };
+            if (
+              !bestCandidate
+              || scoreProjectedFanReliefCandidate(candidate) < scoreProjectedFanReliefCandidate(bestCandidate) - PRESENTATION_METRIC_EPSILON
+            ) {
+              bestCandidate = candidate;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return bestCandidate;
+}
+
+function hasProjectedFanReliefNeed(layoutGraph, coords) {
+  for (const [centerAtomId, centerAtom] of layoutGraph?.atoms ?? []) {
+    if (
+      !coords.has(centerAtomId)
+      || !centerAtom
+      || centerAtom.element !== 'C'
+      || centerAtom.aromatic
+      || centerAtom.chirality
+      || centerAtom.heavyDegree !== 4
+      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
+    if (
+      heavyBonds.length !== 4
+      || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)
+    ) {
+      continue;
+    }
+    let attachedRingRootCount = 0;
+    let acyclicCarbonContinuationCount = 0;
+    let hasCationDialkylNitrogenBranch = false;
+    for (const { neighborAtomId } of heavyBonds) {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+        attachedRingRootCount++;
+      } else if (neighborAtom?.element === 'C' && neighborAtom.heavyDegree > 1) {
+        acyclicCarbonContinuationCount++;
+      } else if (neighborAtom?.element === 'N' && neighborAtom.heavyDegree === 2) {
+        hasCationDialkylNitrogenBranch = true;
+      }
+    }
+    if (
+      attachedRingRootCount < 2
+      || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)
+    ) {
+      continue;
+    }
+    const penalty = projectedCenterPenalty(
+      coords,
+      centerAtomId,
+      heavyBonds.map(({ neighborAtomId }) => neighborAtomId)
+    );
+    if (penalty && penalty.maxDeviation >= MIN_PROJECTED_FAN_RELIEF_DEVIATION) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Clears symmetric projected-tetrahedral branch clashes by rotating either the
  * next bond down from exact center substituents or, for browser-specific
  * 60/120 slot collapses, direct substituent subtrees back onto a 90/180 cross.
+ * Direct snaps include crowded diaryl centers with either a dialkyl nitrogen
+ * branch or two acyclic carbon continuations.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
  * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null, bondValidationClasses?: Map<string, string>}} [options] - Cleanup options.
@@ -562,21 +732,25 @@ function findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, opt
 export function runProjectedTetrahedralBranchClearance(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const baseOverlaps = findSevereOverlaps(layoutGraph, inputCoords, bondLength);
-  if (baseOverlaps.length === 0) {
+  const shouldTryFanRelief = hasProjectedFanReliefNeed(layoutGraph, inputCoords);
+  if (baseOverlaps.length === 0 && !shouldTryFanRelief) {
     return {
       coords: inputCoords,
       nudges: 0,
       changed: false
     };
   }
-
   const baseAudit = auditLayout(layoutGraph, inputCoords, {
     bondLength,
     bondValidationClasses: options.bondValidationClasses
   });
-  const bestCandidate =
-    findExactProjectedBranchClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps)
-    ?? findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps);
+  const bestCandidate = baseOverlaps.length > 0
+    ? (
+        findExactProjectedBranchClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps)
+        ?? findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps)
+        ?? (shouldTryFanRelief ? findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit) : null)
+      )
+    : findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit);
 
   if (!bestCandidate) {
     return {

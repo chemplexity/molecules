@@ -2,6 +2,12 @@
 
 ## 2026-05-11
 
+- Open the acyl-substituted spiro-bridged aza cage projection while preserving compact bond audits, so the ammonium bridge no longer pinches the malformed ring.
+- Keep crowded aryl dinitro roots exact by moving the neighboring compact thiazole side instead of folding nitro oxo fans.
+- Snap compact terminal phenyl divalent exits in WebKit while rotating nearby sulfonyl subtrees just enough to preserve oxo opposition and avoid contacts.
+- Preserve acyl-hydrazine phenoxy and diaryl ring-root angles by swinging terminal cation labels before residual aryl-overlap relief.
+- Spread crowded diaryl saturated centers with paired projected-slot relief after ring presentation cleanup.
+- Clear WebKit-rendered propyl-tail crossings after exact ring-terminal root retouching while preserving 120-degree aryl exits.
 - Carry projected four-slot turns through sulfone-adjacent tert-butyl carbons so C8 methyl fans stay orthogonal.
 - Add an ammonium cyanomethyl oxatricyclo template so compact ether cages avoid pinched oxetane lanes.
 - Snap aryl sulfonamide linker roots onto exact ring-outward axes while rotating downstream sulfone fans clear of neighboring substituents.

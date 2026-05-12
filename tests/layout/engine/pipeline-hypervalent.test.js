@@ -6,13 +6,8 @@ import { angleOf, angularDifference, distance, sub } from '../../../src/layout/e
 import { pointInPolygon } from '../../../src/layout/engine/geometry/polygon.js';
 import { computeIncidentRingOutwardAngles } from '../../../src/layout/engine/geometry/ring-direction.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
-import {
-  hasHypervalentAngleTidyNeed,
-  measureOrthogonalHypervalentDeviation
-} from '../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
-import {
-  measureTerminalMultipleBondLeafFanPenalty
-} from '../../../src/layout/engine/cleanup/presentation/ring-terminal-hetero.js';
+import { hasHypervalentAngleTidyNeed, measureOrthogonalHypervalentDeviation } from '../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
+import { measureTerminalMultipleBondLeafFanPenalty } from '../../../src/layout/engine/cleanup/presentation/ring-terminal-hetero.js';
 
 function assertOrthogonalCross(result, centerAtomIds) {
   for (const centerAtomId of centerAtomIds) {
@@ -32,12 +27,8 @@ function assertOrthogonalCross(result, centerAtomIds) {
     }
 
     assert.equal(angles.length, 4);
-    const sortedAngles = [...angles]
-      .map(angle => ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2))
-      .sort((first, second) => first - second);
-    const deltas = sortedAngles.map(
-      (angle, index) => ((sortedAngles[(index + 1) % sortedAngles.length] - angle) + Math.PI * 2) % (Math.PI * 2)
-    );
+    const sortedAngles = [...angles].map(angle => ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)).sort((first, second) => first - second);
+    const deltas = sortedAngles.map((angle, index) => (sortedAngles[(index + 1) % sortedAngles.length] - angle + Math.PI * 2) % (Math.PI * 2));
     for (const delta of deltas) {
       assert.ok(Math.abs(delta - Math.PI / 2) < 1e-6);
     }
@@ -90,9 +81,7 @@ function assertIncidentRingOutwardBond(result, centerAtomId, neighborAtomId) {
   assert.equal(outwardAngles.length, 1);
 
   const bondAngle = angleOf(sub(neighborPosition, centerPosition));
-  assert.ok(
-    outwardAngles.some(outwardAngle => angularDifference(bondAngle, outwardAngle) < 1e-6)
-  );
+  assert.ok(outwardAngles.some(outwardAngle => angularDifference(bondAngle, outwardAngle) < 1e-6));
 }
 
 function assertOxoLigandsOutsideIncidentRings(result, centerAtomId, oxoAtomIds) {
@@ -160,17 +149,16 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
       assertBondAngle(result, 'C11', 'N23', 'O24', (2 * Math.PI) / 3);
       assertBondAngle(result, 'C11', 'N23', 'O25', (2 * Math.PI) / 3);
       assertBondAngle(result, 'O24', 'N23', 'O25', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'C10', 'C11', 'N23', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'C12', 'C11', 'N23', (2 * Math.PI) / 3);
     }
   });
 
   it('keeps aryl nitro oxo leaves trigonal when a neighboring carbonyl blocks the exact slot', () => {
-    const result = runPipeline(
-      parseSMILES('CC(=O)C1=CC=CC(=C1N(CC1=CC=C(C=C1)C1=CC=CC=C1C1=NN=NN1CC1=CC=CC=C1)C(=O)OC(C)(C)C)N(=O)=O'),
-      {
-        suppressH: true,
-        auditTelemetry: true
-      }
-    );
+    const result = runPipeline(parseSMILES('CC(=O)C1=CC=CC(=C1N(CC1=CC=C(C=C1)C1=CC=CC=C1C1=NN=NN1CC1=CC=CC=C1)C(=O)OC(C)(C)C)N(=O)=O'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.audit.ok, true);
@@ -198,9 +186,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
-    assert.ok(
-      ['checkpoint', 'presentation', 'specialist'].includes(result.metadata.cleanupTelemetry.selectedStageCategory)
-    );
+    assert.ok(['checkpoint', 'presentation', 'specialist'].includes(result.metadata.cleanupTelemetry.selectedStageCategory));
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(phosphorusAtomIds.length, 2);
@@ -208,13 +194,10 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
   });
 
   it('re-orthogonalizes linked sugar phosphates after the final overlap-clearing ring-substituent touchup', () => {
-    const result = runPipeline(
-      parseSMILES('O[C@H]1[C@H](OP(O)(O)=O)[C@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H]1OP(O)(O)=O'),
-      {
-        suppressH: true,
-        auditTelemetry: true
-      }
-    );
+    const result = runPipeline(parseSMILES('O[C@H]1[C@H](OP(O)(O)=O)[C@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H]1OP(O)(O)=O'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
     const phosphorusAtomIds = [...result.layoutGraph.atoms.values()].filter(atom => atom.element === 'P').map(atom => atom.id);
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
@@ -242,13 +225,10 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
   });
 
   it('keeps condensed nucleotide triphosphates on strict phosphate crosses', () => {
-    const result = runPipeline(
-      parseSMILES('NC1=NC2=C(C(C[NH3+])=CN2C2CC(OCN=[N+]=[N-])C(COP([O-])(=O)OP([O-])(=O)OP([O-])([O-])=O)O2)C(=O)N1'),
-      {
-        suppressH: true,
-        auditTelemetry: true
-      }
-    );
+    const result = runPipeline(parseSMILES('NC1=NC2=C(C(C[NH3+])=CN2C2CC(OCN=[N+]=[N-])C(COP([O-])(=O)OP([O-])(=O)OP([O-])([O-])=O)O2)C(=O)N1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
     const phosphorusAtomIds = [...result.layoutGraph.atoms.values()].filter(atom => atom.element === 'P').map(atom => atom.id);
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
@@ -293,13 +273,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
       assert.equal(heavyNeighborIds.length, 3);
       for (let firstIndex = 0; firstIndex < heavyNeighborIds.length; firstIndex++) {
         for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighborIds.length; secondIndex++) {
-          assertBondAngle(
-            result,
-            heavyNeighborIds[firstIndex],
-            'P28',
-            heavyNeighborIds[secondIndex],
-            (2 * Math.PI) / 3
-          );
+          assertBondAngle(result, heavyNeighborIds[firstIndex], 'P28', heavyNeighborIds[secondIndex], (2 * Math.PI) / 3);
         }
       }
       assert.equal(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['P28']) }), 0);
@@ -505,9 +479,11 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
       assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
       assert.equal(result.metadata.audit.labelOverlapCount, 0);
       assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
-      assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, {
-        focusAtomIds: new Set(['S11', 'S21', 'S30'])
-      }) < 1e-9);
+      assert.ok(
+        measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, {
+          focusAtomIds: new Set(['S11', 'S21', 'S30'])
+        }) < 1e-9
+      );
       assertOrthogonalCross(result, ['S11', 'S21', 'S30']);
       assertOppositePair(result, 'S11', 'C10', 'N14');
       assertOppositePair(result, 'S11', 'O12', 'O13');
@@ -797,14 +773,11 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
   });
 
   it('keeps acyclic sulfonamide oxo ligands orthogonal while moving a nearby pendant ring', () => {
-    const result = runPipeline(
-      parseSMILES('CN1CCN(CC1)C(=O)N[C@H](CC1=CC=CC=C1)C(=O)N[C@H](CCC1=CC=CC=C1)CCS(=O)(=O)NOCC1=CC=CC=C1'),
-      {
-        suppressH: true,
-        auditTelemetry: true,
-        finalLandscapeOrientation: true
-      }
-    );
+    const result = runPipeline(parseSMILES('CN1CCN(CC1)C(=O)N[C@H](CC1=CC=CC=C1)C(=O)N[C@H](CCC1=CC=CC=C1)CCS(=O)(=O)NOCC1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
@@ -817,6 +790,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'S35', 'O36', 'O37');
     assertBondAngle(result, 'C34', 'S35', 'O36', Math.PI / 2);
     assertBondAngle(result, 'N38', 'S35', 'O36', Math.PI / 2);
+    assertBondAngle(result, 'C11', 'C13', 'C14', (2 * Math.PI) / 3);
     assert.ok(distance(result.coords.get('C19'), result.coords.get('O37')) > result.layoutGraph.options.bondLength * 0.55);
   });
 

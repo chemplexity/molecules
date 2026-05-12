@@ -10,7 +10,7 @@ import {
   isPlanarDivalentNitrogenContinuationPair,
   supportsProjectedTetrahedralGeometry
 } from '../placement/branch-placement/angle-selection.js';
-import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
+import { ANGLE_EPSILON, IDEAL_DIVALENT_CONTINUATION_ELEMENTS, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
 import { COARSE_ROTATION_ANGLES, STANDARD_ROTATION_ANGLES } from './rotation-candidates.js';
 const RIGID_SUBTREE_REFINEMENT_OFFSETS = Object.freeze([
   Math.PI / 36,
@@ -93,7 +93,6 @@ const OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS = Object.freeze([
   (2 * Math.PI) / 3,
   -(2 * Math.PI) / 3
 ]);
-const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 
 function protectsLargeMoleculeBackbone(options) {
   return options.protectLargeMoleculeBackbone === true;

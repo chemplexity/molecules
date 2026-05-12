@@ -16,6 +16,17 @@ const RING_BODY_ROTATIONS = Object.freeze([
   Math.PI / 3,
   -(Math.PI / 3)
 ]);
+const TERMINAL_CATION_LEAF_ROTATIONS = Object.freeze([
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 4,
+  -(Math.PI / 4),
+  Math.PI / 3,
+  -(Math.PI / 3),
+  Math.PI / 2,
+  -(Math.PI / 2),
+  Math.PI
+]);
 const RESIDUAL_RING_BODY_ROTATIONS = Object.freeze([
   Math.PI / 6,
   -(Math.PI / 6),
@@ -25,6 +36,28 @@ const RESIDUAL_RING_BODY_ROTATIONS = Object.freeze([
   -(Math.PI / 3),
   Math.PI / 2,
   -(Math.PI / 2)
+]);
+const RESIDUAL_PAIRED_RING_BODY_ROTATIONS = Object.freeze([
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  Math.PI / 6,
+  -(Math.PI / 6)
+]);
+const RESIDUAL_PAIRED_LEAF_ROTATIONS = Object.freeze([
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 4,
+  -(Math.PI / 4)
 ]);
 const LINKER_SWING_ROTATIONS = Object.freeze([
   Math.PI / 3,
@@ -107,6 +140,36 @@ function collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomI
     }
   }
   return descriptors;
+}
+
+function collectTerminalLeafReliefDescriptor(layoutGraph, coords, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element === 'H'
+    || atom.aromatic
+    || atom.heavyDegree !== 1
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+  const [parentAtomId] = heavyCovalentNeighborIds(layoutGraph, atomId);
+  if (!parentAtomId || !coords.has(parentAtomId)) {
+    return null;
+  }
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, parentAtomId)]
+    .filter(subtreeAtomId => coords.has(subtreeAtomId));
+  if (
+    subtreeAtomIds.length === 0
+    || subtreeAtomIds.some(subtreeAtomId => (layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0)
+  ) {
+    return null;
+  }
+  return {
+    leafAtomId: atomId,
+    parentAtomId,
+    subtreeAtomIds
+  };
 }
 
 function minimumDistanceToAtomSet(coords, atomId, targetAtomIds) {
@@ -195,14 +258,21 @@ function collectTerminalCationRingDescriptors(layoutGraph, coords, bondLength) {
       if (subtreeAtomIds.length === 0) {
         continue;
       }
+      const terminalSubtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, parentAtomId)]
+        .filter(subtreeAtomId => coords.has(subtreeAtomId));
+      if (terminalSubtreeAtomIds.length === 0) {
+        continue;
+      }
       const ringBodyAtomIds = collectRingBodyAtomIds(layoutGraph, ring, ringRootAtomId, coords);
       descriptors.push({
         terminalAtomId: atomId,
+        parentAtomId,
         linkerAtomId,
         ringRootAtomId,
         ringAtomIds: ring.atomIds,
         ringBodyAtomIds,
         subtreeAtomIds,
+        terminalSubtreeAtomIds,
         terminalRingDistance
       });
     }
@@ -263,7 +333,62 @@ function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bo
 
   let best = null;
   const currentTerminalRingDistance = minimumDistanceToAtomSet(coords, descriptor.terminalAtomId, descriptor.ringAtomIds);
+  const allowedOverlapCount = Math.min(startingOverlaps.length - 1, baseOverlapCount);
   for (const overlap of startingOverlaps) {
+    for (const [ringAtomId, leafAtomId] of [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ]) {
+      const leafDescriptor = collectTerminalLeafReliefDescriptor(layoutGraph, coords, leafAtomId);
+      if (!leafDescriptor) {
+        continue;
+      }
+      for (const reliefDescriptor of collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, ringAtomId)) {
+        for (const ringRotation of RESIDUAL_PAIRED_RING_BODY_ROTATIONS) {
+          const ringCoords = rotateSubtreeAroundPivot(
+            coords,
+            reliefDescriptor.ringBodyAtomIds,
+            reliefDescriptor.rootAtomId,
+            ringRotation
+          );
+          if (!ringCoords) {
+            continue;
+          }
+          for (const leafRotation of RESIDUAL_PAIRED_LEAF_ROTATIONS) {
+            const candidateCoords = rotateSubtreeAroundPivot(
+              ringCoords,
+              leafDescriptor.subtreeAtomIds,
+              leafDescriptor.parentAtomId,
+              leafRotation
+            );
+            if (!candidateCoords) {
+              continue;
+            }
+            const candidateOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
+            if (candidateOverlaps.length > allowedOverlapCount) {
+              continue;
+            }
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+            if (candidateAudit.ok !== true) {
+              continue;
+            }
+            const terminalRingDistance = minimumDistanceToAtomSet(candidateCoords, descriptor.terminalAtomId, descriptor.ringAtomIds);
+            if (terminalRingDistance < currentTerminalRingDistance - TIDY_EPSILON) {
+              continue;
+            }
+            const candidate = {
+              coords: candidateCoords,
+              overlapCount: candidateOverlaps.length,
+              terminalRingDistance,
+              geometryCost: Math.abs(ringRotation) * 1.5 + Math.abs(leafRotation) * 0.5
+            };
+            if (isBetterCandidate(candidate, best)) {
+              best = candidate;
+            }
+          }
+        }
+      }
+    }
     for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
       for (const reliefDescriptor of collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomId)) {
         for (const rotation of RESIDUAL_RING_BODY_ROTATIONS) {
@@ -277,7 +402,7 @@ function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bo
             continue;
           }
           const candidateOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
-          if (candidateOverlaps.length > Math.min(startingOverlaps.length - 1, baseOverlapCount)) {
+          if (candidateOverlaps.length > allowedOverlapCount) {
             continue;
           }
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
@@ -343,6 +468,27 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
       const baseOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
       const minimumImprovement = bondLength * MIN_CLEARANCE_IMPROVEMENT_FACTOR;
       let bestCandidate = null;
+
+      for (const rotation of TERMINAL_CATION_LEAF_ROTATIONS) {
+        const candidateCoords = rotateSubtreeAroundPivot(
+          coords,
+          descriptor.terminalSubtreeAtomIds,
+          descriptor.parentAtomId,
+          rotation
+        );
+        const candidate = candidateCoords
+          ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.abs(rotation) * 0.75)
+          : null;
+        if (
+          !candidate
+          || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement
+        ) {
+          continue;
+        }
+        if (isBetterCandidate(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
+      }
 
       for (const rotation of RING_BODY_ROTATIONS) {
         const candidateCoords = rotateSubtreeAroundPivot(

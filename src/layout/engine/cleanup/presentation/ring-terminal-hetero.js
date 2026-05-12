@@ -16,6 +16,7 @@ import {
   supportsExteriorBranchSpreadRingSize
 } from '../../placement/branch-placement.js';
 import { isExactVisibleTrigonalBisectorEligible } from '../../placement/branch-placement/angle-selection.js';
+import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 const TERMINAL_HETERO_OUTWARD_NEED_TRIGGER = Math.PI / 9;
@@ -374,18 +375,6 @@ function rotateAtomIdsAroundPivot(coords, atomIds, pivotAtomId, rotationAngle) {
   return candidateCoords;
 }
 
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
-    .filter(bond => bond?.kind === 'covalent')
-    .map(bond => ({
-      bond,
-      neighborAtomId: bond.a === atomId ? bond.b : bond.a
-    }))
-    .filter(({ neighborAtomId }) => {
-      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
-    });
-}
 
 function terminalMultipleBondLeafFanPenaltyFromAngles(angles) {
   if (angles.length !== 3) {

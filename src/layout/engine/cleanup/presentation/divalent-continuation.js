@@ -5,12 +5,16 @@ import { angleOf, angularDifference, rotate, sub, wrapAngle } from '../../geomet
 import { rotateAround } from '../../geometry/transforms.js';
 import { isExactSimpleAcyclicContinuationEligible } from '../../placement/branch-placement/angle-selection.js';
 import { auditLayout } from '../../audit/audit.js';
-import { measureDivalentContinuationDistortion } from '../../audit/invariants.js';
+import { findSevereOverlaps, measureDivalentContinuationDistortion } from '../../audit/invariants.js';
 import { collectCutSubtree } from '../subtree-utils.js';
+import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 
 const MAX_MOVABLE_DIVALENT_CONTINUATION_HEAVY_ATOMS = 4;
 const MAX_MOVABLE_CARBONYL_RING_CONTINUATION_HEAVY_ATOMS = 18;
+const MAX_MOVABLE_TERMINAL_RING_CONTINUATION_HEAVY_ATOMS = 12;
 const IDEAL_DIVALENT_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
+const HYPERVALENT_CONTACT_RELIEF_ROTATIONS = Object.freeze([-Math.PI / 36, Math.PI / 36, -Math.PI / 18, Math.PI / 18, -Math.PI / 12, Math.PI / 12]);
+const HYPERVALENT_CONTACT_CENTER_ELEMENTS = new Set(['P', 'S', 'Se', 'Si']);
 const TERMINAL_ALKENE_PARENT_ROTATIONS = Object.freeze([
   -Math.PI,
   Math.PI,
@@ -27,22 +31,6 @@ const TERMINAL_ALKENE_PARENT_ROTATIONS = Object.freeze([
   -Math.PI / 3,
   Math.PI / 3
 ]);
-
-function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
-  const bonds = [];
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
-      continue;
-    }
-    bonds.push({ bond, neighborAtomId });
-  }
-  return bonds;
-}
 
 function isCarbonylAttachedRingContinuationSide(layoutGraph, rootAtomId, centerAtomId, subtreeAtomIds) {
   const rootAtom = layoutGraph.atoms.get(rootAtomId);
@@ -70,20 +58,43 @@ function isCarbonylAttachedRingContinuationSide(layoutGraph, rootAtomId, centerA
       hasAttachedRingNeighbor = true;
     }
   }
-  return (
-    hasTerminalMultipleHetero
-    && hasAttachedRingNeighbor
-    && subtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0)
-  );
+  return hasTerminalMultipleHetero && hasAttachedRingNeighbor && subtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+}
+
+function isCompactTerminalRingContinuationSide(layoutGraph, rootAtomId, centerAtomId, subtreeAtomIds) {
+  const rootRings = layoutGraph.atomToRings.get(rootAtomId) ?? [];
+  if (rootRings.length !== 1 || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+  const ring = rootRings[0];
+  const ringAtomIds = ring.atomIds ?? [];
+  if (ringAtomIds.length < 5 || ringAtomIds.length > 6) {
+    return false;
+  }
+  const subtreeAtomIdSet = new Set(subtreeAtomIds);
+  if (!ringAtomIds.every(atomId => subtreeAtomIdSet.has(atomId))) {
+    return false;
+  }
+  for (const atomId of subtreeAtomIds) {
+    const atomRings = layoutGraph.atomToRings.get(atomId) ?? [];
+    if (atomRings.length === 0) {
+      continue;
+    }
+    if (atomRings.length !== 1 || atomRings[0] !== ring) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function collectCompactMovableSide(layoutGraph, coords, rootAtomId, centerAtomId, frozenAtomIds) {
-  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)]
-    .filter(atomId => coords.has(atomId));
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
   if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerAtomId)) {
     return null;
   }
-  const allowRingAtoms = isCarbonylAttachedRingContinuationSide(layoutGraph, rootAtomId, centerAtomId, subtreeAtomIds);
+  const allowCarbonylAttachedRingSide = isCarbonylAttachedRingContinuationSide(layoutGraph, rootAtomId, centerAtomId, subtreeAtomIds);
+  const allowTerminalRingSide = isCompactTerminalRingContinuationSide(layoutGraph, rootAtomId, centerAtomId, subtreeAtomIds);
+  const allowRingAtoms = allowCarbonylAttachedRingSide || allowTerminalRingSide;
   let heavyAtomCount = 0;
   for (const atomId of subtreeAtomIds) {
     if (frozenAtomIds?.has(atomId)) {
@@ -100,12 +111,12 @@ function collectCompactMovableSide(layoutGraph, coords, rootAtomId, centerAtomId
       heavyAtomCount++;
     }
   }
-  const heavyAtomLimit = allowRingAtoms
-    ? MAX_MOVABLE_CARBONYL_RING_CONTINUATION_HEAVY_ATOMS
-    : MAX_MOVABLE_DIVALENT_CONTINUATION_HEAVY_ATOMS;
-  return heavyAtomCount > 0 && heavyAtomCount <= heavyAtomLimit
-    ? subtreeAtomIds
-    : null;
+  const heavyAtomLimit = allowTerminalRingSide
+    ? MAX_MOVABLE_TERMINAL_RING_CONTINUATION_HEAVY_ATOMS
+    : allowCarbonylAttachedRingSide
+      ? MAX_MOVABLE_CARBONYL_RING_CONTINUATION_HEAVY_ATOMS
+      : MAX_MOVABLE_DIVALENT_CONTINUATION_HEAVY_ATOMS;
+  return heavyAtomCount > 0 && heavyAtomCount <= heavyAtomLimit ? subtreeAtomIds : null;
 }
 
 function divalentContinuationCandidates(layoutGraph, coords, centerAtomId, frozenAtomIds) {
@@ -154,12 +165,7 @@ function isRingAdjacentTerminalContinuationDescriptor(layoutGraph, coords, descr
     coords.has(descriptor.rootAtomId) &&
     (layoutGraph.atomToRings.get(descriptor.parentAtomId)?.length ?? 0) > 0 &&
     (layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0) === 0 &&
-    isExactSimpleAcyclicContinuationEligible(
-      layoutGraph,
-      descriptor.centerAtomId,
-      descriptor.parentAtomId,
-      descriptor.rootAtomId
-    )
+    isExactSimpleAcyclicContinuationEligible(layoutGraph, descriptor.centerAtomId, descriptor.parentAtomId, descriptor.rootAtomId)
   );
 }
 
@@ -177,6 +183,135 @@ function rotateSubtreeAroundCenter(coords, descriptor, rotation) {
     nextCoords.set(atomId, rotateAround(position, centerPosition, rotation));
   }
   return nextCoords;
+}
+
+function terminalMultipleBondHypervalentContact(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H') {
+    return null;
+  }
+  const covalentBonds = (layoutGraph.bondsByAtomId.get(atomId) ?? []).filter(bond => bond?.kind === 'covalent');
+  if (covalentBonds.length !== 1) {
+    return null;
+  }
+  const bond = covalentBonds[0];
+  if ((bond.order ?? 1) < 2) {
+    return null;
+  }
+  const centerAtomId = bond.a === atomId ? bond.b : bond.a;
+  const centerAtom = layoutGraph.atoms.get(centerAtomId);
+  if (!centerAtom || !HYPERVALENT_CONTACT_CENTER_ELEMENTS.has(centerAtom.element)) {
+    return null;
+  }
+  return {
+    centerAtomId,
+    terminalAtomId: atomId
+  };
+}
+
+function hypervalentContactReliefPivots(layoutGraph, coords, centerAtomId, movedAtomIdSet, frozenAtomIds) {
+  const pivots = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const pivotAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const pivotAtom = layoutGraph.atoms.get(pivotAtomId);
+    if (!pivotAtom || pivotAtom.element === 'H' || frozenAtomIds?.has(pivotAtomId)) {
+      continue;
+    }
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, centerAtomId, pivotAtomId)].filter(atomId => coords.has(atomId));
+    if (subtreeAtomIds.length === 0 || subtreeAtomIds.some(atomId => movedAtomIdSet.has(atomId) || frozenAtomIds?.has(atomId))) {
+      continue;
+    }
+    pivots.push({
+      pivotAtomId,
+      subtreeAtomIds
+    });
+  }
+  return pivots;
+}
+
+function compareHypervalentContactReliefCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (candidate.divalentPenalty < incumbent.divalentPenalty - CLEANUP_EPSILON) {
+    return -1;
+  }
+  if (candidate.divalentPenalty > incumbent.divalentPenalty + CLEANUP_EPSILON) {
+    return 1;
+  }
+  if (candidate.rotationMagnitude < incumbent.rotationMagnitude - CLEANUP_EPSILON) {
+    return -1;
+  }
+  if (candidate.rotationMagnitude > incumbent.rotationMagnitude + CLEANUP_EPSILON) {
+    return 1;
+  }
+  return candidate.movedAtomCount - incumbent.movedAtomCount;
+}
+
+function relieveHypervalentContactAfterDivalentSnap(layoutGraph, coords, movedAtomIds, frozenAtomIds, bondLength) {
+  if (!Array.isArray(movedAtomIds) || movedAtomIds.length === 0) {
+    return null;
+  }
+  const movedAtomIdSet = new Set(movedAtomIds);
+  const contacts = [];
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    for (const [overlapAtomId, otherAtomId] of [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ]) {
+      if (!movedAtomIdSet.has(otherAtomId)) {
+        continue;
+      }
+      const contact = terminalMultipleBondHypervalentContact(layoutGraph, overlapAtomId);
+      if (contact) {
+        contacts.push(contact);
+      }
+    }
+  }
+  if (contacts.length === 0) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  for (const contact of contacts) {
+    const pivots = hypervalentContactReliefPivots(layoutGraph, coords, contact.centerAtomId, movedAtomIdSet, frozenAtomIds);
+    for (const pivot of pivots) {
+      const pivotPosition = coords.get(pivot.pivotAtomId);
+      if (!pivotPosition) {
+        continue;
+      }
+      for (const rotation of HYPERVALENT_CONTACT_RELIEF_ROTATIONS) {
+        const candidateCoords = new Map(coords);
+        for (const atomId of pivot.subtreeAtomIds) {
+          const position = coords.get(atomId);
+          if (!position) {
+            continue;
+          }
+          candidateCoords.set(atomId, rotateAround(position, pivotPosition, rotation));
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        if (candidateAudit.ok !== true) {
+          continue;
+        }
+        const movedAtoms = [...new Set([...movedAtomIds, ...pivot.subtreeAtomIds])];
+        const candidate = {
+          coords: candidateCoords,
+          audit: candidateAudit,
+          atomIds: movedAtoms,
+          divalentPenalty: measureDivalentContinuationDistortion(layoutGraph, candidateCoords).totalDeviation,
+          movedAtomCount: movedAtoms.length,
+          rotationMagnitude: Math.abs(rotation)
+        };
+        if (compareHypervalentContactReliefCandidates(candidate, bestCandidate) < 0) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+  }
+  return bestCandidate;
 }
 
 function terminalAlkeneContinuationDescriptor(layoutGraph, coords, centerAtomId, frozenAtomIds) {
@@ -201,21 +336,20 @@ function terminalAlkeneContinuationDescriptor(layoutGraph, coords, centerAtomId,
   }
   const parentAtomId = parentBond.neighborAtomId;
   const leafAtomId = leafBond.neighborAtomId;
-  const grandParentAtomId = visibleHeavyCovalentBonds(layoutGraph, coords, parentAtomId)
-    .map(({ neighborAtomId }) => neighborAtomId)
-    .find(neighborAtomId => neighborAtomId !== centerAtomId) ?? null;
+  const grandParentAtomId =
+    visibleHeavyCovalentBonds(layoutGraph, coords, parentAtomId)
+      .map(({ neighborAtomId }) => neighborAtomId)
+      .find(neighborAtomId => neighborAtomId !== centerAtomId) ?? null;
   if (!grandParentAtomId || frozenAtomIds?.has(parentAtomId) || frozenAtomIds?.has(leafAtomId)) {
     return null;
   }
-  const parentSubtreeAtomIds = [...collectCutSubtree(layoutGraph, parentAtomId, grandParentAtomId)]
-    .filter(atomId => coords.has(atomId));
-  const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, centerAtomId)]
-    .filter(atomId => coords.has(atomId));
+  const parentSubtreeAtomIds = [...collectCutSubtree(layoutGraph, parentAtomId, grandParentAtomId)].filter(atomId => coords.has(atomId));
+  const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
   if (
-    parentSubtreeAtomIds.length === 0
-    || leafSubtreeAtomIds.length === 0
-    || parentSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))
-    || leafSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))
+    parentSubtreeAtomIds.length === 0 ||
+    leafSubtreeAtomIds.length === 0 ||
+    parentSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId)) ||
+    leafSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))
   ) {
     return null;
   }
@@ -252,12 +386,7 @@ function terminalAlkeneAngleDeviation(coords, descriptor) {
   if (!centerPosition || !parentPosition || !leafPosition) {
     return Number.POSITIVE_INFINITY;
   }
-  return Math.abs(
-    angularDifference(
-      angleOf(sub(parentPosition, centerPosition)),
-      angleOf(sub(leafPosition, centerPosition))
-    ) - IDEAL_DIVALENT_CONTINUATION_ANGLE
-  );
+  return Math.abs(angularDifference(angleOf(sub(parentPosition, centerPosition)), angleOf(sub(leafPosition, centerPosition))) - IDEAL_DIVALENT_CONTINUATION_ANGLE);
 }
 
 function restoreTerminalAlkeneLeafAngle(coords, descriptor) {
@@ -271,10 +400,7 @@ function restoreTerminalAlkeneLeafAngle(coords, descriptor) {
   const leafAngle = angleOf(sub(leafPosition, centerPosition));
   let bestCoords = null;
   let bestRotationMagnitude = Number.POSITIVE_INFINITY;
-  for (const targetAngle of [
-    parentAngle + IDEAL_DIVALENT_CONTINUATION_ANGLE,
-    parentAngle - IDEAL_DIVALENT_CONTINUATION_ANGLE
-  ]) {
+  for (const targetAngle of [parentAngle + IDEAL_DIVALENT_CONTINUATION_ANGLE, parentAngle - IDEAL_DIVALENT_CONTINUATION_ANGLE]) {
     const rotation = wrapAngle(targetAngle - leafAngle);
     const candidateCoords = rotateAtomIdsAroundAtom(coords, descriptor.leafSubtreeAtomIds, descriptor.centerAtomId, rotation);
     if (!candidateCoords) {
@@ -304,10 +430,7 @@ function buildContinuationCandidates(layoutGraph, coords, descriptor) {
   }
 
   const candidates = [];
-  for (const targetAngle of [
-    parentAngle + IDEAL_DIVALENT_CONTINUATION_ANGLE,
-    parentAngle - IDEAL_DIVALENT_CONTINUATION_ANGLE
-  ]) {
+  for (const targetAngle of [parentAngle + IDEAL_DIVALENT_CONTINUATION_ANGLE, parentAngle - IDEAL_DIVALENT_CONTINUATION_ANGLE]) {
     const rotation = wrapAngle(targetAngle - currentRootAngle);
     const magnitude = Math.abs(rotation);
     if (magnitude <= CLEANUP_EPSILON) {
@@ -347,8 +470,7 @@ export function measureRingAdjacentTerminalDivalentContinuationDistortion(layout
   let maxDeviation = 0;
 
   for (const atomId of coords.keys()) {
-    const descriptors = divalentContinuationCandidates(layoutGraph, coords, atomId, null)
-      .filter(descriptor => isRingAdjacentTerminalContinuationDescriptor(layoutGraph, coords, descriptor));
+    const descriptors = divalentContinuationCandidates(layoutGraph, coords, atomId, null).filter(descriptor => isRingAdjacentTerminalContinuationDescriptor(layoutGraph, coords, descriptor));
     if (descriptors.length === 0) {
       continue;
     }
@@ -413,6 +535,21 @@ function isBetterDivalentContinuationCandidate(candidate, incumbent) {
   if (candidate.penalty.totalDeviation > incumbent.penalty.totalDeviation + CLEANUP_EPSILON) {
     return false;
   }
+  if ((candidate.audit?.ok === true) !== (incumbent.audit?.ok === true)) {
+    return candidate.audit?.ok === true;
+  }
+  for (const key of ['severeOverlapCount', 'visibleHeavyBondCrossingCount', 'labelOverlapCount']) {
+    const candidateCount = candidate.audit?.[key] ?? 0;
+    const incumbentCount = incumbent.audit?.[key] ?? 0;
+    if (candidateCount !== incumbentCount) {
+      return candidateCount < incumbentCount;
+    }
+  }
+  const candidateOverlapPenalty = candidate.audit?.severeOverlapPenalty ?? 0;
+  const incumbentOverlapPenalty = incumbent.audit?.severeOverlapPenalty ?? 0;
+  if (Math.abs(candidateOverlapPenalty - incumbentOverlapPenalty) > CLEANUP_EPSILON) {
+    return candidateOverlapPenalty < incumbentOverlapPenalty;
+  }
   return candidate.rotationMagnitude < incumbent.rotationMagnitude - CLEANUP_EPSILON;
 }
 
@@ -452,11 +589,19 @@ export function runDivalentContinuationTidy(layoutGraph, inputCoords, options = 
     let bestCandidate = null;
     for (const descriptor of divalentContinuationCandidates(layoutGraph, coords, atomId, frozenAtomIds)) {
       for (const candidate of buildContinuationCandidates(layoutGraph, coords, descriptor)) {
-        const candidateAudit = auditLayout(layoutGraph, candidate.coords, { bondLength });
+        let candidateCoords = candidate.coords;
+        let candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        let candidateAtomIds = candidate.atomIds;
+        const contactRelief = allowAuditWorsening ? relieveHypervalentContactAfterDivalentSnap(layoutGraph, candidateCoords, candidateAtomIds, frozenAtomIds, bondLength) : null;
+        if (contactRelief && auditCountsDoNotWorsen(contactRelief.audit, audit)) {
+          candidateCoords = contactRelief.coords;
+          candidateAudit = contactRelief.audit;
+          candidateAtomIds = contactRelief.atomIds;
+        }
         if (!allowAuditWorsening && !auditCountsDoNotWorsen(candidateAudit, audit)) {
           continue;
         }
-        const penalty = measureDivalentContinuationDistortion(layoutGraph, candidate.coords, {
+        const penalty = measureDivalentContinuationDistortion(layoutGraph, candidateCoords, {
           focusAtomIds: new Set([atomId])
         });
         if (penalty.maxDeviation >= focusedPenalty.maxDeviation - CLEANUP_EPSILON) {
@@ -464,6 +609,8 @@ export function runDivalentContinuationTidy(layoutGraph, inputCoords, options = 
         }
         const scoredCandidate = {
           ...candidate,
+          coords: candidateCoords,
+          atomIds: candidateAtomIds,
           audit: candidateAudit,
           penalty
         };
@@ -516,23 +663,16 @@ export function runTerminalAlkeneContinuationRelief(layoutGraph, inputCoords, op
       continue;
     }
     for (const rotation of TERMINAL_ALKENE_PARENT_ROTATIONS) {
-      const parentRotatedCoords = rotateAtomIdsAroundAtom(
-        inputCoords,
-        descriptor.parentSubtreeAtomIds,
-        descriptor.grandParentAtomId,
-        rotation
-      );
-      const candidateCoords = parentRotatedCoords
-        ? restoreTerminalAlkeneLeafAngle(parentRotatedCoords, descriptor)
-        : null;
+      const parentRotatedCoords = rotateAtomIdsAroundAtom(inputCoords, descriptor.parentSubtreeAtomIds, descriptor.grandParentAtomId, rotation);
+      const candidateCoords = parentRotatedCoords ? restoreTerminalAlkeneLeafAngle(parentRotatedCoords, descriptor) : null;
       if (!candidateCoords || terminalAlkeneAngleDeviation(candidateCoords, descriptor) > CLEANUP_EPSILON) {
         continue;
       }
       const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
       if (
-        (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0)
-        || (candidateAudit.bondLengthFailureCount ?? 0) > (baseAudit.bondLengthFailureCount ?? 0)
-        || (candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0) + 1
+        (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0) ||
+        (candidateAudit.bondLengthFailureCount ?? 0) > (baseAudit.bondLengthFailureCount ?? 0) ||
+        (candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0) + 1
       ) {
         continue;
       }
@@ -543,13 +683,10 @@ export function runTerminalAlkeneContinuationRelief(layoutGraph, inputCoords, op
         movedAtomIds: [...new Set([...descriptor.parentSubtreeAtomIds, ...descriptor.leafSubtreeAtomIds])]
       };
       if (
-        !bestCandidate
-        || (candidate.audit.ok === true && bestCandidate.audit.ok !== true)
-        || (candidate.audit.severeOverlapCount ?? 0) < (bestCandidate.audit.severeOverlapCount ?? 0)
-        || (
-          (candidate.audit.severeOverlapCount ?? 0) === (bestCandidate.audit.severeOverlapCount ?? 0)
-          && candidate.rotationMagnitude < bestCandidate.rotationMagnitude - CLEANUP_EPSILON
-        )
+        !bestCandidate ||
+        (candidate.audit.ok === true && bestCandidate.audit.ok !== true) ||
+        (candidate.audit.severeOverlapCount ?? 0) < (bestCandidate.audit.severeOverlapCount ?? 0) ||
+        ((candidate.audit.severeOverlapCount ?? 0) === (bestCandidate.audit.severeOverlapCount ?? 0) && candidate.rotationMagnitude < bestCandidate.rotationMagnitude - CLEANUP_EPSILON)
       ) {
         bestCandidate = candidate;
       }

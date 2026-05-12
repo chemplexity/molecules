@@ -667,6 +667,7 @@ describe('layout/engine/pipeline', () => {
 
     const rightSpiroCornerAngle = bondAngleAtAtom(result.coords, 'C13', 'C7', 'C14');
     const rightAmmoniumRingAngle = bondAngleAtAtom(result.coords, 'C11', 'C14', 'N9');
+    const ammoniumBridgeAngle = bondAngleAtAtom(result.coords, 'N9', 'C7', 'C11');
     const rightRingBondLengths = [
       distance(result.coords.get('C13'), result.coords.get('C14')),
       distance(result.coords.get('C14'), result.coords.get('C11')),
@@ -674,8 +675,9 @@ describe('layout/engine/pipeline', () => {
       distance(result.coords.get('N9'), result.coords.get('C7'))
     ];
 
-    assert.ok(rightSpiroCornerAngle > 44, `expected the right spiro corner to open, got ${rightSpiroCornerAngle.toFixed(2)} degrees`);
-    assert.ok(rightAmmoniumRingAngle > 64, `expected the ammonium-side ring to stay open, got ${rightAmmoniumRingAngle.toFixed(2)} degrees`);
+    assert.ok(rightSpiroCornerAngle > 48, `expected the right spiro corner to open, got ${rightSpiroCornerAngle.toFixed(2)} degrees`);
+    assert.ok(rightAmmoniumRingAngle > 67, `expected the ammonium-side ring to stay open, got ${rightAmmoniumRingAngle.toFixed(2)} degrees`);
+    assert.ok(ammoniumBridgeAngle > 88, `expected the ammonium bridge to avoid pinching, got ${ammoniumBridgeAngle.toFixed(2)} degrees`);
     assert.ok(Math.min(...rightRingBondLengths) > 1.18, `expected right-side ring bonds to avoid compression, got ${rightRingBondLengths.map(length => length.toFixed(3)).join(', ')}`);
   });
 
@@ -2535,7 +2537,13 @@ describe('layout/engine/pipeline', () => {
       bondAngleAtAtom(result.coords, 'N11', 'C26', 'C10'),
       bondAngleAtAtom(result.coords, 'C26', 'N11', 'C27'),
       bondAngleAtAtom(result.coords, 'C26', 'N11', 'C33'),
-      bondAngleAtAtom(result.coords, 'C26', 'C27', 'C33')
+      bondAngleAtAtom(result.coords, 'C26', 'C27', 'C33'),
+      bondAngleAtAtom(result.coords, 'C20', 'C25', 'C21'),
+      bondAngleAtAtom(result.coords, 'C20', 'C25', 'O19'),
+      bondAngleAtAtom(result.coords, 'C20', 'C21', 'O19'),
+      bondAngleAtAtom(result.coords, 'C33', 'C26', 'C38'),
+      bondAngleAtAtom(result.coords, 'C33', 'C26', 'C34'),
+      bondAngleAtAtom(result.coords, 'C33', 'C38', 'C34')
     ]) {
       assert.ok(Math.abs(angle - 120) < 1e-6, `expected acyl-hydrazine diaryl fan to stay at 120 degrees, got ${angle.toFixed(2)}`);
     }
