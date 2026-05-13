@@ -1720,9 +1720,13 @@ describe('layout/engine/families/mixed', () => {
     });
     const graph = result.layoutGraph;
     const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
-    const exactExteriorAnchorIds = ['C38', 'C32', 'C16', 'C19', 'C2', 'C29'];
+    const exactExteriorAnchorIds = ['C38', 'C16', 'C19', 'C2', 'C29'];
     const centralFanSeparations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C11', graph);
     const c7Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C7', graph);
+    const visibleCrossings = findVisibleHeavyBondCrossings(graph, result.coords);
+    const c32F34Distance = distance(result.coords.get('C32'), result.coords.get('F34'));
+    const f34C5Distance = distance(result.coords.get('F34'), result.coords.get('C5'));
+    const f34C6Distance = distance(result.coords.get('F34'), result.coords.get('C6'));
     const isocyanateAngles = [
       bondAngleAtAtom(result.coords, 'C36', 'N35', 'O37'),
       bondAngleAtAtom(result.coords, 'C23', 'N22', 'O24'),
@@ -1743,6 +1747,15 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(
       c7Separations[0] >= Math.PI / 4 - 1e-6,
       `expected C7 isocyanate/ring exit fan to stay bounded while clearing overlaps, got minimum separation ${((c7Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.equal(visibleCrossings.length, 0, 'expected compressed F34 escape to remove visible heavy-bond crossings');
+    assert.ok(
+      c32F34Distance < graph.options.bondLength && c32F34Distance >= graph.options.bondLength * 0.55 - 1e-6,
+      `expected C32-F34 to compress within the accepted terminal-ring-leaf range, got ${c32F34Distance.toFixed(3)}`
+    );
+    assert.ok(
+      Math.min(f34C5Distance, f34C6Distance) > graph.options.bondLength * 0.8,
+      `expected F34 to clear the neighboring C5-C6 ring edge, got distances ${f34C5Distance.toFixed(3)} and ${f34C6Distance.toFixed(3)}`
     );
     for (const angle of isocyanateAngles) {
       assert.ok(

@@ -1,6 +1,7 @@
 /** @module cleanup/presentation/ring-chain-unit-projection-retouch */
 
 import { auditLayout } from '../../audit/audit.js';
+import { findSevereOverlaps } from '../../audit/invariants.js';
 import { describePathLikeIsolatedRingChain } from '../../topology/isolated-ring-chain.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 
@@ -9,8 +10,21 @@ const SIDE_BRANCH_DESCENDANT_ROTATION_CANDIDATES = Object.freeze([
   ...Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 12)
     .flatMap(angle => (Math.abs(angle - Math.PI) <= 1e-9 ? [Math.PI] : [angle, -angle]))
 ]);
+const NEIGHBOR_SIDE_BRANCH_RELIEF_ROTATIONS = Object.freeze([
+  Math.PI / 72,
+  -Math.PI / 72,
+  Math.PI / 36,
+  -Math.PI / 36,
+  Math.PI / 24,
+  -Math.PI / 24,
+  Math.PI / 18,
+  -Math.PI / 18,
+  Math.PI / 12,
+  -Math.PI / 12
+]);
 const INTERNAL_LIGAND_RELIEF_MAX_ROOT_DEVIATION = Math.PI / 180;
 const HYPERVALENT_BRANCH_CENTER_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
+const HYPERVALENT_CROSS_GEOMETRY_SCORE_WEIGHT = 1_000;
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -342,6 +356,11 @@ function angleBetweenPositions(firstPosition, centerPosition, secondPosition) {
   return Math.acos(cosine);
 }
 
+function angularDifference(firstAngle, secondAngle) {
+  const difference = Math.abs(normalizeAngle(firstAngle - secondAngle));
+  return Math.min(difference, (Math.PI * 2) - difference);
+}
+
 function sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId, targetAngle = (Math.PI * 2) / 3) {
   const neighborAtomIds = visibleHeavyNeighborAtomIds(layoutGraph, coords, rootAtomId);
   if (neighborAtomIds.length !== 2) {
@@ -355,6 +374,88 @@ function sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId, targetAng
   }
   const angle = angleBetweenPositions(firstPosition, centerPosition, secondPosition);
   return angle == null ? 0 : Math.abs(angle - targetAngle);
+}
+
+function permutationIndexes(count) {
+  if (count === 0) {
+    return [[]];
+  }
+  const result = [];
+  const usedIndexes = new Set();
+  const current = [];
+  const visit = () => {
+    if (current.length === count) {
+      result.push([...current]);
+      return;
+    }
+    for (let index = 0; index < count; index++) {
+      if (usedIndexes.has(index)) {
+        continue;
+      }
+      usedIndexes.add(index);
+      current.push(index);
+      visit();
+      current.pop();
+      usedIndexes.delete(index);
+    }
+  };
+  visit();
+  return result;
+}
+
+const THREE_LIGAND_PERMUTATIONS = Object.freeze(permutationIndexes(3));
+const HYPERVALENT_CROSS_TARGET_OFFSETS = Object.freeze([Math.PI, Math.PI / 2, -Math.PI / 2]);
+
+/**
+ * Scores how closely a four-coordinate sulfate/phosphate-like branch keeps the
+ * ligand opposite the ring-bound root at `180°` and the remaining ligands at a
+ * perpendicular cross.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} rootAtomId - Branch root attached to the ring anchor.
+ * @param {string} anchorAtomId - Ring anchor attached to the branch root.
+ * @returns {number} Minimum summed angular deviation in radians.
+ */
+function hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchorAtomId) {
+  const centerAtomId = visibleHeavyNeighborAtomIds(layoutGraph, coords, rootAtomId)
+    .find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
+  const centerAtom = centerAtomId ? layoutGraph.atoms.get(centerAtomId) : null;
+  const centerPosition = centerAtomId ? coords.get(centerAtomId) : null;
+  const rootPosition = coords.get(rootAtomId);
+  if (!centerAtom || !HYPERVALENT_BRANCH_CENTER_ELEMENTS.has(centerAtom.element) || !centerPosition || !rootPosition) {
+    return 0;
+  }
+
+  const ligandAngles = visibleHeavyNeighborAtomIds(layoutGraph, coords, centerAtomId)
+    .filter(ligandAtomId => ligandAtomId !== rootAtomId)
+    .map(ligandAtomId => coords.get(ligandAtomId))
+    .filter(Boolean)
+    .map(position => Math.atan2(position.y - centerPosition.y, position.x - centerPosition.x));
+  if (ligandAngles.length !== 3) {
+    return 0;
+  }
+
+  const rootAngle = Math.atan2(rootPosition.y - centerPosition.y, rootPosition.x - centerPosition.x);
+  let bestDeviation = Number.POSITIVE_INFINITY;
+  for (const permutation of THREE_LIGAND_PERMUTATIONS) {
+    let deviation = 0;
+    for (let index = 0; index < permutation.length; index++) {
+      deviation += angularDifference(
+        normalizeAngle(ligandAngles[permutation[index]] - rootAngle),
+        HYPERVALENT_CROSS_TARGET_OFFSETS[index]
+      );
+    }
+    bestDeviation = Math.min(bestDeviation, deviation);
+  }
+  return bestDeviation;
+}
+
+function sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit) {
+  return (
+    auditScore(audit)
+    + (sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId) * 1_000)
+    + (hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchorAtomId) * HYPERVALENT_CROSS_GEOMETRY_SCORE_WEIGHT)
+  );
 }
 
 function exactRootAngleRotations(layoutGraph, coords, rootAtomId, anchorAtomId, targetAngle = (Math.PI * 2) / 3) {
@@ -396,6 +497,98 @@ function sideBranchDescendantAtomIds(layoutGraph, coords, rootAtomId, anchorAtom
   return [...atomIds];
 }
 
+function isRingAtom(layoutGraph, atomId) {
+  return (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0;
+}
+
+function nearestRingSideBranchCut(layoutGraph, coords, atomId, blockedAtomIds) {
+  if (!coords.has(atomId) || isRingAtom(layoutGraph, atomId) || blockedAtomIds.has(atomId)) {
+    return null;
+  }
+  const queue = [atomId];
+  const seen = new Set([atomId]);
+  let queueIndex = 0;
+  while (queueIndex < queue.length && queueIndex < 24) {
+    const currentAtomId = queue[queueIndex++];
+    for (const bond of layoutGraph.bondsByAtomId.get(currentAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = otherBondAtomId(bond, currentAtomId);
+      if (!coords.has(neighborAtomId) || blockedAtomIds.has(neighborAtomId)) {
+        continue;
+      }
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H') {
+        continue;
+      }
+      if (isRingAtom(layoutGraph, neighborAtomId)) {
+        return {
+          rootAtomId: currentAtomId,
+          anchorAtomId: neighborAtomId
+        };
+      }
+      if (!seen.has(neighborAtomId)) {
+        seen.add(neighborAtomId);
+        queue.push(neighborAtomId);
+      }
+    }
+  }
+  return null;
+}
+
+function bestNeighboringSideBranchReliefCoords(layoutGraph, inputCoords, rootAtomId, anchorAtomId, baseAudit, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const activeAtomIds = new Set([
+    rootAtomId,
+    ...sideBranchDescendantAtomIds(layoutGraph, inputCoords, rootAtomId, anchorAtomId)
+  ]);
+  const overlaps = findSevereOverlaps(layoutGraph, inputCoords, bondLength)
+    .filter(overlap => activeAtomIds.has(overlap.firstAtomId) !== activeAtomIds.has(overlap.secondAtomId));
+  let best = null;
+  for (const overlap of overlaps) {
+    const externalAtomId = activeAtomIds.has(overlap.firstAtomId) ? overlap.secondAtomId : overlap.firstAtomId;
+    const cut = nearestRingSideBranchCut(layoutGraph, inputCoords, externalAtomId, activeAtomIds);
+    if (!cut) {
+      continue;
+    }
+    const reliefAtomIds = [...collectCutSubtree(layoutGraph, cut.rootAtomId, cut.anchorAtomId)]
+      .filter(candidateAtomId => inputCoords.has(candidateAtomId));
+    if (
+      reliefAtomIds.length === 0
+      || reliefAtomIds.some(candidateAtomId => activeAtomIds.has(candidateAtomId) || isRingAtom(layoutGraph, candidateAtomId))
+    ) {
+      continue;
+    }
+    const anchorPosition = inputCoords.get(cut.anchorAtomId);
+    if (!anchorPosition) {
+      continue;
+    }
+    for (const rotation of NEIGHBOR_SIDE_BRANCH_RELIEF_ROTATIONS) {
+      const coords = rotatedAtomsCoords(inputCoords, reliefAtomIds, anchorPosition, rotation);
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses ?? null
+      });
+      if (!auditCountsDoNotWorsen(audit, baseAudit)) {
+        continue;
+      }
+      const score = (
+        sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit)
+        + Math.abs(rotation)
+      );
+      if (!best || score < best.score - 1e-9) {
+        best = {
+          coords,
+          audit,
+          score
+        };
+      }
+    }
+  }
+  return best;
+}
+
 function bestAuditedSideBranchCoords(layoutGraph, candidateCoords, rootAtomId, anchorAtomId, baseAudit, options) {
   const rootPosition = candidateCoords.get(rootAtomId);
   if (!rootPosition) {
@@ -415,19 +608,27 @@ function bestAuditedSideBranchCoords(layoutGraph, candidateCoords, rootAtomId, a
     });
     if (!auditCountsDoNotWorsen(audit, baseAudit)) {
       const internalRelief = bestInternalLigandReliefCoords(layoutGraph, coords, rootAtomId, anchorAtomId, baseAudit, options);
-      if (!internalRelief || (best && internalRelief.score >= best.score - 1e-9)) {
+      const neighborRelief = bestNeighboringSideBranchReliefCoords(layoutGraph, coords, rootAtomId, anchorAtomId, baseAudit, options);
+      const relief = [internalRelief, neighborRelief]
+        .filter(Boolean)
+        .sort((first, second) => first.score - second.score)[0] ?? null;
+      if (!relief || (best && relief.score >= best.score - 1e-9)) {
         continue;
       }
-      best = internalRelief;
+      best = relief;
       continue;
     }
-    const score = auditScore(audit) + (sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId) * 1_000);
+    const score = sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit);
     if (!best || score < best.score - 1e-9) {
       best = {
         coords,
         audit,
         score
       };
+    }
+    const internalRelief = bestInternalLigandReliefCoords(layoutGraph, coords, rootAtomId, anchorAtomId, baseAudit, options);
+    if (internalRelief && internalRelief.score < best.score - 1e-9) {
+      best = internalRelief;
     }
   }
   return best;
@@ -446,6 +647,45 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
   }
 
   let best = null;
+  const rootPosition = inputCoords.get(rootAtomId);
+  const ligandAtomIds = visibleHeavyNeighborAtomIds(layoutGraph, inputCoords, centerAtomId)
+    .filter(ligandAtomId => ligandAtomId !== rootAtomId);
+  if (rootPosition && ligandAtomIds.length === 3) {
+    const rootAngle = Math.atan2(rootPosition.y - centerPosition.y, rootPosition.x - centerPosition.x);
+    for (const permutation of THREE_LIGAND_PERMUTATIONS) {
+      let coords = new Map(inputCoords);
+      for (let index = 0; index < permutation.length; index++) {
+        const ligandAtomId = ligandAtomIds[permutation[index]];
+        const ligandPosition = coords.get(ligandAtomId);
+        if (!ligandPosition) {
+          continue;
+        }
+        const ligandSubtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)]
+          .filter(atomId => coords.has(atomId));
+        if (ligandSubtreeAtomIds.length === 0 || ligandSubtreeAtomIds.includes(rootAtomId) || ligandSubtreeAtomIds.includes(anchorAtomId)) {
+          continue;
+        }
+        const ligandAngle = Math.atan2(ligandPosition.y - centerPosition.y, ligandPosition.x - centerPosition.x);
+        const targetAngle = rootAngle + HYPERVALENT_CROSS_TARGET_OFFSETS[index];
+        coords = rotatedAtomsCoords(coords, ligandSubtreeAtomIds, centerPosition, normalizeAngle(targetAngle - ligandAngle));
+      }
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength: options.bondLength,
+        bondValidationClasses: options.bondValidationClasses ?? null
+      });
+      if (!auditCountsDoNotWorsen(audit, baseAudit)) {
+        continue;
+      }
+      const score = sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit);
+      if (!best || score < best.score - 1e-9) {
+        best = {
+          coords,
+          audit,
+          score
+        };
+      }
+    }
+  }
   for (const ligandAtomId of visibleHeavyNeighborAtomIds(layoutGraph, inputCoords, centerAtomId)) {
     if (ligandAtomId === rootAtomId) {
       continue;
@@ -467,7 +707,7 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
       if (!auditCountsDoNotWorsen(audit, baseAudit)) {
         continue;
       }
-      const score = auditScore(audit) + (sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId) * 1_000);
+      const score = sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit);
       if (!best || score < best.score - 1e-9) {
         best = {
           coords,

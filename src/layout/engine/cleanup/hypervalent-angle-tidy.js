@@ -1,7 +1,7 @@
 /** @module cleanup/hypervalent-angle-tidy */
 
 import { auditLayout } from '../audit/audit.js';
-import { add, angleOf, angularDifference, distance, fromAngle, sub, wrapAngleUnsigned } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, distance, fromAngle, rotate, sub, wrapAngleUnsigned } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { pointInPolygon } from '../geometry/polygon.js';
@@ -28,6 +28,7 @@ const MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 14;
 const MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_ATOMS = 28;
 const ACYCLIC_HYPERVALENT_BRANCH_ANCHOR_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 const TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD = Math.PI / 180;
+const TERMINAL_HYPERVALENT_SINGLE_LIGAND_ANGLE_THRESHOLD = Math.PI / 180;
 const TERMINAL_HYPERVALENT_MULTIPLE_LIGAND_ANGLE_THRESHOLD = Math.PI / 180;
 const RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD = Math.PI / 180;
 const ACYCLIC_ANCHORED_HYPERVALENT_OVERLAP_RELIEF_ANGLE_THRESHOLD = Math.PI / 180;
@@ -81,6 +82,26 @@ const RING_EMBEDDED_BIS_OXO_CENTER_SHIFT_STEP = Math.PI / 180;
 const RING_EMBEDDED_BIS_OXO_MAX_CENTER_SHIFT = Math.PI / 3;
 const RING_ANCHORED_HYPERVALENT_OVERLAP_RELIEF_STEP = Math.PI / 180;
 const RING_ANCHORED_HYPERVALENT_OVERLAP_RELIEF_MAX_ROTATION = Math.PI / 18;
+const RING_ANCHORED_HYPERVALENT_COMPROMISE_MIN_DEVIATION = Math.PI / 6;
+const RING_ANCHORED_HYPERVALENT_COMPROMISE_MIN_IMPROVEMENT = Math.PI / 22.5;
+const RING_ANCHORED_HYPERVALENT_COMPROMISE_MAX_CENTER_DEVIATION = 0.7;
+const RING_ANCHORED_HYPERVALENT_COMPROMISE_ROTATION_FACTORS = Object.freeze([0.3, 0.25, 0.2, 0.15, 0.1, 0.05]);
+const RING_ANCHORED_HYPERVALENT_COMPROMISE_LIGAND_STEP = Math.PI / 12;
+const RING_ANCHORED_HYPERVALENT_CONNECTOR_MIN_DEVIATION = Math.PI / 9;
+const RING_ANCHORED_HYPERVALENT_CONNECTOR_MAX_DESCRIPTORS = 2;
+const RING_ANCHORED_HYPERVALENT_CONNECTOR_MAX_SUBTREE_HEAVY_ATOMS = 48;
+const RING_ANCHORED_HYPERVALENT_CONNECTOR_ROTATIONS = Object.freeze([
+  -Math.PI / 2,
+  (-5 * Math.PI) / 12,
+  -Math.PI / 3,
+  -Math.PI / 4,
+  -Math.PI / 6,
+  Math.PI / 6,
+  Math.PI / 4,
+  Math.PI / 3,
+  (5 * Math.PI) / 12,
+  Math.PI / 2
+]);
 const HYPERVALENT_DIRECT_LIGAND_LOCAL_RELIEF_MAX_PASSES = 2;
 
 /**
@@ -1312,6 +1333,36 @@ function isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAt
 }
 
 /**
+ * Returns whether a direct single-bond ligand is a terminal visible hetero leaf
+ * on a supported hypervalent center. These leaves, such as sulfonic-acid OH
+ * groups, should snap to the exact opposing slot instead of inheriting the
+ * broader heavy-ligand tolerance used for bulky scaffold branches.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} ligandAtomId - Direct ligand atom id.
+ * @returns {boolean} True when the single ligand is terminal and cheap to move.
+ */
+function isTerminalSingleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId) {
+  const bond = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? []).find(candidateBond => {
+    if (!candidateBond || candidateBond.kind !== 'covalent') {
+      return false;
+    }
+    const neighborAtomId = candidateBond.a === centerAtomId ? candidateBond.b : candidateBond.a;
+    return neighborAtomId === ligandAtomId;
+  });
+  const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
+  return Boolean(
+    bond
+    && !bond.aromatic
+    && (bond.order ?? 1) === 1
+    && ligandAtom
+    && ligandAtom.element !== 'C'
+    && ligandAtom.element !== 'H'
+    && ligandAtom.heavyDegree === 1
+  );
+}
+
+/**
  * Returns the angular tolerance for moving one direct hypervalent ligand.
  * Hidden hydrogens and terminal oxo-like ligands are cheap to move, so they
  * should snap to the exact opposing slot instead of stopping inside the broader
@@ -1325,6 +1376,9 @@ function isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAt
 function hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, ligandAtomId, defaultThreshold) {
   if (layoutGraph.atoms.get(ligandAtomId)?.element === 'H') {
     return TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD;
+  }
+  if (isTerminalSingleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)) {
+    return TERMINAL_HYPERVALENT_SINGLE_LIGAND_ANGLE_THRESHOLD;
   }
   if (isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)) {
     return TERMINAL_HYPERVALENT_MULTIPLE_LIGAND_ANGLE_THRESHOLD;
@@ -1515,6 +1569,483 @@ function alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, d
     nudges++;
   }
   return nudges;
+}
+
+function ringAnchoredHypervalentBranchExitInfo(layoutGraph, coords, centerAtomId, ringAnchorAtomId) {
+  const anchorPosition = coords.get(ringAnchorAtomId);
+  const centerPosition = coords.get(centerAtomId);
+  if (!anchorPosition || !centerPosition) {
+    return null;
+  }
+  const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, ringAnchorAtomId, atomId => coords.get(atomId) ?? null);
+  if (outwardAngles.length === 0) {
+    return null;
+  }
+  const currentAngle = angleOf(sub(centerPosition, anchorPosition));
+  const targetAngle = outwardAngles
+    .slice()
+    .sort((firstAngle, secondAngle) => angularDifference(currentAngle, firstAngle) - angularDifference(currentAngle, secondAngle))[0];
+  if (targetAngle == null) {
+    return null;
+  }
+  return {
+    currentAngle,
+    targetAngle,
+    rotation: Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle)),
+    deviation: angularDifference(currentAngle, targetAngle)
+  };
+}
+
+function terminalMultipleLigandReliefAngles(coords, centerAtomId, ligandAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  const ligandPosition = coords.get(ligandAtomId);
+  if (!centerPosition || !ligandPosition) {
+    return [];
+  }
+
+  const angles = [angleOf(sub(ligandPosition, centerPosition))];
+  const seenAngles = new Set(angles.map(angle => angle.toFixed(8)));
+  for (
+    let angle = 0;
+    angle < Math.PI * 2 - 1e-9;
+    angle += RING_ANCHORED_HYPERVALENT_COMPROMISE_LIGAND_STEP
+  ) {
+    const key = angle.toFixed(8);
+    if (seenAngles.has(key)) {
+      continue;
+    }
+    seenAngles.add(key);
+    angles.push(angle);
+  }
+  return angles;
+}
+
+function ringAnchoredHypervalentCompromiseAuditCandidate(
+  layoutGraph,
+  coords,
+  centerAtomId,
+  descriptor,
+  incumbentAudit,
+  rootExitDeviation
+) {
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const candidateAudit = auditLayout(layoutGraph, coords, { bondLength });
+  if (
+    !crossCandidateAuditDoesNotRegress(candidateAudit, {
+      ...incumbentAudit,
+      labelOverlapCount: (incumbentAudit.labelOverlapCount ?? 0) + 1
+    })
+  ) {
+    return null;
+  }
+  const centerDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, coords, {
+    focusAtomIds: new Set([centerAtomId])
+  });
+  if (centerDeviation > RING_ANCHORED_HYPERVALENT_COMPROMISE_MAX_CENTER_DEVIATION) {
+    return null;
+  }
+  return {
+    coords,
+    audit: candidateAudit,
+    rootExitDeviation,
+    centerDeviation,
+    rotationMagnitude: 0
+  };
+}
+
+function betterRingAnchoredHypervalentCompromiseCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    const candidateValue = candidate.audit[key] ?? 0;
+    const incumbentValue = incumbent.audit[key] ?? 0;
+    if (candidateValue !== incumbentValue) {
+      return candidateValue < incumbentValue;
+    }
+  }
+  if (Math.abs(candidate.rootExitDeviation - incumbent.rootExitDeviation) > 1e-9) {
+    return candidate.rootExitDeviation < incumbent.rootExitDeviation;
+  }
+  if (Math.abs(candidate.centerDeviation - incumbent.centerDeviation) > 1e-9) {
+    return candidate.centerDeviation < incumbent.centerDeviation;
+  }
+  return candidate.rotationMagnitude < incumbent.rotationMagnitude;
+}
+
+/**
+ * Applies a bounded compromise for sulfonic-acid branches whose exact
+ * ring-outward exit is blocked by a neighboring carbonyl. The branch is moved
+ * partway toward the ring bisector, then one terminal oxo may rotate to clear
+ * the local contact while keeping the final audit clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Orthogonal hypervalent descriptor.
+ * @returns {number} Number of accepted compromise moves.
+ */
+function compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor) {
+  if (layoutGraph.atoms.get(centerAtomId)?.element !== 'S' || descriptor?.multipleNeighborIds?.length < 2) {
+    return 0;
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  let nudges = 0;
+  for (const ringAnchorAtomId of descriptor.singleNeighborIds) {
+    const exitInfo = ringAnchoredHypervalentBranchExitInfo(layoutGraph, coords, centerAtomId, ringAnchorAtomId);
+    if (!exitInfo || exitInfo.deviation < RING_ANCHORED_HYPERVALENT_COMPROMISE_MIN_DEVIATION) {
+      continue;
+    }
+    const subtreeAtomIds = movableRingAnchoredHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ringAnchorAtomId, coords);
+    if (!subtreeAtomIds) {
+      continue;
+    }
+    const exactPositions = buildRotatedBranchPositions(coords, ringAnchorAtomId, subtreeAtomIds, exitInfo.rotation);
+    if (exactPositions && preservesSevereOverlapState(layoutGraph, coords, exactPositions, bondLength)) {
+      for (const [atomId, position] of exactPositions) {
+        coords.set(atomId, position);
+      }
+      nudges++;
+      continue;
+    }
+
+    const incumbentAudit = auditLayout(layoutGraph, coords, { bondLength });
+    let bestCandidate = null;
+    for (const factor of RING_ANCHORED_HYPERVALENT_COMPROMISE_ROTATION_FACTORS) {
+      const rotation = exitInfo.rotation * factor;
+      const candidatePositions = buildRotatedBranchPositions(coords, ringAnchorAtomId, subtreeAtomIds, rotation);
+      if (!candidatePositions) {
+        continue;
+      }
+      const baseCoords = withCandidatePositions(coords, candidatePositions);
+      const baseExitInfo = ringAnchoredHypervalentBranchExitInfo(layoutGraph, baseCoords, centerAtomId, ringAnchorAtomId);
+      if (
+        !baseExitInfo
+        || baseExitInfo.deviation > exitInfo.deviation - RING_ANCHORED_HYPERVALENT_COMPROMISE_MIN_IMPROVEMENT
+      ) {
+        continue;
+      }
+
+      const baseCandidate = ringAnchoredHypervalentCompromiseAuditCandidate(
+        layoutGraph,
+        baseCoords,
+        centerAtomId,
+        descriptor,
+        incumbentAudit,
+        baseExitInfo.deviation
+      );
+      if (baseCandidate) {
+        baseCandidate.rotationMagnitude = Math.abs(rotation);
+        if (betterRingAnchoredHypervalentCompromiseCandidate(baseCandidate, bestCandidate)) {
+          bestCandidate = baseCandidate;
+        }
+      }
+
+      for (const ligandAtomId of descriptor.multipleNeighborIds) {
+        if (!isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)) {
+          continue;
+        }
+        for (const targetAngle of terminalMultipleLigandReliefAngles(baseCoords, centerAtomId, ligandAtomId)) {
+          const ligandCoords = rotateTerminalMultipleLigandToAngle(
+            layoutGraph,
+            baseCoords,
+            centerAtomId,
+            ligandAtomId,
+            targetAngle
+          );
+          const ligandCandidate = ringAnchoredHypervalentCompromiseAuditCandidate(
+            layoutGraph,
+            ligandCoords,
+            centerAtomId,
+            descriptor,
+            incumbentAudit,
+            baseExitInfo.deviation
+          );
+          if (!ligandCandidate) {
+            continue;
+          }
+          ligandCandidate.rotationMagnitude = Math.abs(rotation) + angularDifference(
+            angleOf(sub(baseCoords.get(ligandAtomId), baseCoords.get(centerAtomId))),
+            targetAngle
+          );
+          if (betterRingAnchoredHypervalentCompromiseCandidate(ligandCandidate, bestCandidate)) {
+            bestCandidate = ligandCandidate;
+          }
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      continue;
+    }
+    for (const [atomId, position] of bestCandidate.coords) {
+      coords.set(atomId, position);
+    }
+    nudges++;
+  }
+  return nudges;
+}
+
+function ringAnchoredHypervalentConnectorHeavyAtomCount(layoutGraph, atomIds) {
+  return atomIds.reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+}
+
+function fusedRingSystemAtomIdsForAtom(layoutGraph, atomId) {
+  const seedRings = layoutGraph.atomToRings.get(atomId) ?? [];
+  if (seedRings.length === 0) {
+    return new Set();
+  }
+  const visitedRingIds = new Set();
+  const atomIds = new Set();
+  const queue = [...seedRings];
+  while (queue.length > 0) {
+    const ring = queue.shift();
+    const ringId = ring.id ?? ring.rawIndex ?? ring.atomIds?.join(',');
+    if (visitedRingIds.has(ringId)) {
+      continue;
+    }
+    visitedRingIds.add(ringId);
+    for (const ringAtomId of ring.atomIds ?? []) {
+      atomIds.add(ringAtomId);
+      for (const adjacentRing of layoutGraph.atomToRings.get(ringAtomId) ?? []) {
+        const adjacentRingId = adjacentRing.id ?? adjacentRing.rawIndex ?? adjacentRing.atomIds?.join(',');
+        if (!visitedRingIds.has(adjacentRingId)) {
+          queue.push(adjacentRing);
+        }
+      }
+    }
+  }
+  return atomIds;
+}
+
+function collectRingAnchoredHypervalentConnectorDescriptors(layoutGraph, coords) {
+  const descriptorsByKey = new Map();
+  const totalCoordCount = coords.size;
+
+  for (const centerAtomId of coords.keys()) {
+    if (layoutGraph.atoms.get(centerAtomId)?.element !== 'S') {
+      continue;
+    }
+    const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, coords);
+    if (!descriptor || descriptor.multipleNeighborIds.length < 2) {
+      continue;
+    }
+
+    for (const ringAnchorAtomId of descriptor.singleNeighborIds) {
+      const exitInfo = ringAnchoredHypervalentBranchExitInfo(layoutGraph, coords, centerAtomId, ringAnchorAtomId);
+      if (!exitInfo || exitInfo.deviation < RING_ANCHORED_HYPERVALENT_CONNECTOR_MIN_DEVIATION) {
+        continue;
+      }
+
+      const ringAtomIds = fusedRingSystemAtomIdsForAtom(layoutGraph, ringAnchorAtomId);
+      if (ringAtomIds.size === 0) {
+        continue;
+      }
+      for (const rootAtomId of ringAtomIds) {
+        for (const bond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+          if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+            continue;
+          }
+          const anchorAtomId = bond.a === rootAtomId ? bond.b : bond.a;
+          if (
+            anchorAtomId === centerAtomId
+            || ringAtomIds.has(anchorAtomId)
+            || !coords.has(anchorAtomId)
+            || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+          ) {
+            continue;
+          }
+          const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+          if (
+            subtreeAtomIds.length === 0
+            || subtreeAtomIds.length >= totalCoordCount
+            || !subtreeAtomIds.includes(centerAtomId)
+          ) {
+            continue;
+          }
+          const heavyAtomCount = ringAnchoredHypervalentConnectorHeavyAtomCount(layoutGraph, subtreeAtomIds);
+          if (heavyAtomCount > RING_ANCHORED_HYPERVALENT_CONNECTOR_MAX_SUBTREE_HEAVY_ATOMS) {
+            continue;
+          }
+          const key = `${anchorAtomId}|${rootAtomId}`;
+          const existing = descriptorsByKey.get(key);
+          if (existing && existing.exitDeviation >= exitInfo.deviation) {
+            continue;
+          }
+          descriptorsByKey.set(key, {
+            anchorAtomId,
+            rootAtomId,
+            subtreeAtomIds,
+            exitDeviation: exitInfo.deviation
+          });
+        }
+      }
+    }
+  }
+
+  return [...descriptorsByKey.values()]
+    .sort((firstDescriptor, secondDescriptor) => {
+      if (Math.abs(secondDescriptor.exitDeviation - firstDescriptor.exitDeviation) > 1e-9) {
+        return secondDescriptor.exitDeviation - firstDescriptor.exitDeviation;
+      }
+      if (firstDescriptor.subtreeAtomIds.length !== secondDescriptor.subtreeAtomIds.length) {
+        return firstDescriptor.subtreeAtomIds.length - secondDescriptor.subtreeAtomIds.length;
+      }
+      if (firstDescriptor.rootAtomId !== secondDescriptor.rootAtomId) {
+        return firstDescriptor.rootAtomId.localeCompare(secondDescriptor.rootAtomId, 'en', { numeric: true });
+      }
+      return firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId, 'en', { numeric: true });
+    })
+    .slice(0, RING_ANCHORED_HYPERVALENT_CONNECTOR_MAX_DESCRIPTORS);
+}
+
+function rotateConnectorDescriptorSubtree(coords, descriptor, rotation) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const nextCoords = new Map(coords);
+  for (const atomId of descriptor.subtreeAtomIds) {
+    const position = nextCoords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    nextCoords.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotation)));
+  }
+  return nextCoords;
+}
+
+function connectorRotationAssignments(descriptorCount) {
+  if (descriptorCount <= 0) {
+    return [];
+  }
+  const rotations = [0, ...RING_ANCHORED_HYPERVALENT_CONNECTOR_ROTATIONS];
+  if (descriptorCount === 1) {
+    return rotations.slice(1).map(rotation => [rotation]);
+  }
+  const assignments = [];
+  for (const firstRotation of rotations) {
+    for (const secondRotation of rotations) {
+      if (Math.abs(firstRotation) <= 1e-12 && Math.abs(secondRotation) <= 1e-12) {
+        continue;
+      }
+      assignments.push([firstRotation, secondRotation]);
+    }
+  }
+  return assignments;
+}
+
+function connectorRotationCandidateIsBetter(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    const candidateValue = candidate.audit[key] ?? 0;
+    const incumbentValue = incumbent.audit[key] ?? 0;
+    if (candidateValue !== incumbentValue) {
+      return candidateValue < incumbentValue;
+    }
+  }
+  if (Math.abs(candidate.hypervalentDeviation - incumbent.hypervalentDeviation) > 1e-9) {
+    return candidate.hypervalentDeviation < incumbent.hypervalentDeviation;
+  }
+  if (Math.abs(candidate.ringBranchDeviation.totalDeviation - incumbent.ringBranchDeviation.totalDeviation) > 1e-9) {
+    return candidate.ringBranchDeviation.totalDeviation < incumbent.ringBranchDeviation.totalDeviation;
+  }
+  if (Math.abs(candidate.ringBranchDeviation.maxDeviation - incumbent.ringBranchDeviation.maxDeviation) > 1e-9) {
+    return candidate.ringBranchDeviation.maxDeviation < incumbent.ringBranchDeviation.maxDeviation;
+  }
+  return candidate.rotationMagnitude < incumbent.rotationMagnitude;
+}
+
+/**
+ * Rotates larger aryl-side connector subtrees before re-running the
+ * hypervalent tidy. This handles crowded aryl sulfonic acids where an exact
+ * S/O cross is geometrically possible only after the whole sulfonated aryl
+ * block swings around its amide connector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinate map.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Best connector-rotation retouch.
+ */
+export function runHypervalentConnectorSubtreeRotationTidy(layoutGraph, inputCoords) {
+  const baseHypervalentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, inputCoords);
+  if (!(baseHypervalentDeviation > 1e-9)) {
+    return { coords: inputCoords, nudges: 0 };
+  }
+  const baseRingBranchDeviation = measureRingAnchoredHypervalentBranchDeviation(layoutGraph, inputCoords);
+  if (baseRingBranchDeviation.branchCount === 0) {
+    return { coords: inputCoords, nudges: 0 };
+  }
+
+  const descriptors = collectRingAnchoredHypervalentConnectorDescriptors(layoutGraph, inputCoords);
+  if (descriptors.length === 0) {
+    return { coords: inputCoords, nudges: 0 };
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const baseAudit = auditLayout(layoutGraph, inputCoords, { bondLength });
+  let bestCandidate = null;
+  for (const rotations of connectorRotationAssignments(descriptors.length)) {
+    let rotatedCoords = inputCoords;
+    let rotationMagnitude = 0;
+    for (let index = 0; index < descriptors.length; index++) {
+      const rotation = rotations[index] ?? 0;
+      rotationMagnitude += Math.abs(rotation);
+      if (Math.abs(rotation) <= 1e-12) {
+        continue;
+      }
+      rotatedCoords = rotateConnectorDescriptorSubtree(rotatedCoords, descriptors[index], rotation);
+      if (!rotatedCoords) {
+        break;
+      }
+    }
+    if (!rotatedCoords) {
+      continue;
+    }
+
+    const retouched = runHypervalentAngleTidy(layoutGraph, rotatedCoords);
+    if (!retouched || !(retouched.coords instanceof Map) || (retouched.nudges ?? 0) <= 0) {
+      continue;
+    }
+    const candidateAudit = auditLayout(layoutGraph, retouched.coords, { bondLength });
+    if (!crossCandidateAuditDoesNotRegress(candidateAudit, baseAudit)) {
+      continue;
+    }
+    const candidateHypervalentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, retouched.coords);
+    const candidateRingBranchDeviation = measureRingAnchoredHypervalentBranchDeviation(layoutGraph, retouched.coords);
+    if (
+      candidateHypervalentDeviation >= baseHypervalentDeviation - 1e-9
+      || candidateRingBranchDeviation.totalDeviation > baseRingBranchDeviation.totalDeviation + 1e-9
+    ) {
+      continue;
+    }
+
+    const candidate = {
+      coords: retouched.coords,
+      nudges: (retouched.nudges ?? 0) + rotations.filter(rotation => Math.abs(rotation) > 1e-12).length,
+      audit: candidateAudit,
+      hypervalentDeviation: candidateHypervalentDeviation,
+      ringBranchDeviation: candidateRingBranchDeviation,
+      rotationMagnitude
+    };
+    if (connectorRotationCandidateIsBetter(candidate, bestCandidate)) {
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate
+    ? { coords: bestCandidate.coords, nudges: bestCandidate.nudges }
+    : { coords: inputCoords, nudges: 0 };
 }
 
 function severeOverlapState(overlaps) {
@@ -3418,6 +3949,52 @@ export function hasHypervalentAngleTidyNeed(layoutGraph, coords, options = {}) {
 }
 
 /**
+ * Measures how far compact ring-anchored hypervalent branches sit from their
+ * ring anchor's outward bisector. This complements the internal S/P/Se/As
+ * cross score, catching cases where an exact hypervalent fan would point the
+ * whole branch back into a neighboring carbonyl.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {{totalDeviation: number, maxDeviation: number, branchCount: number}} Ring-exit deviation summary in radians.
+ */
+export function measureRingAnchoredHypervalentBranchDeviation(layoutGraph, coords) {
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+  let branchCount = 0;
+
+  for (const centerAtomId of coords.keys()) {
+    const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, coords);
+    if (!descriptor) {
+      continue;
+    }
+    for (const ringAnchorAtomId of descriptor.singleNeighborIds) {
+      const subtreeAtomIds = movableRingAnchoredHypervalentSubtreeAtomIds(
+        layoutGraph,
+        centerAtomId,
+        ringAnchorAtomId,
+        coords
+      );
+      if (!subtreeAtomIds) {
+        continue;
+      }
+      const exitInfo = ringAnchoredHypervalentBranchExitInfo(layoutGraph, coords, centerAtomId, ringAnchorAtomId);
+      if (!exitInfo) {
+        continue;
+      }
+      totalDeviation += exitInfo.deviation;
+      maxDeviation = Math.max(maxDeviation, exitInfo.deviation);
+      branchCount++;
+    }
+  }
+
+  return {
+    totalDeviation,
+    maxDeviation,
+    branchCount
+  };
+}
+
+/**
  * Nudges supported hypervalent centers back toward orthogonal presentation
  * while preserving bond lengths by rigidly rotating movable terminal ligands.
  * @param {object} layoutGraph - Layout graph shell.
@@ -3483,6 +4060,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
+      nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
       continue;
     }
 
@@ -3495,6 +4073,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
         coords.set(atomId, position);
       }
       nudges += 1;
+      nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
       continue;
     }
 
@@ -3507,6 +4086,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
         coords.set(atomId, position);
       }
       nudges += 1;
+      nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
       continue;
     }
 
@@ -3546,6 +4126,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
+      nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
       continue;
     }
 
@@ -3587,6 +4168,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
     }
 
     nudges += alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
+    nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
     nudges += relieveRingAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
     nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
     nudges += relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);

@@ -3,7 +3,7 @@
 import { auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
 import { CLEANUP_EPSILON, PRESENTATION_METRIC_EPSILON, atomPairKey } from '../../constants.js';
-import { angleOf, angularDifference, sub, wrapAngle } from '../../geometry/vec2.js';
+import { add, angleOf, angularDifference, fromAngle, sub, wrapAngle } from '../../geometry/vec2.js';
 import { rotateAround } from '../../geometry/transforms.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -44,6 +44,29 @@ const ROOT_SUBTREE_LEAF_ROTATIONS = Object.freeze([
   5 * Math.PI / 6,
   -Math.PI,
   Math.PI
+]);
+const ROOT_SUBTREE_CROSSING_ESCAPE_ANGLES = Object.freeze(
+  Array.from({ length: 36 }, (_value, index) => (index * Math.PI) / 18)
+);
+const CROWDED_TERMINAL_RING_LEAF_CROSSING_ESCAPE_OFFSETS = Object.freeze(
+  Array.from({ length: 72 }, (_value, index) => ((index + 1) * Math.PI) / 72)
+    .flatMap(offset => [offset, -offset])
+);
+const CROWDED_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([
+  1,
+  0.95,
+  0.9,
+  0.85,
+  0.8,
+  0.75,
+  0.72,
+  0.7,
+  2 / 3,
+  0.65,
+  0.6,
+  0.58,
+  0.56,
+  0.55
 ]);
 const INTERNAL_RELIEF_ROTATIONS = Object.freeze([
   -Math.PI / 36,
@@ -131,7 +154,8 @@ function rootDeviation(coords, descriptor) {
 function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) {
   const descriptors = [];
   for (const centerAtomId of coords.keys()) {
-    if (frozenAtomIds?.has(centerAtomId) || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) === 0) {
+    const centerIsFrozen = frozenAtomIds?.has(centerAtomId) ?? false;
+    if ((layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) === 0) {
       continue;
     }
     const centerAtom = layoutGraph.atoms.get(centerAtomId);
@@ -173,9 +197,13 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
       rootSubtreeAtomIds,
       allowsInternalRelief: isLinkedRingRoot
     };
+    const crossingCount = rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, descriptor);
+    if (centerIsFrozen && crossingCount === 0) {
+      continue;
+    }
     if (
       rootDeviation(coords, descriptor) > MIN_ROOT_DEVIATION
-      || rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, descriptor) > 0
+      || crossingCount > 0
     ) {
       descriptors.push(descriptor);
     }
@@ -215,6 +243,81 @@ function exactRootCoords(coords, descriptor) {
     nextCoords.set(atomId, rotateAround(coords.get(atomId), centerPosition, rotation));
   }
   return nextCoords;
+}
+
+function translateRootSubtreeToAngle(coords, descriptor, targetAngle) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!centerPosition || !rootPosition) {
+    return null;
+  }
+  const targetPosition = add(centerPosition, fromAngle(targetAngle, Math.hypot(rootPosition.x - centerPosition.x, rootPosition.y - centerPosition.y)));
+  const delta = sub(targetPosition, rootPosition);
+  const nextCoords = new Map(coords);
+  for (const atomId of descriptor.rootSubtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (position) {
+      nextCoords.set(atomId, add(position, delta));
+    }
+  }
+  return nextCoords;
+}
+
+function auditDoesNotRegressRootEscape(candidateAudit, baseAudit) {
+  return (
+    (candidateAudit.severeOverlapCount ?? 0) <= (baseAudit.severeOverlapCount ?? 0)
+    && (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit.bondLengthFailureCount ?? 0)
+    && (candidateAudit.labelOverlapCount ?? 0) <= (baseAudit.labelOverlapCount ?? 0)
+    && (candidateAudit.collapsedMacrocycleCount ?? 0) <= (baseAudit.collapsedMacrocycleCount ?? 0)
+    && (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (baseAudit.ringSubstituentReadabilityFailureCount ?? 0)
+  );
+}
+
+/**
+ * Rotates a compact terminal root away from a visible crossing when preserving
+ * the current root slot is worse than taking a nearby non-crossing slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} descriptor - Terminal-root descriptor.
+ * @param {object} baseAudit - Audit before the escape.
+ * @param {object} options - Retouch options.
+ * @returns {Map<string, {x: number, y: number}>|null} Escaped coordinates, if accepted.
+ */
+function escapeCurrentRootSubtreeCrossing(layoutGraph, coords, descriptor, baseAudit, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const currentCrossingCount = rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, descriptor);
+  if (currentCrossingCount === 0) {
+    return null;
+  }
+
+  const currentDeviation = rootDeviation(coords, descriptor);
+  let best = null;
+  for (const targetAngle of ROOT_SUBTREE_CROSSING_ESCAPE_ANGLES) {
+    const candidateCoords = translateRootSubtreeToAngle(coords, descriptor, targetAngle);
+    if (!candidateCoords) {
+      continue;
+    }
+    const crossingCount = rootSubtreeVisibleBondCrossingCount(layoutGraph, candidateCoords, descriptor);
+    if (crossingCount >= currentCrossingCount) {
+      continue;
+    }
+    const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: options.bondValidationClasses
+    });
+    if (!auditDoesNotRegressRootEscape(candidateAudit, baseAudit)) {
+      continue;
+    }
+    const deviationPenalty = Math.max(0, rootDeviation(candidateCoords, descriptor) - currentDeviation);
+    const score = auditPenalty(candidateAudit) + crossingCount * 1_000_000 + deviationPenalty * 10_000;
+    if (!best || score < best.score - CLEANUP_EPSILON) {
+      best = {
+        coords: candidateCoords,
+        score
+      };
+    }
+  }
+  return best?.coords ?? null;
 }
 
 function collectReliefDescriptor(layoutGraph, coords, rootAtomId, parentAtomId, protectedAtomIds, frozenAtomIds) {
@@ -298,6 +401,230 @@ function rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, targetDescript
       || (crossing.secondAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId))
     )
     .length;
+}
+
+function bondAtomIdsMatch(atomIds, firstAtomId, secondAtomId) {
+  return (
+    atomIds?.length === 2 &&
+    (
+      (atomIds[0] === firstAtomId && atomIds[1] === secondAtomId) ||
+      (atomIds[0] === secondAtomId && atomIds[1] === firstAtomId)
+    )
+  );
+}
+
+function terminalRingLeafBondCrossingCount(layoutGraph, coords, descriptor) {
+  return findVisibleHeavyBondCrossings(layoutGraph, coords, {
+    focusAtomIds: [descriptor.anchorAtomId, descriptor.leafAtomId]
+  }).filter(crossing => (
+    bondAtomIdsMatch(crossing.firstAtomIds, descriptor.anchorAtomId, descriptor.leafAtomId) ||
+    bondAtomIdsMatch(crossing.secondAtomIds, descriptor.anchorAtomId, descriptor.leafAtomId)
+  )).length;
+}
+
+function terminalRingLeafMinimumClearance(layoutGraph, coords, descriptor) {
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!leafPosition) {
+    return 0;
+  }
+  const protectedAtomIds = new Set([descriptor.anchorAtomId, ...descriptor.leafSubtreeAtomIds]);
+  let minimumClearance = Number.POSITIVE_INFINITY;
+  for (const [atomId, atomPosition] of coords) {
+    if (protectedAtomIds.has(atomId) || layoutGraph.bondedPairSet.has(atomPairKey(descriptor.leafAtomId, atomId))) {
+      continue;
+    }
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom || atom.element === 'H') {
+      continue;
+    }
+    minimumClearance = Math.min(minimumClearance, Math.hypot(leafPosition.x - atomPosition.x, leafPosition.y - atomPosition.y));
+  }
+  return Number.isFinite(minimumClearance) ? minimumClearance : Number.POSITIVE_INFINITY;
+}
+
+function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, leafAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !anchorAtom ||
+    !leafAtom ||
+    anchorAtom.aromatic ||
+    anchorAtom.heavyDegree !== 4 ||
+    leafAtom.element === 'C' ||
+    leafAtom.element === 'H' ||
+    leafAtom.aromatic ||
+    (leafAtom.heavyDegree ?? 0) !== 1 ||
+    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1 ||
+    (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(anchorAtomId, leafAtomId));
+  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return null;
+  }
+
+  let ringNeighborCount = 0;
+  let terminalHeteroLeafCount = 0;
+  for (const neighborBond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!neighborBond || neighborBond.kind !== 'covalent' || neighborBond.aromatic || (neighborBond.order ?? 1) !== 1) {
+      return null;
+    }
+    const neighborAtomId = otherBondAtomId(neighborBond, anchorAtomId);
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      ringNeighborCount++;
+    } else if (
+      neighborAtom.element !== 'C' &&
+      !neighborAtom.aromatic &&
+      (neighborAtom.heavyDegree ?? 0) === 1
+    ) {
+      terminalHeteroLeafCount++;
+    }
+  }
+  if (ringNeighborCount !== 2 || terminalHeteroLeafCount !== 2) {
+    return null;
+  }
+
+  const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+  if (
+    leafSubtreeAtomIds.length === 0 ||
+    leafSubtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) ||
+    countHeavyAtoms(layoutGraph, leafSubtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
+  ) {
+    return null;
+  }
+  return {
+    anchorAtomId,
+    leafAtomId,
+    leafSubtreeAtomIds
+  };
+}
+
+function collectCrowdedTerminalRingLeafCrossingDescriptors(layoutGraph, coords, frozenAtomIds) {
+  const descriptorMap = new Map();
+  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords)) {
+    for (const atomIds of [crossing.firstAtomIds, crossing.secondAtomIds]) {
+      if (!Array.isArray(atomIds) || atomIds.length !== 2) {
+        continue;
+      }
+      for (const [anchorAtomId, leafAtomId] of [atomIds, [atomIds[1], atomIds[0]]]) {
+        if (frozenAtomIds?.has(anchorAtomId) || frozenAtomIds?.has(leafAtomId)) {
+          continue;
+        }
+        const descriptor = crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, leafAtomId);
+        if (!descriptor || descriptor.leafSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))) {
+          continue;
+        }
+        if (terminalRingLeafBondCrossingCount(layoutGraph, coords, descriptor) === 0) {
+          continue;
+        }
+        descriptorMap.set(`${anchorAtomId}:${leafAtomId}`, descriptor);
+      }
+    }
+  }
+  return [...descriptorMap.values()].sort((firstDescriptor, secondDescriptor) => (
+    compareAtomIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId) ||
+    compareAtomIds(firstDescriptor.leafAtomId, secondDescriptor.leafAtomId)
+  ));
+}
+
+function compareAtomIds(firstAtomId, secondAtomId) {
+  return firstAtomId.localeCompare(secondAtomId, undefined, { numeric: true });
+}
+
+function translateTerminalRingLeafToAngle(coords, descriptor, targetAngle, targetLength) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!anchorPosition || !leafPosition || !(targetLength > 0)) {
+    return null;
+  }
+  const targetPosition = add(anchorPosition, fromAngle(targetAngle, targetLength));
+  const delta = sub(targetPosition, leafPosition);
+  const nextCoords = new Map(coords);
+  for (const atomId of descriptor.leafSubtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (position) {
+      nextCoords.set(atomId, add(position, delta));
+    }
+  }
+  return nextCoords;
+}
+
+function resolveCrowdedTerminalRingLeafCrossings(layoutGraph, coords, baseAudit, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  if ((baseAudit.visibleHeavyBondCrossingCount ?? 0) === 0) {
+    return null;
+  }
+
+  for (const descriptor of collectCrowdedTerminalRingLeafCrossingDescriptors(layoutGraph, coords, options.frozenAtomIds ?? null)) {
+    const anchorPosition = coords.get(descriptor.anchorAtomId);
+    const leafPosition = coords.get(descriptor.leafAtomId);
+    if (!anchorPosition || !leafPosition) {
+      continue;
+    }
+    const currentCrossingCount = terminalRingLeafBondCrossingCount(layoutGraph, coords, descriptor);
+    if (currentCrossingCount === 0) {
+      continue;
+    }
+    const currentAngle = angleOf(sub(leafPosition, anchorPosition));
+    const currentLength = Math.hypot(leafPosition.x - anchorPosition.x, leafPosition.y - anchorPosition.y);
+    let best = null;
+    for (const offset of CROWDED_TERMINAL_RING_LEAF_CROSSING_ESCAPE_OFFSETS) {
+      for (const compressionFactor of CROWDED_TERMINAL_RING_LEAF_COMPRESSION_FACTORS) {
+        const candidateCoords = translateTerminalRingLeafToAngle(
+          coords,
+          descriptor,
+          wrapAngle(currentAngle + offset),
+          Math.min(currentLength, bondLength) * compressionFactor
+        );
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateCrossingCount = terminalRingLeafBondCrossingCount(layoutGraph, candidateCoords, descriptor);
+        if (candidateCrossingCount >= currentCrossingCount) {
+          continue;
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: options.bondValidationClasses
+        });
+        if (
+          candidateAudit.ok !== true ||
+          (candidateAudit.visibleHeavyBondCrossingCount ?? 0) >= (baseAudit.visibleHeavyBondCrossingCount ?? 0) ||
+          (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0) ||
+          (candidateAudit.bondLengthFailureCount ?? 0) > (baseAudit.bondLengthFailureCount ?? 0) ||
+          (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) > (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) ||
+          (candidateAudit.outwardAxisRingSubstituentFailureCount ?? 0) > (baseAudit.outwardAxisRingSubstituentFailureCount ?? 0)
+        ) {
+          continue;
+        }
+        const clearance = terminalRingLeafMinimumClearance(layoutGraph, candidateCoords, descriptor);
+        const score = (
+          (candidateAudit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
+          candidateCrossingCount * 100_000 +
+          (candidateAudit.labelOverlapCount ?? 0) * 10_000 +
+          Math.abs(1 - compressionFactor) * 1_000 +
+          Math.abs(offset) * 100 -
+          clearance
+        );
+        if (!best || score < best.score - CLEANUP_EPSILON) {
+          best = {
+            coords: candidateCoords,
+            score
+          };
+        }
+      }
+    }
+    if (best) {
+      return best.coords;
+    }
+  }
+  return null;
 }
 
 /**
@@ -920,12 +1247,64 @@ function relieveLinkedRootInternalOverlaps(layoutGraph, coords, targetDescriptor
  */
 export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const baseAudit = auditLayout(layoutGraph, inputCoords, {
+  let coords = inputCoords;
+  let baseAudit = auditLayout(layoutGraph, coords, {
     bondLength,
     bondValidationClasses: options.bondValidationClasses
   });
-  for (const descriptor of collectTerminalRingRootDescriptors(layoutGraph, inputCoords, options.frozenAtomIds ?? null)) {
-    const exactCoords = exactRootCoords(inputCoords, descriptor);
+  const crowdedTerminalRingLeafCoords = resolveCrowdedTerminalRingLeafCrossings(layoutGraph, coords, baseAudit, {
+    ...options,
+    bondLength
+  });
+  if (crowdedTerminalRingLeafCoords) {
+    return {
+      coords: crowdedTerminalRingLeafCoords,
+      nudges: 1,
+      linkedRootNudges: 0,
+      crowdedTerminalRingLeafNudges: 1,
+      changed: true
+    };
+  }
+
+  let crossingEscapeNudges = 0;
+  let linkedRootNudges = 0;
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (const descriptor of collectTerminalRingRootDescriptors(layoutGraph, coords, options.frozenAtomIds ?? null)) {
+      const crossingEscapeCoords = escapeCurrentRootSubtreeCrossing(layoutGraph, coords, descriptor, baseAudit, {
+        ...options,
+        bondLength
+      });
+      if (!crossingEscapeCoords) {
+        continue;
+      }
+      coords = crossingEscapeCoords;
+      baseAudit = auditLayout(layoutGraph, coords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      crossingEscapeNudges++;
+      if (descriptor.allowsInternalRelief) {
+        linkedRootNudges++;
+      }
+      moved = true;
+      break;
+    }
+    if (!moved) {
+      break;
+    }
+  }
+  if (crossingEscapeNudges > 0) {
+    return {
+      coords,
+      nudges: crossingEscapeNudges,
+      linkedRootNudges,
+      changed: true
+    };
+  }
+
+  for (const descriptor of collectTerminalRingRootDescriptors(layoutGraph, coords, options.frozenAtomIds ?? null)) {
+    const exactCoords = exactRootCoords(coords, descriptor);
     if (!exactCoords) {
       continue;
     }

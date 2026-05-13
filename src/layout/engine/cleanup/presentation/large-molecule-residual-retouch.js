@@ -19,7 +19,7 @@ import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 
 const MAX_RETOUCH_PASSES = 8;
 const MAX_ANGLE_RETOUCH_PASSES = 40;
-const MAX_FINAL_ANGLE_POLISH_PASSES = 12;
+const MAX_FINAL_ANGLE_POLISH_PASSES = 20;
 const ANGLE_CENTER_SCAN_LIMIT = 10;
 const FINAL_ANGLE_POLISH_CENTER_SCAN_LIMIT = 32;
 const MAX_SMALL_SUBTREE_ATOMS = 96;

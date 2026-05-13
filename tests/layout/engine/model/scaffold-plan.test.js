@@ -203,6 +203,30 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the hydroxy acetal oxadecalin template for bridgehead alcohol ether cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2C(O)C(C1)C1OCCOC2CC1C'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-acetal-oxadecalin-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the hydroxy oxatricyclo diol template for compact ether alcohol cages', () => {
+    const graph = createLayoutGraph(parseSMILES('OC12CCC(O)(C1)C1CC2O1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-oxatricyclo-diol-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the formyl aza oxatricyclo template for compact N-formyl amine oxirane cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1CC2CCC3(CO3)C(C1)CN2C=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'formyl-aza-oxatricyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the bridged pyrrolizidine dione template for compact tricyclic enone cages', () => {
     const graph = createLayoutGraph(parseSMILES(String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);

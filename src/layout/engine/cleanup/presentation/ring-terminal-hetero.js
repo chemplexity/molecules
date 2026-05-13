@@ -20,6 +20,7 @@ import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 const TERMINAL_HETERO_OUTWARD_NEED_TRIGGER = Math.PI / 9;
+const TERMINAL_HETERO_BOND_LENGTH_NEED_FACTOR = 0.02;
 const TERMINAL_HETERO_BLOCKER_RELIEF_OFFSETS = Object.freeze([
   ...[1, 2, 3, 4, 5, 6, 8, 10].map(degrees => (degrees * Math.PI) / 180),
   ...[1, 2, 3, 4, 5, 6, 8, 10].map(degrees => -(degrees * Math.PI) / 180),
@@ -2144,12 +2145,28 @@ function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coor
   return best?.targetPositions ?? null;
 }
 
-function scoreTerminalHeteroPosition(layoutGraph, coords, descriptor, atomGrid, ringPolygons, position, candidateAngle, currentAngle, threshold, searchRadius) {
+function scoreTerminalHeteroPosition(
+  layoutGraph,
+  coords,
+  descriptor,
+  atomGrid,
+  ringPolygons,
+  position,
+  candidateAngle,
+  currentAngle,
+  threshold,
+  searchRadius,
+  bondLength
+) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
   return {
     position,
     insideRingCount: countPointInPolygons(ringPolygons, position),
     overlapCount: localSevereOverlapCount(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, position, threshold),
     clearance: localNonbondedClearance(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, position, searchRadius),
+    terminalBondLengthDeviation: descriptor.prefersOutwardGeometry && anchorPosition
+      ? Math.abs(distance(anchorPosition, position) - bondLength)
+      : 0,
     prefersOutwardGeometry: descriptor.prefersOutwardGeometry,
     outwardDeviation: descriptor.prefersOutwardGeometry
       ? Math.min(...descriptor.outwardAngles.map(outwardAngle => angularDifference(outwardAngle, candidateAngle)))
@@ -2632,7 +2649,7 @@ export function runPairedTerminalHeteroLeafFanTidy(layoutGraph, inputCoords, opt
   return { coords, nudges };
 }
 
-function exactOutwardBlockerReliefCandidates(layoutGraph, coords, descriptor, ringPolygons, currentAngle, radius, threshold, searchRadius, bondLength) {
+function exactOutwardBlockerReliefCandidates(layoutGraph, coords, descriptor, ringPolygons, currentAngle, targetRadius, threshold, searchRadius, bondLength) {
   if (!descriptor.prefersOutwardGeometry || descriptor.outwardAngles.length === 0) {
     return [];
   }
@@ -2644,7 +2661,7 @@ function exactOutwardBlockerReliefCandidates(layoutGraph, coords, descriptor, ri
 
   const candidates = [];
   for (const outwardAngle of descriptor.outwardAngles) {
-    const outwardPosition = add(anchorPosition, fromAngle(outwardAngle, radius));
+    const outwardPosition = add(anchorPosition, fromAngle(outwardAngle, targetRadius));
     const outwardOverrides = terminalHeteroMoveOverrides(descriptor, outwardPosition, outwardAngle, bondLength);
     const exactCoords = new Map(coords);
     for (const [atomId, position] of outwardOverrides) {
@@ -2701,7 +2718,8 @@ function exactOutwardBlockerReliefCandidates(layoutGraph, coords, descriptor, ri
             outwardAngle,
             currentAngle,
             threshold,
-            searchRadius
+            searchRadius,
+            bondLength
           ),
           blockerCenterDeviation,
           blockerCenterMaxSeparation: threeHeavyCenterMaxSeparation(
@@ -2809,6 +2827,12 @@ export function hasRingTerminalHeteroTidyNeed(layoutGraph, coords, options = {})
       descriptor.prefersOutwardGeometry
       && descriptor.outwardAngles.length > 0
       && Math.min(...descriptor.outwardAngles.map(outwardAngle => angularDifference(outwardAngle, currentAngle))) > TERMINAL_HETERO_OUTWARD_NEED_TRIGGER
+    ) {
+      return true;
+    }
+    if (
+      descriptor.prefersOutwardGeometry
+      && Math.abs(distance(anchorPosition, currentPosition) - bondLength) > bondLength * TERMINAL_HETERO_BOND_LENGTH_NEED_FACTOR
     ) {
       return true;
     }
@@ -3095,6 +3119,12 @@ function isBetterTidyCandidate(candidate, incumbent) {
     return candidate.outwardDeviation < incumbent.outwardDeviation;
   }
   if (
+    candidate.prefersOutwardGeometry
+    && Math.abs(candidate.terminalBondLengthDeviation - incumbent.terminalBondLengthDeviation) > TIDY_IMPROVEMENT_EPSILON
+  ) {
+    return candidate.terminalBondLengthDeviation < incumbent.terminalBondLengthDeviation;
+  }
+  if (
     Number.isFinite(candidate.blockerCenterDeviation)
     && Number.isFinite(incumbent.blockerCenterDeviation)
     && Math.abs(candidate.blockerCenterDeviation - incumbent.blockerCenterDeviation) > TIDY_IMPROVEMENT_EPSILON
@@ -3159,11 +3189,14 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
         currentAngle,
         currentAngle,
         threshold,
-        searchRadius
+        searchRadius,
+        bondLength
       ),
       angleDelta: 0
     };
+    const targetRadius = descriptor.prefersOutwardGeometry ? bondLength : radius;
     const candidateAngles = new Set(STANDARD_ROTATION_ANGLES);
+    candidateAngles.add(currentAngle);
     for (const angle of descriptor.outwardAngles) { candidateAngles.add(angle); }
     const candidateSearch = visitPresentationDescriptorCandidates(layoutGraph, coords, {
       anchorAtomId: descriptor.anchorAtomId,
@@ -3174,7 +3207,7 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
       materializeOverrides(_coords, _rotationDescriptor, candidateAngle) {
         return terminalHeteroMoveOverrides(
           descriptor,
-          add(anchorPosition, fromAngle(candidateAngle, radius)),
+          add(anchorPosition, fromAngle(candidateAngle, targetRadius)),
           candidateAngle,
           bondLength
         );
@@ -3195,7 +3228,8 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
             candidateAngle,
             currentAngle,
             threshold,
-            searchRadius
+            searchRadius,
+            bondLength
           ),
           overridePositions
         };
@@ -3209,7 +3243,7 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
       descriptor,
       ringPolygons,
       currentAngle,
-      radius,
+      targetRadius,
       threshold,
       searchRadius,
       bondLength
@@ -3222,10 +3256,13 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
     const improvesOverlapCount = bestCandidate.overlapCount < currentCandidate.overlapCount;
     const improvesInsideRing = bestCandidate.insideRingCount < currentCandidate.insideRingCount;
     const improvesClearance = bestCandidate.clearance > currentCandidate.clearance + TIDY_IMPROVEMENT_EPSILON;
+    const improvesBondLength =
+      descriptor.prefersOutwardGeometry
+      && bestCandidate.terminalBondLengthDeviation < currentCandidate.terminalBondLengthDeviation - TIDY_IMPROVEMENT_EPSILON;
     const improvesOutwardGeometry =
       descriptor.prefersOutwardGeometry
       && bestCandidate.outwardDeviation < currentCandidate.outwardDeviation - TIDY_IMPROVEMENT_EPSILON;
-    if (!improvesInsideRing && !improvesOverlapCount && !improvesClearance && !improvesOutwardGeometry) {
+    if (!improvesInsideRing && !improvesOverlapCount && !improvesClearance && !improvesBondLength && !improvesOutwardGeometry) {
       continue;
     }
 

@@ -1,7 +1,30 @@
 # Change Log
 
+## 2026-05-12
+
+- Add a hydroxy oxatricyclo diol template so compact ether-alcohol cages keep the small ether cap from collapsing.
+- Add a formyl aza-oxatricyclo template so compact amine-oxirane cages keep terminal amine exits outside the ring system.
+- Rebalance the hydroxy acetal oxadecalin scaffold so its fused ether rings stay open without crossings while preserving the bridgehead alcohol placement.
+- Rotate crowded aryl sulfonic-acid connector subtrees before the final hypervalent cleanup so WebKit keeps exact S/O cross angles without carbonyl clashes.
+- Add an ethyl dioxatricyclo oxetane template so compact ether cages keep balanced small-ring geometry.
+- Add a methyl aza-oxa tricyclic template so compact saturated amine-ether cages avoid crossed bridge paths.
+- Tighten the dimethyl oxatricyclo cage projection so compact ether cages use more balanced bridged-ring spans.
+- Add an amino acyl aryl norbornane template so substituted stereochemical cages keep bridgehead hydrogens outside the ring face.
+- Add a hydroxy dimethyl oxatricyclo cage template so alcohol-substituted compact ether cages keep structured bridged rings.
+- Add a dimethyl oxatricyclo cage template so compact ether cages avoid crossed bridged lanes.
+- Add an ammonium benzocyclobutane template so compact fused aromatic cages avoid stretched saturated bridges.
+- Add a cyclopropyl lactam pentacycle template so compact enone-lactam cages avoid flattened fused rings.
+- Add an imino oxa azatricyclo ketone template so compact bridged imine-ketone cages avoid flattened shared loops.
+- Add a hydroxy azatricyclo cyclohexene template so compact bridged amine-alcohol cages avoid flattened shared rings.
+- Compress crowded geminal terminal ring halogens only when their exact exterior slot creates a visible heavy-bond crossing, clearing the fluorinated cyclohexyl F34 overlap while preserving audit readability.
+- Reproject sulfated glycoside ring chains after residual cleanup and permute/nudge neighboring sulfate branches so O38/O101 fans keep cross geometry without losing exact ring exits in WebKit.
+- Add a hydroxy acetal oxadecalin scaffold and clamp terminal ring hetero bonds back to normal length, keeping the O6 bridgehead alcohol clear of the compact ether cage.
+
 ## 2026-05-11
 
+- Regularize severely pinched coordinate-bound aromatic ligand rings after Ru mixed placement while preserving the broader polypyridyl complex pose.
+- Reapply opt-in landscape leveling after final presentation retouches only when large layouts end portrait, keeping hidden-hydrogen sulfated glycosides broad without perturbing already-landscape bridged templates.
+- Give large peptide residual angle polish a few more bounded passes so late carbonyl fans stay within the tightened visual tolerance.
 - Open the acyl-substituted spiro-bridged aza cage projection while preserving compact bond audits, so the ammonium bridge no longer pinches the malformed ring.
 - Keep crowded aryl dinitro roots exact by moving the neighboring compact thiazole side instead of folding nitro oxo fans.
 - Snap compact terminal phenyl divalent exits in WebKit while rotating nearby sulfonyl subtrees just enough to preserve oxo opposition and avoid contacts.

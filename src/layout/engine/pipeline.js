@@ -14,6 +14,7 @@ import {
   runDivalentContinuationTidy
 } from './cleanup/presentation/divalent-continuation.js';
 import { runTerminalAcyclicChainRetouch } from './cleanup/presentation/terminal-chain-retouch.js';
+import { runOrganometallicAromaticRingRetouch } from './cleanup/presentation/organometallic-aromatic-ring-retouch.js';
 import { runRingChainLinearRetouch } from './cleanup/presentation/ring-chain-linear-retouch.js';
 import { runRingChainHypervalentBranchRetouch } from './cleanup/presentation/ring-chain-hypervalent-retouch.js';
 import {
@@ -24,6 +25,13 @@ import {
   runLargeMoleculeResidualRetouch,
   runMacrocycleRingFanAngleRetouch
 } from './cleanup/presentation/large-molecule-residual-retouch.js';
+import {
+  hasHypervalentAngleTidyNeed,
+  measureOrthogonalHypervalentDeviation,
+  measureRingAnchoredHypervalentBranchDeviation,
+  runHypervalentConnectorSubtreeRotationTidy,
+  runHypervalentAngleTidy
+} from './cleanup/hypervalent-angle-tidy.js';
 import {
   buildCleanupTelemetry,
   buildStageTelemetryFromCleanupTelemetry,
@@ -42,6 +50,7 @@ import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
+import { computeBounds } from './geometry/bounds.js';
 import { cloneCoords } from './geometry/transforms.js';
 import { add, angleOf, centroid, rotate, sub } from './geometry/vec2.js';
 import { PRESENTATION_METRIC_EPSILON } from './constants.js';
@@ -267,6 +276,12 @@ function shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) {
   return policy?.orientationBias === 'horizontal';
 }
 
+function shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, coords) {
+  const heavyAtomIds = [...coords.keys()].filter(atomId => layoutGraph.atoms.has(atomId) && layoutGraph.atoms.get(atomId)?.element !== 'H');
+  const bounds = computeBounds(coords, heavyAtomIds);
+  return Boolean(bounds && bounds.height > bounds.width);
+}
+
 function ringSystemCenter(coords, ringSystem) {
   const positions = (ringSystem?.atomIds ?? [])
     .map(atomId => coords.get(atomId))
@@ -450,6 +465,163 @@ function maybeSnapStretchedTerminalMultipleBondLeaves(layoutGraph, finalCoords, 
     return { coords: finalCoords, changed: false };
   }
   return { coords: candidateCoords, changed: true };
+}
+
+function isPreferredFinalHypervalentRetouch(
+  candidateAudit,
+  candidateDeviation,
+  candidateRingBranchDeviation,
+  incumbentAudit,
+  incumbentDeviation,
+  incumbentRingBranchDeviation
+) {
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    const candidateValue = candidateAudit[key] ?? 0;
+    const incumbentValue = incumbentAudit[key] ?? 0;
+    if (candidateValue !== incumbentValue) {
+      return candidateValue < incumbentValue;
+    }
+  }
+  if (Math.abs(candidateDeviation - incumbentDeviation) > PRESENTATION_METRIC_EPSILON) {
+    return candidateDeviation < incumbentDeviation;
+  }
+  if (
+    Math.abs(candidateRingBranchDeviation.totalDeviation - incumbentRingBranchDeviation.totalDeviation)
+    > PRESENTATION_METRIC_EPSILON
+  ) {
+    return candidateRingBranchDeviation.totalDeviation < incumbentRingBranchDeviation.totalDeviation;
+  }
+  return candidateRingBranchDeviation.maxDeviation < incumbentRingBranchDeviation.maxDeviation - PRESENTATION_METRIC_EPSILON;
+}
+
+/**
+ * Re-applies the hypervalent angle specialist after post-stage retouches that
+ * can resolve large-molecule overlaps outside the normal cleanup graph. The
+ * candidate is accepted only when it improves S/P/Se/As/Si presentation while
+ * preserving the externally visible final audit counts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current final coordinate map.
+ * @param {object} placement - Placement result with bond-validation classes.
+ * @param {number} bondLength - Target layout bond length.
+ * @param {((label: string, description: string, coords: Map<string, {x: number, y: number}>, metrics?: object) => void)|null} [onStep] - Optional debug callback.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean}} Retouch result.
+ */
+function maybeRetouchFinalHypervalentAngles(layoutGraph, finalCoords, placement, bondLength, onStep = null) {
+  if (!hasHypervalentAngleTidyNeed(layoutGraph, finalCoords)) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  let currentCoords = finalCoords;
+  let currentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, currentCoords);
+  let currentRingBranchDeviation = measureRingAnchoredHypervalentBranchDeviation(layoutGraph, currentCoords);
+  let nudges = 0;
+  let changed = false;
+
+  for (let passIndex = 0; passIndex < 3; passIndex++) {
+    const currentHasNeed = hasHypervalentAngleTidyNeed(layoutGraph, currentCoords);
+    if (!currentHasNeed) {
+      break;
+    }
+
+    const baseAudit = auditLayout(layoutGraph, currentCoords, {
+      bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    const retouchCandidates = [
+      runHypervalentAngleTidy(layoutGraph, currentCoords),
+      runHypervalentConnectorSubtreeRotationTidy(layoutGraph, currentCoords)
+    ];
+    let selectedRetouch = null;
+    let selectedAudit = null;
+    let selectedDeviation = null;
+    let selectedRingBranchDeviation = null;
+    for (const retouch of retouchCandidates) {
+      if (!retouch || !(retouch.coords instanceof Map) || (retouch.nudges ?? 0) <= 0) {
+        continue;
+      }
+
+      const candidateDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, retouch.coords);
+      const candidateHasNeed = hasHypervalentAngleTidyNeed(layoutGraph, retouch.coords);
+      const candidateRingBranchDeviation = measureRingAnchoredHypervalentBranchDeviation(layoutGraph, retouch.coords);
+      const improvesDeviation = candidateDeviation < currentDeviation - PRESENTATION_METRIC_EPSILON;
+      const clearsResidualNeed =
+        currentHasNeed
+        && !candidateHasNeed
+        && candidateDeviation <= currentDeviation + PRESENTATION_METRIC_EPSILON;
+      if (!improvesDeviation && !clearsResidualNeed) {
+        continue;
+      }
+
+      const candidateAudit = auditLayout(layoutGraph, retouch.coords, {
+        bondLength,
+        bondValidationClasses: placement.bondValidationClasses
+      });
+      if (
+        !finalAuditCountsDoNotWorsen(candidateAudit, {
+          ...baseAudit,
+          labelOverlapCount: (baseAudit.labelOverlapCount ?? 0) + 1
+        })
+      ) {
+        continue;
+      }
+      if (
+        candidateRingBranchDeviation.branchCount > 0
+        && candidateRingBranchDeviation.totalDeviation > currentRingBranchDeviation.totalDeviation + PRESENTATION_METRIC_EPSILON
+      ) {
+        continue;
+      }
+      if (
+        selectedRetouch
+        && !isPreferredFinalHypervalentRetouch(
+          candidateAudit,
+          candidateDeviation,
+          candidateRingBranchDeviation,
+          selectedAudit,
+          selectedDeviation,
+          selectedRingBranchDeviation
+        )
+      ) {
+        continue;
+      }
+      selectedRetouch = retouch;
+      selectedAudit = candidateAudit;
+      selectedDeviation = candidateDeviation;
+      selectedRingBranchDeviation = candidateRingBranchDeviation;
+    }
+
+    if (!selectedRetouch) {
+      break;
+    }
+
+    currentCoords = selectedRetouch.coords;
+    currentDeviation = selectedDeviation;
+    currentRingBranchDeviation = selectedRingBranchDeviation;
+    nudges += selectedRetouch.nudges ?? 0;
+    changed = true;
+  }
+
+  if (!changed) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  onStep?.(
+    'Hypervalent Angle Final Touchup',
+    'S/P/Se/As and tetraaryl Si center angles re-orthogonalized after final retouches.',
+    cloneCoords(currentCoords),
+    {
+      nudges,
+      hypervalentDeviationBefore: measureOrthogonalHypervalentDeviation(layoutGraph, finalCoords),
+      hypervalentDeviationAfter: currentDeviation,
+      ringBranchDeviationBefore: measureRingAnchoredHypervalentBranchDeviation(layoutGraph, finalCoords).totalDeviation,
+      ringBranchDeviationAfter: currentRingBranchDeviation.totalDeviation
+    }
+  );
+  return { coords: currentCoords, changed: true };
 }
 
 function isPreferredFinalDivalentContinuationRetouch(layoutGraph, baseCoords, candidateCoords, baseAudit, candidateAudit) {
@@ -1119,6 +1291,7 @@ export function runPipeline(molecule, options = {}) {
       {}
     );
   }
+  let largeMoleculeResidualChanged = false;
   if (placement.placedFamilies.includes('large-molecule') || familySummary.primaryFamily === 'large-molecule') {
     const largeMoleculeResidualRetouch = runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
       bondLength: normalizedOptions.bondLength
@@ -1126,6 +1299,7 @@ export function runPipeline(molecule, options = {}) {
     if (largeMoleculeResidualRetouch.changed) {
       finalCoords = largeMoleculeResidualRetouch.coords;
       finalCoordsModified = true;
+      largeMoleculeResidualChanged = true;
       onStep?.(
         'Large Molecule Residual Retouch',
         'Local branches rotated away from remaining large-molecule overlap, crossing, and angle residuals.',
@@ -1140,6 +1314,19 @@ export function runPipeline(molecule, options = {}) {
           visibleHeavyBondCrossingCountAfter: largeMoleculeResidualRetouch.visibleHeavyBondCrossingCountAfter
         }
       );
+    }
+  }
+  if (largeMoleculeResidualChanged) {
+    const restoredProjectedRingChainRetouch = maybeRetouchProjectedRingChain(
+      layoutGraph,
+      finalCoords,
+      placement,
+      normalizedOptions.bondLength,
+      onStep
+    );
+    if (restoredProjectedRingChainRetouch.changed) {
+      finalCoords = restoredProjectedRingChainRetouch.coords;
+      finalCoordsModified = true;
     }
   }
   if (
@@ -1168,6 +1355,37 @@ export function runPipeline(molecule, options = {}) {
       );
     }
   }
+  if (familySummary.primaryFamily === 'organometallic') {
+    const organometallicAromaticRingRetouch = runOrganometallicAromaticRingRetouch(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (organometallicAromaticRingRetouch.changed) {
+      finalCoords = organometallicAromaticRingRetouch.coords;
+      finalCoordsModified = true;
+      onStep?.(
+        'Organometallic Aromatic Ring Retouch',
+        'Coordinate-bound aromatic ligand rings regularized while preserving their bidentate linker pose.',
+        cloneCoords(finalCoords),
+        {
+          movedAtomCount: organometallicAromaticRingRetouch.movedAtomIds.length,
+          maxDeviationBefore: organometallicAromaticRingRetouch.maxDeviationBefore,
+          maxDeviationAfter: organometallicAromaticRingRetouch.maxDeviationAfter
+        }
+      );
+    }
+  }
+  const finalHypervalentRetouch = maybeRetouchFinalHypervalentAngles(
+    layoutGraph,
+    finalCoords,
+    placement,
+    normalizedOptions.bondLength,
+    onStep
+  );
+  if (finalHypervalentRetouch.changed) {
+    finalCoords = finalHypervalentRetouch.coords;
+    finalCoordsModified = true;
+  }
   const stretchedTerminalMultipleBondSnap = maybeSnapStretchedTerminalMultipleBondLeaves(
     layoutGraph,
     finalCoords,
@@ -1177,6 +1395,23 @@ export function runPipeline(molecule, options = {}) {
   if (stretchedTerminalMultipleBondSnap.changed) {
     finalCoords = stretchedTerminalMultipleBondSnap.coords;
     finalCoordsModified = true;
+  }
+  if (
+    shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)
+    && shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, finalCoords)
+  ) {
+    const landscapeCoords = cloneCoords(finalCoords);
+    const landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
+    if (landscapeApplied) {
+      finalCoords = landscapeCoords;
+      finalCoordsModified = true;
+      onStep?.(
+        'Final Landscape Orientation',
+        'Whole-molecule landscape leveling reapplied after final presentation retouches.',
+        cloneCoords(finalCoords),
+        {}
+      );
+    }
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

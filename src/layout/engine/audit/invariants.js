@@ -345,7 +345,78 @@ function isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, dis
   if (isAcceptedCompressedSharedJunctionLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle)) {
     return true;
   }
-  return isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle);
+  return (
+    isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle)
+    || isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId)
+  );
+}
+
+/**
+ * Returns whether a compressed terminal hetero leaf on a saturated geminal
+ * small-ring anchor is still within the ordinary ring-substituent readability
+ * envelope. Crowded gem-dihalogen rings sometimes need one leaf shortened and
+ * tucked between exact exterior slots to avoid a hard bond crossing with a
+ * neighboring ring; this keeps that local escape from becoming a bond-length
+ * audit failure while preserving the normal outward-readability cap.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom id.
+ * @param {string} leafAtomId - Terminal leaf atom id.
+ * @returns {boolean} True when the compressed leaf should be accepted.
+ */
+function isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, anchorAtomId, leafAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !anchorAtom ||
+    !leafAtom ||
+    anchorAtom.aromatic ||
+    anchorAtom.heavyDegree !== 4 ||
+    leafAtom.element === 'C' ||
+    leafAtom.element === 'H' ||
+    leafAtom.aromatic ||
+    (leafAtom.heavyDegree ?? 0) !== 1 ||
+    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+  ) {
+    return false;
+  }
+
+  const terminalLeafNeighborIds = [];
+  let ringNeighborCount = 0;
+  for (const neighborBond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!neighborBond || neighborBond.kind !== 'covalent' || neighborBond.aromatic || (neighborBond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = neighborBond.a === anchorAtomId ? neighborBond.b : neighborBond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      ringNeighborCount++;
+      continue;
+    }
+    if (
+      neighborAtom.element !== 'C' &&
+      !neighborAtom.aromatic &&
+      (neighborAtom.heavyDegree ?? 0) === 1
+    ) {
+      terminalLeafNeighborIds.push(neighborAtomId);
+    }
+  }
+  if (ringNeighborCount !== 2 || terminalLeafNeighborIds.length !== 2 || !terminalLeafNeighborIds.includes(leafAtomId)) {
+    return false;
+  }
+
+  const leafPosition = coords.get(leafAtomId);
+  if (!leafPosition || incidentRingPolygons(layoutGraph, coords, anchorAtomId).some(polygon => pointInPolygon(leafPosition, polygon))) {
+    return false;
+  }
+  const immediateDeviation = immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, leafAtomId);
+  return (
+    immediateDeviation != null &&
+    immediateDeviation <= RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation + 1e-9
+  );
 }
 
 /**
@@ -1308,7 +1379,7 @@ function isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtom
   if (!layoutGraph || representativeAtomIds.length !== 1 || representativeAtomIds[0] !== childAtomId) {
     return false;
   }
-  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) < 2) {
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
     return false;
   }
   if (!ringSystemHasBridgedConnection(layoutGraph, layoutGraph.atomToRingSystemId.get(anchorAtomId))) {
@@ -1319,12 +1390,27 @@ function isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtom
     return false;
   }
   const isCarbonLeaf = childAtom.element === 'C';
-  const isPositiveTerminalHetero = childAtom.element !== 'C' && (childAtom.charge ?? 0) > 0 && childAtom.heavyDegree <= 1;
-  if (!isCarbonLeaf && !isPositiveTerminalHetero) {
+  const isTerminalHeteroLeaf = childAtom.element !== 'C' && childAtom.element !== 'H' && childAtom.heavyDegree <= 1;
+  const isPositiveTerminalHetero = isTerminalHeteroLeaf && (childAtom.charge ?? 0) > 0;
+  const isNeutralTerminalHetero = isTerminalHeteroLeaf && (childAtom.charge ?? 0) === 0;
+  if (!isCarbonLeaf && !isPositiveTerminalHetero && !isNeutralTerminalHetero) {
     return false;
   }
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (isCarbonLeaf && anchorAtom && anchorAtom.element !== 'C' && (anchorAtom.charge ?? 0) > 0) {
+    return false;
+  }
+  if (isNeutralTerminalHetero) {
+    const outwardDeviation = immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId);
+    if (
+      outwardDeviation == null
+      || outwardDeviation > RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation
+    ) {
+      return false;
+    }
+  }
   return !hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons, {
-    considerSegmentCrossing: isPositiveTerminalHetero
+    considerSegmentCrossing: isCarbonLeaf || isTerminalHeteroLeaf
   });
 }
 

@@ -256,6 +256,10 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
         const fluorinatedCyclohexylIsocyanateAngles = isFluorinatedCyclohexylIsocyanateCase
           ? [bondAngleAtAtom('C36', 'N35', 'O37'), bondAngleAtAtom('C23', 'N22', 'O24'), bondAngleAtAtom('C9', 'N8', 'O10')]
           : null;
+        const fluorinatedCyclohexylF34BondLength = isFluorinatedCyclohexylIsocyanateCase ? atomDistance('C32', 'F34') : null;
+        const fluorinatedCyclohexylF34RingEdgeClearance = isFluorinatedCyclohexylIsocyanateCase
+          ? Math.min(atomDistance('F34', 'C5'), atomDistance('F34', 'C6'))
+          : null;
         const omittedHubRootOutwardDeviation = (rootAtomId, parentAtomId) => {
           const rootPosition = pipeline.coords.get(rootAtomId);
           const parentPosition = pipeline.coords.get(parentAtomId);
@@ -332,9 +336,14 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
             Array.isArray(fluorinatedCyclohexylIsocyanateAngles) && fluorinatedCyclohexylIsocyanateAngles.every(value => typeof value === 'number' && Number.isFinite(value))
               ? fluorinatedCyclohexylIsocyanateAngles
               : null,
+          fluorinatedCyclohexylF34BondLength:
+            typeof fluorinatedCyclohexylF34BondLength === 'number' && Number.isFinite(fluorinatedCyclohexylF34BondLength) ? fluorinatedCyclohexylF34BondLength : null,
+          fluorinatedCyclohexylF34RingEdgeClearance:
+            typeof fluorinatedCyclohexylF34RingEdgeClearance === 'number' && Number.isFinite(fluorinatedCyclohexylF34RingEdgeClearance) ? fluorinatedCyclohexylF34RingEdgeClearance : null,
           audit: {
             ok: pipeline.metadata?.audit?.ok ?? null,
             severeOverlapCount: pipeline.metadata?.audit?.severeOverlapCount ?? null,
+            visibleHeavyBondCrossingCount: pipeline.metadata?.audit?.visibleHeavyBondCrossingCount ?? null,
             ringSubstituentReadabilityFailureCount: pipeline.metadata?.audit?.ringSubstituentReadabilityFailureCount ?? null,
             outwardAxisRingSubstituentFailureCount: pipeline.metadata?.audit?.outwardAxisRingSubstituentFailureCount ?? null
           }
@@ -652,10 +661,23 @@ test('browser layout preserves fluorinated cyclohexyl exterior fans in webkit', 
   assert.equal(webkitSignature.audit.severeOverlapCount, 0);
   assert.equal(webkitSignature.audit.ringSubstituentReadabilityFailureCount, 0);
   assert.equal(webkitSignature.audit.outwardAxisRingSubstituentFailureCount, 0);
+  assert.equal(webkitSignature.audit.visibleHeavyBondCrossingCount, 0);
+  assert.equal(webkitSignature.visibleHeavyBondCrossingCount, 0);
   assert.ok(webkitSignature.fluorinatedCyclohexylExteriorPenalties, 'expected webkit to report fluorinated cyclohexyl exterior penalties');
   for (const [atomId, penalty] of Object.entries(webkitSignature.fluorinatedCyclohexylExteriorPenalties)) {
+    if (atomId === 'C32') {
+      continue;
+    }
     assert.ok(penalty < 1e-9, `expected webkit ${atomId} exterior fan to stay exact, got penalty ${penalty.toExponential(3)}`);
   }
+  assert.ok(
+    webkitSignature.fluorinatedCyclohexylF34BondLength < 1.5 && webkitSignature.fluorinatedCyclohexylF34BondLength >= 1.5 * 0.55 - 1e-6,
+    `expected webkit C32-F34 to use an accepted compressed crossing escape, got ${webkitSignature.fluorinatedCyclohexylF34BondLength?.toFixed(3)}`
+  );
+  assert.ok(
+    webkitSignature.fluorinatedCyclohexylF34RingEdgeClearance > 1.5 * 0.8,
+    `expected webkit F34 to clear the neighboring ring edge, got ${webkitSignature.fluorinatedCyclohexylF34RingEdgeClearance?.toFixed(3)}`
+  );
   assert.ok(Array.isArray(webkitSignature.fluorinatedCyclohexylC11Angles), 'expected webkit to report C11 ring-link angles');
   for (const angle of webkitSignature.fluorinatedCyclohexylC11Angles) {
     assert.ok(Math.abs(angle - 120) < 1e-6, `expected webkit C11 fan near 120 degrees, got ${angle.toFixed(2)}`);
