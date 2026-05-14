@@ -2,6 +2,8 @@
 
 import { PRESENTATION_METRIC_EPSILON, PROTECTED_CLEANUP_STAGE_LIMITS } from '../constants.js';
 
+const MAX_STEREO_RESCUE_BOND_DEVIATION_REGRESSION = 0.25;
+
 /**
  * Returns whether two stages carry comparable finite metric values.
  * @param {object} candidate - Candidate stage result.
@@ -70,6 +72,37 @@ function worsensSmallRingExteriorFan(candidate, incumbent) {
 }
 
 /**
+ * Returns whether a stereo-rescue candidate fixes E/Z metadata only by damaging
+ * existing covalent bond integrity. Stereo rescue may improve visual parity, but
+ * it must not win by reflecting a large cyclic side across a bond and tearing
+ * other ring bonds open.
+ * @param {object} candidate - Candidate stage result.
+ * @param {object|null} incumbent - Current incumbent stage result.
+ * @returns {boolean} True when the stereo candidate should be rejected.
+ */
+function hasUnsafeStereoRescueBondRegression(candidate, incumbent) {
+  if (
+    !candidate?.audit
+    || !incumbent?.audit
+    || incumbent.audit.stereoContradiction !== true
+    || candidate.audit.stereoContradiction !== false
+    || candidate.audit.ok === true
+  ) {
+    return false;
+  }
+
+  if (candidate.audit.bondLengthFailureCount > incumbent.audit.bondLengthFailureCount) {
+    return true;
+  }
+
+  return (
+    candidate.audit.bondLengthFailureCount >= incumbent.audit.bondLengthFailureCount
+    && candidate.audit.maxBondLengthDeviation
+      > incumbent.audit.maxBondLengthDeviation + MAX_STEREO_RESCUE_BOND_DEVIATION_REGRESSION
+  );
+}
+
+/**
  * Compares two stereo-aware cleanup stages using the existing final-stage ordering.
  * @param {object} candidate - Candidate stage result.
  * @param {object|null} incumbent - Current incumbent stage result.
@@ -82,6 +115,9 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
     return true;
   }
   if (incumbent.audit.bondLengthFailureCount === 0 && candidate.audit.bondLengthFailureCount > 0) {
+    return false;
+  }
+  if (hasUnsafeStereoRescueBondRegression(candidate, incumbent)) {
     return false;
   }
   if (candidate.audit.ok !== incumbent.audit.ok) {

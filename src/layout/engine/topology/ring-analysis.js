@@ -7,6 +7,128 @@ function compareStrings(firstValue, secondValue) {
   return String(firstValue).localeCompare(String(secondValue), 'en', { numeric: true });
 }
 
+function ringKey(atomIds) {
+  return [...atomIds].sort(compareStrings).join('\0');
+}
+
+function ringContainsBond(ringAtomIds, firstAtomId, secondAtomId) {
+  const firstIndex = ringAtomIds.indexOf(firstAtomId);
+  if (firstIndex === -1) {
+    return false;
+  }
+  const ringSize = ringAtomIds.length;
+  return (
+    ringAtomIds[(firstIndex + 1) % ringSize] === secondAtomId
+    || ringAtomIds[(firstIndex - 1 + ringSize) % ringSize] === secondAtomId
+  );
+}
+
+function ringListContainsBond(rings, firstAtomId, secondAtomId) {
+  return rings.some(ring => ringContainsBond(ring.atomIds, firstAtomId, secondAtomId));
+}
+
+/**
+ * Finds the shortest cycle containing a bond by removing the bond and finding
+ * the shortest path between its endpoints.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} bond - Source molecule bond.
+ * @returns {string[]|null} Cycle atom IDs, or null when the bond is acyclic.
+ */
+function shortestCycleThroughBond(molecule, bond) {
+  const [firstAtomId, secondAtomId] = bond.atoms ?? [];
+  if (!firstAtomId || !secondAtomId) {
+    return null;
+  }
+
+  const previousByAtomId = new Map([[firstAtomId, null]]);
+  const queue = [firstAtomId];
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const atomId = queue[queueHead++];
+    for (const bondId of molecule.atoms.get(atomId)?.bonds ?? []) {
+      if (bondId === bond.id) {
+        continue;
+      }
+      const neighborBond = molecule.bonds.get(bondId);
+      if (!neighborBond) {
+        continue;
+      }
+      const neighborAtomId = neighborBond.getOtherAtom(atomId);
+      if (!neighborAtomId || previousByAtomId.has(neighborAtomId)) {
+        continue;
+      }
+      previousByAtomId.set(neighborAtomId, atomId);
+      if (neighborAtomId === secondAtomId) {
+        const cycleAtomIds = [];
+        for (let currentAtomId = secondAtomId; currentAtomId != null; currentAtomId = previousByAtomId.get(currentAtomId)) {
+          cycleAtomIds.push(currentAtomId);
+        }
+        cycleAtomIds.reverse();
+        return cycleAtomIds;
+      }
+      queue.push(neighborAtomId);
+    }
+  }
+
+  return null;
+}
+
+function createRingDescriptor(molecule, atomIds, canonicalAtomRank, rawIndex, supplemental = false) {
+  let aromaticAtomCount = 0;
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if ((typeof atom?.isAromatic === 'function' && atom.isAromatic()) || atom?.properties.aromatic) {
+      aromaticAtomCount++;
+    }
+  }
+  return {
+    rawIndex,
+    atomIds,
+    size: atomIds.length,
+    aromatic: aromaticAtomCount === atomIds.length && atomIds.length > 0,
+    aromaticAtomCount,
+    supplemental,
+    signature: buildCanonicalRingSignature(atomIds, canonicalAtomRank, molecule)
+  };
+}
+
+function withSupplementalBondCoveringRings(molecule, rings, canonicalAtomRank) {
+  const seenRingKeys = new Set(rings.map(ring => ringKey(ring.atomIds)));
+  const supplementedRings = [...rings];
+
+  for (const bond of molecule.bonds.values()) {
+    const [firstAtomId, secondAtomId] = bond.atoms ?? [];
+    if (
+      !firstAtomId
+      || !secondAtomId
+      || ringListContainsBond(supplementedRings, firstAtomId, secondAtomId)
+      || typeof bond.isInRing !== 'function'
+      || !bond.isInRing(molecule)
+    ) {
+      continue;
+    }
+
+    const cycleAtomIds = shortestCycleThroughBond(molecule, bond);
+    if (!cycleAtomIds || cycleAtomIds.length < 3) {
+      continue;
+    }
+    const key = ringKey(cycleAtomIds);
+    if (seenRingKeys.has(key)) {
+      continue;
+    }
+    seenRingKeys.add(key);
+    supplementedRings.push(createRingDescriptor(
+      molecule,
+      cycleAtomIds,
+      canonicalAtomRank,
+      supplementedRings.length,
+      true
+    ));
+  }
+
+  return supplementedRings;
+}
+
 /**
  * Returns atom IDs shared by two rings.
  * @param {string[]} firstRingAtomIds - First ring atom IDs.
@@ -93,25 +215,16 @@ export function getRingAtomIds(molecule) {
  * @returns {{rings: object[], ringSystems: object[]}} Ring analysis results.
  */
 export function analyzeRings(molecule, canonicalAtomRank = new Map()) {
-  const adaptedRings = getRingAtomIds(molecule)
-    .map((ringAtomIds, rawIndex) => {
-      const atomIds = [...ringAtomIds];
-      let aromaticAtomCount = 0;
-      for (const atomId of atomIds) {
-        const atom = molecule.atoms.get(atomId);
-        if ((typeof atom?.isAromatic === 'function' && atom.isAromatic()) || atom?.properties.aromatic) {
-          aromaticAtomCount++;
-        }
-      }
-      return {
-        rawIndex,
-        atomIds,
-        size: atomIds.length,
-        aromatic: aromaticAtomCount === atomIds.length && atomIds.length > 0,
-        aromaticAtomCount,
-        signature: buildCanonicalRingSignature(atomIds, canonicalAtomRank, molecule)
-      };
-    })
+  const adaptedRings = withSupplementalBondCoveringRings(
+    molecule,
+    getRingAtomIds(molecule).map((ringAtomIds, rawIndex) => createRingDescriptor(
+      molecule,
+      [...ringAtomIds],
+      canonicalAtomRank,
+      rawIndex
+    )),
+    canonicalAtomRank
+  )
     .sort((firstRing, secondRing) => {
       if (secondRing.size !== firstRing.size) {
         return secondRing.size - firstRing.size;

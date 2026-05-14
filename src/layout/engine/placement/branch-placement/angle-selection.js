@@ -25,6 +25,7 @@ import {
 } from './shared.js';
 
 const CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+const TERMINAL_HALOGEN_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
 const TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR = 0.72;
 const TERMINAL_LEAF_SHARED_JUNCTION_CLEARANCE = Math.PI / 4;
 
@@ -2501,15 +2502,15 @@ function compareAngleSets(firstAngleSet, secondAngleSet) {
 
 /**
  * Returns whether a neighbor is a compact terminal substituent root, such as a
- * CF3, tert-butyl carbon, or one-heavy alkoxy root, that should occupy one
- * projected-tetrahedral slot as a single bulky leaf when placed from its
- * parent center.
+ * CF3, monohalomethyl, tert-butyl carbon, or one-heavy alkoxy root, that
+ * should occupy one projected-tetrahedral slot as a single bulky leaf when
+ * placed from its parent center.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} centerAtomId - Parent center atom ID.
  * @param {string} atomId - Candidate compact substituent root ID.
  * @returns {boolean} True when the neighbor can be treated as a terminal slot occupant.
  */
-function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId) {
+export function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId) {
   const atom = layoutGraph?.atoms?.get(atomId);
   if (!layoutGraph || !atom || atom.element === 'H' || atom.aromatic || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
     return false;
@@ -2526,6 +2527,7 @@ function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId
   }
 
   let terminalHeavyLeafCount = 0;
+  let terminalHalogenLeafCount = 0;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
       return false;
@@ -2542,9 +2544,16 @@ function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId
       return false;
     }
     terminalHeavyLeafCount++;
+    if (TERMINAL_HALOGEN_ELEMENTS.has(neighborAtom.element)) {
+      terminalHalogenLeafCount++;
+    }
   }
 
-  return terminalHeavyLeafCount >= 2 || (['O', 'S', 'Se'].includes(atom.element) && terminalHeavyLeafCount === 1);
+  return (
+    terminalHeavyLeafCount >= 2
+    || (atom.element === 'C' && terminalHeavyLeafCount === 1 && terminalHalogenLeafCount === 1)
+    || (['O', 'S', 'Se'].includes(atom.element) && terminalHeavyLeafCount === 1)
+  );
 }
 
 function isProjectedTetrahedralLeafNeighbor(layoutGraph, centerAtomId, atomId) {

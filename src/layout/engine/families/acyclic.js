@@ -7,6 +7,7 @@ import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
 import {
+  isCompactProjectedTerminalSubstituent,
   isExactVisibleTrigonalBisectorEligible,
   shouldPreferOmittedHydrogenTrigonalBisector,
   supportsProjectedTetrahedralGeometry
@@ -388,6 +389,64 @@ function terminalCarbonLeafCount(layoutGraph, atomId) {
 }
 
 /**
+ * Counts compact terminal substituent roots attached by single bonds to a center.
+ * Monohalomethyl and related compact leaves need the same backbone projection
+ * as direct terminal leaves when paired with a linear ligand.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Center atom ID.
+ * @returns {number} Compact projected terminal substituent count.
+ */
+function compactProjectedTerminalSubstituentCount(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  let substituentCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    if (isCompactProjectedTerminalSubstituent(layoutGraph, atomId, neighborAtomId)) {
+      substituentCount++;
+    }
+  }
+  return substituentCount;
+}
+
+/**
+ * Returns whether a center has a singly attached neighbor that continues into
+ * a linear visible ligand, such as a nitrile carbon.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Center atom ID.
+ * @returns {boolean} True when a single-bond neighbor is linear.
+ */
+function hasLinearSingleBondNeighbor(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    for (const neighborBond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
+      if (!neighborBond || neighborBond === bond || neighborBond.kind !== 'covalent' || neighborBond.aromatic) {
+        continue;
+      }
+      const otherAtomId = neighborBond.a === neighborAtomId ? neighborBond.b : neighborBond.a;
+      if (isLinearCentre(layoutGraph, atomId, neighborAtomId, otherAtomId)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Returns whether a center is directly attached to a cross-like hypervalent
  * neighbor through a single covalent bond.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -432,6 +491,30 @@ function isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId) {
 }
 
 /**
+ * Returns whether a four-coordinate acyclic carbon with compact terminal
+ * substituents and a linear ligand needs a projected 90-degree backbone turn.
+ * This keeps nitrile-adjacent bis-halomethyl centers from putting two compact
+ * branches into the compressed side of a normal zig-zag turn.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate carbon atom ID.
+ * @returns {boolean} True when the carbon should use a 90-degree projected turn.
+ */
+function isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  return Boolean(
+    layoutGraph
+    && atom
+    && atom.element === 'C'
+    && !atom.aromatic
+    && atom.heavyDegree === 4
+    && atom.degree === 4
+    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && compactProjectedTerminalSubstituentCount(layoutGraph, atomId) >= 2
+    && hasLinearSingleBondNeighbor(layoutGraph, atomId)
+  );
+}
+
+/**
  * Returns whether a backbone center should use projected-tetrahedral
  * continuation geometry instead of the default 120-degree zig-zag. Acyclic
  * CF2 chain centers need the backbone bonds to take two projected slots before
@@ -439,6 +522,8 @@ function isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId) {
  * Tert-butyl-like carbons attached to cross-like hypervalent centers need the
  * same projected turn so the backbone methyl does not collapse the remaining
  * carbon leaves into uneven 80-degree side gaps.
+ * Nitrile-adjacent centers with compact halomethyl branches also use the
+ * projection so those branches occupy separate quadrants.
  * Fully substituted acyclic silanes and ammonium centers need the same
  * projection so visible off-backbone ligands do not collapse into the
  * remaining branch fan.
@@ -464,6 +549,7 @@ function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomI
   if (atom?.element === 'C') {
     return (
       terminalFluorineLeafCount(layoutGraph, atomId) >= 2
+      || isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId)
       || isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId)
     );
   }

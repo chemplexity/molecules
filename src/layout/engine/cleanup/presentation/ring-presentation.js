@@ -1020,14 +1020,20 @@ function isBetterPresentationState(layoutGraph, candidateState, incumbentState, 
       < incumbentState.terminalMultipleBondLeafFanMaxPenalty - PRESENTATION_NEED_EPSILON
     && candidateState.terminalMultipleBondLeafFanPenalty
       < incumbentState.terminalMultipleBondLeafFanPenalty - PRESENTATION_NEED_EPSILON;
+  const candidateRelievesSevereOverlap =
+    (candidateState.score?.audit?.severeOverlapCount ?? Number.POSITIVE_INFINITY)
+      < (incumbentState.score?.audit?.severeOverlapCount ?? Number.POSITIVE_INFINITY);
   if (
     candidateState.smallRingExteriorFanExactPenalty
       > incumbentState.smallRingExteriorFanExactPenalty + PRESENTATION_NEED_EPSILON
+    && !candidateRelievesSevereOverlap
   ) {
     return false;
   }
   if (candidateState.visibleBondCrossingCount !== incumbentState.visibleBondCrossingCount) {
-    return candidateState.visibleBondCrossingCount < incumbentState.visibleBondCrossingCount;
+    if (!candidateRelievesSevereOverlap || candidateState.visibleBondCrossingCount > incumbentState.visibleBondCrossingCount + 1) {
+      return candidateState.visibleBondCrossingCount < incumbentState.visibleBondCrossingCount;
+    }
   }
   if (
     incumbentState.omittedHydrogenTrigonalPenalty <= EXACT_OMITTED_H_TRIGONAL_EPSILON
@@ -1192,6 +1198,7 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
  *   includeTerminalMultipleBondLeaf?: boolean,
  *   includeTerminalHetero?: boolean,
  *   includeAttachedRingFallback?: boolean,
+ *   attachedRingFallbackHeavyAtomLimit?: number,
  *   scoreCoordsFn?: ((coords: Map<string, {x: number, y: number}>) => object|null),
  *   comparatorFn?: ((candidate: object, incumbent: object) => boolean)
  * }} [options] - Presentation cleanup options.
@@ -1368,7 +1375,8 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
         bondLength: options.bondLength,
         frozenAtomIds: options.frozenAtomIds ?? null,
         cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
-        protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+        protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true,
+        maxHeavyAtomCount: options.attachedRingFallbackHeavyAtomLimit
       }),
       options
     );
@@ -1477,7 +1485,8 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
         bondLength: options.bondLength,
         frozenAtomIds: options.frozenAtomIds ?? null,
         cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
-        protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+        protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true,
+        maxHeavyAtomCount: options.attachedRingFallbackHeavyAtomLimit
       }),
       options
     );

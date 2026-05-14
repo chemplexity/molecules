@@ -25,6 +25,83 @@ function buildRingCentersFromCoords(rings, coords) {
   return ringCenters;
 }
 
+/**
+ * Returns an outward direction for a placed atom using the local incident rings
+ * in the active macrocycle system.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate ring coordinates.
+ * @param {string} atomId - Ring atom identifier.
+ * @returns {number|null} Outward angle in radians, or null when unavailable.
+ */
+function macrocycleLocalOutwardAngle(rings, coords, atomId) {
+  const atomPosition = coords.get(atomId);
+  if (!atomPosition) {
+    return null;
+  }
+
+  const incidentCenters = rings
+    .filter(ring => ring.atomIds.includes(atomId))
+    .map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean))
+    .filter(points => points.length >= 3)
+    .map(points => centroid(points));
+  const center =
+    incidentCenters.length > 0
+      ? centroid(incidentCenters)
+      : centroid([...coords.values()]);
+  if (!center) {
+    return null;
+  }
+  return angleOf(sub(atomPosition, center));
+}
+
+/**
+ * Adds a one-bond preview for heavy exocyclic substituent roots so macrocycle
+ * seed scoring can reject ring poses that are clean only before branches are
+ * grown.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate ring coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Candidate coordinates plus previewed roots.
+ */
+function previewMacrocycleExocyclicRoots(layoutGraph, rings, coords, bondLength) {
+  if (!layoutGraph) {
+    return coords;
+  }
+
+  const previewCoords = new Map(coords);
+  const ringAtomIds = new Set(rings.flatMap(ring => ring.atomIds));
+  const previewedRootIds = new Set();
+  for (const anchorAtomId of ringAtomIds) {
+    const anchorPosition = coords.get(anchorAtomId);
+    if (!anchorPosition) {
+      continue;
+    }
+    const outwardAngle = macrocycleLocalOutwardAngle(rings, coords, anchorAtomId);
+    if (outwardAngle == null) {
+      continue;
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.inRing) {
+        continue;
+      }
+      const rootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (coords.has(rootAtomId) || previewedRootIds.has(rootAtomId)) {
+        continue;
+      }
+      const rootAtom = layoutGraph.atoms.get(rootAtomId);
+      if (!rootAtom || rootAtom.element === 'H' || rootAtom.visible === false) {
+        continue;
+      }
+      previewCoords.set(rootAtomId, add(anchorPosition, fromAngle(outwardAngle, bondLength)));
+      previewedRootIds.add(rootAtomId);
+    }
+  }
+
+  return previewCoords;
+}
+
 
 /**
  * Normalizes an angle into the signed `(-pi, pi]` range.
@@ -223,26 +300,27 @@ function circumcenterOf3(p0, p1, p2) {
 }
 
 /**
- * Fits a fixed-radius regular polygon to the already placed atoms of a ring and
- * returns predicted coordinates for every atom in ring order.
+ * Fits fixed-radius regular polygons to the already placed atoms of a ring and
+ * returns predicted coordinates for every atom in ring order, ordered by anchor
+ * fit quality.
  * This is more stable than a raw circumcenter fit when only 1-2 atoms remain
  * unplaced or when overlapping macrocycles have already distorted the shared anchors.
  * @param {object} ring - Ring descriptor.
  * @param {Map<string, {x: number, y: number}>} coords - Existing atom coordinates.
  * @param {number} radius - Target circumradius for the ring.
- * @returns {{predicted: Map<string, {x: number, y: number}>, score: number}|null} Best-fit prediction or null when insufficient anchors exist.
+ * @returns {Array<{predicted: Map<string, {x: number, y: number}>, score: number}>} Fit predictions ordered best first.
  */
-function fitRegularPolygonToPlacedAtoms(ring, coords, radius) {
+function fitRegularPolygonCandidatesToPlacedAtoms(ring, coords, radius) {
   const placed = ring.atomIds.flatMap((atomId, index) => {
     const point = coords.get(atomId);
     return point ? [{ atomId, index, point }] : [];
   });
   if (placed.length < 3) {
-    return null;
+    return [];
   }
 
   const observedCentroid = centroid(placed.map(entry => entry.point));
-  let best = null;
+  const candidates = [];
   const angleStep = (2 * Math.PI) / ring.atomIds.length;
 
   for (const rotationSign of [1, -1]) {
@@ -278,12 +356,10 @@ function fitRegularPolygonToPlacedAtoms(ring, coords, radius) {
       score += dx * dx + dy * dy;
     }
 
-    if (!best || score < best.score) {
-      best = { predicted, score };
-    }
+    candidates.push({ predicted, score });
   }
 
-  return best;
+  return candidates.sort((firstCandidate, secondCandidate) => firstCandidate.score - secondCandidate.score);
 }
 
 function contiguousPlacedRunIndices(ring, coords) {
@@ -401,15 +477,109 @@ function missingRingArcFitsToPlacedRun(ring, coords, bondLength) {
   return candidates;
 }
 
-function scoreRingCompletionCandidate(layoutGraph, coords, predictedCoords, bondLength) {
+/**
+ * Builds exact two-bond candidates for a ring with one missing atom whose two
+ * ring neighbors are already placed.
+ * @param {object} ring - Ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Existing atom coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Array<Map<string, {x: number, y: number}>>} Single-atom bridge candidates.
+ */
+function singleMissingAtomBridgeFits(ring, coords, bondLength) {
+  const missingIndices = [];
+  for (let index = 0; index < ring.atomIds.length; index++) {
+    if (!coords.has(ring.atomIds[index])) {
+      missingIndices.push(index);
+    }
+  }
+  if (missingIndices.length !== 1) {
+    return [];
+  }
+
+  const missingIndex = missingIndices[0];
+  const missingAtomId = ring.atomIds[missingIndex];
+  const previousAtomId = ring.atomIds[(missingIndex - 1 + ring.atomIds.length) % ring.atomIds.length];
+  const nextAtomId = ring.atomIds[(missingIndex + 1) % ring.atomIds.length];
+  const previousPosition = coords.get(previousAtomId);
+  const nextPosition = coords.get(nextAtomId);
+  if (!previousPosition || !nextPosition) {
+    return [];
+  }
+
+  const endpointVector = sub(nextPosition, previousPosition);
+  const endpointDistance = Math.hypot(endpointVector.x, endpointVector.y);
+  if (endpointDistance <= 1e-9 || endpointDistance > 2 * bondLength + 1e-9) {
+    return [];
+  }
+
+  const midpointPosition = midpoint(previousPosition, nextPosition);
+  const bridgeHeight = Math.sqrt(Math.max(0, bondLength * bondLength - (endpointDistance * endpointDistance) / 4));
+  const normal = normalize(perpLeft(endpointVector));
+  const candidates = [];
+  for (const normalSign of [1, -1]) {
+    const predicted = new Map();
+    predicted.set(missingAtomId, add(midpointPosition, scale(normal, normalSign * bridgeHeight)));
+    candidates.push(predicted);
+  }
+
+  return candidates;
+}
+
+/**
+ * Estimates unavoidable future bond stretch for rings that are one atom away
+ * from completion after a candidate is applied.
+ * @param {object[]} rings - Rings in the active ring system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{failureCount: number, maxDeviation: number}} Estimated closure risk.
+ */
+function measureOneAtomBridgeClosureRisk(rings, coords, bondLength) {
+  let failureCount = 0;
+  let maxDeviation = 0;
+
+  for (const ring of rings) {
+    const missingIndices = [];
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      if (!coords.has(ring.atomIds[index])) {
+        missingIndices.push(index);
+      }
+    }
+    if (missingIndices.length !== 1) {
+      continue;
+    }
+
+    const missingIndex = missingIndices[0];
+    const previousAtomId = ring.atomIds[(missingIndex - 1 + ring.atomIds.length) % ring.atomIds.length];
+    const nextAtomId = ring.atomIds[(missingIndex + 1) % ring.atomIds.length];
+    const previousPosition = coords.get(previousAtomId);
+    const nextPosition = coords.get(nextAtomId);
+    if (!previousPosition || !nextPosition) {
+      continue;
+    }
+
+    const endpointDistance = distance(previousPosition, nextPosition);
+    if (endpointDistance <= 2 * bondLength) {
+      continue;
+    }
+
+    failureCount += 2;
+    maxDeviation = Math.max(maxDeviation, endpointDistance / 2 - bondLength);
+  }
+
+  return { failureCount, maxDeviation };
+}
+
+function scoreRingCompletionCandidate(layoutGraph, coords, predictedCoords, bondLength, rings = []) {
   const candidateCoords = new Map(coords);
   for (const [atomId, position] of predictedCoords) {
     candidateCoords.set(atomId, position);
   }
   const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+  const bridgeClosureRisk = measureOneAtomBridgeClosureRisk(rings, candidateCoords, bondLength);
   return {
     predictedCoords,
-    audit
+    audit,
+    bridgeClosureRisk
   };
 }
 
@@ -420,11 +590,15 @@ function isBetterRingCompletionCandidate(candidate, incumbent) {
   if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
     return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
   }
-  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
-    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  const candidateBondFailureCount = candidate.audit.bondLengthFailureCount + (candidate.bridgeClosureRisk?.failureCount ?? 0);
+  const incumbentBondFailureCount = incumbent.audit.bondLengthFailureCount + (incumbent.bridgeClosureRisk?.failureCount ?? 0);
+  if (candidateBondFailureCount !== incumbentBondFailureCount) {
+    return candidateBondFailureCount < incumbentBondFailureCount;
   }
-  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
-    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  const candidateMaxBondDeviation = Math.max(candidate.audit.maxBondLengthDeviation, candidate.bridgeClosureRisk?.maxDeviation ?? 0);
+  const incumbentMaxBondDeviation = Math.max(incumbent.audit.maxBondLengthDeviation, incumbent.bridgeClosureRisk?.maxDeviation ?? 0);
+  if (Math.abs(candidateMaxBondDeviation - incumbentMaxBondDeviation) > 1e-9) {
+    return candidateMaxBondDeviation < incumbentMaxBondDeviation;
   }
   return false;
 }
@@ -561,18 +735,30 @@ function growRemainingRingAtoms(rings, coords, bondLength, layoutGraph = null) {
 
       const arcFits = layoutGraph ? missingRingArcFitsToPlacedRun(ring, coords, bondLength) : [];
 
-      if (unplacedIds.length <= 2 || placedIds.length >= 4 || arcFits.length > 0) {
-        const fitted = fitRegularPolygonToPlacedAtoms(ring, coords, radius);
+      if (unplacedIds.length <= 2 || placedIds.length >= 4 || (n <= 6 && placedIds.length >= 3) || arcFits.length > 0) {
+        const fittedCandidates = fitRegularPolygonCandidatesToPlacedAtoms(ring, coords, radius);
+        const bridgeFits = singleMissingAtomBridgeFits(ring, coords, bondLength);
         let selectedCandidate = null;
-        if (fitted) {
+        for (const bridgeFit of bridgeFits) {
+          const bridgeCandidate = layoutGraph
+            ? scoreRingCompletionCandidate(layoutGraph, coords, bridgeFit, bondLength, rings)
+            : { predictedCoords: bridgeFit };
+          if (isBetterRingCompletionCandidate(bridgeCandidate, selectedCandidate)) {
+            selectedCandidate = bridgeCandidate;
+          }
+        }
+        for (const fitted of fittedCandidates) {
           const fittedMissingCoords = new Map(unplacedIds.map(atomId => [atomId, fitted.predicted.get(atomId)]).filter(([, position]) => Boolean(position)));
-          selectedCandidate = layoutGraph
-            ? scoreRingCompletionCandidate(layoutGraph, coords, fittedMissingCoords, bondLength)
+          const fittedCandidate = layoutGraph
+            ? scoreRingCompletionCandidate(layoutGraph, coords, fittedMissingCoords, bondLength, rings)
             : { predictedCoords: fittedMissingCoords };
+          if (isBetterRingCompletionCandidate(fittedCandidate, selectedCandidate)) {
+            selectedCandidate = fittedCandidate;
+          }
         }
         for (const arcFit of arcFits) {
           const arcCandidate = layoutGraph
-            ? scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength)
+            ? scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength, rings)
             : { predictedCoords: arcFit.predicted };
           if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate)) {
             selectedCandidate = arcCandidate;
@@ -660,8 +846,8 @@ function completeMacrocycleSeed(rings, primaryRing, seedCoords, bondLength, layo
 
 /**
  * Returns whether one macrocycle seed candidate is better than another.
- * @param {{audit: object, candidatePenalty: number}} candidate - Candidate descriptor.
- * @param {{audit: object, candidatePenalty: number}|null} incumbent - Incumbent descriptor.
+ * @param {{audit: object, previewAudit?: object, candidatePenalty: number}} candidate - Candidate descriptor.
+ * @param {{audit: object, previewAudit?: object, candidatePenalty: number}|null} incumbent - Incumbent descriptor.
  * @returns {boolean} True when the candidate is preferred.
  */
 function isBetterMacrocycleSeed(candidate, incumbent) {
@@ -673,6 +859,18 @@ function isBetterMacrocycleSeed(candidate, incumbent) {
   }
   if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
     return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  }
+  if ((candidate.previewAudit?.severeOverlapCount ?? 0) !== (incumbent.previewAudit?.severeOverlapCount ?? 0)) {
+    return (candidate.previewAudit?.severeOverlapCount ?? 0) < (incumbent.previewAudit?.severeOverlapCount ?? 0);
+  }
+  if ((candidate.previewAudit?.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.previewAudit?.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidate.previewAudit?.visibleHeavyBondCrossingCount ?? 0) < (incumbent.previewAudit?.visibleHeavyBondCrossingCount ?? 0);
+  }
+  if ((candidate.previewAudit?.ringSubstituentReadabilityFailureCount ?? 0) !== (incumbent.previewAudit?.ringSubstituentReadabilityFailureCount ?? 0)) {
+    return (candidate.previewAudit?.ringSubstituentReadabilityFailureCount ?? 0) < (incumbent.previewAudit?.ringSubstituentReadabilityFailureCount ?? 0);
+  }
+  if (candidate.audit.visibleHeavyBondCrossingCount !== incumbent.audit.visibleHeavyBondCrossingCount) {
+    return candidate.audit.visibleHeavyBondCrossingCount < incumbent.audit.visibleHeavyBondCrossingCount;
   }
   if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
     return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
@@ -691,14 +889,28 @@ function isBetterMacrocycleSeed(candidate, incumbent) {
 function macrocycleSeedCandidates(primaryRing, aspectRatio) {
   const baseStartAngle = Math.PI / 2;
   const halfStep = Math.PI / primaryRing.atomIds.length;
-  const expandedAspectRatio = Math.min(aspectRatio + 0.12, 2.05);
-  return [
-    { startAngle: baseStartAngle, aspectRatio, candidatePenalty: 0 },
-    { startAngle: baseStartAngle + halfStep, aspectRatio, candidatePenalty: 1 },
-    { startAngle: baseStartAngle - halfStep, aspectRatio, candidatePenalty: 2 },
-    { startAngle: baseStartAngle, aspectRatio: expandedAspectRatio, candidatePenalty: 3 },
-    { startAngle: baseStartAngle + halfStep, aspectRatio: expandedAspectRatio, candidatePenalty: 4 }
+  const aspectRatios = [
+    aspectRatio,
+    Math.min(aspectRatio + 0.12, 2.05),
+    Math.max(aspectRatio, 1.9),
+    Math.max(aspectRatio, 2.2)
   ];
+  const offsetCount = Math.min(primaryRing.atomIds.length, 24);
+  const startOffsets = [0];
+  for (let offsetIndex = 1; offsetIndex <= offsetCount; offsetIndex++) {
+    startOffsets.push(offsetIndex * halfStep, -offsetIndex * halfStep);
+  }
+  const candidates = [];
+  for (const [aspectIndex, candidateAspectRatio] of aspectRatios.entries()) {
+    for (const [offsetIndex, startOffset] of startOffsets.entries()) {
+      candidates.push({
+        startAngle: baseStartAngle + startOffset,
+        aspectRatio: candidateAspectRatio,
+        candidatePenalty: aspectIndex * startOffsets.length + offsetIndex
+      });
+    }
+  }
+  return candidates;
 }
 
 /**
@@ -743,9 +955,12 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
     );
     const coords = completeMacrocycleSeed(rings, primaryRing, seedCoords, bondLength, options.layoutGraph ?? null);
     const audit = options.layoutGraph ? auditLayout(options.layoutGraph, coords, { bondLength }) : { severeOverlapCount: 0, bondLengthFailureCount: 0, maxBondLengthDeviation: 0 };
+    const auditCoords = previewMacrocycleExocyclicRoots(options.layoutGraph ?? null, rings, coords, bondLength);
+    const previewAudit = options.layoutGraph ? auditLayout(options.layoutGraph, auditCoords, { bondLength }) : audit;
     const scoredCandidate = {
       coords,
       audit,
+      previewAudit,
       candidatePenalty: candidate.candidatePenalty
     };
     if (isBetterMacrocycleSeed(scoredCandidate, bestSeed)) {

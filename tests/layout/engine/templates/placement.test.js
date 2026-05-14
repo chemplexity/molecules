@@ -974,6 +974,29 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('N4').x > coords.get('C3').x);
   });
 
+  it('places the triazaadamantane cage without crossed polyaza ring bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('C12CN3CN(CN(C3)C1)C2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'triazaadamantane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const exposedCarbonAngles = [
+      angularDifference(angleOf(sub(coords.get('C1'), coords.get('C2'))), angleOf(sub(coords.get('N3'), coords.get('C2')))) * (180 / Math.PI),
+      angularDifference(angleOf(sub(coords.get('C1'), coords.get('C10'))), angleOf(sub(coords.get('N5'), coords.get('C10')))) * (180 / Math.PI)
+    ];
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+
+    assert.equal(coords.size, 10);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(coords.get('C1').x < coords.get('N3').x);
+    assert.ok(coords.get('C1').x < coords.get('N5').x);
+    assert.ok(coords.get('C1').x < coords.get('N7').x);
+    assert.ok(exposedCarbonAngles.every(angle => angle < 160), `expected C2/C10 to form visible cage vertices, got ${exposedCarbonAngles.map(angle => angle.toFixed(1)).join(', ')}`);
+  });
+
   it('places the sulfonyl cyclopentenyl azocane core with a structured five-member ring', () => {
     const graph = createLayoutGraph(parseSMILES('CC1=C2CS(=O)(=O)C1C(CCNC2(C)C)C=O'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'sulfonyl-cyclopentenyl-azocane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -1198,6 +1221,41 @@ describe('layout/engine/templates/placement', () => {
     }
     assert.ok(coords.get('N33').y > coords.get('C40').y);
     assert.ok(coords.get('O25').y < coords.get('C40').y);
+  });
+
+  it('places the phenolic oxaza morphinan core with regular fused six-rings', () => {
+    const graph = createLayoutGraph(parseSMILES('O[C@H]1CC[C@@]2(O)[C@H]3CC4=CC=C(O)C5=C4[C@@]2(CCN3CC2CCC2)[C@H]1O5'), { suppressH: true });
+    const rootRingSystem = graph.ringSystems[0];
+    const coords = placeTemplateCoords(graph, 'phenolic-oxaza-morphinan-core', rootRingSystem.atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, rootRingSystem.atomIds, 'bridged')
+    });
+    const regularSixRings = [
+      ['C27', 'C18', 'C6', 'C5', 'C4', 'C2'],
+      ['C10', 'C11', 'C17', 'C18', 'C6', 'C8'],
+      ['C17', 'C16', 'C14', 'C13', 'C12', 'C11']
+    ];
+    const etherBridgeAngles = ringAngles(coords, ['O29', 'C27', 'C18', 'C17', 'C16']);
+
+    assert.equal(coords.size, 18);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.58);
+    for (const ring of regularSixRings) {
+      for (let index = 0; index < ring.length; index++) {
+        const atomId = ring[index];
+        const nextAtomId = ring[(index + 1) % ring.length];
+        assert.ok(Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength) < 1e-5);
+      }
+      for (const angle of ringAngles(coords, ring)) {
+        assert.ok(Math.abs(angle - 120) < 1e-5);
+      }
+    }
+    assert.ok(Math.min(...etherBridgeAngles) > 88);
+    assert.ok(Math.max(...etherBridgeAngles) < 125);
+    assert.ok(coords.get('N21').y > coords.get('C18').y);
+    assert.ok(coords.get('O29').y < coords.get('C18').y);
   });
 
   it('places the larger bicyclo and adamantane cage templates too', () => {

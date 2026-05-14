@@ -28,6 +28,7 @@ const COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR = 0.4;
 const COMPRESSED_TERMINAL_CARBONYL_LEAF_CLASH_FACTOR = 0.45;
 const BRIDGED_RING_SUBSTITUENT_SLOT_SCAN_STEP = Math.PI / 36;
 const BRIDGED_RING_SUBSTITUENT_SLOT_CLEARANCE_FACTOR = 0.55;
+const BOND_LENGTH_DEVIATION_EPSILON = 1e-9;
 
 function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
   if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
@@ -1769,7 +1770,7 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
     sampleCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
-    if (deviation > allowedDeviation) {
+    if (deviation > allowedDeviation + BOND_LENGTH_DEVIATION_EPSILON) {
       failingBondCount++;
       if (deviation > allowedDeviation * 2) {
         severeFailingBondCount++;

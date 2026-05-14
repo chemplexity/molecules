@@ -233,6 +233,27 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'O14', 'C15', 'O16') - 120) < 1e-6);
   });
 
+  it('keeps nitrile-adjacent halomethyl branches on projected-tetrahedral slots', () => {
+    const result = runPipeline(parseSMILES('C[Si](C)(C)OC(CF)(CF)C#N'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'acyclic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    for (const atomId of ['Si2', 'C6']) {
+      const separations = sortedHeavyNeighborSeparations(result.layoutGraph, result.coords, atomId);
+      assert.ok(
+        separations.every(separation => Math.abs(separation - 90) < 1e-6),
+        `expected ${atomId} to use projected-tetrahedral quadrants, got ${separations.map(separation => separation.toFixed(2)).join(', ')} degrees`
+      );
+    }
+    assert.ok(Math.abs(bondAngle(result.coords, 'C6', 'C11', 'N12') - 180) < 1e-6);
+  });
+
   it('keeps conjugated ester backbone oxygens on a strict 120-degree bend', () => {
     const result = runPipeline(parseSMILES('CCCCCCOC(=O)C=C(C)C=CCC(C)CCCC(C)C'), {
       suppressH: true,

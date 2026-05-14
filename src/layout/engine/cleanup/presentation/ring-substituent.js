@@ -80,6 +80,23 @@ const TERMINAL_RING_CARBONYL_LEAF_CONTACT_OFFSETS = Object.freeze(
 const DIRECT_ATTACHED_RING_CARBONYL_LEAF_COMPRESSION_FACTORS = Object.freeze([0.62, 0.6, 0.58, 0.56, 0.55, 0.54, 0.52, 0.5, 0.45, 0.4]);
 const TERMINAL_RING_CARBONYL_LEAF_CLEARANCE_FACTOR = 0.75;
 const TERMINAL_RING_CARBONYL_LEAF_MAX_FAN_DEVIATION = Math.PI / 15;
+const TERMINAL_RING_LEAF_OVERLAP_ROTATION_OFFSETS = Object.freeze([
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 4,
+  -(Math.PI / 4),
+  Math.PI / 3,
+  -(Math.PI / 3),
+  Math.PI / 2,
+  -(Math.PI / 2),
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
+  (5 * Math.PI) / 6,
+  -(5 * Math.PI) / 6,
+  Math.PI
+]);
 const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
   maxSubtreeHeavyAtomCount: 18,
   maxSubtreeAtomCount: 28,
@@ -2289,6 +2306,185 @@ function readabilityFailureCountsWorsen(candidate, base) {
     || (candidate.outwardAxisFailureCount ?? 0) > (base.outwardAxisFailureCount ?? 0);
 }
 
+function isTerminalHeavyRingLeaf(layoutGraph, coords, anchorAtomId, rootAtomId, frozenAtomIds = null) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(anchorAtomId, rootAtomId));
+  if (
+    !anchorAtom
+    || !rootAtom
+    || rootAtom.element === 'H'
+    || rootAtom.heavyDegree !== 1
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
+    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+    || !bond
+    || bond.kind !== 'covalent'
+    || bond.inRing
+    || bond.aromatic
+    || (bond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+  if (subtreeAtomIds.length === 0 || (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds))) {
+    return false;
+  }
+  const heavySubtreeAtomIds = subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+  return heavySubtreeAtomIds.length === 1 && heavySubtreeAtomIds[0] === rootAtomId;
+}
+
+function rotateTerminalLeafAroundAnchor(coords, layoutGraph, anchorAtomId, rootAtomId, rotation) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || Math.abs(rotation) <= TIDY_ANGLE_EPSILON) {
+    return null;
+  }
+
+  const overridePositions = new Map();
+  for (const atomId of collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    overridePositions.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotation)));
+  }
+  return overridePositions.size > 0 ? overridePositions : null;
+}
+
+function applyOverridePositions(coords, overridePositions) {
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of overridePositions) {
+    candidateCoords.set(atomId, position);
+  }
+  return candidateCoords;
+}
+
+function terminalLeafOverlapCandidate(layoutGraph, coords, bondLength, baseAudit, anchorAtomId, rootAtomId, rotation) {
+  const overridePositions = rotateTerminalLeafAroundAnchor(coords, layoutGraph, anchorAtomId, rootAtomId, rotation);
+  if (!overridePositions) {
+    return null;
+  }
+  const candidateCoords = applyOverridePositions(coords, overridePositions);
+  const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+  return {
+    coords: candidateCoords,
+    audit,
+    rootAtomId,
+    rotationMagnitude: Math.abs(rotation),
+    severeOverlapPenalty: audit.severeOverlapPenalty,
+    crossingCount: audit.visibleHeavyBondCrossingCount,
+    readabilitySlack:
+      Math.max(0, audit.ringSubstituentReadabilityFailureCount - baseAudit.ringSubstituentReadabilityFailureCount)
+      + Math.max(0, audit.outwardAxisRingSubstituentFailureCount - baseAudit.outwardAxisRingSubstituentFailureCount)
+  };
+}
+
+function isBoundedTerminalLeafOverlapCandidate(candidate, baseAudit) {
+  if (
+    !candidate
+    || candidate.audit.bondLengthFailureCount > baseAudit.bondLengthFailureCount
+    || candidate.audit.collapsedMacrocycleCount > baseAudit.collapsedMacrocycleCount
+    || candidate.audit.labelOverlapCount > baseAudit.labelOverlapCount
+    || candidate.audit.inwardRingSubstituentCount > baseAudit.inwardRingSubstituentCount
+  ) {
+    return false;
+  }
+  if (candidate.audit.severeOverlapCount < baseAudit.severeOverlapCount) {
+    return candidate.audit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount + 1
+      && candidate.readabilitySlack <= 2;
+  }
+  return candidate.audit.severeOverlapCount === baseAudit.severeOverlapCount
+    && candidate.audit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount
+    && candidate.audit.severeOverlapPenalty < baseAudit.severeOverlapPenalty - TIDY_ATOM_EPSILON
+    && candidate.readabilitySlack <= 1;
+}
+
+function isBetterTerminalLeafOverlapCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.audit.visibleHeavyBondCrossingCount !== incumbent.audit.visibleHeavyBondCrossingCount) {
+    return candidate.audit.visibleHeavyBondCrossingCount < incumbent.audit.visibleHeavyBondCrossingCount;
+  }
+  if (candidate.readabilitySlack !== incumbent.readabilitySlack) {
+    return candidate.readabilitySlack < incumbent.readabilitySlack;
+  }
+  if (Math.abs(candidate.audit.severeOverlapPenalty - incumbent.audit.severeOverlapPenalty) > TIDY_ATOM_EPSILON) {
+    return candidate.audit.severeOverlapPenalty < incumbent.audit.severeOverlapPenalty;
+  }
+  return candidate.rotationMagnitude < incumbent.rotationMagnitude - TIDY_ANGLE_EPSILON;
+}
+
+function terminalLeafOverlapDescriptors(layoutGraph, coords, bondLength, frozenAtomIds = null) {
+  const descriptorsByRootId = new Map();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    for (const [rootAtomId, blockerAtomId] of [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ]) {
+      const rootAtom = layoutGraph.atoms.get(rootAtomId);
+      const blockerAtom = layoutGraph.atoms.get(blockerAtomId);
+      if (!rootAtom || !blockerAtom || rootAtom.element === 'H' || blockerAtom.element === 'H') {
+        continue;
+      }
+      for (const bond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+        const anchorAtomId = bond.a === rootAtomId ? bond.b : bond.a;
+        if (!isTerminalHeavyRingLeaf(layoutGraph, coords, anchorAtomId, rootAtomId, frozenAtomIds)) {
+          continue;
+        }
+        descriptorsByRootId.set(rootAtomId, { anchorAtomId, rootAtomId });
+      }
+    }
+  }
+  return [...descriptorsByRootId.values()].sort((firstDescriptor, secondDescriptor) => (
+    firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId)
+    || firstDescriptor.rootAtomId.localeCompare(secondDescriptor.rootAtomId)
+  ));
+}
+
+function relieveTerminalRingLeafSevereOverlaps(layoutGraph, coords, bondLength, frozenAtomIds = null) {
+  let nudges = 0;
+  let baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+  if (baseAudit.severeOverlapCount === 0) {
+    return nudges;
+  }
+
+  const descriptors = terminalLeafOverlapDescriptors(layoutGraph, coords, bondLength, frozenAtomIds);
+  for (const descriptor of descriptors) {
+    baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+    let bestCandidate = null;
+    for (const rotation of TERMINAL_RING_LEAF_OVERLAP_ROTATION_OFFSETS) {
+      const candidate = terminalLeafOverlapCandidate(
+        layoutGraph,
+        coords,
+        bondLength,
+        baseAudit,
+        descriptor.anchorAtomId,
+        descriptor.rootAtomId,
+        rotation
+      );
+      if (
+        isBoundedTerminalLeafOverlapCandidate(candidate, baseAudit)
+        && isBetterTerminalLeafOverlapCandidate(candidate, bestCandidate)
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+    if (!bestCandidate) {
+      continue;
+    }
+    coords.clear();
+    for (const [atomId, position] of bestCandidate.coords) {
+      coords.set(atomId, position);
+    }
+    nudges++;
+  }
+  return nudges;
+}
+
 function isBetterDirectAttachedRingRootRetidyCandidate(candidate, incumbent) {
   if (!incumbent) {
     return true;
@@ -3092,6 +3288,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
 
   nudges += alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds);
   nudges += relieveTerminalRingCarbonylLeafContacts(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds);
+  nudges += relieveTerminalRingLeafSevereOverlaps(layoutGraph, coords, bondLength, frozenAtomIds);
 
   return { coords, nudges };
 }

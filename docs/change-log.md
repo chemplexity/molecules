@@ -1,7 +1,24 @@
 # Change Log
 
+## 2026-05-13
+
+- Supplement ring analysis with omitted closure cycles so glycopeptide macrocycles avoid stretched hidden ring bonds and overlaps.
+- Add a phenolic oxaza morphinan template so oxygen-bridged opioid cages keep regular fused six-ring geometry.
+- Add a triazaadamantane cage template so polyaza thiourea ring systems avoid collapsed ring bonds and overlap.
+- Add an exposed-nitrogen diazatricyclodecane cage template and first-bond crossing rescue so bridged bis-amine carbamates stay placed outside the cage face.
+- Keep ansamycin macrocycle presentation cleanup from being discarded when E/Z enforcement would reopen clean ring closures.
+- Score near-complete fused macrocycle rings with one-atom closure lookahead so ansamycin ether bridges keep normal bond lengths.
+- Add a methyl imino oxatricyclo template so compact iminium ether cages keep separated five-ring lanes and an uncrossed carbon cap.
+- Add a methyl azabicyclo cyclobutanone template so compact ammonium ketone cages keep C12 open and route the carbonyl away from the cyclobutane edge.
+- Add an amino pyrimidine cyclobutane template so compact fused heterocycles keep square four-ring caps and regular hetero five-rings.
+- Move crossing terminal carbonyl leaves onto clean trigonal slots so compact bridged lactam cages keep ring bonds uncrossed.
+
 ## 2026-05-12
 
+- Keep nitrile-adjacent bis-halomethyl siloxy centers on projected four-slot geometry so compact fluoromethyl branches do not pinch.
+- Add an amino cyano thiazole oxatricyclo template so compact heteroaryl ether cages keep regular saturated six-ring geometry.
+- Add an alkenyl phenyl oxabicycloheptane template so substituted ether cages keep clean compact ring geometry.
+- Add a hydroxy diformyl bicyclooctadiene template so substituted bridged dienes keep structured six-member ring lanes.
 - Add a hydroxy oxatricyclo diol template so compact ether-alcohol cages keep the small ether cap from collapsing.
 - Add a formyl aza-oxatricyclo template so compact amine-oxirane cages keep terminal amine exits outside the ring system.
 - Rebalance the hydroxy acetal oxadecalin scaffold so its fused ether rings stay open without crossings while preserving the bridgehead alcohol placement.

@@ -91,6 +91,22 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, false);
   });
 
+  it('uses the diazatricyclodecane template for bridged bis-amine cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)OC(=O)N1C2CC3CC1CC(C2)N3c4ncnc(Oc5ccc(cc5)n6cnnn6)c4C'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'diazatricyclodecane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the triazaadamantane template for polyaza thiourea cages', () => {
+    const graph = createLayoutGraph(parseSMILES('COc1ccccc1N=C(S)NC23CN4CN(CN(C4)C2)C3'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'triazaadamantane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the oxygen-exit quinuclidinium template for ester-substituted cations', () => {
     const graph = createLayoutGraph(parseSMILES('NC(=O)C[N+]12CCC(CC1)C(C2)OC(=O)C1(CCCCCC1)C1=CC=CC=C1'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -105,6 +121,22 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'oxabicyclo-2-2-2');
     assert.equal(plan.mixedMode, false);
+  });
+
+  it('uses the hydroxy diformyl bicyclooctadiene template for substituted bridged dienes', () => {
+    const graph = createLayoutGraph(parseSMILES('CCCC1C(O)C2C(C=O)=CC1C=C2C=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-diformyl-bicyclooctadiene-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the alkenyl phenyl oxabicycloheptane template for substituted ether cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CCCCC(C)(C)C(O)C=CC1C2CC(CO2)(C1CC=CCCCC([O-])=O)C1=CC=CC=C1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'alkenyl-phenyl-oxabicycloheptane-core');
+    assert.equal(plan.mixedMode, true);
   });
 
   it('uses the oxabicyclo[3.1.1]heptane template for bridged oxygen cages', () => {
@@ -275,6 +307,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the amino cyano thiazole oxatricyclo template for compact fused cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC12CCC(C3=NSC=C3O1)C(C)(C#N)C2N'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'amino-cyano-thiazole-oxatricyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the aza-annulene cyclohexadiene template for substituted bridged aza-annulene cores', () => {
     const graph = createLayoutGraph(parseSMILES('CCC1=NC(N)=CC(C)=CC=C2NC=CC1=C2'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -352,6 +392,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'oxaza-morphinan-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the phenolic oxaza morphinan template for oxygen-bridged phenolic cages', () => {
+    const graph = createLayoutGraph(parseSMILES('O[C@H]1CC[C@@]2(O)[C@H]3CC4=CC=C(O)C5=C4[C@@]2(CCN3CC2CCC2)[C@H]1O5'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'phenolic-oxaza-morphinan-core');
     assert.equal(plan.mixedMode, true);
   });
 

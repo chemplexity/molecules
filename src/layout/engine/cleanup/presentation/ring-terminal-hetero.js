@@ -819,9 +819,25 @@ function movedAtomOverlapCount(layoutGraph, coords, atomIds, overridePositions, 
   return overlapCount;
 }
 
+function hiddenHydrogenTerminalMultipleBondAuditDoesNotRegress(candidateAudit, incumbentAudit) {
+  if (candidateAudit?.ok === true) {
+    return true;
+  }
+  if (incumbentAudit?.ok === true) {
+    return false;
+  }
+  return (
+    (candidateAudit?.severeOverlapCount ?? 0) <= (incumbentAudit?.severeOverlapCount ?? 0)
+    && (candidateAudit?.visibleHeavyBondCrossingCount ?? 0) <= (incumbentAudit?.visibleHeavyBondCrossingCount ?? 0)
+    && (candidateAudit?.bondLengthFailureCount ?? 0) <= (incumbentAudit?.bondLengthFailureCount ?? 0)
+    && (candidateAudit?.collapsedMacrocycleCount ?? 0) <= (incumbentAudit?.collapsedMacrocycleCount ?? 0)
+  );
+}
+
 function runHiddenHydrogenTerminalMultipleBondFanTidy(layoutGraph, coords, bondLength, atomGrid, frozenAtomIds) {
   let nudges = 0;
   const threshold = bondLength * 0.55;
+  let incumbentAudit = null;
   for (const centerAtomId of [...coords.keys()]) {
     const descriptor = hiddenHydrogenTerminalMultipleBondFanDescriptor(layoutGraph, coords, centerAtomId, frozenAtomIds);
     if (!descriptor) {
@@ -871,7 +887,11 @@ function runHiddenHydrogenTerminalMultipleBondFanTidy(layoutGraph, coords, bondL
     if (candidatePenalty >= descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
       continue;
     }
-    if (auditLayout(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
+    const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+    if (candidateAudit.ok !== true) {
+      incumbentAudit ??= auditLayout(layoutGraph, coords, { bondLength });
+    }
+    if (!hiddenHydrogenTerminalMultipleBondAuditDoesNotRegress(candidateAudit, incumbentAudit)) {
       continue;
     }
 
@@ -886,6 +906,7 @@ function runHiddenHydrogenTerminalMultipleBondFanTidy(layoutGraph, coords, bondL
       atomGrid.insert(atomId, previousPosition);
     }
     nudges++;
+    incumbentAudit = null;
   }
   return nudges;
 }

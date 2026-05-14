@@ -3861,7 +3861,8 @@ export function runExactAttachedRingRootOutwardRetidy(layoutGraph, inputCoords, 
  *   bondLength?: number,
  *   frozenAtomIds?: Set<string>|null,
  *   cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>,
- *   protectLargeMoleculeBackbone?: boolean
+ *   protectLargeMoleculeBackbone?: boolean,
+ *   maxHeavyAtomCount?: number
  * }} [options] - Touchup options.
  * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Best accepted touchup result.
  */
@@ -3869,7 +3870,8 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const maxPasses = Math.max(1, options.maxPasses ?? 2);
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
-  if ((layoutGraph.traits.heavyAtomCount ?? 0) > 60) {
+  const maxHeavyAtomCount = options.maxHeavyAtomCount ?? 60;
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > maxHeavyAtomCount) {
     return { coords: inputCoords, nudges: 0 };
   }
 

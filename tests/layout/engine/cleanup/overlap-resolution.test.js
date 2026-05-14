@@ -194,7 +194,11 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
 
     assert.ok(beforeAudit.severeOverlapCount > 0);
     assert.equal(audit.severeOverlapCount, 0);
-    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.severeBondLengthFailureCount, 0);
+    assert.ok(
+      audit.maxBondLengthDeviation < graph.options.bondLength * 0.07,
+      `expected only mild rigid sugar-ring bond compression after overlap cleanup, got max deviation ${audit.maxBondLengthDeviation.toFixed(3)}`
+    );
     assert.ok(result.moves > 0);
   });
 

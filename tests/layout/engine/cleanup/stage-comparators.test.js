@@ -53,4 +53,42 @@ describe('layout/engine/cleanup/stage-comparators', () => {
     assert.equal(isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true }), false);
   });
 
+  it('rejects stereo rescue candidates that fix E/Z by tearing open existing ring bonds', () => {
+    const incumbent = {
+      audit: stageAudit({
+        stereoContradiction: true,
+        bondLengthFailureCount: 4,
+        maxBondLengthDeviation: 1.1
+      })
+    };
+    const candidate = {
+      audit: stageAudit({
+        stereoContradiction: false,
+        bondLengthFailureCount: 6,
+        maxBondLengthDeviation: 26.2
+      })
+    };
+
+    assert.equal(isPreferredFinalStereoStage(candidate, incumbent), false);
+  });
+
+  it('still accepts stereo rescue candidates that fix E/Z without bond-length regression', () => {
+    const incumbent = {
+      audit: stageAudit({
+        stereoContradiction: true,
+        bondLengthFailureCount: 1,
+        maxBondLengthDeviation: 0.4
+      })
+    };
+    const candidate = {
+      audit: stageAudit({
+        stereoContradiction: false,
+        bondLengthFailureCount: 1,
+        maxBondLengthDeviation: 0.4
+      })
+    };
+
+    assert.equal(isPreferredFinalStereoStage(candidate, incumbent), true);
+  });
+
 });

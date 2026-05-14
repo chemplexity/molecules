@@ -25,6 +25,12 @@ import {
   runLargeMoleculeResidualRetouch,
   runMacrocycleRingFanAngleRetouch
 } from './cleanup/presentation/large-molecule-residual-retouch.js';
+import { runAttachedRingRotationTouchup } from './cleanup/presentation/attached-ring-fallback.js';
+import {
+  measureTerminalMultipleBondLeafFanPenalty,
+  runPairedTerminalHeteroLeafFanTidy,
+  runTerminalMultipleBondLeafFanTidy
+} from './cleanup/presentation/ring-terminal-hetero.js';
 import {
   hasHypervalentAngleTidyNeed,
   measureOrthogonalHypervalentDeviation,
@@ -409,6 +415,198 @@ function terminalMultipleBondLeafEndpoint(layoutGraph, bond) {
     : { leafAtomId: bond.b, centerAtomId: bond.a };
 }
 
+function normalizeFullAngle(angle) {
+  return ((angle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+}
+
+function angleSeparation(firstAngle, secondAngle) {
+  const difference = Math.abs(normalizeFullAngle(firstAngle - secondAngle));
+  return difference > Math.PI ? (2 * Math.PI) - difference : difference;
+}
+
+function uniqueCandidateAngles(angles) {
+  const uniqueAngles = [];
+  for (const angle of angles) {
+    const normalizedAngle = normalizeFullAngle(angle);
+    if (!uniqueAngles.some(candidateAngle => angleSeparation(candidateAngle, normalizedAngle) < 1e-9)) {
+      uniqueAngles.push(normalizedAngle);
+    }
+  }
+  return uniqueAngles;
+}
+
+function terminalMultipleBondLeafCandidateAngles(coords, centerAtomId, neighborAtomIds) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition || neighborAtomIds.length !== 2) {
+    return [];
+  }
+  const neighborAngles = neighborAtomIds
+    .map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), centerPosition)))
+    .map(normalizeFullAngle)
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const [firstAngle, secondAngle] = neighborAngles;
+  const directGap = secondAngle - firstAngle;
+  const wrappedGap = (2 * Math.PI) - directGap;
+  const directGapBisector = firstAngle + directGap / 2;
+  const wrappedGapBisector = secondAngle + wrappedGap / 2;
+
+  return uniqueCandidateAngles([
+    directGapBisector,
+    wrappedGapBisector,
+    firstAngle + (2 * Math.PI) / 3,
+    firstAngle - (2 * Math.PI) / 3,
+    secondAngle + (2 * Math.PI) / 3,
+    secondAngle - (2 * Math.PI) / 3
+  ]);
+}
+
+function terminalMultipleBondLeafAngleDeviation(coords, centerAtomId, leafAtomId, neighborAtomIds) {
+  const centerPosition = coords.get(centerAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  if (!centerPosition || !leafPosition || neighborAtomIds.length !== 2) {
+    return Infinity;
+  }
+  const leafAngle = angleOf(sub(leafPosition, centerPosition));
+  let maxDeviation = 0;
+  for (const neighborAtomId of neighborAtomIds) {
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborPosition) {
+      return Infinity;
+    }
+    const neighborAngle = angleOf(sub(neighborPosition, centerPosition));
+    maxDeviation = Math.max(maxDeviation, Math.abs(Math.PI * 2 / 3 - angleSeparation(leafAngle, neighborAngle)));
+  }
+  return maxDeviation;
+}
+
+function compareTerminalMultipleBondLeafCrossingCandidates(firstCandidate, secondCandidate) {
+  if (!secondCandidate) {
+    return -1;
+  }
+  for (const key of [
+    'visibleHeavyBondCrossingCount',
+    'severeOverlapCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    const difference = (firstCandidate.audit[key] ?? 0) - (secondCandidate.audit[key] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  if (Math.abs(firstCandidate.angleDeviation - secondCandidate.angleDeviation) > PRESENTATION_METRIC_EPSILON) {
+    return firstCandidate.angleDeviation - secondCandidate.angleDeviation;
+  }
+  if (Math.abs(firstCandidate.movement - secondCandidate.movement) > PRESENTATION_METRIC_EPSILON) {
+    return firstCandidate.movement - secondCandidate.movement;
+  }
+  return firstCandidate.leafAtomId.localeCompare(secondCandidate.leafAtomId);
+}
+
+/**
+ * Repositions terminal multiple-bond leaves when their current slot creates a
+ * visible heavy-bond crossing. The move is intentionally accepted only when it
+ * lowers the final crossing count without worsening other audit counts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Final coordinate map.
+ * @param {object} placement - Placement result with bond-validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean}} Retouch result.
+ */
+function maybeRepositionCrossingTerminalMultipleBondLeaves(layoutGraph, finalCoords, placement, bondLength) {
+  let coords = finalCoords;
+  let changed = false;
+
+  for (let passIndex = 0; passIndex < 2; passIndex++) {
+    const baseAudit = auditLayout(layoutGraph, coords, {
+      bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if ((baseAudit.visibleHeavyBondCrossingCount ?? 0) === 0) {
+      break;
+    }
+
+    let bestCandidate = null;
+    for (const bond of layoutGraph.bonds.values()) {
+      const endpoint = terminalMultipleBondLeafEndpoint(layoutGraph, bond);
+      if (!endpoint) {
+        continue;
+      }
+      const centerAtom = layoutGraph.atoms.get(endpoint.centerAtomId);
+      if (!centerAtom || centerAtom.heavyDegree !== 3 || !coords.has(endpoint.centerAtomId) || !coords.has(endpoint.leafAtomId)) {
+        continue;
+      }
+      const neighborAtomIds = (layoutGraph.bondsByAtomId.get(endpoint.centerAtomId) ?? [])
+        .map(candidateBond => (candidateBond.a === endpoint.centerAtomId ? candidateBond.b : candidateBond.a))
+        .filter(neighborAtomId => (
+          neighborAtomId !== endpoint.leafAtomId
+          && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H'
+          && coords.has(neighborAtomId)
+        ));
+      if (neighborAtomIds.length !== 2) {
+        continue;
+      }
+
+      const centerPosition = coords.get(endpoint.centerAtomId);
+      const leafPosition = coords.get(endpoint.leafAtomId);
+      const baseAngleDeviation = terminalMultipleBondLeafAngleDeviation(
+        coords,
+        endpoint.centerAtomId,
+        endpoint.leafAtomId,
+        neighborAtomIds
+      );
+      for (const candidateAngle of terminalMultipleBondLeafCandidateAngles(coords, endpoint.centerAtomId, neighborAtomIds)) {
+        const candidateCoords = cloneCoords(coords);
+        candidateCoords.set(endpoint.leafAtomId, {
+          x: centerPosition.x + Math.cos(candidateAngle) * bondLength,
+          y: centerPosition.y + Math.sin(candidateAngle) * bondLength
+        });
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        if (
+          !finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)
+          || (candidateAudit.visibleHeavyBondCrossingCount ?? 0) >= (baseAudit.visibleHeavyBondCrossingCount ?? 0)
+        ) {
+          continue;
+        }
+        const angleDeviation = terminalMultipleBondLeafAngleDeviation(
+          candidateCoords,
+          endpoint.centerAtomId,
+          endpoint.leafAtomId,
+          neighborAtomIds
+        );
+        if (angleDeviation > baseAngleDeviation + PRESENTATION_METRIC_EPSILON) {
+          continue;
+        }
+        const movement = Math.hypot(
+          candidateCoords.get(endpoint.leafAtomId).x - leafPosition.x,
+          candidateCoords.get(endpoint.leafAtomId).y - leafPosition.y
+        );
+        const candidate = {
+          audit: candidateAudit,
+          angleDeviation,
+          coords: candidateCoords,
+          leafAtomId: endpoint.leafAtomId,
+          movement
+        };
+        if (compareTerminalMultipleBondLeafCrossingCandidates(candidate, bestCandidate) < 0) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    coords = bestCandidate.coords;
+    changed = true;
+  }
+
+  return { coords, changed };
+}
+
 /**
  * Shortens stretched terminal multiple-bond leaves along their current bond axis.
  * The move is accepted only when final audit metrics do not worsen and the
@@ -465,6 +663,299 @@ function maybeSnapStretchedTerminalMultipleBondLeaves(layoutGraph, finalCoords, 
     return { coords: finalCoords, changed: false };
   }
   return { coords: candidateCoords, changed: true };
+}
+
+function finalCompressedPairedTerminalHeteroLeafFanCandidate(layoutGraph, coords, centerAtomId, targetAngles, factors, leafEntries) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return null;
+  }
+  const candidateCoords = cloneCoords(coords);
+  let movement = 0;
+  let compression = 0;
+
+  for (let index = 0; index < leafEntries.length; index++) {
+    const leafEntry = leafEntries[index];
+    const leafPosition = coords.get(leafEntry.atomId);
+    if (!leafPosition) {
+      return null;
+    }
+    const currentRadius = Math.hypot(leafPosition.x - centerPosition.x, leafPosition.y - centerPosition.y);
+    if (currentRadius <= PRESENTATION_METRIC_EPSILON) {
+      return null;
+    }
+    const targetRadius = currentRadius * factors[index];
+    const targetPosition = {
+      x: centerPosition.x + Math.cos(targetAngles[index]) * targetRadius,
+      y: centerPosition.y + Math.sin(targetAngles[index]) * targetRadius
+    };
+    const delta = {
+      x: targetPosition.x - leafPosition.x,
+      y: targetPosition.y - leafPosition.y
+    };
+    candidateCoords.set(leafEntry.atomId, targetPosition);
+    movement += Math.hypot(delta.x, delta.y);
+    compression += Math.abs(1 - factors[index]);
+
+    for (const hydrogenAtomId of leafEntry.hydrogenAtomIds) {
+      const hydrogenPosition = coords.get(hydrogenAtomId);
+      if (hydrogenPosition) {
+        candidateCoords.set(hydrogenAtomId, {
+          x: hydrogenPosition.x + delta.x,
+          y: hydrogenPosition.y + delta.y
+        });
+      }
+    }
+  }
+
+  return { coords: candidateCoords, movement, compression };
+}
+
+function compareFinalCompressedPairedTerminalHeteroFanCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    const difference = (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  if (
+    Math.abs(candidate.penalty.maxDeviation - incumbent.penalty.maxDeviation)
+    > PRESENTATION_METRIC_EPSILON
+  ) {
+    return candidate.penalty.maxDeviation - incumbent.penalty.maxDeviation;
+  }
+  if (
+    Math.abs(candidate.penalty.totalDeviation - incumbent.penalty.totalDeviation)
+    > PRESENTATION_METRIC_EPSILON
+  ) {
+    return candidate.penalty.totalDeviation - incumbent.penalty.totalDeviation;
+  }
+  if (
+    Math.abs((candidate.audit.maxBondLengthDeviation ?? 0) - (incumbent.audit.maxBondLengthDeviation ?? 0))
+    > PRESENTATION_METRIC_EPSILON
+  ) {
+    return (candidate.audit.maxBondLengthDeviation ?? 0) - (incumbent.audit.maxBondLengthDeviation ?? 0);
+  }
+  if (Math.abs(candidate.compression - incumbent.compression) > PRESENTATION_METRIC_EPSILON) {
+    return candidate.compression - incumbent.compression;
+  }
+  return candidate.movement - incumbent.movement;
+}
+
+function maybeRetouchFinalCompressedPairedTerminalHeteroLeafFans(
+  layoutGraph,
+  finalCoords,
+  placement,
+  bondLength,
+  basePenalty,
+  baseAudit
+) {
+  const compressionFactors = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5];
+  let bestCandidate = null;
+
+  for (const centerAtomId of finalCoords.keys()) {
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    const centerPosition = finalCoords.get(centerAtomId);
+    if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic || !centerPosition) {
+      continue;
+    }
+
+    const heavyBonds = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
+      .filter(bond => bond?.kind === 'covalent' && !bond.aromatic)
+      .map(bond => {
+        const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        return {
+          bond,
+          neighborAtomId,
+          neighborAtom
+        };
+      })
+      .filter(({ neighborAtomId, neighborAtom }) => (
+        neighborAtom
+        && neighborAtom.element !== 'H'
+        && finalCoords.has(neighborAtomId)
+      ));
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+
+    const terminalMultipleLeaves = heavyBonds.filter(({ bond, neighborAtomId, neighborAtom }) => (
+      (bond.order ?? 1) >= 2
+      && neighborAtom.element !== 'C'
+      && neighborAtom.heavyDegree === 1
+      && !(placement.frozenAtomIds instanceof Set && placement.frozenAtomIds.has(neighborAtomId))
+    ));
+    const terminalSingleHeteroLeaves = heavyBonds.filter(({ bond, neighborAtomId, neighborAtom }) => (
+      (bond.order ?? 1) === 1
+      && neighborAtom.element !== 'C'
+      && neighborAtom.element !== 'H'
+      && neighborAtom.heavyDegree === 1
+      && !(placement.frozenAtomIds instanceof Set && placement.frozenAtomIds.has(neighborAtomId))
+    ));
+    if (terminalMultipleLeaves.length !== 1 || terminalSingleHeteroLeaves.length !== 1) {
+      continue;
+    }
+
+    const leafAtomIds = new Set([
+      terminalMultipleLeaves[0].neighborAtomId,
+      terminalSingleHeteroLeaves[0].neighborAtomId
+    ]);
+    const fixedBonds = heavyBonds.filter(({ neighborAtomId }) => !leafAtomIds.has(neighborAtomId));
+    if (fixedBonds.length !== 1) {
+      continue;
+    }
+    const fixedNeighborPosition = finalCoords.get(fixedBonds[0].neighborAtomId);
+    if (!fixedNeighborPosition) {
+      continue;
+    }
+
+    const fixedAngle = angleOf(sub(fixedNeighborPosition, centerPosition));
+    const leafEntries = [terminalMultipleLeaves[0], terminalSingleHeteroLeaves[0]].map(({ neighborAtomId }) => ({
+      atomId: neighborAtomId,
+      hydrogenAtomIds: (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? [])
+        .filter(bond => bond?.kind === 'covalent')
+        .map(bond => (bond.a === neighborAtomId ? bond.b : bond.a))
+        .filter(atomId => layoutGraph.atoms.get(atomId)?.element === 'H' && finalCoords.has(atomId))
+    }));
+
+    for (const targetAngles of [
+      [fixedAngle + (2 * Math.PI) / 3, fixedAngle - (2 * Math.PI) / 3],
+      [fixedAngle - (2 * Math.PI) / 3, fixedAngle + (2 * Math.PI) / 3]
+    ]) {
+      for (const firstFactor of compressionFactors) {
+        for (const secondFactor of compressionFactors) {
+          const retouch = finalCompressedPairedTerminalHeteroLeafFanCandidate(
+            layoutGraph,
+            finalCoords,
+            centerAtomId,
+            targetAngles,
+            [firstFactor, secondFactor],
+            leafEntries
+          );
+          if (!retouch) {
+            continue;
+          }
+          const candidatePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, retouch.coords);
+          if (
+            (candidatePenalty.maxDeviation ?? Number.POSITIVE_INFINITY)
+              >= (basePenalty.maxDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+            && (candidatePenalty.totalDeviation ?? Number.POSITIVE_INFINITY)
+              >= (basePenalty.totalDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+          ) {
+            continue;
+          }
+
+          const candidateAudit = auditLayout(layoutGraph, retouch.coords, {
+            bondLength,
+            bondValidationClasses: placement.bondValidationClasses
+          });
+          if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
+            continue;
+          }
+
+          const candidate = {
+            ...retouch,
+            audit: candidateAudit,
+            penalty: candidatePenalty
+          };
+          if (compareFinalCompressedPairedTerminalHeteroFanCandidates(candidate, bestCandidate) < 0) {
+            bestCandidate = candidate;
+          }
+        }
+      }
+    }
+  }
+
+  return bestCandidate
+    ? {
+        coords: bestCandidate.coords,
+        changed: true,
+        nudges: 1,
+        maxDeviationBefore: basePenalty.maxDeviation,
+        maxDeviationAfter: bestCandidate.penalty.maxDeviation
+      }
+    : { coords: finalCoords, changed: false };
+}
+
+function maybeRetouchFinalTerminalMultipleBondLeafFans(layoutGraph, finalCoords, placement, bondLength) {
+  const basePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, finalCoords);
+  if ((basePenalty.maxDeviation ?? 0) <= PRESENTATION_METRIC_EPSILON) {
+    return { coords: finalCoords, changed: false };
+  }
+  const baseAudit = auditLayout(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+
+  const retouch = runTerminalMultipleBondLeafFanTidy(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses,
+    frozenAtomIds: placement.frozenAtomIds
+  });
+  const pairedTerminalHeteroRetouch = runPairedTerminalHeteroLeafFanTidy(layoutGraph, retouch.coords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  const retouchedCoords = (pairedTerminalHeteroRetouch.nudges ?? 0) > 0
+    ? pairedTerminalHeteroRetouch.coords
+    : retouch.coords;
+  const nudgeCount = (retouch.nudges ?? 0) + (pairedTerminalHeteroRetouch.nudges ?? 0);
+  if (nudgeCount <= 0) {
+    return maybeRetouchFinalCompressedPairedTerminalHeteroLeafFans(
+      layoutGraph,
+      finalCoords,
+      placement,
+      bondLength,
+      basePenalty,
+      baseAudit
+    );
+  }
+
+  const candidatePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, retouchedCoords);
+  if (
+    (candidatePenalty.maxDeviation ?? Number.POSITIVE_INFINITY) >= (basePenalty.maxDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+    && (candidatePenalty.totalDeviation ?? Number.POSITIVE_INFINITY) >= (basePenalty.totalDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+  ) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  const candidateAudit = auditLayout(layoutGraph, retouchedCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  const candidateFanMaxImproves =
+    (candidatePenalty.maxDeviation ?? Number.POSITIVE_INFINITY)
+      < (basePenalty.maxDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON;
+  const candidateBondDeviationWorsens =
+    (candidateAudit.maxBondLengthDeviation ?? 0)
+      > (baseAudit.maxBondLengthDeviation ?? 0) + PRESENTATION_METRIC_EPSILON;
+  if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) || (candidateBondDeviationWorsens && !candidateFanMaxImproves)) {
+    return maybeRetouchFinalCompressedPairedTerminalHeteroLeafFans(
+      layoutGraph,
+      finalCoords,
+      placement,
+      bondLength,
+      basePenalty,
+      baseAudit
+    );
+  }
+
+  return {
+    coords: retouchedCoords,
+    changed: true,
+    nudges: nudgeCount,
+    maxDeviationBefore: basePenalty.maxDeviation,
+    maxDeviationAfter: candidatePenalty.maxDeviation
+  };
 }
 
 function isPreferredFinalHypervalentRetouch(
@@ -1329,12 +1820,24 @@ export function runPipeline(molecule, options = {}) {
       finalCoordsModified = true;
     }
   }
-  if (
+  const macrocycleRingFanAudit = familySummary.primaryFamily === 'macrocycle' && familySummary.mixedMode
+    ? auditLayout(layoutGraph, finalCoords, {
+        bondLength: normalizedOptions.bondLength,
+        bondValidationClasses: placement.bondValidationClasses
+      })
+    : null;
+  const shouldRunMacrocycleRingFanAngleRetouch =
     familySummary.primaryFamily === 'macrocycle'
     && familySummary.mixedMode
-    && (layoutGraph.traits.heavyAtomCount ?? 0) >= 100
-    && (layoutGraph.traits.ringCount ?? 0) >= 8
-  ) {
+    && (layoutGraph.traits.ringCount ?? 0) >= 6
+    && (
+      (
+        (layoutGraph.traits.heavyAtomCount ?? 0) >= 100
+        && (layoutGraph.traits.ringCount ?? 0) >= 8
+      )
+      || (macrocycleRingFanAudit?.severeOverlapCount ?? 0) > 0
+    );
+  if (shouldRunMacrocycleRingFanAngleRetouch) {
     const macrocycleRingFanAngleRetouch = runMacrocycleRingFanAngleRetouch(layoutGraph, finalCoords, {
       bondLength: normalizedOptions.bondLength,
       bondValidationClasses: placement.bondValidationClasses
@@ -1353,6 +1856,46 @@ export function runPipeline(molecule, options = {}) {
           maxDeviationAfter: macrocycleRingFanAngleRetouch.maxDeviationAfter
         }
       );
+
+      const attachedRingAfterFanRetouch = runAttachedRingRotationTouchup(layoutGraph, finalCoords, {
+        bondLength: normalizedOptions.bondLength,
+        bondValidationClasses: placement.bondValidationClasses,
+        maxHeavyAtomCount: 90,
+        maxPasses: 2
+      });
+      if ((attachedRingAfterFanRetouch.nudges ?? 0) > 0) {
+        const currentAudit = auditLayout(layoutGraph, finalCoords, {
+          bondLength: normalizedOptions.bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        const candidateAudit = auditLayout(layoutGraph, attachedRingAfterFanRetouch.coords, {
+          bondLength: normalizedOptions.bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        if (
+          (candidateAudit.bondLengthFailureCount ?? 0) <= (currentAudit.bondLengthFailureCount ?? 0)
+          && (candidateAudit.mildBondLengthFailureCount ?? 0) <= (currentAudit.mildBondLengthFailureCount ?? 0)
+          && (candidateAudit.severeBondLengthFailureCount ?? 0) <= (currentAudit.severeBondLengthFailureCount ?? 0)
+          && (candidateAudit.severeOverlapCount ?? 0) <= (currentAudit.severeOverlapCount ?? 0)
+          && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (currentAudit.visibleHeavyBondCrossingCount ?? 0)
+          && (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (currentAudit.ringSubstituentReadabilityFailureCount ?? 0)
+          && (candidateAudit.labelOverlapCount ?? 0) <= (currentAudit.labelOverlapCount ?? 0) + 1
+          && !((candidateAudit.stereoContradiction ?? false) && !(currentAudit.stereoContradiction ?? false))
+        ) {
+          finalCoords = attachedRingAfterFanRetouch.coords;
+          finalCoordsModified = true;
+          onStep?.(
+            'Macrocycle Attached Ring Retouch',
+            'Attached ring subtree rotated after macrocycle fan polish to clear residual severe overlap.',
+            cloneCoords(finalCoords),
+            {
+              nudges: attachedRingAfterFanRetouch.nudges,
+              severeOverlapCountBefore: currentAudit.severeOverlapCount,
+              severeOverlapCountAfter: candidateAudit.severeOverlapCount
+            }
+          );
+        }
+      }
     }
   }
   if (familySummary.primaryFamily === 'organometallic') {
@@ -1395,6 +1938,36 @@ export function runPipeline(molecule, options = {}) {
   if (stretchedTerminalMultipleBondSnap.changed) {
     finalCoords = stretchedTerminalMultipleBondSnap.coords;
     finalCoordsModified = true;
+  }
+  const crossingTerminalMultipleBondRetouch = maybeRepositionCrossingTerminalMultipleBondLeaves(
+    layoutGraph,
+    finalCoords,
+    placement,
+    normalizedOptions.bondLength
+  );
+  if (crossingTerminalMultipleBondRetouch.changed) {
+    finalCoords = crossingTerminalMultipleBondRetouch.coords;
+    finalCoordsModified = true;
+  }
+  const finalTerminalMultipleBondFanRetouch = maybeRetouchFinalTerminalMultipleBondLeafFans(
+    layoutGraph,
+    finalCoords,
+    placement,
+    normalizedOptions.bondLength
+  );
+  if (finalTerminalMultipleBondFanRetouch.changed) {
+    finalCoords = finalTerminalMultipleBondFanRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.(
+      'Final Terminal Multiple-Bond Fan Retouch',
+      'Residual terminal multiple-bond fans snapped back to trigonal slots after late macrocycle retouches.',
+      cloneCoords(finalCoords),
+      {
+        nudges: finalTerminalMultipleBondFanRetouch.nudges,
+        maxDeviationBefore: finalTerminalMultipleBondFanRetouch.maxDeviationBefore,
+        maxDeviationAfter: finalTerminalMultipleBondFanRetouch.maxDeviationAfter
+      }
+    );
   }
   if (
     shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)
