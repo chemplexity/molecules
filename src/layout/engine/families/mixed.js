@@ -30,6 +30,7 @@ import {
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeRemainingBranches, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
 import {
+  countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   findVisibleHeavyBondCrossings,
   findSevereOverlaps,
@@ -12422,6 +12423,7 @@ function snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantA
       continue;
     }
 
+    const coreScoreContext = createAttachedBlockCoreScoreContext(layoutGraph, coords, bondLength);
     let bestCoords = coords;
     let bestScore = null;
     for (const [continuationParentAtomId, childAtomId] of [
@@ -12435,7 +12437,9 @@ function snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantA
         attachmentAtomId: childAtomId,
         parentAtomId: anchorAtomId
       };
-      const baseScore = measureAttachedBlockCandidateState(coords, coords, bondLength, layoutGraph, candidateMeta);
+      const baseScore = measureAttachedBlockCandidateState(coords, coords, bondLength, layoutGraph, candidateMeta, {
+        coreScoreContext
+      });
       if (baseScore.exactContinuationPenalty <= IMPROVEMENT_EPSILON) {
         continue;
       }
@@ -12455,7 +12459,9 @@ function snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantA
         for (const [atomId, position] of candidate.transformedCoords) {
           candidateCoords.set(atomId, position);
         }
-        const candidateScore = measureAttachedBlockCandidateState(coords, candidateCoords, bondLength, layoutGraph, candidate.meta);
+        const candidateScore = measureAttachedBlockCandidateState(coords, candidateCoords, bondLength, layoutGraph, candidate.meta, {
+          coreScoreContext
+        });
         let shouldReplaceBestCandidate =
           candidateScore.overlapCount === bestScore.overlapCount
           && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
@@ -14946,18 +14952,103 @@ function ensureAttachedBlockPresentationState(score) {
   );
 }
 
+function createAttachedBlockCoreScoreContext(layoutGraph, baseCoords, bondLength) {
+  return {
+    layoutGraph,
+    baseCoords,
+    bondLength,
+    baseSevereOverlaps: findSevereOverlaps(layoutGraph, baseCoords, bondLength),
+    severeOverlapCountByMovedSignature: new Map()
+  };
+}
+
+function attachedBlockCoreScoreContextMatches(context, layoutGraph, baseCoords, bondLength) {
+  return (
+    context
+    && context.layoutGraph === layoutGraph
+    && context.baseCoords === baseCoords
+    && context.bondLength === bondLength
+    && Array.isArray(context.baseSevereOverlaps)
+  );
+}
+
+function countBaseSevereOverlapsTouchingAtoms(baseSevereOverlaps, atomIdSet) {
+  let count = 0;
+  for (const overlap of baseSevereOverlaps) {
+    if (atomIdSet.has(overlap.firstAtomId) || atomIdSet.has(overlap.secondAtomId)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function measureAttachedBlockSevereOverlapCount(
+  layoutGraph,
+  baseCoords,
+  candidateCoords,
+  bondLength,
+  changedAtomIds,
+  changedAtomPositions,
+  coreScoreContext = null
+) {
+  if (!attachedBlockCoreScoreContextMatches(coreScoreContext, layoutGraph, baseCoords, bondLength)) {
+    return findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+  }
+  if (changedAtomIds.length === 0) {
+    return coreScoreContext.baseSevereOverlaps.length;
+  }
+
+  const movedSignature = candidateCoordSignature(changedAtomPositions);
+  const cachedCount = coreScoreContext.severeOverlapCountByMovedSignature.get(movedSignature);
+  if (cachedCount != null) {
+    return cachedCount;
+  }
+
+  const changedAtomIdSet = new Set(changedAtomIds);
+  const baseMovedOverlapCount = countBaseSevereOverlapsTouchingAtoms(
+    coreScoreContext.baseSevereOverlaps,
+    changedAtomIdSet
+  );
+  const candidateMovedOverlapCount = countSevereOverlapsWithOverrides(
+    layoutGraph,
+    baseCoords,
+    changedAtomPositions,
+    bondLength
+  ).count;
+  const overlapCount = Math.max(
+    0,
+    coreScoreContext.baseSevereOverlaps.length - baseMovedOverlapCount + candidateMovedOverlapCount
+  );
+  coreScoreContext.severeOverlapCountByMovedSignature.set(movedSignature, overlapCount);
+  return overlapCount;
+}
+
 function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLength, layoutGraph, candidateMeta = null, options = {}) {
-  const changedAtomIds = [...candidateCoords.keys()].filter(atomId => {
+  const changedAtomIds = [];
+  const changedAtomPositions = new Map();
+  for (const [atomId, candidatePosition] of candidateCoords) {
     if (!baseCoords.has(atomId)) {
-      return true;
+      changedAtomIds.push(atomId);
+      changedAtomPositions.set(atomId, candidatePosition);
+      continue;
     }
     const basePosition = baseCoords.get(atomId);
-    const candidatePosition = candidateCoords.get(atomId);
-    return Math.hypot(candidatePosition.x - basePosition.x, candidatePosition.y - basePosition.y) > 1e-9;
-  });
+    if (Math.hypot(candidatePosition.x - basePosition.x, candidatePosition.y - basePosition.y) > 1e-9) {
+      changedAtomIds.push(atomId);
+      changedAtomPositions.set(atomId, candidatePosition);
+    }
+  }
   const scoringFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds);
   const readabilityFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds, 2);
-  const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+  const overlapCount = measureAttachedBlockSevereOverlapCount(
+    layoutGraph,
+    baseCoords,
+    candidateCoords,
+    bondLength,
+    changedAtomIds,
+    changedAtomPositions,
+    options.coreScoreContext ?? null
+  );
   const heavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, {
     focusAtomIds: changedAtomIds
   });
@@ -15326,7 +15417,9 @@ function scoreAttachedBlockOrientation(
   const score = {
     layoutCost: null,
     totalCost: null,
-    ...measureAttachedBlockCandidateState(coords, candidateCoords, bondLength, layoutGraph, candidateMeta)
+    ...measureAttachedBlockCandidateState(coords, candidateCoords, bondLength, layoutGraph, candidateMeta, {
+      coreScoreContext: options.coreScoreContext ?? null
+    })
   };
   if (options.includeCandidateCoords === true) {
     score.candidateCoords = candidateCoords;
@@ -15719,9 +15812,23 @@ function pickBestAttachedBlockOrientation(
     return null;
   }
 
+  let coreScoreContext = options.coreScoreContext ?? null;
+  const getCoreScoreContext = () => {
+    if (!coreScoreContext) {
+      coreScoreContext = createAttachedBlockCoreScoreContext(layoutGraph, coords, bondLength);
+    }
+    return coreScoreContext;
+  };
   const scoredCandidates = candidates.map(candidate => ({
     ...candidate,
-    _prescore: candidate._prescore ?? preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null)
+    _prescore: candidate._prescore ?? preScoreAttachedBlockOrientation(
+      coords,
+      candidate.transformedCoords,
+      bondLength,
+      layoutGraph,
+      candidate.meta ?? null,
+      { coreScoreContext: getCoreScoreContext() }
+    )
   }));
   const requiresFullExactVisibleTrigonalScoring =
     options.forceFullScoring === true
@@ -15807,7 +15914,8 @@ function pickBestAttachedBlockOrientation(
       candidate.meta ?? null,
       {
         prescore: candidate._prescore ?? null,
-        placementContext: options.placementContext ?? null
+        placementContext: options.placementContext ?? null,
+        coreScoreContext: getCoreScoreContext()
       }
     );
     const cmp = bestScore == null ? -1 : compareAttachedBlockScores(candidateScore, bestScore);
@@ -15865,7 +15973,7 @@ function pickBestAttachedBlockOrientation(
  * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
  * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, heavyBondCrossingCount: number, heavyBondCrossingPriorityCount: number, failingSubstituentCount: number, fusedJunctionContinuationPenalty: number, parentExteriorPenalty: number, exactContinuationPenalty: number, exactTerminalMultipleSlotPenalty: number, terminalLabelClearancePenalty: number, trigonalBisectorPenalty: number, ringExitMaxPenalty: number, omittedHydrogenTrigonalPenalty: number, omittedHydrogenDirectAttachmentCompromisePenalty: number, presentationPenalty: number, cost: number}} Prescored candidate snapshot.
  */
-function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength, layoutGraph, candidateMeta = null) {
+function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength, layoutGraph, candidateMeta = null, options = {}) {
   const candidateCoords = new Map(coords);
   for (const [atomId, position] of transformedCoords) {
     candidateCoords.set(atomId, position);
@@ -15876,7 +15984,10 @@ function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength,
     bondLength,
     layoutGraph,
     candidateMeta,
-    { includePresentation: false }
+    {
+      includePresentation: false,
+      coreScoreContext: options.coreScoreContext ?? null
+    }
   );
   const bounds = computeBounds(candidateCoords, [...candidateCoords.keys()]);
   return {
@@ -15902,13 +16013,15 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     return candidates;
   }
 
+  const coreScoreContext = createAttachedBlockCoreScoreContext(layoutGraph, coords, bondLength);
   const scoredCandidates = candidates.map(candidate => {
     const prescore = candidate._prescore ?? preScoreAttachedBlockOrientation(
       coords,
       candidate.transformedCoords,
       bondLength,
       layoutGraph,
-      candidate.meta ?? null
+      candidate.meta ?? null,
+      { coreScoreContext }
     );
     return {
       ...candidate,
@@ -16377,8 +16490,16 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
     const uniqueInitialRawCandidates = dedupeAttachedBlockCandidatesByMeta(rawCandidates);
     rawCandidates.length = 0;
     rawCandidates.push(...uniqueInitialRawCandidates);
+    const initialCoreScoreContext = createAttachedBlockCoreScoreContext(layoutGraph, coords, bondLength);
     for (const candidate of rawCandidates) {
-      candidate._prescore = preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null);
+      candidate._prescore = preScoreAttachedBlockOrientation(
+        coords,
+        candidate.transformedCoords,
+        bondLength,
+        layoutGraph,
+        candidate.meta ?? null,
+        { coreScoreContext: initialCoreScoreContext }
+      );
     }
     const defaultOverlapFree = rawCandidates.some(candidate => candidate._prescore.overlapCount === 0);
     const defaultCandidatesNeedBranchScoring = rawCandidates.some(candidate =>

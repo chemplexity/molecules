@@ -5,6 +5,8 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import {
   buildAtomGrid,
+  countSevereOverlapsWithOverrides,
+  countVisibleHeavyBondCrossings,
   computeAtomDistortionCost,
   computeSubtreeOverlapCost,
   detectCollapsedMacrocycles,
@@ -63,6 +65,34 @@ describe('layout/engine/audit/invariants', () => {
     });
 
     assert.deepEqual(viaGrid, direct);
+  });
+
+  it('counts severe overlaps from overridden positions like the equivalent moved coordinate set', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('a0', 'C');
+    molecule.addAtom('a1', 'C');
+    molecule.addAtom('a2', 'C');
+    molecule.addAtom('a3', 'C');
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    const graph = createLayoutGraph(molecule);
+    const coords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 0 }],
+      ['a2', { x: 4, y: 0 }],
+      ['a3', { x: 6, y: 0 }]
+    ]);
+    const overridePositions = new Map([
+      ['a3', { x: 0.2, y: 0 }]
+    ]);
+    const movedCoords = new Map(coords);
+    for (const [atomId, position] of overridePositions) {
+      movedCoords.set(atomId, position);
+    }
+
+    assert.equal(
+      countSevereOverlapsWithOverrides(graph, coords, overridePositions, 1.5).count,
+      findSevereOverlaps(graph, movedCoords, 1.5).length
+    );
   });
 
   it('returns the same subtree overlap cost when backed by a spatial atom grid', () => {
@@ -277,6 +307,35 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(findVisibleHeavyBondCrossings(graph, crossingCoords).length, 1);
     assert.equal(layoutState.visibleHeavyBondCrossingCount, 1);
     assert.equal(measureLayoutState(graph, separatedCoords, graph.options.bondLength).visibleHeavyBondCrossingCount, 0);
+  });
+
+  it('counts only focus-touching visible heavy-bond crossings when focus atoms are provided', () => {
+    const molecule = new Molecule();
+    for (let index = 0; index < 8; index++) {
+      molecule.addAtom(`a${index}`, 'C');
+    }
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    molecule.addBond('b1', 'a2', 'a3', {}, false);
+    molecule.addBond('b2', 'a4', 'a5', {}, false);
+    molecule.addBond('b3', 'a6', 'a7', {}, false);
+    const graph = createLayoutGraph(molecule);
+    const coords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 1.5 }],
+      ['a2', { x: 0, y: 1.5 }],
+      ['a3', { x: 1.5, y: 0 }],
+      ['a4', { x: 3, y: 0 }],
+      ['a5', { x: 4.5, y: 1.5 }],
+      ['a6', { x: 3, y: 1.5 }],
+      ['a7', { x: 4.5, y: 0 }]
+    ]);
+
+    assert.equal(countVisibleHeavyBondCrossings(graph, coords), 2);
+    assert.equal(countVisibleHeavyBondCrossings(graph, coords, { focusAtomIds: ['a0'] }), 1);
+    assert.deepEqual(
+      findVisibleHeavyBondCrossings(graph, coords, { focusAtomIds: ['a0'] }).map(crossing => [crossing.firstBondId, crossing.secondBondId]),
+      [['b0', 'b1']]
+    );
   });
 
   it('returns a combined layout state consistent with separate overlap and cost measurements', () => {

@@ -12,6 +12,7 @@
 - Deduplicate larger mixed attached-block candidate pools and cache terminal carbonyl descriptor lists so repeated direct-ring root refinement and carbonyl contact scoring avoid redundant topology and audit work.
 - Reuse full-audit results across late mixed carbonyl and omitted-H hub candidate loops, deduplicate repeated carbonyl contact poses, and reject non-improving ring-carbonyl leaf moves before full audit.
 - Split mixed attached-block prescoring into lazy core and presentation tiers so cheap overlap, exactness, and ring-root gates can discard candidates before readability and near-contact scans run.
+- Reconstruct mixed attached-block severe-overlap counts from cached base overlaps plus moved-atom deltas, and make focus-mode heavy-bond crossing checks compare only focus-touching bonds against the full segment set.
 - Refine caged lactone and bicyclo[2.1.1] template projections for cleaner symmetry and separated lactone exits.
 - Add a trigonal-carbon bicyclo[2.1.1]hexane template so formyl-substituted cages avoid pinched bridge geometry.
 - Add a hydroxy aminopropyl cyclobutane-decalin template so saturated fused cages keep open six-ring lanes and a square cyclobutane cap.
