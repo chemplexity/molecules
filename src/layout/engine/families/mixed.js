@@ -886,7 +886,7 @@ function isExactTerminalCarbonRingLeaf(layoutGraph, coords, anchorAtomId, leafAt
     !layoutGraph
     || !coords.has(anchorAtomId)
     || !coords.has(leafAtomId)
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
     || !isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, leafAtomId)
   ) {
     return false;
@@ -1053,7 +1053,7 @@ function snapExactTerminalCarbonRingLeavesWithAttachedRingClearance(layoutGraph,
   const descriptors = [];
 
   for (const anchorAtomId of coords.keys()) {
-    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1) {
+    if ((layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1) {
       continue;
     }
     for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
@@ -1942,7 +1942,7 @@ function isExactTerminalHeteroRingLeaf(layoutGraph, coords, anchorAtomId, leafAt
     !layoutGraph
     || !coords.has(anchorAtomId)
     || !coords.has(leafAtomId)
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
     || !isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, leafAtomId)
   ) {
     return false;
@@ -2040,7 +2040,7 @@ function snapExactTerminalHeteroRingLeavesWithAttachedRingClearance(layoutGraph,
   const descriptors = [];
 
   for (const anchorAtomId of coords.keys()) {
-    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1) {
+    if ((layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1) {
       continue;
     }
     for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
@@ -4347,7 +4347,7 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
     if (!chainAtom || chainAtom.element !== 'C' || chainAtom.aromatic || chainAtom.heavyDegree !== 2) {
       return false;
     }
-    if ((layoutGraph.atomToRings.get(attachmentAtomId) ?? []).length !== 1) {
+    if ((layoutGraph.ringCountByAtomId.get(attachmentAtomId) ?? 0) !== 1) {
       return false;
     }
     if (classifyRingSystemFamily(layoutGraph, ringSystem) !== 'fused' || !ringSystemHasAromaticRing(ringSystem)) {
@@ -5519,7 +5519,7 @@ function exactDirectAttachmentParentRingOutwardAngles(layoutGraph, coords, candi
   if (!parentAtom.aromatic && !supportsSaturatedRingNitrogenParent && !supportsSaturatedFusedCarbonParent) {
     return [];
   }
-  const parentRingCount = layoutGraph.atomToRings.get(parentAtomId)?.length ?? 0;
+  const parentRingCount = layoutGraph.ringCountByAtomId.get(parentAtomId) ?? 0;
   if (
     (supportsSaturatedFusedCarbonParent ? parentRingCount < 2 : parentRingCount !== 1)
     || !layoutGraph.ringAtomIdSet.has(attachmentAtomId)
@@ -6012,75 +6012,11 @@ function refineExactImineLinkedArylRingChains(layoutGraph, coords, bondLength) {
  * @returns {{centerAtomId: string, leafAtomId: string, ringAnchorAtomId: string, movedAtomIds: string[]}|null} Escape descriptor.
  */
 function terminalCarbonylLeafEscapeDescriptor(layoutGraph, coords, leafAtomId) {
-  const leafAtom = layoutGraph.atoms.get(leafAtomId);
-  if (
-    !leafAtom
-    || leafAtom.element === 'H'
-    || leafAtom.element === 'C'
-    || leafAtom.aromatic
-    || leafAtom.heavyDegree !== 1
-    || !coords.has(leafAtomId)
-  ) {
+  const descriptor = cachedTerminalCarbonylLeafEscapeDescriptor(layoutGraph, leafAtomId);
+  if (!terminalCarbonylLeafEscapeDescriptorCoordsArePresent(coords, descriptor)) {
     return null;
   }
-
-  const centerAtomId = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? [])
-    .filter(bond => bond?.kind === 'covalent')
-    .map(bond => (bond.a === leafAtomId ? bond.b : bond.a))
-    .find(neighborAtomId => {
-      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
-    }) ?? null;
-  const centerAtom = centerAtomId ? layoutGraph.atoms.get(centerAtomId) : null;
-  if (
-    !centerAtomId
-    || !centerAtom
-    || centerAtom.element !== 'C'
-    || centerAtom.aromatic
-    || centerAtom.heavyDegree !== 3
-    || layoutGraph.ringAtomIdSet.has(centerAtomId)
-  ) {
-    return null;
-  }
-
-  const visibleHeavyNeighborIds = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
-    .filter(bond => bond?.kind === 'covalent')
-    .map(bond => (bond.a === centerAtomId ? bond.b : bond.a))
-    .filter(neighborAtomId => {
-      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
-    });
-  if (visibleHeavyNeighborIds.length !== 3) {
-    return null;
-  }
-
-  const ringNeighborIds = visibleHeavyNeighborIds.filter(neighborAtomId =>
-    layoutGraph.ringAtomIdSet.has(neighborAtomId)
-  );
-  const heteroNeighborCount = visibleHeavyNeighborIds.filter(neighborAtomId => {
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    return neighborAtom && neighborAtom.element !== 'C' && neighborAtom.element !== 'H';
-  }).length;
-  const terminalHeteroLeafCount = visibleHeavyNeighborIds.filter(neighborAtomId => {
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    return (
-      neighborAtom
-      && neighborAtom.element !== 'C'
-      && neighborAtom.element !== 'H'
-      && neighborAtom.heavyDegree === 1
-      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
-    );
-  }).length;
-  if (
-    ringNeighborIds.length !== 1
-    || terminalHeteroLeafCount < 1
-    || heteroNeighborCount < 2
-  ) {
-    return null;
-  }
-
-  const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, leafAtomId, centerAtomId);
-  return { centerAtomId, leafAtomId, ringAnchorAtomId: ringNeighborIds[0], movedAtomIds };
+  return descriptor;
 }
 
 function translateAtomIdsToTargetPosition(coords, atomIds, atomId, targetPosition) {
@@ -6220,23 +6156,145 @@ function terminalCarbonylBranchEscapeLocalDeviation(layoutGraph, coords, descrip
   );
 }
 
+function getMixedTopologyDescriptorCache(layoutGraph, cacheName) {
+  const cacheRoot = layoutGraph._mixedTopologyDescriptorCache ?? (layoutGraph._mixedTopologyDescriptorCache = new Map());
+  let cache = cacheRoot.get(cacheName);
+  if (!cache) {
+    cache = new Map();
+    cacheRoot.set(cacheName, cache);
+  }
+  return cache;
+}
+
+function cachedTerminalCarbonylLeafEscapeDescriptor(layoutGraph, leafAtomId) {
+  const cache = getMixedTopologyDescriptorCache(layoutGraph, 'terminalCarbonylLeafEscape');
+  if (cache.has(leafAtomId)) {
+    return cache.get(leafAtomId);
+  }
+
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !leafAtom
+    || leafAtom.element === 'H'
+    || leafAtom.element === 'C'
+    || leafAtom.aromatic
+    || leafAtom.heavyDegree !== 1
+  ) {
+    cache.set(leafAtomId, null);
+    return null;
+  }
+
+  const centerAtomId = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => (bond.a === leafAtomId ? bond.b : bond.a))
+    .find(neighborAtomId => {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H';
+    }) ?? null;
+  const centerAtom = centerAtomId ? layoutGraph.atoms.get(centerAtomId) : null;
+  if (
+    !centerAtomId
+    || !centerAtom
+    || centerAtom.element !== 'C'
+    || centerAtom.aromatic
+    || centerAtom.heavyDegree !== 3
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
+  ) {
+    cache.set(leafAtomId, null);
+    return null;
+  }
+
+  const visibleHeavyNeighborIds = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => (bond.a === centerAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H';
+    });
+  if (visibleHeavyNeighborIds.length !== 3) {
+    cache.set(leafAtomId, null);
+    return null;
+  }
+
+  const ringNeighborIds = visibleHeavyNeighborIds.filter(neighborAtomId =>
+    layoutGraph.ringAtomIdSet.has(neighborAtomId)
+  );
+  const heteroNeighborCount = visibleHeavyNeighborIds.filter(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return neighborAtom && neighborAtom.element !== 'C' && neighborAtom.element !== 'H';
+  }).length;
+  const terminalHeteroLeafCount = visibleHeavyNeighborIds.filter(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return (
+      neighborAtom
+      && neighborAtom.element !== 'C'
+      && neighborAtom.element !== 'H'
+      && neighborAtom.heavyDegree === 1
+      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
+    );
+  }).length;
+  const terminalOxygenLeafCount = visibleHeavyNeighborIds.filter(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return (
+      neighborAtom
+      && neighborAtom.element === 'O'
+      && neighborAtom.heavyDegree === 1
+      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
+    );
+  }).length;
+  if (
+    ringNeighborIds.length !== 1
+    || terminalHeteroLeafCount < 1
+    || heteroNeighborCount < 2
+  ) {
+    cache.set(leafAtomId, null);
+    return null;
+  }
+
+  const descriptor = {
+    centerAtomId,
+    leafAtomId,
+    ringAnchorAtomId: ringNeighborIds[0],
+    movedAtomIds: collectCovalentSubtreeAtomIds(layoutGraph, leafAtomId, centerAtomId),
+    terminalOxygenLeafCount,
+    _requiredCoordAtomIds: [leafAtomId, centerAtomId, ...visibleHeavyNeighborIds]
+  };
+  cache.set(leafAtomId, descriptor);
+  return descriptor;
+}
+
+function terminalCarbonylLeafEscapeDescriptorCoordsArePresent(coords, descriptor) {
+  return !!descriptor && descriptor._requiredCoordAtomIds.every(atomId => coords.has(atomId));
+}
+
+function allCachedTerminalCarbonylLeafEscapeDescriptors(layoutGraph) {
+  const cache = getMixedTopologyDescriptorCache(layoutGraph, 'terminalCarbonylLeafEscapeAll');
+  if (cache.has('descriptors')) {
+    return cache.get('descriptors');
+  }
+
+  const descriptors = [];
+  for (const atomId of layoutGraph.atoms.keys()) {
+    const descriptor = cachedTerminalCarbonylLeafEscapeDescriptor(layoutGraph, atomId);
+    if (descriptor) {
+      descriptors.push(descriptor);
+    }
+  }
+  descriptors.sort((firstDescriptor, secondDescriptor) => (
+    compareCanonicalIds(firstDescriptor.leafAtomId, secondDescriptor.leafAtomId, layoutGraph.canonicalAtomRank)
+    || compareCanonicalIds(firstDescriptor.centerAtomId, secondDescriptor.centerAtomId, layoutGraph.canonicalAtomRank)
+  ));
+  cache.set('descriptors', descriptors);
+  return descriptors;
+}
+
 function terminalCarbonylBranchEscapeDescriptor(layoutGraph, coords, leafAtomId) {
   const leafDescriptor = terminalCarbonylLeafEscapeDescriptor(layoutGraph, coords, leafAtomId);
   if (!leafDescriptor) {
     return null;
   }
 
-  const anchorAtomId = (layoutGraph.bondsByAtomId.get(leafDescriptor.centerAtomId) ?? [])
-    .filter(bond => bond?.kind === 'covalent')
-    .map(bond => (bond.a === leafDescriptor.centerAtomId ? bond.b : bond.a))
-    .filter(neighborAtomId => {
-      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-      return !!neighborAtom
-        && neighborAtom.element !== 'H'
-        && neighborAtomId !== leafDescriptor.leafAtomId
-        && coords.has(neighborAtomId);
-    })
-    .find(neighborAtomId => layoutGraph.ringAtomIdSet.has(neighborAtomId)) ?? null;
+  const anchorAtomId = leafDescriptor.ringAnchorAtomId;
   if (!anchorAtomId || layoutGraph.atoms.get(anchorAtomId)?.chirality) {
     return null;
   }
@@ -8247,7 +8305,11 @@ function refineDirectAttachedRingRootsWithTerminalLeafClearance(layoutGraph, coo
       && baseScore.exactRingExitPenalty <= IMPROVEMENT_EPSILON
     ) {
       let bestLeafEscapeScore = baseScore;
+      const leafEscapeCandidateSignatures = new Set();
       for (const candidateCoords of buildTerminalCarbonylLeafEscapeCandidates(layoutGraph, coords, rotatedRingAtomIds, bondLength)) {
+        if (!markUniqueCandidateCoordSignature(leafEscapeCandidateSignatures, candidateCoords)) {
+          continue;
+        }
         const candidateScore = directAttachedRingRootRefinementCheapScore(
           layoutGraph,
           candidateCoords,
@@ -8322,6 +8384,8 @@ function refineDirectAttachedRingRootsWithTerminalLeafClearance(layoutGraph, coo
     }
 
     let bestScore = baseScore;
+    const sweptRootCandidateSignatures = new Set();
+    const scoredRootCandidateSignatures = new Set();
     for (const rootRotation of rootRotationCandidates) {
       const rotatedRootCoords = rotateAtomIdsAroundPivot(coords, rotatedRingAtomIds, attachmentAtomId, rootRotation);
       if (!rotatedRootCoords) {
@@ -8335,20 +8399,20 @@ function refineDirectAttachedRingRootsWithTerminalLeafClearance(layoutGraph, coo
 
       for (const rootPoseCoordSet of rootPoseCoords) {
         const parentSweepOffsets = [...DIRECT_ATTACHED_RING_ROOT_PARENT_SWEEP_OFFSETS];
-          const parentPosition = rootPoseCoordSet.get(parentAtomId);
-          const attachmentPosition = rootPoseCoordSet.get(attachmentAtomId);
-          if (parentPosition && attachmentPosition) {
-            const currentAttachmentAngle = angleOf(sub(attachmentPosition, parentPosition));
-            const exactParentRingOutwardAngles = exactDirectAttachmentParentRingOutwardAngles(layoutGraph, rootPoseCoordSet, { parentAtomId, attachmentAtomId });
-            for (const exactParentRingOutwardAngle of exactParentRingOutwardAngles) {
-              const exactSweepOffset = normalizeSignedAngle(exactParentRingOutwardAngle - currentAttachmentAngle);
-              if (!parentSweepOffsets.some(existingOffset => angularDifference(existingOffset, exactSweepOffset) <= 1e-9)) {
-                parentSweepOffsets.push(exactSweepOffset);
-              }
+        const parentPosition = rootPoseCoordSet.get(parentAtomId);
+        const attachmentPosition = rootPoseCoordSet.get(attachmentAtomId);
+        if (parentPosition && attachmentPosition) {
+          const currentAttachmentAngle = angleOf(sub(attachmentPosition, parentPosition));
+          const exactParentRingOutwardAngles = exactDirectAttachmentParentRingOutwardAngles(layoutGraph, rootPoseCoordSet, { parentAtomId, attachmentAtomId });
+          for (const exactParentRingOutwardAngle of exactParentRingOutwardAngles) {
+            const exactSweepOffset = normalizeSignedAngle(exactParentRingOutwardAngle - currentAttachmentAngle);
+            if (!parentSweepOffsets.some(existingOffset => angularDifference(existingOffset, exactSweepOffset) <= 1e-9)) {
+              parentSweepOffsets.push(exactSweepOffset);
             }
-            for (const exactParentExteriorAngle of exactDirectAttachmentParentExteriorAngles(layoutGraph, rootPoseCoordSet, { parentAtomId, attachmentAtomId })) {
-              const exactSweepOffset = normalizeSignedAngle(exactParentExteriorAngle - currentAttachmentAngle);
-              if (!parentSweepOffsets.some(existingOffset => angularDifference(existingOffset, exactSweepOffset) <= 1e-9)) {
+          }
+          for (const exactParentExteriorAngle of exactDirectAttachmentParentExteriorAngles(layoutGraph, rootPoseCoordSet, { parentAtomId, attachmentAtomId })) {
+            const exactSweepOffset = normalizeSignedAngle(exactParentExteriorAngle - currentAttachmentAngle);
+            if (!parentSweepOffsets.some(existingOffset => angularDifference(existingOffset, exactSweepOffset) <= 1e-9)) {
               parentSweepOffsets.push(exactSweepOffset);
             }
           }
@@ -8359,6 +8423,9 @@ function refineDirectAttachedRingRootsWithTerminalLeafClearance(layoutGraph, coo
             ? rootPoseCoordSet
             : rotateAtomIdsAroundPivot(rootPoseCoordSet, rotatedRingAtomIds, parentAtomId, parentSweepOffset);
           if (!sweptRootCoords) {
+            continue;
+          }
+          if (!markUniqueCandidateCoordSignature(sweptRootCandidateSignatures, sweptRootCoords)) {
             continue;
           }
 
@@ -8392,6 +8459,9 @@ function refineDirectAttachedRingRootsWithTerminalLeafClearance(layoutGraph, coo
                   bondLength
                 )
               ]) {
+                if (!markUniqueCandidateCoordSignature(scoredRootCandidateSignatures, resolvedCandidateCoords)) {
+                  continue;
+                }
                 const candidateScore = directAttachedRingRootRefinementCheapScore(
                   layoutGraph,
                   resolvedCandidateCoords,
@@ -8604,7 +8674,7 @@ function restoreFusedCyclopropaneExteriorCaps(layoutGraph, coords, bondLength) {
     const capAtomId = cyclopropaneRing.atomIds.find(atomId => !connection.sharedAtomIds.includes(atomId));
     if (
       !capAtomId
-      || (layoutGraph.atomToRings.get(capAtomId)?.length ?? 0) !== 1
+      || (layoutGraph.ringCountByAtomId.get(capAtomId) ?? 0) !== 1
       || !coords.has(capAtomId)
       || !connection.sharedAtomIds.every(atomId => coords.has(atomId))
       || !parentRing.atomIds.every(atomId => coords.has(atomId))
@@ -8772,7 +8842,7 @@ function exocyclicTwoHeavyLinkerChildAtomId(layoutGraph, coords, anchorAtomId, l
     || linkerAtom.aromatic
     || linkerAtom.chirality
     || linkerAtom.heavyDegree !== 2
-    || (layoutGraph.atomToRings.get(linkerAtomId)?.length ?? 0) !== 0
+    || layoutGraph.ringAtomIdSet.has(linkerAtomId)
     || !coords.has(linkerAtomId)
   ) {
     return null;
@@ -9423,7 +9493,7 @@ function directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, coords
   if (!anchorAtom || anchorAtom.aromatic || anchorAtom.heavyDegree !== 3) {
     return { eligible: false, strict: false, omittedHydrogen: false };
   }
-  const anchorRingCount = layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0;
+  const anchorRingCount = layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0;
   if (anchorRingCount > 0) {
     const strict = isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, otherAtomId);
     if (strict) {
@@ -10317,15 +10387,9 @@ function rotateAtomIdsAroundPivot(coords, atomIds, pivotAtomId, rotation) {
 }
 
 function addUniqueSuppressedHydrogenClearanceCandidate(candidates, seenSignatures, coords) {
-  const signature = [...coords.entries()]
-    .sort(([firstAtomId], [secondAtomId]) => String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true }))
-    .map(([atomId, position]) => `${atomId}:${Math.round(position.x * 1e6)}:${Math.round(position.y * 1e6)}`)
-    .join('|');
-  if (seenSignatures.has(signature)) {
-    return;
+  if (markUniqueCandidateCoordSignature(seenSignatures, coords)) {
+    candidates.push(coords);
   }
-  seenSignatures.add(signature);
-  candidates.push(coords);
 }
 
 function buildSuppressedHydrogenRingJunctionClearanceCandidates(layoutGraph, candidateCoords, protectedAtomIds, bondLength) {
@@ -10774,6 +10838,88 @@ function candidateCoordSignature(coords) {
     .join('|');
 }
 
+function markUniqueCandidateCoordSignature(seenSignatures, coords) {
+  const signature = candidateCoordSignature(coords);
+  if (seenSignatures.has(signature)) {
+    return false;
+  }
+  seenSignatures.add(signature);
+  return true;
+}
+
+function cachedMixedCandidateAudit(layoutGraph, coords, bondLength, auditCache) {
+  if (!auditCache) {
+    return auditLayout(layoutGraph, coords, { bondLength });
+  }
+  const signature = candidateCoordSignature(coords);
+  let audit = auditCache.get(signature);
+  if (!audit) {
+    audit = auditLayout(layoutGraph, coords, { bondLength });
+    auditCache.set(signature, audit);
+  }
+  return audit;
+}
+
+function candidateMetaValueSignature(value) {
+  if (value == null) {
+    return String(value);
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(Math.round(value * 1e6)) : String(value);
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(item => candidateMetaValueSignature(item)).join(',')}]`;
+  }
+  if (value instanceof Set) {
+    return `Set(${[...value].map(item => candidateMetaValueSignature(item)).sort().join(',')})`;
+  }
+  if (value instanceof Map) {
+    return `Map(${[...value.entries()]
+      .map(([key, entryValue]) => `${candidateMetaValueSignature(key)}:${candidateMetaValueSignature(entryValue)}`)
+      .sort()
+      .join(',')})`;
+  }
+  if (typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map(key => `${key}:${candidateMetaValueSignature(value[key])}`)
+      .join(',')}}`;
+  }
+  return String(value);
+}
+
+function attachedBlockCandidateMetaSignature(candidate) {
+  return candidateMetaValueSignature(candidate.meta ?? null);
+}
+
+function dedupeAttachedBlockCandidatesByMeta(candidates) {
+  if (candidates.length <= 4) {
+    return candidates.slice();
+  }
+
+  const seenIndexBySignature = new Map();
+  const uniqueCandidates = [];
+  for (const candidate of candidates) {
+    if (!candidate?.transformedCoords) {
+      continue;
+    }
+    const signature = attachedBlockCandidateMetaSignature(candidate);
+    const existingIndex = seenIndexBySignature.get(signature);
+    if (existingIndex == null) {
+      seenIndexBySignature.set(signature, uniqueCandidates.length);
+      uniqueCandidates.push(candidate);
+      continue;
+    }
+    if (!uniqueCandidates[existingIndex]._prescore && candidate._prescore) {
+      uniqueCandidates[existingIndex] = candidate;
+    }
+  }
+  return uniqueCandidates;
+}
+
 /**
  * Adds a candidate coordinate map once per rounded coordinate signature.
  * @param {Map<string, {x: number, y: number}>[]} candidates - Candidate list to update.
@@ -10782,12 +10928,9 @@ function candidateCoordSignature(coords) {
  * @returns {void}
  */
 function pushUniqueNonRingSuppressedHydrogenFanCandidate(candidates, seenSignatures, coords) {
-  const signature = candidateCoordSignature(coords);
-  if (seenSignatures.has(signature)) {
-    return;
+  if (markUniqueCandidateCoordSignature(seenSignatures, coords)) {
+    candidates.push(coords);
   }
-  seenSignatures.add(signature);
-  candidates.push(coords);
 }
 
 /**
@@ -12673,7 +12816,7 @@ function isEscapableBridgeheadChain(layoutGraph, coords, anchorAtomId, childAtom
     || childAtom.element !== 'C'
     || childAtom.aromatic
     || childAtom.heavyDegree !== 2
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) < 2
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) < 2
     || layoutGraph.ringAtomIdSet.has(childAtomId)
     || !coords.has(anchorAtomId)
     || !coords.has(childAtomId)
@@ -14085,7 +14228,7 @@ function findLinkedRingSideBalanceDescriptors(layoutGraph, coords) {
       || linkerAtom.element !== 'C'
       || linkerAtom.aromatic
       || linkerAtom.heavyDegree !== 2
-      || (layoutGraph.atomToRings.get(linkerAtomId)?.length ?? 0) !== 0
+      || layoutGraph.ringAtomIdSet.has(linkerAtomId)
       || !coords.has(linkerAtomId)
     ) {
       continue;
@@ -14734,7 +14877,76 @@ function measureAttachedBlockNearContactPenalty(layoutGraph, coords, bondLength,
   return penalty;
 }
 
-function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLength, layoutGraph, candidateMeta = null) {
+function emptyAttachedBlockReadability() {
+  return {
+    failingSubstituentCount: 0,
+    inwardSubstituentCount: 0,
+    outwardAxisFailureCount: 0,
+    totalOutwardDeviation: 0,
+    maxOutwardDeviation: 0
+  };
+}
+
+function applyAttachedBlockPresentationState(score, presentationState) {
+  score.readability = presentationState.readability;
+  score.failingSubstituentCount = presentationState.readability.failingSubstituentCount;
+  score.nearContactPenalty = presentationState.nearContactPenalty;
+  score.presentationPenalty = presentationState.presentationPenalty;
+  score.idealLeafPresentationPenalty = presentationState.idealLeafPresentationPenalty;
+  score.smallRingExteriorPenalty = presentationState.smallRingExteriorPenalty;
+  score._attachedBlockPresentationComplete = true;
+  score._attachedBlockPresentationContext = null;
+  return score;
+}
+
+function measureAttachedBlockPresentationState(layoutGraph, candidateCoords, bondLength, context) {
+  const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords, {
+    focusAtomIds: context.readabilityFocusAtomIds
+  });
+  const smallRingExteriorPenalty = [...context.scoringFocusAtomIds].reduce(
+    (sum, atomId) => sum + (candidateCoords.has(atomId) ? measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, atomId) : 0),
+    0
+  );
+  const nearContactPenalty = measureAttachedBlockNearContactPenalty(
+    layoutGraph,
+    candidateCoords,
+    bondLength,
+    context.scoringFocusAtomIds
+  );
+  const idealLeafPresentationPenalty = context.shouldScoreIdealLeafPresentation
+    ? measureRingSubstituentPresentationPenalty(layoutGraph, candidateCoords, {
+        focusAtomIds: context.readabilityFocusAtomIds
+      })
+    : 0;
+  return {
+    readability,
+    nearContactPenalty,
+    presentationPenalty: (readability.totalOutwardDeviation ?? 0) + smallRingExteriorPenalty + idealLeafPresentationPenalty,
+    idealLeafPresentationPenalty,
+    smallRingExteriorPenalty
+  };
+}
+
+function ensureAttachedBlockPresentationState(score) {
+  if (!score || score._attachedBlockPresentationComplete === true) {
+    return score;
+  }
+  const context = score._attachedBlockPresentationContext;
+  if (!context) {
+    return score;
+  }
+  return applyAttachedBlockPresentationState(
+    score,
+    measureAttachedBlockPresentationState(
+      context.layoutGraph,
+      context.candidateCoords,
+      context.bondLength,
+      context
+    )
+  );
+}
+
+function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLength, layoutGraph, candidateMeta = null, options = {}) {
   const changedAtomIds = [...candidateCoords.keys()].filter(atomId => {
     if (!baseCoords.has(atomId)) {
       return true;
@@ -14745,9 +14957,6 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
   });
   const scoringFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds);
   const readabilityFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds, 2);
-  const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords, {
-    focusAtomIds: readabilityFocusAtomIds
-  });
   const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
   const heavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, {
     focusAtomIds: changedAtomIds
@@ -14805,20 +15014,17 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     bondLength,
     changedAtomIds
   );
-  const smallRingExteriorPenalty = [...scoringFocusAtomIds].reduce(
-    (sum, atomId) => sum + (candidateCoords.has(atomId) ? measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, atomId) : 0),
-    0
-  );
-  const nearContactPenalty = measureAttachedBlockNearContactPenalty(layoutGraph, candidateCoords, bondLength, scoringFocusAtomIds);
   const shouldScoreIdealLeafPresentation =
     changedAtomIds.length <= 12 && (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT;
-  const idealLeafPresentationPenalty = shouldScoreIdealLeafPresentation
-    ? measureRingSubstituentPresentationPenalty(layoutGraph, candidateCoords, {
-        focusAtomIds: readabilityFocusAtomIds
-      })
-    : 0;
-
-  return {
+  const presentationContext = {
+    layoutGraph,
+    candidateCoords,
+    bondLength,
+    scoringFocusAtomIds,
+    readabilityFocusAtomIds,
+    shouldScoreIdealLeafPresentation
+  };
+  const score = {
     overlapCount,
     heavyBondCrossingCount,
     heavyBondCrossingPriorityCount,
@@ -14838,14 +15044,24 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     junctionCrowdingPenalty,
     exactTerminalMultipleSlotPenalty,
     terminalLabelClearancePenalty,
-    nearContactPenalty,
     prioritizeRingExitBeforeTerminalSlots: candidateMeta?.prioritizeRingExitBeforeTerminalSlots === true,
-    presentationPenalty: (readability.totalOutwardDeviation ?? 0) + smallRingExteriorPenalty + idealLeafPresentationPenalty,
-    idealLeafPresentationPenalty,
-    smallRingExteriorPenalty,
     changedAtomIds,
-    readability
+    _attachedBlockPresentationComplete: options.includePresentation !== false,
+    _attachedBlockPresentationContext: options.includePresentation === false ? presentationContext : null
   };
+  if (options.includePresentation === false) {
+    score.readability = emptyAttachedBlockReadability();
+    score.failingSubstituentCount = 0;
+    score.nearContactPenalty = 0;
+    score.presentationPenalty = 0;
+    score.idealLeafPresentationPenalty = 0;
+    score.smallRingExteriorPenalty = 0;
+    return score;
+  }
+  return applyAttachedBlockPresentationState(
+    score,
+    measureAttachedBlockPresentationState(layoutGraph, candidateCoords, bondLength, presentationContext)
+  );
 }
 
 function mixedAttachedBlockWorkload(coords, primaryNonRingAtomIds) {
@@ -14939,7 +15155,6 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
   if (
     bestScore.overlapCount !== 0 ||
     bestScore.heavyBondCrossingPriorityCount !== 0 ||
-    bestScore.readability.failingSubstituentCount !== 0 ||
     bestScore.fusedJunctionContinuationPenalty > IMPROVEMENT_EPSILON ||
     bestScore.parentVisibleTrigonalPenalty > IMPROVEMENT_EPSILON ||
     bestScore.parentOutwardPenalty > IMPROVEMENT_EPSILON ||
@@ -14952,7 +15167,13 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
     bestScore.ringExitMaxPenalty > IMPROVEMENT_EPSILON ||
     bestScore.attachmentExteriorPenalty > IMPROVEMENT_EPSILON ||
     bestScore.junctionCrowdingPenalty > IMPROVEMENT_EPSILON ||
-    bestScore.terminalLabelClearancePenalty > IMPROVEMENT_EPSILON ||
+    bestScore.terminalLabelClearancePenalty > IMPROVEMENT_EPSILON
+  ) {
+    return false;
+  }
+  ensureAttachedBlockPresentationState(bestScore);
+  if (
+    bestScore.readability.failingSubstituentCount !== 0 ||
     bestScore.nearContactPenalty > IMPROVEMENT_EPSILON ||
     bestScore.presentationPenalty > 0.25
   ) {
@@ -14964,7 +15185,6 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
   return (
     runnerUpScore.overlapCount > 0 ||
     runnerUpScore.heavyBondCrossingPriorityCount > 0 ||
-    runnerUpScore.readability.failingSubstituentCount > 0 ||
     runnerUpScore.fusedJunctionContinuationPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.parentVisibleTrigonalPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.parentOutwardPenalty > IMPROVEMENT_EPSILON ||
@@ -14978,9 +15198,14 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
     runnerUpScore.attachmentExteriorPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.junctionCrowdingPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.terminalLabelClearancePenalty > IMPROVEMENT_EPSILON ||
-    runnerUpScore.nearContactPenalty > IMPROVEMENT_EPSILON ||
-    runnerUpScore.presentationPenalty > bestScore.presentationPenalty + 0.2 ||
     runnerUpScore.cost > bestScore.cost + bondLength * 0.2
+  ) || (
+    ensureAttachedBlockPresentationState(runnerUpScore)
+    && (
+      runnerUpScore.readability.failingSubstituentCount > 0 ||
+      runnerUpScore.nearContactPenalty > IMPROVEMENT_EPSILON ||
+      runnerUpScore.presentationPenalty > bestScore.presentationPenalty + 0.2
+    )
   );
 }
 
@@ -14988,10 +15213,9 @@ function attachedBlockPrimaryScoreIsPerfect(score) {
   if (!score) {
     return false;
   }
-  return (
+  if (!(
     score.overlapCount === 0 &&
     score.heavyBondCrossingPriorityCount === 0 &&
-    score.readability.failingSubstituentCount === 0 &&
     score.fusedJunctionContinuationPenalty <= IMPROVEMENT_EPSILON &&
     score.parentVisibleTrigonalPenalty <= IMPROVEMENT_EPSILON &&
     score.parentOutwardPenalty <= IMPROVEMENT_EPSILON &&
@@ -15004,8 +15228,15 @@ function attachedBlockPrimaryScoreIsPerfect(score) {
     score.ringExitMaxPenalty <= IMPROVEMENT_EPSILON &&
     score.attachmentExteriorPenalty <= IMPROVEMENT_EPSILON &&
     score.junctionCrowdingPenalty <= IMPROVEMENT_EPSILON &&
-    score.terminalLabelClearancePenalty <= IMPROVEMENT_EPSILON &&
+    score.terminalLabelClearancePenalty <= IMPROVEMENT_EPSILON
+  )) {
+    return false;
+  }
+  ensureAttachedBlockPresentationState(score);
+  return (
+    score.readability.failingSubstituentCount === 0 &&
     score.nearContactPenalty <= IMPROVEMENT_EPSILON &&
+    score.smallRingExteriorPenalty <= IMPROVEMENT_EPSILON &&
     score.presentationPenalty <= IMPROVEMENT_EPSILON
   );
 }
@@ -15107,6 +15338,7 @@ function ensureAttachedBlockLayoutCost(candidateScore, candidateCoords, layoutGr
   if (candidateScore.layoutCost != null && candidateScore.totalCost != null) {
     return candidateScore;
   }
+  ensureAttachedBlockPresentationState(candidateScore);
 
   const layoutCost =
     candidateScore.changedAtomIds.length >= 12
@@ -15154,6 +15386,8 @@ function compareAttachedBlockScores(cand, inc) {
   if (Math.abs(cand.exactTerminalMultipleSlotPenalty - inc.exactTerminalMultipleSlotPenalty) > IMPROVEMENT_EPSILON) {
     return cand.exactTerminalMultipleSlotPenalty - inc.exactTerminalMultipleSlotPenalty;
   }
+  ensureAttachedBlockPresentationState(cand);
+  ensureAttachedBlockPresentationState(inc);
   if (cand.readability.failingSubstituentCount !== inc.readability.failingSubstituentCount) {
     return cand.readability.failingSubstituentCount - inc.readability.failingSubstituentCount;
   }
@@ -15181,6 +15415,8 @@ function compareOmittedHydrogenDirectAttachmentRefinementScores(cand, inc) {
   if (Math.abs(cand.exactTerminalMultipleSlotPenalty - inc.exactTerminalMultipleSlotPenalty) > IMPROVEMENT_EPSILON) {
     return cand.exactTerminalMultipleSlotPenalty - inc.exactTerminalMultipleSlotPenalty;
   }
+  ensureAttachedBlockPresentationState(cand);
+  ensureAttachedBlockPresentationState(inc);
   if (cand.readability.failingSubstituentCount !== inc.readability.failingSubstituentCount) {
     return cand.readability.failingSubstituentCount - inc.readability.failingSubstituentCount;
   }
@@ -15209,6 +15445,8 @@ function compareOmittedHydrogenDirectAttachmentRefinementScores(cand, inc) {
  * @returns {boolean} True when the candidate is within the rescue budget.
  */
 function hasBoundedOmittedHydrogenParentSpreadTradeoff(cand, inc) {
+  ensureAttachedBlockPresentationState(cand);
+  ensureAttachedBlockPresentationState(inc);
   return (
     cand.overlapCount <= inc.overlapCount
     && cand.heavyBondCrossingPriorityCount <= inc.heavyBondCrossingPriorityCount
@@ -15412,6 +15650,8 @@ function compareExactTrigonalBisectorRescueScores(cand, inc) {
     && inc.projectedTetrahedralParentPenalty <= IMPROVEMENT_EPSILON
     && inc.parentExteriorPenalty <= IMPROVEMENT_EPSILON
     && inc.ringExitPenalty <= IMPROVEMENT_EPSILON;
+  ensureAttachedBlockPresentationState(cand);
+  ensureAttachedBlockPresentationState(inc);
   if (
     candidateIsExact
     && !incumbentIsExact
@@ -15503,9 +15743,14 @@ function pickBestAttachedBlockOrientation(
     )
     && bestPrescoredCandidate._prescore.overlapCount === 0
     && bestPrescoredCandidate._prescore.heavyBondCrossingPriorityCount === 0
-    && bestPrescoredCandidate._prescore.readability.failingSubstituentCount === 0
     && bestPrescoredCandidate._prescore.ringExitPenalty <= IMPROVEMENT_EPSILON
-    && bestPrescoredCandidate._prescore.presentationPenalty <= IMPROVEMENT_EPSILON;
+    && (() => {
+      ensureAttachedBlockPresentationState(bestPrescoredCandidate._prescore);
+      return (
+        bestPrescoredCandidate._prescore.readability.failingSubstituentCount === 0
+        && bestPrescoredCandidate._prescore.presentationPenalty <= IMPROVEMENT_EPSILON
+      );
+    })();
   if (canAcceptExactChildRootPrescore) {
     return {
       transformedCoords: bestPrescoredCandidate.transformedCoords,
@@ -15625,7 +15870,14 @@ function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength,
   for (const [atomId, position] of transformedCoords) {
     candidateCoords.set(atomId, position);
   }
-  const measuredState = measureAttachedBlockCandidateState(coords, candidateCoords, bondLength, layoutGraph, candidateMeta);
+  const measuredState = measureAttachedBlockCandidateState(
+    coords,
+    candidateCoords,
+    bondLength,
+    layoutGraph,
+    candidateMeta,
+    { includePresentation: false }
+  );
   const bounds = computeBounds(candidateCoords, [...candidateCoords.keys()]);
   return {
     coords: candidateCoords,
@@ -15650,10 +15902,20 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     return candidates;
   }
 
-  const scoredCandidates = candidates.map(candidate => ({
-    ...candidate,
-    ...(candidate._prescore ?? preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null))
-  }));
+  const scoredCandidates = candidates.map(candidate => {
+    const prescore = candidate._prescore ?? preScoreAttachedBlockOrientation(
+      coords,
+      candidate.transformedCoords,
+      bondLength,
+      layoutGraph,
+      candidate.meta ?? null
+    );
+    return {
+      ...candidate,
+      ...prescore,
+      _prescore: prescore
+    };
+  });
   scoredCandidates.sort((firstCandidate, secondCandidate) => {
     if (firstCandidate.overlapCount !== secondCandidate.overlapCount) {
       return firstCandidate.overlapCount - secondCandidate.overlapCount;
@@ -15664,6 +15926,8 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     if (Math.abs(firstCandidate.exactTerminalMultipleSlotPenalty - secondCandidate.exactTerminalMultipleSlotPenalty) > IMPROVEMENT_EPSILON) {
       return firstCandidate.exactTerminalMultipleSlotPenalty - secondCandidate.exactTerminalMultipleSlotPenalty;
     }
+    ensureAttachedBlockPresentationState(firstCandidate);
+    ensureAttachedBlockPresentationState(secondCandidate);
     if (firstCandidate.failingSubstituentCount !== secondCandidate.failingSubstituentCount) {
       return firstCandidate.failingSubstituentCount - secondCandidate.failingSubstituentCount;
     }
@@ -16110,6 +16374,9 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
         rawCandidates.push(buildLinkedRingCandidate(turnSign, mirror));
       }
     }
+    const uniqueInitialRawCandidates = dedupeAttachedBlockCandidatesByMeta(rawCandidates);
+    rawCandidates.length = 0;
+    rawCandidates.push(...uniqueInitialRawCandidates);
     for (const candidate of rawCandidates) {
       candidate._prescore = preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null);
     }
@@ -16141,6 +16408,9 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
         }
       }
     }
+    const uniqueRawLinkerCandidates = dedupeAttachedBlockCandidatesByMeta(rawCandidates);
+    rawCandidates.length = 0;
+    rawCandidates.push(...uniqueRawLinkerCandidates);
     for (const candidate of [...rawCandidates]) {
       rawCandidates.push(
         ...buildDirectAttachmentExactRingExitRescueCandidates(
@@ -16384,6 +16654,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         }
       }
     }
+    const uniqueInitialAttachedBlockCandidates = dedupeAttachedBlockCandidatesByMeta(rawAttachedBlockCandidates);
+    rawAttachedBlockCandidates.length = 0;
+    rawAttachedBlockCandidates.push(...uniqueInitialAttachedBlockCandidates);
     rawAttachedBlockCandidates.push(
       ...rawAttachedBlockCandidates.flatMap(candidate =>
         buildAttachedBlockTerminalCarbonylLeafEscapeCandidates(
@@ -16559,21 +16832,23 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           }
         }
       }
+      const uniqueExpandedCandidates = dedupeAttachedBlockCandidatesByMeta(expandedCandidates);
       const shouldProbeMirroredParentSubtrees =
         (directAttachmentTrigonalSensitivity.omittedHydrogen || shouldExpandForExactAromaticRingExit) &&
         !layoutGraph.atoms.get(attachment.parentAtomId)?.chirality &&
         !layoutGraph.atoms.get(attachment.attachmentAtomId)?.chirality;
       const expandedCandidatePool = shouldProbeMirroredParentSubtrees
         ? [
-            ...expandedCandidates,
-            ...expandedCandidates.flatMap(candidate =>
+            ...uniqueExpandedCandidates,
+            ...uniqueExpandedCandidates.flatMap(candidate =>
               buildMirroredParentSideSubtreeCandidates(layoutGraph, coords, candidate.transformedCoords, candidate.meta ?? null)
             )
           ]
-        : expandedCandidates;
+        : uniqueExpandedCandidates;
+      const uniqueExpandedCandidatePool = dedupeAttachedBlockCandidatesByMeta(expandedCandidatePool);
       const candidatePool = [
-        ...expandedCandidatePool,
-        ...expandedCandidatePool.flatMap(candidate =>
+        ...uniqueExpandedCandidatePool,
+        ...uniqueExpandedCandidatePool.flatMap(candidate =>
           buildAttachedBlockTerminalCarbonylLeafEscapeCandidates(
             layoutGraph,
             coords,
@@ -17649,10 +17924,8 @@ function terminalCarbonylLeafForeignRingBondCrossing(layoutGraph, coords, descri
 
 function terminalCarbonylLeafForeignRingContacts(layoutGraph, coords, clearanceThreshold) {
   const records = [];
-  const seenKeys = new Set();
-  for (const leafAtomId of coords.keys()) {
-    const descriptor = terminalCarbonylLeafEscapeDescriptor(layoutGraph, coords, leafAtomId);
-    if (!descriptor) {
+  for (const descriptor of allCachedTerminalCarbonylLeafEscapeDescriptors(layoutGraph)) {
+    if (!terminalCarbonylLeafEscapeDescriptorCoordsArePresent(coords, descriptor)) {
       continue;
     }
     const ringAnchorAtom = layoutGraph.atoms.get(descriptor.ringAnchorAtomId);
@@ -17660,26 +17933,9 @@ function terminalCarbonylLeafForeignRingContacts(layoutGraph, coords, clearanceT
     if (!ringAnchorAtom || ringAnchorAtom.element === 'H' || leafAtom?.element !== 'O') {
       continue;
     }
-    const terminalOxygenLeafCount = (layoutGraph.bondsByAtomId.get(descriptor.centerAtomId) ?? [])
-      .filter(bond => bond?.kind === 'covalent')
-      .map(bond => (bond.a === descriptor.centerAtomId ? bond.b : bond.a))
-      .filter(neighborAtomId => {
-        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-        return (
-          neighborAtom
-          && neighborAtom.element === 'O'
-          && neighborAtom.heavyDegree === 1
-          && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
-        );
-      }).length;
-    if (terminalOxygenLeafCount < 1) {
+    if ((descriptor.terminalOxygenLeafCount ?? 0) < 1) {
       continue;
     }
-    const key = `${descriptor.centerAtomId}:${descriptor.leafAtomId}`;
-    if (seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
     const contact = terminalCarbonylLeafClosestForeignRingContact(layoutGraph, coords, descriptor);
     const intrusion = terminalCarbonylLeafForeignRingIntrusion(layoutGraph, coords, descriptor);
     const crossing = terminalCarbonylLeafForeignRingBondCrossing(layoutGraph, coords, descriptor);
@@ -17713,15 +17969,20 @@ function terminalCarbonylLeafForeignRingContacts(layoutGraph, coords, clearanceT
  * @param {string} leafAtomId - Candidate terminal oxygen atom id.
  * @returns {{centerAtomId: string, leafAtomId: string, ringSystemId: string|number|null}|null} Ring-carbonyl leaf descriptor.
  */
-function terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtomId) {
+function cachedTerminalRingCarbonylLeafContactDescriptor(layoutGraph, leafAtomId) {
+  const cache = getMixedTopologyDescriptorCache(layoutGraph, 'terminalRingCarbonylLeafContact');
+  if (cache.has(leafAtomId)) {
+    return cache.get(leafAtomId);
+  }
+
   const leafAtom = layoutGraph.atoms.get(leafAtomId);
   if (
     !leafAtom
     || leafAtom.element !== 'O'
     || leafAtom.aromatic
     || leafAtom.heavyDegree !== 1
-    || !coords.has(leafAtomId)
   ) {
+    cache.set(leafAtomId, null);
     return null;
   }
 
@@ -17736,21 +17997,53 @@ function terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtom
       || centerAtom.element !== 'C'
       || centerAtom.aromatic
       || centerAtom.heavyDegree !== 3
-      || !coords.has(centerAtomId)
       || !layoutGraph.ringAtomIdSet.has(centerAtomId)
       || !isTerminalMultipleBondLeaf(layoutGraph, centerAtomId, bond)
     ) {
       continue;
     }
 
-    return {
+    const descriptor = {
       centerAtomId,
       leafAtomId,
-      ringSystemId: layoutGraph.atomToRingSystemId.get(centerAtomId) ?? null
+      ringSystemId: layoutGraph.atomToRingSystemId.get(centerAtomId) ?? null,
+      _requiredCoordAtomIds: [leafAtomId, centerAtomId]
     };
+    cache.set(leafAtomId, descriptor);
+    return descriptor;
   }
 
+  cache.set(leafAtomId, null);
   return null;
+}
+
+function terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtomId) {
+  const descriptor = cachedTerminalRingCarbonylLeafContactDescriptor(layoutGraph, leafAtomId);
+  if (!descriptor || !descriptor._requiredCoordAtomIds.every(atomId => coords.has(atomId))) {
+    return null;
+  }
+  return descriptor;
+}
+
+function allCachedTerminalRingCarbonylLeafContactDescriptors(layoutGraph) {
+  const cache = getMixedTopologyDescriptorCache(layoutGraph, 'terminalRingCarbonylLeafContactAll');
+  if (cache.has('descriptors')) {
+    return cache.get('descriptors');
+  }
+
+  const descriptors = [];
+  for (const atomId of layoutGraph.atoms.keys()) {
+    const descriptor = cachedTerminalRingCarbonylLeafContactDescriptor(layoutGraph, atomId);
+    if (descriptor) {
+      descriptors.push(descriptor);
+    }
+  }
+  descriptors.sort((firstDescriptor, secondDescriptor) => (
+    compareCanonicalIds(firstDescriptor.leafAtomId, secondDescriptor.leafAtomId, layoutGraph.canonicalAtomRank)
+    || compareCanonicalIds(firstDescriptor.centerAtomId, secondDescriptor.centerAtomId, layoutGraph.canonicalAtomRank)
+  ));
+  cache.set('descriptors', descriptors);
+  return descriptors;
 }
 
 /**
@@ -17845,17 +18138,10 @@ function terminalRingCarbonylLeafForeignRingBondCrossing(layoutGraph, coords, de
  */
 function terminalRingCarbonylLeafForeignRingContacts(layoutGraph, coords, clearanceThreshold, bondLength) {
   const records = [];
-  const seenKeys = new Set();
-  for (const leafAtomId of coords.keys()) {
-    const descriptor = terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtomId);
-    if (!descriptor) {
+  for (const descriptor of allCachedTerminalRingCarbonylLeafContactDescriptors(layoutGraph)) {
+    if (!descriptor._requiredCoordAtomIds.every(atomId => coords.has(atomId))) {
       continue;
     }
-    const key = `${descriptor.centerAtomId}:${descriptor.leafAtomId}`;
-    if (seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
 
     const contact = terminalRingCarbonylLeafForeignRingContact(layoutGraph, coords, descriptor);
     const crossing = terminalRingCarbonylLeafForeignRingBondCrossing(layoutGraph, coords, descriptor, bondLength);
@@ -18293,38 +18579,46 @@ function buildTerminalCarbonylCenterFanRefinementCandidates(layoutGraph, coords,
 }
 
 function terminalCarbonylRingContactCandidateScore(layoutGraph, coords, contact, candidateRecord, bondLength) {
-  const candidateContact = terminalCarbonylLeafClosestForeignRingContact(
+  const candidateContact = candidateRecord._candidateContact ?? terminalCarbonylLeafClosestForeignRingContact(
     layoutGraph,
     candidateRecord.coords,
     contact.descriptor
   );
-  const candidateIntrusion = terminalCarbonylLeafForeignRingIntrusion(
+  const candidateIntrusion = '_candidateIntrusion' in candidateRecord
+    ? candidateRecord._candidateIntrusion
+    : terminalCarbonylLeafForeignRingIntrusion(
+        layoutGraph,
+        candidateRecord.coords,
+        contact.descriptor
+      );
+  const localDeviation = candidateRecord._localDeviation ?? threeHeavyCenterMaxAngularDeviation(
     layoutGraph,
     candidateRecord.coords,
-    contact.descriptor
+    candidateRecord.anchorAtomId
   );
-  const localDeviation = threeHeavyCenterMaxAngularDeviation(layoutGraph, candidateRecord.coords, candidateRecord.anchorAtomId);
+  const heavyBondCrossingCount = candidateRecord._heavyBondCrossingCount ?? findVisibleHeavyBondCrossings(
+    layoutGraph,
+    candidateRecord.coords,
+    { bondLength }
+  ).length;
+  const smallRingExteriorPenalty = candidateRecord._smallRingExteriorPenalty ?? measureSmallRingExteriorGapSpreadPenalty(
+    layoutGraph,
+    candidateRecord.coords,
+    contact.descriptor.ringAnchorAtomId
+  );
 
   return {
     coords: candidateRecord.coords,
     insideForeignRing: candidateIntrusion != null,
     contactDistance: candidateContact.distance,
-    heavyBondCrossingCount: findVisibleHeavyBondCrossings(
-      layoutGraph,
-      candidateRecord.coords,
-      { bondLength }
-    ).length,
+    heavyBondCrossingCount,
     carbonylFanDeviation: threeHeavyCenterMaxAngularDeviation(
       layoutGraph,
       candidateRecord.coords,
       contact.descriptor.centerAtomId
     ),
     localDeviation,
-    smallRingExteriorPenalty: measureSmallRingExteriorGapSpreadPenalty(
-      layoutGraph,
-      candidateRecord.coords,
-      contact.descriptor.ringAnchorAtomId
-    ),
+    smallRingExteriorPenalty,
     layoutCost: measureFocusedPlacementCost(layoutGraph, candidateRecord.coords, bondLength, [
       contact.descriptor.leafAtomId,
       contact.opposingAtomId,
@@ -19529,6 +19823,7 @@ function compareTerminalRingCarbonylLeafContactCandidates(candidate, incumbent, 
 function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLength) {
   const clearanceThreshold = bondLength * ATTACHED_BLOCK_TERMINAL_LABEL_CLEARANCE_FACTOR;
   let changed = false;
+  const auditCache = new Map();
 
   for (let passIndex = 0; passIndex < 2; passIndex++) {
     const contact = terminalRingCarbonylLeafForeignRingContacts(layoutGraph, coords, clearanceThreshold, bondLength)[0];
@@ -19541,7 +19836,7 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
     if (!centerPosition || !leafPosition) {
       break;
     }
-    const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+    const baseAudit = cachedMixedCandidateAudit(layoutGraph, coords, bondLength, auditCache);
     const baseScore = scoreTerminalRingCarbonylLeafContactCandidate(
       layoutGraph,
       coords,
@@ -19553,6 +19848,7 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
     const leafDistance = distance(centerPosition, leafPosition);
     const currentAngle = angleOf(sub(leafPosition, centerPosition));
     let bestCandidate = null;
+    const leafCandidateSignatures = new Set();
 
     for (const rotationOffset of TERMINAL_RING_CARBONYL_LEAF_CONTACT_OFFSETS) {
       const candidateCoords = new Map(coords);
@@ -19560,11 +19856,7 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
         contact.descriptor.leafAtomId,
         add(centerPosition, fromAngle(currentAngle + rotationOffset, leafDistance))
       );
-      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-      if (
-        !ringLeafCandidateAuditDoesNotRegress(candidateAudit, baseAudit)
-        || candidateAudit.labelOverlapCount > baseAudit.labelOverlapCount
-      ) {
+      if (!markUniqueCandidateCoordSignature(leafCandidateSignatures, candidateCoords)) {
         continue;
       }
 
@@ -19585,27 +19877,28 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
       ) {
         continue;
       }
+
+      const candidateAudit = cachedMixedCandidateAudit(layoutGraph, candidateCoords, bondLength, auditCache);
+      if (
+        !ringLeafCandidateAuditDoesNotRegress(candidateAudit, baseAudit)
+        || candidateAudit.labelOverlapCount > baseAudit.labelOverlapCount
+      ) {
+        continue;
+      }
       if (compareTerminalRingCarbonylLeafContactCandidates(candidate, bestCandidate, clearanceThreshold) < 0) {
         bestCandidate = candidate;
       }
     }
     if (!bestCandidate) {
+      const ringCandidateSignatures = new Set();
       for (const ringCandidate of buildTerminalRingCarbonylForeignRingContactCandidates(
         layoutGraph,
         coords,
         contact
       )) {
-        const candidateAudit = auditLayout(layoutGraph, ringCandidate.coords, { bondLength });
-        if (
-          !ringLeafCandidateAuditDoesNotRegress(candidateAudit, baseAudit)
-          || candidateAudit.labelOverlapCount > baseAudit.labelOverlapCount
-          || candidateAudit.ringSubstituentReadabilityFailureCount > baseAudit.ringSubstituentReadabilityFailureCount
-          || candidateAudit.inwardRingSubstituentCount > baseAudit.inwardRingSubstituentCount
-          || candidateAudit.outwardAxisRingSubstituentFailureCount > baseAudit.outwardAxisRingSubstituentFailureCount
-        ) {
+        if (!markUniqueCandidateCoordSignature(ringCandidateSignatures, ringCandidate.coords)) {
           continue;
         }
-
         const candidate = {
           ...scoreTerminalRingCarbonylLeafContactCandidate(
             layoutGraph,
@@ -19615,7 +19908,6 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
             ringCandidate.rotationMagnitude,
             bondLength
           ),
-          audit: candidateAudit,
           movedAtomIds: ringCandidate.movedAtomIds,
           totalMove: terminalCarbonylRingContactCandidateTotalMove(
             coords,
@@ -19629,6 +19921,19 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
         ) {
           continue;
         }
+
+        const candidateAudit = cachedMixedCandidateAudit(layoutGraph, ringCandidate.coords, bondLength, auditCache);
+        if (
+          !ringLeafCandidateAuditDoesNotRegress(candidateAudit, baseAudit)
+          || candidateAudit.labelOverlapCount > baseAudit.labelOverlapCount
+          || candidateAudit.ringSubstituentReadabilityFailureCount > baseAudit.ringSubstituentReadabilityFailureCount
+          || candidateAudit.inwardRingSubstituentCount > baseAudit.inwardRingSubstituentCount
+          || candidateAudit.outwardAxisRingSubstituentFailureCount > baseAudit.outwardAxisRingSubstituentFailureCount
+        ) {
+          continue;
+        }
+
+        candidate.audit = candidateAudit;
         if (compareTerminalRingCarbonylForeignRingContactCandidates(candidate, bestCandidate, clearanceThreshold) < 0) {
           bestCandidate = candidate;
         }
@@ -19658,6 +19963,7 @@ function resolveTerminalRingCarbonylLeafNearContacts(layoutGraph, coords, bondLe
 function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength) {
   const clearanceThreshold = bondLength * ATTACHED_BLOCK_TERMINAL_LABEL_CLEARANCE_FACTOR;
   let changed = false;
+  const auditCache = new Map();
 
   for (let passIndex = 0; passIndex < 3; passIndex++) {
     const contact = terminalCarbonylLeafForeignRingContacts(layoutGraph, coords, clearanceThreshold)[0];
@@ -19665,7 +19971,7 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
       break;
     }
 
-    const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+    const baseAudit = cachedMixedCandidateAudit(layoutGraph, coords, bondLength, auditCache);
     const baseHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
     const baseSmallRingExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(
       layoutGraph,
@@ -19723,7 +20029,15 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
       }
     }
 
+    const uniqueCandidateRecords = [];
+    const candidateRecordSignatures = new Set();
     for (const candidateRecord of candidateRecords) {
+      if (markUniqueCandidateCoordSignature(candidateRecordSignatures, candidateRecord.coords)) {
+        uniqueCandidateRecords.push(candidateRecord);
+      }
+    }
+
+    for (const candidateRecord of uniqueCandidateRecords) {
       const candidateContact = terminalCarbonylLeafClosestForeignRingContact(
         layoutGraph,
         candidateRecord.coords,
@@ -19756,10 +20070,6 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
         continue;
       }
 
-      const candidateAudit = auditLayout(layoutGraph, candidateRecord.coords, { bondLength });
-      if (!ringLeafCandidateAuditDoesNotRegress(candidateAudit, baseAudit)) {
-        continue;
-      }
       const candidateHeavyBondCrossingCount = findVisibleHeavyBondCrossings(
         layoutGraph,
         candidateRecord.coords,
@@ -19769,7 +20079,25 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
         continue;
       }
 
-      const candidate = terminalCarbonylRingContactCandidateScore(layoutGraph, coords, contact, candidateRecord, bondLength);
+      const candidateAudit = cachedMixedCandidateAudit(layoutGraph, candidateRecord.coords, bondLength, auditCache);
+      if (!ringLeafCandidateAuditDoesNotRegress(candidateAudit, baseAudit)) {
+        continue;
+      }
+
+      const candidate = terminalCarbonylRingContactCandidateScore(
+        layoutGraph,
+        coords,
+        contact,
+        {
+          ...candidateRecord,
+          _candidateContact: candidateContact,
+          _candidateIntrusion: candidateIntrusion,
+          _localDeviation: localDeviation,
+          _heavyBondCrossingCount: candidateHeavyBondCrossingCount,
+          _smallRingExteriorPenalty: candidateSmallRingExteriorPenalty
+        },
+        bondLength
+      );
       if (compareTerminalCarbonylRingContactCandidates(candidate, bestCandidate, clearanceThreshold) < 0) {
         bestCandidate = candidate;
       }
@@ -20122,6 +20450,7 @@ function omittedHydrogenDirectRingHubSiblingBalanceScore(anchorAngle, leafAngle,
  * @param {{centerAtomId: string, leafAtomId: string, anchorAtomId: string}} descriptor - Carbonyl branch descriptor.
  * @param {Set<string>} protectedAtomIds - Atoms that must not move during hub relief.
  * @param {number} bondLength - Target bond length.
+ * @param {Map<string, object>|null} [auditCache] - Optional coordinate-signature audit cache.
  * @returns {Array<Map<string, {x: number, y: number}>>} Audit-clean sibling-balance candidates.
  */
 function buildOmittedHydrogenDirectRingHubSiblingBalanceCandidates(
@@ -20129,7 +20458,8 @@ function buildOmittedHydrogenDirectRingHubSiblingBalanceCandidates(
   coords,
   descriptor,
   protectedAtomIds,
-  bondLength
+  bondLength,
+  auditCache = null
 ) {
   const centerPosition = coords.get(descriptor.centerAtomId);
   const anchorPosition = coords.get(descriptor.anchorAtomId);
@@ -20205,7 +20535,7 @@ function buildOmittedHydrogenDirectRingHubSiblingBalanceCandidates(
     if (candidateScore >= currentScore - IMPROVEMENT_EPSILON) {
       continue;
     }
-    const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+    const candidateAudit = cachedMixedCandidateAudit(layoutGraph, candidateCoords, bondLength, auditCache);
     if (candidateAudit.ok !== true) {
       continue;
     }
@@ -20219,7 +20549,8 @@ function buildOmittedHydrogenDirectRingHubBranchEscapeCandidates(
   coords,
   changedHubAtomIds,
   protectedAtomIds,
-  bondLength
+  bondLength,
+  auditCache = null
 ) {
   const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
   if (overlaps.length === 0) {
@@ -20284,7 +20615,7 @@ function buildOmittedHydrogenDirectRingHubBranchEscapeCandidates(
         if (!branchLeafCoords) {
           continue;
         }
-        const branchLeafAudit = auditLayout(layoutGraph, branchLeafCoords, { bondLength });
+        const branchLeafAudit = cachedMixedCandidateAudit(layoutGraph, branchLeafCoords, bondLength, auditCache);
         if (branchLeafAudit.ok === true) {
           candidates.push(branchLeafCoords);
           candidates.push(...buildOmittedHydrogenDirectRingHubSiblingBalanceCandidates(
@@ -20292,7 +20623,8 @@ function buildOmittedHydrogenDirectRingHubBranchEscapeCandidates(
             branchLeafCoords,
             descriptor,
             protectedAtomIds,
-            bondLength
+            bondLength,
+            auditCache
           ));
           branchLeafCandidateCount++;
         }
@@ -20326,7 +20658,7 @@ function buildOmittedHydrogenDirectRingHubBranchEscapeCandidates(
         if (!leafCoords) {
           continue;
         }
-        const leafAudit = auditLayout(layoutGraph, leafCoords, { bondLength });
+        const leafAudit = cachedMixedCandidateAudit(layoutGraph, leafCoords, bondLength, auditCache);
         if (leafAudit.ok === true) {
           candidates.push(leafCoords);
           candidates.push(...buildOmittedHydrogenDirectRingHubSiblingBalanceCandidates(
@@ -20334,13 +20666,14 @@ function buildOmittedHydrogenDirectRingHubBranchEscapeCandidates(
             leafCoords,
             descriptor,
             protectedAtomIds,
-            bondLength
+            bondLength,
+            auditCache
           ));
           restoredLeafCandidateCount++;
         }
       }
       if (restoredLeafCandidateCount === 0 && branchLeafCandidateCount === 0) {
-        const candidateAudit = auditLayout(layoutGraph, branchCoords, { bondLength });
+        const candidateAudit = cachedMixedCandidateAudit(layoutGraph, branchCoords, bondLength, auditCache);
         if (candidateAudit.ok === true) {
           candidates.push(branchCoords);
         }
@@ -20421,7 +20754,8 @@ function compareOmittedHydrogenDirectRingHubScores(layoutGraph, candidateScore, 
 function resolveOmittedHydrogenDirectRingHubGeometry(layoutGraph, coords, bondLength) {
   let bestCoords = null;
   let bestScore = null;
-  const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+  const auditCache = new Map();
+  const baseAudit = cachedMixedCandidateAudit(layoutGraph, coords, bondLength, auditCache);
 
   for (const [centerAtomId] of layoutGraph.atoms) {
     const neighborIds = omittedHydrogenDirectRingHubNeighborIds(layoutGraph, coords, centerAtomId);
@@ -20500,7 +20834,8 @@ function resolveOmittedHydrogenDirectRingHubGeometry(layoutGraph, coords, bondLe
               candidateCoords,
               changedAtomIdsBetweenCoordMaps(coords, candidateCoords),
               protectedAtomIds,
-              bondLength
+              bondLength,
+              auditCache
             );
             for (const reliefCoords of reliefCandidates) {
               const reliefFanDeviation = omittedHydrogenDirectRingHubMaxFanDeviation(reliefCoords, centerAtomId, neighborIds);
@@ -20508,7 +20843,7 @@ function resolveOmittedHydrogenDirectRingHubGeometry(layoutGraph, coords, bondLe
               if (reliefFanDeviation > IMPROVEMENT_EPSILON || reliefRootDeviation > IMPROVEMENT_EPSILON) {
                 continue;
               }
-              const candidateAudit = auditLayout(layoutGraph, reliefCoords, { bondLength });
+              const candidateAudit = cachedMixedCandidateAudit(layoutGraph, reliefCoords, bondLength, auditCache);
               if (!omittedHydrogenDirectRingHubAuditDoesNotRegress(candidateAudit, baseAudit)) {
                 continue;
               }

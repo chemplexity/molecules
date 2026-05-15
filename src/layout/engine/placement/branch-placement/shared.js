@@ -211,7 +211,7 @@ export function splitDeferredLeafNeighbors(unplacedNeighborIds, layoutGraph) {
  * @returns {boolean} True when the anchor is a ring atom.
  */
 export function isRingAnchor(layoutGraph, atomId) {
-  return (layoutGraph?.atomToRings.get(atomId)?.length ?? 0) > 0;
+  return layoutGraph?.ringAtomIdSet?.has(atomId);
 }
 
 /**

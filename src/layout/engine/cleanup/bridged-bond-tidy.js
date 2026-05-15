@@ -11,7 +11,7 @@ function atomTouchesAromaticRing(layoutGraph, atomId) {
 }
 
 function atomRingCount(layoutGraph, atomId) {
-  return layoutGraph.atomToRings.get(atomId)?.length ?? 0;
+  return layoutGraph.ringCountByAtomId.get(atomId) ?? 0;
 }
 
 function atomMobility(layoutGraph, atomId) {

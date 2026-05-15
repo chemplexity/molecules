@@ -403,8 +403,8 @@ function terminalMultipleLeafRigidReliefPivotIds(layoutGraph, centerAtomId, leaf
   return pivotIds.sort((firstAtomId, secondAtomId) => {
     const firstAtom = layoutGraph.atoms.get(firstAtomId);
     const secondAtom = layoutGraph.atoms.get(secondAtomId);
-    const firstRingCount = layoutGraph.atomToRings.get(firstAtomId)?.length ?? 0;
-    const secondRingCount = layoutGraph.atomToRings.get(secondAtomId)?.length ?? 0;
+    const firstRingCount = layoutGraph.ringCountByAtomId.get(firstAtomId) ?? 0;
+    const secondRingCount = layoutGraph.ringCountByAtomId.get(secondAtomId) ?? 0;
     if (firstRingCount !== secondRingCount) {
       return secondRingCount - firstRingCount;
     }

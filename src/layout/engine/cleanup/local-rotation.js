@@ -856,7 +856,7 @@ function anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords) {
     if (ring?.aromatic || ringSize < 5 || !supportsExteriorBranchSpreadRingSize(ringSize)) {
       continue;
     }
-    if (ring.atomIds.some(atomId => atomId !== anchorAtomId && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) !== 1)) {
+    if (ring.atomIds.some(atomId => atomId !== anchorAtomId && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) !== 1)) {
       continue;
     }
 
@@ -2248,7 +2248,7 @@ function localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, override
     return 0;
   }
 
-  const incidentRingCount = layoutGraph.atomToRings.get(atomId)?.length ?? 0;
+  const incidentRingCount = layoutGraph.ringCountByAtomId.get(atomId) ?? 0;
   if (incidentRingCount > 0 && !shouldPreserveRingTrigonalHeteroFan(layoutGraph, atomId, heavyBonds)) {
     return 0;
   }

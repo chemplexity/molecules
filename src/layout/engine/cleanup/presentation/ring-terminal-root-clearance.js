@@ -454,7 +454,7 @@ function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, le
     leafAtom.element === 'H' ||
     leafAtom.aromatic ||
     (leafAtom.heavyDegree ?? 0) !== 1 ||
-    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1 ||
+    (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1 ||
     layoutGraph.ringAtomIdSet.has(leafAtomId)
   ) {
     return null;

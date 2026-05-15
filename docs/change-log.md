@@ -2,7 +2,16 @@
 
 ## 2026-05-14
 
+- Add a shared `visibleHeavyCovalentBonds` utility and remove seven duplicate inline implementations across cleanup and presentation passes.
+- Centralize repeated element sets (`ORTHOGONAL_HYPERVALENT_ELEMENTS`, `IDEAL_DIVALENT_CONTINUATION_ELEMENTS`, `TERMINAL_HETERO_BRANCH_ELEMENTS`) into `constants.js` and remove local copies from six files.
+- Add an O(1) `ringSystemById` index to `layoutGraph` and replace twelve O(R) `ringSystems.find()` linear scans across `mixed.js`, `invariants.js`, `ring-substituent.js`, `attached-ring-fallback.js`, and `angle-selection.js`.
+- Remove three redundant local `new Map(layoutGraph.ringSystems.map(...))` constructions in `mixed.js`, `invariants.js`, and `ring-substituent.js` in favour of the shared index.
+- Cache `bridgeheadTerminalCarbonFanDescriptor` results in the mixed-layout candidate loop to halve descriptor-computation calls on each pass.
+- Replace 304 `atomToRings.get(X)?.length` ring-membership checks with `ringAtomIdSet.has(X)` across 36 source files, eliminating redundant Map lookups and optional-chaining overhead on the hot audit path.
 - Optimize mixed-layout direct-attached ring scoring by caching local scoring-focus expansion, reusing topology bond-pair lookups, and deferring full audit/layout-cost scoring until cheap candidate gates pass.
+- Deduplicate larger mixed attached-block candidate pools and cache terminal carbonyl descriptor lists so repeated direct-ring root refinement and carbonyl contact scoring avoid redundant topology and audit work.
+- Reuse full-audit results across late mixed carbonyl and omitted-H hub candidate loops, deduplicate repeated carbonyl contact poses, and reject non-improving ring-carbonyl leaf moves before full audit.
+- Split mixed attached-block prescoring into lazy core and presentation tiers so cheap overlap, exactness, and ring-root gates can discard candidates before readability and near-contact scans run.
 - Refine caged lactone and bicyclo[2.1.1] template projections for cleaner symmetry and separated lactone exits.
 - Add a trigonal-carbon bicyclo[2.1.1]hexane template so formyl-substituted cages avoid pinched bridge geometry.
 - Add a hydroxy aminopropyl cyclobutane-decalin template so saturated fused cages keep open six-ring lanes and a square cyclobutane cap.

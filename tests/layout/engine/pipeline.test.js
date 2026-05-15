@@ -167,7 +167,7 @@ function preferredRingAttachmentAngle(layoutGraph, coords, anchorAtomId) {
   if (!anchorPosition) {
     return null;
   }
-  const anchorRingCount = layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0;
+  const anchorRingCount = layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0;
   if (anchorRingCount > 1) {
     const ringSystem = layoutGraph.ringSystems.find(candidateRingSystem => candidateRingSystem.atomIds.includes(anchorAtomId));
     const positions = ringSystem?.atomIds.filter(atomId => coords.has(atomId)).map(atomId => coords.get(atomId)) ?? [];
@@ -2835,7 +2835,7 @@ describe('layout/engine/pipeline', () => {
     const checkedAnchors = [];
 
     for (const atomId of result.layoutGraph.components[0].atomIds) {
-      if ((result.layoutGraph.atomToRings.get(atomId)?.length ?? 0) !== 1) {
+      if ((result.layoutGraph.ringCountByAtomId.get(atomId) ?? 0) !== 1) {
         continue;
       }
       const atom = result.layoutGraph.atoms.get(atomId);
@@ -2845,7 +2845,7 @@ describe('layout/engine/pipeline', () => {
       const oxygenChildren = (result.layoutGraph.bondsByAtomId.get(atomId) ?? [])
         .filter(bond => !bond.inRing && bond.kind === 'covalent' && !bond.aromatic && (bond.order ?? 1) === 1)
         .map(bond => (bond.a === atomId ? bond.b : bond.a))
-        .filter(childAtomId => (result.layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0 && result.layoutGraph.atoms.get(childAtomId)?.element === 'O');
+        .filter(childAtomId => (result.layoutGraph.ringCountByAtomId.get(childAtomId) ?? 0) === 0 && result.layoutGraph.atoms.get(childAtomId)?.element === 'O');
       if (oxygenChildren.length !== 1) {
         continue;
       }
@@ -3193,13 +3193,13 @@ describe('layout/engine/pipeline', () => {
       atom =>
         atom.element === 'C' &&
         atom.heavyDegree === 2 &&
-        (result.layoutGraph.atomToRings.get(atom.id)?.length ?? 0) === 0 &&
+        (result.layoutGraph.ringCountByAtomId.get(atom.id) ?? 0) === 0 &&
         (result.layoutGraph.bondsByAtomId.get(atom.id) ?? []).some(bond => (bond.order ?? 1) === 3)
     )?.id;
     assert.ok(nitrileCarbonAtomId);
     const anchorAtomId = (result.layoutGraph.bondsByAtomId.get(nitrileCarbonAtomId) ?? [])
       .map(bond => (bond.a === nitrileCarbonAtomId ? bond.b : bond.a))
-      .find(atomId => (result.layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+      .find(atomId => (result.layoutGraph.ringCountByAtomId.get(atomId) ?? 0) > 0);
     assert.ok(anchorAtomId);
     const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, anchorAtomId);
     assert.notEqual(preferredAngle, null);

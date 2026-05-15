@@ -513,8 +513,8 @@ function fitRegularRingTargetsFromSharedEdge(layoutGraph, ring, coords) {
     const firstAtomId = ring.atomIds[index];
     const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
     if (
-      (layoutGraph.atomToRings.get(firstAtomId)?.length ?? 0) <= 1
-      || (layoutGraph.atomToRings.get(secondAtomId)?.length ?? 0) <= 1
+      (layoutGraph.ringCountByAtomId.get(firstAtomId) ?? 0) <= 1
+      || (layoutGraph.ringCountByAtomId.get(secondAtomId) ?? 0) <= 1
     ) {
       continue;
     }

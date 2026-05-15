@@ -165,7 +165,7 @@ function isRingBranchBondCrossingRescueEligible(layoutGraph, anchorAtomId, child
 
   const anchorAtom = layoutGraph?.atoms?.get(anchorAtomId);
   const childAtom = layoutGraph?.atoms?.get(childAtomId);
-  const anchorRingCount = layoutGraph?.atomToRings.get(anchorAtomId)?.length ?? 0;
+  const anchorRingCount = layoutGraph?.ringCountByAtomId.get(anchorAtomId) ?? 0;
   const anchorIsHeteroAtom = anchorAtom && anchorAtom.element !== 'C' && anchorAtom.element !== 'H';
   return Boolean(
     layoutGraph
@@ -664,7 +664,7 @@ function isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, ch
 function phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, preferredAngles) {
   if (
     layoutGraph?.atoms.get(anchorAtomId)?.aromatic !== true
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
     || !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
     || !isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize)
   ) {
@@ -701,9 +701,9 @@ function shouldUseRingAnchorSingleBranchLookahead(
 ) {
   const anchorAtom = layoutGraph?.atoms.get(anchorAtomId);
   const placedRingNeighborCount = currentPlacedNeighborIds.filter(neighborAtomId => (
-    (layoutGraph?.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+    layoutGraph?.ringAtomIdSet?.has(neighborAtomId)
   )).length;
-  const ringCount = layoutGraph?.atomToRings.get(anchorAtomId)?.length ?? 0;
+  const ringCount = layoutGraph?.ringCountByAtomId.get(anchorAtomId) ?? 0;
   const useAromaticTailLookahead =
     anchorAtom?.aromatic === true
     && ringCount === 1
@@ -770,7 +770,7 @@ function branchPlacementExcludedAtomIds(layoutGraph, anchorAtomId, currentPlaced
   const excludedAtomIds = new Set([anchorAtomId]);
   const anchorIsRingAtom = isRingAnchor(layoutGraph, anchorAtomId);
   for (const neighborAtomId of currentPlacedNeighborIds) {
-    if (anchorIsRingAtom && (layoutGraph?.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+    if (anchorIsRingAtom && layoutGraph?.ringAtomIdSet?.has(neighborAtomId)) {
       continue;
     }
     excludedAtomIds.add(neighborAtomId);
@@ -1092,7 +1092,7 @@ function placeNeighborSequence(
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
     const shouldAvoidTerminalRingLeafSlots =
       shouldForceExactSimpleAcyclicAngle
-      && (layoutGraph?.atomToRings.get(childAtomId)?.length ?? 0) === 0;
+      && !layoutGraph?.ringAtomIdSet?.has(childAtomId);
     const exactPreferredAvoidPoints = shouldAvoidTerminalRingLeafSlots && constrainedPreferredAngles.length > 1
       ? [
           ...exactTerminalRingLeafSlotPoints(layoutGraph, coords, bondLength, childAtomId),

@@ -1,5 +1,7 @@
 /** @module geometry/vec2 */
 
+const TWO_PI = 2 * Math.PI;
+
 /**
  * Creates a 2D vector object.
  * @param {number} x - X coordinate.
@@ -150,12 +152,12 @@ export function perpLeft(value) {
  * @returns {number} Wrapped angle.
  */
 export function wrapAngle(angle) {
-  const result = angle % (2 * Math.PI);
+  const result = angle % TWO_PI;
   if (result <= -Math.PI) {
-    return result + 2 * Math.PI;
+    return result + TWO_PI;
   }
   if (result > Math.PI) {
-    return result - 2 * Math.PI;
+    return result - TWO_PI;
   }
   return result;
 }
@@ -166,9 +168,9 @@ export function wrapAngle(angle) {
  * @returns {number} Wrapped angle.
  */
 export function wrapAngleUnsigned(angle) {
-  let result = angle % (2 * Math.PI);
+  let result = angle % TWO_PI;
   if (result < 0) {
-    result += 2 * Math.PI;
+    result += TWO_PI;
   }
   return result;
 }

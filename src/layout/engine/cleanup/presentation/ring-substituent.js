@@ -194,7 +194,7 @@ function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
 }
 
 function preferredMultiRingOutwardAngle(layoutGraph, anchorPosition, positions, anchorAtomId) {
-  if (!anchorPosition || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1 || positions.length < 3) {
+  if (!anchorPosition || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) <= 1 || positions.length < 3) {
     return null;
   }
   return angleOf(sub(anchorPosition, centroid(positions)));
@@ -241,7 +241,7 @@ function incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
 function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, rootAtomId, localOutwardAngles) {
   if (
     !rootAtomId
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) <= 1
     || layoutGraph.ringAtomIdSet.has(rootAtomId)
     || localOutwardAngles.length !== 1
   ) {
@@ -293,23 +293,22 @@ function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId, rootAtomId = 
   return localOutwardAngles;
 }
 
-function ringSystemAtomIds(layoutGraph, atomId, coords, ringSystemById = null) {
+function ringSystemAtomIds(layoutGraph, atomId, coords) {
   const ringSystemId = layoutGraph.atomToRingSystemId.get(atomId);
   if (ringSystemId == null) {
     return [];
   }
-  const ringSystem = ringSystemById ? ringSystemById.get(ringSystemId) : layoutGraph.ringSystems.find(rs => rs.id === ringSystemId);
-  return (ringSystem?.atomIds ?? []).filter(candidateAtomId => coords.has(candidateAtomId));
+  return (layoutGraph.ringSystemById.get(ringSystemId)?.atomIds ?? []).filter(candidateAtomId => coords.has(candidateAtomId));
 }
 
-function resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId, rootAtomId, ringSystemById = null) {
+function resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId, rootAtomId) {
   const rootAtom = layoutGraph.atoms.get(rootAtomId);
   if (
     !rootAtom
     || rootAtom.aromatic
     || !IDEAL_RING_LINKER_ELEMENTS.has(rootAtom.element)
     || rootAtom.heavyDegree !== 2
-    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) !== 0
+    || layoutGraph.ringAtomIdSet.has(rootAtomId)
   ) {
     return null;
   }
@@ -330,7 +329,7 @@ function resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId,
     return null;
   }
 
-  const representativeAtomIds = ringSystemAtomIds(layoutGraph, downstreamAnchorAtomId, coords, ringSystemById);
+  const representativeAtomIds = ringSystemAtomIds(layoutGraph, downstreamAnchorAtomId, coords);
   if (representativeAtomIds.length === 0) {
     return null;
   }
@@ -359,7 +358,7 @@ function resolveIdealLinkedSubtreeRepresentative(layoutGraph, coords, anchorAtom
     || rootAtom.aromatic
     || !IDEAL_RING_LINKER_ELEMENTS.has(rootAtom.element)
     || rootAtom.heavyDegree !== 2
-    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) !== 0
+    || layoutGraph.ringAtomIdSet.has(rootAtomId)
   ) {
     return null;
   }
@@ -614,7 +613,7 @@ function buildSharedJunctionTerminalLeafCandidate(layoutGraph, coords, anchorAto
 function alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds = null) {
   let nudges = 0;
   for (const anchorAtomId of coords.keys()) {
-    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1) {
+    if ((layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) <= 1) {
       continue;
     }
     for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
@@ -1224,7 +1223,6 @@ function allowsLinkedRingBridgeWithSiblingLeaves(substituentChildren, linkedRing
 
 function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAtomIds = null, options = {}) {
   const descriptorsByPair = new Map();
-  const ringSystemById = layoutGraph.ringSystemById;
   const focusSet = focusAtomIds instanceof Set && focusAtomIds.size > 0 ? focusAtomIds : null;
   const includeRingSystemSubstituents = options.includeRingSystemSubstituents !== false;
 
@@ -1257,7 +1255,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
     const linkedRingRepresentativesByChildId = new Map(
       substituentChildren.map(child => [
         child.childAtomId,
-        resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId, child.childAtomId, ringSystemById)
+        resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId, child.childAtomId)
       ])
     );
     const linkedRingChildIds = [...linkedRingRepresentativesByChildId.entries()]
@@ -1342,7 +1340,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
         continue;
       }
 
-      const reverseRepresentativeAtomIds = isRingSystemSubstituent ? ringSystemAtomIds(layoutGraph, anchorAtomId, coords, ringSystemById) : [];
+      const reverseRepresentativeAtomIds = isRingSystemSubstituent ? ringSystemAtomIds(layoutGraph, anchorAtomId, coords) : [];
       const descriptor = {
         anchorAtomId,
         rootAtomId,
@@ -2673,7 +2671,7 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
   for (const descriptor of descriptors) {
     const anchorAtom = layoutGraph.atoms.get(descriptor.anchorAtomId);
     const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
-    const anchorRingCount = layoutGraph.atomToRings.get(descriptor.anchorAtomId)?.length ?? 0;
+    const anchorRingCount = layoutGraph.ringCountByAtomId.get(descriptor.anchorAtomId) ?? 0;
     const anchorPosition = coords.get(descriptor.anchorAtomId);
     const rootPosition = coords.get(descriptor.rootAtomId);
     const reverseAnchorPosition = descriptor.isRingSystemSubstituent ? coords.get(descriptor.reverseAnchorAtomId) : null;

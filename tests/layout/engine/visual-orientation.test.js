@@ -274,7 +274,7 @@ describe('layout/engine/visual-orientation', () => {
     const c7Assignment = pickWedgeAssignments(fusedSugar.layoutGraph, fusedSugar.coords).assignments.find(assignment => assignment.centerId === 'C7');
     const ringNeighborIds = fusedSugar.layoutGraph.sourceMolecule.atoms.get('C7')
       .getNeighbors(fusedSugar.layoutGraph.sourceMolecule)
-      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== 'O8' && (fusedSugar.layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== 'O8' && (fusedSugar.layoutGraph.ringCountByAtomId.get(neighborAtom.id) ?? 0) > 0)
       .map(neighborAtom => neighborAtom.id);
     const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => sharedRingCount(fusedSugar.layoutGraph, 'C7', neighborAtomId) > 1);
     const straightJunctionAngle = angleOf(sub(fusedSugar.coords.get('C7'), fusedSugar.coords.get(sharedJunctionNeighborId)));

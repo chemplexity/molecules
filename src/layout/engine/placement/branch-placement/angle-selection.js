@@ -1149,7 +1149,7 @@ function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorA
   if (
     !layoutGraph
     || !childAtomId
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) <= 1
     || layoutGraph.ringAtomIdSet.has(childAtomId)
   ) {
     return false;
@@ -1213,7 +1213,7 @@ function shouldPreferLocalRingOutwardForTerminalHeteroSubstituent(layoutGraph, a
     return false;
   }
 
-  const anchorRingCount = layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0;
+  const anchorRingCount = layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0;
   return (
     (anchorRingCount === 1 && localRingAngles.length === 1 && ringSystemHasOnlyIsolatedOrFusedConnections(layoutGraph, anchorAtomId)) ||
     (anchorRingCount > 1 && localRingAngles.length > 1 && (childAtom.charge ?? 0) > 0)
@@ -1262,7 +1262,7 @@ function shouldPreferSimpleChainLocalOutwardOverStraightJunction(layoutGraph, co
   if (
     (!straightJunctionAngle && straightJunctionAngle !== 0)
     || !layoutGraph
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
+    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) <= 1
     || layoutGraph.ringAtomIdSet.has(childAtomId)
   ) {
     return false;
@@ -1334,7 +1334,7 @@ function isDirectAttachedForeignRingChild(layoutGraph, anchorAtomId, childAtomId
     return false;
   }
 
-  const childRingCount = layoutGraph.atomToRings.get(childAtomId)?.length ?? 0;
+  const childRingCount = layoutGraph.ringCountByAtomId.get(childAtomId) ?? 0;
   if (childRingCount === 0) {
     return false;
   }

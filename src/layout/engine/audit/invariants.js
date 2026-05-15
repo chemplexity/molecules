@@ -258,7 +258,7 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
       continue;
     }
 
-    const centerRingCount = layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0;
+    const centerRingCount = layoutGraph.ringCountByAtomId.get(centerAtomId) ?? 0;
     let ringNeighborCount = 0;
     let ringAdjacentNeighborCount = 0;
     let terminalHeteroNeighborCount = 0;
@@ -377,7 +377,7 @@ function isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, anc
     leafAtom.element === 'H' ||
     leafAtom.aromatic ||
     (leafAtom.heavyDegree ?? 0) !== 1 ||
-    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+    (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
   ) {
     return false;
   }
@@ -454,7 +454,7 @@ function isAcceptedCompressedSharedJunctionLeafBond(layoutGraph, coords, anchorA
  * @returns {boolean} True when the compressed fused-system leaf is intentional.
  */
 function isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, anchorAtomId, leafAtomId, leafAngle) {
-  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1) {
+  if ((layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) <= 1) {
     return false;
   }
   const anchorPosition = coords.get(anchorAtomId);
@@ -934,8 +934,8 @@ export function supportsRingSubstituentOutwardReadability(layoutGraph, anchorAto
   return false;
 }
 
-function ringSystemAtomIds(layoutGraph, ringSystemId, ringSystemById = null) {
-  return (ringSystemById ? ringSystemById.get(ringSystemId) : layoutGraph.ringSystems.find(ringSystem => ringSystem.id === ringSystemId))?.atomIds ?? [];
+function ringSystemAtomIds(layoutGraph, ringSystemId) {
+  return layoutGraph.ringSystemById.get(ringSystemId)?.atomIds ?? [];
 }
 
 /**
@@ -1108,10 +1108,9 @@ function prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtom
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} anchorAtomId - Candidate ring anchor atom id.
  * @param {string} childAtomId - Candidate non-ring child atom id.
- * @param {Map<number, object>|null} [ringSystemById] - Optional cached ring-system lookup.
  * @returns {{representativeAtomIds: string[]}|null} Downstream ring representative, or `null`.
  */
-function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById = null) {
+function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, anchorAtomId, childAtomId) {
   const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
@@ -1191,17 +1190,17 @@ function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, an
   if (reachableRingSystemIds.size !== 1) {
     return null;
   }
-  const representativeAtomIds = ringSystemAtomIds(layoutGraph, [...reachableRingSystemIds][0], ringSystemById).filter(atomId => coords.has(atomId));
+  const representativeAtomIds = ringSystemAtomIds(layoutGraph, [...reachableRingSystemIds][0]).filter(atomId => coords.has(atomId));
   return representativeAtomIds.length > 0 ? { representativeAtomIds } : null;
 }
 
-function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById = null) {
+function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, childAtomId) {
   const cache = layoutGraph._linkedSubstituentRepCache ?? (layoutGraph._linkedSubstituentRepCache = new Map());
   const cacheKey = `${anchorAtomId}:${childAtomId}`;
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
-  const result = _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById);
+  const result = _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, anchorAtomId, childAtomId);
   cache.set(cacheKey, result);
   return result;
 }
@@ -1422,10 +1421,9 @@ function isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtom
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} anchorAtomId - Candidate ring anchor atom id.
- * @param {Map<number, object>|null} [ringSystemById] - Optional cached ring-system lookup.
  * @returns {Array<{childAtomId: string, representativeAtomIds: string[]}>} Readability candidates.
  */
-export function collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId, ringSystemById = null) {
+export function collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId) {
   const anchorAtom = layoutGraph.sourceMolecule.atoms.get(anchorAtomId);
   if (!anchorAtom || !layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
     return [];
@@ -1444,8 +1442,7 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
       continue;
     }
 
-    const childRingCount = layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0;
-    if (childRingCount === 0) {
+    if (!layoutGraph.ringAtomIdSet.has(neighborAtom.id)) {
       if (isMetalAtom(neighborAtom)) {
         // Metal branches read by the immediate coordination bond, not a downstream ligand centroid.
         candidates.push({
@@ -1454,7 +1451,7 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
         });
         continue;
       }
-      const linkedRingRepresentative = resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, neighborAtom.id, ringSystemById);
+      const linkedRingRepresentative = resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, neighborAtom.id);
       if (linkedRingRepresentative) {
         candidates.push({
           childAtomId: neighborAtom.id,
@@ -1476,7 +1473,7 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
     if (childRingSystemId == null || childRingSystemId === anchorRingSystemId) {
       continue;
     }
-    const representativeAtomIds = ringSystemAtomIds(layoutGraph, childRingSystemId, ringSystemById).filter(atomId => coords.has(atomId));
+    const representativeAtomIds = ringSystemAtomIds(layoutGraph, childRingSystemId).filter(atomId => coords.has(atomId));
     if (representativeAtomIds.length === 0) {
       continue;
     }
@@ -1552,7 +1549,6 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
   const maxOutwardDeviation = options.maxOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation;
   const maxSevereImmediateOutwardDeviation = options.maxSevereImmediateOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation;
   const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
-  const ringSystemById = layoutGraph.ringSystemById;
   let failingSubstituentCount = 0;
   let inwardSubstituentCount = 0;
   let outwardAxisFailureCount = 0;
@@ -1568,7 +1564,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       continue;
     }
 
-    const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId, ringSystemById);
+    const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId);
     if (substituentChildren.length === 0) {
       continue;
     }
@@ -1631,7 +1627,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       if (anchorRingSystemId == null) {
         continue;
       }
-      const reverseRepresentativeAtomIds = ringSystemAtomIds(layoutGraph, anchorRingSystemId, ringSystemById).filter(atomId => coords.has(atomId));
+      const reverseRepresentativeAtomIds = ringSystemAtomIds(layoutGraph, anchorRingSystemId).filter(atomId => coords.has(atomId));
       if (reverseRepresentativeAtomIds.length === 0) {
         continue;
       }

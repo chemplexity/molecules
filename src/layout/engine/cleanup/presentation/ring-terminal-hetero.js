@@ -2243,7 +2243,7 @@ function isSaturatedBridgeheadTerminalHeteroAnchor(layoutGraph, anchorAtomId, an
   return (
     anchorAtom.aromatic !== true
     && (anchorAtom.heavyDegree ?? 0) >= 4
-    && (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 1
+    && (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) > 1
   );
 }
 

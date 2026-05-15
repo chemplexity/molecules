@@ -544,7 +544,7 @@ function measureAttachedRingRootOutwardPenalty(layoutGraph, coords, descriptor, 
 }
 
 function supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor) {
-  const rootRingCount = layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0;
+  const rootRingCount = layoutGraph.ringCountByAtomId.get(descriptor.rootAtomId) ?? 0;
   if (rootRingCount === 0) {
     return false;
   }

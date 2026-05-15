@@ -164,7 +164,7 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
   const candidateAtomIds = atomIds
     .filter(atomId =>
       bridgeProjectionInternalHeavyDegree(layoutGraph, atomId, atomIdSet) >= 3
-      && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 1
+      && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) > 1
     )
     .sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
   let bestPair = defaultBridgeheadAtomIds;

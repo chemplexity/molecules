@@ -73,6 +73,16 @@ function buildRingAtomIds(rings) {
   return ringAtomIdSet;
 }
 
+function buildRingCountByAtomId(rings) {
+  const ringCountByAtomId = new Map();
+  for (const ring of rings) {
+    for (const atomId of ring.atomIds) {
+      ringCountByAtomId.set(atomId, (ringCountByAtomId.get(atomId) ?? 0) + 1);
+    }
+  }
+  return ringCountByAtomId;
+}
+
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const ORTHOGONAL_ORGANOSILICON_ELEMENTS = new Set(['Si']);
 const ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS = 2;
@@ -250,6 +260,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
   const atomToRingSystemId = buildAtomToRingSystemIdIndex(ringAnalysis.ringSystems);
   const ringSystemById = buildRingSystemByIdIndex(ringAnalysis.ringSystems);
   const ringAtomIdSet = buildRingAtomIds(ringAnalysis.rings);
+  const ringCountByAtomId = buildRingCountByAtomId(ringAnalysis.rings);
 
   return {
     moleculeId: molecule.id,
@@ -262,6 +273,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
     atomToRings,
     atomToRingSystemId,
     ringAtomIdSet,
+    ringCountByAtomId,
     components,
     rings: ringAnalysis.rings,
     ringSystems: ringAnalysis.ringSystems,

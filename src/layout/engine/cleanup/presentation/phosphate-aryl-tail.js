@@ -115,7 +115,7 @@ function collectPhosphateArylTailDescriptors(layoutGraph, coords) {
     if (
       anchorAtom?.aromatic !== true
       || !coords.has(anchorAtomId)
-      || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+      || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
       || !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
     ) {
       continue;
@@ -192,7 +192,7 @@ function collectPhosphateArylLinkerDescriptors(layoutGraph, coords) {
       if (
         neighborAtom.element === 'C'
         && neighborAtom.aromatic === true
-        && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 1
+        && (layoutGraph.ringCountByAtomId.get(neighborAtomId) ?? 0) === 1
         && isPhosphateBoundAromaticRing(layoutGraph, neighborAtomId)
       ) {
         arylAtomId = neighborAtomId;
