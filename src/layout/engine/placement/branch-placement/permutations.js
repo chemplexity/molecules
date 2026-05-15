@@ -523,7 +523,7 @@ function bentDivalentCenterPenalty(layoutGraph, coords, atomId) {
     || atom.element !== 'N'
     || atom.aromatic
     || !atomPosition
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return 0;
   }
@@ -806,7 +806,7 @@ function trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAto
     || anchorAtom.aromatic
     || anchorAtom.heavyDegree !== 3
     || anchorAtom.degree !== 3
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
   ) {
     return 0;
   }
@@ -867,7 +867,7 @@ function ringRootHasPreviewableRingNeighbors(layoutGraph, ringRootAtomId) {
   const ringRootAtom = layoutGraph?.atoms.get(ringRootAtomId);
   if (
     !ringRootAtom
-    || (layoutGraph.atomToRings.get(ringRootAtomId)?.length ?? 0) === 0
+    || !layoutGraph.ringAtomIdSet.has(ringRootAtomId)
   ) {
     return false;
   }
@@ -1103,7 +1103,7 @@ function futureAttachedRingPreviewPenalty(
       if (coords.has(neighborAtomId)) {
         placedHeavyNeighborIds.push(neighborAtomId);
       } else if (
-        (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+        layoutGraph.ringAtomIdSet.has(neighborAtomId)
         && ringRootHasPreviewableRingNeighbors(layoutGraph, neighborAtomId)
       ) {
         pendingRingNeighborIds.push(neighborAtomId);

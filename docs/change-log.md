@@ -1,7 +1,22 @@
 # Change Log
 
+## 2026-05-14
+
+- Optimize mixed-layout direct-attached ring scoring by caching local scoring-focus expansion, reusing topology bond-pair lookups, and deferring full audit/layout-cost scoring until cheap candidate gates pass.
+- Refine caged lactone and bicyclo[2.1.1] template projections for cleaner symmetry and separated lactone exits.
+- Add a trigonal-carbon bicyclo[2.1.1]hexane template so formyl-substituted cages avoid pinched bridge geometry.
+- Add a hydroxy aminopropyl cyclobutane-decalin template so saturated fused cages keep open six-ring lanes and a square cyclobutane cap.
+- Add a cyclopropane-capped azacyclooctane template so compact ammonium cages avoid collapsed ring lanes.
+- Add a substituted bicyclo[2.1.1]hexane template so compact azetidinium cyanomethyl cages avoid crossed cap bonds.
+- Add a shared-edge tricyclic ether template so saturated ether cages avoid crossed carbon lanes.
+- Add an azabicyclo-pyrrolidine template so compact aminonitrile amine cages avoid stretched bridged-ring geometry.
+
 ## 2026-05-13
 
+- Add an ammonium cyclobutyl-pyrrolidine template so compact charged bicyclic cages avoid crossed bridge geometry.
+- Add an N-methyl lactam diazatricyclo template so compact ammonium lactam cages avoid pinched fused-ring geometry.
+- Open the phenolic oxaza morphinan saturated bridge lane so long ether-tailed opioid cages avoid pinched ring geometry.
+- Add a caged hydroxy lactone template so compact oxygenated steroid-like ring systems avoid flattened fused-ring geometry.
 - Supplement ring analysis with omitted closure cycles so glycopeptide macrocycles avoid stretched hidden ring bonds and overlaps.
 - Add a phenolic oxaza morphinan template so oxygen-bridged opioid cages keep regular fused six-ring geometry.
 - Add a triazaadamantane cage template so polyaza thiourea ring systems avoid collapsed ring bonds and overlap.

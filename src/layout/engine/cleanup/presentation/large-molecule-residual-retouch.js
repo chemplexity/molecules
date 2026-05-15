@@ -1202,9 +1202,9 @@ function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, fro
   centers.sort((first, second) => second.maxDeviationDegrees - first.maxDeviationDegrees);
 
   for (const center of centers.slice(0, ANGLE_CENTER_SCAN_LIMIT)) {
-    const centerInRing = (layoutGraph.atomToRings.get(center.atomId)?.length ?? 0) > 0;
+    const centerInRing = layoutGraph.ringAtomIdSet.has(center.atomId);
     for (const { neighborAtomId } of center.covalentBonds) {
-      const neighborInRing = (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+      const neighborInRing = layoutGraph.ringAtomIdSet.has(neighborAtomId);
       if (!neighborInRing || !centerInRing) {
         addDescriptor(layoutGraph, coords, descriptors, seenDescriptors, neighborAtomId, center.atomId, currentScore, frozenAtomIds);
       }
@@ -1231,9 +1231,9 @@ function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, froze
   centers.sort((first, second) => second.totalDeviation - first.totalDeviation);
 
   for (const center of centers.slice(0, FINAL_ANGLE_POLISH_CENTER_SCAN_LIMIT)) {
-    const centerInRing = (layoutGraph.atomToRings.get(center.atomId)?.length ?? 0) > 0;
+    const centerInRing = layoutGraph.ringAtomIdSet.has(center.atomId);
     for (const { neighborAtomId } of center.covalentBonds) {
-      const neighborInRing = (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+      const neighborInRing = layoutGraph.ringAtomIdSet.has(neighborAtomId);
       if (neighborInRing && centerInRing) {
         continue;
       }
@@ -1418,7 +1418,7 @@ function ringFanAnglePolishCenter(layoutGraph, coords, atomId) {
   if (!atom || atom.element === 'H' || !coords.has(atomId)) {
     return null;
   }
-  if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0) {
+  if (!layoutGraph.ringAtomIdSet.has(atomId)) {
     return null;
   }
   const covalentBonds = visibleHeavyCovalentBonds(layoutGraph, coords, atomId);
@@ -1690,7 +1690,7 @@ function ringFanAnglePolishTerminalLeafAnchor(layoutGraph, leafAtomId) {
     !leafAtom
     || leafAtom.element === 'H'
     || leafAtom.heavyDegree !== 1
-    || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(leafAtomId)
     || layoutGraph.fixedCoords.has(leafAtomId)
   ) {
     return null;
@@ -1726,7 +1726,7 @@ function ringFanAnglePolishAnchorHasPairedTerminalHeteroLeaves(layoutGraph, anch
       && neighborAtom.element !== 'C'
       && neighborAtom.element !== 'H'
       && neighborAtom.heavyDegree === 1
-      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
     ) {
       terminalHeteroLeafCount++;
     }

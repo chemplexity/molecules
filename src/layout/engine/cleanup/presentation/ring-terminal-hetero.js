@@ -957,7 +957,7 @@ function terminalMultipleBondBalancedSupportReliefCoords(layoutGraph, coords, de
     if (protectsExactTrigonalSupportBranch(layoutGraph, supportAtomId, descriptor.centerAtomId)) {
       continue;
     }
-    if ((layoutGraph.atomToRings.get(supportAtomId)?.length ?? 0) === 0) {
+    if (!layoutGraph.ringAtomIdSet.has(supportAtomId)) {
       continue;
     }
     const supportAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, supportAtomId, descriptor.centerAtomId)
@@ -1905,8 +1905,8 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
   if (
     !anchorAtom
     || !centerAtom
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
-    || (layoutGraph.atomToRings.get(descriptor.centerAtomId)?.length ?? 0) > 0
+    || !layoutGraph.ringAtomIdSet.has(anchorAtomId)
+    || layoutGraph.ringAtomIdSet.has(descriptor.centerAtomId)
     || !anchorPosition
     || !centerPosition
     || (frozenAtomIds instanceof Set && (
@@ -2777,7 +2777,7 @@ function terminalRingHeteros(layoutGraph, coords) {
       if (!anchorAtom || !heteroAtom || heteroAtom.element === 'H' || heteroAtom.element === 'C') {
         continue;
       }
-      if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 || (layoutGraph.atomToRings.get(heteroAtomId)?.length ?? 0) > 0) {
+      if (!layoutGraph.ringAtomIdSet.has(anchorAtomId) || layoutGraph.ringAtomIdSet.has(heteroAtomId)) {
         continue;
       }
       if (!coords.has(anchorAtomId) || !coords.has(heteroAtomId) || (heteroAtom.heavyDegree ?? 0) !== 1) {
@@ -3061,7 +3061,7 @@ function boundTerminalMultipleBondSupportFans(layoutGraph, coords, bondLength) {
 
     for (const { neighborAtomId: supportAtomId } of descriptor.supportBonds) {
       const supportAtom = layoutGraph.atoms.get(supportAtomId);
-      if (!supportAtom || supportAtom.element === 'H' || (layoutGraph.atomToRings.get(supportAtomId)?.length ?? 0) === 0) {
+      if (!supportAtom || supportAtom.element === 'H' || !layoutGraph.ringAtomIdSet.has(supportAtomId)) {
         continue;
       }
 

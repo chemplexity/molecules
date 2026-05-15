@@ -498,7 +498,7 @@ function sideBranchDescendantAtomIds(layoutGraph, coords, rootAtomId, anchorAtom
 }
 
 function isRingAtom(layoutGraph, atomId) {
-  return (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0;
+  return layoutGraph.ringAtomIdSet.has(atomId);
 }
 
 function nearestRingSideBranchCut(layoutGraph, coords, atomId, blockedAtomIds) {

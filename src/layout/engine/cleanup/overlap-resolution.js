@@ -1181,8 +1181,8 @@ function isCompressibleTerminalCarbonylLeaf(layoutGraph, centerAtomId, leafAtomI
     || leafAtom.element === 'C'
     || leafAtom.element === 'H'
     || (leafAtom.heavyDegree ?? 0) !== 1
-    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
-    || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
+    || layoutGraph.ringAtomIdSet.has(leafAtomId)
   ) {
     return false;
   }
@@ -1199,13 +1199,13 @@ function isCompressibleTerminalCarbonylLeaf(layoutGraph, centerAtomId, leafAtomI
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       ringNeighborCount++;
     }
     if (
       neighborAtom.element !== 'C'
       && (neighborAtom.heavyDegree ?? 0) === 1
-      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
     ) {
       terminalHeteroNeighborCount++;
       if (!bond.aromatic && (bond.order ?? 1) >= 2) {

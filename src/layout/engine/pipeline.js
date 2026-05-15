@@ -241,7 +241,7 @@ function isRingJunctionStereoAssignment(layoutGraph, assignment) {
 
   const ringNeighborCount = centerAtom
     .getNeighbors(molecule)
-    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && (layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0).length;
+    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && layoutGraph.ringAtomIdSet.has(neighborAtom.id)).length;
   return ringNeighborCount >= 3;
 }
 

@@ -131,8 +131,8 @@ function isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor) {
     && rootAtom
     && COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(rootAtom.element)
     && (rootAtom.heavyDegree ?? 0) === 1
-    && (layoutGraph.atomToRings.get(descriptor.anchorAtomId)?.length ?? 0) > 0
-    && (layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0) === 0
+    && layoutGraph.ringAtomIdSet.has(descriptor.anchorAtomId)
+    && !layoutGraph.ringAtomIdSet.has(descriptor.rootAtomId)
     && bond
     && bond.kind === 'covalent'
     && !bond.inRing
@@ -242,7 +242,7 @@ function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, r
   if (
     !rootAtomId
     || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
-    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(rootAtomId)
     || localOutwardAngles.length !== 1
   ) {
     return false;
@@ -323,7 +323,7 @@ function resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId,
   }
 
   const downstreamAnchorAtomId = heavyNeighborIds.find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
-  if (!downstreamAnchorAtomId || (layoutGraph.atomToRings.get(downstreamAnchorAtomId)?.length ?? 0) === 0) {
+  if (!downstreamAnchorAtomId || !layoutGraph.ringAtomIdSet.has(downstreamAnchorAtomId)) {
     return null;
   }
   if (layoutGraph.atomToRingSystemId.get(downstreamAnchorAtomId) === layoutGraph.atomToRingSystemId.get(anchorAtomId)) {
@@ -377,7 +377,7 @@ function resolveIdealLinkedSubtreeRepresentative(layoutGraph, coords, anchorAtom
   if (
     !downstreamAnchorAtomId
     || !downstreamAnchorAtom
-    || (layoutGraph.atomToRings.get(downstreamAnchorAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(downstreamAnchorAtomId)
     || (downstreamAnchorAtom.heavyDegree ?? 0) <= 1
   ) {
     return null;
@@ -466,7 +466,7 @@ function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, 
 
 function terminalHeavyLeafAnchorAtomId(layoutGraph, leafAtomId) {
   const atom = layoutGraph.atoms.get(leafAtomId);
-  if (!atom || atom.element === 'H' || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0) {
+  if (!atom || atom.element === 'H' || layoutGraph.ringAtomIdSet.has(leafAtomId)) {
     return null;
   }
   const heavyNeighborIds = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? [])
@@ -511,7 +511,7 @@ function terminalLeafBlockersNearPosition(layoutGraph, coords, rootAtomId, targe
     const blockerAnchorAtomId = terminalHeavyLeafAnchorAtomId(layoutGraph, atomId);
     if (
       !blockerAnchorAtomId
-      || (layoutGraph.atomToRings.get(blockerAnchorAtomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(blockerAnchorAtomId)
       || !coords.has(blockerAnchorAtomId)
     ) {
       continue;
@@ -692,7 +692,7 @@ function terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtom
       || centerAtom.aromatic
       || centerAtom.heavyDegree !== 3
       || !coords.has(centerAtomId)
-      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(centerAtomId)
     ) {
       continue;
     }
@@ -728,7 +728,7 @@ function terminalRingCarbonylLeafForeignRingDistance(layoutGraph, coords, descri
       || atomId === descriptor.leafAtomId
       || atomId === descriptor.centerAtomId
       || !coords.has(atomId)
-      || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(atomId)
       || layoutGraph.atomToRingSystemId.get(atomId) === descriptor.ringSystemId
       || layoutGraph.bondedPairSet.has(atomPairKey(descriptor.leafAtomId, atomId))
     ) {
@@ -1126,7 +1126,7 @@ function shouldReplaceTidyeableDescriptor(candidate, incumbent) {
  */
 function resolveIdealTerminalMultipleBondLeafDescriptor(layoutGraph, coords, anchorAtomId, frozenAtomIds) {
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
-  if (!anchorAtom || anchorAtom.aromatic || anchorAtom.heavyDegree !== 3 || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+  if (!anchorAtom || anchorAtom.aromatic || anchorAtom.heavyDegree !== 3 || !layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
     return null;
   }
 
@@ -1224,7 +1224,7 @@ function allowsLinkedRingBridgeWithSiblingLeaves(substituentChildren, linkedRing
 
 function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAtomIds = null, options = {}) {
   const descriptorsByPair = new Map();
-  const ringSystemById = new Map(layoutGraph.ringSystems.map(rs => [rs.id, rs]));
+  const ringSystemById = layoutGraph.ringSystemById;
   const focusSet = focusAtomIds instanceof Set && focusAtomIds.size > 0 ? focusAtomIds : null;
   const includeRingSystemSubstituents = options.includeRingSystemSubstituents !== false;
 
@@ -1232,7 +1232,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
     if (focusSet && !focusSet.has(anchorAtomId)) {
       continue;
     }
-    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    if (!layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
       continue;
     }
     const terminalMultipleBondLeafDescriptor = resolveIdealTerminalMultipleBondLeafDescriptor(
@@ -1280,7 +1280,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
       const isDirectAttachedRingSystemSubstituent =
         linkedRingRepresentative == null
         && substituentChild.representativeAtomIds.length > 1
-        && (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0;
+        && layoutGraph.ringAtomIdSet.has(rootAtomId);
       const prefersIdealOutwardGeometry =
         (substituentChildren.length === 1 && (
           substituentChild.representativeAtomIds.length === 1
@@ -2315,8 +2315,8 @@ function isTerminalHeavyRingLeaf(layoutGraph, coords, anchorAtomId, rootAtomId, 
     || !rootAtom
     || rootAtom.element === 'H'
     || rootAtom.heavyDegree !== 1
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
-    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+    || !layoutGraph.ringAtomIdSet.has(anchorAtomId)
+    || layoutGraph.ringAtomIdSet.has(rootAtomId)
     || !bond
     || bond.kind !== 'covalent'
     || bond.inRing
@@ -2553,8 +2553,8 @@ function isDirectAttachedRingParentTrigonalCandidate(layoutGraph, anchorAtomId, 
     bond.inRing ||
     bond.aromatic ||
     (bond.order ?? 1) !== 1 ||
-    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 ||
-    (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0 ||
+    !layoutGraph.ringAtomIdSet.has(anchorAtomId) ||
+    !layoutGraph.ringAtomIdSet.has(rootAtomId) ||
     layoutGraph.atomToRingSystemId.get(anchorAtomId) === layoutGraph.atomToRingSystemId.get(rootAtomId)
   ) {
     return false;
@@ -2789,7 +2789,7 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
     if (focusAtomIds && !focusAtomIds.has(anchorAtomId)) {
       continue;
     }
-    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    if (!layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
       continue;
     }
     const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId);
@@ -2800,7 +2800,7 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
     const { childAtomId: rootAtomId, representativeAtomIds } = substituentChildren[0];
     if (
       representativeAtomIds.length <= 1
-      || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(rootAtomId)
     ) {
       continue;
     }

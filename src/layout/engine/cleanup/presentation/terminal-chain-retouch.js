@@ -57,7 +57,7 @@ function orderedTerminalChain(layoutGraph, rootAtomId, anchorAtomId) {
       return null;
     }
     const nextAtomId = nextAtomIds[0];
-    if ((layoutGraph.atomToRings.get(nextAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(nextAtomId)) {
       return null;
     }
     if (!isRetouchableChainBond(layoutGraph, currentAtomId, nextAtomId)) {
@@ -90,7 +90,7 @@ function terminalChainCandidates(layoutGraph, ringChain) {
         if (ringAtomIds.has(rootAtomId) || linkerAtomIds.has(rootAtomId)) {
           continue;
         }
-        if ((layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0) {
+        if (layoutGraph.ringAtomIdSet.has(rootAtomId)) {
           continue;
         }
         if (!isRetouchableChainBond(layoutGraph, anchorAtomId, rootAtomId)) {

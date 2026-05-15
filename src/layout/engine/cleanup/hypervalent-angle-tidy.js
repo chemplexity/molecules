@@ -673,8 +673,8 @@ function isHypervalentSingleLigandBond(layoutGraph, centerAtomId, bond) {
     neighborAtom
     && neighborAtom.element !== 'H'
     && neighborAtom.heavyDegree > 1
-    && (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
-    && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+    && layoutGraph.ringAtomIdSet.has(centerAtomId)
+    && layoutGraph.ringAtomIdSet.has(neighborAtomId)
   );
 }
 
@@ -689,7 +689,7 @@ function isOrthogonalOrganosiliconArylLigand(layoutGraph, atomId) {
     atom
     && atom.element === 'C'
     && atom.aromatic === true
-    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    && layoutGraph.ringAtomIdSet.has(atomId)
   );
 }
 
@@ -1009,7 +1009,7 @@ function isRingLinkedBisOxoCenter(layoutGraph, centerAtomId, descriptor) {
     descriptor?.kind !== 'bis-oxo'
     || descriptor.singleNeighborIds.length !== 2
     || descriptor.multipleNeighborIds.length !== 2
-    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
   ) {
     return false;
   }
@@ -1019,7 +1019,7 @@ function isRingLinkedBisOxoCenter(layoutGraph, centerAtomId, descriptor) {
       return (
         neighborAtom?.element === 'C'
         && neighborAtom.aromatic === true
-        && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+        && layoutGraph.ringAtomIdSet.has(neighborAtomId)
       );
     }
   );
@@ -1217,7 +1217,7 @@ function movableBridgeLinkedHypervalentSubtreeAtomIds(layoutGraph, centerAtomId,
     || !coords.has(ligandAtomId)
     || ligandAtom.heavyDegree !== 2
     || !BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS.has(ligandAtom.element)
-    || (layoutGraph.atomToRings.get(ligandAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(ligandAtomId)
   ) {
     return null;
   }
@@ -1399,7 +1399,7 @@ function hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, ligandAtomId
  * @returns {string[]|null} Center-side subtree atom ids, or `null` when too broad.
  */
 function movableRingAnchoredHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ringAnchorAtomId, coords) {
-  if ((layoutGraph.atomToRings.get(ringAnchorAtomId)?.length ?? 0) === 0) {
+  if (!layoutGraph.ringAtomIdSet.has(ringAnchorAtomId)) {
     return null;
   }
   const subtreeAtomIds = [...collectCutSubtree(layoutGraph, centerAtomId, ringAnchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
@@ -1433,7 +1433,7 @@ function movableAcyclicAnchoredHypervalentSubtreeAtomIds(layoutGraph, centerAtom
     !anchorAtom
     || anchorAtom.aromatic
     || !ACYCLIC_HYPERVALENT_BRANCH_ANCHOR_ELEMENTS.has(anchorAtom.element)
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
   ) {
     return null;
   }
@@ -1856,7 +1856,7 @@ function collectRingAnchoredHypervalentConnectorDescriptors(layoutGraph, coords)
             anchorAtomId === centerAtomId
             || ringAtomIds.has(anchorAtomId)
             || !coords.has(anchorAtomId)
-            || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+            || layoutGraph.ringAtomIdSet.has(anchorAtomId)
           ) {
             continue;
           }
@@ -2666,7 +2666,7 @@ function ringAnchoredSulfonamideCrossLigands(layoutGraph, centerAtomId, descript
     || descriptor?.kind !== 'bis-oxo'
     || descriptor.singleNeighborIds.length !== 2
     || descriptor.multipleNeighborIds.length !== 2
-    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
   ) {
     return null;
   }
@@ -2676,7 +2676,7 @@ function ringAnchoredSulfonamideCrossLigands(layoutGraph, centerAtomId, descript
     return Boolean(
       neighborAtom?.element === 'C'
       && neighborAtom.aromatic === true
-      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+      && layoutGraph.ringAtomIdSet.has(neighborAtomId)
     );
   });
   const nitrogenAtomId = descriptor.singleNeighborIds.find(neighborAtomId => {
@@ -3284,7 +3284,7 @@ function terminalLeafParentRingExitDeviation(layoutGraph, coords, descriptor, di
       || directLigandAtomIds.has(anchorAtomId)
       || anchorAtom?.element !== 'C'
       || anchorAtom.aromatic !== true
-      || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(anchorAtomId)
     ) {
       continue;
     }

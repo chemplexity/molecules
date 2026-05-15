@@ -92,7 +92,7 @@ function collectDiarylFanDescriptors(layoutGraph, coords) {
       || atom.element !== 'C'
       || atom.aromatic
       || atom.heavyDegree !== 3
-      || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(atomId)
     ) {
       continue;
     }

@@ -115,7 +115,7 @@ function countHeavyAtoms(layoutGraph, atomIds) {
  * @returns {boolean} True when any atom belongs to a ring.
  */
 function hasRingAtom(layoutGraph, atomIds) {
-  return atomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+  return atomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId));
 }
 
 /**
@@ -155,7 +155,7 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
   const descriptors = [];
   for (const centerAtomId of coords.keys()) {
     const centerIsFrozen = frozenAtomIds?.has(centerAtomId) ?? false;
-    if ((layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) === 0) {
+    if (!layoutGraph.ringAtomIdSet.has(centerAtomId)) {
       continue;
     }
     const centerAtom = layoutGraph.atoms.get(centerAtomId);
@@ -166,9 +166,9 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
     if (heavyBonds.length !== 3) {
       continue;
     }
-    const ringBonds = heavyBonds.filter(({ neighborAtomId }) => (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0);
+    const ringBonds = heavyBonds.filter(({ neighborAtomId }) => layoutGraph.ringAtomIdSet.has(neighborAtomId));
     const terminalBonds = heavyBonds.filter(({ bond, neighborAtomId }) => (
-      (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+      !layoutGraph.ringAtomIdSet.has(neighborAtomId)
       && !bond.aromatic
       && (bond.order ?? 1) === 1
     ));
@@ -325,7 +325,7 @@ function collectReliefDescriptor(layoutGraph, coords, rootAtomId, parentAtomId, 
   if (
     subtreeAtomIds.length === 0
     || subtreeAtomIds.includes(parentAtomId)
-    || subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId) || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0)
+    || subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId) || layoutGraph.ringAtomIdSet.has(atomId))
     || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
   ) {
     return null;
@@ -455,7 +455,7 @@ function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, le
     leafAtom.aromatic ||
     (leafAtom.heavyDegree ?? 0) !== 1 ||
     (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1 ||
-    (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    layoutGraph.ringAtomIdSet.has(leafAtomId)
   ) {
     return null;
   }
@@ -476,7 +476,7 @@ function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, le
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       ringNeighborCount++;
     } else if (
       neighborAtom.element !== 'C' &&
@@ -493,7 +493,7 @@ function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, le
   const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
   if (
     leafSubtreeAtomIds.length === 0 ||
-    leafSubtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) ||
+    leafSubtreeAtomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId)) ||
     countHeavyAtoms(layoutGraph, leafSubtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
   ) {
     return null;
@@ -782,7 +782,7 @@ function collectInternalReliefDescriptors(layoutGraph, coords, targetDescriptor,
             frozenAtomIds?.has(atomId)
             || protectedAtomIds.has(atomId)
             || !movedAtomIds.has(atomId)
-            || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+            || layoutGraph.ringAtomIdSet.has(atomId)
           )
           || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_INTERNAL_RELIEF_HEAVY_ATOMS
         ) {
@@ -1037,7 +1037,7 @@ function collectRootSubtreeLeafReliefDescriptors(layoutGraph, coords, targetDesc
             frozenAtomIds?.has(subtreeAtomId)
             || protectedAtomIds.has(subtreeAtomId)
             || !rootSubtreeAtomIds.has(subtreeAtomId)
-            || (layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0
+            || layoutGraph.ringAtomIdSet.has(subtreeAtomId)
           )
           || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
         ) {

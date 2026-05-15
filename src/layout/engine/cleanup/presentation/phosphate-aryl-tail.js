@@ -52,7 +52,7 @@ function isVisibleCarbon(layoutGraph, atomId) {
     && atom.element === 'C'
     && atom.visible !== false
     && atom.aromatic !== true
-    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(atomId)
   );
 }
 
@@ -168,7 +168,7 @@ function collectPhosphateArylLinkerDescriptors(layoutGraph, coords) {
       !oxygenAtom
       || oxygenAtom.element !== 'O'
       || oxygenAtom.aromatic === true
-      || (layoutGraph.atomToRings.get(oxygenAtomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(oxygenAtomId)
       || !coords.has(oxygenAtomId)
     ) {
       continue;

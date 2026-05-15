@@ -347,6 +347,70 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the N-methyl lactam diazatricyclo template for compact ammonium lactam cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1CCC2C3NC(=O)C2([NH3+])CC13'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'n-methyl-lactam-diaza-tricyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the ammonium cyclobutyl-pyrrolidine template for compact charged bicyclic cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CNC1=C(N(C)C=C1)C12CC(C1)C[NH2+]2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'ammonium-cyclobutyl-pyrrolidine-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the azabicyclo-pyrrolidine template for compact aminonitrile amines', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)C(NC12CN(C1)CC2)C#N'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'azabicyclo-pyrrolidine-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the shared-edge tricyclic ether template for saturated ether cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1COCCCC23CCCC12CCC3'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'shared-edge-tricyclic-ether-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the substituted bicyclo[2.1.1]hexane template for azetidinium cyanomethyl cages', () => {
+    const graph = createLayoutGraph(parseSMILES('N#CC(C1C[NH2+]C1)C12CC(C1)CC2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'substituted-bicyclo-2-1-1-hexane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the trigonal-carbon bicyclo[2.1.1]hexane template for formyl cages', () => {
+    const graph = createLayoutGraph(parseSMILES('O=CC12CC(C1)CC2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'trigonal-carbon-bicyclo-2-1-1-hexane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the cyclopropane-capped azacyclooctane template for compact ammonium cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1C2CC3(CC3)C1C(C)C[NH2+]C(C)(C)C2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'cyclopropane-azacyclooctane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the hydroxy aminopropyl cyclobutane-decalin template for fused saturated cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2(C1)CC1(O)CCC2C(CC[NH3+])C1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-aminopropyl-cyclobutane-decalin-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the sulfonyl cyclopentenyl azocane template for compact sulfone-fused cages', () => {
     const graph = createLayoutGraph(parseSMILES('CC1=C2CS(=O)(=O)C1C(CCNC2(C)C)C=O'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);

@@ -175,7 +175,7 @@ function exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId,
     || !anchorPosition
     || !rootPosition
     || anchorAtom.aromatic
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
   ) {
     return [];
   }
@@ -312,13 +312,13 @@ function isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anch
     || !rootAtom
     || !anchorPosition
     || !rootPosition
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
+    || !layoutGraph.ringAtomIdSet.has(anchorAtomId)
     || rootAtom.element !== 'C'
     || rootAtom.aromatic
     || rootAtom.heavyDegree !== 3
     || rootAtom.degree !== 4
     || layoutGraph.options.suppressH !== true
-    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(rootAtomId)
   ) {
     return false;
   }
@@ -351,7 +351,7 @@ function saturatedTerminalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborId
   if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 2) {
     return null;
   }
-  if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0 || heavyNeighborIds.length !== 2) {
+  if (layoutGraph.ringAtomIdSet.has(atomId) || heavyNeighborIds.length !== 2) {
     return null;
   }
 
@@ -368,7 +368,7 @@ function saturatedTerminalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborId
       || terminalLeafAtom.element === 'H'
       || terminalLeafAtom.aromatic
       || terminalLeafAtom.heavyDegree !== 1
-      || (layoutGraph.atomToRings.get(terminalLeafAtomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(terminalLeafAtomId)
       || !singleBondDescriptor(layoutGraph, atomId, anchorAtomId)
       || !singleBondDescriptor(layoutGraph, atomId, terminalLeafAtomId)
     ) {
@@ -392,7 +392,7 @@ function isTerminalHeavyLeaf(layoutGraph, atomId) {
     && atom.element !== 'H'
     && !atom.aromatic
     && atom.heavyDegree === 1
-    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0;
+    && !layoutGraph.ringAtomIdSet.has(atomId);
 }
 
 /**
@@ -413,7 +413,7 @@ function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds
     || atom.aromatic
     || atom.heavyDegree !== 3
     || heavyNeighborIds.length !== 3
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return null;
   }
@@ -472,7 +472,7 @@ function exactTrigonalRingBranchAxisReflectionDescriptor(layoutGraph, atomId, he
     || atom.aromatic
     || atom.heavyDegree !== 3
     || heavyNeighborIds.length !== 3
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return null;
   }
@@ -496,7 +496,7 @@ function exactTrigonalRingBranchAxisReflectionDescriptor(layoutGraph, atomId, he
     if ((bond.order ?? 1) !== 1) {
       return null;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       if (ringNeighborAtomId != null) {
         return null;
       }
@@ -538,7 +538,7 @@ function isCompactSaturatedSideGroup(layoutGraph, atomId, parentAtomId, maxHeavy
     if (!atom) {
       return false;
     }
-    if ((layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(subtreeAtomId)) {
       return false;
     }
     if (atom.element !== 'H') {
@@ -565,7 +565,7 @@ function isCompactAcyclicSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAt
     if (!atom) {
       return false;
     }
-    if ((layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(subtreeAtomId)) {
       return false;
     }
     if (atom.element !== 'H') {
@@ -584,7 +584,7 @@ function isCompactAcyclicSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAt
  */
 function isAcyclicSubtree(layoutGraph, subtreeAtomIds) {
   for (const atomId of subtreeAtomIds) {
-    if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(atomId)) {
       return false;
     }
   }
@@ -674,7 +674,7 @@ function compactDivalentAcyclicBranchDescriptor(layoutGraph, atomId, heavyNeighb
     || atom.aromatic
     || atom.heavyDegree !== 2
     || heavyNeighborIds.length !== 2
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return null;
   }
@@ -689,7 +689,7 @@ function compactDivalentAcyclicBranchDescriptor(layoutGraph, atomId, heavyNeighb
       || anchorAtom.element !== 'C'
       || anchorAtom.aromatic
       || anchorAtom.heavyDegree !== 2
-      || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(anchorAtomId)
     ) {
       continue;
     }
@@ -725,7 +725,7 @@ function branchedSaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighborId
     || atom.heavyDegree !== 3
     || atom.degree !== 4
     || heavyNeighborIds.length !== 3
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return null;
   }
@@ -771,7 +771,7 @@ function quaternarySaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighbor
     || atom.heavyDegree !== 4
     || atom.degree !== 4
     || heavyNeighborIds.length !== 4
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return null;
   }
@@ -1415,7 +1415,7 @@ function planarNitrogenAttachedRingSwapSubtrees(layoutGraph, coords) {
         || rootAtom.element === 'H'
         || !coords.has(anchorAtomId)
         || !coords.has(rootAtomId)
-        || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0
+        || !layoutGraph.ringAtomIdSet.has(rootAtomId)
         || !isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, rootAtomId)
       ) {
         continue;
@@ -1424,7 +1424,7 @@ function planarNitrogenAttachedRingSwapSubtrees(layoutGraph, coords) {
       if (
         subtreeAtomIds.length === 0
         || subtreeAtomIds.includes(anchorAtomId)
-        || !subtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0)
+        || !subtreeAtomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId))
       ) {
         continue;
       }
@@ -2036,7 +2036,7 @@ function shouldPreserveRingTrigonalHeteroFan(layoutGraph, atomId, heavyBonds) {
   return !!exocyclicAtom
     && exocyclicAtom.element !== 'H'
     && !exocyclicAtom.aromatic
-    && (layoutGraph.atomToRings.get(exocyclicBond.neighborAtomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(exocyclicBond.neighborAtomId)
     && isCompactAcyclicSideGroup(layoutGraph, exocyclicBond.neighborAtomId, atomId, 4);
 }
 
@@ -2152,7 +2152,7 @@ function shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, atomId, bas
   const hasRingNeighbor = (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => {
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    return neighborAtom?.element !== 'H' && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+    return neighborAtom?.element !== 'H' && layoutGraph.ringAtomIdSet.has(neighborAtomId);
   });
   return Boolean(
     atom
@@ -2161,7 +2161,7 @@ function shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, atomId, bas
     && atom.heavyDegree === 3
     && atom.degree === 4
     && layoutGraph.options.suppressH === true
-    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(atomId)
     && hasRingNeighbor
     && baseDistortion <= CLEANUP_EPSILON
   );
@@ -2201,11 +2201,11 @@ function isExactTrigonalRingAxisReflectionEligible(layoutGraph, coords, anchorAt
   if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
     return false;
   }
-  if ((layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0) {
+  if (!layoutGraph.ringAtomIdSet.has(rootAtomId)) {
     return false;
   }
   const subtreeAtomIds = collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId);
-  return subtreeAtomIds.size > 1 && [...subtreeAtomIds].some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+  return subtreeAtomIds.size > 1 && [...subtreeAtomIds].some(atomId => layoutGraph.ringAtomIdSet.has(atomId));
 }
 
 /**

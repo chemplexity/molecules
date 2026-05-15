@@ -176,7 +176,7 @@ function sortedAngularFanDistortion(angles) {
 
 function exactRingRootFanDistortionCost(layoutGraph, coords, atomId) {
   const atomPosition = coords.get(atomId);
-  if (!atomPosition || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0) {
+  if (!atomPosition || !layoutGraph.ringAtomIdSet.has(atomId)) {
     return 0;
   }
   const neighborAngles = [];
@@ -204,7 +204,7 @@ function exactRingRootFanDistortionCost(layoutGraph, coords, atomId) {
 function exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) {
   let maxWorsening = 0;
   for (const atomId of baseCoords.keys()) {
-    if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0 || !candidateCoords.has(atomId)) {
+    if (!layoutGraph.ringAtomIdSet.has(atomId) || !candidateCoords.has(atomId)) {
       continue;
     }
     const baseCost = exactRingRootFanDistortionCost(layoutGraph, baseCoords, atomId);

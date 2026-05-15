@@ -149,7 +149,7 @@ function collectTerminalLeafReliefDescriptor(layoutGraph, coords, atomId) {
     || atom.element === 'H'
     || atom.aromatic
     || atom.heavyDegree !== 1
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return null;
   }
@@ -161,7 +161,7 @@ function collectTerminalLeafReliefDescriptor(layoutGraph, coords, atomId) {
     .filter(subtreeAtomId => coords.has(subtreeAtomId));
   if (
     subtreeAtomIds.length === 0
-    || subtreeAtomIds.some(subtreeAtomId => (layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0)
+    || subtreeAtomIds.some(subtreeAtomId => layoutGraph.ringAtomIdSet.has(subtreeAtomId))
   ) {
     return null;
   }
@@ -237,7 +237,7 @@ function collectTerminalCationRingDescriptors(layoutGraph, coords, bondLength) {
         || linkerAtom.aromatic
         || !['O', 'S', 'Se', 'N'].includes(linkerAtom.element)
         || linkerAtom.heavyDegree !== 2
-        || (layoutGraph.atomToRings.get(linkerAtomId)?.length ?? 0) > 0
+        || layoutGraph.ringAtomIdSet.has(linkerAtomId)
       ) {
         continue;
       }

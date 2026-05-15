@@ -242,7 +242,7 @@ function omittedHydrogenDirectRingHubNeighborIds(layoutGraph, coords, centerAtom
     || centerAtom.aromatic
     || centerAtom.degree !== 4
     || centerAtom.heavyDegree !== 3
-    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
     || !coords.has(centerAtomId)
   ) {
     return [];
@@ -258,7 +258,7 @@ function omittedHydrogenDirectRingHubNeighborIds(layoutGraph, coords, centerAtom
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    if (!coords.has(neighborAtomId) || (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0) {
+    if (!coords.has(neighborAtomId) || !layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       return [];
     }
     neighborIds.push(neighborAtomId);
@@ -312,7 +312,7 @@ function measureOmittedHydrogenDirectRingHubCollateralRootPenalty(layoutGraph, c
       || ringAtom.element === 'H'
       || !coords.has(ringAtomId)
       || protectedAtomIds.has(ringAtomId)
-      || (layoutGraph.atomToRings.get(ringAtomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(ringAtomId)
     ) {
       continue;
     }
@@ -327,7 +327,7 @@ function measureOmittedHydrogenDirectRingHubCollateralRootPenalty(layoutGraph, c
         || rootAtom.element === 'H'
         || !coords.has(rootAtomId)
         || protectedAtomIds.has(rootAtomId)
-        || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+        || layoutGraph.ringAtomIdSet.has(rootAtomId)
       ) {
         continue;
       }
@@ -376,7 +376,7 @@ function collectOmittedHydrogenDirectRingHubCollateralRootDescriptors(layoutGrap
       || ringAtom.element === 'H'
       || !coords.has(ringAtomId)
       || protectedAtomIds.has(ringAtomId)
-      || (layoutGraph.atomToRings.get(ringAtomId)?.length ?? 0) === 0
+      || !layoutGraph.ringAtomIdSet.has(ringAtomId)
     ) {
       continue;
     }
@@ -391,7 +391,7 @@ function collectOmittedHydrogenDirectRingHubCollateralRootDescriptors(layoutGrap
         || rootAtom.element === 'H'
         || !coords.has(rootAtomId)
         || protectedAtomIds.has(rootAtomId)
-        || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+        || layoutGraph.ringAtomIdSet.has(rootAtomId)
       ) {
         continue;
       }

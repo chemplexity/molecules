@@ -144,8 +144,8 @@ function isTerminalCarbonRingBranchLeaf(layoutGraph, anchorAtomId, childAtomId, 
     && !childAtom.aromatic
     && !childAtom.chirality
     && childAtom.heavyDegree === 1
-    && (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
-    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
+    && layoutGraph.ringAtomIdSet.has(anchorAtomId)
+    && !layoutGraph.ringAtomIdSet.has(childAtomId)
   );
 }
 
@@ -179,7 +179,7 @@ function isRingBranchBondCrossingRescueEligible(layoutGraph, anchorAtomId, child
     && anchorIsHeteroAtom
     && childAtom.element !== 'H'
     && !childAtom.aromatic
-    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(childAtomId)
     && childSubtreeSize > 1
     && childSubtreeSize <= RING_BRANCH_BOND_CROSSING_RESCUE_MAX_SUBTREE
   );
@@ -422,7 +422,7 @@ function isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
 function shouldDeferTerminalCarbonLeafForPendingTrigonalNeighbor(adjacency, atomIdsToPlace, coords, anchorAtomId, neighborAtomId, layoutGraph) {
   if (
     !layoutGraph
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
     || !isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
     || !hasPendingNonAromaticRingNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph)
   ) {
@@ -590,7 +590,7 @@ function isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId
     }
     visited.add(atomId);
     const atom = layoutGraph.atoms.get(atomId);
-    if (!atom || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+    if (!atom || layoutGraph.ringAtomIdSet.has(atomId)) {
       return false;
     }
     if (atom.element === 'H') {
@@ -631,7 +631,7 @@ function isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, ch
     || !childAtom
     || childAtom.element === 'H'
     || childAtom.aromatic
-    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(childAtomId)
     || !childBond
     || childBond.kind !== 'covalent'
     || childBond.aromatic
@@ -715,7 +715,7 @@ function shouldUseRingAnchorSingleBranchLookahead(
     layoutGraph
     && isRingAnchor(layoutGraph, anchorAtomId)
     && (useSaturatedMultiRingLookahead || useAromaticTailLookahead)
-    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(childAtomId)
     && childBond != null
     && !childBond.aromatic
     && (childBond.order ?? 1) === 1
@@ -732,8 +732,8 @@ function shouldPreferFineAlkylTailRescue(layoutGraph, anchorAtomId, parentAtomId
     || !childAtomId
     || currentPlacedNeighborIds.length !== 1
     || preferredAngles.length < 2
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
-    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
+    || layoutGraph.ringAtomIdSet.has(childAtomId)
   ) {
     return false;
   }
@@ -800,7 +800,7 @@ function terminalRingLeafIds(layoutGraph, anchorAtomId, skipLeafAtomId) {
       !neighborAtom
       || !EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS.has(neighborAtom.element)
       || (neighborAtom.heavyDegree ?? 0) !== 1
-      || (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(neighborAtomId)
     ) {
       continue;
     }
@@ -826,7 +826,7 @@ function exactTerminalRingLeafSlotPoints(layoutGraph, coords, bondLength, skipLe
 
   const slotPoints = [];
   for (const [anchorAtomId, anchorPosition] of coords) {
-    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    if (!layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
       continue;
     }
     const leafAtomIds = terminalRingLeafIds(layoutGraph, anchorAtomId, skipLeafAtomId);

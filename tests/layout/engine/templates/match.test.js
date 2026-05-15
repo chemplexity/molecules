@@ -308,6 +308,16 @@ describe('layout/engine/templates/match', () => {
       buildRingCandidate(phenolicOxazaMorphinanGraph, phenolicOxazaMorphinanGraph.ringSystems[0], 'bridged')
     );
     assert.equal(phenolicOxazaMorphinanMatch.id, 'phenolic-oxaza-morphinan-core');
+
+    const cagedHydroxyLactoneGraph = createLayoutGraph(
+      parseSMILES('[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O'),
+      { suppressH: true }
+    );
+    const cagedHydroxyLactoneMatch = findTemplateMatch(
+      cagedHydroxyLactoneGraph,
+      buildRingCandidate(cagedHydroxyLactoneGraph, cagedHydroxyLactoneGraph.ringSystems[0], 'bridged')
+    );
+    assert.equal(cagedHydroxyLactoneMatch.id, 'caged-hydroxy-lactone-core');
   });
 
   it('matches compact bridged lactone cages only when the carbonyl context is present', () => {
@@ -610,6 +620,54 @@ describe('layout/engine/templates/match', () => {
     const graph = createLayoutGraph(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'spiro-bridged-aza-cage');
+  });
+
+  it('matches the N-methyl lactam diazatricyclo scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1CCC2C3NC(=O)C2([NH3+])CC13'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'n-methyl-lactam-diaza-tricyclo-core');
+  });
+
+  it('matches the ammonium cyclobutyl-pyrrolidine scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('C12CC(C1)C[NH2+]2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'ammonium-cyclobutyl-pyrrolidine-core');
+  });
+
+  it('matches the neutral azabicyclo-pyrrolidine scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('C12CN(C1)CC2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'azabicyclo-pyrrolidine-core');
+  });
+
+  it('matches the shared-edge tricyclic ether scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1COCCCC23CCCC12CCC3'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'shared-edge-tricyclic-ether-core');
+  });
+
+  it('matches the substituted bicyclo[2.1.1]hexane scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('N#CC(C1C[NH2+]C1)C12CC(C1)CC2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'substituted-bicyclo-2-1-1-hexane-core');
+  });
+
+  it('matches the trigonal-carbon bicyclo[2.1.1]hexane scaffold ahead of tetrahedral exits', () => {
+    const graph = createLayoutGraph(parseSMILES('O=CC12CC(C1)CC2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'trigonal-carbon-bicyclo-2-1-1-hexane-core');
+  });
+
+  it('matches the cyclopropane-capped azacyclooctane scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1C2CC3(CC3)C1C(C)C[NH2+]C(C)(C)C2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'cyclopropane-azacyclooctane-core');
+  });
+
+  it('matches the hydroxy aminopropyl cyclobutane-decalin scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2(C1)CC1(O)CCC2C(CC[NH3+])C1'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'hydroxy-aminopropyl-cyclobutane-decalin-core');
   });
 
   it('matches the compact spiro-bridged oxetane cage scaffold too', () => {

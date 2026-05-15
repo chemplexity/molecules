@@ -217,7 +217,7 @@ function directAttachedRingJunctionDeviation(layoutGraph, coords, anchorAtomId, 
   const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
   const ringNeighborIds = layoutGraph.sourceMolecule.atoms.get(anchorAtomId)
     ?.getNeighbors(layoutGraph.sourceMolecule)
-    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && (layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && layoutGraph.ringAtomIdSet.has(neighborAtom.id))
     .map(neighborAtom => neighborAtom.id) ?? [];
   const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => {
     const neighborRings = layoutGraph.atomToRings.get(neighborAtomId) ?? [];

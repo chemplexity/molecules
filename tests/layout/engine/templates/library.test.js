@@ -10,6 +10,7 @@ describe('layout/engine/templates/library', () => {
       'bicyclo-2-2-2',
       'hydroxy-diformyl-bicyclooctadiene-core',
       'alkenyl-phenyl-oxabicycloheptane-core',
+      'caged-hydroxy-lactone-core',
       'oxabicyclo-2-2-2',
       'quinuclidine',
       'quinuclidinium-oxygen-exit',
@@ -33,13 +34,21 @@ describe('layout/engine/templates/library', () => {
       'amino-pyrimidine-cyclobutane-core',
       'methyl-azabicyclo-cyclobutanone-core',
       'methyl-imino-oxatricyclo-core',
+      'n-methyl-lactam-diaza-tricyclo-core',
+      'ammonium-cyclobutyl-pyrrolidine-core',
+      'azabicyclo-pyrrolidine-core',
+      'shared-edge-tricyclic-ether-core',
       'aminomethyl-oxabicyclobutane-core',
       'cyclopropane-azabicyclic-enone-core',
+      'cyclopropane-azacyclooctane-core',
+      'hydroxy-aminopropyl-cyclobutane-decalin-core',
       'hydroxy-aminomethyl-bicyclo-ketone-core',
       'hydroxy-amino-oxabicyclic-acetal-core',
       'aryl-phosphite-spiro-core',
       'imino-oxazocine-lactam-core',
       'alkylidene-oxime-bicyclohexane-core',
+      'trigonal-carbon-bicyclo-2-1-1-hexane-core',
+      'substituted-bicyclo-2-1-1-hexane-core',
       'azabicyclo-nitrile-core',
       'bridged-decalin-lactam-core',
       'bridged-oxadecalin-core',
@@ -175,6 +184,22 @@ describe('layout/engine/templates/library', () => {
         ['C12', 'C'],
         ['C15', 'C'],
         ['C18', 'C']
+      ]
+    );
+
+    const cagedHydroxyLactone = getTemplateById('caged-hydroxy-lactone-core');
+    assert.equal(cagedHydroxyLactone.family, 'bridged');
+    assert.equal(cagedHydroxyLactone.atomCount, 17);
+    assert.equal(cagedHydroxyLactone.bondCount, 21);
+    assert.equal(cagedHydroxyLactone.ringCount, 5);
+    assert.deepEqual(
+      cagedHydroxyLactone.matchContext?.exocyclicNeighbors?.map(neighbor => [neighbor.templateAtomId, neighbor.element, neighbor.bondOrder]),
+      [
+        ['C6', 'C', 2],
+        ['C15', 'O', 1],
+        ['C18', 'C', 1],
+        ['C20', 'O', 2],
+        ['C25', 'C', 1]
       ]
     );
 
@@ -369,6 +394,50 @@ describe('layout/engine/templates/library', () => {
     assert.equal(methylIminoOxatricyclo.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C10');
     assert.equal(methylIminoOxatricyclo.matchContext?.exocyclicNeighbors?.[1]?.element, 'N');
     assert.equal(methylIminoOxatricyclo.matchContext?.exocyclicNeighbors?.[1]?.bondOrder, 2);
+
+    const ammoniumCyclobutylPyrrolidine = getTemplateById('ammonium-cyclobutyl-pyrrolidine-core');
+    assert.equal(ammoniumCyclobutylPyrrolidine.family, 'bridged');
+    assert.equal(ammoniumCyclobutylPyrrolidine.atomCount, 6);
+    assert.equal(ammoniumCyclobutylPyrrolidine.bondCount, 7);
+    assert.equal(ammoniumCyclobutylPyrrolidine.ringCount, 2);
+
+    const azabicycloPyrrolidine = getTemplateById('azabicyclo-pyrrolidine-core');
+    assert.equal(azabicycloPyrrolidine.family, 'bridged');
+    assert.equal(azabicycloPyrrolidine.atomCount, 6);
+    assert.equal(azabicycloPyrrolidine.bondCount, 7);
+    assert.equal(azabicycloPyrrolidine.ringCount, 2);
+
+    const sharedEdgeTricyclicEther = getTemplateById('shared-edge-tricyclic-ether-core');
+    assert.equal(sharedEdgeTricyclicEther.family, 'bridged');
+    assert.equal(sharedEdgeTricyclicEther.atomCount, 14);
+    assert.equal(sharedEdgeTricyclicEther.bondCount, 16);
+    assert.equal(sharedEdgeTricyclicEther.ringCount, 3);
+
+    const trigonalCarbonBicyclo211Hexane = getTemplateById('trigonal-carbon-bicyclo-2-1-1-hexane-core');
+    assert.equal(trigonalCarbonBicyclo211Hexane.family, 'bridged');
+    assert.equal(trigonalCarbonBicyclo211Hexane.atomCount, 6);
+    assert.equal(trigonalCarbonBicyclo211Hexane.bondCount, 7);
+    assert.equal(trigonalCarbonBicyclo211Hexane.ringCount, 2);
+    assert.equal(trigonalCarbonBicyclo211Hexane.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C1');
+    assert.equal(trigonalCarbonBicyclo211Hexane.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 3);
+
+    const substitutedBicyclo211Hexane = getTemplateById('substituted-bicyclo-2-1-1-hexane-core');
+    assert.equal(substitutedBicyclo211Hexane.family, 'bridged');
+    assert.equal(substitutedBicyclo211Hexane.atomCount, 6);
+    assert.equal(substitutedBicyclo211Hexane.bondCount, 7);
+    assert.equal(substitutedBicyclo211Hexane.ringCount, 2);
+    assert.equal(substitutedBicyclo211Hexane.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C1');
+    assert.equal(substitutedBicyclo211Hexane.matchContext?.exocyclicNeighbors?.[0]?.element, 'C');
+
+    const hydroxyAminopropylCyclobutaneDecalin = getTemplateById('hydroxy-aminopropyl-cyclobutane-decalin-core');
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.family, 'bridged');
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.atomCount, 11);
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.bondCount, 13);
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.ringCount, 3);
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C2');
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C7');
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.matchContext?.exocyclicNeighbors?.[1]?.element, 'O');
+    assert.equal(hydroxyAminopropylCyclobutaneDecalin.matchContext?.exocyclicNeighbors?.[2]?.templateAtomId, 'C12');
 
     const hydroxyAminomethylBicycloKetone = getTemplateById('hydroxy-aminomethyl-bicyclo-ketone-core');
     assert.equal(hydroxyAminomethylBicycloKetone.family, 'bridged');
@@ -573,6 +642,16 @@ describe('layout/engine/templates/library', () => {
     assert.equal(cyclopropaneAzabicyclicEnone.ringCount, 3);
     assert.equal(cyclopropaneAzabicyclicEnone.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C7');
     assert.equal(cyclopropaneAzabicyclicEnone.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+
+    const cyclopropaneAzacyclooctane = getTemplateById('cyclopropane-azacyclooctane-core');
+    assert.equal(cyclopropaneAzacyclooctane.family, 'bridged');
+    assert.equal(cyclopropaneAzacyclooctane.atomCount, 12);
+    assert.equal(cyclopropaneAzacyclooctane.bondCount, 14);
+    assert.equal(cyclopropaneAzacyclooctane.ringCount, 3);
+    assert.equal(cyclopropaneAzacyclooctane.matchContext?.mappedAtoms?.[0]?.templateAtomId, 'N12');
+    assert.equal(cyclopropaneAzacyclooctane.matchContext?.mappedAtoms?.[0]?.charge, 1);
+    assert.equal(cyclopropaneAzacyclooctane.matchContext?.exocyclicNeighbors?.[2]?.templateAtomId, 'C14');
+    assert.equal(cyclopropaneAzacyclooctane.matchContext?.exocyclicNeighbors?.[2]?.minCount, 2);
 
     const aminoDiazaTricyclo = getTemplateById('amino-diaza-tricyclo-core');
     assert.equal(aminoDiazaTricyclo.family, 'bridged');

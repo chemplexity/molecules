@@ -130,7 +130,7 @@ function isConjugatedHeteroBackboneCentre(layoutGraph, previousAtomId, atomId, n
     || atom.aromatic
     || !CONJUGATED_BACKBONE_HETERO_ELEMENTS.has(atom.element)
     || atom.heavyDegree !== 2
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return false;
   }
@@ -380,7 +380,7 @@ function terminalCarbonLeafCount(layoutGraph, atomId) {
     if (
       neighborAtom?.element === 'C'
       && neighborAtom.heavyDegree === 1
-      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
     ) {
       carbonLeafCount++;
     }
@@ -484,7 +484,7 @@ function isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId) {
     && !atom.aromatic
     && atom.heavyDegree === 4
     && atom.degree === 4
-    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(atomId)
     && terminalCarbonLeafCount(layoutGraph, atomId) >= 3
     && hasCrossLikeHypervalentSingleNeighbor(layoutGraph, atomId)
   );
@@ -508,7 +508,7 @@ function isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId) {
     && !atom.aromatic
     && atom.heavyDegree === 4
     && atom.degree === 4
-    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && !layoutGraph.ringAtomIdSet.has(atomId)
     && compactProjectedTerminalSubstituentCount(layoutGraph, atomId) >= 2
     && hasLinearSingleBondNeighbor(layoutGraph, atomId)
   );
@@ -614,7 +614,7 @@ function isSaturatedBackboneZigzagCentre(layoutGraph, previousAtomId, atomId, ne
     || atom.element !== 'C'
     || atom.aromatic
     || atom.heavyDegree !== 2
-    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(atomId)
   ) {
     return false;
   }
@@ -1074,7 +1074,7 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
       || atom.element !== 'C'
       || atom.aromatic
       || atom.heavyDegree !== 3
-      || (layoutGraph.atomToRings.get(atom.id)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(atom.id)
     ) {
       continue;
     }
@@ -1185,7 +1185,7 @@ function realignConjugatedNitrogenSingleBondRoots(layoutGraph, coords, backbone 
       || atom.aromatic
       || atom.heavyDegree !== 3
       || atom.degree !== 3
-      || (layoutGraph.atomToRings.get(atom.id)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(atom.id)
     ) {
       continue;
     }

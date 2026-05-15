@@ -31,7 +31,7 @@ function subtreeHeavyAtomCount(layoutGraph, atomIds) {
 }
 
 function subtreeContainsRingAtom(layoutGraph, atomIds) {
-  return atomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+  return atomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId));
 }
 
 function subtreeContainsHypervalentBranchCenter(layoutGraph, atomIds) {

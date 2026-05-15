@@ -15,7 +15,7 @@ export function supportsAttachedCarbonylPresentationPreference(layoutGraph, desc
   if (!anchorAtom || !rootAtom || anchorAtom.element !== 'O' || rootAtom.element !== 'C') {
     return false;
   }
-  if (rootAtom.aromatic || rootAtom.heavyDegree !== 3 || (layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0) > 0) {
+  if (rootAtom.aromatic || rootAtom.heavyDegree !== 3 || layoutGraph.ringAtomIdSet.has(descriptor.rootAtomId)) {
     return false;
   }
 
@@ -33,7 +33,7 @@ export function supportsAttachedCarbonylPresentationPreference(layoutGraph, desc
     if (!bond.aromatic && (bond.order ?? 1) >= 2) {
       nonAromaticMultipleBondCount++;
     }
-    if (neighborAtomId !== descriptor.anchorAtomId && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+    if (neighborAtomId !== descriptor.anchorAtomId && layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       ringNeighborCount++;
     }
   }
@@ -44,7 +44,7 @@ export function supportsAttachedCarbonylPresentationPreference(layoutGraph, desc
 
   let subtreeRingAtomCount = 0;
   for (const atomId of descriptor.subtreeAtomIds) {
-    if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0 && layoutGraph.atoms.get(atomId)?.element !== 'H') {
+    if (layoutGraph.ringAtomIdSet.has(atomId) && layoutGraph.atoms.get(atomId)?.element !== 'H') {
       subtreeRingAtomCount++;
     }
   }

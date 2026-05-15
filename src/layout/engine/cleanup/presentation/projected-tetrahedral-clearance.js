@@ -81,7 +81,7 @@ function isProjectedTetrahedralCenter(layoutGraph, coords, centerAtomId) {
     !centerAtom
     || centerAtom.element === 'H'
     || centerAtom.aromatic
-    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
   ) {
     return null;
   }
@@ -108,7 +108,7 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
     || centerAtom.aromatic
     || centerAtom.chirality
     || centerAtom.heavyDegree !== 4
-    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    || layoutGraph.ringAtomIdSet.has(centerAtomId)
   ) {
     return null;
   }
@@ -151,7 +151,7 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
       atomId: neighborAtomId,
       element: neighborAtom.element,
       heavyDegree: neighborAtom.heavyDegree ?? 0,
-      isAttachedRingRoot: (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0,
+      isAttachedRingRoot: layoutGraph.ringAtomIdSet.has(neighborAtomId),
       subtreeAtomIds,
       heavyAtomCount,
       angle: wrapAngle(angleOf(sub(coords.get(neighborAtomId), centerPosition)))
@@ -252,7 +252,7 @@ function collectBranchClearanceDescriptors(layoutGraph, coords, centerDescriptor
       !parentAtom
       || parentAtom.element === 'H'
       || parentAtom.aromatic
-      || (layoutGraph.atomToRings.get(parentAtomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(parentAtomId)
     ) {
       continue;
     }
@@ -674,7 +674,7 @@ function hasProjectedFanReliefNeed(layoutGraph, coords) {
       || centerAtom.aromatic
       || centerAtom.chirality
       || centerAtom.heavyDegree !== 4
-      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+      || layoutGraph.ringAtomIdSet.has(centerAtomId)
     ) {
       continue;
     }
@@ -691,7 +691,7 @@ function hasProjectedFanReliefNeed(layoutGraph, coords) {
     let hasCationDialkylNitrogenBranch = false;
     for (const { neighborAtomId } of heavyBonds) {
       const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-      if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
         attachedRingRootCount++;
       } else if (neighborAtom?.element === 'C' && neighborAtom.heavyDegree > 1) {
         acyclicCarbonContinuationCount++;

@@ -54,16 +54,16 @@ function isCarbonylAttachedRingContinuationSide(layoutGraph, rootAtomId, centerA
     if ((bond.order ?? 1) >= 2 && neighborAtom.element !== 'C' && (neighborAtom.heavyDegree ?? 0) === 1) {
       hasTerminalMultipleHetero = true;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+    if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       hasAttachedRingNeighbor = true;
     }
   }
-  return hasTerminalMultipleHetero && hasAttachedRingNeighbor && subtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+  return hasTerminalMultipleHetero && hasAttachedRingNeighbor && subtreeAtomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId));
 }
 
 function isCompactTerminalRingContinuationSide(layoutGraph, rootAtomId, centerAtomId, subtreeAtomIds) {
   const rootRings = layoutGraph.atomToRings.get(rootAtomId) ?? [];
-  if (rootRings.length !== 1 || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0) {
+  if (rootRings.length !== 1 || layoutGraph.ringAtomIdSet.has(centerAtomId)) {
     return false;
   }
   const ring = rootRings[0];
@@ -100,7 +100,7 @@ function collectCompactMovableSide(layoutGraph, coords, rootAtomId, centerAtomId
     if (frozenAtomIds?.has(atomId)) {
       return null;
     }
-    if (!allowRingAtoms && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+    if (!allowRingAtoms && layoutGraph.ringAtomIdSet.has(atomId)) {
       return null;
     }
     const atom = layoutGraph.atoms.get(atomId);
@@ -124,7 +124,7 @@ function divalentContinuationCandidates(layoutGraph, coords, centerAtomId, froze
     return [];
   }
   const centerAtom = layoutGraph.atoms.get(centerAtomId);
-  if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0) {
+  if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic || layoutGraph.ringAtomIdSet.has(centerAtomId)) {
     return [];
   }
   const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
@@ -163,8 +163,8 @@ function isRingAdjacentTerminalContinuationDescriptor(layoutGraph, coords, descr
     rootAtom &&
     rootAtom.element !== 'H' &&
     coords.has(descriptor.rootAtomId) &&
-    (layoutGraph.atomToRings.get(descriptor.parentAtomId)?.length ?? 0) > 0 &&
-    (layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0) === 0 &&
+    layoutGraph.ringAtomIdSet.has(descriptor.parentAtomId) &&
+    !layoutGraph.ringAtomIdSet.has(descriptor.rootAtomId) &&
     isExactSimpleAcyclicContinuationEligible(layoutGraph, descriptor.centerAtomId, descriptor.parentAtomId, descriptor.rootAtomId)
   );
 }

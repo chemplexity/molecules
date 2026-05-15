@@ -55,6 +55,14 @@ function buildAtomToRingSystemIdIndex(ringSystems) {
   return atomToRingSystemId;
 }
 
+function buildRingSystemByIdIndex(ringSystems) {
+  const ringSystemById = new Map();
+  for (const ringSystem of ringSystems) {
+    ringSystemById.set(ringSystem.id, ringSystem);
+  }
+  return ringSystemById;
+}
+
 function buildRingAtomIds(rings) {
   const ringAtomIdSet = new Set();
   for (const ring of rings) {
@@ -240,6 +248,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
   const bondsByAtomId = buildAtomBondsIndex(atoms, bonds);
   const atomToRings = buildAtomToRingsIndex(ringAnalysis.rings);
   const atomToRingSystemId = buildAtomToRingSystemIdIndex(ringAnalysis.ringSystems);
+  const ringSystemById = buildRingSystemByIdIndex(ringAnalysis.ringSystems);
   const ringAtomIdSet = buildRingAtomIds(ringAnalysis.rings);
 
   return {
@@ -256,6 +265,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
     components,
     rings: ringAnalysis.rings,
     ringSystems: ringAnalysis.ringSystems,
+    ringSystemById,
     ringConnections: ringConnections.connections,
     ringAdj: ringConnections.ringAdj,
     ringConnectionByPair: ringConnections.connectionByPair,
