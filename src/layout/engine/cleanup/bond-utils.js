@@ -3,10 +3,10 @@
 /**
  * Returns all visible heavy covalent bonds incident to atomId:
  * covalent, non-hydrogen neighbor, present in coords.
- * @param {object} layoutGraph
- * @param {Map} coords
- * @param {string} atomId
- * @returns {{ bond: object, neighborAtomId: string }[]}
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Atom whose incident bonds should be collected.
+ * @returns {{ bond: object, neighborAtomId: string }[]} Visible heavy covalent bond records.
  */
 export function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
   const bonds = [];

@@ -27,6 +27,7 @@ const BROWSER_SODIUM_TETRAZOLE_C2_CROSSING_SMILES = '[Na+].CC(C)n1nnnc1C(=C(c2cc
 const BROWSER_TRIARYL_SULFOXIDE_INDOLE_SMILES = 'C[S+]([O-])c1ccc(cc1)c2cc(c3ccncc3C)c([nH]2)c4ccc(F)cc4';
 const BROWSER_DIHYDROPYRIDINE_CHLOROPHENYL_SMILES = 'CC1=C(C(C2=CC=CC=C2Cl)C(C2=NN=CO2)=C(C)N1)C([O-])=O';
 const BROWSER_FLUORINATED_CYCLOHEXYL_ISOCYANATE_SMILES = 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
+const BROWSER_BRIDGED_ALKALOID_STRICT_RING_SMILES = '[H][C@@]12N(C)C3=C(C=C(C(OC)=C3)[C@]3(C[C@@H]4CN(C[C@](O)(CC)C4)CCC4=C3NC3=CC=CC=C43)C(=O)OC)[C@@]11CCN3CC=C[C@@](CC)([C@@H](<OC(C)=O>)[C@]2(O)C(=O)OC)[C@@]13[H]';
 const BROWSER_LARGE_PEPTIDE_HIDDEN_HYDROGEN_SMILES =
   'CC[C@H](C)[C@H](<NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](CO)NC(=O)[C@H](Cc1c[nH]cn1)NC(=O)[C@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](C)NC(=O)[C@H](CCCCN)NC(=O)[C@@H](NC(=O)[C@H](CCSC)NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](Cc2c[nH]cn2)NC(=O)[C@H](Cc3ccccc3)NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CO)NC(=O)[C@@H](NC(=O)[C@@H]4CCCN4C(=O)[C@@H]5CCCN5C(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@@H](N)CO)[C@@H](C)CC)[C@@H](C)O)C(C)C)[C@@H](C)O>)C(=O)N[C@@H](C)C(=O)N';
 
@@ -260,6 +261,12 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
         const fluorinatedCyclohexylF34RingEdgeClearance = isFluorinatedCyclohexylIsocyanateCase
           ? Math.min(atomDistance('F34', 'C5'), atomDistance('F34', 'C6'))
           : null;
+        const isBridgedAlkaloidStrictRingCase = smilesValue === '[H][C@@]12N(C)C3=C(C=C(C(OC)=C3)[C@]3(C[C@@H]4CN(C[C@](O)(CC)C4)CCC4=C3NC3=CC=CC=C43)C(=O)OC)[C@@]11CCN3CC=C[C@@](CC)([C@@H](<OC(C)=O>)[C@]2(O)C(=O)OC)[C@@]13[H]';
+        const bridgedAlkaloidC8Angles = isBridgedAlkaloidStrictRingCase
+          ? [bondAngleAtAtom('C8', 'C7', 'C9'), bondAngleAtAtom('C8', 'C7', 'C13'), bondAngleAtAtom('C8', 'C9', 'C13')]
+          : null;
+        const bridgedAlkaloidC49C54Distance = isBridgedAlkaloidStrictRingCase ? atomDistance('C49', 'C54') : null;
+        const bridgedAlkaloidC27O37Distance = isBridgedAlkaloidStrictRingCase ? atomDistance('C27', 'O37') : null;
         const omittedHubRootOutwardDeviation = (rootAtomId, parentAtomId) => {
           const rootPosition = pipeline.coords.get(rootAtomId);
           const parentPosition = pipeline.coords.get(parentAtomId);
@@ -340,6 +347,14 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
             typeof fluorinatedCyclohexylF34BondLength === 'number' && Number.isFinite(fluorinatedCyclohexylF34BondLength) ? fluorinatedCyclohexylF34BondLength : null,
           fluorinatedCyclohexylF34RingEdgeClearance:
             typeof fluorinatedCyclohexylF34RingEdgeClearance === 'number' && Number.isFinite(fluorinatedCyclohexylF34RingEdgeClearance) ? fluorinatedCyclohexylF34RingEdgeClearance : null,
+          bridgedAlkaloidC8Angles:
+            Array.isArray(bridgedAlkaloidC8Angles) && bridgedAlkaloidC8Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+              ? bridgedAlkaloidC8Angles
+              : null,
+          bridgedAlkaloidC49C54Distance:
+            typeof bridgedAlkaloidC49C54Distance === 'number' && Number.isFinite(bridgedAlkaloidC49C54Distance) ? bridgedAlkaloidC49C54Distance : null,
+          bridgedAlkaloidC27O37Distance:
+            typeof bridgedAlkaloidC27O37Distance === 'number' && Number.isFinite(bridgedAlkaloidC27O37Distance) ? bridgedAlkaloidC27O37Distance : null,
           audit: {
             ok: pipeline.metadata?.audit?.ok ?? null,
             severeOverlapCount: pipeline.metadata?.audit?.severeOverlapCount ?? null,
@@ -511,6 +526,36 @@ test('browser layout stays audit-clean for mixed-root exact ring exits on anisol
   assert.equal(chromiumSignature.audit.severeOverlapCount, 0);
   assert.equal(chromiumSignature.audit.ringSubstituentReadabilityFailureCount, 0);
   assert.equal(chromiumSignature.audit.outwardAxisRingSubstituentFailureCount, 0);
+});
+
+test('browser layout keeps bridged alkaloid C8 exact and terminal methyl contacts clear in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const chromiumSignature = await browserLayoutSignature(chromium, origin, BROWSER_BRIDGED_ALKALOID_STRICT_RING_SMILES);
+  const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_BRIDGED_ALKALOID_STRICT_RING_SMILES);
+
+  for (const [browserName, signature] of [
+    ['chromium', chromiumSignature],
+    ['webkit', webkitSignature]
+  ]) {
+    assert.equal(signature.audit.ok, true, `expected ${browserName} audit to pass`);
+    assert.equal(signature.audit.severeOverlapCount, 0, `expected ${browserName} to avoid severe overlaps`);
+    assert.ok(Array.isArray(signature.bridgedAlkaloidC8Angles), `expected ${browserName} to report C8 angles`);
+    for (const angle of signature.bridgedAlkaloidC8Angles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${browserName} C8 aryl fan near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.ok(
+      signature.bridgedAlkaloidC27O37Distance > 1.5 * 2,
+      `expected ${browserName} upper carbonyl to clear C27, got ${signature.bridgedAlkaloidC27O37Distance?.toFixed(3)}`
+    );
+  }
+  assert.ok(
+    webkitSignature.bridgedAlkaloidC49C54Distance > 1.5 * 0.6,
+    `expected webkit terminal methyl contact to clear, got ${webkitSignature.bridgedAlkaloidC49C54Distance?.toFixed(3)}`
+  );
 });
 
 test('browser layout keeps crowded omitted-h thiophene and piperazine hubs bounded and overlap-free in webkit', { timeout: 120_000 }, async t => {

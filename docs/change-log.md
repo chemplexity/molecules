@@ -1,7 +1,27 @@
 # Change Log
 
+## 2026-05-15
+
+- Add a final terminal-carbon leaf contact retouch so WebKit clears the alkaloid C49/C54 methyl overlap without moving bridged ring atoms.
+- Prefer strict five- and six-member bridged ring geometry in mixed alkaloid cages, with a terminal carbon-chain retouch to keep explicit hydrogens clear.
+- Restore aromatic-to-tetravalent cage exits after mixed bridged regularization so the alkaloid C8 aryl fan stays 120/120/120 while the upper carbonyl clears C27.
+- Rebuild crowded mixed bridged acyl branches on exact trigonal slots so large alkaloid cages clear ester overlaps without stretched ring bonds.
+- Treat ambiguous fused neutral aza donors as aromatic-component donors so charged lowercase fused aza SMILES avoid stale valence warnings.
+- Preserve exact hidden-H hydroxy linker fans during mixed-root attached-ring overlap relief, then pull the paired methoxy aryl exit back toward a clean trigonal slot without introducing crossings.
+- Snap crowded tertiary-amide aryl roots back to exact aromatic exits after cleanup so the oxalyl diaryl imide fan remains 120/120 without reintroducing overlaps.
+- Keep imine-carbon direct ring attachments on exact parent-side trigonal slots so mixed isolated-ring layouts preserve the reported 120-degree angle.
+- Add an exact honeycomb fused template for the amino-bromo diaza ketone pericondensed core so all six-member rings stay strict.
+- Add a bridged diketone tricyclo template so compact 5-5-4 carbonyl cages avoid flattened five-ring bridge geometry.
+- Retension bond-dirty cyclic fused-ring placements after polygon regularization so pericondensed heteroaromatics avoid stretched shared edges.
+- Widen the caged hydroxy-lactone steroid projection so exocyclic carbonyl leaves clear fused-ring edges.
+- Recenters four-coordinate chelated metal atoms inside their ligand pocket so cobalt corrins keep a square-planar metal fan.
+- Keep paired phosphonic-acid branches attached to the same acyclic carbon on exact orthogonal P crosses by coordinating the shared-anchor branch sectors before the hypervalent final tidy is accepted.
+
 ## 2026-05-14
 
+- Add a clean-placement fast path for fresh, audit-clean ordinary isolated-ring and acyclic layouts, while keeping angle/presentation-dirty placements on the full cleanup route.
+- Cache cleanup presentation tie-break metrics per coordinate snapshot so mixed full-path guard and scoring stages reuse repeated angle, ring-exit, hypervalent, and terminal-fan scans.
+- Cache mixed-root retry comparison metrics and stop alternate-root retries once an audit-clean root has cleared the retry-triggering geometry defects.
 - Add a shared `visibleHeavyCovalentBonds` utility and remove seven duplicate inline implementations across cleanup and presentation passes.
 - Centralize repeated element sets (`ORTHOGONAL_HYPERVALENT_ELEMENTS`, `IDEAL_DIVALENT_CONTINUATION_ELEMENTS`, `TERMINAL_HETERO_BRANCH_ELEMENTS`) into `constants.js` and remove local copies from six files.
 - Add an O(1) `ringSystemById` index to `layoutGraph` and replace twelve O(R) `ringSystems.find()` linear scans across `mixed.js`, `invariants.js`, `ring-substituent.js`, `attached-ring-fallback.js`, and `angle-selection.js`.

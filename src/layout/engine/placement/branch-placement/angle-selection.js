@@ -822,7 +822,18 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
 
   const multipleBondNeighborId = parentOrder >= 2 ? parentAtomId : childAtomId;
   if (anchorAtom.element === 'C') {
-    return layoutGraph.atoms.get(multipleBondNeighborId)?.element === 'C';
+    const multipleBondNeighbor = layoutGraph.atoms.get(multipleBondNeighborId);
+    if (multipleBondNeighbor?.element === 'C') {
+      return true;
+    }
+    const singleBondNeighborId = parentOrder === 1 ? parentAtomId : childAtomId;
+    const singleBondNeighbor = layoutGraph.atoms.get(singleBondNeighborId);
+    return Boolean(
+      multipleBondNeighbor?.element === 'N'
+      && singleBondNeighbor
+      && !singleBondNeighbor.aromatic
+      && layoutGraph.ringAtomIdSet.has(singleBondNeighborId)
+    );
   }
   if (anchorAtom.element === 'N') {
     return isPlanarDivalentNitrogenContinuationPair(layoutGraph, parentAtomId, childAtomId);

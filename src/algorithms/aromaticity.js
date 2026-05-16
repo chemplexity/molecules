@@ -273,6 +273,65 @@ function _canSatisfyHuckelWithAmbiguousN(ring, ringAtomSet, piTotal, mol) {
 }
 
 /**
+ * Returns true if a fused all-aromatic source component can satisfy Hückel by
+ * treating one or more neutral fused nitrogens as pyrrolic two-electron donors.
+ *
+ * In charged fused aza systems, a shared neutral `n` can be ambiguous at the
+ * fused-component level: per-atom counting sees only aromatic ring bonds and
+ * assigns one electron, but the source all-lowercase system may require its lone
+ * pair to complete the 4n+2 count. The check is limited to neutral no-H
+ * nitrogens whose heavy bonds all stay inside the candidate fused component and
+ * were source-aromatic, so exocyclic amines and carbonyl-disrupted systems are
+ * not promoted.
+ * @param {Set<string>} atomIds - Fused component atom IDs.
+ * @param {number} piTotal - Current total π electron count.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @returns {boolean} True when a valid Hückel assignment exists.
+ */
+function _canSatisfyFusedHuckelWithAmbiguousN(atomIds, piTotal, mol) {
+  let ambiguousCount = 0;
+  for (const atomId of atomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom) {
+      return false;
+    }
+    if (atom.name !== 'N') {
+      continue;
+    }
+    const hasH = atom.bonds.some(bondId => {
+      const bond = mol.bonds.get(bondId);
+      return bond && mol.atoms.get(bond.getOtherAtom(atomId))?.name === 'H';
+    });
+    if (hasH) {
+      return false;
+    }
+    if ((atom.properties.charge ?? 0) !== 0) {
+      continue;
+    }
+
+    const heavyBonds = atom.bonds
+      .map(bondId => mol.bonds.get(bondId))
+      .filter(bond => {
+        const otherAtom = bond ? mol.atoms.get(bond.getOtherAtom(atomId)) : null;
+        return otherAtom && otherAtom.name !== 'H';
+      });
+    if (
+      heavyBonds.length > 0
+      && heavyBonds.every(bond => atomIds.has(bond.getOtherAtom(atomId)) && _isSourceAromaticBond(bond))
+    ) {
+      ambiguousCount++;
+    }
+  }
+
+  for (let extra = 1; extra <= ambiguousCount; extra++) {
+    if (_isHuckel(piTotal + extra)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Returns localized bond orders for a selected aromatic bond set using the same
  * maximum-matching logic as renderer-side Kekule localization.
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
@@ -529,7 +588,7 @@ function _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds) {
       }
       piTotal += pi;
     }
-    if (!valid || !_isHuckel(piTotal)) {
+    if (!valid || (!_isHuckel(piTotal) && !_canSatisfyFusedHuckelWithAmbiguousN(atomIds, piTotal, mol))) {
       continue;
     }
 

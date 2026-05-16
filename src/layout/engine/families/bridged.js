@@ -57,6 +57,10 @@ const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_STEP_FACTORS = Object.freeze([0.04
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_MAX_PASSES = 3;
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_DIRECTION_COUNT = 12;
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_STEP_FACTORS = Object.freeze([0.027, 0.017, 0.01, 0.005]);
+const STRICT_BRIDGED_SMALL_RING_MIN_ANGLE_DEVIATION = Math.PI / 12;
+const STRICT_BRIDGED_SMALL_RING_MAX_BOND_DEVIATION_FACTOR = 0.24;
+const STRICT_BRIDGED_SMALL_RING_MAX_PASSES = 10;
+const STRICT_BRIDGED_SMALL_RING_DAMPING_FACTORS = Object.freeze([0.85, 0.65, 0.45, 0.3, 0.18, 0.1]);
 const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_RING_COUNT = 8;
 const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ATOM_COUNT = BRIDGED_KK_LIMITS.mediumAtomLimit + 20;
 const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_ANGLE_DEVIATION = Math.PI / 15;
@@ -2197,6 +2201,179 @@ function regularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, coords, bo
   return bestCoords;
 }
 
+function strictSmallBridgedRings(rings) {
+  return rings.filter(ring => ring.atomIds.length === 5 || ring.atomIds.length === 6);
+}
+
+/**
+ * Scores only publication-critical small rings in a bridged system, ignoring
+ * larger perimeter cycles whose SSSR shape is often a topological artifact.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{maxBondDeviation: number, maxAngleDeviation: number, totalBondDeviation: number, totalAngleDeviation: number, totalScore: number}|null} Aggregate regularity score, or null when incomplete.
+ */
+export function scoreBridgedSmallRingGeometry(rings, coords, bondLength) {
+  const smallRings = strictSmallBridgedRings(rings);
+  return smallRings.length === 0 ? null : saturatedBridgedRingShapeScore(smallRings, coords, bondLength);
+}
+
+function shouldRegularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, shapeScore, bondLength) {
+  return Boolean(
+    shapeScore
+    && rings.length > 0
+    && atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
+    && !containsMetalAtom(layoutGraph, atomIds)
+    && (
+      shapeScore.maxAngleDeviation > STRICT_BRIDGED_SMALL_RING_MIN_ANGLE_DEVIATION
+      || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR
+    )
+  );
+}
+
+function buildStrictSmallBridgedRingRegularizedCoords(layoutGraph, rings, coords, bondLength, damping) {
+  const targetSums = new Map();
+  const targetCounts = new Map();
+
+  for (const ring of rings) {
+    const targets = fitRegularRingTargets(ring, coords, bondLength);
+    if (!targets) {
+      continue;
+    }
+    for (const [atomId, target] of targets) {
+      if (layoutGraph.fixedCoords.has(atomId)) {
+        continue;
+      }
+      const sum = targetSums.get(atomId) ?? { x: 0, y: 0 };
+      sum.x += target.x;
+      sum.y += target.y;
+      targetSums.set(atomId, sum);
+      targetCounts.set(atomId, (targetCounts.get(atomId) ?? 0) + 1);
+    }
+  }
+
+  if (targetSums.size === 0) {
+    return null;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  for (const [atomId, sum] of targetSums) {
+    const current = coords.get(atomId);
+    const count = targetCounts.get(atomId);
+    if (!current || !count) {
+      continue;
+    }
+    const target = {
+      x: sum.x / count,
+      y: sum.y / count
+    };
+    candidateCoords.set(atomId, {
+      x: current.x * (1 - damping) + target.x * damping,
+      y: current.y * (1 - damping) + target.y * damping
+    });
+  }
+
+  return candidateCoords;
+}
+
+function strictSmallBridgedRingScoreImproves(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxAngleDeviation > incumbentScore.maxAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.totalAngleDeviation > incumbentScore.totalAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxBondDeviation > incumbentScore.maxBondDeviation + 1e-9) {
+    return false;
+  }
+  return candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9;
+}
+
+function shouldAcceptStrictSmallBridgedRingRegularizedCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > Math.max(
+    incumbentAudit.maxBondLengthDeviation + bondLength * 0.02,
+    bondLength * STRICT_BRIDGED_SMALL_RING_MAX_BOND_DEVIATION_FACTOR
+  )) {
+    return false;
+  }
+  return strictSmallBridgedRingScoreImproves(candidateScore, incumbentScore);
+}
+
+/**
+ * Prioritizes regular five- and six-membered ring geometry in compact bridged
+ * systems. Larger SSSR perimeter cycles can otherwise dominate the averaged
+ * regular-polygon targets, leaving cyclohexyl-style rings visibly pinched even
+ * when the audit is clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
+ */
+function regularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, coords, bondLength) {
+  const smallRings = strictSmallBridgedRings(rings);
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  let bestScore = saturatedBridgedRingShapeScore(smallRings, coords, bondLength);
+  if (!bestAudit || !shouldRegularizeStrictSmallBridgedRings(layoutGraph, smallRings, atomIds, bestScore, bondLength)) {
+    return coords;
+  }
+
+  for (let pass = 0; pass < STRICT_BRIDGED_SMALL_RING_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    for (const damping of STRICT_BRIDGED_SMALL_RING_DAMPING_FACTORS) {
+      const candidateCoords = buildStrictSmallBridgedRingRegularizedCoords(layoutGraph, smallRings, bestCoords, bondLength, damping);
+      if (!candidateCoords) {
+        continue;
+      }
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      const candidateScore = saturatedBridgedRingShapeScore(smallRings, candidateCoords, bondLength);
+      if (shouldAcceptStrictSmallBridgedRingRegularizedCoords(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        bestScore = candidateScore;
+        acceptedInPass = true;
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  return bestCoords;
+}
+
 /**
  * Returns whether a medium-sized bridged ring system is within the bounded
  * specialist budget for additional local relaxation passes.
@@ -3677,6 +3854,33 @@ function selectBridgedProjectionCoords(layoutGraph, atomIds, kkCoords, projected
 }
 
 /**
+ * Applies the bridged-family ring regularization stack to an existing ring
+ * system placement. Mixed-family layouts can pick a hybrid fused/bridged seed
+ * before this point, so this keeps their final ring geometry aligned with the
+ * pure bridged path without forcing them through a different seed selector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
+ */
+export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds, coords, bondLength) {
+  let selectedCoords = coords;
+  selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = balanceSaturatedBridgedRingJunctionAngles(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = balanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeSingleAnchorBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizePeripheralBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeAromaticBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  return selectedCoords;
+}
+
+/**
  * Places a bridged or caged ring system using matched template coordinates
  * when available, then falls back to a Kamada-Kawai seed for unmatched cases.
  * @param {object[]} rings - Ring descriptors in the bridged system.
@@ -3774,15 +3978,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
       selectedCoords = refinedSelectedCoords;
     }
   }
-  selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = regularizeFusedAromaticCyclohexaneCores(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = regularizeSaturatedBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = balanceSaturatedBridgedRingJunctionAngles(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = balanceSaturatedBridgedRingShape(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = regularizeSingleAnchorBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = regularizePeripheralBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = regularizeAromaticBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
-  selectedCoords = spreadSpiroJunctionRingBlocks(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeBridgedRingSystemGeometry(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
 
   const ringCenters = new Map();
   for (const ring of rings) {

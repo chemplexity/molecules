@@ -8,6 +8,7 @@ import {
 } from './invariants.js';
 import { measureSmallRingExteriorGapSpreadPenalty } from '../placement/branch-placement.js';
 import { measureOrthogonalHypervalentDeviation } from '../cleanup/hypervalent-angle-tidy.js';
+import { measureLigandAngleDeviation } from '../cleanup/ligand-angle-tidy.js';
 import { measureRingSubstituentPresentationPenalty } from '../cleanup/presentation/ring-substituent.js';
 
 function getSmallRingExteriorPenaltyAtomIds(layoutGraph) {
@@ -87,6 +88,7 @@ export function measureCleanupStagePresentationPenalty(layoutGraph, coords, opti
       includeLinkedRingBridgePenalty: true
     })
     + measureOrthogonalHypervalentDeviation(layoutGraph, coords, { focusAtomIds })
+    + measureLigandAngleDeviation(layoutGraph, coords, { focusAtomIds })
     + measureDivalentContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
     + measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
     + measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation

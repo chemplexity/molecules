@@ -64,6 +64,7 @@ describe('layout/engine/templates/library', () => {
       'hydroxy-oxatricyclo-diol-core',
       'cyclobutane-oxadecalin-core',
       'dimethyl-oxatricyclo-cage-core',
+      'bridged-diketone-tricyclo-core',
       'bridged-pyrrolizidine-dione-core',
       'acetal-amino-decalin-core',
       'amino-oxaza-tricyclo-core',
@@ -108,6 +109,7 @@ describe('layout/engine/templates/library', () => {
       'trans-polyene-macrolide',
       'steroid-core-unsaturated',
       'steroid-core-saturated',
+      'amino-bromo-diaza-ketone-pericondensed-core',
       'perylene',
       'pyrene',
       'fluorene',
@@ -608,6 +610,15 @@ describe('layout/engine/templates/library', () => {
     assert.equal(bridgedPyrrolizidineDione.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C24');
     assert.equal(bridgedPyrrolizidineDione.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
 
+    const bridgedDiketoneTricyclo = getTemplateById('bridged-diketone-tricyclo-core');
+    assert.equal(bridgedDiketoneTricyclo.family, 'bridged');
+    assert.equal(bridgedDiketoneTricyclo.atomCount, 9);
+    assert.equal(bridgedDiketoneTricyclo.bondCount, 11);
+    assert.equal(bridgedDiketoneTricyclo.ringCount, 3);
+    assert.equal(bridgedDiketoneTricyclo.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C2');
+    assert.equal(bridgedDiketoneTricyclo.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+    assert.equal(bridgedDiketoneTricyclo.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C5');
+
     const acetalAminoDecalin = getTemplateById('acetal-amino-decalin-core');
     assert.equal(acetalAminoDecalin.family, 'bridged');
     assert.equal(acetalAminoDecalin.atomCount, 12);
@@ -911,6 +922,15 @@ describe('layout/engine/templates/library', () => {
     assert.equal(perylene.atomCount, 20);
     assert.equal(perylene.bondCount, 24);
     assert.equal(perylene.ringCount, 5);
+
+    const aminoBromoDiazaKetone = getTemplateById('amino-bromo-diaza-ketone-pericondensed-core');
+    assert.equal(aminoBromoDiazaKetone.family, 'fused');
+    assert.equal(aminoBromoDiazaKetone.atomCount, 21);
+    assert.equal(aminoBromoDiazaKetone.bondCount, 25);
+    assert.equal(aminoBromoDiazaKetone.ringCount, 5);
+    assert.equal(aminoBromoDiazaKetone.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C8');
+    assert.equal(aminoBromoDiazaKetone.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+    assert.equal(aminoBromoDiazaKetone.matchContext?.exocyclicNeighbors?.[2]?.element, 'Br');
 
     const fluorene = getTemplateById('fluorene');
     assert.equal(fluorene.family, 'fused');

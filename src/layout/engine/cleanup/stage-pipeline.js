@@ -54,6 +54,10 @@ import {
   runTerminalAlkeneContinuationRelief
 } from './presentation/divalent-continuation.js';
 import { runRingTerminalRootExactClearance } from './presentation/ring-terminal-root-clearance.js';
+import {
+  hasPlanarNitrogenAttachedRingRootOutwardMiss,
+  refineDirectAttachedRingRootsWithTerminalLeafClearance
+} from '../families/mixed.js';
 
 function hasPostCleanupHook(policy, hookName) {
   return policy.postCleanupHooks?.includes(hookName) === true;
@@ -100,25 +104,64 @@ function hasCoreGeometryCleanupNeed(stageResult) {
 function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
   const audit = stageResult?.audit ?? null;
   const coords = stageResult?.coords;
+  let presentationMetricsResolved = false;
+  let presentationMetrics = null;
+  const getPresentationMetrics = () => {
+    if (presentationMetricsResolved) {
+      return presentationMetrics;
+    }
+    presentationMetricsResolved = true;
+    presentationMetrics = options.presentationMetrics ?? (
+      typeof options.getPresentationMetrics === 'function' && coords instanceof Map
+        ? options.getPresentationMetrics(coords)
+        : null
+    );
+    return presentationMetrics;
+  };
+  const getEnrichedStageResult = () => {
+    const metrics = getPresentationMetrics();
+    return stageResult && metrics ? { ...stageResult, ...metrics } : stageResult;
+  };
+  const getTerminalHeteroOutwardMaxPenalty = () => {
+    const metrics = getPresentationMetrics();
+    return Number.isFinite(metrics?.terminalHeteroOutwardMaxPenalty)
+      ? metrics.terminalHeteroOutwardMaxPenalty
+      : measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords).maxDeviation;
+  };
+  const getRingTerminalHeteroTidyNeed = () => (
+    coords instanceof Map
+      ? (
+          typeof options.ringTerminalHeteroTidyNeedFn === 'function'
+            ? options.ringTerminalHeteroTidyNeedFn(coords)
+            : hasRingTerminalHeteroTidyNeed(layoutGraph, coords, { bondLength: options.bondLength })
+        )
+      : false
+  );
+  const hasAromaticMovableAttachedRing = () => (
+    coords instanceof Map
+      ? (
+          typeof options.hasAromaticMovableAttachedRingFn === 'function'
+            ? options.hasAromaticMovableAttachedRingFn(coords)
+            : collectMovableAttachedRingDescriptors(
+                layoutGraph,
+                coords,
+                options.frozenAtomIds ?? null
+              ).some(descriptor => layoutGraph.atoms.get(descriptor.anchorAtomId)?.aromatic === true)
+        )
+      : false
+  );
   return (
     (audit?.labelOverlapCount ?? 0) > 0
     || (audit?.stereoContradiction ?? false) === true
-    || (options.includeTerminalHetero === true && hasRingTerminalHeteroTidyNeed(layoutGraph, stageResult?.coords, {
-      bondLength: options.bondLength
-    }))
+    || (options.includeTerminalHetero === true && getRingTerminalHeteroTidyNeed())
     || (
       options.includeRingSubstituent === true
-      && measureRingTerminalHeteroOutwardPenalty(layoutGraph, stageResult?.coords).maxDeviation > DISTANCE_EPSILON
+      && getTerminalHeteroOutwardMaxPenalty() > DISTANCE_EPSILON
     )
-    || hasOutstandingRingPresentationNeed(layoutGraph, stageResult)
+    || hasOutstandingRingPresentationNeed(layoutGraph, getEnrichedStageResult())
     || (
       options.includeAttachedRingFallback === true
-      && coords instanceof Map
-      && collectMovableAttachedRingDescriptors(
-        layoutGraph,
-        coords,
-        options.frozenAtomIds ?? null
-      ).some(descriptor => layoutGraph.atoms.get(descriptor.anchorAtomId)?.aromatic === true)
+      && hasAromaticMovableAttachedRing()
     )
     || (
       options.includeSymmetry === true
@@ -225,18 +268,29 @@ export function buildCleanupStageGraph(context) {
     return result;
   };
   const auditFinalStereoWithTieBreak = (candidate, incumbent) => isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
-  const scorePresentationTieBreakMetrics = coords => {
+  const presentationMetricsCache = new WeakMap();
+  const presentationMetricsFor = coords => {
+    if (!(coords instanceof Map)) {
+      return null;
+    }
+    if (presentationMetricsCache.has(coords)) {
+      return presentationMetricsCache.get(coords);
+    }
     const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
     const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
     const smallRingExteriorFanExactPenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, coords);
     const omittedHydrogenCollateralRootPenalty =
       measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
-    return {
+    const divalentContinuationPenalty = measureDivalentContinuationDistortion(layoutGraph, coords);
+    const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, coords);
+    const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords);
+    const metrics = {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
       hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
-      divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
-      trigonalDistortionPenalty: measureTrigonalDistortion(layoutGraph, coords).totalDeviation,
-      omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
+      divalentContinuationPenalty: divalentContinuationPenalty.totalDeviation,
+      divalentContinuationMaxPenalty: divalentContinuationPenalty.maxDeviation,
+      trigonalDistortionPenalty: trigonalDistortionPenalty.totalDeviation,
+      omittedHydrogenTrigonalPenalty: omittedHydrogenTrigonalPenalty.totalDeviation,
       omittedHydrogenDirectRingHubCollateralRootMaxPenalty: omittedHydrogenCollateralRootPenalty.maxDeviation,
       omittedHydrogenDirectRingHubCollateralRootPenalty: omittedHydrogenCollateralRootPenalty.totalDeviation,
       phosphateArylTailPenalty: measurePhosphateArylTailPresentationPenalty(layoutGraph, coords),
@@ -250,6 +304,59 @@ export function buildCleanupStageGraph(context) {
       terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
       smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
       smallRingExteriorFanExactPenalty: smallRingExteriorFanExactPenalty.totalDeviation
+    };
+    presentationMetricsCache.set(coords, metrics);
+    return metrics;
+  };
+  const ringTerminalHeteroTidyNeedCache = new WeakMap();
+  const ringTerminalHeteroTidyNeedFor = coords => {
+    if (!(coords instanceof Map)) {
+      return false;
+    }
+    if (ringTerminalHeteroTidyNeedCache.has(coords)) {
+      return ringTerminalHeteroTidyNeedCache.get(coords);
+    }
+    const result = hasRingTerminalHeteroTidyNeed(layoutGraph, coords, { bondLength });
+    ringTerminalHeteroTidyNeedCache.set(coords, result);
+    return result;
+  };
+  const aromaticMovableAttachedRingCache = new WeakMap();
+  const hasAromaticMovableAttachedRing = coords => {
+    if (!(coords instanceof Map)) {
+      return false;
+    }
+    if (aromaticMovableAttachedRingCache.has(coords)) {
+      return aromaticMovableAttachedRingCache.get(coords);
+    }
+    const result = collectMovableAttachedRingDescriptors(
+      layoutGraph,
+      coords,
+      placement.frozenAtomIds
+    ).some(descriptor => layoutGraph.atoms.get(descriptor.anchorAtomId)?.aromatic === true);
+    aromaticMovableAttachedRingCache.set(coords, result);
+    return result;
+  };
+  const scorePresentationTieBreakMetrics = coords => {
+    const metrics = presentationMetricsFor(coords);
+    return {
+      presentationPenalty: metrics?.presentationPenalty ?? 0,
+      hypervalentDeviation: metrics?.hypervalentDeviation ?? 0,
+      divalentContinuationPenalty: metrics?.divalentContinuationPenalty ?? 0,
+      trigonalDistortionPenalty: metrics?.trigonalDistortionPenalty ?? 0,
+      omittedHydrogenTrigonalPenalty: metrics?.omittedHydrogenTrigonalPenalty ?? 0,
+      omittedHydrogenDirectRingHubCollateralRootMaxPenalty: metrics?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0,
+      omittedHydrogenDirectRingHubCollateralRootPenalty: metrics?.omittedHydrogenDirectRingHubCollateralRootPenalty ?? 0,
+      phosphateArylTailPenalty: metrics?.phosphateArylTailPenalty ?? 0,
+      terminalCationRingProximityPenalty: metrics?.terminalCationRingProximityPenalty ?? 0,
+      attachedRingPeripheralPenalty: metrics?.attachedRingPeripheralPenalty ?? 0,
+      attachedRingRootOutwardPenalty: metrics?.attachedRingRootOutwardPenalty ?? 0,
+      terminalHeteroOutwardMaxPenalty: metrics?.terminalHeteroOutwardMaxPenalty ?? 0,
+      terminalHeteroOutwardPenalty: metrics?.terminalHeteroOutwardPenalty ?? 0,
+      terminalRingCarbonylLeafContactPenalty: metrics?.terminalRingCarbonylLeafContactPenalty ?? 0,
+      terminalMultipleBondLeafFanMaxPenalty: metrics?.terminalMultipleBondLeafFanMaxPenalty ?? 0,
+      terminalMultipleBondLeafFanPenalty: metrics?.terminalMultipleBondLeafFanPenalty ?? 0,
+      smallRingExteriorFanExactMaxPenalty: metrics?.smallRingExteriorFanExactMaxPenalty ?? 0,
+      smallRingExteriorFanExactPenalty: metrics?.smallRingExteriorFanExactPenalty ?? 0
     };
   };
   const auditFinalStereoWithPresentationMetrics = coords => ({
@@ -513,6 +620,14 @@ export function buildCleanupStageGraph(context) {
     ) {
       return false;
     }
+    const directAttachedRingRootImproves =
+      (candidate.directAttachedRingRootNudges ?? 0) > 0
+      && (incumbent?.audit?.maxBondLengthDeviation ?? 0) <= bondLength * 0.04
+      && (candidate.attachedRingRootOutwardPenalty ?? Number.POSITIVE_INFINITY)
+        < (incumbent?.attachedRingRootOutwardPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON;
+    if (directAttachedRingRootImproves) {
+      return auditCountsDoNotWorsen(candidate.audit, incumbent?.audit);
+    }
     const terminalMultipleBondLeafFanRegression = Math.max(
       (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0)
         - (incumbent?.terminalMultipleBondLeafFanMaxPenalty ?? 0),
@@ -655,7 +770,10 @@ export function buildCleanupStageGraph(context) {
           includeAttachedRingFallback: includeRingSubstituent,
           frozenAtomIds: placement.frozenAtomIds,
           includeSymmetry: familySummary.primaryFamily === 'fused' && familySummary.mixedMode !== true,
-          symmetryEpsilon: bondLength * 0.01
+          symmetryEpsilon: bondLength * 0.01,
+          getPresentationMetrics: presentationMetricsFor,
+          ringTerminalHeteroTidyNeedFn: ringTerminalHeteroTidyNeedFor,
+          hasAromaticMovableAttachedRingFn: hasAromaticMovableAttachedRing
         });
       },
       transformFn(parentCoords, inputContext, _stageResults, incumbent) {
@@ -871,8 +989,8 @@ export function buildCleanupStageGraph(context) {
         return (
           (hasRingTerminalHeteroHook || includeRingSubstituent)
           && (
-            hasRingTerminalHeteroTidyNeed(layoutGraph, incumbent?.coords, { bondLength })
-            || measureRingTerminalHeteroOutwardPenalty(layoutGraph, incumbent?.coords).maxDeviation > DISTANCE_EPSILON
+            ringTerminalHeteroTidyNeedFor(incumbent?.coords)
+            || (presentationMetricsFor(incumbent?.coords)?.terminalHeteroOutwardMaxPenalty ?? 0) > DISTANCE_EPSILON
           )
         );
       },
@@ -896,7 +1014,7 @@ export function buildCleanupStageGraph(context) {
       name: 'terminalMultipleBondLeafFinalRetouch',
       parentStage: 'best',
       guard(_stageResults, incumbent) {
-        return measureTerminalMultipleBondLeafFanPenalty(layoutGraph, incumbent?.coords).maxDeviation > DISTANCE_EPSILON;
+        return (presentationMetricsFor(incumbent?.coords)?.terminalMultipleBondLeafFanMaxPenalty ?? 0) > DISTANCE_EPSILON;
       },
       transformFn(parentCoords, inputContext) {
         const result = runTerminalMultipleBondLeafFanTidy(layoutGraph, parentCoords, {
@@ -978,7 +1096,7 @@ export function buildCleanupStageGraph(context) {
       name: 'divalentContinuationFinalRetouch',
       parentStage: 'best',
       guard(_stageResults, incumbent) {
-        return measureDivalentContinuationDistortion(layoutGraph, incumbent?.coords).maxDeviation > DISTANCE_EPSILON;
+        return (presentationMetricsFor(incumbent?.coords)?.divalentContinuationMaxPenalty ?? 0) > DISTANCE_EPSILON;
       },
       transformFn(parentCoords, inputContext) {
         const result = runDivalentContinuationTidy(layoutGraph, parentCoords, {
@@ -1022,7 +1140,7 @@ export function buildCleanupStageGraph(context) {
         return true;
       },
       transformFn(parentCoords, inputContext) {
-        const result = runRingTerminalRootExactClearance(layoutGraph, parentCoords, {
+        let result = runRingTerminalRootExactClearance(layoutGraph, parentCoords, {
           bondLength,
           frozenAtomIds: placement.frozenAtomIds,
           bondValidationClasses: placement.bondValidationClasses,
@@ -1030,7 +1148,25 @@ export function buildCleanupStageGraph(context) {
           epsilon: bondLength * 0.001
         });
         if ((result.nudges ?? 0) <= 0) {
-          return null;
+          if (!hasPlanarNitrogenAttachedRingRootOutwardMiss(layoutGraph, parentCoords)) {
+            return null;
+          }
+          const coords = inputContext.copyCoords(parentCoords);
+          const directAttachedRingRootRefinement = refineDirectAttachedRingRootsWithTerminalLeafClearance(
+            layoutGraph,
+            coords,
+            bondLength
+          );
+          if (!directAttachedRingRootRefinement.changed) {
+            return null;
+          }
+          result = {
+            coords,
+            nudges: 1,
+            linkedRootNudges: 1,
+            directAttachedRingRootNudges: 1,
+            changed: true
+          };
         }
         const [label, description] = HOOK_STEP_META['ring-terminal-root-exact-clearance'];
         inputContext.onStep?.(label, description, inputContext.copyCoords(result.coords), {

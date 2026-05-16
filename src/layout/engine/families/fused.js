@@ -524,9 +524,10 @@ function redistributePericondensedAtoms(rings, ringCenters, inputCoords, bondLen
  * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
  * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
  * @param {number} bondLength - Target bond length.
+ * @param {{layoutGraph?: object}} [options] - Placement options.
  * @returns {{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}} Placement result.
  */
-function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength) {
+function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength, options = {}) {
   const coords = new Map();
   const ringCenters = new Map();
   const ringById = new Map(rings.map(ring => [ring.id, ring]));
@@ -570,7 +571,18 @@ function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLen
     iterations: 18,
     damping: 0.45
   });
-  const orientedCoords = orientCoordsHorizontally(regularizedCoords, computeFusedAxis(rebuildRingCenters(rings, regularizedCoords)));
+  const ringAtomIds = [...new Set(rings.flatMap(ring => ring.atomIds))];
+  const regularizedAudit = options.layoutGraph
+    ? auditLayout(options.layoutGraph, regularizedCoords, { bondLength })
+    : null;
+  // Retension only bond-dirty cyclic fused systems; clean small fused systems keep their exact presentation.
+  const retensionedCoords = (options.layoutGraph && (regularizedAudit?.bondLengthFailureCount ?? 0) > 0)
+    ? relaxConstructedFusedCoords(options.layoutGraph, ringAtomIds, regularizedCoords, bondLength, {
+      iterations: 8,
+      damping: 0.2
+    })
+    : regularizedCoords;
+  const orientedCoords = orientCoordsHorizontally(retensionedCoords, computeFusedAxis(rebuildRingCenters(rings, retensionedCoords)));
 
   return {
     coords: orientedCoords,
@@ -797,7 +809,7 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
     };
   }
   if (hasFusedAdjacencyCycle(rings, ringAdj)) {
-    return layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength);
+    return layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength, options);
   }
 
   const rootRing = rings[0];

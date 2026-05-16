@@ -103,6 +103,36 @@ const RING_ANCHORED_HYPERVALENT_CONNECTOR_ROTATIONS = Object.freeze([
   Math.PI / 2
 ]);
 const HYPERVALENT_DIRECT_LIGAND_LOCAL_RELIEF_MAX_PASSES = 2;
+const PAIRED_HYPERVALENT_ANCHOR_OFFSET_STEPS = Object.freeze([
+  0,
+  Math.PI / 18,
+  -Math.PI / 18,
+  Math.PI / 9,
+  -Math.PI / 9,
+  Math.PI / 6,
+  -Math.PI / 6,
+  (2 * Math.PI) / 9,
+  (-2 * Math.PI) / 9
+]);
+const PAIRED_HYPERVALENT_ANCHOR_SEPARATIONS = Object.freeze([
+  Math.PI / 3,
+  (7 * Math.PI) / 18,
+  (4 * Math.PI) / 9,
+  Math.PI / 2,
+  (5 * Math.PI) / 9,
+  (11 * Math.PI) / 18,
+  (2 * Math.PI) / 3
+]);
+const PAIRED_HYPERVALENT_ANCHOR_EXACT_OPTION_LIMIT = 4;
+const PAIRED_HYPERVALENT_ANCHOR_MAX_HEAVY_ATOMS = 64;
+const THREE_SLOT_PERMUTATIONS = Object.freeze([
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0]
+]);
 
 /**
  * Returns whether an atom participates in visible overlap checks for the
@@ -2083,6 +2113,381 @@ function withCandidatePositions(coords, candidatePositions) {
     candidateCoords.set(atomId, position);
   }
   return candidateCoords;
+}
+
+/**
+ * Counts visible heavy atoms in a candidate movable block.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Candidate atom ids.
+ * @returns {number} Visible heavy-atom count.
+ */
+function heavyAtomCount(layoutGraph, atomIds) {
+  return atomIds.reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+}
+
+function twoItemOrders(items) {
+  return [
+    [items[0], items[1]],
+    [items[1], items[0]]
+  ];
+}
+
+function orderedAnglePairInfo(firstRecord, secondRecord) {
+  const delta = Math.atan2(
+    Math.sin(secondRecord.angle - firstRecord.angle),
+    Math.cos(secondRecord.angle - firstRecord.angle)
+  );
+  return {
+    midpoint: firstRecord.angle + delta / 2
+  };
+}
+
+function remainingSlotPermutations(fixedSlotIndex) {
+  const remainingSlotIndexes = [0, 1, 2, 3].filter(slotIndex => slotIndex !== fixedSlotIndex);
+  return THREE_SLOT_PERMUTATIONS.map(permutation => permutation.map(index => remainingSlotIndexes[index]));
+}
+
+/**
+ * Collects a four-coordinate acyclic anchor whose two hypervalent branches need
+ * a coordinated pair swap before their internal P/S/Se/As crosses can remain
+ * exact without creating direct ligand clashes.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Candidate shared anchor atom id.
+ * @returns {{anchorAtomId: string, hypervalentRecords: object[], otherRecords: object[], heavyAtomCount: number}|null} Paired-anchor descriptor.
+ */
+function pairedHypervalentAnchorDescriptor(layoutGraph, coords, anchorAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (
+    !anchorAtom
+    || anchorAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || anchorAtom.chirality
+    || anchorAtom.heavyDegree !== 4
+    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
+  ) {
+    return null;
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+
+  const records = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return null;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, anchorAtomId)]
+      .filter(atomId => coords.has(atomId));
+    if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(anchorAtomId)) {
+      return null;
+    }
+    const subtreeHeavyAtomCount = heavyAtomCount(layoutGraph, subtreeAtomIds);
+    if (subtreeHeavyAtomCount === 0) {
+      return null;
+    }
+
+    const hypervalentDescriptor = describeOrthogonalHypervalentCenter(layoutGraph, neighborAtomId, coords);
+    records.push({
+      atomId: neighborAtomId,
+      subtreeAtomIds,
+      heavyAtomCount: subtreeHeavyAtomCount,
+      angle: angleOf(sub(neighborPosition, anchorPosition)),
+      hypervalentDescriptor:
+        hypervalentDescriptor?.singleNeighborIds.includes(anchorAtomId) === true
+          ? hypervalentDescriptor
+          : null
+    });
+  }
+
+  if (records.length !== 4) {
+    return null;
+  }
+  const totalHeavyAtomCount = records.reduce((count, record) => count + record.heavyAtomCount, 0);
+  if (totalHeavyAtomCount > PAIRED_HYPERVALENT_ANCHOR_MAX_HEAVY_ATOMS) {
+    return null;
+  }
+
+  const hypervalentRecords = records.filter(record => record.hypervalentDescriptor);
+  const otherRecords = records.filter(record => !record.hypervalentDescriptor);
+  if (hypervalentRecords.length !== 2 || otherRecords.length !== 2) {
+    return null;
+  }
+
+  return {
+    anchorAtomId,
+    hypervalentRecords,
+    otherRecords,
+    heavyAtomCount: totalHeavyAtomCount
+  };
+}
+
+function rotatePairedAnchorBranches(coords, descriptor, targetRecords) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const candidateCoords = new Map(coords);
+  let rotationMagnitude = 0;
+  for (const { record, targetAngle } of targetRecords) {
+    const currentPosition = candidateCoords.get(record.atomId);
+    if (!currentPosition) {
+      return null;
+    }
+    const currentAngle = angleOf(sub(currentPosition, anchorPosition));
+    const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+    rotationMagnitude += Math.abs(rotation);
+    if (Math.abs(rotation) <= 1e-12) {
+      continue;
+    }
+    for (const subtreeAtomId of record.subtreeAtomIds) {
+      const currentSubtreePosition = candidateCoords.get(subtreeAtomId);
+      if (!currentSubtreePosition) {
+        continue;
+      }
+      candidateCoords.set(subtreeAtomId, add(anchorPosition, rotate(sub(currentSubtreePosition, anchorPosition), rotation)));
+    }
+  }
+  return { coords: candidateCoords, rotationMagnitude };
+}
+
+/**
+ * Builds the cheapest exact cross assignments for a hypervalent branch after
+ * its shared anchor has moved to a new sector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} fixedAnchorAtomId - Shared anchor atom id that must stay fixed.
+ * @returns {Array<{positions: Map<string, {x: number, y: number}>, cost: number}>} Exact cross options.
+ */
+function exactPairedAnchorHypervalentCrossOptions(layoutGraph, coords, centerAtomId, fixedAnchorAtomId) {
+  const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, coords);
+  const centerPosition = coords.get(centerAtomId);
+  const fixedAnchorPosition = coords.get(fixedAnchorAtomId);
+  if (
+    !descriptor
+    || !centerPosition
+    || !fixedAnchorPosition
+    || !descriptor.singleNeighborIds.includes(fixedAnchorAtomId)
+  ) {
+    return [];
+  }
+
+  const movableNeighborIds = [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds]
+    .filter(neighborAtomId => neighborAtomId !== fixedAnchorAtomId);
+  if (movableNeighborIds.length !== 3) {
+    return [];
+  }
+
+  const fixedAnchorAngle = angleOf(sub(fixedAnchorPosition, centerPosition));
+  const options = [];
+  for (let fixedSlotIndex = 0; fixedSlotIndex < 4; fixedSlotIndex++) {
+    const alpha = fixedAnchorAngle - fixedSlotIndex * (Math.PI / 2);
+    for (const slotPermutation of remainingSlotPermutations(fixedSlotIndex)) {
+      const positions = new Map();
+      let cost = 0;
+      let valid = true;
+      for (let neighborIndex = 0; neighborIndex < movableNeighborIds.length; neighborIndex++) {
+        const neighborAtomId = movableNeighborIds[neighborIndex];
+        const neighborPosition = coords.get(neighborAtomId);
+        const subtreeAtomIds = movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, neighborAtomId, coords);
+        if (!neighborPosition || !Array.isArray(subtreeAtomIds) || subtreeAtomIds.length === 0) {
+          valid = false;
+          break;
+        }
+        const targetAngle = alpha + slotPermutation[neighborIndex] * (Math.PI / 2);
+        const currentAngle = angleOf(sub(neighborPosition, centerPosition));
+        const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+        cost += rotation ** 2;
+        for (const subtreeAtomId of subtreeAtomIds) {
+          const subtreePosition = coords.get(subtreeAtomId);
+          if (!subtreePosition) {
+            continue;
+          }
+          const offset = sub(subtreePosition, centerPosition);
+          const absoluteAngle = angleOf(offset);
+          const radius = distance(centerPosition, subtreePosition);
+          const targetSubtreeAngle = absoluteAngle + rotation;
+          const nextPosition = subtreeAtomId === neighborAtomId
+            ? compressedTerminalMultipleLigandPosition(
+                layoutGraph,
+                coords,
+                centerAtomId,
+                neighborAtomId,
+                targetSubtreeAngle,
+                radius
+              )
+            : add(centerPosition, fromAngle(targetSubtreeAngle, radius));
+          positions.set(subtreeAtomId, nextPosition);
+        }
+      }
+      if (valid) {
+        options.push({ positions, cost });
+      }
+    }
+  }
+
+  return options
+    .sort((firstOption, secondOption) => firstOption.cost - secondOption.cost)
+    .slice(0, PAIRED_HYPERVALENT_ANCHOR_EXACT_OPTION_LIMIT);
+}
+
+function pairedHypervalentAnchorCandidateIsBetter(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  for (const key of ['severeOverlapCount', 'visibleHeavyBondCrossingCount', 'labelOverlapCount', 'bondLengthFailureCount']) {
+    const candidateValue = candidate.audit[key] ?? 0;
+    const incumbentValue = incumbent.audit[key] ?? 0;
+    if (candidateValue !== incumbentValue) {
+      return candidateValue < incumbentValue;
+    }
+  }
+  if (Math.abs(candidate.hypervalentDeviation - incumbent.hypervalentDeviation) > 1e-9) {
+    return candidate.hypervalentDeviation < incumbent.hypervalentDeviation;
+  }
+  if (Math.abs(candidate.rotationMagnitude - incumbent.rotationMagnitude) > 1e-9) {
+    return candidate.rotationMagnitude < incumbent.rotationMagnitude;
+  }
+  return candidate.heavyAtomCount < incumbent.heavyAtomCount;
+}
+
+function pairedHypervalentAnchorBranchTargetSets(descriptor) {
+  const hypervalentPair = orderedAnglePairInfo(descriptor.hypervalentRecords[0], descriptor.hypervalentRecords[1]);
+  const otherPair = orderedAnglePairInfo(descriptor.otherRecords[0], descriptor.otherRecords[1]);
+  const targetSets = [];
+  for (const hypervalentOffset of PAIRED_HYPERVALENT_ANCHOR_OFFSET_STEPS) {
+    for (const otherOffset of PAIRED_HYPERVALENT_ANCHOR_OFFSET_STEPS) {
+      for (const hypervalentSeparation of PAIRED_HYPERVALENT_ANCHOR_SEPARATIONS) {
+        for (const otherSeparation of PAIRED_HYPERVALENT_ANCHOR_SEPARATIONS) {
+          const hypervalentMidpoint = otherPair.midpoint + hypervalentOffset;
+          const otherMidpoint = hypervalentPair.midpoint + otherOffset;
+          for (const hypervalentOrder of twoItemOrders(descriptor.hypervalentRecords)) {
+            for (const otherOrder of twoItemOrders(descriptor.otherRecords)) {
+              targetSets.push([
+                { record: hypervalentOrder[0], targetAngle: hypervalentMidpoint - hypervalentSeparation / 2 },
+                { record: hypervalentOrder[1], targetAngle: hypervalentMidpoint + hypervalentSeparation / 2 },
+                { record: otherOrder[0], targetAngle: otherMidpoint - otherSeparation / 2 },
+                { record: otherOrder[1], targetAngle: otherMidpoint + otherSeparation / 2 }
+              ]);
+            }
+          }
+        }
+      }
+    }
+  }
+  return targetSets;
+}
+
+function evaluatePairedHypervalentAnchorTargetSet(layoutGraph, coords, descriptor, targetSet, bondLength) {
+  const rotated = rotatePairedAnchorBranches(coords, descriptor, targetSet);
+  if (!rotated) {
+    return null;
+  }
+  const firstOptions = exactPairedAnchorHypervalentCrossOptions(
+    layoutGraph,
+    rotated.coords,
+    descriptor.hypervalentRecords[0].atomId,
+    descriptor.anchorAtomId
+  );
+  const secondOptions = exactPairedAnchorHypervalentCrossOptions(
+    layoutGraph,
+    rotated.coords,
+    descriptor.hypervalentRecords[1].atomId,
+    descriptor.anchorAtomId
+  );
+  if (firstOptions.length === 0 || secondOptions.length === 0) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  for (const firstOption of firstOptions) {
+    for (const secondOption of secondOptions) {
+      const candidateCoords = withCandidatePositions(
+        withCandidatePositions(rotated.coords, firstOption.positions),
+        secondOption.positions
+      );
+      const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      if (audit.ok !== true) {
+        continue;
+      }
+      const hypervalentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords, {
+        focusAtomIds: new Set(descriptor.hypervalentRecords.map(record => record.atomId))
+      });
+      const candidate = {
+        coords: candidateCoords,
+        audit,
+        hypervalentDeviation,
+        rotationMagnitude: rotated.rotationMagnitude + firstOption.cost + secondOption.cost,
+        heavyAtomCount: descriptor.heavyAtomCount
+      };
+      if (pairedHypervalentAnchorCandidateIsBetter(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+  return bestCandidate;
+}
+
+/**
+ * Repairs paired phosphonate/sulfonate-style branches attached to the same
+ * four-coordinate carbon when exact internal crosses need the whole branch pair
+ * to occupy the opposite sectors before the audit can stay clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @returns {number} Number of accepted coordinated branch moves.
+ */
+function relievePairedHypervalentTetrahedralAnchors(layoutGraph, coords) {
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const currentAudit = auditLayout(layoutGraph, coords, { bondLength });
+  if (
+    (currentAudit.severeOverlapCount ?? 0) === 0
+    && (currentAudit.visibleHeavyBondCrossingCount ?? 0) === 0
+  ) {
+    return 0;
+  }
+
+  let nudges = 0;
+  for (const anchorAtomId of coords.keys()) {
+    const descriptor = pairedHypervalentAnchorDescriptor(layoutGraph, coords, anchorAtomId);
+    if (!descriptor) {
+      continue;
+    }
+
+    let bestCandidate = null;
+    for (const targetSet of pairedHypervalentAnchorBranchTargetSets(descriptor)) {
+      const candidate = evaluatePairedHypervalentAnchorTargetSet(layoutGraph, coords, descriptor, targetSet, bondLength);
+      if (!candidate) {
+        continue;
+      }
+      if (pairedHypervalentAnchorCandidateIsBetter(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+        if (
+          (candidate.audit.labelOverlapCount ?? 0) === 0
+          && candidate.hypervalentDeviation <= 1e-9
+        ) {
+          break;
+        }
+      }
+    }
+    if (!bestCandidate) {
+      continue;
+    }
+    for (const [atomId, position] of bestCandidate.coords) {
+      coords.set(atomId, position);
+    }
+    nudges++;
+  }
+  return nudges;
 }
 
 function isBetterAcyclicBranchReliefFit(candidateFit, incumbentFit) {
@@ -4178,6 +4583,8 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
     nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
     nudges += relieveDirectTerminalMultipleLigandOverlaps(layoutGraph, coords, centerAtomId);
   }
+
+  nudges += relievePairedHypervalentTetrahedralAnchors(layoutGraph, coords);
 
   return { coords, nudges };
 }

@@ -193,6 +193,25 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOrthogonalCross(result, phosphorusAtomIds);
   });
 
+  it('keeps paired phosphonic acid lipid heads on orthogonal crosses', () => {
+    const result = runPipeline(parseSMILES(String.raw`CCCCC\C=C\CC(C\C=C\CCCCC)(P(O)(O)=O)P(O)(O)=O`), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const phosphorusAtomIds = [...result.layoutGraph.atoms.values()].filter(atom => atom.element === 'P').map(atom => atom.id);
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.ok(['specialist', 'stabilization'].includes(result.metadata.cleanupTelemetry.selectedStageCategory));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(phosphorusAtomIds.length, 2);
+    assertOrthogonalCross(result, phosphorusAtomIds);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords) < 1e-9);
+  });
+
   it('re-orthogonalizes linked sugar phosphates after the final overlap-clearing ring-substituent touchup', () => {
     const result = runPipeline(parseSMILES('O[C@H]1[C@H](OP(O)(O)=O)[C@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H]1OP(O)(O)=O'), {
       suppressH: true,

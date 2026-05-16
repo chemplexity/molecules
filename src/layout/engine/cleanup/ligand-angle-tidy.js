@@ -1,10 +1,13 @@
 /** @module cleanup/ligand-angle-tidy */
 
-import { add, angleOf, angularDifference, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { organometallicArrangementSpecs, organometallicGeometryKind } from '../families/organometallic-geometry.js';
 
 const ANGLE_THRESHOLD = Math.PI / 18;
+const CENTER_RECENTER_MIN_IMPROVEMENT = Math.PI / 9;
+const CENTER_RECENTER_MAX_MOVE_FACTOR = 0.75;
+const CENTER_RECENTER_MIN_LIGAND_DISTANCE_FACTOR = 0.4;
 
 /**
  * Returns whether the requested atom is a supported visible metal center.
@@ -101,6 +104,122 @@ function assignIdealAngles(currentAngles, idealAngles) {
 }
 
 /**
+ * Measures how far an unordered ligand fan is from equal angular separation.
+ * @param {number[]} angles - Ligand angles around the metal center.
+ * @returns {number} Total absolute angular-gap deviation in radians.
+ */
+function ligandSeparationDeviation(angles) {
+  if (angles.length < 2) {
+    return 0;
+  }
+  const sortedAngles = [...angles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const idealStep = (2 * Math.PI) / sortedAngles.length;
+  let deviation = 0;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length] + (index === sortedAngles.length - 1 ? 2 * Math.PI : 0);
+    deviation += Math.abs(nextAngle - sortedAngles[index] - idealStep);
+  }
+  return deviation;
+}
+
+/**
+ * Returns current direct-ligand angles for one metal center.
+ * @param {string[]} ligandAtomIds - Direct ligand atom IDs.
+ * @param {{x: number, y: number}} metalPosition - Metal coordinate.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {number[]} Ligand angles in radians.
+ */
+function ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords) {
+  return ligandAtomIds.map(atomId => angleOf(sub(coords.get(atomId), metalPosition)));
+}
+
+/**
+ * Returns whether the direct ligands are ring-like or chelating enough that the
+ * metal should move to them, instead of dragging ligand subtrees around.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} ligandAtomIds - Direct ligand atom IDs.
+ * @returns {boolean} True when ligand positions should be treated as the fixed pocket.
+ */
+function hasChelatingLigandPocket(layoutGraph, ligandAtomIds) {
+  return ligandAtomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && (atom.heavyDegree ?? 0) > 1;
+  }).length >= 2;
+}
+
+/**
+ * Finds a safe center position for a distorted four-coordinate chelated metal.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} ligandAtomIds - Direct ligand atom IDs.
+ * @param {{x: number, y: number}} metalPosition - Current metal position.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} angleThreshold - Minimum improvement threshold.
+ * @returns {{position: {x: number, y: number}, beforeDeviation: number, afterDeviation: number}|null} Candidate center shift.
+ */
+function centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold) {
+  if (ligandAtomIds.length !== 4 || !hasChelatingLigandPocket(layoutGraph, ligandAtomIds)) {
+    return null;
+  }
+  const ligandPositions = ligandAtomIds.map(atomId => coords.get(atomId));
+  if (ligandPositions.some(position => !position)) {
+    return null;
+  }
+  const candidatePosition = centroid(ligandPositions);
+  const displacement = distance(metalPosition, candidatePosition);
+  if (displacement <= 1e-9 || displacement > bondLength * CENTER_RECENTER_MAX_MOVE_FACTOR) {
+    return null;
+  }
+  const minCandidateLigandDistance = Math.min(...ligandPositions.map(position => distance(candidatePosition, position)));
+  if (minCandidateLigandDistance < bondLength * CENTER_RECENTER_MIN_LIGAND_DISTANCE_FACTOR) {
+    return null;
+  }
+  const beforeDeviation = ligandSeparationDeviation(ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords));
+  const afterDeviation = ligandSeparationDeviation(ligandAnglesAroundMetal(ligandAtomIds, candidatePosition, coords));
+  if (afterDeviation > beforeDeviation - Math.max(angleThreshold, CENTER_RECENTER_MIN_IMPROVEMENT)) {
+    return null;
+  }
+  return {
+    position: candidatePosition,
+    beforeDeviation,
+    afterDeviation
+  };
+}
+
+/**
+ * Measures metal-ligand presentation deviation for cleanup-stage tie-breaking.
+ * Four-coordinate centers are scored by angular separation so chelated metal
+ * pockets can improve without imposing a global drawing orientation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {number} Total ligand-angle deviation in radians.
+ */
+export function measureLigandAngleDeviation(layoutGraph, coords) {
+  let totalDeviation = 0;
+  for (const metalAtomId of [...coords.keys()].filter(atomId => isVisibleMetalCenter(layoutGraph, atomId))) {
+    const metalPosition = coords.get(metalAtomId);
+    const ligandAtomIds = directLigandAtomIds(layoutGraph, metalAtomId, coords);
+    if (!metalPosition || ligandAtomIds.length < 2) {
+      continue;
+    }
+    const currentAngles = ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords);
+    if (ligandAtomIds.length === 4) {
+      totalDeviation += ligandSeparationDeviation(currentAngles);
+      continue;
+    }
+    const idealAngles = idealLigandAngles(layoutGraph, metalAtomId, ligandAtomIds.length);
+    if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
+      continue;
+    }
+    const assignment = assignIdealAngles(currentAngles, idealAngles);
+    for (let index = 0; index < ligandAtomIds.length; index++) {
+      totalDeviation += angularDifference(currentAngles[index], idealAngles[assignment[index]]);
+    }
+  }
+  return totalDeviation;
+}
+
+/**
  * Returns whether the current layout contains a simple metal center with a
  * movable terminal ligand that materially deviates from its ideal arrangement.
  * @param {object} layoutGraph - Layout graph shell.
@@ -110,11 +229,16 @@ function assignIdealAngles(currentAngles, idealAngles) {
  */
 export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
   const angleThreshold = options.angleThreshold ?? ANGLE_THRESHOLD;
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
 
   for (const metalAtomId of [...coords.keys()].filter(atomId => isVisibleMetalCenter(layoutGraph, atomId))) {
     const metalPosition = coords.get(metalAtomId);
     const ligandAtomIds = directLigandAtomIds(layoutGraph, metalAtomId, coords);
     const idealAngles = idealLigandAngles(layoutGraph, metalAtomId, ligandAtomIds.length);
+    const centerCandidate = centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold);
+    if (centerCandidate) {
+      return true;
+    }
     if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
       continue;
     }
@@ -149,6 +273,7 @@ export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
 export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
   const maxIterations = options.maxIterations ?? 2;
   const angleThreshold = options.angleThreshold ?? ANGLE_THRESHOLD;
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   let nudges = 0;
   let iterations = 0;
@@ -156,9 +281,16 @@ export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     let moved = false;
     for (const metalAtomId of [...coords.keys()].filter(atomId => isVisibleMetalCenter(layoutGraph, atomId))) {
-      const metalPosition = coords.get(metalAtomId);
+      let metalPosition = coords.get(metalAtomId);
       const ligandAtomIds = directLigandAtomIds(layoutGraph, metalAtomId, coords);
       const idealAngles = idealLigandAngles(layoutGraph, metalAtomId, ligandAtomIds.length);
+      const centerCandidate = centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold);
+      if (centerCandidate) {
+        coords.set(metalAtomId, centerCandidate.position);
+        metalPosition = centerCandidate.position;
+        nudges++;
+        moved = true;
+      }
       if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
         continue;
       }

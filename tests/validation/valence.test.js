@@ -96,6 +96,11 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES('CCCCCCCN(CCCCCSc1[nH]cnc2ncnc12)C(=O)NC(C)C')), []);
   });
 
+  it('charged lowercase fused aza salts produce no carbon valence warning', () => {
+    const smiles = 'Br.[Br-].CCNC(=N)N\\N=C\\c1ccc(cc1)c2cn3ccc(C)cc3[n+]2C';
+    assert.deepEqual(validateValence(parseSMILES(smiles)), []);
+  });
+
   it('ammonium [NH4+] produces no warnings', () => {
     assert.deepEqual(validateValence(parseSMILES('[NH4+]')), []);
   });

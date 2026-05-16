@@ -267,6 +267,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the bridged diketone tricyclo template for compact carbonyl cages', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C1CC2C(=O)C3CCC12C3'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'bridged-diketone-tricyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the acetal amino decalin template for ester-substituted tricyclic cages', () => {
     const graph = createLayoutGraph(parseSMILES('COC(OC)[C@@]12CC[C@@H]3CCCC3(C1)[C@@H](N[C@@H]2C(=O)OC)C(=O)OC'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -496,6 +504,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(saturatedPlan.rootScaffold.family, 'fused');
     assert.equal(saturatedPlan.rootScaffold.templateId, 'steroid-core-saturated');
     assert.equal(saturatedPlan.mixedMode, true);
+  });
+
+  it('uses the amino bromo diaza ketone template for pericondensed fused aromatics', () => {
+    const graph = createLayoutGraph(parseSMILES('Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'fused');
+    assert.equal(plan.rootScaffold.templateId, 'amino-bromo-diaza-ketone-pericondensed-core');
+    assert.equal(plan.mixedMode, true);
   });
 
   it('prefers the indanone fused template when exocyclic ketone context is present', () => {

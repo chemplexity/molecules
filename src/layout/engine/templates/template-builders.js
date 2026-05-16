@@ -376,6 +376,18 @@ function createPeryleneTemplate() {
 }
 
 /**
+ * Creates the amino-bromo diaza ketone pericondensed aromatic core from its
+ * exact ring-system graph.
+ * @returns {Molecule} Amino-bromo diaza ketone scaffold template molecule.
+ */
+function createAminoBromoDiazaKetonePericondensedCoreTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'amino-bromo-diaza-ketone-pericondensed-core',
+    'Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br'
+  );
+}
+
+/**
  * Creates a fluorene fused tricyclic template from its exact ring-system graph.
  * @returns {Molecule} Fluorene scaffold template molecule.
  */
@@ -1158,6 +1170,15 @@ function createBridgedPyrrolizidineDioneCoreTemplate() {
 }
 
 /**
+ * Creates the compact bridged diketone tricyclo scaffold graph found in
+ * strained 5-5-4 cages like `O=C1CC2C(=O)C3CCC12C3`.
+ * @returns {Molecule} Bridged diketone tricyclo scaffold template molecule.
+ */
+function createBridgedDiketoneTricycloCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('bridged-diketone-tricyclo-core', 'O=C1CC2C(=O)C3CCC12C3');
+}
+
+/**
  * Creates the acetal amino decalin scaffold graph found in ester-substituted
  * tricyclic saturated cores like
  * `COC(OC)[C@@]12CC[C@@H]3CCCC3(C1)[C@@H](N[C@@H]2C(=O)OC)C(=O)OC`.
@@ -1713,6 +1734,38 @@ function createPeryleneGeometry() {
 }
 
 /**
+ * Creates normalized coordinates for the amino-bromo diaza ketone core on an
+ * exact honeycomb lattice so every fused six-member ring remains regular.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAminoBromoDiazaKetonePericondensedCoreGeometry() {
+  const yUnit = Math.sqrt(3) / 2;
+  return createCenteredFrozenGeometry([
+    ['C10', { x: 1, y: 0 }],
+    ['C15', { x: 0.5, y: yUnit }],
+    ['C16', { x: -0.5, y: yUnit }],
+    ['C21', { x: -1, y: 0 }],
+    ['C7', { x: -0.5, y: -yUnit }],
+    ['C8', { x: 0.5, y: -yUnit }],
+    ['C11', { x: 2, y: 0 }],
+    ['C12', { x: 2.5, y: yUnit }],
+    ['C13', { x: 2, y: 2 * yUnit }],
+    ['N14', { x: 1, y: 2 * yUnit }],
+    ['N17', { x: -1, y: 2 * yUnit }],
+    ['C18', { x: -2, y: 2 * yUnit }],
+    ['C19', { x: -2.5, y: yUnit }],
+    ['C20', { x: -2, y: 0 }],
+    ['C22', { x: -2.5, y: -yUnit }],
+    ['C5', { x: -2, y: -2 * yUnit }],
+    ['N6', { x: -1, y: -2 * yUnit }],
+    ['C23', { x: -3.5, y: -yUnit }],
+    ['C4', { x: -2.5, y: -3 * yUnit }],
+    ['C3', { x: -3.5, y: -3 * yUnit }],
+    ['C2', { x: -4, y: -2 * yUnit }]
+  ]);
+}
+
+/**
  * Creates normalized coordinates for fluorene with the bridge carbon at the top.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -2075,7 +2128,8 @@ function createAlkenylPhenylOxabicycloheptaneCoreGeometry() {
  * Creates a broad five-ring cage projection for oxygenated lactone steroids.
  * The left decalin lobe and right lactone lobe are separated by the central
  * C4-C8-C12-C23-C25 bridge so the fused six-rings remain recognizable instead
- * of being flattened into one compact tangle.
+ * of being flattened into one compact tangle, while the lactone lobe leaves
+ * terminal carbonyl leaves clear of adjacent fused-ring edges.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
 function createCagedHydroxyLactoneCoreGeometry() {
@@ -2090,8 +2144,8 @@ function createCagedHydroxyLactoneCoreGeometry() {
     ['C11', { x: -2.653825, y: -0.104642 }],
     ['C12', { x: 0.406603, y: 0.455854 }],
     ['C13', { x: 1.329074, y: 1.465429 }],
-    ['C14', { x: 2.520000, y: 1.250000 }],
-    ['C15', { x: 2.750000, y: 0.110000 }],
+    ['C14', { x: 2.700000, y: 1.400000 }],
+    ['C15', { x: 2.900000, y: 0.110000 }],
     ['C18', { x: 1.648680, y: -0.427585 }],
     ['C20', { x: 1.718060, y: 0.272484 }],
     ['O22', { x: 1.100000, y: 0.650000 }],
@@ -3157,6 +3211,26 @@ function createBridgedPyrrolizidineDioneCoreGeometry() {
     ['C17', { x: -0.8, y: 1.72 }],
     ['C16', { x: 0, y: 2.35 }],
     ['C15', { x: 0.8, y: 1.72 }]
+  ]);
+}
+
+/**
+ * Creates a readable compact tricyclo diketone projection. One five-ring uses
+ * an ideal pentagonal lane, the second five-ring is opened below the shared
+ * bridge, and the cyclobutane cap is kept square off the exterior edge.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createBridgedDiketoneTricycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C7', { x: -0.850651, y: 0.0 }],
+    ['C11', { x: -0.262866, y: -0.809017 }],
+    ['C10', { x: 0.688191, y: -0.5 }],
+    ['C4', { x: 0.688191, y: 0.5 }],
+    ['C5', { x: -0.262866, y: 0.809017 }],
+    ['C8', { x: -1.1, y: -1.12 }],
+    ['C9', { x: 0.22, y: -1.58 }],
+    ['C3', { x: 1.688191, y: 0.5 }],
+    ['C2', { x: 1.688191, y: -0.5 }]
   ]);
 }
 
@@ -4547,6 +4621,21 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createCyclobutaneOxadecalinCoreGeometry(), BRIDGED_VALIDATION)
     ),
     createTemplate(
+      'bridged-diketone-tricyclo-core',
+      'bridged',
+      53.852,
+      createBridgedDiketoneTricycloCoreTemplate(),
+      geometrySpec('normalized-xy', createBridgedDiketoneTricycloCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C5', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'bridged-pyrrolizidine-dione-core',
       'bridged',
       53.85,
@@ -4871,6 +4960,22 @@ export function buildTemplateLibrary() {
       40.96,
       createSteroidCoreSaturatedTemplate(),
       geometrySpec('normalized-xy', createSteroidCoreSaturatedGeometry(), PLANAR_VALIDATION)
+    ),
+    createTemplate(
+      'amino-bromo-diaza-ketone-pericondensed-core',
+      'fused',
+      40.957,
+      createAminoBromoDiazaKetonePericondensedCoreTemplate(),
+      geometrySpec('normalized-xy', createAminoBromoDiazaKetonePericondensedCoreGeometry(), PLANAR_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C8', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C2', element: 'N', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C23', element: 'Br', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
     ),
     createTemplate('perylene', 'fused', 40.955, createPeryleneTemplate(), geometrySpec('normalized-xy', createPeryleneGeometry(), PLANAR_VALIDATION)),
     createTemplate('pyrene', 'fused', 40.95, createPyreneTemplate(), geometrySpec('normalized-xy', createPyreneGeometry(), PLANAR_VALIDATION)),

@@ -7,8 +7,10 @@ import { resolvePolicy } from './standards/profile-policy.js';
 import { createEmptyPipelineResult } from './model/empty-result.js';
 import { layoutSupportedComponents } from './placement/component-layout.js';
 import { buildCleanupStageGraph } from './cleanup/stage-pipeline.js';
-import { runStageGraph } from './cleanup/stage-runner.js';
+import { createStageExecutionEntry, runStageGraph } from './cleanup/stage-runner.js';
 import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
+import { visibleHeavyCovalentBonds } from './cleanup/bond-utils.js';
+import { resolveMixedAcylBranchSevereContacts } from './families/mixed.js';
 import {
   measureRingAdjacentTerminalDivalentContinuationDistortion,
   runDivalentContinuationTidy
@@ -27,10 +29,13 @@ import {
 } from './cleanup/presentation/large-molecule-residual-retouch.js';
 import { runAttachedRingRotationTouchup } from './cleanup/presentation/attached-ring-fallback.js';
 import {
+  hasRingTerminalHeteroTidyNeed,
+  measureRingTerminalHeteroOutwardPenalty,
   measureTerminalMultipleBondLeafFanPenalty,
   runPairedTerminalHeteroLeafFanTidy,
   runTerminalMultipleBondLeafFanTidy
 } from './cleanup/presentation/ring-terminal-hetero.js';
+import { hasOutstandingRingPresentationNeed } from './cleanup/presentation/ring-presentation.js';
 import {
   hasHypervalentAngleTidyNeed,
   measureOrthogonalHypervalentDeviation,
@@ -45,7 +50,8 @@ import {
   createEmptyStageTelemetry
 } from './cleanup/telemetry.js';
 import { auditLayout } from './audit/audit.js';
-import { auditCleanupStage } from './audit/stage-metrics.js';
+import { findSevereOverlaps } from './audit/invariants.js';
+import { auditCleanupStage, measureCleanupStagePresentationPenalty } from './audit/stage-metrics.js';
 import { createQualityReport } from './model/quality-report.js';
 import { inspectEZStereo } from './stereo/ez.js';
 import { pickWedgeAssignments } from './stereo/wedge-selection.js';
@@ -63,6 +69,10 @@ import { PRESENTATION_METRIC_EPSILON } from './constants.js';
 
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
 const MIN_PROJECTED_RING_CHAIN_ASPECT = 6;
+const FINAL_TERMINAL_CARBON_LEAF_CONTACT_ROTATIONS = Object.freeze(
+  Array.from({ length: 24 }, (_value, index) => ((index + 1) * Math.PI) / 36)
+    .flatMap(offset => [offset, -offset])
+);
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -388,6 +398,244 @@ function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) {
     }
   }
   return !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false));
+}
+
+function collectFinalTerminalCarbonLeafSubtreeAtomIds(layoutGraph, rootAtomId, blockedAtomId, coords) {
+  const visited = new Set([blockedAtomId]);
+  const stack = [rootAtomId];
+  const atomIds = [];
+  while (stack.length > 0) {
+    const atomId = stack.pop();
+    if (visited.has(atomId)) {
+      continue;
+    }
+    visited.add(atomId);
+    if (coords.has(atomId)) {
+      atomIds.push(atomId);
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visited.has(neighborAtomId)) {
+        stack.push(neighborAtomId);
+      }
+    }
+  }
+  return atomIds;
+}
+
+function finalTerminalCarbonLeafContactDescriptor(layoutGraph, coords, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.chirality
+    || atom.heavyDegree !== 1
+    || layoutGraph.ringAtomIdSet.has(atomId)
+    || !coords.has(atomId)
+  ) {
+    return null;
+  }
+
+  const heavyNeighborIds = (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent' && !bond.aromatic && !bond.inRing)
+    .map(bond => (bond.a === atomId ? bond.b : bond.a))
+    .filter(neighborAtomId => (
+      layoutGraph.atoms.get(neighborAtomId)?.element !== 'H'
+      && coords.has(neighborAtomId)
+    ));
+  if (heavyNeighborIds.length !== 1) {
+    return null;
+  }
+
+  const anchorAtomId = heavyNeighborIds[0];
+  const movedAtomIds = collectFinalTerminalCarbonLeafSubtreeAtomIds(layoutGraph, atomId, anchorAtomId, coords);
+  const movedHeavyAtomIds = movedAtomIds.filter(movedAtomId => layoutGraph.atoms.get(movedAtomId)?.element !== 'H');
+  if (movedHeavyAtomIds.length !== 1 || movedHeavyAtomIds[0] !== atomId) {
+    return null;
+  }
+  return {
+    anchorAtomId,
+    leafAtomId: atomId,
+    movedAtomIds
+  };
+}
+
+function rotateFinalTerminalCarbonLeafContactCandidate(coords, descriptor, rotationOffset) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of descriptor.movedAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const dx = position.x - anchorPosition.x;
+    const dy = position.y - anchorPosition.y;
+    const nextAngle = Math.atan2(dy, dx) + rotationOffset;
+    const radius = Math.hypot(dx, dy);
+    candidateCoords.set(atomId, {
+      x: anchorPosition.x + Math.cos(nextAngle) * radius,
+      y: anchorPosition.y + Math.sin(nextAngle) * radius
+    });
+  }
+  return candidateCoords;
+}
+
+function finalTerminalCarbonLeafContactCandidateMove(coords, candidateCoords, atomIds) {
+  return atomIds.reduce((totalMove, atomId) => {
+    const position = coords.get(atomId);
+    const candidatePosition = candidateCoords.get(atomId);
+    return position && candidatePosition
+      ? totalMove + Math.hypot(candidatePosition.x - position.x, candidatePosition.y - position.y)
+      : totalMove;
+  }, 0);
+}
+
+function finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit) {
+  if (!candidateAudit || !baseAudit || (baseAudit.ok === true && candidateAudit.ok !== true)) {
+    return false;
+  }
+  for (const key of [
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (baseAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  if ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  return (
+    (candidateAudit.severeOverlapCount ?? 0) < (baseAudit.severeOverlapCount ?? 0)
+    || (
+      (candidateAudit.severeOverlapCount ?? 0) === (baseAudit.severeOverlapCount ?? 0)
+      && (candidateAudit.severeOverlapPenalty ?? 0) < (baseAudit.severeOverlapPenalty ?? 0) - PRESENTATION_METRIC_EPSILON
+    )
+  );
+}
+
+function compareFinalTerminalCarbonLeafContactCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (Math.abs((candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0)) > PRESENTATION_METRIC_EPSILON) {
+    return (candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0);
+  }
+  if (Math.abs(candidate.totalMove - incumbent.totalMove) > PRESENTATION_METRIC_EPSILON) {
+    return candidate.totalMove - incumbent.totalMove;
+  }
+  if (Math.abs(candidate.rotationMagnitude - incumbent.rotationMagnitude) > PRESENTATION_METRIC_EPSILON) {
+    return candidate.rotationMagnitude - incumbent.rotationMagnitude;
+  }
+  return candidate.leafAtomId.localeCompare(incumbent.leafAtomId, 'en', { numeric: true });
+}
+
+function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoords, placement, bondLength) {
+  let currentCoords = finalCoords;
+  let baseAudit = auditLayout(layoutGraph, currentCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if ((baseAudit.severeOverlapCount ?? 0) === 0) {
+    return { coords: finalCoords, changed: false, movedAtomIds: [] };
+  }
+
+  const movedAtomIds = new Set();
+  let changed = false;
+  for (let passIndex = 0; passIndex < 2; passIndex++) {
+    const descriptorByKey = new Map();
+    for (const overlap of findSevereOverlaps(layoutGraph, currentCoords, bondLength)) {
+      for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
+        const descriptor = finalTerminalCarbonLeafContactDescriptor(layoutGraph, currentCoords, atomId);
+        if (!descriptor) {
+          continue;
+        }
+        descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
+      }
+    }
+    if (descriptorByKey.size === 0) {
+      break;
+    }
+
+    let bestCandidate = null;
+    for (const descriptor of descriptorByKey.values()) {
+      for (const rotationOffset of FINAL_TERMINAL_CARBON_LEAF_CONTACT_ROTATIONS) {
+        const candidateCoords = rotateFinalTerminalCarbonLeafContactCandidate(
+          currentCoords,
+          descriptor,
+          rotationOffset
+        );
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        if (!finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit)) {
+          continue;
+        }
+        const candidate = {
+          coords: candidateCoords,
+          audit: candidateAudit,
+          leafAtomId: descriptor.leafAtomId,
+          movedAtomIds: descriptor.movedAtomIds,
+          rotationMagnitude: Math.abs(rotationOffset),
+          totalMove: finalTerminalCarbonLeafContactCandidateMove(
+            currentCoords,
+            candidateCoords,
+            descriptor.movedAtomIds
+          )
+        };
+        if (compareFinalTerminalCarbonLeafContactCandidates(candidate, bestCandidate) < 0) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    baseAudit = bestCandidate.audit;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    changed = true;
+    if ((baseAudit.severeOverlapCount ?? 0) === 0) {
+      break;
+    }
+  }
+
+  return {
+    coords: currentCoords,
+    changed,
+    movedAtomIds: [...movedAtomIds],
+    audit: baseAudit
+  };
 }
 
 /**
@@ -1158,6 +1406,14 @@ function maybeRetouchFinalDivalentContinuations(layoutGraph, finalCoords, placem
     frozenAtomIds: placement.frozenAtomIds
   });
   const candidateCoords = cleanup.passes > 0 ? cleanup.coords : retouch.coords;
+  if (familySummary.mixedMode === true) {
+    resolveMixedAcylBranchSevereContacts(
+      layoutGraph,
+      candidateCoords,
+      placement.bondValidationClasses,
+      bondLength
+    );
+  }
   const baseAudit = auditLayout(layoutGraph, finalCoords, {
     bondLength,
     bondValidationClasses: placement.bondValidationClasses
@@ -1275,6 +1531,24 @@ function createTimingState(enabled) {
 }
 
 const CLEANUP_BOND_PROTECTED_PRIMARY_FAMILIES = new Set(['large-molecule', 'macrocycle', 'bridged', 'fused', 'organometallic']);
+const CLEAN_PLACEMENT_FAST_PATH_SUPPORTED_PRIMARY_FAMILIES = new Set(['acyclic', 'isolated-ring']);
+const CLEAN_PLACEMENT_FAST_PATH_SUPPORTED_HOOKS = new Set(['ring-substituent-tidy']);
+const CLEAN_PLACEMENT_FAST_PATH_SKIPPED_STAGES = Object.freeze([
+  ['coreGeometryCleanup', null],
+  ['stereoRescueCleanup', 'selectedGeometryCheckpoint'],
+  ['stereoProtectedTouchup', ['stereoRescueCleanup', 'selectedGeometryCheckpoint']],
+  ['stereoTouchup', ['stereoRescueCleanup', 'selectedGeometryCheckpoint']],
+  ['postTouchupStereo', 'stereoTouchup'],
+  ['presentationCleanup', 'best'],
+  ['specialistCleanup', 'best'],
+  ['stabilizeAfterCleanup', 'best'],
+  ['ringTerminalHeteroFinalRetouch', 'best'],
+  ['terminalMultipleBondLeafFinalRetouch', 'best'],
+  ['terminalAlkeneContinuationFinalRetouch', 'best'],
+  ['divalentContinuationFinalRetouch', 'best'],
+  ['ringTerminalRootExactFinalRetouch', 'best'],
+  ['omittedHydrogenCollateralRootFinalRetouch', 'best']
+]);
 
 /**
  * Returns whether cleanup should preserve bond integrity more aggressively for
@@ -1285,6 +1559,203 @@ const CLEANUP_BOND_PROTECTED_PRIMARY_FAMILIES = new Set(['large-molecule', 'macr
  */
 function shouldProtectCleanupBondIntegrity(familySummary, placement) {
   return placement.placedFamilies.includes('large-molecule') || CLEANUP_BOND_PROTECTED_PRIMARY_FAMILIES.has(familySummary.primaryFamily);
+}
+
+function hasOnlyCleanPlacementFastPathHooks(policy) {
+  return (policy.postCleanupHooks ?? []).every(hookName => CLEAN_PLACEMENT_FAST_PATH_SUPPORTED_HOOKS.has(hookName));
+}
+
+function hasCleanPlacementFastPathAudit(audit) {
+  return (
+    audit?.ok === true
+    && (audit.severeOverlapCount ?? 0) === 0
+    && (audit.visibleHeavyBondCrossingCount ?? 0) === 0
+    && (audit.labelOverlapCount ?? 0) === 0
+    && (audit.bondLengthFailureCount ?? 0) === 0
+    && (audit.mildBondLengthFailureCount ?? 0) === 0
+    && (audit.severeBondLengthFailureCount ?? 0) === 0
+    && (audit.collapsedMacrocycleCount ?? 0) === 0
+    && (audit.ringSubstituentReadabilityFailureCount ?? 0) === 0
+    && (audit.inwardRingSubstituentCount ?? 0) === 0
+    && (audit.outwardAxisRingSubstituentFailureCount ?? 0) === 0
+    && (audit.stereoContradiction ?? false) === false
+  );
+}
+
+function hasTerminalAlkeneContinuationCandidate(layoutGraph, coords) {
+  for (const centerAtomId of coords.keys()) {
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (!centerAtom || centerAtom.element !== 'C' || centerAtom.aromatic) {
+      continue;
+    }
+    const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
+    if (heavyBonds.length !== 2) {
+      continue;
+    }
+    const parentBond = heavyBonds.find(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1);
+    const leafBond = heavyBonds.find(({ bond, neighborAtomId }) => {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !bond.aromatic && (bond.order ?? 1) >= 2 && neighborAtom?.element === 'C' && (neighborAtom.heavyDegree ?? 0) === 1;
+    });
+    if (!parentBond || !leafBond) {
+      continue;
+    }
+    const hasGrandParent = visibleHeavyCovalentBonds(layoutGraph, coords, parentBond.neighborAtomId)
+      .some(({ neighborAtomId }) => neighborAtomId !== centerAtomId);
+    if (hasGrandParent) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasCleanPlacementFastPathPresentationNeed(layoutGraph, coords, placementStage, bondLength) {
+  const presentationPenalty = measureCleanupStagePresentationPenalty(layoutGraph, coords);
+  if (presentationPenalty > PRESENTATION_METRIC_EPSILON) {
+    return true;
+  }
+
+  const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
+  if (
+    terminalMultipleBondLeafFanPenalty.maxDeviation > PRESENTATION_METRIC_EPSILON
+    || terminalMultipleBondLeafFanPenalty.totalDeviation > PRESENTATION_METRIC_EPSILON
+  ) {
+    return true;
+  }
+
+  const ringAdjacentDivalentPenalty = measureRingAdjacentTerminalDivalentContinuationDistortion(layoutGraph, coords);
+  if (
+    ringAdjacentDivalentPenalty.distortedCenterCount > 0
+    || ringAdjacentDivalentPenalty.maxDeviation > PRESENTATION_METRIC_EPSILON
+    || ringAdjacentDivalentPenalty.totalDeviation > PRESENTATION_METRIC_EPSILON
+  ) {
+    return true;
+  }
+
+  const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
+  if (
+    terminalHeteroOutwardPenalty.maxDeviation > PRESENTATION_METRIC_EPSILON
+    || terminalHeteroOutwardPenalty.totalDeviation > PRESENTATION_METRIC_EPSILON
+    || hasRingTerminalHeteroTidyNeed(layoutGraph, coords, { bondLength })
+  ) {
+    return true;
+  }
+
+  const hypervalentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, coords);
+  const ringAnchoredHypervalentDeviation = measureRingAnchoredHypervalentBranchDeviation(layoutGraph, coords);
+  if (
+    hypervalentDeviation > PRESENTATION_METRIC_EPSILON
+    || ringAnchoredHypervalentDeviation.maxDeviation > PRESENTATION_METRIC_EPSILON
+    || ringAnchoredHypervalentDeviation.totalDeviation > PRESENTATION_METRIC_EPSILON
+    || hasHypervalentAngleTidyNeed(layoutGraph, coords, {
+      angleThreshold: PRESENTATION_METRIC_EPSILON,
+      ringAnchoredAngleThreshold: PRESENTATION_METRIC_EPSILON
+    })
+  ) {
+    return true;
+  }
+
+  return (
+    hasOutstandingRingPresentationNeed(layoutGraph, {
+      coords,
+      audit: placementStage.audit,
+      presentationPenalty,
+      terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation
+    })
+    || hasTerminalAlkeneContinuationCandidate(layoutGraph, coords)
+  );
+}
+
+function shouldUseCleanPlacementFastPath(layoutGraph, placementStage, familySummary, policy, normalizedOptions) {
+  return (
+    layoutGraph._hasStereoTargets !== true
+    && normalizedOptions.existingCoords.size === 0
+    && normalizedOptions.fixedCoords.size === 0
+    && placementStage.coords instanceof Map
+    && CLEAN_PLACEMENT_FAST_PATH_SUPPORTED_PRIMARY_FAMILIES.has(familySummary.primaryFamily)
+    && hasOnlyCleanPlacementFastPathHooks(policy)
+    && hasCleanPlacementFastPathAudit(placementStage.audit)
+    && !hasCleanPlacementFastPathPresentationNeed(
+      layoutGraph,
+      placementStage.coords,
+      placementStage,
+      normalizedOptions.bondLength
+    )
+  );
+}
+
+function buildCleanPlacementFastPathTelemetry(placementStage, selectedGeometryCheckpointStage) {
+  const stageResults = new Map([
+    ['placement', placementStage],
+    ['selectedGeometryCheckpoint', selectedGeometryCheckpointStage]
+  ]);
+  const stageExecutions = new Map([
+    [
+      'placement',
+      createStageExecutionEntry('placement', null, {
+        ran: true,
+        materialized: true,
+        accepted: true,
+        audit: placementStage.audit ?? null
+      })
+    ]
+  ]);
+
+  stageExecutions.set('coreGeometryCleanup', createStageExecutionEntry('coreGeometryCleanup', null));
+  stageExecutions.set(
+    'selectedGeometryCheckpoint',
+    createStageExecutionEntry('selectedGeometryCheckpoint', 'best', {
+      ran: true,
+      materialized: true,
+      accepted: true,
+      won: true,
+      audit: selectedGeometryCheckpointStage.audit ?? null
+    })
+  );
+
+  for (const [stageName, parentStage] of CLEAN_PLACEMENT_FAST_PATH_SKIPPED_STAGES) {
+    if (stageExecutions.has(stageName)) {
+      continue;
+    }
+    stageExecutions.set(stageName, createStageExecutionEntry(stageName, parentStage));
+  }
+
+  return buildCleanupTelemetry(stageExecutions, stageResults, 'placement', selectedGeometryCheckpointStage.name);
+}
+
+function buildCleanPlacementFastPathResult(layoutGraph, placementStage, includeStageTelemetry) {
+  const selectedGeometryCheckpointStage = {
+    name: 'selectedGeometryCheckpoint',
+    coords: placementStage.coords,
+    stereo: layoutGraph._emptyStereoSummary,
+    audit: placementStage.audit ?? null
+  };
+  const cleanupTelemetry = includeStageTelemetry
+    ? buildCleanPlacementFastPathTelemetry(placementStage, selectedGeometryCheckpointStage)
+    : null;
+
+  return {
+    coords: placementStage.coords,
+    passes: 0,
+    improvement: 0,
+    overlapMoves: 0,
+    labelNudges: 0,
+    symmetrySnaps: 0,
+    junctionSnaps: 0,
+    stereoReflections: 0,
+    postHookNudges: 0,
+    finalStageStereo: selectedGeometryCheckpointStage.stereo,
+    finalStageAudit: selectedGeometryCheckpointStage.audit,
+    finalStageName: selectedGeometryCheckpointStage.name,
+    cleanPlacementFastPath: true,
+    ...(includeStageTelemetry
+      ? {
+          placementAudit: placementStage.audit,
+          stageTelemetry: buildStageTelemetryFromCleanupTelemetry(cleanupTelemetry),
+          cleanupTelemetry
+        }
+      : {})
+  };
 }
 
 /**
@@ -1330,6 +1801,12 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     coords: placement.coords,
     audit: auditCleanupStage(layoutGraph, placement.coords, placement, normalizedOptions.bondLength)
   };
+  if (shouldUseCleanPlacementFastPath(layoutGraph, placementStage, familySummary, policy, normalizedOptions)) {
+    if (timingState) {
+      timingState.cleanupMs = nowMs() - cleanupStart;
+    }
+    return buildCleanPlacementFastPathResult(layoutGraph, placementStage, includeStageTelemetry);
+  }
   const cleanupContext = {
     layoutGraph,
     placement,
@@ -1559,6 +2036,7 @@ function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, p
       cleanupJunctionSnaps: cleanup.junctionSnaps,
       cleanupStereoReflections: cleanup.stereoReflections,
       cleanupPostHookNudges: cleanup.postHookNudges,
+      cleanupFastPath: cleanup.cleanPlacementFastPath === true,
       audit,
       ...(placementTelemetry
         ? {
@@ -1966,6 +2444,30 @@ export function runPipeline(molecule, options = {}) {
         nudges: finalTerminalMultipleBondFanRetouch.nudges,
         maxDeviationBefore: finalTerminalMultipleBondFanRetouch.maxDeviationBefore,
         maxDeviationAfter: finalTerminalMultipleBondFanRetouch.maxDeviationAfter
+      }
+    );
+  }
+  const finalTerminalCarbonLeafContactRetouch = maybeRetouchFinalTerminalCarbonLeafSevereContacts(
+    layoutGraph,
+    finalCoords,
+    placement,
+    normalizedOptions.bondLength
+  );
+  if (finalTerminalCarbonLeafContactRetouch.changed) {
+    const currentAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    finalCoords = finalTerminalCarbonLeafContactRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.(
+      'Final Terminal Carbon Leaf Retouch',
+      'Terminal carbon leaves rotated out of residual severe contacts without moving ring atoms.',
+      cloneCoords(finalCoords),
+      {
+        movedAtomCount: finalTerminalCarbonLeafContactRetouch.movedAtomIds.length,
+        severeOverlapCountBefore: currentAudit.severeOverlapCount,
+        severeOverlapCountAfter: finalTerminalCarbonLeafContactRetouch.audit?.severeOverlapCount ?? null
       }
     );
   }

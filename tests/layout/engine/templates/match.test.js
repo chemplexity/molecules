@@ -142,6 +142,13 @@ describe('layout/engine/templates/match', () => {
     const peryleneMatch = findTemplateMatch(peryleneGraph, buildRingCandidate(peryleneGraph, peryleneGraph.ringSystems[0], 'fused'));
     assert.equal(peryleneMatch.id, 'perylene');
 
+    const aminoBromoDiazaKetoneGraph = createLayoutGraph(parseSMILES('Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br'), { suppressH: true });
+    const aminoBromoDiazaKetoneMatch = findTemplateMatch(
+      aminoBromoDiazaKetoneGraph,
+      buildRingCandidate(aminoBromoDiazaKetoneGraph, aminoBromoDiazaKetoneGraph.ringSystems[0], 'fused')
+    );
+    assert.equal(aminoBromoDiazaKetoneMatch.id, 'amino-bromo-diaza-ketone-pericondensed-core');
+
     const fluoreneGraph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
     const fluoreneMatch = findTemplateMatch(fluoreneGraph, buildRingCandidate(fluoreneGraph, fluoreneGraph.ringSystems[0], 'fused'));
     assert.equal(fluoreneMatch.id, 'fluorene');
@@ -540,6 +547,19 @@ describe('layout/engine/templates/match', () => {
     const graph = createLayoutGraph(parseSMILES(String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'bridged-pyrrolizidine-dione-core');
+  });
+
+  it('matches the bridged diketone tricyclo cage scaffold only with both carbonyls', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C1CC2C(=O)C3CCC12C3'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'bridged-diketone-tricyclo-core');
+
+    const withoutSecondCarbonylGraph = createLayoutGraph(parseSMILES('O=C1CC2CC3CCC12C3'), { suppressH: true });
+    const withoutSecondCarbonylMatch = findTemplateMatch(
+      withoutSecondCarbonylGraph,
+      buildRingCandidate(withoutSecondCarbonylGraph, withoutSecondCarbonylGraph.ringSystems[0], 'bridged')
+    );
+    assert.notEqual(withoutSecondCarbonylMatch?.id, 'bridged-diketone-tricyclo-core');
   });
 
   it('matches the amino oxaza tricyclo cage scaffold too', () => {

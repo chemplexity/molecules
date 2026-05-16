@@ -120,6 +120,24 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(new Set(peryleneXs.map(value => Number(value.toFixed(6)))).size, 8);
     assert.equal(new Set(peryleneYs.map(value => Number(value.toFixed(6)))).size, 6);
 
+    const aminoBromoDiazaKetoneGraph = createLayoutGraph(parseSMILES('Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br'), { suppressH: true });
+    const aminoBromoDiazaKetoneCoords = placeTemplateCoords(
+      aminoBromoDiazaKetoneGraph,
+      'amino-bromo-diaza-ketone-pericondensed-core',
+      aminoBromoDiazaKetoneGraph.ringSystems[0].atomIds,
+      aminoBromoDiazaKetoneGraph.options.bondLength
+    );
+    const aminoBromoDiazaKetoneAngles = aminoBromoDiazaKetoneGraph.rings.flatMap(ring => ringAngles(aminoBromoDiazaKetoneCoords, ring.atomIds));
+    const aminoBromoDiazaKetoneLengths = aminoBromoDiazaKetoneGraph.rings.flatMap(ring => ring.atomIds.map((atomId, index) => (
+      distance(aminoBromoDiazaKetoneCoords.get(atomId), aminoBromoDiazaKetoneCoords.get(ring.atomIds[(index + 1) % ring.atomIds.length]))
+    )));
+    const aminoBromoDiazaKetoneXs = [...aminoBromoDiazaKetoneCoords.values()].map(position => position.x);
+    const aminoBromoDiazaKetoneYs = [...aminoBromoDiazaKetoneCoords.values()].map(position => position.y);
+    assert.equal(aminoBromoDiazaKetoneCoords.size, 21);
+    assert.ok(Math.max(...aminoBromoDiazaKetoneXs) - Math.min(...aminoBromoDiazaKetoneXs) > Math.max(...aminoBromoDiazaKetoneYs) - Math.min(...aminoBromoDiazaKetoneYs));
+    assert.ok(Math.max(...aminoBromoDiazaKetoneAngles.map(angle => Math.abs(angle - 120))) < 1e-9);
+    assert.ok(Math.max(...aminoBromoDiazaKetoneLengths.map(length => Math.abs(length - aminoBromoDiazaKetoneGraph.options.bondLength))) < 1e-9);
+
     const fluoreneGraph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
     const fluoreneCoords = placeTemplateCoords(fluoreneGraph, 'fluorene', fluoreneGraph.ringSystems[0].atomIds, fluoreneGraph.options.bondLength);
     assert.equal(fluoreneCoords.size, 13);
@@ -795,6 +813,30 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C21').y < coords.get('C19').y);
     assert.ok(coords.get('C24').y < coords.get('C11').y);
     assert.ok(Math.min(...pyrrolizidineAngles) > 100);
+  });
+
+  it('places the bridged diketone tricyclo cage without flattening a five-ring bridge', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C1CC2C(=O)C3CCC12C3'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'bridged-diketone-tricyclo-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const bridgedFiveAngles = ringAngles(coords, ['C8', 'C9', 'C10', 'C11', 'C7']);
+    const diketoneFiveAngles = ringAngles(coords, ['C7', 'C11', 'C10', 'C4', 'C5']);
+    const cyclobutaneAngles = ringAngles(coords, ['C10', 'C4', 'C3', 'C2']);
+
+    assert.equal(coords.size, 9);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(Math.min(...bridgedFiveAngles) > 45);
+    assert.ok(Math.max(...bridgedFiveAngles) < 125);
+    assert.ok(Math.min(...diketoneFiveAngles) > 100);
+    assert.ok(Math.max(...diketoneFiveAngles) < 112);
+    assert.ok(Math.min(...cyclobutaneAngles) > 85);
+    assert.ok(Math.max(...cyclobutaneAngles) < 95);
   });
 
   it('places the acetal amino decalin cage without flattening the shared bridge path', () => {
