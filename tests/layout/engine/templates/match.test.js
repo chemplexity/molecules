@@ -598,6 +598,26 @@ describe('layout/engine/templates/match', () => {
     assert.notEqual(withoutImineMatch?.id, 'imino-thiazole-oxaza-tricyclo-core');
   });
 
+  it('matches hydroxy thiazole cyclopropyl pentacycles only with hydroxy and formyl context', () => {
+    const graph = createLayoutGraph(parseSMILES('CC12C3C4C=CC1(O)C1=NSC4=C1C23C=O'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'fused'));
+    assert.equal(match.id, 'hydroxy-thiazole-cyclopropyl-pentacycle-core');
+
+    const withoutHydroxyGraph = createLayoutGraph(parseSMILES('CC12C3C4C=CC1C1=NSC4=C1C23C=O'), { suppressH: true });
+    const withoutHydroxyMatch = findTemplateMatch(withoutHydroxyGraph, buildRingCandidate(withoutHydroxyGraph, withoutHydroxyGraph.ringSystems[0], 'fused'));
+    assert.notEqual(withoutHydroxyMatch?.id, 'hydroxy-thiazole-cyclopropyl-pentacycle-core');
+  });
+
+  it('matches sulfonyl aza cycloheptene cyclopropane cages only with sulfone and methoxy exits', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'fused'));
+    assert.equal(match.id, 'sulfonyl-aza-cycloheptene-cyclopropane-core');
+
+    const withoutMethoxyGraph = createLayoutGraph(parseSMILES('CCC12C3C4=CCCC(CN1S4(=O)=O)C23'), { suppressH: true });
+    const withoutMethoxyMatch = findTemplateMatch(withoutMethoxyGraph, buildRingCandidate(withoutMethoxyGraph, withoutMethoxyGraph.ringSystems[0], 'fused'));
+    assert.notEqual(withoutMethoxyMatch?.id, 'sulfonyl-aza-cycloheptene-cyclopropane-core');
+  });
+
   it('matches amino cyano thiazole oxatricyclo cores only with amino and geminal carbon context', () => {
     const graph = createLayoutGraph(parseSMILES('CC12CCC(C3=NSC=C3O1)C(C)(C#N)C2N'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
@@ -747,6 +767,15 @@ describe('layout/engine/templates/match', () => {
     );
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'oxygen-bridged-bisindole-lactam-core');
+  });
+
+  it('matches the indoline aza bridged heptacycle scaffold too', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'),
+      { suppressH: true }
+    );
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'indoline-aza-bridged-heptacycle-core');
   });
 
   it('matches the porphyrin core as a macrocycle template and can promote it over a bridged heuristic', () => {

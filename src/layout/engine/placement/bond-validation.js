@@ -16,7 +16,7 @@ function isInternalBond(bond, atomIdSet) {
 /**
  * Resolves the validation class implied by a matched template.
  * @param {string|null} templateId - Matched template ID.
- * @returns {'planar'|'bridged'} Validation class for the template.
+ * @returns {'planar'|'bridged'|'haptic'} Validation class for the template.
  */
 function templateValidationClass(templateId) {
   const template = templateId ? getTemplateById(templateId) : null;
@@ -34,7 +34,7 @@ function templateValidationClass(templateId) {
  * @param {string} family - Resolved placement family.
  * @param {string|null|undefined} placementMode - Placement mode returned by the family layouter.
  * @param {string|null} [templateId] - Matched template ID when available.
- * @returns {'planar'|'bridged'} Validation class for the placed bonds.
+ * @returns {'planar'|'bridged'|'haptic'} Validation class for the placed bonds.
  */
 export function resolvePlacementValidationClass(family, placementMode, templateId = null) {
   if (placementMode === 'projected-kamada-kawai' || placementMode === 'kamada-kawai-cage') {
@@ -56,10 +56,10 @@ export function resolvePlacementValidationClass(family, placementMode, templateI
  * Assigns one validation class to every bond internal to the requested atom set.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Iterable<string>} atomIds - Atom IDs whose internal bonds should be tagged.
- * @param {'planar'|'bridged'} validationClass - Validation class to assign.
- * @param {Map<string, 'planar'|'bridged'>} [targetMap] - Optional output map to update.
+ * @param {'planar'|'bridged'|'haptic'} validationClass - Validation class to assign.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} [targetMap] - Optional output map to update.
  * @param {{overwrite?: boolean}} [options] - Assignment options.
- * @returns {Map<string, 'planar'|'bridged'>} Updated validation-class map.
+ * @returns {Map<string, 'planar'|'bridged'|'haptic'>} Updated validation-class map.
  */
 export function assignBondValidationClass(layoutGraph, atomIds, validationClass, targetMap = new Map(), options = {}) {
   const atomIdSet = new Set(atomIds);
@@ -78,10 +78,10 @@ export function assignBondValidationClass(layoutGraph, atomIds, validationClass,
 
 /**
  * Merges one bond-validation map into another.
- * @param {Map<string, 'planar'|'bridged'>} targetMap - Destination validation-class map.
- * @param {Map<string, 'planar'|'bridged'>|null|undefined} sourceMap - Source validation-class map.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} targetMap - Destination validation-class map.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>|null|undefined} sourceMap - Source validation-class map.
  * @param {{overwrite?: boolean}} [options] - Merge options.
- * @returns {Map<string, 'planar'|'bridged'>} Updated destination map.
+ * @returns {Map<string, 'planar'|'bridged'|'haptic'>} Updated destination map.
  */
 export function mergeBondValidationClasses(targetMap, sourceMap, options = {}) {
   if (!sourceMap) {

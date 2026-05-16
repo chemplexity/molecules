@@ -1,7 +1,23 @@
 # Change Log
 
+## 2026-05-16
+
+- Treat large monocyclic macrocycle E/Z mismatches as unsupported unless already depicted correctly, avoiding destructive ring-reflection fallbacks.
+- Apply cyclic E/Z support guards to unsaturated lactone layouts while preserving supported acyclic alkene audits.
+- Apply cyclic E/Z support guards to fused epoxy lactone layouts so unsupported rescue failures stay audit-clean.
+- Apply cyclic E/Z support guards to large polyene macrocycles so unsupported rescue failures stay audit-clean.
+- Apply cyclic E/Z support guards to compact bridged cages so unsafe ring-tearing stereo rescues do not trigger fallback.
+- Treat mismatched fused macrocycle E/Z annotations as unsupported unless a template or seed already depicts them, avoiding unsafe ring-tearing stereo rescues.
+- Treat cyclic E/Z annotations in partial mixed macrocycle fragments as unsupported until the full ring system is placed, avoiding false stereo-contradiction audits.
+
 ## 2026-05-15
 
+- Add sulfonyl aza cycloheptene cage placement and final small-branch retouching so alkene-fused sulfone cages stay readable.
+- Add a hydroxy thiazole cyclopropyl pentacycle template so compact fused cages keep bridged-valid ring bonds and clean substituent readability.
+- Add an indoline aza bridged heptacycle template and preserve its clean mixed-root geometry so bridged alkaloids avoid collapsed ring bonds.
+- Route haptic iron cyclopentadienyl complexes through ligand-only ring placement so both five-membered rings stay regular.
+- Add an N-methyl amino diaza tricyclo template so compact aminal cages avoid folded cap bonds and keep separated ring lanes.
+- Add a final mixed acyl branch retouch so the bridged alkaloid upper carbonyl bond clears the neighboring aryl edge while preserving exact C8 and O38 angles.
 - Add a final terminal-carbon leaf contact retouch so WebKit clears the alkaloid C49/C54 methyl overlap without moving bridged ring atoms.
 - Prefer strict five- and six-member bridged ring geometry in mixed alkaloid cages, with a terminal carbon-chain retouch to keep explicit hydrogens clear.
 - Restore aromatic-to-tetravalent cage exits after mixed bridged regularization so the alkaloid C8 aryl fan stays 120/120/120 while the upper carbonyl clears C27.

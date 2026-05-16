@@ -6,7 +6,13 @@ import {
   measureDivalentContinuationDistortion,
   measureLayoutCost
 } from '../audit/invariants.js';
-import { actualAlkeneStereo, highestPriorityAlkeneSubstituentId, isSupportedAnnotatedDoubleBond, smallestQualifyingStereoRing } from './ez.js';
+import {
+  actualAlkeneStereo,
+  hasEnforceableCyclicEZContext,
+  highestPriorityAlkeneSubstituentId,
+  isSupportedAnnotatedDoubleBond,
+  smallestQualifyingStereoRing
+} from './ez.js';
 import { cloneCoords, rotateAround } from '../geometry/transforms.js';
 import { wrapAngle } from '../geometry/vec2.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
@@ -678,6 +684,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
       !bond.aromatic &&
       (bond.order ?? 1) === 2 &&
       isSupportedAnnotatedDoubleBond(layoutGraph, bond) &&
+      hasEnforceableCyclicEZContext(layoutGraph, coords, bond) &&
       (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
   );
 

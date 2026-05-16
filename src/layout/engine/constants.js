@@ -103,6 +103,14 @@ export const BRIDGED_VALIDATION = Object.freeze({
   maxSevereOverlapCount: 0
 });
 
+/** Relaxed validation for multi-center haptic metal-ligand depiction bonds. */
+export const HAPTIC_VALIDATION = Object.freeze({
+  minBondLengthFactor: 0.05,
+  maxBondLengthFactor: 2.1,
+  maxMeanDeviation: 1,
+  maxSevereOverlapCount: 0
+});
+
 /** Tuned Kamada-Kawai budgets for unmatched bridged/caged systems. */
 export const BRIDGED_KK_LIMITS = Object.freeze({
   threshold: 0.2,

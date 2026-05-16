@@ -65,4 +65,26 @@ describe('layout/engine/stereo/ez', () => {
     assert.equal(summary.checks[0].supported, false);
     assert.equal(summary.checks[0].ok, true);
   });
+
+  it('does not count cyclic E/Z contradictions for incomplete ring-system coordinates', () => {
+    const graph = createLayoutGraph(
+      parseSMILES(String.raw`CC[C@H](C)[C@@H]1O[C@]2(CC[C@@H]1C)C[C@H]3C[C@H](C\C=C(/C)\[C@@H](O[C@H]4C[C@H](OC)[C@H](O[C@H]5C[C@H](OC)[C@H](O)[C@H](C)O5)[C@H](C)O4)[C@@H](C)\C=C\C=C6CO[C@@H]7[C@@H](O)C(=C[C@H](C(=O)O3)[C@@]67O)C)O2`),
+      { suppressH: true, bondLength: 1.5 }
+    );
+    const summary = inspectEZStereo(
+      graph,
+      new Map([
+        ['C21', { x: 0, y: 1 }],
+        ['C22', { x: 0, y: 0 }],
+        ['C23', { x: 1.5, y: 0 }],
+        ['C25', { x: 1.5, y: 1 }]
+      ])
+    );
+    const partiallyPlacedCheck = summary.checks.find(check => check.bondId === '9');
+
+    assert.equal(summary.violationCount, 0);
+    assert.equal(partiallyPlacedCheck.actual, 'Z');
+    assert.equal(partiallyPlacedCheck.supported, false);
+    assert.equal(partiallyPlacedCheck.ok, true);
+  });
 });

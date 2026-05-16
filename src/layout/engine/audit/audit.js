@@ -24,7 +24,7 @@ function isHeavyAtomOverlap(layoutGraph, overlap) {
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {object} [options] - Audit options.
  * @param {number} [options.bondLength] - Target bond length.
- * @param {Map<string, 'planar'|'bridged'>} [options.bondValidationClasses] - Per-bond validation classes.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} [options.bondValidationClasses] - Per-bond validation classes.
  * @param {object} [options.stereo] - Stereo summary produced by the stereo phase.
  * @returns {{ok: boolean, severeOverlapCount: number, visibleHeavyBondCrossingCount: number, labelOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean, ringSubstituentReadabilityFailureCount: number}} Audit summary.
  */

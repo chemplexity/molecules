@@ -16,7 +16,7 @@ import {
 } from '../placement/branch-placement/angle-selection.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
 import { describePathLikeIsolatedRingChain } from '../topology/isolated-ring-chain.js';
-import { atomPairKey, AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
+import { atomPairKey, AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, HAPTIC_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
 const SUBTREE_BOND_CROWDING_WEIGHT = 25;
@@ -44,10 +44,13 @@ function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
 
 /**
  * Returns the bond-validation settings for the requested validation class.
- * @param {'planar'|'bridged'|undefined} validationClass - Bond validation class.
+ * @param {'planar'|'bridged'|'haptic'|undefined} validationClass - Bond validation class.
  * @returns {{minBondLengthFactor: number, maxBondLengthFactor: number, maxMeanDeviation: number, maxSevereOverlapCount: number}} Validation settings.
  */
 function validationSettingsForClass(validationClass) {
+  if (validationClass === 'haptic') {
+    return HAPTIC_VALIDATION;
+  }
   return validationClass === 'bridged' ? BRIDGED_VALIDATION : AUDIT_PLANAR_VALIDATION;
 }
 
@@ -1848,7 +1851,7 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
- * @param {{bondValidationClasses?: Map<string, 'planar'|'bridged'>}} [options] - Bond-validation options.
+ * @param {{bondValidationClasses?: Map<string, 'planar'|'bridged'|'haptic'>}} [options] - Bond-validation options.
  * @returns {{sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}} Bond-length statistics.
  */
 export function measureBondLengthDeviation(layoutGraph, coords, bondLength, options = {}) {
@@ -2587,7 +2590,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
  * @param {object} [options] - State-measurement options.
  * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlaps] - Optional precomputed severe overlaps.
  * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid for overlap lookup.
- * @param {Map<string, 'planar'|'bridged'>} [options.bondValidationClasses] - Optional bond-validation classes.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} [options.bondValidationClasses] - Optional bond-validation classes.
  * @returns {{overlaps: Array<{firstAtomId: string, secondAtomId: string, distance: number}>, overlapCount: number, overlapPenalty: number, bondDeviation: {sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}, cost: number}} Reduced overlap-focused layout state.
  */
 export function measureOverlapState(layoutGraph, coords, bondLength, options = {}) {

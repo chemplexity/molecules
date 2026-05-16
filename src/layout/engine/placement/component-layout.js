@@ -552,7 +552,7 @@ function rescueLargeComponentSlicePlacement(layoutGraph, component, familyPlacem
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} component - Connected-component descriptor.
  * @param {object[]} [macrocycleRings] - Cached macrocycle ring descriptors.
- * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'>, displayAssignments?: Array<{bondId: string, type: 'wedge'|'dash', centerId: string}>, cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>}} Component placement result.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'|'haptic'>, displayAssignments?: Array<{bondId: string, type: 'wedge'|'dash', centerId: string}>, cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>}} Component placement result.
  */
 function layoutComponent(layoutGraph, component, macrocycleRings = []) {
   if (isLargeComponent(layoutGraph, component)) {

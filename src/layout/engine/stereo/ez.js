@@ -2,6 +2,8 @@
 
 import { assignCIPRanks } from '../../../core/Molecule.js';
 
+const MAX_GENERIC_CYCLIC_EZ_RESCUE_RING_SIZE = 11;
+
 function heavyNeighborIds(molecule, atomId, excludedAtomId) {
   const atom = molecule.atoms.get(atomId);
   if (!atom) {
@@ -89,6 +91,91 @@ export function smallestQualifyingStereoRing(layoutGraph, bond) {
  */
 export function isSupportedAnnotatedDoubleBond(layoutGraph, bond) {
   return !bond.inRing || smallestQualifyingStereoRing(layoutGraph, bond) != null;
+}
+
+/**
+ * Returns whether a cyclic annotated double bond has a complete placed ring
+ * system context. Partial mixed layouts can place the four local alkene atoms
+ * while omitting adjacent fused-ring atoms; those fragments are not stable
+ * enough to audit as enforceable cyclic `E/Z` depictions.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} bond - Layout bond descriptor.
+ * @returns {boolean} True when the bond has enough coordinates for cyclic `E/Z` audit/enforcement.
+ */
+export function hasCompleteCyclicEZContext(layoutGraph, coords, bond) {
+  if (!bond.inRing) {
+    return true;
+  }
+
+  const firstRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.a);
+  const secondRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.b);
+  const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId
+    ? layoutGraph.ringSystemById?.get(firstRingSystemId)
+    : null;
+  if (ringSystem) {
+    return ringSystem.atomIds.every(atomId => coords.has(atomId));
+  }
+
+  const ring = smallestQualifyingStereoRing(layoutGraph, bond);
+  return ring ? ring.atomIds.every(atomId => coords.has(atomId)) : false;
+}
+
+/**
+ * Returns whether a cyclic annotated double bond can be rescued by the generic
+ * reflection strategy. Fused macrocycle systems and larger monocyclic
+ * macrocycles need dedicated templates or a correct seed; reflecting a side of
+ * those systems can satisfy `E/Z` only by tearing ring bonds open.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} bond - Layout bond descriptor.
+ * @returns {boolean} True when generic cyclic `E/Z` enforcement is safe to attempt.
+ */
+export function hasEnforceableCyclicEZContext(layoutGraph, coords, bond) {
+  if (!bond.inRing) {
+    return true;
+  }
+  if (!hasCompleteCyclicEZContext(layoutGraph, coords, bond)) {
+    return false;
+  }
+
+  const firstRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.a);
+  const secondRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.b);
+  const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId
+    ? layoutGraph.ringSystemById?.get(firstRingSystemId)
+    : null;
+  if ((ringSystem?.ringIds?.length ?? 1) > 1) {
+    return false;
+  }
+
+  const ring = smallestQualifyingStereoRing(layoutGraph, bond);
+  return ring != null && ring.size <= MAX_GENERIC_CYCLIC_EZ_RESCUE_RING_SIZE;
+}
+
+/**
+ * Returns whether an annotated double bond should count as an auditable `E/Z`
+ * check for the current coordinates. Fused and larger macrocyclic systems that
+ * already depict the requested geometry remain auditable, but mismatched
+ * systems are left unsupported unless the generic rescuer can safely operate on
+ * them.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} bond - Layout bond descriptor.
+ * @param {'E'|'Z'|null} targetStereo - Requested stereodescriptor.
+ * @param {'E'|'Z'|null} actualStereo - Coordinate-implied stereodescriptor.
+ * @returns {boolean} True when the check should contribute to supported `E/Z` audit counts.
+ */
+export function hasAuditableEZContext(layoutGraph, coords, bond, targetStereo, actualStereo) {
+  if (!isSupportedAnnotatedDoubleBond(layoutGraph, bond)) {
+    return false;
+  }
+  if (!bond.inRing) {
+    return true;
+  }
+  if (targetStereo != null && actualStereo != null && targetStereo === actualStereo) {
+    return true;
+  }
+  return hasEnforceableCyclicEZContext(layoutGraph, coords, bond);
 }
 
 /**
@@ -187,8 +274,8 @@ export function inspectEZStereo(layoutGraph, coords) {
     if (target == null) {
       continue;
     }
-    const supported = isSupportedAnnotatedDoubleBond(layoutGraph, bond);
     const actual = actualAlkeneStereo(layoutGraph, coords, bond);
+    const supported = hasAuditableEZContext(layoutGraph, coords, bond, target, actual);
     if (actual != null) {
       resolvedBondCount++;
     }

@@ -969,6 +969,56 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.min(...cyclopropaneAngles) > 40);
   });
 
+  it('places the hydroxy thiazole cyclopropyl pentacycle with clean compact core bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('CC12C3C4C=CC1(O)C1=NSC4=C1C23C=O'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'hydroxy-thiazole-cyclopropyl-pentacycle-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const cyclohexeneAngles = ringAngles(coords, ['C6', 'C7', 'C2', 'C3', 'C4', 'C5']);
+    const cyclopropaneAngles = ringAngles(coords, ['C14', 'C3', 'C2']);
+
+    assert.equal(coords.size, 12);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.38);
+    assert.ok(Math.min(...cyclohexeneAngles) > 50);
+    assert.ok(Math.max(...cyclohexeneAngles) < 150);
+    assert.ok(Math.min(...cyclopropaneAngles) > 50);
+    assert.ok(Math.max(...cyclopropaneAngles) < 75);
+  });
+
+  it('places sulfonyl aza cycloheptene cyclopropane cages with readable alkene ring geometry', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'sulfonyl-aza-cycloheptene-cyclopropane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const cyclohepteneAngles = ringAngles(coords, ['C6', 'C7', 'C8', 'C9', 'C15', 'C4', 'C5']);
+    const azaFiveRingAngles = ringAngles(coords, ['N11', 'C10', 'C9', 'C15', 'C3']);
+    const sulfoneFiveRingAngles = ringAngles(coords, ['S12', 'N11', 'C3', 'C4', 'C5']);
+    const cyclopropaneAngles = ringAngles(coords, ['C15', 'C4', 'C3']);
+
+    assert.equal(coords.size, 11);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.41);
+    assert.ok(Math.min(...cyclohepteneAngles) > 90, `expected the alkene seven-ring to stay open, got ${cyclohepteneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cyclohepteneAngles) < 155, `expected the alkene seven-ring to avoid flattening, got ${cyclohepteneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...azaFiveRingAngles) > 50, `expected the aza five-ring to stay open, got ${azaFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...azaFiveRingAngles) < 156, `expected the aza five-ring to avoid flattening, got ${azaFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...sulfoneFiveRingAngles) > 50, `expected the sulfone five-ring to stay open, got ${sulfoneFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...sulfoneFiveRingAngles) < 156, `expected the sulfone five-ring to avoid flattening, got ${sulfoneFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...cyclopropaneAngles) > 54, `expected the cyclopropane cap to stay triangular, got ${cyclopropaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cyclopropaneAngles) < 72, `expected the cyclopropane cap to avoid stretching, got ${cyclopropaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
   it('places the aza-annulene cyclohexadiene core with a regular six-member ring', () => {
     const graph = createLayoutGraph(parseSMILES('CCC1=NC(N)=CC(C)=CC=C2NC=CC1=C2'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'aza-annulene-cyclohexadiene-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -1130,6 +1180,41 @@ describe('layout/engine/templates/placement', () => {
       assert.ok(Math.min(...lengths) >= graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor - 1e-6);
       assert.ok(Math.max(...lengths) <= graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor + 1e-6);
     }
+  });
+
+  it('places N-methyl amino diaza tricyclo cages with separated ring lanes', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1CC2CC(C)(N)CC11CNC21'), { suppressH: true });
+    const rootRingSystem = graph.ringSystems[0];
+    const coords = placeTemplateCoords(graph, 'n-methyl-amino-diaza-tricyclo-core', rootRingSystem.atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, rootRingSystem.atomIds, 'bridged')
+    });
+    const ringAtomIds = [
+      ['C9', 'C10', 'C13', 'C4', 'C5', 'C6'],
+      ['C10', 'C13', 'C4', 'C3', 'N2'],
+      ['C13', 'N12', 'C11', 'C10']
+    ];
+
+    assert.equal(coords.size, 10);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+
+    const sixRingAngles = ringAngles(coords, ringAtomIds[0]);
+    assert.ok(Math.min(...sixRingAngles) > 110, `expected six-ring lane to stay structured, got ${sixRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...sixRingAngles) < 135, `expected six-ring lane to avoid flattening, got ${sixRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+
+    const fiveRingAngles = ringAngles(coords, ringAtomIds[1]);
+    const fiveRingLengths = ringAtomIds[1].map((atomId, index) => distance(coords.get(atomId), coords.get(ringAtomIds[1][(index + 1) % ringAtomIds[1].length])));
+    assert.ok(Math.min(...fiveRingAngles) > 55, `expected diaza lane to stay open, got ${fiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...fiveRingAngles) < 135, `expected diaza lane to avoid flattening, got ${fiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...fiveRingLengths) < graph.options.bondLength * 1.25, `expected diaza lane bonds to stay bounded, got ${fiveRingLengths.map(length => length.toFixed(3)).join(', ')}`);
+
+    const fourRingAngles = ringAngles(coords, ringAtomIds[2]);
+    assert.ok(Math.min(...fourRingAngles) > 85, `expected aminal cap to stay square-like, got ${fourRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...fourRingAngles) < 96, `expected aminal cap to avoid flattening, got ${fourRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
   it('places substituted bicyclo[2.1.1]hexane cages without crossing cap bonds', () => {
@@ -1499,6 +1584,33 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.min(...upperIndoleAngles) > 103);
     assert.ok(Math.max(...upperIndoleAngles) < 116);
     assert.ok(coords.get('C4').y < coords.get('O13').y, 'expected the small oxygen bridge to leave the ester-bearing atom on the exterior face');
+  });
+
+  it('places the indoline aza bridged heptacycle core without collapsed bridge bonds', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'),
+      { suppressH: true }
+    );
+    const rootRingSystem = graph.ringSystems[0];
+    const coords = placeTemplateCoords(graph, 'indoline-aza-bridged-heptacycle-core', rootRingSystem.atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, rootRingSystem.atomIds, 'bridged')
+    });
+    const minReadableBondLength = graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor;
+    const maxReadableBondLength = graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor;
+    const ringBondLengths = [...graph.bonds.values()]
+      .filter(bond => bond.inRing && rootRingSystem.atomIds.includes(bond.a) && rootRingSystem.atomIds.includes(bond.b))
+      .map(bond => distance(coords.get(bond.a), coords.get(bond.b)));
+
+    assert.equal(coords.size, 19);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(distance(coords.get('C8'), coords.get('N28')) > minReadableBondLength);
+    for (const ringBondLength of ringBondLengths) {
+      assert.ok(ringBondLength >= minReadableBondLength && ringBondLength <= maxReadableBondLength);
+    }
   });
 
   it('places the oxaza morphinan core without malformed bridged ring bonds', () => {

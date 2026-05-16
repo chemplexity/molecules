@@ -63,6 +63,7 @@ const AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS = new Set([
   'amino-cyano-thiazole-oxatricyclo-core',
   'hydroxy-aminopropyl-cyclobutane-decalin-core',
   'hydroxy-keto-oxadiazole-bridged-core',
+  'indoline-aza-bridged-heptacycle-core',
   'oxime-lactam-cyclopentenyl-core'
 ]);
 const MAX_RING_LINKER_ATOMS = 3;
@@ -312,6 +313,12 @@ const TERMINAL_MULTIPLE_BOND_CROSSING_BRANCH_ROTATION_OFFSETS = Object.freeze(
     -(degrees * Math.PI) / 180
   ])
 );
+const TERMINAL_MULTIPLE_BOND_RING_CROSSING_BRANCH_ROTATION_OFFSETS = Object.freeze(
+  [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 75, 90, 120, 150, 180].flatMap(degrees => [
+    (degrees * Math.PI) / 180,
+    -(degrees * Math.PI) / 180
+  ])
+);
 const TERMINAL_MULTIPLE_BOND_CROSSING_MAX_BRANCH_HEAVY_ATOMS = 24;
 const RING_ATTACHED_LINEAR_MULTIPLE_CROWDING_ROTATION_OFFSETS = Object.freeze(
   [5, 10, 15, 20, 25, 30, 35, 40, 45, 60, 90, 120].flatMap(degrees => [
@@ -334,12 +341,73 @@ const TERMINAL_CARBONYL_RING_CONTACT_CENTER_DOWNSTREAM_ROTATIONS = Object.freeze
 const MIXED_ACYL_BRANCH_CONTACT_ANGLES = Object.freeze(
   Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12)
 );
+const MIXED_ACYL_BRANCH_RELAXED_CONTACT_BRANCH_OFFSETS = Object.freeze(
+  [20, 22.5, 25, 30, 35, 37.5, 40, 45, 50].flatMap(degrees => [
+    (degrees * Math.PI) / 180,
+    -(degrees * Math.PI) / 180
+  ])
+);
+const MIXED_ACYL_BRANCH_RELAXED_CONTACT_FAN_OFFSET_PAIRS = Object.freeze(
+  [
+    [0, -30],
+    [5, -25],
+    [7.5, -22.5],
+    [10, -20],
+    [12.5, -17.5],
+    [15, -15],
+    [17.5, -12.5],
+    [20, -10],
+    [22.5, -7.5],
+    [25, -5],
+    [30, 0],
+    [0, 30],
+    [-5, 25],
+    [-7.5, 22.5],
+    [-10, 20],
+    [-12.5, 17.5],
+    [-15, 15],
+    [-17.5, 12.5],
+    [-20, 10],
+    [-22.5, 7.5],
+    [-25, 5],
+    [-30, 0],
+    [40, 80],
+    [45, 75],
+    [45, 80],
+    [45, 85],
+    [45, 90],
+    [40, 85],
+    [35, 80],
+    [30, 75],
+    [-40, -80],
+    [-45, -75],
+    [-45, -80],
+    [-45, -85],
+    [-45, -90],
+    [-40, -85],
+    [-35, -80],
+    [-30, -75]
+  ].map(([terminalLeafDegrees, downstreamDegrees]) => [
+    (terminalLeafDegrees * Math.PI) / 180,
+    (downstreamDegrees * Math.PI) / 180
+  ])
+);
+const MIXED_ACYL_BRANCH_RELAXED_CONTACT_MAX_FAN_DEVIATION = Math.PI / 4;
 const MIXED_ACYL_BRANCH_CONTACT_MAX_BRANCH_HEAVY_ATOMS = 8;
 const MIXED_ACYL_BRANCH_CONTACT_MAX_PASSES = 3;
 const TERMINAL_CARBON_RING_LEAF_CROSSING_ESCAPE_OFFSETS = Object.freeze(
   Array.from({ length: 19 }, (_value, index) => ((index + 1) * Math.PI) / 36)
     .flatMap(offset => [offset, -offset])
 );
+const RING_SUBSTITUENT_BRANCH_CROSSING_ROTATION_OFFSETS = Object.freeze(
+  [10, 15, 20, 25, 30, 45, 60, 90, 120, 150, 180].flatMap(degrees => [
+    (degrees * Math.PI) / 180,
+    -(degrees * Math.PI) / 180
+  ])
+);
+const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS = 32;
+const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_DESCRIPTOR_COUNT = 3;
+const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_PAIR_DESCRIPTOR_COUNT = 2;
 const TERMINAL_CARBON_RING_LEAF_CROSSING_ATTACHED_SIDE_OFFSETS = Object.freeze([
   Math.PI / 36,
   -(Math.PI / 36),
@@ -2174,6 +2242,389 @@ function resolveTerminalCarbonChainLeafRingContacts(layoutGraph, coords, bondLen
     if (bestCandidate.coords !== coords) {
       overwriteCoordMap(coords, bestCandidate.coords);
       baseAudit = bestCandidate.audit;
+      changed = true;
+    }
+  }
+
+  return { changed };
+}
+
+function ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (
+    !anchorAtom
+    || anchorAtom.element === 'H'
+    || !rootAtom
+    || rootAtom.element === 'H'
+    || rootAtom.aromatic
+    || !coords.has(anchorAtomId)
+    || !coords.has(rootAtomId)
+    || !layoutGraph.ringAtomIdSet.has(anchorAtomId)
+    || layoutGraph.ringAtomIdSet.has(rootAtomId)
+  ) {
+    return null;
+  }
+
+  const branchBond = findLayoutBond(layoutGraph, anchorAtomId, rootAtomId);
+  if (!branchBond || branchBond.kind !== 'covalent' || branchBond.inRing || branchBond.aromatic || (branchBond.order ?? 1) !== 1) {
+    return null;
+  }
+
+  const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, anchorAtomId)
+    .filter(atomId => coords.has(atomId));
+  if (movedAtomIds.length === 0 || heavyAtomCountInIds(layoutGraph, movedAtomIds) > 4) {
+    return null;
+  }
+
+  return {
+    anchorAtomId,
+    rootAtomId,
+    movedAtomIds
+  };
+}
+
+function ringSubstituentBranchLocalCrossingCount(layoutGraph, coords, descriptor, bondLength) {
+  return countVisibleHeavyBondCrossings(layoutGraph, coords, {
+    bondLength,
+    focusAtomIds: [descriptor.anchorAtomId, descriptor.rootAtomId, ...descriptor.movedAtomIds]
+  });
+}
+
+function ringSubstituentBranchReadability(layoutGraph, coords, descriptor) {
+  return measureRingSubstituentReadability(layoutGraph, coords, {
+    focusAtomIds: new Set([descriptor.anchorAtomId])
+  });
+}
+
+function ringSubstituentBranchNeedsRelief(layoutGraph, coords, descriptor, bondLength) {
+  if (ringSubstituentBranchLocalCrossingCount(layoutGraph, coords, descriptor, bondLength) > 0) {
+    return true;
+  }
+  return ringSubstituentBranchReadability(layoutGraph, coords, descriptor).failingSubstituentCount > 0;
+}
+
+function ringSubstituentBranchTargetAngles(layoutGraph, coords, descriptor) {
+  const angles = [
+    ...directAttachmentLocalOutwardAngles(layoutGraph, coords, descriptor.anchorAtomId, descriptor.rootAtomId),
+    ...incidentRingOutwardAngles(layoutGraph, coords, descriptor.anchorAtomId)
+  ];
+  return angles.filter((candidateAngle, index) => (
+    angles.findIndex(existingAngle => angularDifference(existingAngle, candidateAngle) <= 1e-9) === index
+  ));
+}
+
+function ringSubstituentBranchCandidateScore(layoutGraph, coords, audit, descriptor, bondLength, totalMove = 0, rotationMagnitude = 0) {
+  const readability = ringSubstituentBranchReadability(layoutGraph, coords, descriptor);
+  return {
+    coords,
+    audit,
+    globalCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }),
+    localCrossingCount: ringSubstituentBranchLocalCrossingCount(layoutGraph, coords, descriptor, bondLength),
+    failingSubstituentCount: readability.failingSubstituentCount,
+    inwardSubstituentCount: readability.inwardSubstituentCount,
+    layoutCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, [
+      descriptor.anchorAtomId,
+      descriptor.rootAtomId,
+      ...descriptor.movedAtomIds
+    ]),
+    totalMove,
+    rotationMagnitude
+  };
+}
+
+function buildRingSubstituentBranchCandidateRecords(layoutGraph, coords, descriptor, bondLength) {
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  const candidateRecords = [];
+
+  for (const rotationOffset of RING_SUBSTITUENT_BRANCH_CROSSING_ROTATION_OFFSETS) {
+    candidateRecords.push({
+      coords: rotateAtomIdsAroundPivot(coords, descriptor.movedAtomIds, descriptor.anchorAtomId, rotationOffset),
+      rotationMagnitude: Math.abs(rotationOffset)
+    });
+  }
+  for (const targetAngle of ringSubstituentBranchTargetAngles(layoutGraph, coords, descriptor)) {
+    const anchorPosition = coords.get(descriptor.anchorAtomId);
+    if (!anchorPosition || !rootPosition) {
+      continue;
+    }
+    candidateRecords.push({
+      coords: translateLeafSubtreeToRingTarget(
+        layoutGraph,
+        coords,
+        descriptor.anchorAtomId,
+        descriptor.rootAtomId,
+        targetAngle,
+        bondLength,
+        distance(anchorPosition, rootPosition)
+      ),
+      rotationMagnitude: angularDifference(angleOf(sub(rootPosition, anchorPosition)), targetAngle)
+    });
+  }
+
+  return candidateRecords;
+}
+
+function ringSubstituentBranchAuditDoesNotRegress(candidateAudit, incumbentAudit) {
+  if (incumbentAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'visibleHeavyBondCrossingCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function compareRingSubstituentBranchCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok ? -1 : 1;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (candidate.globalCrossingCount !== incumbent.globalCrossingCount) {
+    return candidate.globalCrossingCount - incumbent.globalCrossingCount;
+  }
+  if (candidate.localCrossingCount !== incumbent.localCrossingCount) {
+    return candidate.localCrossingCount - incumbent.localCrossingCount;
+  }
+  if (candidate.failingSubstituentCount !== incumbent.failingSubstituentCount) {
+    return candidate.failingSubstituentCount - incumbent.failingSubstituentCount;
+  }
+  if (candidate.inwardSubstituentCount !== incumbent.inwardSubstituentCount) {
+    return candidate.inwardSubstituentCount - incumbent.inwardSubstituentCount;
+  }
+  if (Math.abs(candidate.layoutCost - incumbent.layoutCost) > IMPROVEMENT_EPSILON) {
+    return candidate.layoutCost - incumbent.layoutCost;
+  }
+  if (Math.abs(candidate.rotationMagnitude - incumbent.rotationMagnitude) > IMPROVEMENT_EPSILON) {
+    return candidate.rotationMagnitude - incumbent.rotationMagnitude;
+  }
+  return candidate.totalMove - incumbent.totalMove;
+}
+
+function totalRingSubstituentBranchMove(coords, candidateCoords, atomIds) {
+  return atomIds.reduce((sum, atomId) => {
+    const position = coords.get(atomId);
+    const candidatePosition = candidateCoords.get(atomId);
+    return position && candidatePosition ? sum + distance(position, candidatePosition) : sum;
+  }, 0);
+}
+
+function ringSubstituentBranchDescriptorsOverlap(firstDescriptor, secondDescriptor) {
+  const firstAtomIds = new Set([
+    firstDescriptor.anchorAtomId,
+    firstDescriptor.rootAtomId,
+    ...firstDescriptor.movedAtomIds
+  ]);
+  return [
+    secondDescriptor.anchorAtomId,
+    secondDescriptor.rootAtomId,
+    ...secondDescriptor.movedAtomIds
+  ].some(atomId => firstAtomIds.has(atomId));
+}
+
+/**
+ * Rotates small acyclic ring substituent branches away from visible scaffold
+ * crossings and inward ring faces. Terminal-leaf handlers cover one-atom
+ * branches; this handles short roots such as ethyl or methoxy substituents
+ * whose second bond can be the visible crossing. The search is final-retouch
+ * scoped: it only runs on compact layouts with a small number of failing
+ * branch descriptors, and every accepted move must not worsen audit counts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} bondValidationClasses - Current validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether any branch was adjusted.
+ */
+export function resolveRingSubstituentBranchCrossings(layoutGraph, coords, bondValidationClasses, bondLength) {
+  if (heavyAtomCountInIds(layoutGraph, [...coords.keys()]) > RING_SUBSTITUENT_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS) {
+    return { changed: false };
+  }
+
+  let changed = false;
+  let baseAudit = auditMixedPlacement(layoutGraph, { coords, bondValidationClasses }, bondLength);
+  const descriptors = [];
+
+  for (const anchorAtomId of coords.keys()) {
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const rootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const descriptor = ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtomId, rootAtomId);
+      if (descriptor && ringSubstituentBranchNeedsRelief(layoutGraph, coords, descriptor, bondLength)) {
+        descriptors.push(descriptor);
+      }
+    }
+  }
+
+  if (
+    descriptors.length === 0
+    || descriptors.length > RING_SUBSTITUENT_BRANCH_CROSSING_MAX_DESCRIPTOR_COUNT
+  ) {
+    return { changed: false };
+  }
+
+  descriptors.sort((firstDescriptor, secondDescriptor) => (
+    compareCanonicalIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId, layoutGraph.canonicalAtomRank)
+    || compareCanonicalIds(firstDescriptor.rootAtomId, secondDescriptor.rootAtomId, layoutGraph.canonicalAtomRank)
+  ));
+
+  for (const descriptor of descriptors) {
+    const incumbent = ringSubstituentBranchCandidateScore(layoutGraph, coords, baseAudit, descriptor, bondLength);
+    let bestCandidate = incumbent;
+
+    for (const candidateRecord of buildRingSubstituentBranchCandidateRecords(layoutGraph, coords, descriptor, bondLength)) {
+      if (!candidateRecord.coords) {
+        continue;
+      }
+      const candidateAudit = auditMixedPlacement(
+        layoutGraph,
+        { coords: candidateRecord.coords, bondValidationClasses },
+        bondLength
+      );
+      if (!ringSubstituentBranchAuditDoesNotRegress(candidateAudit, baseAudit)) {
+        continue;
+      }
+      const candidate = ringSubstituentBranchCandidateScore(
+        layoutGraph,
+        candidateRecord.coords,
+        candidateAudit,
+        descriptor,
+        bondLength,
+        totalRingSubstituentBranchMove(coords, candidateRecord.coords, descriptor.movedAtomIds),
+        candidateRecord.rotationMagnitude
+      );
+      if (
+        (
+          candidate.globalCrossingCount < incumbent.globalCrossingCount
+          || candidate.localCrossingCount < incumbent.localCrossingCount
+          || candidate.failingSubstituentCount < incumbent.failingSubstituentCount
+          || candidate.inwardSubstituentCount < incumbent.inwardSubstituentCount
+        )
+        && compareRingSubstituentBranchCandidates(candidate, bestCandidate) < 0
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+
+    if (bestCandidate.coords !== coords) {
+      overwriteCoordMap(coords, bestCandidate.coords);
+      baseAudit = bestCandidate.audit;
+      changed = true;
+    }
+  }
+
+  if (
+    !changed
+    && descriptors.length > 1
+    && descriptors.length <= RING_SUBSTITUENT_BRANCH_CROSSING_MAX_PAIR_DESCRIPTOR_COUNT
+  ) {
+    const incumbent = {
+      coords,
+      audit: baseAudit,
+      globalCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }),
+      failingSubstituentCount: baseAudit.ringSubstituentReadabilityFailureCount ?? 0,
+      inwardSubstituentCount: baseAudit.inwardRingSubstituentCount ?? 0,
+      layoutCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, descriptors.flatMap(descriptor => [
+        descriptor.anchorAtomId,
+        descriptor.rootAtomId,
+        ...descriptor.movedAtomIds
+      ])),
+      totalMove: 0,
+      rotationMagnitude: 0
+    };
+    let bestPairCandidate = incumbent;
+    for (let firstIndex = 0; firstIndex < descriptors.length; firstIndex++) {
+      const firstDescriptor = descriptors[firstIndex];
+      for (let secondIndex = firstIndex + 1; secondIndex < descriptors.length; secondIndex++) {
+        const secondDescriptor = descriptors[secondIndex];
+        if (ringSubstituentBranchDescriptorsOverlap(firstDescriptor, secondDescriptor)) {
+          continue;
+        }
+        for (const firstRecord of buildRingSubstituentBranchCandidateRecords(layoutGraph, coords, firstDescriptor, bondLength)) {
+          if (!firstRecord.coords) {
+            continue;
+          }
+          for (const secondRecord of buildRingSubstituentBranchCandidateRecords(
+            layoutGraph,
+            firstRecord.coords,
+            secondDescriptor,
+            bondLength
+          )) {
+            if (!secondRecord.coords) {
+              continue;
+            }
+            const candidateAudit = auditMixedPlacement(
+              layoutGraph,
+              { coords: secondRecord.coords, bondValidationClasses },
+              bondLength
+            );
+            if (!ringSubstituentBranchAuditDoesNotRegress(candidateAudit, baseAudit)) {
+              continue;
+            }
+            const candidate = {
+              coords: secondRecord.coords,
+              audit: candidateAudit,
+              globalCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, secondRecord.coords, { bondLength }),
+              failingSubstituentCount: candidateAudit.ringSubstituentReadabilityFailureCount ?? 0,
+              inwardSubstituentCount: candidateAudit.inwardRingSubstituentCount ?? 0,
+              layoutCost: measureFocusedPlacementCost(layoutGraph, secondRecord.coords, bondLength, [
+                firstDescriptor.anchorAtomId,
+                firstDescriptor.rootAtomId,
+                ...firstDescriptor.movedAtomIds,
+                secondDescriptor.anchorAtomId,
+                secondDescriptor.rootAtomId,
+                ...secondDescriptor.movedAtomIds
+              ]),
+              totalMove: totalRingSubstituentBranchMove(coords, secondRecord.coords, [
+                ...firstDescriptor.movedAtomIds,
+                ...secondDescriptor.movedAtomIds
+              ]),
+              rotationMagnitude: firstRecord.rotationMagnitude + secondRecord.rotationMagnitude
+            };
+            if (
+              (
+                candidate.globalCrossingCount < incumbent.globalCrossingCount
+                || candidate.failingSubstituentCount < incumbent.failingSubstituentCount
+                || candidate.inwardSubstituentCount < incumbent.inwardSubstituentCount
+                || candidate.audit.ok !== incumbent.audit.ok
+              )
+              && compareRingSubstituentBranchCandidates(candidate, bestPairCandidate) < 0
+            ) {
+              bestPairCandidate = candidate;
+            }
+          }
+        }
+      }
+    }
+    if (bestPairCandidate.coords !== coords) {
+      overwriteCoordMap(coords, bestPairCandidate.coords);
       changed = true;
     }
   }
@@ -20454,6 +20905,137 @@ function mixedAcylBranchDownstreamChildAngles(coords, descriptor, branchAngle, o
   ));
 }
 
+function mixedAcylBranchDownstreamChildAnglesForDirection(descriptor, downstreamAngle) {
+  if (!descriptor.downstreamChildAtomId) {
+    return [0];
+  }
+  const downstreamBackAngle = wrapAngle(downstreamAngle + Math.PI);
+  const candidateAngles = [
+    downstreamBackAngle + EXACT_TRIGONAL_CONTINUATION_ANGLE,
+    downstreamBackAngle - EXACT_TRIGONAL_CONTINUATION_ANGLE,
+    downstreamBackAngle + Math.PI
+  ].map(wrapAngle);
+  return candidateAngles.filter((candidateAngle, index) => (
+    candidateAngles.findIndex(existingAngle => angularDifference(existingAngle, candidateAngle) <= 1e-9) === index
+  ));
+}
+
+function mixedAcylBranchFanDeviation(anchorBackAngle, terminalLeafAngle, downstreamAngle) {
+  return Math.max(
+    Math.abs(angularDifference(anchorBackAngle, terminalLeafAngle) - EXACT_TRIGONAL_CONTINUATION_ANGLE),
+    Math.abs(angularDifference(anchorBackAngle, downstreamAngle) - EXACT_TRIGONAL_CONTINUATION_ANGLE),
+    Math.abs(angularDifference(terminalLeafAngle, downstreamAngle) - EXACT_TRIGONAL_CONTINUATION_ANGLE)
+  );
+}
+
+function mixedAcylBranchDownstreamChildDeviation(coords, descriptor) {
+  if (!descriptor.downstreamChildAtomId) {
+    return 0;
+  }
+  const downstreamPosition = coords.get(descriptor.downstreamAtomId);
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const childPosition = coords.get(descriptor.downstreamChildAtomId);
+  if (!downstreamPosition || !centerPosition || !childPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(
+    angularDifference(
+      angleOf(sub(centerPosition, downstreamPosition)),
+      angleOf(sub(childPosition, downstreamPosition))
+    ) - EXACT_TRIGONAL_CONTINUATION_ANGLE
+  );
+}
+
+function mixedAcylBranchRelaxedContactBranchAngles(coords, descriptor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!anchorPosition || !centerPosition) {
+    return [];
+  }
+  const currentAngle = angleOf(sub(centerPosition, anchorPosition));
+  return MIXED_ACYL_BRANCH_RELAXED_CONTACT_BRANCH_OFFSETS.map(offset => wrapAngle(currentAngle + offset));
+}
+
+function buildMixedAcylBranchRelaxedContactCandidate(
+  layoutGraph,
+  coords,
+  descriptor,
+  branchAngle,
+  orientation,
+  terminalLeafOffset,
+  downstreamOffset,
+  childAngle
+) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const terminalLeafPosition = coords.get(descriptor.terminalLeafAtomId);
+  const downstreamPosition = coords.get(descriptor.downstreamAtomId);
+  if (!anchorPosition || !centerPosition || !terminalLeafPosition || !downstreamPosition) {
+    return null;
+  }
+
+  const nextCoords = new Map(coords);
+  const centerTarget = add(
+    anchorPosition,
+    fromAngle(branchAngle, distance(anchorPosition, centerPosition))
+  );
+  translateMixedAcylSubtree(nextCoords, coords, descriptor.movedAtomIds, sub(centerTarget, centerPosition));
+  nextCoords.set(descriptor.centerAtomId, centerTarget);
+
+  const anchorBackAngle = angleOf(sub(anchorPosition, centerTarget));
+  const terminalLeafAngle = anchorBackAngle
+    + orientation * EXACT_TRIGONAL_CONTINUATION_ANGLE
+    + terminalLeafOffset;
+  const downstreamAngle = anchorBackAngle
+    - orientation * EXACT_TRIGONAL_CONTINUATION_ANGLE
+    + downstreamOffset;
+  const fanDeviation = mixedAcylBranchFanDeviation(anchorBackAngle, terminalLeafAngle, downstreamAngle);
+  if (fanDeviation > MIXED_ACYL_BRANCH_RELAXED_CONTACT_MAX_FAN_DEVIATION + IMPROVEMENT_EPSILON) {
+    return null;
+  }
+
+  const terminalLeafTarget = add(
+    centerTarget,
+    fromAngle(terminalLeafAngle, distance(centerPosition, terminalLeafPosition))
+  );
+  const downstreamTarget = add(
+    centerTarget,
+    fromAngle(downstreamAngle, distance(centerPosition, downstreamPosition))
+  );
+  translateMixedAcylCurrentSubtree(
+    nextCoords,
+    mixedAcylSubtreeAtomIds(layoutGraph, coords, descriptor.terminalLeafAtomId, descriptor.centerAtomId, descriptor.movedAtomIds),
+    sub(terminalLeafTarget, nextCoords.get(descriptor.terminalLeafAtomId))
+  );
+  translateMixedAcylCurrentSubtree(
+    nextCoords,
+    mixedAcylSubtreeAtomIds(layoutGraph, coords, descriptor.downstreamAtomId, descriptor.centerAtomId, descriptor.movedAtomIds),
+    sub(downstreamTarget, nextCoords.get(descriptor.downstreamAtomId))
+  );
+  nextCoords.set(descriptor.terminalLeafAtomId, terminalLeafTarget);
+  nextCoords.set(descriptor.downstreamAtomId, downstreamTarget);
+
+  if (descriptor.downstreamChildAtomId) {
+    const childPosition = nextCoords.get(descriptor.downstreamChildAtomId);
+    const originalChildPosition = coords.get(descriptor.downstreamChildAtomId);
+    if (!childPosition || !originalChildPosition) {
+      return null;
+    }
+    const childTarget = add(
+      downstreamTarget,
+      fromAngle(childAngle, distance(downstreamPosition, originalChildPosition))
+    );
+    translateMixedAcylCurrentSubtree(
+      nextCoords,
+      mixedAcylSubtreeAtomIds(layoutGraph, coords, descriptor.downstreamChildAtomId, descriptor.downstreamAtomId, descriptor.movedAtomIds),
+      sub(childTarget, childPosition)
+    );
+    nextCoords.set(descriptor.downstreamChildAtomId, childTarget);
+  }
+
+  return { coords: nextCoords, fanDeviation };
+}
+
 function mixedAcylBranchContactCandidateTotalMove(coords, candidateCoords, atomIds) {
   return atomIds.reduce((totalMove, atomId) => {
     const position = coords.get(atomId);
@@ -20522,6 +21104,12 @@ function compareMixedAcylBranchContactCandidates(candidate, incumbent) {
       return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
     }
   }
+  if (Math.abs((candidate.downstreamChildDeviation ?? 0) - (incumbent.downstreamChildDeviation ?? 0)) > IMPROVEMENT_EPSILON) {
+    return (candidate.downstreamChildDeviation ?? 0) - (incumbent.downstreamChildDeviation ?? 0);
+  }
+  if (Math.abs((candidate.fanDeviation ?? 0) - (incumbent.fanDeviation ?? 0)) > IMPROVEMENT_EPSILON) {
+    return (candidate.fanDeviation ?? 0) - (incumbent.fanDeviation ?? 0);
+  }
   if (Math.abs((candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0)) > IMPROVEMENT_EPSILON) {
     return (candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0);
   }
@@ -20541,9 +21129,17 @@ function compareMixedAcylBranchContactCandidates(candidate, incumbent) {
  * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
  * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Validation classes for audit checks.
  * @param {number} bondLength - Target bond length.
+ * @param {{allowRelaxedAcylFan?: boolean}} [options] - Optional relaxed final-geometry fallback controls.
  * @returns {{changed: boolean}} Whether an acyl contact retouch was accepted.
  */
-export function resolveMixedAcylBranchSevereContacts(layoutGraph, coords, bondValidationClasses, bondLength) {
+export function resolveMixedAcylBranchSevereContacts(
+  layoutGraph,
+  coords,
+  bondValidationClasses,
+  bondLength,
+  options = {}
+) {
+  const allowRelaxedAcylFan = options.allowRelaxedAcylFan === true;
   let changed = false;
   for (let passIndex = 0; passIndex < MIXED_ACYL_BRANCH_CONTACT_MAX_PASSES; passIndex++) {
     const baseAudit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
@@ -20581,10 +21177,86 @@ export function resolveMixedAcylBranchSevereContacts(layoutGraph, coords, bondVa
             const candidate = {
               coords: candidateCoords,
               audit: candidateAudit,
+              fanDeviation: 0,
+              downstreamChildDeviation: mixedAcylBranchDownstreamChildDeviation(candidateCoords, descriptor),
               totalMove: mixedAcylBranchContactCandidateTotalMove(coords, candidateCoords, descriptor.movedAtomIds)
             };
             if (compareMixedAcylBranchContactCandidates(candidate, bestCandidate) < 0) {
               bestCandidate = candidate;
+            }
+          }
+        }
+      }
+      if (
+        allowRelaxedAcylFan
+        && (
+          bestCandidate == null
+          || (bestCandidate.audit.visibleHeavyBondCrossingCount ?? 0) >= (baseAudit.visibleHeavyBondCrossingCount ?? 0)
+        )
+        && (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 0
+      ) {
+        for (const branchAngle of mixedAcylBranchRelaxedContactBranchAngles(coords, descriptor)) {
+          for (const orientation of [1, -1]) {
+            for (const [
+              terminalLeafOffset,
+              downstreamOffset
+            ] of MIXED_ACYL_BRANCH_RELAXED_CONTACT_FAN_OFFSET_PAIRS) {
+              const anchorPosition = coords.get(descriptor.anchorAtomId);
+              const centerPosition = coords.get(descriptor.centerAtomId);
+              if (!anchorPosition || !centerPosition) {
+                continue;
+              }
+              const centerTarget = add(
+                anchorPosition,
+                fromAngle(branchAngle, distance(anchorPosition, centerPosition))
+              );
+              const anchorBackAngle = angleOf(sub(anchorPosition, centerTarget));
+              const downstreamAngle = anchorBackAngle
+                - orientation * EXACT_TRIGONAL_CONTINUATION_ANGLE
+                + downstreamOffset;
+              const childAngles = mixedAcylBranchDownstreamChildAnglesForDirection(descriptor, downstreamAngle);
+              for (const childAngle of childAngles) {
+                const candidateRecord = buildMixedAcylBranchRelaxedContactCandidate(
+                  layoutGraph,
+                  coords,
+                  descriptor,
+                  branchAngle,
+                  orientation,
+                  terminalLeafOffset,
+                  downstreamOffset,
+                  childAngle
+                );
+                if (
+                  !candidateRecord
+                  || !markUniqueCandidateCoordSignature(seenSignatures, candidateRecord.coords)
+                ) {
+                  continue;
+                }
+                const candidateAudit = auditLayout(layoutGraph, candidateRecord.coords, {
+                  bondLength,
+                  bondValidationClasses
+                });
+                if (!mixedAcylBranchContactAuditCanReplace(candidateAudit, baseAudit)) {
+                  continue;
+                }
+                const candidate = {
+                  coords: candidateRecord.coords,
+                  audit: candidateAudit,
+                  fanDeviation: candidateRecord.fanDeviation,
+                  downstreamChildDeviation: mixedAcylBranchDownstreamChildDeviation(
+                    candidateRecord.coords,
+                    descriptor
+                  ),
+                  totalMove: mixedAcylBranchContactCandidateTotalMove(
+                    coords,
+                    candidateRecord.coords,
+                    descriptor.movedAtomIds
+                  )
+                };
+                if (compareMixedAcylBranchContactCandidates(candidate, bestCandidate) < 0) {
+                  bestCandidate = candidate;
+                }
+              }
             }
           }
         }
@@ -20638,6 +21310,32 @@ function terminalMultipleBondCrossingDescriptor(layoutGraph, coords, atomIds) {
   }
 
   return null;
+}
+
+function terminalMultipleBondCrossingRingBondDescriptor(layoutGraph, coords, atomIds, excludedAtomIds = new Set()) {
+  if (!Array.isArray(atomIds) || atomIds.length !== 2) {
+    return null;
+  }
+  const bond = findLayoutBond(layoutGraph, atomIds[0], atomIds[1]);
+  if (!bond || bond.kind !== 'covalent' || !bond.inRing) {
+    return null;
+  }
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (
+      excludedAtomIds.has(atomId)
+      || !atom
+      || atom.element === 'H'
+      || !layoutGraph.ringAtomIdSet.has(atomId)
+      || !coords.has(atomId)
+    ) {
+      return null;
+    }
+  }
+  return {
+    atomIds: [...atomIds],
+    ringBond: true
+  };
 }
 
 function terminalMultipleBondCrossingClearance(layoutGraph, coords, firstDescriptor, secondDescriptor) {
@@ -21453,68 +22151,117 @@ function resolveRingAttachedLinearMultipleCrowding(layoutGraph, coords, bondVali
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
  * @param {number} bondLength - Target bond length.
+ * @param {Map<string, 'planar'|'bridged'>} [bondValidationClasses] - Validation classes for audit checks.
  * @returns {{changed: boolean}} Whether a crossing-relief rotation was accepted.
  */
-function resolveTerminalMultipleBondLeafCrossings(layoutGraph, coords, bondLength) {
+function resolveTerminalMultipleBondLeafCrossings(layoutGraph, coords, bondLength, bondValidationClasses = null) {
   let changed = false;
 
   for (let passIndex = 0; passIndex < 2; passIndex++) {
-    const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+    const auditOptions = bondValidationClasses ? { bondLength, bondValidationClasses } : { bondLength };
+    const baseAudit = auditLayout(layoutGraph, coords, auditOptions);
     const baseCrossings = findVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
     let bestCandidate = null;
 
     for (const crossing of baseCrossings) {
       const firstDescriptor = terminalMultipleBondCrossingDescriptor(layoutGraph, coords, crossing.firstAtomIds);
       const secondDescriptor = terminalMultipleBondCrossingDescriptor(layoutGraph, coords, crossing.secondAtomIds);
-      if (!firstDescriptor || !secondDescriptor) {
-        continue;
+      const crossingPairs = [];
+      if (firstDescriptor && secondDescriptor) {
+        crossingPairs.push({
+          firstDescriptor,
+          secondDescriptor,
+          branchDescriptors: [
+            ...terminalMultipleBondCrossingBranchDescriptors(
+              layoutGraph,
+              coords,
+              firstDescriptor,
+              new Set(secondDescriptor.atomIds)
+            ),
+            ...terminalMultipleBondCrossingBranchDescriptors(
+              layoutGraph,
+              coords,
+              secondDescriptor,
+              new Set(firstDescriptor.atomIds)
+            )
+          ],
+          rotationOffsets: TERMINAL_MULTIPLE_BOND_CROSSING_BRANCH_ROTATION_OFFSETS
+        });
+      } else if (firstDescriptor) {
+        const ringDescriptor = terminalMultipleBondCrossingRingBondDescriptor(
+          layoutGraph,
+          coords,
+          crossing.secondAtomIds,
+          new Set(firstDescriptor.atomIds)
+        );
+        if (ringDescriptor) {
+          crossingPairs.push({
+            firstDescriptor,
+            secondDescriptor: ringDescriptor,
+            branchDescriptors: terminalMultipleBondCrossingBranchDescriptors(
+              layoutGraph,
+              coords,
+              firstDescriptor,
+              new Set(ringDescriptor.atomIds)
+            ),
+            rotationOffsets: TERMINAL_MULTIPLE_BOND_RING_CROSSING_BRANCH_ROTATION_OFFSETS
+          });
+        }
+      } else if (secondDescriptor) {
+        const ringDescriptor = terminalMultipleBondCrossingRingBondDescriptor(
+          layoutGraph,
+          coords,
+          crossing.firstAtomIds,
+          new Set(secondDescriptor.atomIds)
+        );
+        if (ringDescriptor) {
+          crossingPairs.push({
+            firstDescriptor: ringDescriptor,
+            secondDescriptor,
+            branchDescriptors: terminalMultipleBondCrossingBranchDescriptors(
+              layoutGraph,
+              coords,
+              secondDescriptor,
+              new Set(ringDescriptor.atomIds)
+            ),
+            rotationOffsets: TERMINAL_MULTIPLE_BOND_RING_CROSSING_BRANCH_ROTATION_OFFSETS
+          });
+        }
       }
 
-      const branchDescriptors = [
-        ...terminalMultipleBondCrossingBranchDescriptors(
-          layoutGraph,
-          coords,
-          firstDescriptor,
-          new Set(secondDescriptor.atomIds)
-        ),
-        ...terminalMultipleBondCrossingBranchDescriptors(
-          layoutGraph,
-          coords,
-          secondDescriptor,
-          new Set(firstDescriptor.atomIds)
-        )
-      ];
-      for (const branchDescriptor of branchDescriptors) {
-        for (const rotationOffset of TERMINAL_MULTIPLE_BOND_CROSSING_BRANCH_ROTATION_OFFSETS) {
-          const candidateCoords = rotateAtomIdsAroundPivot(
-            coords,
-            branchDescriptor.movedAtomIds,
-            branchDescriptor.pivotAtomId,
-            rotationOffset
-          );
-          if (!candidateCoords) {
-            continue;
-          }
-          const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-          if (!terminalMultipleBondCrossingAuditDoesNotRegress(candidateAudit, baseAudit)) {
-            continue;
-          }
-          const candidateScore = terminalMultipleBondCrossingCandidateScore(
-            layoutGraph,
-            coords,
-            candidateCoords,
-            candidateAudit,
-            firstDescriptor,
-            secondDescriptor,
-            branchDescriptor.movedAtomIds,
-            Math.abs(rotationOffset),
-            bondLength
-          );
-          if (candidateScore.visibleHeavyBondCrossingCount >= baseCrossings.length) {
-            continue;
-          }
-          if (compareTerminalMultipleBondCrossingCandidates(candidateScore, bestCandidate) < 0) {
-            bestCandidate = candidateScore;
+      for (const crossingPair of crossingPairs) {
+        for (const branchDescriptor of crossingPair.branchDescriptors) {
+          for (const rotationOffset of crossingPair.rotationOffsets) {
+            const candidateCoords = rotateAtomIdsAroundPivot(
+              coords,
+              branchDescriptor.movedAtomIds,
+              branchDescriptor.pivotAtomId,
+              rotationOffset
+            );
+            if (!candidateCoords) {
+              continue;
+            }
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, auditOptions);
+            if (!terminalMultipleBondCrossingAuditDoesNotRegress(candidateAudit, baseAudit)) {
+              continue;
+            }
+            const candidateScore = terminalMultipleBondCrossingCandidateScore(
+              layoutGraph,
+              coords,
+              candidateCoords,
+              candidateAudit,
+              crossingPair.firstDescriptor,
+              crossingPair.secondDescriptor,
+              branchDescriptor.movedAtomIds,
+              Math.abs(rotationOffset),
+              bondLength
+            );
+            if (candidateScore.visibleHeavyBondCrossingCount >= baseCrossings.length) {
+              continue;
+            }
+            if (compareTerminalMultipleBondCrossingCandidates(candidateScore, bestCandidate) < 0) {
+              bestCandidate = candidateScore;
+            }
           }
         }
       }
@@ -22792,7 +23539,6 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
     deferredHydrogenAtomIds,
     pendingRingAttachmentResnapAtomIds
   } = state;
-
   placeMixedBranches(layoutGraph, adjacency, bondLength, state, primaryNonRingAtomIds);
   if ((state.pendingRingSystems?.length ?? 0) > 0) {
     attachPendingRingSystems(layoutGraph, adjacency, bondLength, state);
@@ -22945,7 +23691,8 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   const terminalMultipleBondLeafCrossingRelief = resolveTerminalMultipleBondLeafCrossings(
     layoutGraph,
     coords,
-    bondLength
+    bondLength,
+    bondValidationClasses
   );
   if (terminalMultipleBondLeafCrossingRelief.changed) {
     markMixedBranchPlacementContextDirty(state);

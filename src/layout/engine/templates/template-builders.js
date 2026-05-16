@@ -917,6 +917,15 @@ function createSharedEdgeTricyclicEtherCoreTemplate() {
 }
 
 /**
+ * Creates the N-methyl amino diaza tricyclic cage scaffold found in compact
+ * saturated aminal cores with a shared bridge path.
+ * @returns {Molecule} N-methyl amino diaza tricyclic scaffold template molecule.
+ */
+function createNMethylAminoDiazaTricycloCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('n-methyl-amino-diaza-tricyclo-core', 'CN1CC2CC(C)(N)CC11CNC21');
+}
+
+/**
  * Creates the substituted bicyclo[2.1.1]hexane scaffold found in compact
  * cyanomethyl azetidinium cages with a shared cyclobutane edge.
  * @returns {Molecule} Bicyclo[2.1.1]hexane scaffold template molecule.
@@ -1109,6 +1118,25 @@ function createIminoOxaAzatricycloKetoneCoreTemplate() {
  */
 function createCyclopropylLactamPentacycleCoreTemplate() {
   return createRingSystemTemplateFromSmiles('cyclopropyl-lactam-pentacycle-core', 'CC1C2C=C3C4C2C42C(CC(=O)N12)C3C=O');
+}
+
+/**
+ * Creates the hydroxy thiazole cyclopropyl pentacycle scaffold graph found in
+ * compact fused cages like `CC12C3C4C=CC1(O)C1=NSC4=C1C23C=O`.
+ * @returns {Molecule} Hydroxy thiazole cyclopropyl pentacycle scaffold template molecule.
+ */
+function createHydroxyThiazoleCyclopropylPentacycleCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('hydroxy-thiazole-cyclopropyl-pentacycle-core', 'CC12C3C4C=CC1(O)C1=NSC4=C1C23C=O');
+}
+
+/**
+ * Creates the compact sulfonyl aza cycloheptene cyclopropane scaffold graph
+ * found in alkene-bearing fused sulfone cages like
+ * `CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC`.
+ * @returns {Molecule} Sulfonyl aza cycloheptene cyclopropane scaffold template molecule.
+ */
+function createSulfonylAzaCyclohepteneCyclopropaneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('sulfonyl-aza-cycloheptene-cyclopropane-core', 'CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC');
 }
 
 /**
@@ -1335,6 +1363,18 @@ function createOxygenBridgedBisindoleLactamCoreTemplate() {
   return createRingSystemTemplateFromSmiles(
     'oxygen-bridged-bisindole-lactam-core',
     '[H][C@@]12C[C@H](C(=O)OOC)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'
+  );
+}
+
+/**
+ * Creates the indoline aza-bridged heptacyclic core found in compact
+ * yohimbine/rauwolfia-like alkaloids.
+ * @returns {Molecule} Indoline aza-bridged heptacyclic ring-system template molecule.
+ */
+function createIndolineAzaBridgedHeptacycleCoreTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'indoline-aza-bridged-heptacycle-core',
+    'CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'
   );
 }
 
@@ -2614,6 +2654,28 @@ function createSharedEdgeTricyclicEtherCoreGeometry() {
 }
 
 /**
+ * Creates a split projection for N-methyl amino diaza tricyclic cages. The
+ * six-member carbon lane and four-member aminal cap sit on opposite sides of
+ * the shared C13/C10 bridge while the five-member diaza lane stays readable
+ * without stretching the whole cage.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createNMethylAminoDiazaTricycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C4', { x: 0.290903, y: 0.536545 }],
+    ['C13', { x: -0.554928, y: 0.475074 }],
+    ['C10', { x: -1.099898, y: -0.222952 }],
+    ['C5', { x: 0.914564, y: -0.423550 }],
+    ['C6', { x: 0.355955, y: -1.365977 }],
+    ['C9', { x: -0.732550, y: -1.262975 }],
+    ['C3', { x: -0.361735, y: 1.366710 }],
+    ['N2', { x: -1.447413, y: 0.778925 }],
+    ['C11', { x: -0.243640, y: -0.885651 }],
+    ['N12', { x: 0.330298, y: -0.112035 }]
+  ]);
+}
+
+/**
  * Creates an open projection for substituted bicyclo[2.1.1]hexane cores.
  * The cyclobutane path stays square-like while the longer carbon bridge sits
  * below it, preventing the generic fallback from crossing the two cap bonds.
@@ -3078,6 +3140,52 @@ function createCyclopropylLactamPentacycleCoreGeometry() {
     ['C11', { x: 0.365, y: 1.797 }],
     ['N13', { x: 0.776, y: 0.849 }],
     ['C14', { x: -1.522, y: -0.257 }]
+  ]);
+}
+
+/**
+ * Creates a compact projection for hydroxy thiazole cyclopropyl pentacycles.
+ * The aromatic thiazole lane stays outside the three-membered cap while the
+ * fused cyclohexene face remains broad enough for exocyclic carbonyl exits.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createHydroxyThiazoleCyclopropylPentacycleCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C2', { x: -0.61024, y: 0.028356 }],
+    ['C3', { x: -0.060059, y: -0.595282 }],
+    ['C4', { x: -0.766367, y: -1.218042 }],
+    ['C5', { x: -1.410998, y: -0.324759 }],
+    ['C6', { x: -1.46336, y: 0.423562 }],
+    ['C7', { x: -0.465742, y: 1.006071 }],
+    ['C9', { x: 0.617447, y: 0.84692 }],
+    ['N10', { x: 1.58671, y: 0.834773 }],
+    ['S11', { x: 1.345033, y: -0.216742 }],
+    ['C12', { x: 0.413075, y: -0.996846 }],
+    ['C13', { x: 0.700216, y: -0.146759 }],
+    ['C14', { x: 0.114285, y: 0.358749 }]
+  ]);
+}
+
+/**
+ * Creates a three-lane projection for sulfonyl aza cycloheptene cyclopropane
+ * cages. The alkene seven-ring spans below the cyclopropane cap while the
+ * sulfone and aza five-rings occupy the upper lanes without crossing the
+ * ethyl exit.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createSulfonylAzaCyclohepteneCyclopropaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: -0.14086, y: 0.891914 }],
+    ['C4', { x: -0.47193, y: 0.098823 }],
+    ['C5', { x: -1.169001, y: -0.479391 }],
+    ['C6', { x: -0.700363, y: -1.355954 }],
+    ['C7', { x: 0.231059, y: -1.583155 }],
+    ['C8', { x: 1.01147, y: -0.959764 }],
+    ['C9', { x: 1.263703, y: -0.036537 }],
+    ['C10', { x: 1.005699, y: 0.936718 }],
+    ['N11', { x: -0.224013, y: 1.6 }],
+    ['S12', { x: -1.26, y: 0.66 }],
+    ['C15', { x: 0.462784, y: 0.258506 }]
   ]);
 }
 
@@ -3795,6 +3903,37 @@ function createOxygenBridgedBisindoleLactamCoreGeometry() {
 }
 
 /**
+ * Creates a compact indoline aza-bridged heptacycle projection with a regular
+ * benzene sidewall and separated saturated cage lanes. The central aza bridge
+ * stays foreshortened, but the C8-N28 edge is kept open instead of collapsing
+ * into the neighboring bridge.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createIndolineAzaBridgedHeptacycleCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C17', { x: 0.766247, y: -0.582345 }],
+    ['C16', { x: 1.756262, y: -0.411797 }],
+    ['C18', { x: 0.342775, y: -1.487872 }],
+    ['C15', { x: 0.924305, y: 0.175278 }],
+    ['C7', { x: -1.788556, y: 2.331450 }],
+    ['C21', { x: -1.906025, y: -0.508759 }],
+    ['C19', { x: 0.034936, y: -0.518285 }],
+    ['C14', { x: -0.014407, y: 0.508645 }],
+    ['C3', { x: -3.450765, y: 1.473953 }],
+    ['C5', { x: -2.598195, y: 1.843103 }],
+    ['C8', { x: -1.964346, y: 1.309009 }],
+    ['C22', { x: -2.738733, y: -0.069261 }],
+    ['C24', { x: -2.345452, y: 0.890125 }],
+    ['C10', { x: -1.353921, y: 0.498824 }],
+    ['C25', { x: -1.754941, y: 0.099079 }],
+    ['C29', { x: -3.813889, y: 0.520123 }],
+    ['C20', { x: -0.919788, y: -0.404465 }],
+    ['N12', { x: -0.748085, y: 1.211630 }],
+    ['N28', { x: -2.918999, y: 0.933406 }]
+  ]);
+}
+
+/**
  * Creates a conventional tropane projection matching the common cocaine-style
  * drawing: a vertical aza bridge on the left, a compact left bridge, and a
  * longer right-hand bridge that descends toward the lower-right exit vector.
@@ -3887,6 +4026,7 @@ function freezeMatchContext(matchContext) {
  * @param {object|null} geometry - Optional normalized geometry spec.
  * @param {object} [options] - Additional template options.
  * @param {object|null} [options.matchContext] - Optional match-context metadata.
+ * @param {number} [options.ringCount] - Optional supplemental ring-count override.
  * @returns {object} Frozen template descriptor.
  */
 function createTemplate(id, family, priority, molecule, geometry, options = {}) {
@@ -3897,7 +4037,7 @@ function createTemplate(id, family, priority, molecule, geometry, options = {}) 
     priority,
     atomCount: molecule.atomCount,
     bondCount: molecule.bondCount,
-    ringCount: getRingAtomIds(molecule).length,
+    ringCount: options.ringCount ?? getRingAtomIds(molecule).length,
     molecule,
     geometryKind: geometry?.kind ?? null,
     hasGeometry: Array.isArray(normalizedCoords),
@@ -4229,6 +4369,22 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createSharedEdgeTricyclicEtherCoreGeometry(), BRIDGED_VALIDATION)
     ),
     createTemplate(
+      'n-methyl-amino-diaza-tricyclo-core',
+      'bridged',
+      53.87065035,
+      createNMethylAminoDiazaTricycloCoreTemplate(),
+      geometrySpec('normalized-xy', createNMethylAminoDiazaTricycloCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'N2', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C6', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C6', element: 'N', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'trigonal-carbon-bicyclo-2-1-1-hexane-core',
       'bridged',
       53.8705055,
@@ -4553,6 +4709,38 @@ export function buildTemplateLibrary() {
       }
     ),
     createTemplate(
+      'hydroxy-thiazole-cyclopropyl-pentacycle-core',
+      'fused',
+      53.8552,
+      createHydroxyThiazoleCyclopropylPentacycleCoreTemplate(),
+      geometrySpec('normalized-xy', createHydroxyThiazoleCyclopropylPentacycleCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C7', element: 'O', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C14', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'sulfonyl-aza-cycloheptene-cyclopropane-core',
+      'fused',
+      53.8551,
+      createSulfonylAzaCyclohepteneCyclopropaneCoreTemplate(),
+      geometrySpec('normalized-xy', createSulfonylAzaCyclohepteneCyclopropaneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C3', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'S12', element: 'O', bondOrder: 2, minCount: 2, maxCount: 2 },
+            { templateAtomId: 'C15', element: 'O', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'ammonium-benzocyclobutane-core',
       'bridged',
       53.855125,
@@ -4842,6 +5030,14 @@ export function buildTemplateLibrary() {
       52.925,
       createOxygenBridgedBisindoleLactamCoreTemplate(),
       geometrySpec('normalized-xy', createOxygenBridgedBisindoleLactamCoreGeometry(), BRIDGED_VALIDATION)
+    ),
+    createTemplate(
+      'indoline-aza-bridged-heptacycle-core',
+      'bridged',
+      52.915,
+      createIndolineAzaBridgedHeptacycleCoreTemplate(),
+      geometrySpec('normalized-xy', createIndolineAzaBridgedHeptacycleCoreGeometry(), BRIDGED_VALIDATION),
+      { ringCount: 7 }
     ),
     createTemplate(
       'aza-annulene-cyclohexadiene-core',

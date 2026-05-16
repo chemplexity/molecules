@@ -33,6 +33,24 @@ function bondAngleAt(coords, centerAtomId, firstAtomId, secondAtomId) {
   );
 }
 
+/**
+ * Asserts that an ordered regular ring keeps its target side lengths and angles.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} atomIds - Ordered ring atom IDs.
+ * @param {number} bondLength - Expected ring side length.
+ * @param {number} expectedAngle - Expected interior angle in radians.
+ * @returns {void}
+ */
+function assertRegularRing(coords, atomIds, bondLength, expectedAngle) {
+  for (let index = 0; index < atomIds.length; index++) {
+    const atomId = atomIds[index];
+    const previousAtomId = atomIds[(index - 1 + atomIds.length) % atomIds.length];
+    const nextAtomId = atomIds[(index + 1) % atomIds.length];
+    assert.ok(Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - bondLength) < 1e-6);
+    assert.ok(Math.abs(bondAngleAt(coords, atomId, previousAtomId, nextAtomId) - expectedAngle) < 1e-6);
+  }
+}
+
 describe('layout/engine/families/organometallic', () => {
   it('lays out a simple metal-ligand fragment through the ligand-first path', () => {
     const graph = createLayoutGraph(makeOrganometallic());
@@ -342,6 +360,25 @@ describe('layout/engine/families/organometallic', () => {
     assert.ok(audit.severeOverlapCount <= 6);
     assert.ok(audit.bondLengthFailureCount <= 2);
     assert.ok(audit.maxBondLengthDeviation < 0.7);
+  });
+
+  it('lays out haptic iron cyclopentadienyl ligands on ligand-only ring geometry', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('C1(N(C(=O)CC1)CCC12[Fe]3456789%10C%11C3=C4C5=C6%11)=O.C7(C8=C19)=C2%10'),
+      { suppressH: true }
+    );
+    const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+    const hapticBondCount = [...result.bondValidationClasses.values()].filter(validationClass => validationClass === 'haptic').length;
+
+    assert.equal(result.placementMode, 'ligand-first');
+    assert.equal(hapticBondCount, 10);
+    assert.equal(audit.ok, true);
+    assertRegularRing(result.coords, ['C9', 'C19', 'C18', 'C17', 'C20'], graph.options.bondLength, (3 * Math.PI) / 5);
+    assertRegularRing(result.coords, ['C15', 'C14', 'C13', 'C12', 'C11'], graph.options.bondLength, (3 * Math.PI) / 5);
   });
 
   it('places terminal metal ligands on the exact trigonal slot of unsaturated organic anchors', () => {

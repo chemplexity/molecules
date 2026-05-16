@@ -1,9 +1,10 @@
 /** @module families/organometallic */
 
 import { auditLayout } from '../audit/audit.js';
-import { BRIDGED_KK_LIMITS, ORGANOMETALLIC_RESCUE_LIMITS } from '../constants.js';
+import { BRIDGED_KK_LIMITS, ORGANOMETALLIC_RESCUE_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 import { add, angleOf, centroid, distance, fromAngle, normalize, perpLeft, rotate, scale, sub } from '../geometry/vec2.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
+import { createLayoutGraph } from '../model/layout-graph.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { isMetalAtom as isMetalSourceAtom } from '../topology/metal-centers.js';
@@ -114,6 +115,99 @@ function transformFragment(coords, anchorAtomIds, targetAnchorCenter, desiredAng
   return transformed;
 }
 
+/**
+ * Rotates a coordinate map around a fixed point.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinates to rotate.
+ * @param {{x: number, y: number}} center - Rotation center.
+ * @param {number} angle - Rotation angle in radians.
+ * @returns {Map<string, {x: number, y: number}>} Rotated coordinates.
+ */
+function rotateCoordMapAround(coords, center, angle) {
+  const rotatedCoords = new Map();
+  for (const [atomId, position] of coords) {
+    rotatedCoords.set(atomId, add(center, rotate(sub(position, center), angle)));
+  }
+  return rotatedCoords;
+}
+
+/**
+ * Returns whether an atom should contribute to inter-ligand placement scoring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {boolean} True for visible heavy atoms.
+ */
+function isVisibleHeavyPlacementAtom(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return !!atom && atom.element !== 'H' && atom.visible !== false;
+}
+
+/**
+ * Scores one candidate ligand pose against already placed ligand atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate ligand coordinates.
+ * @param {Map<string, {x: number, y: number}>} existingCoords - Already placed coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Lower-is-better clash score.
+ */
+function scoreFragmentAgainstExisting(layoutGraph, candidateCoords, existingCoords, bondLength) {
+  if (existingCoords.size === 0) {
+    return 0;
+  }
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  let score = 0;
+  let minDistance = Infinity;
+
+  for (const [atomId, position] of candidateCoords) {
+    if (!isVisibleHeavyPlacementAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    for (const [otherAtomId, otherPosition] of existingCoords) {
+      if (!isVisibleHeavyPlacementAtom(layoutGraph, otherAtomId)) {
+        continue;
+      }
+      const atomDistance = distance(position, otherPosition);
+      minDistance = Math.min(minDistance, atomDistance);
+      if (atomDistance < threshold) {
+        const deficit = threshold - atomDistance;
+        score += deficit * deficit * 1000;
+      }
+    }
+  }
+
+  return score - (Number.isFinite(minDistance) ? minDistance * 0.01 : 0);
+}
+
+/**
+ * Chooses a transformed ligand pose, allowing haptic multi-anchor rings to
+ * rotate around their anchor centroid so adjacent ligands avoid vertex clashes.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Local ligand coordinates.
+ * @param {string[]} anchorAtomIds - Ligand atoms bonded to the metal center.
+ * @param {{x: number, y: number}} targetAnchorCenter - Desired anchor centroid.
+ * @param {number} desiredAngle - Outward direction from the metal center.
+ * @param {Map<string, {x: number, y: number}>} existingCoords - Already placed ligand coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Selected transformed coordinates.
+ */
+function chooseTransformedFragment(layoutGraph, coords, anchorAtomIds, targetAnchorCenter, desiredAngle, existingCoords, bondLength) {
+  const baseTransform = transformFragment(coords, anchorAtomIds, targetAnchorCenter, desiredAngle);
+  if (anchorAtomIds.length < 3 || existingCoords.size === 0) {
+    return baseTransform;
+  }
+
+  let bestTransform = baseTransform;
+  let bestScore = scoreFragmentAgainstExisting(layoutGraph, bestTransform, existingCoords, bondLength);
+  for (let step = 1; step < 10; step++) {
+    const candidate = rotateCoordMapAround(baseTransform, targetAnchorCenter, step * (Math.PI / 5));
+    const score = scoreFragmentAgainstExisting(layoutGraph, candidate, existingCoords, bondLength) + step * 1e-6;
+    if (score < bestScore) {
+      bestTransform = candidate;
+      bestScore = score;
+    }
+  }
+  return bestTransform;
+}
+
 function sortRecordsByCanonicalId(records) {
   return [...records].sort((firstRecord, secondRecord) => {
     const firstId = firstRecord.atomIds[0] ?? '';
@@ -128,6 +222,68 @@ function buildOrganometallicBondValidationClasses(layoutGraph, participantAtomId
     mergeBondValidationClasses(bondValidationClasses, sourceMap);
   }
   return bondValidationClasses;
+}
+
+/**
+ * Marks metal bonds to multi-anchor ligand fragments as haptic validation links.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} fragmentRecords - Ligand-fragment records attached to metals.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} targetMap - Validation map to update.
+ * @returns {Map<string, 'planar'|'bridged'|'haptic'>} Updated validation map.
+ */
+function markHapticMetalBondValidation(layoutGraph, fragmentRecords, targetMap) {
+  for (const record of fragmentRecords) {
+    if (record.anchorAtomIds.length < 3) {
+      continue;
+    }
+    for (const metalAtomId of record.anchorMetalIds) {
+      for (const anchorAtomId of record.anchorAtomIds) {
+        const bondId = findMetalAnchorBondId(layoutGraph, metalAtomId, anchorAtomId);
+        if (bondId) {
+          targetMap.set(bondId, 'haptic');
+        }
+      }
+    }
+  }
+  return targetMap;
+}
+
+/**
+ * Lays out one non-metal ligand fragment, retrying on a ligand-only graph when
+ * global metal-ring perception hides the organic scaffold cycles.
+ * @param {object} layoutGraph - Parent layout graph shell.
+ * @param {{component: object, atomIds: string[], anchorAtomIds: string[]}} record - Ligand-fragment record.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{supported: boolean, coords: Map<string, {x: number, y: number}>, bondValidationClasses?: Map<string, 'planar'|'bridged'|'haptic'>}} Slice layout result.
+ */
+function layoutLigandFragment(layoutGraph, record, bondLength) {
+  const adjacency = buildSliceAdjacency(layoutGraph, record.component.atomIds, {
+    includeBond(bond) {
+      return bond.kind === 'covalent';
+    }
+  });
+  const globalLayout = layoutAtomSlice(layoutGraph, record.component, bondLength, { adjacency });
+  if (globalLayout.supported && globalLayout.coords.size === record.component.atomIds.length && record.anchorAtomIds.length < 3) {
+    return globalLayout;
+  }
+
+  const localMolecule = layoutGraph.sourceMolecule.getSubgraph(record.atomIds);
+  const localGraph = createLayoutGraph(localMolecule, {
+    bondLength,
+    suppressH: layoutGraph.options.suppressH
+  });
+  const recordAtomIdSet = new Set(record.atomIds);
+  const localComponent = localGraph.components.find(component => component.atomIds.every(atomId => recordAtomIdSet.has(atomId)));
+  if (!localComponent) {
+    return globalLayout;
+  }
+
+  const localSlice = createAtomSlice(localGraph, localComponent.atomIds, record.component.id);
+  const localLayout = layoutAtomSlice(localGraph, localSlice, bondLength);
+  if (!localLayout.supported || localLayout.coords.size < globalLayout.coords.size) {
+    return globalLayout;
+  }
+  return localLayout;
 }
 
 function auditOrganometallicPlacement(layoutGraph, participantAtomIds, placement, bondLength) {
@@ -744,6 +900,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
 
   const fragmentCoords = new Map();
   const displayAssignments = [];
+  const bondValidationClassMaps = [];
   const groupedByMetal = new Map(metalAtomIds.map(metalAtomId => [metalAtomId, []]));
   for (const record of fragmentRecords) {
     const key = record.anchorMetalIds[0] ?? metalAtomIds[0];
@@ -767,22 +924,27 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
     const specs = arrangementSpecs(layoutGraph, metalAtomId, records);
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
-      const ligandLayout = layoutAtomSlice(layoutGraph, record.component, bondLength, {
-        adjacency: buildSliceAdjacency(layoutGraph, record.component.atomIds, {
-          includeBond(bond) {
-            return bond.kind === 'covalent';
-          }
-        })
-      });
+      const ligandLayout = layoutLigandFragment(layoutGraph, record, bondLength);
       if (!ligandLayout.supported || ligandLayout.coords.size === 0 || record.anchorAtomIds.length === 0) {
         return null;
       }
 
       const spec = specs[index] ?? { angle: 0, displayType: null };
       const targetAnchorCenter = add(provisionalMetalPosition, fromAngle(spec.angle, bondLength));
-      const transformed = transformFragment(ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle);
+      const transformed = chooseTransformedFragment(
+        layoutGraph,
+        ligandLayout.coords,
+        record.anchorAtomIds,
+        targetAnchorCenter,
+        spec.angle,
+        fragmentCoords,
+        bondLength
+      );
       for (const [atomId, position] of transformed) {
         fragmentCoords.set(atomId, position);
+      }
+      if (ligandLayout.bondValidationClasses) {
+        bondValidationClassMaps.push(ligandLayout.bondValidationClasses);
       }
       if (spec.displayType && record.anchorAtomIds.length === 1) {
         const bondId = findMetalAnchorBondId(layoutGraph, metalAtomId, record.anchorAtomIds[0]);
@@ -831,7 +993,11 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
     coords,
     placementMode: 'ligand-first',
     displayAssignments,
-    bondValidationClasses: buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds)
+    bondValidationClasses: markHapticMetalBondValidation(
+      layoutGraph,
+      fragmentRecords,
+      buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds, bondValidationClassMaps)
+    )
   };
 }
 

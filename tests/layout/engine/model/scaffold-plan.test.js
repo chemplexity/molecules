@@ -315,6 +315,22 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the hydroxy thiazole cyclopropyl pentacycle template for compact fused cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC12C3C4C=CC1(O)C1=NSC4=C1C23C=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'fused');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-thiazole-cyclopropyl-pentacycle-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the sulfonyl aza cycloheptene cyclopropane template for alkene-bearing fused cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'fused');
+    assert.equal(plan.rootScaffold.templateId, 'sulfonyl-aza-cycloheptene-cyclopropane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the amino cyano thiazole oxatricyclo template for compact fused cages', () => {
     const graph = createLayoutGraph(parseSMILES('CC12CCC(C3=NSC=C3O1)C(C)(C#N)C2N'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -384,6 +400,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'shared-edge-tricyclic-ether-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the N-methyl amino diaza tricyclo template for substituted aminal cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1CC2CC(C)(N)CC11CNC21'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'n-methyl-amino-diaza-tricyclo-core');
     assert.equal(plan.mixedMode, true);
   });
 

@@ -10,7 +10,7 @@ import { buildCleanupStageGraph } from './cleanup/stage-pipeline.js';
 import { createStageExecutionEntry, runStageGraph } from './cleanup/stage-runner.js';
 import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
 import { visibleHeavyCovalentBonds } from './cleanup/bond-utils.js';
-import { resolveMixedAcylBranchSevereContacts } from './families/mixed.js';
+import { resolveMixedAcylBranchSevereContacts, resolveRingSubstituentBranchCrossings } from './families/mixed.js';
 import {
   measureRingAdjacentTerminalDivalentContinuationDistortion,
   runDivalentContinuationTidy
@@ -65,7 +65,7 @@ import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from '.
 import { computeBounds } from './geometry/bounds.js';
 import { cloneCoords } from './geometry/transforms.js';
 import { add, angleOf, centroid, rotate, sub } from './geometry/vec2.js';
-import { PRESENTATION_METRIC_EPSILON } from './constants.js';
+import { PRESENTATION_METRIC_EPSILON, atomPairKey } from './constants.js';
 
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
 const MIN_PROJECTED_RING_CHAIN_ASPECT = 6;
@@ -73,6 +73,7 @@ const FINAL_TERMINAL_CARBON_LEAF_CONTACT_ROTATIONS = Object.freeze(
   Array.from({ length: 24 }, (_value, index) => ((index + 1) * Math.PI) / 36)
     .flatMap(offset => [offset, -offset])
 );
+const FINAL_TERMINAL_CARBON_LEAF_CONTACT_CLEARANCE_FACTOR = 0.6;
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -464,6 +465,48 @@ function finalTerminalCarbonLeafContactDescriptor(layoutGraph, coords, atomId) {
   };
 }
 
+function finalTerminalCarbonLeafContactClearance(layoutGraph, coords, descriptor) {
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!leafPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const movedAtomIds = new Set(descriptor.movedAtomIds);
+  let clearance = Number.POSITIVE_INFINITY;
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (
+      atomId === descriptor.leafAtomId
+      || movedAtomIds.has(atomId)
+      || !atom
+      || atom.element === 'H'
+      || !coords.has(atomId)
+      || layoutGraph.bondedPairSet.has(atomPairKey(descriptor.leafAtomId, atomId))
+    ) {
+      continue;
+    }
+    clearance = Math.min(clearance, Math.hypot(
+      leafPosition.x - coords.get(atomId).x,
+      leafPosition.y - coords.get(atomId).y
+    ));
+  }
+  return clearance;
+}
+
+function finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, coords, bondLength) {
+  const clearanceThreshold = bondLength * FINAL_TERMINAL_CARBON_LEAF_CONTACT_CLEARANCE_FACTOR;
+  const descriptors = [];
+  for (const atomId of coords.keys()) {
+    const descriptor = finalTerminalCarbonLeafContactDescriptor(layoutGraph, coords, atomId);
+    if (!descriptor) {
+      continue;
+    }
+    const clearance = finalTerminalCarbonLeafContactClearance(layoutGraph, coords, descriptor);
+    if (clearance < clearanceThreshold - PRESENTATION_METRIC_EPSILON) {
+      descriptors.push({ ...descriptor, clearance, clearanceThreshold });
+    }
+  }
+  return descriptors;
+}
+
 function rotateFinalTerminalCarbonLeafContactCandidate(coords, descriptor, rotationOffset) {
   const anchorPosition = coords.get(descriptor.anchorAtomId);
   if (!anchorPosition) {
@@ -497,7 +540,13 @@ function finalTerminalCarbonLeafContactCandidateMove(coords, candidateCoords, at
   }, 0);
 }
 
-function finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit) {
+function finalTerminalCarbonLeafContactAuditCanReplace(
+  candidateAudit,
+  baseAudit,
+  candidateClearance = Number.POSITIVE_INFINITY,
+  baseClearance = Number.POSITIVE_INFINITY,
+  clearanceThreshold = Number.POSITIVE_INFINITY
+) {
   if (!candidateAudit || !baseAudit || (baseAudit.ok === true && candidateAudit.ok !== true)) {
     return false;
   }
@@ -519,12 +568,18 @@ function finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit
   if ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false)) {
     return false;
   }
+  const clearanceImproves = (
+    Number.isFinite(baseClearance)
+    && candidateClearance > baseClearance + PRESENTATION_METRIC_EPSILON
+    && candidateClearance >= clearanceThreshold - PRESENTATION_METRIC_EPSILON
+  );
   return (
     (candidateAudit.severeOverlapCount ?? 0) < (baseAudit.severeOverlapCount ?? 0)
     || (
       (candidateAudit.severeOverlapCount ?? 0) === (baseAudit.severeOverlapCount ?? 0)
       && (candidateAudit.severeOverlapPenalty ?? 0) < (baseAudit.severeOverlapPenalty ?? 0) - PRESENTATION_METRIC_EPSILON
     )
+    || clearanceImproves
   );
 }
 
@@ -545,6 +600,18 @@ function compareFinalTerminalCarbonLeafContactCandidates(candidate, incumbent) {
   if (Math.abs((candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0)) > PRESENTATION_METRIC_EPSILON) {
     return (candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0);
   }
+  const candidateClearanceThreshold = candidate.clearanceThreshold ?? Number.POSITIVE_INFINITY;
+  const incumbentClearanceThreshold = incumbent.clearanceThreshold ?? Number.POSITIVE_INFINITY;
+  const candidateClears = (candidate.clearance ?? Number.POSITIVE_INFINITY)
+    >= candidateClearanceThreshold - PRESENTATION_METRIC_EPSILON;
+  const incumbentClears = (incumbent.clearance ?? Number.POSITIVE_INFINITY)
+    >= incumbentClearanceThreshold - PRESENTATION_METRIC_EPSILON;
+  if (candidateClears !== incumbentClears) {
+    return candidateClears ? -1 : 1;
+  }
+  if (!candidateClears && Math.abs((candidate.clearance ?? 0) - (incumbent.clearance ?? 0)) > PRESENTATION_METRIC_EPSILON) {
+    return (incumbent.clearance ?? 0) - (candidate.clearance ?? 0);
+  }
   if (Math.abs(candidate.totalMove - incumbent.totalMove) > PRESENTATION_METRIC_EPSILON) {
     return candidate.totalMove - incumbent.totalMove;
   }
@@ -560,7 +627,10 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
     bondLength,
     bondValidationClasses: placement.bondValidationClasses
   });
-  if ((baseAudit.severeOverlapCount ?? 0) === 0) {
+  if (
+    (baseAudit.severeOverlapCount ?? 0) === 0
+    && finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength).length === 0
+  ) {
     return { coords: finalCoords, changed: false, movedAtomIds: [] };
   }
 
@@ -576,6 +646,9 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
         }
         descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
       }
+    }
+    for (const descriptor of finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength)) {
+      descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
     }
     if (descriptorByKey.size === 0) {
       break;
@@ -596,12 +669,23 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
           bondLength,
           bondValidationClasses: placement.bondValidationClasses
         });
-        if (!finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit)) {
+        const candidateClearance = Number.isFinite(descriptor.clearance)
+          ? finalTerminalCarbonLeafContactClearance(layoutGraph, candidateCoords, descriptor)
+          : Number.POSITIVE_INFINITY;
+        if (!finalTerminalCarbonLeafContactAuditCanReplace(
+          candidateAudit,
+          baseAudit,
+          candidateClearance,
+          descriptor.clearance,
+          descriptor.clearanceThreshold
+        )) {
           continue;
         }
         const candidate = {
           coords: candidateCoords,
           audit: candidateAudit,
+          clearance: candidateClearance,
+          clearanceThreshold: descriptor.clearanceThreshold,
           leafAtomId: descriptor.leafAtomId,
           movedAtomIds: descriptor.movedAtomIds,
           rotationMagnitude: Math.abs(rotationOffset),
@@ -625,7 +709,10 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
       movedAtomIds.add(atomId);
     }
     changed = true;
-    if ((baseAudit.severeOverlapCount ?? 0) === 0) {
+    if (
+      (baseAudit.severeOverlapCount ?? 0) === 0
+      && finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength).length === 0
+    ) {
       break;
     }
   }
@@ -2470,6 +2557,84 @@ export function runPipeline(molecule, options = {}) {
         severeOverlapCountAfter: finalTerminalCarbonLeafContactRetouch.audit?.severeOverlapCount ?? null
       }
     );
+  }
+  if (familySummary.mixedMode === true) {
+    const currentAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (
+      (currentAudit.severeOverlapCount ?? 0) > 0
+      || (currentAudit.visibleHeavyBondCrossingCount ?? 0) > 0
+    ) {
+      const candidateCoords = cloneCoords(finalCoords);
+      const mixedAcylBranchContactRetouch = resolveMixedAcylBranchSevereContacts(
+        layoutGraph,
+        candidateCoords,
+        placement.bondValidationClasses,
+        normalizedOptions.bondLength,
+        { allowRelaxedAcylFan: true }
+      );
+      if (mixedAcylBranchContactRetouch.changed) {
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength: normalizedOptions.bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        if (finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+          finalCoords = candidateCoords;
+          finalCoordsModified = true;
+          onStep?.(
+            'Final Mixed Acyl Branch Retouch',
+            'Residual mixed acyl branches retouched after final cleanup to clear bond crossings while leaving ring systems fixed.',
+            cloneCoords(finalCoords),
+            {
+              severeOverlapCountBefore: currentAudit.severeOverlapCount,
+              severeOverlapCountAfter: candidateAudit.severeOverlapCount,
+              visibleHeavyBondCrossingCountBefore: currentAudit.visibleHeavyBondCrossingCount,
+              visibleHeavyBondCrossingCountAfter: candidateAudit.visibleHeavyBondCrossingCount
+            }
+          );
+        }
+      }
+    }
+    const postAcylAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (
+      (postAcylAudit.visibleHeavyBondCrossingCount ?? 0) > 0
+      || (postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0
+      || (postAcylAudit.inwardRingSubstituentCount ?? 0) > 0
+    ) {
+      const candidateCoords = cloneCoords(finalCoords);
+      const ringSubstituentBranchRetouch = resolveRingSubstituentBranchCrossings(
+        layoutGraph,
+        candidateCoords,
+        placement.bondValidationClasses,
+        normalizedOptions.bondLength
+      );
+      if (ringSubstituentBranchRetouch.changed) {
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength: normalizedOptions.bondLength,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        if (finalAuditCountsDoNotWorsen(candidateAudit, postAcylAudit)) {
+          finalCoords = candidateCoords;
+          finalCoordsModified = true;
+          onStep?.(
+            'Final Ring Substituent Branch Retouch',
+            'Small ring substituent branches rotated after final cleanup to clear residual inward exits while preserving ring geometry.',
+            cloneCoords(finalCoords),
+            {
+              visibleHeavyBondCrossingCountBefore: postAcylAudit.visibleHeavyBondCrossingCount,
+              visibleHeavyBondCrossingCountAfter: candidateAudit.visibleHeavyBondCrossingCount,
+              ringSubstituentReadabilityFailureCountBefore: postAcylAudit.ringSubstituentReadabilityFailureCount,
+              ringSubstituentReadabilityFailureCountAfter: candidateAudit.ringSubstituentReadabilityFailureCount
+            }
+          );
+        }
+      }
+    }
   }
   if (
     shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)

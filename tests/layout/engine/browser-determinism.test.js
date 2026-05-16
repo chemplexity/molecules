@@ -265,6 +265,7 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
         const bridgedAlkaloidC8Angles = isBridgedAlkaloidStrictRingCase
           ? [bondAngleAtAtom('C8', 'C7', 'C9'), bondAngleAtAtom('C8', 'C7', 'C13'), bondAngleAtAtom('C8', 'C9', 'C13')]
           : null;
+        const bridgedAlkaloidO38Angle = isBridgedAlkaloidStrictRingCase ? bondAngleAtAtom('O38', 'C36', 'C39') : null;
         const bridgedAlkaloidC49C54Distance = isBridgedAlkaloidStrictRingCase ? atomDistance('C49', 'C54') : null;
         const bridgedAlkaloidC27O37Distance = isBridgedAlkaloidStrictRingCase ? atomDistance('C27', 'O37') : null;
         const omittedHubRootOutwardDeviation = (rootAtomId, parentAtomId) => {
@@ -351,6 +352,8 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
             Array.isArray(bridgedAlkaloidC8Angles) && bridgedAlkaloidC8Angles.every(value => typeof value === 'number' && Number.isFinite(value))
               ? bridgedAlkaloidC8Angles
               : null,
+          bridgedAlkaloidO38Angle:
+            typeof bridgedAlkaloidO38Angle === 'number' && Number.isFinite(bridgedAlkaloidO38Angle) ? bridgedAlkaloidO38Angle : null,
           bridgedAlkaloidC49C54Distance:
             typeof bridgedAlkaloidC49C54Distance === 'number' && Number.isFinite(bridgedAlkaloidC49C54Distance) ? bridgedAlkaloidC49C54Distance : null,
           bridgedAlkaloidC27O37Distance:
@@ -543,10 +546,15 @@ test('browser layout keeps bridged alkaloid C8 exact and terminal methyl contact
   ]) {
     assert.equal(signature.audit.ok, true, `expected ${browserName} audit to pass`);
     assert.equal(signature.audit.severeOverlapCount, 0, `expected ${browserName} to avoid severe overlaps`);
+    assert.equal(signature.visibleHeavyBondCrossingCount, 0, `expected ${browserName} to avoid visible heavy bond crossings`);
     assert.ok(Array.isArray(signature.bridgedAlkaloidC8Angles), `expected ${browserName} to report C8 angles`);
     for (const angle of signature.bridgedAlkaloidC8Angles) {
       assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${browserName} C8 aryl fan near 120 degrees, got ${angle.toFixed(2)}`);
     }
+    assert.ok(
+      Math.abs(signature.bridgedAlkaloidO38Angle - 120) < 1e-6,
+      `expected ${browserName} O38 ester continuation near 120 degrees, got ${signature.bridgedAlkaloidO38Angle?.toFixed(2)}`
+    );
     assert.ok(
       signature.bridgedAlkaloidC27O37Distance > 1.5 * 2,
       `expected ${browserName} upper carbonyl to clear C27, got ${signature.bridgedAlkaloidC27O37Distance?.toFixed(3)}`
