@@ -1442,6 +1442,15 @@ function createTropaneTemplate() {
 }
 
 /**
+ * Creates the scopolamine-like tropane epoxide scaffold graph where a compact
+ * oxirane cap shares the upper carbon-carbon edge of the tropane bridge.
+ * @returns {Molecule} Scopolamine epoxide scaffold template molecule.
+ */
+function createScopolamineEpoxideCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('scopolamine-epoxide-core', 'CN1C2CC(CC1C3OC23)');
+}
+
+/**
  * Creates the adamantane cage as the real expanded-tetrahedron graph.
  * @returns {Molecule} Adamantane scaffold template molecule.
  */
@@ -3953,6 +3962,26 @@ function createTropaneGeometry() {
 }
 
 /**
+ * Creates a tropane epoxide projection with exact bond-length lanes. The
+ * oxirane oxygen is placed outside the aza cage rather than inside the
+ * bridgehead face, leaving the tertiary nitrogen and ester exit separated.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createScopolamineEpoxideCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['N2', { x: 1.0, y: 2.286600 }],
+    ['C3', { x: 2.0, y: 2.286600 }],
+    ['C4', { x: 2.5, y: 1.420600 }],
+    ['C5', { x: 2.0, y: 0.554600 }],
+    ['C6', { x: 1.0, y: 0.554600 }],
+    ['C7', { x: 0.5, y: 1.420600 }],
+    ['C8', { x: 0.351700, y: 2.409533 }],
+    ['O9', { x: 0.351700, y: 3.409567 }],
+    ['C10', { x: 1.217733, y: 2.909533 }]
+  ]);
+}
+
+/**
  * Creates a chair-like adamantane cage projection matching common drawing software.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -4121,6 +4150,21 @@ export function buildTemplateLibrary() {
     createTemplate('quinuclidinium', 'bridged', 57.9, createQuinuclidiniumTemplate(), geometrySpec('normalized-xy', createQuinuclidiniumGeometry(), BRIDGED_VALIDATION)),
     createTemplate('diazatricyclodecane-core', 'bridged', 57.85, createDiazatricyclodecaneCoreTemplate(), geometrySpec('normalized-xy', createDiazatricyclodecaneCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate('triazaadamantane-core', 'bridged', 57.8, createTriazaadamantaneCoreTemplate(), geometrySpec('normalized-xy', createTriazaadamantaneCoreGeometry(), TRIAZAADAMANTANE_VALIDATION)),
+    createTemplate(
+      'scopolamine-epoxide-core',
+      'bridged',
+      57.1,
+      createScopolamineEpoxideCoreTemplate(),
+      geometrySpec('normalized-xy', createScopolamineEpoxideCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'N2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C5', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
     createTemplate('tropane', 'bridged', 57, createTropaneTemplate(), geometrySpec('normalized-xy', createTropaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),

@@ -233,6 +233,19 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'O14', 'C15', 'O16') - 120) < 1e-6);
   });
 
+  it('keeps long perfluoroalkyl sulfonamide labels separated', () => {
+    const result = runPipeline(parseSMILES('FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)CCSC(=O)NS(=O)(=O)OCC(Cl)(Cl)Cl'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'acyclic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
+
   it('keeps nitrile-adjacent halomethyl branches on projected-tetrahedral slots', () => {
     const result = runPipeline(parseSMILES('C[Si](C)(C)OC(CF)(CF)C#N'), {
       suppressH: true,

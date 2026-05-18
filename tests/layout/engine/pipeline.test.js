@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { bugMolecules } from '../../../examples/bug-molecules.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
@@ -2848,6 +2849,265 @@ describe('layout/engine/pipeline', () => {
     }
   });
 
+  it('keeps organometallic acyclic E/Z rescue from being rejected by coordinate-only metal centers', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`C[C@H]1C[C@H](O)N[C@@H]2CCCCN(O[Fe@@]34O[C@@H](\C=C\CCCCCCC(O)=O)[N@](CCCC[C@H](NC(=O)[C@H]5COC(=N5)C5=CC=CC=C5O3)C(=O)O1)O4)C2=O`),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.ezViolationCount, 0);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe17']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps ferric hydroxamate stereocenters assigned while treating annotated iron as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`OC(=O)CCCCCC\C=C/[C@@H]1O[Fe@]23ON1CCCC[C@@H](NC(=O)[C@@H]1CO[C@H](N1)C1=CC=CC=C1O2)C(=O)OCCC(=O)N[C@@H]1CCCCN(O3)C1=O`),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.ezViolationCount, 0);
+    assert.equal(result.metadata.stereo.assignedCenterCount, 5);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe15']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('treats annotated porphyrin iron centers as unsupported instead of stereo contradictions', () => {
+    const result = runPipeline(
+      parseSMILES('CCC1=C(C)C2=[N+]3C1=CC1=C(C)C(C=C)=C4C=C5C(C)=C(CCC(O)=O)C6=[N+]5[Fe@@]3(N3C(=C2)C(C)=C(CCC(O)=O)C3=C6)N14'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe29']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps annotated expanded porphyrin iron centers audit-clean when unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C(CCC(O)=O)C2=CC3=[N+]4C(=CC5=C(C=C)C(C=C)=C6C=C7C(C=C)=C(C=C)C8=[N+]7[Fe@]4(N2C1=C8)N56)C(C)=C3CCC(O)=O'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe33']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps cobalt porphyrin metal annotations unsupported instead of stereo contradictions', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C(C=C)C2=CC3=[N+]4C(=CC5=C(C)C(CCC(O)=O)=C6C=C7C(CCC(O)=O)=C(C)C8=[N+]7[Co@]4(N2C1=C8)N56)C(C=C)=C3C'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Co34']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps acetyl porphyrin iron annotations unsupported instead of stereo contradictions', () => {
+    const result = runPipeline(
+      parseSMILES('CC(=O)C1=C2C=C3C(C)=C(CCC(O)=O)C4=[N+]3[Fe@@]35N6C(=CC7=[N+]3C(=CC(N25)=C1C)C(C(O)=C)=C7C)C(C)=C(CCC(O)=O)C6=C4'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe18']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps ester porphyrin iron annotations unsupported instead of stereo contradictions', () => {
+    const result = runPipeline(
+      parseSMILES('COC(=O)CCC1=C(C)C2=CC3=C(C=C)C(C)=C4C=C5N6C(=CC7=C(C)C(CCC(=O)OC)=C8C=C1N2[Fe@@]6(N78)N34)C(C)=C5C=C'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe38']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps charged porphyrin iron stereocenters assigned while treating annotated iron as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('CCc1c(C)c2C=C3C(C)=C(CCC(O)=O)C4=[N+]3[Fe@+3]35[N-]6C(=CC7=[N+]3C(=Cc1[n-]25)[C@](C)(CC)C7=O)C(C)=C(CCC(O)=O)C6=C4'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.assignedCenterCount, 1);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe19']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps porphyrin dione stereocenters assigned while treating annotated iron as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C(CCC(O)=O)C2=CC3=C(CCC(O)=O)C(C)=C4C=C5[N+]6=C(C=C7[N+]8=C(C=C1N2[Fe@]68N34)C(=O)[C@@]7(C)CC(O)=O)C(=O)[C@]5(C)CC(O)=O'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.assignedCenterCount, 2);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe32']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps methylated porphyrin iron centers from reporting stereo contradictions', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C(CCC(O)=O)C2=CC3=[N+]4C(=CC5=C(C=C)C(C)=C6C=C7C(C=C)=C(C)C8=[N+]7[Fe@]4(N2C1=C8)N56)C(C)=C3CCC(O)=O'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe31']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps zinc porphyrin metal annotations unsupported instead of stereo contradictions', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C(CCC(O)=O)C2=CC3=[N+]4C(=CC5=C(C=C)C(C)=C6C=C7C(C=C)=C(C)C8=[N+]7[Zn@]4(N2C1=C8)N56)C(C)=C3CCC(O)=O'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Zn31']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps porphyrin carboxylate stereocenters assigned while treating annotated iron as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('C[C@@]1(CC(O)=O)C2=CC3=C(CC(O)=O)C(CCC(O)=O)=C4C=C5N6C(=CC7=C(CCC(O)=O)[C@](C)(CC(O)=O)C8=CC(N2[Fe@]6(N34)N78)=C1CCC(O)=O)C(CC(O)=O)=C5CCC(O)=O'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.assignedCenterCount, 2);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe44']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps porphyrin vinyl alcohol stereocenters assigned while treating annotated iron as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C2C=C3[C@@H](C(O)=C)C(C)=C4C=C5N6C(=CC7=C(CCC(O)=O)C(C)=C8C=C([C@@H]1C=C)N2[Fe@@]6(N34)N78)C(CCC(O)=O)=C5C'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.assignedCenterCount, 2);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe36']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps porphyrin alkene stereo audit-clean while treating annotated iron as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`C\C=C1\C(C)=C2C=C3N4C(=CC5=C(CCC(O)=O)C(C)=C6C=C7N8C(C=C1N2[Fe@]48N56)=C(C)\C7=C\C)C(CCC(O)=O)=C3C`),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.ezViolationCount, 0);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe29']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps zinc porphyrin alkene stereo audit-clean while treating annotated zinc as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`C\C=C1\C(C)=C2C=C3N4C(=CC5=C(CCC(O)=O)C(C)=C6C=C7N8C(C=C1N2[Zn@]48N56)=C(C)\C7=C\C)C(CCC(O)=O)=C3C`),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.ezViolationCount, 0);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Zn29']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps covalent amine stereo assigned while treating annotated porphyrin copper as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('CCC1=C(C)C2=CC3=C(CC)C(C)=C4C=C5C(C)=C(CCC(O)=O)C6=[N+]5[Cu@@]5(N7C(=CC1=[N+]25)C(C)=C(CCC(O)=O)C7=C6)[N@+]34C'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.stereo.assignedCenterCount, 1);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Cu27']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
+  it('keeps covalent amine cage stereo assigned while treating annotated copper as unsupported', () => {
+    const result = runPipeline(
+      parseSMILES('C(C1=CC=C(C[N@+]23CC[N@@]4CCC[N@]5CC[N@](CCC2)[Cu@@]345)C=C1)[N@+]12CC[N@@]3CCC[N@]4CC[N@](CCC1)[Cu@@]234'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.assignedCenterCount, 2);
+    assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
+    assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Cu21']);
+    assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
   it('keeps supported three-coordinate copper centers on an explicit trigonal-planar spread after cleanup', () => {
     const result = runPipeline(parseSMILES('[Cu](Cl)(Cl)Cl'), { suppressH: true });
     const metal = result.coords.get('Cu1');
@@ -4799,6 +5059,20 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
+  it('rejects final macrocycle attached-ring retouches that flip accepted E/Z geometry', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`C[C@H]1CCC[C@H]2O[C@H]2C[C@H](OC(=O)C[C@H](O)C(C)(C)C(=O)[C@H](C)[C@H]1OC(=O)CSSCC(=O)O[C@H]3[C@@H](C)CCC[C@H]4O[C@H]4C[C@H](OC(=O)C[C@H](O)C(C)(C)C(=O)[C@@H]3C)\C(=C\c5csc(C)n5)\C)\C(=C\c6csc(C)n6)\C`),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.stereo.ezViolationCount, 0);
+    assert.equal(result.metadata.stereo.ezSupportedBondCount, 2);
+    assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
+  });
+
   it('keeps fused ether ansamycin macrocycle closures bond-clean and overlap-free', () => {
     const result = runPipeline(
       parseSMILES(String.raw`COC1\C=C\OC2(C)Oc3c(C)c(O)c4c(O)c(NC(=O)\C(=C/C=C/C(C)C(O)C(C)C(O)C(C)C(OC(=O)C)C1C)\C)c(C=NN5CCN(Cc6c(C)cc(C)cc6C)CC5)c(O)c4c3C2=O`),
@@ -5453,6 +5727,331 @@ describe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.totalMs < 50000, `expected residual peptide retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
+  it('rotates nearby aromatic sidechain roots to clear residual peptide label overlaps', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CC[C@H](C)[C@H](NC(=O)CNC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](Cc1ccccc1)NC(=O)[C@@H](NC(=O)[C@H](Cc2cnc[nH]2)NC(=O)[C@H](Cc3cnc[nH]3)NC(=O)[C@H](Cc4ccccc4)NC(=O)[C@@H](N)Cc5ccccc5)[C@@H](C)CC)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](Cc6cnc[nH]6)C(=O)N[C@@H](C(C)C)C(=O)NCC(=O)N[C@@H](CCCCN)C(=O)N[C@@H]([C@@H](C)O)C(=O)N[C@@H]([C@@H](C)CC)C(=O)N[C@@H](Cc7cnc[nH]7)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H]([C@@H](C)O)C(=O)NCC(=O)O'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected peptide label-overlap retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps lipidated indole peptide sidechains label-clean after large-molecule residual retouch', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CCCCCCCCCCCCCC(=O)N[C@@H](CCCCN)C(=O)N[C@@H](<[C@@H](C)CC>)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 15000, `expected lipidated peptide label retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('clears final glycan phosphate terminal-label overlaps after large-molecule retouch', { timeout: 30000 }, () => {
+    let finalLabelClearanceMetrics = null;
+    const result = runPipeline(
+      parseSMILES(
+        'C[C@@H]1O[C@@H](<O[C@H]2[C@H](O)[C@H](NC(=O)C)[C@H](O[C@@H]3[C@@H](OP(=O)(O)OC[C@@H](OCCN(C4CCCCC4)C5CCCCC5)C(=O)O)O[C@@H](C(=O)N)[C@@](C)(O)[C@@H]3OC(=O)N)O[C@H]2CO[C@@H]6O[C@@H](CO)[C@@H](O)[C@H](O)[C@@H]6O>)[C@@H](<NC(=O)C>)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](<[C@H](O)[C@H](O)[C@@H]7O>)C(=O)N'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true,
+        debug: {
+          onStep(label, _description, _coords, metrics) {
+            if (label === 'Final Label Clearance') {
+              finalLabelClearanceMetrics = metrics;
+            }
+          }
+        }
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(finalLabelClearanceMetrics?.labelOverlapCountAfter, 0);
+    assert.ok(result.metadata.timing.totalMs < 15000, `expected glycan phosphate label retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps perfluoroalkyl fused triazine sidechains label-clean after mixed placement', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'FC(F)(F)c1cc(nc2N=CN(Cc3cn(CCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)nn3)C(=O)c12)c4ccccc4'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 5000, `expected perfluoroalkyl fused triazine layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps compact purine sugar acid sidechains label-clean after mixed placement', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'Nc1nc(O)c2ncn([C@@H]3O[C@H]4C[C@@](<CC(=O)O>)(O[C@H]4[C@H]3O)C(=O)O)c2n1'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact purine sugar acid layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps phosphorylated difluoro cyclohexene acid labels clean after mixed cleanup', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'O[C@H]1[C@@H](<CC(=C[C@H]1OP(=O)(O)O)C(=O)O>)O[C@](<OP(=O)(O)O>)(C(=O)O)C(F)(F)F'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected phosphorylated difluoro cyclohexene acid layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps sodium triphosphate nucleosides label-clean after fragment packing', () => {
+    const result = runPipeline(
+      parseSMILES(
+        '[Na+].[Na+].[Na+].C[C@@H]1O[C@H](<OP(=O)([O-])OP(=O)([O-])OP(=O)([O-])OC[C@H]2O[C@H]([C@H](O)[C@@H]2O)n3cnc4c(O)nc(N)nc34>)[C@H](O)[C@@H](O)[C@@H]1O'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed', 'acyclic', 'acyclic', 'acyclic']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected sodium triphosphate nucleoside layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('rotates terminal methoxy leaves out of chloropyridyl oxime bond crossings', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`CO\N=C(/c1ccccc1COc2ncc(Cl)cc2Cl)\c3nccn3C`),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected chloropyridyl oxime layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps aromatic amide nitro trifluoromethyl labels clean after final orientation', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CC(=O)Nc1ccc(OCC(C)(O)C(=O)Nc2ccc(c(c2)C(F)(F)F)[N+](=O)[O-])cc1'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected aromatic amide nitro trifluoromethyl layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('clears perfluoroaryl sulfonamide terminal fluorine contacts after final retouch', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'NS(=O)(=O)c1cc(c(NS(=O)(=O)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)cc1Cl)S(=O)(=O)N'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected perfluoroaryl sulfonamide layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('coordinates adjacent macrocycle chromophore ring exits after final readability retouch', { timeout: 12000 }, () => {
+    const result = runPipeline(
+      parseSMILES(
+        '[H][C@@]12CCCN1C(=O)[C@H](<NC(=O)[C@@H](NC(=O)C1=C3N=C4C(OC3=C(C)C=C1)=C(C)C(=O)C(N)=C4C(=O)N[C@H]1[C@@H](C)OC(=O)[C@H](C(C)C)N(C)C(=O)CN(C)C(=O)[C@]3([H])CCCN3C(=O)[C@H](NC1=O)C(C)C)[C@@H](C)OC(=O)[C@H](C(C)C)N(C)C(=O)CN(C)C2=O>)C(C)C'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 8000, `expected macrocycle chromophore retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps audit-clean macrocycle core cleanup over dirtier protected placement', { timeout: 12000 }, () => {
+    const result = runPipeline(
+      parseSMILES(
+        String.raw`OC(=O)CC[C@H]1\C2=C\C3=N\C(=C(C)/C4=N[C@@H](<[C@@H](CC(O)=O)[C@]4(C)CCC(O)=O>)[C@@]4(C)N\C(=C(C)/C(=N2)[C@]1(C)CC(O)=O)[C@H](<CCC(O)=O>)[C@@]4(C)CC(O)=O)\[C@H](CCC(O)=O)C3(C)C`
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.06);
+    assert.ok(result.metadata.timing.totalMs < 8000, `expected tetrapyrrole macrocycle layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('clears peptide proline branch residual overlaps and carbonyl label contacts', { timeout: 12000 }, () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CC[C@H](C)[C@H](NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](Cc1ccccc1)NC(=O)[C@H](CC(=O)O)NC(=O)C)C(=O)N2CCC[C@H]2C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](Cc3ccc(OS(=O)(=O)O)cc3)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCC(=O)N)C(=O)O'
+      ),
+      {
+        suppressH: true,
+        finalLandscapeOrientation: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected peptide proline branch layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('repairs ultra-large nucleotide phosphate residual label overlaps without final angle-polish churn', { timeout: 60000 }, () => {
+    let residualRetouchMetrics = null;
+    const result = runPipeline(
+      parseSMILES(
+        'CO[C@@H]1[C@H](<OP(=O)(O)OC[C@H]2O[C@H]([C@H](OC)[C@@H]2OP(=O)(O)OC[C@H]3O[C@H]([C@H](OC)[C@@H]3OP(=O)(O)OC[C@H]4O[C@H]([C@H](OC)[C@@H]4OP(=O)(O)OC[C@H]5O[C@H]([C@H](OC)[C@@H]5OP(=O)(O)O)N6C=CC(=NC6=O)N)n7cnc8C(=O)NC(=Nc78)N)n9cnc%10C(=O)NC(=Nc9%10)N)N%11C=CC(=NC%11=O)N>)[C@@H](<COP(=O)(O)O[C@@H]%12[C@@H](COP(=O)(O)O[C@@H]%13[C@@H](COP(=O)(O)O[C@@H]%14[C@@H](COP(=O)(O)O[C@@H]%15[C@@H](COP(=O)(O)O[C@@H]%16[C@@H](COP(=O)(O)O[C@@H]%17[C@@H](COP(=O)(O)O[C@@H]%18[C@@H](COP(=O)(O)OP(=O)(O)O[C@@H]%19[C@@H](COP(=O)(O)O[C@@H]%20[C@@H](COP(=O)(O)O[C@@H]%21[C@@H](COP(=O)(O)O[C@@H]%22[C@@H](COP(=O)(O)O[C@@H]%23[C@@H](COP(=O)(O)O[C@H]%24C[C@@H](O[C@@H]%24CN%25NNC(=C%25)CO[C@H]%26CC[C@]%27(C)[C@H]%28CC[C@]%29(C)[C@H](CC[C@H]%29[C@@H]%28CC=C%27C%26)[C@H](C)CCCC(C)C)N%30C=C(C)C(=O)NC%30=O)O[C@H]([C@@H]%23OC)n%31cnc%32c(N)ncnc%31%32)O[C@H]([C@@H]%22OC)N%33C=CC(=NC%33=O)N)O[C@H]([C@@H]%21OC)N%34C=CC(=NC%34=O)N)O[C@H]([C@@H]%20OC)N%35C=CC(=NC%35=O)N)O[C@H]([C@@H]%19OC)n%36cnc%37c(N)ncnc%36%37)O[C@H]([C@@H]%18OC)n%38cnc%39c(N)ncnc%38%39)O[C@H]([C@@H]%17OC)N%40C=CC(=NC%40=O)N)O[C@H]([C@@H]%16OC)n%41cnc%42c(N)ncnc%41%42)O[C@H]([C@@H]%15OC)N%43C=CC(=NC%43=O)N)O[C@H]([C@@H]%14OC)N%44C=CC(=O)NC%44=O)O[C@H]([C@@H]%13OC)n%45cnc%46c(N)ncnc%45%46)O[C@H]([C@@H]%12OC)N%47C=CC(=NC%47=O)N>)O[C@H]1N%48C=CC(=O)NC%48=O'
+      ),
+      {
+        suppressH: true,
+        timing: true,
+        maxCleanupPasses: 6,
+        debug: {
+          onStep(label, _description, _coords, metrics) {
+            if (label === 'Large Molecule Residual Retouch') {
+              residualRetouchMetrics = metrics;
+            }
+          }
+        }
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(residualRetouchMetrics?.finalAnglePolishPasses, 0);
+    assert.ok(result.metadata.timing.totalMs < 50000, `expected nucleotide residual retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
   it('keeps overlap-heavy large-molecule packing fast without cleanup stretching backbone bonds', () => {
     const start = Date.now();
     const result = runPipeline(
@@ -5896,5 +6495,100 @@ describe('layout/engine/pipeline', () => {
       Math.abs(closureLength - result.layoutGraph.options.bondLength) < result.layoutGraph.options.bondLength * 0.05,
       `expected the hidden macrocycle closure to stay at normal bond length, got ${closureLength.toFixed(3)}`
     );
+  });
+
+  it('keeps the latest 20260516 label-overlap audit batch clean', () => {
+    const cases = [
+      'CC(C)C(=O)[N+]1=C2C(=O)NC(=O)N=C2N(C[C@@H](O)[C@@H](O)[C@H](O)CO[P@]([O-])(=O)O[P@@](O)(=O)OC[C@@H]2O[C@H](<[C@H](O)[C@H]2O>)N2C=NC3=C2N=CN=C3N)C2=CC(C)=C(C)C=C12',
+      'CC1=CN([C@@H]2C[C@H](N=[N+]=[N-])[C@@H](<CO[P@]([O-])(=O)O[P@@]([O-])(=O)O[P@]([O-])(=O)O[P@@]([O-])(=O)O[P@@]([O-])(=O)OC[C@@H]3O[C@H]([C@H](O)[C@H]3O)N3C=NC4=C3N=CN=C4N>)O2)C(=O)NC1=O',
+      '[Ta]1234567[Br][Ta]1189%10%11[Br][Ta]2112%12%13%14([Ta]33([Br]4)([Br]1)[Ta]821([Br][Ta]5931([Br]%12)([Br]6)[Br]%10)([Br]%13)([Br]%14)[Br]%11)[Br]7',
+      'CC1=C(CCO[P@]([O-])(=O)O[P@@]([O-])(=O)OC[C@@H]2O[C@H](<[C@H](O)[C@H]2O>)N2C=NC3=C2N=CN=C3N)SC(=N1)C([O-])=O',
+      '[O--][Mo+6]123([O--])[O--][Mo+6]45([O--])([O--])[O--][Mo+6]67([O--])([O--])[O--][Mo+6]89([O--])([O--])[O--][Mo+6]%10%11([O--])([O--])[O--][Mo+6]%12([O--])([O--])([O--]1)[O--]%10[Mo+6]([O--]2)([O--]8)([O--]46)([O--]35%12)[O--]79%11'
+    ];
+
+    for (const smiles of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      });
+
+      assert.equal(result.metadata.audit.ok, true, `expected clean audit for ${smiles}`);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
+  });
+
+  it('clears the next 20260516 label-overlap audit entries', { timeout: 60000 }, () => {
+    const cases = [
+      {
+        smiles: bugMolecules.find(smiles => smiles.startsWith('[H][C@]12OC3([O-])OC(C4C(O)[NH+]=C(N)NC4')),
+        requireCleanAudit: true
+      },
+      {
+        smiles: bugMolecules.find(smiles => smiles.startsWith('FC1=C(CN2C(=O)C3=CC=CN3')),
+        requireCleanAudit: true
+      },
+      {
+        smiles: bugMolecules.find(smiles => smiles.startsWith('CC[C@H](C)[C@H](<NC(=O)[C@H](CCC(N)=O)')),
+        requireCleanAudit: false
+      },
+      {
+        smiles: bugMolecules.find(smiles => smiles.startsWith('[H]C1(CC([H])(OP(O)(=S)OCC2')),
+        requireCleanAudit: false
+      },
+      {
+        smiles: bugMolecules.find(smiles => smiles === 'FC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)Br'),
+        requireCleanAudit: true
+      }
+    ];
+
+    assert.equal(cases.every(({ smiles }) => typeof smiles === 'string'), true);
+    assert.equal(new Set(cases.map(({ smiles }) => smiles)).size, cases.length);
+
+    for (const { smiles, requireCleanAudit } of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      });
+
+      assert.equal(result.metadata.audit.labelOverlapCount, 0, `expected label-overlap audit to clear for ${smiles}`);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0, `expected no bond failures for ${smiles}`);
+      if (requireCleanAudit) {
+        assert.equal(result.metadata.audit.ok, true, `expected clean audit for ${smiles}`);
+        assert.equal(result.metadata.audit.severeOverlapCount, 0);
+        assert.equal(result.metadata.audit.fallback.mode, null);
+      }
+    }
+  });
+
+  it('clears the following 20260516 label-overlap audit entries', () => {
+    const cases = [
+      bugMolecules.find(smiles => smiles.startsWith('CC(=O)NC1=CC=C(OC[C@](C)(O)C(=O)NC2=CC')),
+      bugMolecules.find(smiles => smiles.startsWith('OC(COC1=CC=CC(=C1)C1=CC=CC')),
+      bugMolecules.find(smiles => smiles.startsWith('COC(=O)C1=C(C)NC(C)=C(C1C1=CC=CC=C1')),
+      bugMolecules.find(smiles => smiles === 'NCCCCCC(O)(P(O)(O)=O)P(O)(O)=O'),
+      bugMolecules.find(smiles => smiles === 'C1OC2C3OCC12CO3')
+    ];
+
+    assert.equal(cases.every(smiles => typeof smiles === 'string'), true);
+    assert.equal(new Set(cases).size, cases.length);
+
+    for (const smiles of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      });
+
+      assert.equal(result.metadata.audit.ok, true, `expected clean audit for ${smiles}`);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
   });
 });

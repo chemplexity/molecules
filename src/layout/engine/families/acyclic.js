@@ -18,6 +18,7 @@ const ZIGZAG_STEP_ANGLE = Math.PI / 6;
 const TRIGONAL_TARGET_ANGLE = (2 * Math.PI) / 3;
 const PROJECTED_TETRAHEDRAL_BACKBONE_TURN = Math.PI / 2;
 const CONJUGATED_BACKBONE_HETERO_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+const TERMINAL_HALOGEN_BACKBONE_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
 
 /**
  * Returns the bond order between two atoms in the layout graph.
@@ -361,6 +362,46 @@ function terminalFluorineLeafCount(layoutGraph, atomId) {
 }
 
 /**
+ * Returns whether a carbon is a fully substituted fluorinated backbone center.
+ * Consecutive runs of these centers cannot all use square-grid backbone turns
+ * without reusing terminal fluorine positions every few atoms.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} atomId - Candidate atom ID.
+ * @returns {boolean} True when the atom is a fully substituted fluorinated carbon.
+ */
+function isFullySubstitutedFluorinatedCarbon(layoutGraph, atomId) {
+  const atom = atomId == null ? null : layoutGraph?.atoms.get(atomId);
+  return Boolean(
+    layoutGraph
+    && atom
+    && atom.element === 'C'
+    && !atom.aromatic
+    && atom.heavyDegree === 4
+    && atom.degree === 4
+    && !layoutGraph.ringAtomIdSet.has(atomId)
+    && terminalFluorineLeafCount(layoutGraph, atomId) >= 2
+  );
+}
+
+/**
+ * Returns whether a center sits inside a consecutive perfluoroalkyl-like run
+ * where exact projected backbone turns would force repeated terminal-leaf
+ * coordinates. These runs use the ordinary acyclic zig-zag for the backbone
+ * while branch placement still prefers projected terminal-leaf slots where
+ * they are locally possible.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
+ * @param {string|null|undefined} atomId - Center backbone atom ID.
+ * @param {string|null|undefined} nextAtomId - Next backbone atom ID.
+ * @returns {boolean} True when the center should avoid a square-grid backbone turn.
+ */
+function isInternalFluorinatedProjectedRunCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
+  return isFullySubstitutedFluorinatedCarbon(layoutGraph, previousAtomId)
+    && isFullySubstitutedFluorinatedCarbon(layoutGraph, atomId)
+    && isFullySubstitutedFluorinatedCarbon(layoutGraph, nextAtomId);
+}
+
+/**
  * Counts terminal carbon leaves attached by single bonds to a center.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Center atom ID.
@@ -548,7 +589,7 @@ function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomI
 
   if (atom?.element === 'C') {
     return (
-      terminalFluorineLeafCount(layoutGraph, atomId) >= 2
+      (terminalFluorineLeafCount(layoutGraph, atomId) >= 2 && !isInternalFluorinatedProjectedRunCentre(layoutGraph, previousAtomId, atomId, nextAtomId))
       || isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId)
       || isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId)
     );
@@ -1298,6 +1339,64 @@ function realignTerminalMultipleBondLeaves(layoutGraph, coords, bondLength) {
 }
 
 /**
+ * Returns whether an atom is a terminal halogen leaf that should be kept off
+ * the main acyclic backbone when a non-leaf scaffold is available. Long
+ * perhaloalkyl chains otherwise start from a halogen attached to a fully
+ * substituted projected center, forcing every carbon onto a square-grid turn
+ * whose terminal leaves can collide at repeated corners.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom ID.
+ * @returns {boolean} True when the atom is a terminal halogen backbone leaf.
+ */
+function isTerminalHalogenBackboneLeaf(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (
+    !atom
+    || !TERMINAL_HALOGEN_BACKBONE_LEAF_ELEMENTS.has(atom.element)
+    || atom.heavyDegree !== 1
+    || layoutGraph.ringAtomIdSet.has(atomId)
+  ) {
+    return false;
+  }
+
+  const neighborAtomId = (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .map(bond => (bond.a === atomId ? bond.b : bond.a))
+    .find(candidateAtomId => layoutGraph.atoms.get(candidateAtomId)?.element !== 'H') ?? null;
+  const neighborAtom = neighborAtomId == null ? null : layoutGraph.atoms.get(neighborAtomId);
+  return Boolean(
+    neighborAtom
+    && neighborAtom.heavyDegree === 4
+    && supportsProjectedTetrahedralGeometry(layoutGraph, neighborAtomId)
+  );
+}
+
+/**
+ * Chooses heavy atoms eligible for the acyclic backbone search. Terminal
+ * halogens are better treated as branches when at least two structural heavy
+ * atoms remain, because that leaves fully substituted endpoint carbons free to
+ * place all halogen leaves on projected tetrahedral slots.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Set<string>} atomIdsToPlace - Atom IDs in the current component.
+ * @returns {Set<string>} Candidate atom IDs for longest-backbone selection.
+ */
+function backboneCandidateAtomIds(layoutGraph, atomIdsToPlace) {
+  const heavyAtomIds = new Set(
+    [...atomIdsToPlace].filter(atomId => {
+      const atom = layoutGraph?.atoms.get(atomId);
+      return atom ? atom.element !== 'H' : true;
+    })
+  );
+  if (!layoutGraph) {
+    return heavyAtomIds.size >= 2 ? heavyAtomIds : atomIdsToPlace;
+  }
+
+  const structuralAtomIds = new Set(
+    [...heavyAtomIds].filter(atomId => !isTerminalHalogenBackboneLeaf(layoutGraph, atomId))
+  );
+  return structuralAtomIds.size >= 2 ? structuralAtomIds : heavyAtomIds;
+}
+
+/**
  * Returns whether an atom is a terminal hetero leaf attached by a single bond
  * to a cross-like hypervalent center that continues into a larger heavy-atom
  * backbone beyond the center.
@@ -1445,13 +1544,7 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
     return coords;
   }
 
-  const heavyBackboneAtomIds = new Set(
-    [...atomIdsToPlace].filter(atomId => {
-      const atom = layoutGraph?.atoms.get(atomId);
-      return atom ? atom.element !== 'H' : true;
-    })
-  );
-  const backboneAtomIds = heavyBackboneAtomIds.size >= 2 ? heavyBackboneAtomIds : atomIdsToPlace;
+  const backboneAtomIds = backboneCandidateAtomIds(layoutGraph, atomIdsToPlace);
   const backbone = longestBackbonePath(adjacency, canonicalAtomRank, backboneAtomIds, layoutGraph);
   const conjugatedCenterIds = findConjugatedBackboneCenters(layoutGraph, backbone);
   if (backbone.length === 2) {

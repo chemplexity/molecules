@@ -28,6 +28,9 @@ const CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS = new Set(['N', 'O', 'S', 'S
 const TERMINAL_HALOGEN_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
 const TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR = 0.72;
 const TERMINAL_LEAF_SHARED_JUNCTION_CLEARANCE = Math.PI / 4;
+const PROJECTED_TETRAHEDRAL_LEAF_RESCUE_TRIGGER_FACTOR = BRANCH_CLEARANCE_FLOOR_FACTOR;
+const PROJECTED_TETRAHEDRAL_LEAF_RESCUE_MAX_ANGLE_SETS = 24;
+const PROJECTED_TETRAHEDRAL_LEAF_RESCUE_MAX_ANGLES_PER_SLOT = 12;
 
 /**
  * Returns the bond angles of all already placed neighbors around an anchor.
@@ -2512,6 +2515,212 @@ function compareAngleSets(firstAngleSet, secondAngleSet) {
 }
 
 /**
+ * Infers the local bond length around an anchor from already placed neighbor
+ * coordinates. Projected terminal-leaf rescue uses this instead of threading
+ * the global bond length through the candidate-set builder.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{x: number, y: number}} anchorPosition - Anchor atom position.
+ * @param {string[]} placedNeighborIds - Already placed neighbor IDs.
+ * @returns {number} Local bond length, or zero when unavailable.
+ */
+function inferPlacedNeighborBondLength(coords, anchorPosition, placedNeighborIds) {
+  for (const neighborAtomId of placedNeighborIds) {
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborPosition) {
+      continue;
+    }
+    const localBondLength = distance(anchorPosition, neighborPosition);
+    if (localBondLength > 0) {
+      return localBondLength;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Returns whether a projected terminal-leaf rescue is operating inside a
+ * fully substituted perhalo-like backbone segment. Short fluorinated chains
+ * with one partially substituted endpoint can keep exact projected slots; the
+ * rescue is for repeated square-grid collisions between adjacent projected
+ * four-heavy carbon centers.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string[]} placedNeighborIds - Already placed neighbor IDs.
+ * @returns {boolean} True when the local placed neighbors identify a crowded projected segment.
+ */
+function terminalHalogenLeafCount(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  let leafCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom && TERMINAL_HALOGEN_ELEMENTS.has(neighborAtom.element) && neighborAtom.heavyDegree === 1) {
+      leafCount++;
+    }
+  }
+  return leafCount;
+}
+
+function isPerhaloProjectedBackboneCarbon(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  return Boolean(
+    layoutGraph
+    && atom
+    && atom.element === 'C'
+    && !atom.aromatic
+    && atom.heavyDegree === 4
+    && atom.degree === 4
+    && !layoutGraph.ringAtomIdSet.has(atomId)
+    && terminalHalogenLeafCount(layoutGraph, atomId) >= 2
+    && supportsProjectedTetrahedralGeometry(layoutGraph, atomId)
+  );
+}
+
+function hasProjectedBackboneLeafRescueContext(layoutGraph, anchorAtomId, placedNeighborIds) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const projectedCarbonNeighborCount = placedNeighborIds.filter(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return Boolean(
+      neighborAtom
+      && neighborAtom.element === 'C'
+      && neighborAtom.heavyDegree === 4
+      && supportsProjectedTetrahedralGeometry(layoutGraph, neighborAtomId)
+    );
+  }).length;
+  if (projectedCarbonNeighborCount >= 2) {
+    return true;
+  }
+  if (!isPerhaloProjectedBackboneCarbon(layoutGraph, anchorAtomId) || projectedCarbonNeighborCount < 1) {
+    return false;
+  }
+  const perhaloProjectedCarbonNeighborCount = (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []).filter(bond => {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    return isPerhaloProjectedBackboneCarbon(layoutGraph, neighborAtomId);
+  }).length;
+  return perhaloProjectedCarbonNeighborCount >= 2;
+}
+
+/**
+ * Returns bounded off-slot angle sets for projected terminal leaves when the
+ * strict orthogonal slots already collide with placed atoms. The exact slot
+ * set stays first in the candidate list; these near-slot alternatives are only
+ * available for scoring to choose when an exact perhalo chain slot has become
+ * unusable.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{x: number, y: number}} anchorPosition - Anchor atom position.
+ * @param {string} anchorAtomId - Projected center atom ID.
+ * @param {string[]} placedNeighborIds - Already placed neighbor IDs.
+ * @param {string[]} assigningNeighborIds - Terminal leaves being assigned.
+ * @param {number[]} strictAngleSet - Exact projected slot angles.
+ * @returns {number[][]} Near-projected rescue angle sets.
+ */
+function projectedTerminalLeafRescueAngleSets(
+  layoutGraph,
+  coords,
+  anchorPosition,
+  anchorAtomId,
+  placedNeighborIds,
+  assigningNeighborIds,
+  strictAngleSet
+) {
+  if (
+    !layoutGraph
+    || strictAngleSet.length === 0
+    || assigningNeighborIds.length !== strictAngleSet.length
+    || !hasProjectedBackboneLeafRescueContext(layoutGraph, anchorAtomId, placedNeighborIds)
+    || !assigningNeighborIds.every(neighborAtomId => isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId))
+  ) {
+    return [];
+  }
+
+  const bondLength = inferPlacedNeighborBondLength(coords, anchorPosition, placedNeighborIds);
+  if (!(bondLength > 0)) {
+    return [];
+  }
+
+  const excludedAtomIds = new Set([anchorAtomId, ...assigningNeighborIds]);
+  const strictMinimumClearance = strictAngleSet.reduce(
+    (minimumClearance, angle) => Math.min(
+      minimumClearance,
+      candidateClearanceScore(anchorPosition, angle, bondLength, coords, excludedAtomIds)
+    ),
+    Number.POSITIVE_INFINITY
+  );
+  if (strictMinimumClearance >= bondLength * PROJECTED_TETRAHEDRAL_LEAF_RESCUE_TRIGGER_FACTOR) {
+    return [];
+  }
+
+  const occupiedAngles = placedNeighborIds
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean)
+    .map(neighborPosition => angleOf(sub(neighborPosition, anchorPosition)));
+  const comfortClearance = bondLength * TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR;
+  const angleCandidatesBySlot = strictAngleSet.map(strictAngle => {
+    const candidates = buildNearPreferredRescueCandidateAngles([strictAngle])
+      .map(candidateAngle => normalizeSignedAngle(candidateAngle))
+      .filter(candidateAngle => occupiedAngles.every(occupiedAngle => angularDifference(candidateAngle, occupiedAngle) >= DEG30 - 1e-9))
+      .map(candidateAngle => ({
+        angle: candidateAngle,
+        deviation: angularDifference(candidateAngle, strictAngle),
+        clearanceScore: candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds),
+        isSafe: isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds)
+      }))
+      .filter(candidate => candidate.isSafe)
+      .sort((firstCandidate, secondCandidate) => {
+        const firstHasComfortClearance = firstCandidate.clearanceScore >= comfortClearance;
+        const secondHasComfortClearance = secondCandidate.clearanceScore >= comfortClearance;
+        if (firstHasComfortClearance !== secondHasComfortClearance) {
+          return secondHasComfortClearance - firstHasComfortClearance;
+        }
+        if (Math.abs(firstCandidate.deviation - secondCandidate.deviation) > 1e-9) {
+          return firstCandidate.deviation - secondCandidate.deviation;
+        }
+        return secondCandidate.clearanceScore - firstCandidate.clearanceScore;
+      })
+      .slice(0, PROJECTED_TETRAHEDRAL_LEAF_RESCUE_MAX_ANGLES_PER_SLOT)
+      .map(candidate => candidate.angle);
+    return candidates.length > 0 ? candidates : [strictAngle];
+  });
+
+  const rescueAngleSets = [];
+  const recurse = (slotIndex, angleSet) => {
+    if (rescueAngleSets.length >= PROJECTED_TETRAHEDRAL_LEAF_RESCUE_MAX_ANGLE_SETS) {
+      return;
+    }
+    if (slotIndex === angleCandidatesBySlot.length) {
+      const sortedAngleSet = [...angleSet].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+      if (sortedAngleSet.some((angle, index) => (
+        sortedAngleSet.some((otherAngle, otherIndex) => otherIndex > index && angularDifference(angle, otherAngle) < DEG30 - 1e-9)
+      ))) {
+        return;
+      }
+      if (!rescueAngleSets.some(candidate => compareAngleSets(candidate, sortedAngleSet) === 0)) {
+        rescueAngleSets.push(sortedAngleSet);
+      }
+      return;
+    }
+    for (const candidateAngle of angleCandidatesBySlot[slotIndex]) {
+      recurse(slotIndex + 1, [...angleSet, candidateAngle]);
+      if (rescueAngleSets.length >= PROJECTED_TETRAHEDRAL_LEAF_RESCUE_MAX_ANGLE_SETS) {
+        return;
+      }
+    }
+  };
+  recurse(0, []);
+  return rescueAngleSets;
+}
+
+/**
  * Returns whether a neighbor is a compact terminal substituent root, such as a
  * CF3, monohalomethyl, tert-butyl carbon, or one-heavy alkoxy root, that
  * should occupy one projected-tetrahedral slot as a single bulky leaf when
@@ -2711,6 +2920,14 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     && (layoutGraph.atomToRings?.get(placedNeighborIds[0])?.length ?? 0) > 0
     && inBatchNeighborIds.length === 3
     && allInBatchNeighborsAreTerminalCarbonLeaves;
+  const isProjectedThreeTerminalLeafEndpointBatch =
+    anchorAtom?.element === 'C'
+    && !anchorAtom.aromatic
+    && (anchorAtom.heavyDegree ?? 0) === 4
+    && placedNeighborIds.length === 1
+    && inBatchNeighborIds.length === 3
+    && deferredHeavyNeighborIds.length === 0
+    && allInBatchNeighborsAreTerminalLeaves;
   const shouldReserveOppositeSlotForDeferredBranch =
     anchorAtom?.element === 'C'
     && !anchorAtom.aromatic
@@ -2746,6 +2963,7 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
       (placedNeighborIds.length === 2
         && inBatchNeighborIds.length === 2
         && allInBatchNeighborsAreTerminalLeaves)
+      || isProjectedThreeTerminalLeafEndpointBatch
       || isProjectedThreeTerminalCarbonLeafBatch
       || isProjectedMixedAttachedRingBatch
       || shouldReserveOppositeSlotForDeferredRing
@@ -2829,7 +3047,19 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     }
   }
 
-  return bestCandidates.sort(compareAngleSets).slice(0, 1);
+  const exactCandidates = bestCandidates.sort(compareAngleSets).slice(0, 1);
+  return exactCandidates.flatMap(angleSet => [
+    angleSet,
+    ...projectedTerminalLeafRescueAngleSets(
+      layoutGraph,
+      coords,
+      anchorPosition,
+      anchorAtomId,
+      placedNeighborIds,
+      inBatchNeighborIds,
+      angleSet
+    )
+  ]);
 }
 
 function preferredProjectedTetrahedralAngles(layoutGraph, coords, anchorAtomId, currentPlacedNeighborIds, childAtomId) {

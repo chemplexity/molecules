@@ -249,6 +249,51 @@ export function shouldPreferFusedMixedOverlapCleanupStage(familySummary, candida
 }
 
 /**
+ * Allows a protected-family cleanup stage to win when it fully clears severe
+ * overlaps and remains inside a tight no-bond-failure deviation envelope.
+ * Trigger: dirty incumbent with severe overlaps; budget: one already-scored
+ * cleanup candidate; must-not-worsen: bond failures, crossings, labels,
+ * collapses, and stereo/readability counts. Ablation: remove this branch and the
+ * core cleanup candidate loses to the dirtier placement on tiny bond-deviation
+ * tie-breaks.
+ * @param {object} candidate - Candidate cleanup stage result.
+ * @param {object|null} incumbent - Current incumbent stage result.
+ * @returns {boolean} True when an audit-clean overlap win should apply.
+ */
+export function shouldPreferAuditCleanOverlapCleanupStage(candidate, incumbent) {
+  if (!incumbent || (incumbent.audit?.severeOverlapCount ?? 0) === 0) {
+    return false;
+  }
+  if (candidate.audit?.ok !== true || (candidate.audit.severeOverlapCount ?? 0) !== 0) {
+    return false;
+  }
+  for (const key of [
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) > (incumbent.audit[key] ?? 0)) {
+      return false;
+    }
+  }
+  if ((candidate.audit.stereoContradiction ?? false) && !(incumbent.audit.stereoContradiction ?? false)) {
+    return false;
+  }
+  return (
+    (candidate.audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY)
+      <= PROTECTED_CLEANUP_STAGE_LIMITS.maxAuditCleanOverlapWinBondDeviation
+    && (candidate.audit.meanBondLengthDeviation ?? Number.POSITIVE_INFINITY)
+      <= PROTECTED_CLEANUP_STAGE_LIMITS.maxAuditCleanOverlapWinMeanBondDeviation
+  );
+}
+
+/**
  * Allows a stage with fewer severe overlaps to tolerate a small ring-substituent
  * readability regression. A real atom-on-atom clash is visually worse than a
  * single outward-axis presentation miss, and later presentation cleanup still
@@ -352,6 +397,9 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
     return true;
   }
   if (shouldPreferFusedMixedOverlapCleanupStage(familySummary, candidate, incumbent)) {
+    return true;
+  }
+  if (shouldPreferAuditCleanOverlapCleanupStage(candidate, incumbent)) {
     return true;
   }
   if (shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, incumbent)) {

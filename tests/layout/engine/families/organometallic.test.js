@@ -362,6 +362,43 @@ describe('layout/engine/families/organometallic', () => {
     assert.ok(audit.maxBondLengthDeviation < 0.7);
   });
 
+  it('projects octahedral multi-metal halide clusters outward so bridge labels clear', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('[Ta]1234567[Br][Ta]1189%10%11[Br][Ta]2112%12%13%14([Ta]33([Br]4)([Br]1)[Ta]821([Br][Ta]5931([Br]%12)([Br]6)[Br]%10)([Br]%13)([Br]%14)[Br]%11)[Br]7'),
+      { suppressH: true }
+    );
+    const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(result.placementMode, 'metal-framework-rescue');
+    assert.equal(result.displayAssignments.length, 0);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < 0.6);
+  });
+
+  it('places seven-metal polyoxo wheels on a clean central hexagon projection', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('[O--][Mo+6]123([O--])[O--][Mo+6]45([O--])([O--])[O--][Mo+6]67([O--])([O--])[O--][Mo+6]89([O--])([O--])[O--][Mo+6]%10%11([O--])([O--])[O--][Mo+6]%12([O--])([O--])([O--]1)[O--]%10[Mo+6]([O--]2)([O--]8)([O--]46)([O--]35%12)[O--]79%11'),
+      { suppressH: true }
+    );
+    const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(result.placementMode, 'polyoxo-framework-rescue');
+    assert.equal(result.displayAssignments.length, 0);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+  });
+
   it('lays out haptic iron cyclopentadienyl ligands on ligand-only ring geometry', () => {
     const graph = createLayoutGraph(
       parseSMILES('C1(N(C(=O)CC1)CCC12[Fe]3456789%10C%11C3=C4C5=C6%11)=O.C7(C8=C19)=C2%10'),

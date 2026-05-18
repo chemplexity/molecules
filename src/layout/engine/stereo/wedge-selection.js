@@ -3,6 +3,7 @@
 import { assignCIPRanks } from '../../../core/Molecule.js';
 import { centroid, distance, normalize, scale, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
+import { isMetalAtom } from '../topology/metal-centers.js';
 import { minimumSectorAngle, synthesizeHydrogenPosition } from './wedge-geometry.js';
 
 function findBondBetween(molecule, firstAtomId, secondAtomId) {
@@ -150,6 +151,26 @@ function bondOrder(bond) {
 }
 
 /**
+ * Returns the covalent single bonds that can carry normal wedge/dash display for
+ * one stereocenter. Coordinate-only metal centers are projected by the
+ * organometallic placer when safe, not by this covalent wedge selector.
+ * @param {object[]} entries - Prepared stereocenter neighbor entries.
+ * @param {string} centerId - Stereocenter atom id.
+ * @returns {object[]} Candidate display entries.
+ */
+function covalentStereoDisplayEntries(entries, centerId) {
+  return entries.filter(entry => {
+    if (bondKind(entry.bond) !== 'covalent' || entry.bond.properties.aromatic === true || bondOrder(entry.bond) !== 1) {
+      return false;
+    }
+    if (displayConflicts(entry, centerId)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
  * Returns whether a candidate entry points to any hydrogen atom.
  * @param {object} entry - Candidate stereobond entry.
  * @returns {boolean} True when the entry atom is hydrogen.
@@ -268,6 +289,13 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       unsupportedCenterIds.push(centerId);
       continue;
     }
+    if (
+      isMetalAtom(preparedEntries.center)
+      && covalentStereoDisplayEntries(preparedEntries.entries, centerId).length === 0
+    ) {
+      unsupportedCenterIds.push(centerId);
+      continue;
+    }
     preparedCenterEntriesById.set(centerId, preparedEntries);
     centerIds.push(centerId);
   }
@@ -309,15 +337,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       continue;
     }
 
-    const candidateEntries = rawEntries.entries.filter(entry => {
-      if (bondKind(entry.bond) !== 'covalent' || entry.bond.properties.aromatic === true || bondOrder(entry.bond) !== 1) {
-        return false;
-      }
-      if (displayConflicts(entry, centerId)) {
-        return false;
-      }
-      return true;
-    });
+    const candidateEntries = covalentStereoDisplayEntries(rawEntries.entries, centerId);
     const nonRingCandidates = candidateEntries.filter(entry => !entry.bond.isInRing(molecule));
     const nonRingVisibleHeavyCandidates = nonRingCandidates.filter(entry => !isHydrogenEntry(entry));
     const visibleHeavyCandidates = candidateEntries.filter(entry => !isHydrogenEntry(entry));

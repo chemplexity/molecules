@@ -47,6 +47,8 @@ export const UNIFIED_CLEANUP_LIMITS = Object.freeze({
 export const PROTECTED_CLEANUP_STAGE_LIMITS = Object.freeze({
   maxBondFailureIncreaseForOverlapWin: 1,
   maxBondDeviationIncrease: 1e-6,
+  maxAuditCleanOverlapWinBondDeviation: 0.06,
+  maxAuditCleanOverlapWinMeanBondDeviation: 0.01,
   maxFusedMixedBondDeviationForOverlapWin: 0.06,
   maxFusedMixedMeanDeviationForOverlapWin: 0.01
 });
@@ -182,13 +184,19 @@ export const ORGANOMETALLIC_RESCUE_LIMITS = Object.freeze({
   maxLigandFragmentAtomCount: 1,
   maxAnchorMetalCount: 2,
   singleAnchorSpreadStep: Math.PI / 6,
+  octahedralFrameworkRadiusFactor: 0.8,
+  octahedralBridgeOffsetFactor: 2.3,
+  octahedralDuplicateBridgeSpreadFactor: 0.8,
   mixedRingSystemRescueMinAtomCount: 40,
   mixedRingSystemRescueMinRingCount: 8,
   polyoxoMinMetalCount: 4,
-  polyoxoMaxAnchorMetalCount: 3,
+  polyoxoMaxAnchorMetalCount: 4,
   polyoxoFrameworkBondLengthFactor: 2,
   polyoxoPairBridgeOffsetFactor: 0.25,
   polyoxoTerminalSlotCount: 12,
   polyoxoTerminalMinSlotSeparation: Math.PI / 6,
+  polyoxoWheelOuterRadiusFactor: 26 / 15,
+  polyoxoWheelTerminalFanAngle: 0.55,
+  polyoxoWheelMultiBridgeRadialFactor: 2,
   polyoxoRescueMaxSevereOverlapCount: 6
 });

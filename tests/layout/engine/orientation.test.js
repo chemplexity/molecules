@@ -235,4 +235,18 @@ describe('layout/engine/orientation', () => {
     assert.notEqual(end, undefined);
     assert.ok(Math.abs(end.y - start.y) < 1e-6, `expected the long chain backbone to stay level, got tilt ${Math.abs(end.y - start.y).toFixed(6)}`);
   });
+
+  it('rejects final orientation candidates that reintroduce label overlaps', () => {
+    const smiles = '[Na+].[Na+].[Na+].[Na+].CSCCNc1nc(SCCC(F)(F)F)nc2c1ncn2[C@@H]3O[C@H](<COP(=O)([O-])OP(=O)([O-])C(Cl)(Cl)P(=O)([O-])[O-]>)[C@@H](O)[C@H]3O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
 });

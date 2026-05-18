@@ -1,7 +1,28 @@
 # Change Log
 
+## 2026-05-17
+
+- Seed unmatched compact 5-5-4 bridged cages from their smallest ring so ether lanes avoid projected label-overlap collapse.
+- Prefer ring-system atom ordering for unmatched bridged KK seeds so compact tetracyclic cages avoid label-overlap fallback from ring-list ordering bias.
+- Give large-molecule residual retouch a bounded extra pass budget and contact-directed rotation targets so stubborn peptide label-overlap audit cases keep improving without moving ring atoms directly.
+- Add an octahedral multi-metal halide rescue that projects six-metal bridge clusters onto an outward-spread framework so dense tantalum bromide labels clear.
+- Add a seven-metal polyoxo wheel rescue that places central molybdate cages on a clean hexagonal projection with terminal oxos fanned outward.
+- Let protected-family core cleanup keep audit-clean macrocycle overlap wins when bond deviations stay below visible failure limits.
+- Add a bounded final ring-substituent readability retouch so macrocycle chromophore exits clear audit without reopening label contacts.
+- Rotate terminal halogen leaves during final contact retouch so perfluoroaryl sulfonamide tails clear residual overlaps.
+- Let large-molecule residual retouch accept severe-overlap-reducing branch swings and add guarded carbonyl label micro-rotations so peptide proline branches clear both bond crossings and label contacts.
+- Rotate terminal carbon leaves away from residual bond crossings so chloropyridyl oxime layouts stay clean.
+- Add guarded final terminal-label clearance so large glycan/phosphate layouts keep residual retouch fixes without label overlaps.
+- Reject final whole-molecule orientation candidates that reintroduce label overlaps.
+- Add a scopolamine epoxide bridged-core template so oxirane caps stay outside tropane cages and clear label overlaps.
+
 ## 2026-05-16
 
+- Let large-molecule residual retouch repair compact nucleotide phosphate overlap clusters with bounded large-swing follow-ups while skipping ultra-large final angle-polish churn once safety residuals are clean.
+- Keep long perfluoroalkyl acyclic backbones from reusing terminal halogen slots so label overlaps clear.
+- Rotate nearby aromatic sidechain roots during large-molecule residual retouch so peptide label contacts clear without moving ring atoms directly.
+- Treat coordinate-only annotated metal centers as unsupported in covalent wedge selection so organometallic E/Z rescues do not fail stereo audit.
+- Check stereo when accepting final macrocycle attached-ring retouches so late branch rotations cannot flip accepted alkene geometry.
 - Treat large monocyclic macrocycle E/Z mismatches as unsupported unless already depicted correctly, avoiding destructive ring-reflection fallbacks.
 - Apply cyclic E/Z support guards to unsaturated lactone layouts while preserving supported acyclic alkene audits.
 - Apply cyclic E/Z support guards to fused epoxy lactone layouts so unsupported rescue failures stay audit-clean.

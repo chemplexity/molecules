@@ -106,6 +106,24 @@ describe('layout/engine/stereo/wedge-selection', () => {
     assert.deepEqual(summary.missingCenterIds, []);
   });
 
+  it('treats coordinate-only metal centers as unsupported covalent wedge centers', () => {
+    const molecule = parseSMILES(String.raw`C[C@H]1C[C@H](O)N[C@@H]2CCCCN(O[Fe@@]34O[C@@H](\C=C\CCCCCCC(O)=O)[N@](CCCC[C@H](NC(=O)[C@H]5COC(=N5)C5=CC=CC=C5O3)C(=O)O1)O4)C2=O`);
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const summary = pickWedgeAssignments(result.layoutGraph, result.coords);
+
+    assert.equal(summary.annotatedCenterCount, 7);
+    assert.equal(summary.chiralCenterCount, 6);
+    assert.equal(summary.assignedCenterCount, 6);
+    assert.equal(summary.unassignedCenterCount, 0);
+    assert.equal(summary.unsupportedCenterCount, 1);
+    assert.deepEqual(summary.unsupportedCenterIds, ['Fe17']);
+    assert.deepEqual(summary.missingCenterIds, []);
+  });
+
   it('uses distinct display bonds for adjacent hidden-hydrogen stereocenters', () => {
     const molecule = parseSMILES('CCCN(CCC)C(=O)c1cc(C)cc(c1)C(=O)N[C@@H](Cc2cc(F)cc(F)c2)[C@H](O)[C@@H]3NCCN(Cc4ccccc4)C3=O');
     const result = runPipeline(molecule, { suppressH: true });

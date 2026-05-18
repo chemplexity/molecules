@@ -3881,6 +3881,89 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
 }
 
 /**
+ * Returns a shortest-ring-first atom order for compact saturated 5-5-4 cages.
+ * Starting KK on the small ring keeps the two larger ether lanes from collapsing
+ * into a crossed bridge projection before the ordinary bridged audit can compare
+ * candidates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Rings being placed as one bridged component.
+ * @param {string[]} fallbackAtomIds - Ring-list atom order used by default.
+ * @returns {string[]|null} Seed atom order for compact 5-5-4 cages, or `null`.
+ */
+function compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (
+    rings.length !== 3
+    || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
+    || rings.some(ring => ring.aromatic)
+    || containsMetalAtom(layoutGraph, fallbackAtomIds)
+  ) {
+    return null;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (ringSizes[0] !== 4 || ringSizes[1] !== 5 || ringSizes[2] !== 5) {
+    return null;
+  }
+
+  const atomIds = [
+    ...new Set(
+      [...rings]
+        .sort((firstRing, secondRing) => firstRing.atomIds.length - secondRing.atomIds.length || firstRing.id - secondRing.id)
+        .flatMap(ring => ring.atomIds)
+    )
+  ];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+/**
+ * Returns a stable atom order for bridged KK seeding. The order produced by
+ * flattening SSSR ring atom lists can start dense tetracyclic cages in a
+ * crossed state; the ring-system ordering is generated once from the whole
+ * fused component and gives KK a less biased initial circle, while compact
+ * 5-5-4 cages use their small ring as the initial seed.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Rings being placed as one bridged component.
+ * @param {string|null} [templateId] - Matched template ID, when placement is templated.
+ * @returns {string[]} Atom IDs for the bridged component.
+ */
+function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
+  const fallbackAtomIds = [...new Set(rings.flatMap(ring => ring.atomIds))];
+  if (templateId != null) {
+    return fallbackAtomIds;
+  }
+
+  const compactSmallRingFirstAtomIds = compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (compactSmallRingFirstAtomIds) {
+    return compactSmallRingFirstAtomIds;
+  }
+
+  if (rings.length !== 4) {
+    return fallbackAtomIds;
+  }
+  const ringIds = rings.map(ring => ring.id);
+  const ringIdSet = new Set(ringIds);
+  const owningRingSystem = (layoutGraph.ringSystems ?? []).find(ringSystem => {
+    const systemRingIds = ringSystem.ringIds ?? [];
+    if (systemRingIds.length !== ringIds.length) {
+      return false;
+    }
+    return systemRingIds.every(ringId => ringIdSet.has(ringId));
+  });
+  if (!owningRingSystem || !Array.isArray(owningRingSystem.atomIds)) {
+    return fallbackAtomIds;
+  }
+
+  const fallbackAtomIdSet = new Set(fallbackAtomIds);
+  if (
+    owningRingSystem.atomIds.length !== fallbackAtomIds.length
+    || !owningRingSystem.atomIds.every(atomId => fallbackAtomIdSet.has(atomId))
+  ) {
+    return fallbackAtomIds;
+  }
+  return [...owningRingSystem.atomIds];
+}
+
+/**
  * Places a bridged or caged ring system using matched template coordinates
  * when available, then falls back to a Kamada-Kawai seed for unmatched cases.
  * @param {object[]} rings - Ring descriptors in the bridged system.
@@ -3892,7 +3975,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   if (rings.length === 0 || !options.layoutGraph) {
     return null;
   }
-  const atomIds = [...new Set(rings.flatMap(ring => ring.atomIds))];
+  const atomIds = bridgedPlacementAtomIds(options.layoutGraph, rings, options.templateId ?? null);
   const templateCoords = placeTemplateCoords(options.layoutGraph, options.templateId, atomIds, bondLength);
   if (templateCoords) {
     const ringCenters = new Map();

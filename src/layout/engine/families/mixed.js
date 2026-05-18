@@ -32,6 +32,7 @@ import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeR
 import {
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
+  collectReadableRingSubstituentChildren,
   findVisibleHeavyBondCrossings,
   findSevereOverlaps,
   measureFocusedPlacementCost,
@@ -55,7 +56,7 @@ import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from './macro
 import { layoutSpiroFamily } from './spiro.js';
 import { classifyRingSystemFamily } from '../model/scaffold-plan.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
-import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS, atomPairKey } from '../constants.js';
+import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SUBSTITUENT_READABILITY_LIMITS, RING_SYSTEM_RESCUE_LIMITS, atomPairKey } from '../constants.js';
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
@@ -64,6 +65,7 @@ const AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS = new Set([
   'hydroxy-aminopropyl-cyclobutane-decalin-core',
   'hydroxy-keto-oxadiazole-bridged-core',
   'indoline-aza-bridged-heptacycle-core',
+  'scopolamine-epoxide-core',
   'oxime-lactam-cyclopentenyl-core'
 ]);
 const MAX_RING_LINKER_ATOMS = 3;
@@ -408,6 +410,18 @@ const RING_SUBSTITUENT_BRANCH_CROSSING_ROTATION_OFFSETS = Object.freeze(
 const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS = 32;
 const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_DESCRIPTOR_COUNT = 3;
 const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_PAIR_DESCRIPTOR_COUNT = 2;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_LAYOUT_HEAVY_ATOMS = 140;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS = 48;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_DESCRIPTOR_COUNT = 3;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_PAIR_DESCRIPTOR_COUNT = 2;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_TARGET_SLACK = Math.PI / 720;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_OFFSETS = Object.freeze(
+  [3, 5, 8, 9, 10, 12, 15, 18, 20, 25, 30, 45, 60, 90, 120, 150, 180]
+    .map(degrees => (degrees * Math.PI) / 180)
+);
+const RING_SUBSTITUENT_BOUNDED_READABILITY_FRACTIONS = Object.freeze(
+  [0.18, 0.22, 0.26, 0.3, 0.35, 0.42, 0.5, 0.66, 0.8, 1]
+);
 const TERMINAL_CARBON_RING_LEAF_CROSSING_ATTACHED_SIDE_OFFSETS = Object.freeze([
   Math.PI / 36,
   -(Math.PI / 36),
@@ -2446,6 +2460,371 @@ function ringSubstituentBranchDescriptorsOverlap(firstDescriptor, secondDescript
     secondDescriptor.rootAtomId,
     ...secondDescriptor.movedAtomIds
   ].some(atomId => firstAtomIds.has(atomId));
+}
+
+function nearestRingSubstituentReadabilityTargetAngle(layoutGraph, coords, anchorAtomId, childAtomId) {
+  const currentAngle = angleOf(sub(coords.get(childAtomId), coords.get(anchorAtomId)));
+  const targetAngles = [
+    ...directAttachmentLocalOutwardAngles(layoutGraph, coords, anchorAtomId, childAtomId),
+    ...incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId)
+  ].filter((candidateAngle, index, angles) => (
+    angles.findIndex(existingAngle => angularDifference(existingAngle, candidateAngle) <= 1e-9) === index
+  ));
+  if (targetAngles.length === 0) {
+    return null;
+  }
+  return targetAngles.reduce((bestAngle, candidateAngle) => (
+    angularDifference(candidateAngle, currentAngle) < angularDifference(bestAngle, currentAngle)
+      ? candidateAngle
+      : bestAngle
+  ));
+}
+
+function ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchorAtomId, childAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    !anchorAtom
+    || anchorAtom.element === 'H'
+    || !childAtom
+    || childAtom.element === 'H'
+    || childAtom.aromatic
+    || !coords.has(anchorAtomId)
+    || !coords.has(childAtomId)
+    || !layoutGraph.ringAtomIdSet.has(anchorAtomId)
+    || layoutGraph.ringAtomIdSet.has(childAtomId)
+  ) {
+    return null;
+  }
+
+  const branchBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (!branchBond || branchBond.kind !== 'covalent' || branchBond.inRing || branchBond.aromatic || (branchBond.order ?? 1) !== 1) {
+    return null;
+  }
+
+  const focusReadability = measureRingSubstituentReadability(layoutGraph, coords, {
+    focusAtomIds: new Set([anchorAtomId])
+  });
+  if ((focusReadability.failingSubstituentCount ?? 0) === 0) {
+    return null;
+  }
+
+  const targetAngle = nearestRingSubstituentReadabilityTargetAngle(layoutGraph, coords, anchorAtomId, childAtomId);
+  if (targetAngle == null) {
+    return null;
+  }
+
+  const currentAngle = angleOf(sub(coords.get(childAtomId), coords.get(anchorAtomId)));
+  const outwardDelta = normalizeSignedAngle(targetAngle - currentAngle);
+  const outwardDeviation = Math.abs(outwardDelta);
+  if (outwardDeviation <= RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation) {
+    return null;
+  }
+
+  const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId)
+    .filter(atomId => coords.has(atomId));
+  if (
+    movedAtomIds.length === 0
+    || movedAtomIds.includes(anchorAtomId)
+    || heavyAtomCountInIds(layoutGraph, movedAtomIds) > RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS
+  ) {
+    return null;
+  }
+
+  return {
+    anchorAtomId,
+    rootAtomId: childAtomId,
+    movedAtomIds,
+    currentAngle,
+    targetAngle,
+    outwardDelta,
+    outwardDeviation
+  };
+}
+
+function ringSubstituentBoundedReadabilityDescriptors(layoutGraph, coords) {
+  if (
+    heavyAtomCountInIds(layoutGraph, [...coords.keys()])
+      > RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_LAYOUT_HEAVY_ATOMS
+  ) {
+    return [];
+  }
+
+  const descriptors = [];
+  const seenPairs = new Set();
+  for (const anchorAtomId of coords.keys()) {
+    for (const { childAtomId } of collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId)) {
+      const pairKey = atomPairKey(anchorAtomId, childAtomId);
+      if (seenPairs.has(pairKey)) {
+        continue;
+      }
+      seenPairs.add(pairKey);
+      const descriptor = ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchorAtomId, childAtomId);
+      if (descriptor) {
+        descriptors.push(descriptor);
+      }
+    }
+  }
+
+  return descriptors.sort((firstDescriptor, secondDescriptor) => (
+    compareCanonicalIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId, layoutGraph.canonicalAtomRank)
+    || compareCanonicalIds(firstDescriptor.rootAtomId, secondDescriptor.rootAtomId, layoutGraph.canonicalAtomRank)
+  ));
+}
+
+function ringSubstituentBoundedReadabilityAngles(descriptor) {
+  const sign = descriptor.outwardDelta >= 0 ? 1 : -1;
+  const magnitude = Math.abs(descriptor.outwardDelta);
+  const targetDeviation = Math.max(
+    0,
+    RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation
+      - RING_SUBSTITUENT_BOUNDED_READABILITY_TARGET_SLACK
+  );
+  const minimumOffset = Math.max(0, magnitude - targetDeviation);
+  const offsets = [
+    minimumOffset,
+    minimumOffset + Math.PI / 360,
+    minimumOffset + Math.PI / 180,
+    ...RING_SUBSTITUENT_BOUNDED_READABILITY_OFFSETS,
+    ...RING_SUBSTITUENT_BOUNDED_READABILITY_FRACTIONS.map(fraction => magnitude * fraction),
+    magnitude
+  ]
+    .filter(offset => offset > IMPROVEMENT_EPSILON && offset <= magnitude + IMPROVEMENT_EPSILON)
+    .map(offset => Math.min(offset, magnitude));
+  return offsets
+    .map(offset => wrapAngle(descriptor.currentAngle + sign * offset))
+    .filter((candidateAngle, index, angles) => (
+      angles.findIndex(existingAngle => angularDifference(existingAngle, candidateAngle) <= 1e-6) === index
+    ));
+}
+
+function translateRingSubstituentBoundedReadabilitySubtree(layoutGraph, coords, descriptor, targetAngle) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return null;
+  }
+
+  const targetPosition = add(
+    anchorPosition,
+    fromAngle(targetAngle, distance(anchorPosition, rootPosition))
+  );
+  const delta = sub(targetPosition, rootPosition);
+  if (distance(targetPosition, rootPosition) <= IMPROVEMENT_EPSILON) {
+    return null;
+  }
+
+  const nextCoords = new Map(coords);
+  for (const atomId of descriptor.movedAtomIds) {
+    const position = coords.get(atomId);
+    if (position) {
+      nextCoords.set(atomId, add(position, delta));
+    }
+  }
+  return nextCoords;
+}
+
+function buildRingSubstituentBoundedReadabilityCandidateRecords(layoutGraph, coords, descriptor) {
+  return ringSubstituentBoundedReadabilityAngles(descriptor)
+    .map(targetAngle => ({
+      coords: translateRingSubstituentBoundedReadabilitySubtree(layoutGraph, coords, descriptor, targetAngle),
+      rotationMagnitude: angularDifference(targetAngle, descriptor.currentAngle)
+    }))
+    .filter(record => record.coords);
+}
+
+function ringSubstituentBoundedReadabilityCandidateScore(
+  layoutGraph,
+  coords,
+  audit,
+  descriptors,
+  bondLength,
+  totalMove = 0,
+  rotationMagnitude = 0
+) {
+  const descriptorList = Array.isArray(descriptors) ? descriptors : [descriptors];
+  const focusAtomIds = [...new Set(descriptorList.flatMap(descriptor => [
+    descriptor.anchorAtomId,
+    descriptor.rootAtomId,
+    ...descriptor.movedAtomIds
+  ]))];
+  const readability = measureRingSubstituentReadability(layoutGraph, coords);
+  return {
+    coords,
+    audit,
+    readability,
+    layoutCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds),
+    totalMove,
+    rotationMagnitude
+  };
+}
+
+function totalRingSubstituentBoundedReadabilityMove(coords, candidateCoords, descriptors) {
+  const movedAtomIds = new Set(descriptors.flatMap(descriptor => descriptor.movedAtomIds));
+  let totalMove = 0;
+  for (const atomId of movedAtomIds) {
+    const position = coords.get(atomId);
+    const candidatePosition = candidateCoords.get(atomId);
+    if (position && candidatePosition) {
+      totalMove += distance(position, candidatePosition);
+    }
+  }
+  return totalMove;
+}
+
+function compareRingSubstituentBoundedReadabilityCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok ? -1 : 1;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount',
+    'bondLengthFailureCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (Math.abs(candidate.readability.totalOutwardDeviation - incumbent.readability.totalOutwardDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.readability.totalOutwardDeviation - incumbent.readability.totalOutwardDeviation;
+  }
+  if (Math.abs(candidate.readability.maxOutwardDeviation - incumbent.readability.maxOutwardDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.readability.maxOutwardDeviation - incumbent.readability.maxOutwardDeviation;
+  }
+  if (Math.abs(candidate.layoutCost - incumbent.layoutCost) > IMPROVEMENT_EPSILON) {
+    return candidate.layoutCost - incumbent.layoutCost;
+  }
+  if (Math.abs(candidate.rotationMagnitude - incumbent.rotationMagnitude) > IMPROVEMENT_EPSILON) {
+    return candidate.rotationMagnitude - incumbent.rotationMagnitude;
+  }
+  return candidate.totalMove - incumbent.totalMove;
+}
+
+/**
+ * Moves bounded ring-exit substituent subtrees toward the nearest exterior
+ * axis just far enough for readability, accepting only audit-clean candidates.
+ * The pair search covers adjacent exits where either one alone would reopen a
+ * contact but the coordinated small moves clear both failures.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} bondValidationClasses - Current validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether a bounded readability move was applied.
+ */
+export function resolveRingSubstituentBoundedReadability(
+  layoutGraph,
+  coords,
+  bondValidationClasses,
+  bondLength
+) {
+  const baseAudit = auditMixedPlacement(layoutGraph, { coords, bondValidationClasses }, bondLength);
+  if ((baseAudit.ringSubstituentReadabilityFailureCount ?? 0) === 0) {
+    return { changed: false };
+  }
+
+  const descriptors = ringSubstituentBoundedReadabilityDescriptors(layoutGraph, coords);
+  if (
+    descriptors.length === 0
+    || descriptors.length > RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_DESCRIPTOR_COUNT
+  ) {
+    return { changed: false };
+  }
+
+  const incumbent = ringSubstituentBoundedReadabilityCandidateScore(
+    layoutGraph,
+    coords,
+    baseAudit,
+    descriptors,
+    bondLength
+  );
+  let bestCandidate = incumbent;
+
+  for (const descriptor of descriptors) {
+    for (const candidateRecord of buildRingSubstituentBoundedReadabilityCandidateRecords(layoutGraph, coords, descriptor)) {
+      const candidateAudit = auditMixedPlacement(
+        layoutGraph,
+        { coords: candidateRecord.coords, bondValidationClasses },
+        bondLength
+      );
+      if (!mixedAuditCountsDoNotRegress(candidateAudit, baseAudit)) {
+        continue;
+      }
+      const candidate = ringSubstituentBoundedReadabilityCandidateScore(
+        layoutGraph,
+        candidateRecord.coords,
+        candidateAudit,
+        descriptor,
+        bondLength,
+        totalRingSubstituentBoundedReadabilityMove(coords, candidateRecord.coords, [descriptor]),
+        candidateRecord.rotationMagnitude
+      );
+      if (
+        (candidate.audit.ringSubstituentReadabilityFailureCount ?? 0)
+          < (baseAudit.ringSubstituentReadabilityFailureCount ?? 0)
+        && compareRingSubstituentBoundedReadabilityCandidates(candidate, bestCandidate) < 0
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  if (descriptors.length <= RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_PAIR_DESCRIPTOR_COUNT) {
+    for (let firstIndex = 0; firstIndex < descriptors.length; firstIndex++) {
+      const firstDescriptor = descriptors[firstIndex];
+      for (let secondIndex = firstIndex + 1; secondIndex < descriptors.length; secondIndex++) {
+        const secondDescriptor = descriptors[secondIndex];
+        if (ringSubstituentBranchDescriptorsOverlap(firstDescriptor, secondDescriptor)) {
+          continue;
+        }
+        for (const firstRecord of buildRingSubstituentBoundedReadabilityCandidateRecords(layoutGraph, coords, firstDescriptor)) {
+          for (const secondRecord of buildRingSubstituentBoundedReadabilityCandidateRecords(
+            layoutGraph,
+            firstRecord.coords,
+            secondDescriptor
+          )) {
+            const candidateAudit = auditMixedPlacement(
+              layoutGraph,
+              { coords: secondRecord.coords, bondValidationClasses },
+              bondLength
+            );
+            if (!mixedAuditCountsDoNotRegress(candidateAudit, baseAudit)) {
+              continue;
+            }
+            const candidate = ringSubstituentBoundedReadabilityCandidateScore(
+              layoutGraph,
+              secondRecord.coords,
+              candidateAudit,
+              [firstDescriptor, secondDescriptor],
+              bondLength,
+              totalRingSubstituentBoundedReadabilityMove(coords, secondRecord.coords, [firstDescriptor, secondDescriptor]),
+              firstRecord.rotationMagnitude + secondRecord.rotationMagnitude
+            );
+            if (
+              (candidate.audit.ringSubstituentReadabilityFailureCount ?? 0)
+                < (baseAudit.ringSubstituentReadabilityFailureCount ?? 0)
+              && compareRingSubstituentBoundedReadabilityCandidates(candidate, bestCandidate) < 0
+            ) {
+              bestCandidate = candidate;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (bestCandidate.coords === coords) {
+    return { changed: false };
+  }
+
+  overwriteCoordMap(coords, bestCandidate.coords);
+  return { changed: true };
 }
 
 /**

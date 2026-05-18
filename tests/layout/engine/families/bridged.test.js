@@ -286,6 +286,27 @@ describe('layout/engine/families/bridged', () => {
     );
   });
 
+  it('seeds compact 5-5-4 bridged ether cages from the small ring', () => {
+    const graph = createLayoutGraph(parseSMILES('C1OC2C3OCC12CO3'), {
+      suppressH: true
+    });
+    const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.fallback.mode, null);
+  });
+
   it('balances compact fused-spiro bridged heterorings without bond failures', () => {
     const smiles = 'CC1OC2=NCC(=N)NC3=NCC(C)CC23O1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -550,6 +571,55 @@ describe('layout/engine/families/bridged', () => {
     assertQuinuclidiniumRings(result.coords, 'template layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assertQuinuclidiniumRings(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses a scopolamine epoxide template so the oxirane cap stays outside the tropane cage', () => {
+    const smiles = 'O.Br.CN1[C@@H]2C[C@H](C[C@H]1[C@@H]3O[C@H]23)OC(=O)[C@H](CO)c4ccccc4';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.atomIds.includes('O15'));
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'scopolamine-epoxide-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const sixRing = rings.find(ring => ring.size === 6);
+    const oxiraneRing = rings.find(ring => ring.size === 3);
+    assert.ok(sixRing);
+    assert.ok(oxiraneRing);
+    const assertScopolamineCore = (coords, label) => {
+      const sixRingAngles = sixRing.atomIds.map(atomId => ringInternalAngle(sixRing, coords, atomId) * (180 / Math.PI));
+      const oxiraneAngles = oxiraneRing.atomIds.map(atomId => ringInternalAngle(oxiraneRing, coords, atomId) * (180 / Math.PI));
+      assert.ok(
+        sixRingAngles.every(angle => Math.abs(angle - 120) < 0.05),
+        `expected ${label} tropane six-ring to stay regular, got ${sixRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+      );
+      assert.ok(
+        oxiraneAngles.every(angle => Math.abs(angle - 60) < 0.05),
+        `expected ${label} oxirane cap to stay equilateral, got ${oxiraneAngles.map(angle => angle.toFixed(2)).join(', ')}`
+      );
+      assert.ok(
+        distance(coords.get('N4'), coords.get('O15')) > graph.options.bondLength * 1.25,
+        `expected ${label} oxirane oxygen to clear the tertiary nitrogen`
+      );
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertScopolamineCore(result.coords, 'template layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(pipelineResult.metadata.audit.labelOverlapCount, 0);
+    assert.equal(pipelineResult.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertScopolamineCore(pipelineResult.coords, 'pipeline layout');
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
