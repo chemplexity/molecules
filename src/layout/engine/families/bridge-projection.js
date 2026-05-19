@@ -57,12 +57,7 @@ function quadraticPoint(firstPoint, controlPoint, secondPoint, t) {
 function bridgeProjectionMinimumSpan(paths, bondLength) {
   const defaultSpan = bondLength * 1.6;
   const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
-  if (
-    segmentCounts.length === 3
-    && segmentCounts[0] === 2
-    && segmentCounts[1] >= 4
-    && segmentCounts[2] - segmentCounts[1] <= 1
-  ) {
+  if (segmentCounts.length === 3 && segmentCounts[0] === 2 && segmentCounts[1] >= 4 && segmentCounts[2] - segmentCounts[1] <= 1) {
     return Math.max(defaultSpan, bondLength * segmentCounts[0]);
   }
   if (paths.length < 3) {
@@ -84,17 +79,7 @@ function bridgeProjectionMinimumSpan(paths, bondLength) {
  */
 function shouldUseBalancedThetaProjection(sortedPaths) {
   const segmentCounts = bridgePathSegmentCounts(sortedPaths).sort((firstCount, secondCount) => firstCount - secondCount);
-  return (
-    segmentCounts.length === 3
-    && (
-      segmentCounts[0] >= 3
-      || (
-        segmentCounts[0] === 2
-        && segmentCounts[1] >= 4
-        && segmentCounts[2] - segmentCounts[1] <= 1
-      )
-    )
-  );
+  return segmentCounts.length === 3 && (segmentCounts[0] >= 3 || (segmentCounts[0] === 2 && segmentCounts[1] >= 4 && segmentCounts[2] - segmentCounts[1] <= 1));
 }
 
 /**
@@ -123,11 +108,7 @@ function shortestBridgePathSegmentCount(paths) {
  */
 function isBalancedLongThetaPathSet(paths) {
   const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
-  return (
-    segmentCounts.length === 3
-    && segmentCounts[0] >= 3
-    && segmentCounts[2] - segmentCounts[0] <= 1
-  );
+  return segmentCounts.length === 3 && segmentCounts[0] >= 3 && segmentCounts[2] - segmentCounts[0] <= 1;
 }
 
 /**
@@ -182,10 +163,7 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
 
   const atomIdSet = new Set(atomIds);
   const candidateAtomIds = atomIds
-    .filter(atomId =>
-      bridgeProjectionInternalHeavyDegree(layoutGraph, atomId, atomIdSet) >= 3
-      && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) > 1
-    )
+    .filter(atomId => bridgeProjectionInternalHeavyDegree(layoutGraph, atomId, atomIdSet) >= 3 && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) > 1)
     .sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
   let bestPair = defaultBridgeheadAtomIds;
   let bestScore = Number.POSITIVE_INFINITY;
@@ -194,8 +172,8 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
     for (let secondIndex = firstIndex + 1; secondIndex < candidateAtomIds.length; secondIndex++) {
       const candidatePair = [candidateAtomIds[firstIndex], candidateAtomIds[secondIndex]];
       if (
-        (candidatePair[0] === defaultBridgeheadAtomIds[0] && candidatePair[1] === defaultBridgeheadAtomIds[1])
-        || (candidatePair[0] === defaultBridgeheadAtomIds[1] && candidatePair[1] === defaultBridgeheadAtomIds[0])
+        (candidatePair[0] === defaultBridgeheadAtomIds[0] && candidatePair[1] === defaultBridgeheadAtomIds[1]) ||
+        (candidatePair[0] === defaultBridgeheadAtomIds[1] && candidatePair[1] === defaultBridgeheadAtomIds[0])
       ) {
         continue;
       }
@@ -397,7 +375,7 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
         side = -previousSide;
       }
     }
-    const layer = side === 0 ? 0 : sideUsage.get(side) ?? 0;
+    const layer = side === 0 ? 0 : (sideUsage.get(side) ?? 0);
     if (side !== 0) {
       sideUsage.set(side, layer + 1);
     }
@@ -431,9 +409,7 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     const amplitude =
       side *
       bondLength *
-      (BRIDGE_PROJECTION_FACTORS.pathArcBaseAmplitudeFactor +
-        (internalCount - 1) * BRIDGE_PROJECTION_FACTORS.meanSeedBiasFactor +
-        layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor);
+      (BRIDGE_PROJECTION_FACTORS.pathArcBaseAmplitudeFactor + (internalCount - 1) * BRIDGE_PROJECTION_FACTORS.meanSeedBiasFactor + layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor);
     const controlPoint = {
       x: midpointX + xBias,
       y: amplitude

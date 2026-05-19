@@ -8,45 +8,10 @@ import { collectCutSubtree } from '../subtree-utils.js';
 const CLOSE_TERMINAL_CATION_RING_FACTOR = 1.15;
 const MIN_CLEARANCE_IMPROVEMENT_FACTOR = 0.45;
 const TIDY_EPSILON = 1e-6;
-const RING_BODY_ROTATIONS = Object.freeze([
-  Math.PI / 6,
-  -(Math.PI / 6),
-  Math.PI / 4,
-  -(Math.PI / 4),
-  Math.PI / 3,
-  -(Math.PI / 3)
-]);
-const TERMINAL_CATION_LEAF_ROTATIONS = Object.freeze([
-  Math.PI / 6,
-  -(Math.PI / 6),
-  Math.PI / 4,
-  -(Math.PI / 4),
-  Math.PI / 3,
-  -(Math.PI / 3),
-  Math.PI / 2,
-  -(Math.PI / 2),
-  Math.PI
-]);
-const RESIDUAL_RING_BODY_ROTATIONS = Object.freeze([
-  Math.PI / 6,
-  -(Math.PI / 6),
-  Math.PI / 4,
-  -(Math.PI / 4),
-  Math.PI / 3,
-  -(Math.PI / 3),
-  Math.PI / 2,
-  -(Math.PI / 2)
-]);
-const RESIDUAL_PAIRED_RING_BODY_ROTATIONS = Object.freeze([
-  Math.PI / 18,
-  -(Math.PI / 18),
-  Math.PI / 12,
-  -(Math.PI / 12),
-  Math.PI / 9,
-  -(Math.PI / 9),
-  Math.PI / 6,
-  -(Math.PI / 6)
-]);
+const RING_BODY_ROTATIONS = Object.freeze([Math.PI / 6, -(Math.PI / 6), Math.PI / 4, -(Math.PI / 4), Math.PI / 3, -(Math.PI / 3)]);
+const TERMINAL_CATION_LEAF_ROTATIONS = Object.freeze([Math.PI / 6, -(Math.PI / 6), Math.PI / 4, -(Math.PI / 4), Math.PI / 3, -(Math.PI / 3), Math.PI / 2, -(Math.PI / 2), Math.PI]);
+const RESIDUAL_RING_BODY_ROTATIONS = Object.freeze([Math.PI / 6, -(Math.PI / 6), Math.PI / 4, -(Math.PI / 4), Math.PI / 3, -(Math.PI / 3), Math.PI / 2, -(Math.PI / 2)]);
+const RESIDUAL_PAIRED_RING_BODY_ROTATIONS = Object.freeze([Math.PI / 18, -(Math.PI / 18), Math.PI / 12, -(Math.PI / 12), Math.PI / 9, -(Math.PI / 9), Math.PI / 6, -(Math.PI / 6)]);
 const RESIDUAL_PAIRED_LEAF_ROTATIONS = Object.freeze([
   Math.PI / 18,
   -(Math.PI / 18),
@@ -59,13 +24,7 @@ const RESIDUAL_PAIRED_LEAF_ROTATIONS = Object.freeze([
   Math.PI / 4,
   -(Math.PI / 4)
 ]);
-const LINKER_SWING_ROTATIONS = Object.freeze([
-  Math.PI / 3,
-  -(Math.PI / 3),
-  (2 * Math.PI) / 3,
-  -(2 * Math.PI) / 3,
-  Math.PI
-]);
+const LINKER_SWING_ROTATIONS = Object.freeze([Math.PI / 3, -(Math.PI / 3), (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI]);
 
 function heavyCovalentNeighborIds(layoutGraph, atomId) {
   const neighborIds = [];
@@ -84,17 +43,11 @@ function heavyCovalentNeighborIds(layoutGraph, atomId) {
 
 function isTerminalCationNitrogen(layoutGraph, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
-  return Boolean(
-    atom
-    && atom.element === 'N'
-    && atom.charge > 0
-    && atom.heavyDegree === 1
-  );
+  return Boolean(atom && atom.element === 'N' && atom.charge > 0 && atom.heavyDegree === 1);
 }
 
 function aromaticRingForRoot(layoutGraph, rootAtomId) {
-  return (layoutGraph?.atomToRings.get(rootAtomId) ?? [])
-    .find(ring => ring?.aromatic === true && Array.isArray(ring.atomIds)) ?? null;
+  return (layoutGraph?.atomToRings.get(rootAtomId) ?? []).find(ring => ring?.aromatic === true && Array.isArray(ring.atomIds)) ?? null;
 }
 
 function collectRingBodyAtomIds(layoutGraph, ring, rootAtomId, coords) {
@@ -124,8 +77,7 @@ function collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomI
     }
     const ringAtomIds = new Set(ring.atomIds);
     for (const rootAtomId of ring.atomIds) {
-      const exocyclicParentAtomId = heavyCovalentNeighborIds(layoutGraph, rootAtomId)
-        .find(neighborAtomId => !ringAtomIds.has(neighborAtomId));
+      const exocyclicParentAtomId = heavyCovalentNeighborIds(layoutGraph, rootAtomId).find(neighborAtomId => !ringAtomIds.has(neighborAtomId));
       if (!exocyclicParentAtomId || !coords.has(exocyclicParentAtomId)) {
         continue;
       }
@@ -144,25 +96,15 @@ function collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomI
 
 function collectTerminalLeafReliefDescriptor(layoutGraph, coords, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
-  if (
-    !atom
-    || atom.element === 'H'
-    || atom.aromatic
-    || atom.heavyDegree !== 1
-    || layoutGraph.ringAtomIdSet.has(atomId)
-  ) {
+  if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 1 || layoutGraph.ringAtomIdSet.has(atomId)) {
     return null;
   }
   const [parentAtomId] = heavyCovalentNeighborIds(layoutGraph, atomId);
   if (!parentAtomId || !coords.has(parentAtomId)) {
     return null;
   }
-  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, parentAtomId)]
-    .filter(subtreeAtomId => coords.has(subtreeAtomId));
-  if (
-    subtreeAtomIds.length === 0
-    || subtreeAtomIds.some(subtreeAtomId => layoutGraph.ringAtomIdSet.has(subtreeAtomId))
-  ) {
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, parentAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.some(subtreeAtomId => layoutGraph.ringAtomIdSet.has(subtreeAtomId))) {
     return null;
   }
   return {
@@ -183,10 +125,7 @@ function minimumDistanceToAtomSet(coords, atomId, targetAtomIds) {
     if (!targetPosition) {
       continue;
     }
-    minimumDistance = Math.min(
-      minimumDistance,
-      Math.hypot(position.x - targetPosition.x, position.y - targetPosition.y)
-    );
+    minimumDistance = Math.min(minimumDistance, Math.hypot(position.x - targetPosition.x, position.y - targetPosition.y));
   }
   return minimumDistance;
 }
@@ -220,8 +159,7 @@ function collectTerminalCationRingDescriptors(layoutGraph, coords, bondLength) {
     if (!parentAtomId) {
       continue;
     }
-    const parentHeavyNeighborIds = heavyCovalentNeighborIds(layoutGraph, parentAtomId)
-      .filter(neighborAtomId => neighborAtomId !== atomId);
+    const parentHeavyNeighborIds = heavyCovalentNeighborIds(layoutGraph, parentAtomId).filter(neighborAtomId => neighborAtomId !== atomId);
     if (parentHeavyNeighborIds.length !== 1) {
       continue;
     }
@@ -232,18 +170,11 @@ function collectTerminalCationRingDescriptors(layoutGraph, coords, bondLength) {
         continue;
       }
       const linkerAtom = layoutGraph.atoms.get(linkerAtomId);
-      if (
-        !linkerAtom
-        || linkerAtom.aromatic
-        || !['O', 'S', 'Se', 'N'].includes(linkerAtom.element)
-        || linkerAtom.heavyDegree !== 2
-        || layoutGraph.ringAtomIdSet.has(linkerAtomId)
-      ) {
+      if (!linkerAtom || linkerAtom.aromatic || !['O', 'S', 'Se', 'N'].includes(linkerAtom.element) || linkerAtom.heavyDegree !== 2 || layoutGraph.ringAtomIdSet.has(linkerAtomId)) {
         continue;
       }
 
-      const ringRootAtomId = heavyCovalentNeighborIds(layoutGraph, linkerAtomId)
-        .find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
+      const ringRootAtomId = heavyCovalentNeighborIds(layoutGraph, linkerAtomId).find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
       const ring = ringRootAtomId ? aromaticRingForRoot(layoutGraph, ringRootAtomId) : null;
       if (!ring) {
         continue;
@@ -253,13 +184,11 @@ function collectTerminalCationRingDescriptors(layoutGraph, coords, bondLength) {
       if (!(terminalRingDistance < closeDistance - TIDY_EPSILON)) {
         continue;
       }
-      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ringRootAtomId, linkerAtomId)]
-        .filter(subtreeAtomId => coords.has(subtreeAtomId));
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ringRootAtomId, linkerAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
       if (subtreeAtomIds.length === 0) {
         continue;
       }
-      const terminalSubtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, parentAtomId)]
-        .filter(subtreeAtomId => coords.has(subtreeAtomId));
+      const terminalSubtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, parentAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
       if (terminalSubtreeAtomIds.length === 0) {
         continue;
       }
@@ -345,22 +274,12 @@ function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bo
       }
       for (const reliefDescriptor of collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, ringAtomId)) {
         for (const ringRotation of RESIDUAL_PAIRED_RING_BODY_ROTATIONS) {
-          const ringCoords = rotateSubtreeAroundPivot(
-            coords,
-            reliefDescriptor.ringBodyAtomIds,
-            reliefDescriptor.rootAtomId,
-            ringRotation
-          );
+          const ringCoords = rotateSubtreeAroundPivot(coords, reliefDescriptor.ringBodyAtomIds, reliefDescriptor.rootAtomId, ringRotation);
           if (!ringCoords) {
             continue;
           }
           for (const leafRotation of RESIDUAL_PAIRED_LEAF_ROTATIONS) {
-            const candidateCoords = rotateSubtreeAroundPivot(
-              ringCoords,
-              leafDescriptor.subtreeAtomIds,
-              leafDescriptor.parentAtomId,
-              leafRotation
-            );
+            const candidateCoords = rotateSubtreeAroundPivot(ringCoords, leafDescriptor.subtreeAtomIds, leafDescriptor.parentAtomId, leafRotation);
             if (!candidateCoords) {
               continue;
             }
@@ -392,12 +311,7 @@ function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bo
     for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
       for (const reliefDescriptor of collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomId)) {
         for (const rotation of RESIDUAL_RING_BODY_ROTATIONS) {
-          const candidateCoords = rotateSubtreeAroundPivot(
-            coords,
-            reliefDescriptor.ringBodyAtomIds,
-            reliefDescriptor.rootAtomId,
-            rotation
-          );
+          const candidateCoords = rotateSubtreeAroundPivot(coords, reliefDescriptor.ringBodyAtomIds, reliefDescriptor.rootAtomId, rotation);
           if (!candidateCoords) {
             continue;
           }
@@ -470,19 +384,9 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
       let bestCandidate = null;
 
       for (const rotation of TERMINAL_CATION_LEAF_ROTATIONS) {
-        const candidateCoords = rotateSubtreeAroundPivot(
-          coords,
-          descriptor.terminalSubtreeAtomIds,
-          descriptor.parentAtomId,
-          rotation
-        );
-        const candidate = candidateCoords
-          ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.abs(rotation) * 0.75)
-          : null;
-        if (
-          !candidate
-          || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement
-        ) {
+        const candidateCoords = rotateSubtreeAroundPivot(coords, descriptor.terminalSubtreeAtomIds, descriptor.parentAtomId, rotation);
+        const candidate = candidateCoords ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.abs(rotation) * 0.75) : null;
+        if (!candidate || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement) {
           continue;
         }
         if (isBetterCandidate(candidate, bestCandidate)) {
@@ -491,19 +395,9 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
       }
 
       for (const rotation of RING_BODY_ROTATIONS) {
-        const candidateCoords = rotateSubtreeAroundPivot(
-          coords,
-          descriptor.ringBodyAtomIds,
-          descriptor.ringRootAtomId,
-          rotation
-        );
-        const candidate = candidateCoords
-          ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.abs(rotation))
-          : null;
-        if (
-          !candidate
-          || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement
-        ) {
+        const candidateCoords = rotateSubtreeAroundPivot(coords, descriptor.ringBodyAtomIds, descriptor.ringRootAtomId, rotation);
+        const candidate = candidateCoords ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.abs(rotation)) : null;
+        if (!candidate || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement) {
           continue;
         }
         if (isBetterCandidate(candidate, bestCandidate)) {
@@ -512,19 +406,9 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
       }
 
       for (const rotation of LINKER_SWING_ROTATIONS) {
-        const candidateCoords = rotateSubtreeAroundPivot(
-          coords,
-          descriptor.subtreeAtomIds,
-          descriptor.linkerAtomId,
-          rotation
-        );
-        const candidate = candidateCoords
-          ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.PI * 2 + Math.abs(rotation))
-          : null;
-        if (
-          !candidate
-          || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement
-        ) {
+        const candidateCoords = rotateSubtreeAroundPivot(coords, descriptor.subtreeAtomIds, descriptor.linkerAtomId, rotation);
+        const candidate = candidateCoords ? scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseOverlapCount, Math.PI * 2 + Math.abs(rotation)) : null;
+        if (!candidate || candidate.terminalRingDistance < descriptor.terminalRingDistance + minimumImprovement) {
           continue;
         }
         if (isBetterCandidate(candidate, bestCandidate)) {
@@ -535,13 +419,7 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
       if (!bestCandidate) {
         continue;
       }
-      coords = relieveResidualAromaticRingOverlaps(
-        layoutGraph,
-        bestCandidate.coords,
-        descriptor,
-        bondLength,
-        baseOverlapCount
-      );
+      coords = relieveResidualAromaticRingOverlaps(layoutGraph, bestCandidate.coords, descriptor, bondLength, baseOverlapCount);
       nudges++;
       movedThisPass = true;
     }

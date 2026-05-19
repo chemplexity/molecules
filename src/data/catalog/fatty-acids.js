@@ -74,8 +74,7 @@ const fattyAcidsCatalog = {
       id: 'eicosapentaenoic-acid',
       name: 'Eicosapentaenoic Acid',
       smiles: 'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
-      inchi:
-        'InChI=1S/C20H30O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18-19-20(21)22/h3-4,6-7,9-10,12-13,15-16,22H,2,5,8,11,14,17-19H2,1H3/b3-4-,6-7-,9-10-,12-13-,15-16-/m0/s1',
+      inchi: 'InChI=1S/C20H30O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18-19-20(21)22/h3-4,6-7,9-10,12-13,15-16,22H,2,5,8,11,14,17-19H2,1H3/b3-4-,6-7-,9-10-,12-13-,15-16-/m0/s1',
       tags: ['fatty-acid', 'polyunsaturated', 'omega-3'],
       aliases: ['EPA', 'icosapentaenoic acid', 'C20:5']
     },

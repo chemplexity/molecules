@@ -10,18 +10,14 @@ const MIN_TERMINAL_CHAIN_CARBON_COUNT = 7;
 const TERMINAL_CHAIN_ANGLE_STEP = Math.PI / 18;
 const TERMINAL_CHAIN_ZIGZAG_ANGLE = Math.PI / 3;
 const TERMINAL_CHAIN_AXIS_WEIGHT = 2500;
-const TERMINAL_CHAIN_ANGLE_VALUES = Object.freeze(
-  Array.from({ length: 36 }, (_value, index) => -Math.PI + index * TERMINAL_CHAIN_ANGLE_STEP)
-);
+const TERMINAL_CHAIN_ANGLE_VALUES = Object.freeze(Array.from({ length: 36 }, (_value, index) => -Math.PI + index * TERMINAL_CHAIN_ANGLE_STEP));
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
 }
 
 function heavyNeighborIds(layoutGraph, atomId) {
-  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
-    .map(bond => otherBondAtomId(bond, atomId))
-    .filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? []).map(bond => otherBondAtomId(bond, atomId)).filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
 }
 
 function findBond(layoutGraph, firstAtomId, secondAtomId) {
@@ -31,13 +27,7 @@ function findBond(layoutGraph, firstAtomId, secondAtomId) {
 
 function isRetouchableChainBond(layoutGraph, firstAtomId, secondAtomId) {
   const bond = findBond(layoutGraph, firstAtomId, secondAtomId);
-  return Boolean(
-    bond
-    && bond.kind === 'covalent'
-    && !bond.inRing
-    && !bond.aromatic
-    && (bond.order ?? 1) === 1
-  );
+  return Boolean(bond && bond.kind === 'covalent' && !bond.inRing && !bond.aromatic && (bond.order ?? 1) === 1);
 }
 
 function orderedTerminalChain(layoutGraph, rootAtomId, anchorAtomId) {
@@ -70,9 +60,7 @@ function orderedTerminalChain(layoutGraph, rootAtomId, anchorAtomId) {
   }
 
   const carbonCount = atomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element === 'C').length;
-  return atomIds.length >= MIN_TERMINAL_CHAIN_ATOM_COUNT && carbonCount >= MIN_TERMINAL_CHAIN_CARBON_COUNT
-    ? atomIds
-    : null;
+  return atomIds.length >= MIN_TERMINAL_CHAIN_ATOM_COUNT && carbonCount >= MIN_TERMINAL_CHAIN_CARBON_COUNT ? atomIds : null;
 }
 
 function terminalChainCandidates(layoutGraph, ringChain) {
@@ -120,9 +108,7 @@ function terminalChainCandidates(layoutGraph, ringChain) {
 }
 
 function ringSystemCenter(coords, ringSystem) {
-  const positions = (ringSystem?.atomIds ?? [])
-    .map(atomId => coords.get(atomId))
-    .filter(Boolean);
+  const positions = (ringSystem?.atomIds ?? []).map(atomId => coords.get(atomId)).filter(Boolean);
   return positions.length > 0 ? centroid(positions) : null;
 }
 
@@ -156,24 +142,21 @@ function terminalChainAxisPenalty(preferredAngle, anchorAngle, chainAngle, turnS
     return 0;
   }
   const zigzagAverageAngle = chainAngle + (turnSign * TERMINAL_CHAIN_ZIGZAG_ANGLE) / 2;
-  return (
-    angularDifference(zigzagAverageAngle, preferredAngle)
-    + angularDifference(anchorAngle, preferredAngle) * 0.25
-  ) * TERMINAL_CHAIN_AXIS_WEIGHT;
+  return (angularDifference(zigzagAverageAngle, preferredAngle) + angularDifference(anchorAngle, preferredAngle) * 0.25) * TERMINAL_CHAIN_AXIS_WEIGHT;
 }
 
 function auditScore(audit, bounds, axisPenalty = 0) {
   return (
-    audit.severeOverlapCount * 10_000_000
-    + (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000
-    + audit.bondLengthFailureCount * 100_000
-    + (audit.ringSubstituentReadabilityFailureCount ?? 0) * 10_000
-    + (audit.inwardRingSubstituentCount ?? 0) * 10_000
-    + (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 10_000
-    + audit.labelOverlapCount * 5_000
-    + audit.severeOverlapPenalty * 1_000
-    + axisPenalty
-    - Math.min(bounds.width / Math.max(bounds.height, 1e-6), 4) * 1_000
+    audit.severeOverlapCount * 10_000_000 +
+    (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
+    audit.bondLengthFailureCount * 100_000 +
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) * 10_000 +
+    (audit.inwardRingSubstituentCount ?? 0) * 10_000 +
+    (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 10_000 +
+    audit.labelOverlapCount * 5_000 +
+    audit.severeOverlapPenalty * 1_000 +
+    axisPenalty -
+    Math.min(bounds.width / Math.max(bounds.height, 1e-6), 4) * 1_000
   );
 }
 
@@ -209,15 +192,7 @@ function bestTerminalChainRetouch(layoutGraph, inputCoords, candidate, options) 
   for (const anchorAngle of TERMINAL_CHAIN_ANGLE_VALUES) {
     for (const chainAngle of TERMINAL_CHAIN_ANGLE_VALUES) {
       for (const turnSign of [-1, 1]) {
-        const coords = rebuildTerminalChainCoords(
-          inputCoords,
-          anchorPosition,
-          candidate.chainAtomIds,
-          options.bondLength,
-          anchorAngle,
-          chainAngle,
-          turnSign
-        );
+        const coords = rebuildTerminalChainCoords(inputCoords, anchorPosition, candidate.chainAtomIds, options.bondLength, anchorAngle, chainAngle, turnSign);
         const audit = auditLayout(layoutGraph, coords, {
           bondLength: options.bondLength,
           bondValidationClasses: options.bondValidationClasses

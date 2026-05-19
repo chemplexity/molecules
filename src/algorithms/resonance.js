@@ -87,13 +87,7 @@ function _shiftedCommonValences(symbol, atom, charge, radical = atom.properties.
   }
 
   const shift =
-    symbol === 'H'
-      ? v => v - Math.abs(charge) - radical
-      : group === 14
-        ? v => v - Math.abs(charge) - radical
-        : group >= 15 && group <= 17
-          ? v => v + charge - radical
-          : v => v - charge - radical;
+    symbol === 'H' ? v => v - Math.abs(charge) - radical : group === 14 ? v => v - Math.abs(charge) - radical : group >= 15 && group <= 17 ? v => v + charge - radical : v => v - charge - radical;
 
   return [...new Set(base.map(shift).filter(v => Number.isInteger(v) && v >= 0 && v <= 8))].sort((a, b) => a - b);
 }
@@ -1675,14 +1669,7 @@ function _mergeComponentStateIntoCanonical(componentState, canonicalState) {
 function _enumerateIndependentComponentStates(molecule, components, canonicalState, canonicalComponentState, atomIds, bondIds, options) {
   const rawStates = [];
   const seenResolvedKeys = new Set([
-    _resolvedStateKey(
-      canonicalState,
-      canonicalComponentState.canonicalBondOrders,
-      canonicalComponentState.canonicalAtomCharges,
-      canonicalComponentState.canonicalAtomRadicals,
-      atomIds,
-      bondIds
-    )
+    _resolvedStateKey(canonicalState, canonicalComponentState.canonicalBondOrders, canonicalComponentState.canonicalAtomCharges, canonicalComponentState.canonicalAtomRadicals, atomIds, bondIds)
   ]);
 
   for (const component of components) {
@@ -1931,13 +1918,7 @@ export function generateResonanceStructures(molecule, options = {}) {
     .filter(
       state =>
         includeIndependentComponentPermutations ||
-        _changedComponentCount(
-          state,
-          canonicalComponentState.canonicalBondOrders,
-          canonicalComponentState.canonicalAtomCharges,
-          canonicalComponentState.canonicalAtomRadicals,
-          components
-        ) <= 1
+        _changedComponentCount(state, canonicalComponentState.canonicalBondOrders, canonicalComponentState.canonicalAtomCharges, canonicalComponentState.canonicalAtomRadicals, components) <= 1
     )
     .filter(state => _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude))
     .slice(0, maxContributors);

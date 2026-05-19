@@ -81,18 +81,13 @@ describe('layout/engine/audit/invariants', () => {
       ['a2', { x: 4, y: 0 }],
       ['a3', { x: 6, y: 0 }]
     ]);
-    const overridePositions = new Map([
-      ['a3', { x: 0.2, y: 0 }]
-    ]);
+    const overridePositions = new Map([['a3', { x: 0.2, y: 0 }]]);
     const movedCoords = new Map(coords);
     for (const [atomId, position] of overridePositions) {
       movedCoords.set(atomId, position);
     }
 
-    assert.equal(
-      countSevereOverlapsWithOverrides(graph, coords, overridePositions, 1.5).count,
-      findSevereOverlaps(graph, movedCoords, 1.5).length
-    );
+    assert.equal(countSevereOverlapsWithOverrides(graph, coords, overridePositions, 1.5).count, findSevereOverlaps(graph, movedCoords, 1.5).length);
   });
 
   it('returns the same subtree overlap cost when backed by a spatial atom grid', () => {
@@ -128,10 +123,9 @@ describe('layout/engine/audit/invariants', () => {
   });
 
   it('returns the same focused placement cost when backed by a spatial atom grid', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('C[C@](O)(CC(O)=O)CC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(O)(=O)OP(O)(=O)OC[C@H]1O[C@H]([C@H](O)[C@@H]1OP(O)(O)=O)N1C=NC2=C(N)N=CN=C12'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('C[C@](O)(CC(O)=O)CC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(O)(=O)OP(O)(=O)OC[C@H]1O[C@H]([C@H](O)[C@@H]1OP(O)(O)=O)N1C=NC2=C(N)N=CN=C12'), {
+      suppressH: true
+    });
     const result = runPipeline(graph.sourceMolecule, { suppressH: true });
     const focusAtomIds = [...result.coords.keys()].slice(-18);
 

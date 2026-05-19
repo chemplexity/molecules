@@ -413,10 +413,7 @@ export function createForceSceneRenderer(ctx) {
         const nx = -dy / length;
         const ny = dx / length;
         if (info.type === 'wedge') {
-          info.element.attr(
-            'points',
-            `${src.x},${src.y} ${tgt.x - nx * FORCE_WEDGE_HW},${tgt.y - ny * FORCE_WEDGE_HW} ${tgt.x + nx * FORCE_WEDGE_HW},${tgt.y + ny * FORCE_WEDGE_HW}`
-          );
+          info.element.attr('points', `${src.x},${src.y} ${tgt.x - nx * FORCE_WEDGE_HW},${tgt.y - ny * FORCE_WEDGE_HW} ${tgt.x + nx * FORCE_WEDGE_HW},${tgt.y + ny * FORCE_WEDGE_HW}`);
         } else {
           for (let i = 0; i < FORCE_DASH_COUNT; i++) {
             const t = (i + 1) / (FORCE_DASH_COUNT + 1);
@@ -760,9 +757,7 @@ export function createForceSceneRenderer(ctx) {
     let forceBondLengthLabels = null;
     if (forceBondLengthsData) {
       const blLayer = ctx.g.append('g').attr('class', 'force-bond-lengths').style('pointer-events', 'none');
-      const blLabelData = forceBondLengthsData
-        .map(({ bondId, label }) => ({ link: forceLinkById.get(bondId), bond: molecule.bonds.get(bondId), label }))
-        .filter(d => d.link && d.bond);
+      const blLabelData = forceBondLengthsData.map(({ bondId, label }) => ({ link: forceLinkById.get(bondId), bond: molecule.bonds.get(bondId), label })).filter(d => d.link && d.bond);
       forceBondLengthLabels = blLayer
         .selectAll('text.force-bond-length-label')
         .data(blLabelData)

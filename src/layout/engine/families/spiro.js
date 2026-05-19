@@ -4,13 +4,7 @@ import { circumradiusForRegularPolygon, placeRegularPolygon } from '../geometry/
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, normalize, scale, sub } from '../geometry/vec2.js';
 import { placeTemplateCoords } from '../templates/placement.js';
 
-const SPIRO_PATH_CENTER_OFFSETS = Object.freeze([
-  0,
-  Math.PI / 12,
-  Math.PI / 6,
-  Math.PI / 4,
-  Math.PI / 3
-]);
+const SPIRO_PATH_CENTER_OFFSETS = Object.freeze([0, Math.PI / 12, Math.PI / 6, Math.PI / 4, Math.PI / 3]);
 const SPIRO_JUNCTION_CLEARANCE_FACTOR = 0.95;
 const SPIRO_JUNCTION_ANGLE_EPSILON = 1e-9;
 
@@ -93,10 +87,7 @@ function shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair) {
   }
 
   const ringById = new Map(rings.map(ring => [ring.id, ring]));
-  const endpointSizes = [
-    ringById.get(ringOrder[0])?.atomIds.length ?? 0,
-    ringById.get(ringOrder[ringOrder.length - 1])?.atomIds.length ?? 0
-  ];
+  const endpointSizes = [ringById.get(ringOrder[0])?.atomIds.length ?? 0, ringById.get(ringOrder[ringOrder.length - 1])?.atomIds.length ?? 0];
   const largestEndpointSize = Math.max(...endpointSizes);
 
   for (let index = 1; index < ringOrder.length - 1; index++) {
@@ -162,10 +153,7 @@ function ringPerimeterNeighbors(ring, atomId) {
   if (atomIndex < 0 || ring.atomIds.length < 3) {
     return [];
   }
-  return [
-    ring.atomIds[(atomIndex - 1 + ring.atomIds.length) % ring.atomIds.length],
-    ring.atomIds[(atomIndex + 1) % ring.atomIds.length]
-  ];
+  return [ring.atomIds[(atomIndex - 1 + ring.atomIds.length) % ring.atomIds.length], ring.atomIds[(atomIndex + 1) % ring.atomIds.length]];
 }
 
 function regularRingInteriorAngle(ringSize) {
@@ -184,7 +172,7 @@ function idealSpiroCrossRingAngle(firstRing, secondRing) {
   }
   const firstInteriorAngle = regularRingInteriorAngle(firstRing.atomIds.length);
   const secondInteriorAngle = regularRingInteriorAngle(secondRing.atomIds.length);
-  return Math.max(0, ((2 * Math.PI) - firstInteriorAngle - secondInteriorAngle) / 2);
+  return Math.max(0, (2 * Math.PI - firstInteriorAngle - secondInteriorAngle) / 2);
 }
 
 /**
@@ -231,10 +219,7 @@ function measureSpiroJunctionClearance(layoutGraph, coords, ringById, ringConnec
           continue;
         }
         if (sharedPosition) {
-          const angleBetween = angularDifference(
-            angleOf(sub(coords.get(firstAtomId), sharedPosition)),
-            angleOf(sub(coords.get(secondAtomId), sharedPosition))
-          );
+          const angleBetween = angularDifference(angleOf(sub(coords.get(firstAtomId), sharedPosition)), angleOf(sub(coords.get(secondAtomId), sharedPosition)));
           junctionMinAngle = Math.min(junctionMinAngle, angleBetween);
           minAngle = Math.min(minAngle, angleBetween);
         }
@@ -326,14 +311,7 @@ function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLengt
     const secondVector = sub(nextCenter, currentCenter);
     centerBend += Math.abs(firstVector.x * secondVector.y - firstVector.y * secondVector.x);
   }
-  const spiroJunctionClearance = measureSpiroJunctionClearance(
-    layoutGraph,
-    coords,
-    ringById,
-    ringConnectionByPair,
-    ringOrder,
-    bondLength
-  );
+  const spiroJunctionClearance = measureSpiroJunctionClearance(layoutGraph, coords, ringById, ringConnectionByPair, ringOrder, bondLength);
 
   return {
     severeOverlapCount,
@@ -359,19 +337,13 @@ function isBetterSpiroScore(firstScore, secondScore) {
   if (firstScore.spiroJunctionClearanceFailureCount !== secondScore.spiroJunctionClearanceFailureCount) {
     return firstScore.spiroJunctionClearanceFailureCount < secondScore.spiroJunctionClearanceFailureCount;
   }
-  if (
-    firstScore.spiroJunctionClearanceFailureCount > 0
-    && Math.abs(firstScore.spiroJunctionMinDistance - secondScore.spiroJunctionMinDistance) > 1e-12
-  ) {
+  if (firstScore.spiroJunctionClearanceFailureCount > 0 && Math.abs(firstScore.spiroJunctionMinDistance - secondScore.spiroJunctionMinDistance) > 1e-12) {
     return firstScore.spiroJunctionMinDistance > secondScore.spiroJunctionMinDistance;
   }
   if (Math.abs(firstScore.spiroJunctionAngleDeficit - secondScore.spiroJunctionAngleDeficit) > SPIRO_JUNCTION_ANGLE_EPSILON) {
     return firstScore.spiroJunctionAngleDeficit < secondScore.spiroJunctionAngleDeficit;
   }
-  if (
-    firstScore.spiroJunctionAngleDeficit > SPIRO_JUNCTION_ANGLE_EPSILON
-    && Math.abs(firstScore.spiroJunctionMinAngle - secondScore.spiroJunctionMinAngle) > SPIRO_JUNCTION_ANGLE_EPSILON
-  ) {
+  if (firstScore.spiroJunctionAngleDeficit > SPIRO_JUNCTION_ANGLE_EPSILON && Math.abs(firstScore.spiroJunctionMinAngle - secondScore.spiroJunctionMinAngle) > SPIRO_JUNCTION_ANGLE_EPSILON) {
     return firstScore.spiroJunctionMinAngle > secondScore.spiroJunctionMinAngle;
   }
   if (Math.abs(firstScore.centerBend - secondScore.centerBend) > 1e-12) {

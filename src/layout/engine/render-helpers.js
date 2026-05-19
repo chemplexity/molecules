@@ -166,8 +166,7 @@ export function secondaryDir(firstAtom, secondAtom, molecule, toSVG) {
     }
   }
 
-  const neighbors = atom =>
-    atom.getNeighbors(molecule).filter(neighbor => neighbor && neighbor.id !== firstAtom.id && neighbor.id !== secondAtom.id && neighbor.name !== 'H' && neighbor.x != null);
+  const neighbors = atom => atom.getNeighbors(molecule).filter(neighbor => neighbor && neighbor.id !== firstAtom.id && neighbor.id !== secondAtom.id && neighbor.name !== 'H' && neighbor.x != null);
   const allNeighbors = [...neighbors(firstAtom), ...neighbors(secondAtom)];
   if (allNeighbors.length === 0) {
     return 1;
@@ -320,14 +319,10 @@ export function ringLabelOffset(atom, molecule, pointForAtom, label, fontSize) {
 
   let dx = baseDx;
   let dy = 0;
-  const heavyNeighbors = atom
-    .getNeighbors(molecule)
-    .filter(neighbor => neighbor && neighbor.name !== 'H' && neighbor.x != null && neighbor.y != null);
+  const heavyNeighbors = atom.getNeighbors(molecule).filter(neighbor => neighbor && neighbor.name !== 'H' && neighbor.x != null && neighbor.y != null);
   if (heavyNeighbors.length === 1) {
     const anchor = heavyNeighbors[0];
-    const anchorBond = molecule.getBond?.(atom.id, anchor.id)
-      ?? [...molecule.bonds.values()].find(bond => bond.atoms.includes(atom.id) && bond.atoms.includes(anchor.id))
-      ?? null;
+    const anchorBond = molecule.getBond?.(atom.id, anchor.id) ?? [...molecule.bonds.values()].find(bond => bond.atoms.includes(atom.id) && bond.atoms.includes(anchor.id)) ?? null;
     const bondOrder = anchorBond?.properties?.localizedOrder ?? anchorBond?.properties?.order ?? 1;
     if (bondOrder >= 2) {
       const atomPoint = pointForAtom(atom);
@@ -370,13 +365,7 @@ export function ringLabelOffset(atom, molecule, pointForAtom, label, fontSize) {
   const length = vecLen(vx, vy);
   const inwardDirection = { x: -vx / length, y: -vy / length };
   const inwardAngle = Math.atan2(inwardDirection.y, inwardDirection.x);
-  const inwardLabelExtent = rayDistanceToShiftedBox(
-    inwardAngle,
-    dx,
-    dy,
-    labelHalfW(label, fontSize),
-    labelHalfH(label, fontSize)
-  );
+  const inwardLabelExtent = rayDistanceToShiftedBox(inwardAngle, dx, dy, labelHalfW(label, fontSize), labelHalfH(label, fontSize));
   const faceDepth = inwardRingFaceDepth(atomPoint, inwardDirection, ringPolygons);
   if (faceDepth == null) {
     return { dx, dy };

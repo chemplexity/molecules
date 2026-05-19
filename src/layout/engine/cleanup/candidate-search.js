@@ -16,10 +16,24 @@ export function buildSparseOverrideKey(overridePositions) {
   if (!(overridePositions instanceof Map)) {
     return null;
   }
-  return [...overridePositions.entries()]
-    .sort(([leftAtomId], [rightAtomId]) => leftAtomId.localeCompare(rightAtomId))
-    .map(([atomId, position]) => `${atomId}:${formatOverrideCoord(position?.x)}:${formatOverrideCoord(position?.y)}`)
-    .join('|');
+  if (overridePositions.size === 0) {
+    return '';
+  }
+  if (overridePositions.size === 1) {
+    const [atomId, position] = overridePositions.entries().next().value;
+    return `${atomId}:${formatOverrideCoord(position?.x)}:${formatOverrideCoord(position?.y)}`;
+  }
+
+  const entries = [...overridePositions.entries()].sort(([leftAtomId], [rightAtomId]) => leftAtomId.localeCompare(rightAtomId));
+  let key = '';
+  for (let index = 0; index < entries.length; index++) {
+    const [atomId, position] = entries[index];
+    if (index > 0) {
+      key += '|';
+    }
+    key += `${atomId}:${formatOverrideCoord(position?.x)}:${formatOverrideCoord(position?.y)}`;
+  }
+  return key;
 }
 
 /**
@@ -56,11 +70,7 @@ function normalizeFollowupResult(result) {
   if (!(result.coords instanceof Map)) {
     return null;
   }
-  const changed =
-    typeof result.changed === 'boolean'
-      ? result.changed
-      : (Number.isFinite(result.nudges) && result.nudges > 0)
-        || (Number.isFinite(result.passes) && result.passes > 0);
+  const changed = typeof result.changed === 'boolean' ? result.changed : (Number.isFinite(result.nudges) && result.nudges > 0) || (Number.isFinite(result.passes) && result.passes > 0);
   return {
     coords: result.coords,
     changed,
@@ -122,18 +132,9 @@ function defaultCompareEquivalentCandidates(candidate, incumbent) {
 export function visitPresentationDescriptorCandidates(layoutGraph, coords, descriptor, options = {}) {
   const context = options.context ?? {};
   const generateSeeds = typeof options.generateSeeds === 'function' ? options.generateSeeds : () => [];
-  const materializeOverrides =
-    typeof options.materializeOverrides === 'function'
-      ? options.materializeOverrides
-      : () => null;
-  const isBetterScore =
-    typeof options.isBetterScore === 'function'
-      ? options.isBetterScore
-      : defaultIsBetterScore;
-  const compareEquivalentCandidates =
-    typeof options.compareEquivalentCandidates === 'function'
-      ? options.compareEquivalentCandidates
-      : defaultCompareEquivalentCandidates;
+  const materializeOverrides = typeof options.materializeOverrides === 'function' ? options.materializeOverrides : () => null;
+  const isBetterScore = typeof options.isBetterScore === 'function' ? options.isBetterScore : defaultIsBetterScore;
+  const compareEquivalentCandidates = typeof options.compareEquivalentCandidates === 'function' ? options.compareEquivalentCandidates : defaultCompareEquivalentCandidates;
   const seenCandidateKeys = new Set();
   let bestSeedCandidate = null;
   let bestFinalCandidate = null;
@@ -145,9 +146,7 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
     if (!(overridePositions instanceof Map)) {
       continue;
     }
-    const candidateKey =
-      options.buildCandidateKey?.(descriptor, overridePositions, seed, context, layoutGraph)
-      ?? buildSparseOverrideKey(overridePositions);
+    const candidateKey = options.buildCandidateKey?.(descriptor, overridePositions, seed, context, layoutGraph) ?? buildSparseOverrideKey(overridePositions);
     if (candidateKey && seenCandidateKeys.has(candidateKey)) {
       continue;
     }
@@ -184,13 +183,8 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
     options.onAcceptedCandidate?.(candidate, bestSeedCandidate);
 
     const seedScoreBeatsBest = bestSeedCandidate ? isBetterScore(seedScore, bestSeedCandidate.seedScore) : true;
-    const bestSeedScoreBeatsCandidate =
-      bestSeedCandidate ? isBetterScore(bestSeedCandidate.seedScore, seedScore) : false;
-    if (
-      !bestSeedCandidate
-      || seedScoreBeatsBest
-      || (!bestSeedScoreBeatsCandidate && compareEquivalentCandidates(candidate, bestSeedCandidate) < 0)
-    ) {
+    const bestSeedScoreBeatsCandidate = bestSeedCandidate ? isBetterScore(bestSeedCandidate.seedScore, seedScore) : false;
+    if (!bestSeedCandidate || seedScoreBeatsBest || (!bestSeedScoreBeatsCandidate && compareEquivalentCandidates(candidate, bestSeedCandidate) < 0)) {
       bestSeedCandidate = candidate;
     }
   }
@@ -213,11 +207,19 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
     const maxRuns = Math.max(1, followup.maxRuns ?? 1);
     for (let runIndex = 0; runIndex < maxRuns; runIndex++) {
       const followupResult = normalizeFollowupResult(
-        followup.run(layoutGraph, refinedCoords, descriptor, bestSeedCandidate.seed, context, {
-          bestSeedCandidate,
+        followup.run(
+          layoutGraph,
           refinedCoords,
-          followupResults
-        }, runIndex)
+          descriptor,
+          bestSeedCandidate.seed,
+          context,
+          {
+            bestSeedCandidate,
+            refinedCoords,
+            followupResults
+          },
+          runIndex
+        )
       );
       if (!followupResult) {
         break;
@@ -237,11 +239,18 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
 
   const finalScore =
     typeof options.scoreRefined === 'function'
-      ? options.scoreRefined(descriptor, refinedCoords, bestSeedCandidate.seed, context, {
-        bestSeedCandidate,
-        refinedCoords,
-        followupResults
-      }, layoutGraph)
+      ? options.scoreRefined(
+          descriptor,
+          refinedCoords,
+          bestSeedCandidate.seed,
+          context,
+          {
+            bestSeedCandidate,
+            refinedCoords,
+            followupResults
+          },
+          layoutGraph
+        )
       : bestSeedCandidate.seedScore;
   if (finalScore != null) {
     bestFinalCandidate = {

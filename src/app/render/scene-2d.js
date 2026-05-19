@@ -18,10 +18,7 @@ import {
   stereoBondCenterIdForRender,
   atomBBox
 } from '../../layout/mol2d-helpers.js';
-import {
-  DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
-  synthesizeDisplayedStereoHydrogenPosition
-} from '../../layout/engine/stereo/wedge-geometry.js';
+import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 
 /**
  * Returns the placed incident ring polygons for one atom.
@@ -64,25 +61,17 @@ function projectHiddenStereoHydrogens(molecule, bondLength, stereoMap = null) {
       continue;
     }
     const bond = molecule.getBond(atom.id, parent.id);
-    const hasCoincidentCoords =
-      atom.x != null && atom.y != null && parent.x != null && parent.y != null && Math.abs(atom.x - parent.x) <= 1e-6 && Math.abs(atom.y - parent.y) <= 1e-6;
+    const hasCoincidentCoords = atom.x != null && atom.y != null && parent.x != null && parent.y != null && Math.abs(atom.x - parent.x) <= 1e-6 && Math.abs(atom.y - parent.y) <= 1e-6;
     const hasDisplayedStereo = !!bond && ((stereoMap && stereoMap.has(bond.id)) || bond.properties?.display?.as);
     const shouldProject = atom.visible === false || (hasDisplayedStereo && hasCoincidentCoords);
     if (!shouldProject) {
       continue;
     }
-    const knownNeighbors = parent
-      .getNeighbors(molecule)
-      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null);
+    const knownNeighbors = parent.getNeighbors(molecule).filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null);
     const knownPositions = knownNeighbors.map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const protectedAtomIds = new Set([atom.id, parent.id, ...knownNeighbors.map(neighbor => neighbor.id)]);
     const avoidPositions = [...molecule.atoms.values()]
-      .filter(candidateAtom => (
-        !protectedAtomIds.has(candidateAtom.id)
-        && candidateAtom.visible !== false
-        && candidateAtom.x != null
-        && candidateAtom.y != null
-      ))
+      .filter(candidateAtom => !protectedAtomIds.has(candidateAtom.id) && candidateAtom.visible !== false && candidateAtom.x != null && candidateAtom.y != null)
       .map(candidateAtom => ({ x: candidateAtom.x, y: candidateAtom.y }));
     const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
@@ -163,8 +152,7 @@ export function create2DSceneRenderer(ctx) {
       return false;
     }
     const bond = molecule.getBond(atom.id, parent.id);
-    const hasCoincidentCoords =
-      atom.x != null && atom.y != null && parent.x != null && parent.y != null && Math.abs(atom.x - parent.x) <= 1e-6 && Math.abs(atom.y - parent.y) <= 1e-6;
+    const hasCoincidentCoords = atom.x != null && atom.y != null && parent.x != null && parent.y != null && Math.abs(atom.x - parent.x) <= 1e-6 && Math.abs(atom.y - parent.y) <= 1e-6;
     return atom.visible === false || (!!bond && ((stereoMap && stereoMap.has(bond.id)) || bond.properties?.display?.as) && hasCoincidentCoords);
   }
 
@@ -468,15 +456,7 @@ export function create2DSceneRenderer(ctx) {
           });
         const { cx, cy } = placement;
         placed.push(placement);
-        blLayer
-          .append('text')
-          .attr('x', cx)
-          .attr('y', cy)
-          .attr('text-anchor', 'middle')
-          .attr('dominant-baseline', 'central')
-          .attr('font-size', `${BL_FS}px`)
-          .attr('fill', '#000')
-          .text(label);
+        blLayer.append('text').attr('x', cx).attr('y', cy).attr('text-anchor', 'middle').attr('dominant-baseline', 'central').attr('font-size', `${BL_FS}px`).attr('fill', '#000').text(label);
       }
     }
 
@@ -573,14 +553,7 @@ export function create2DSceneRenderer(ctx) {
       for (const atom of warningAtoms) {
         const { x, y } = toSVGPt(atom);
         const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, fontSize), 10) + 7;
-        warningLayer
-          .append('circle')
-          .attr('class', 'valence-warning')
-          .attr('cx', x)
-          .attr('cy', y)
-          .attr('r', r)
-          .attr('fill', ctx.constants.valenceWarningFill)
-          .attr('stroke', 'none');
+        warningLayer.append('circle').attr('class', 'valence-warning').attr('cx', x).attr('cy', y).attr('r', r).attr('fill', ctx.constants.valenceWarningFill).attr('stroke', 'none');
       }
     }
 

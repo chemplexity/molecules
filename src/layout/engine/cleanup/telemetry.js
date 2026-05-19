@@ -101,10 +101,7 @@ export function buildStageTelemetryFromCleanupTelemetry(cleanupTelemetry) {
     selectedGeometryStage: cleanupTelemetry.selectedGeometryStage ?? null,
     selectedStage: cleanupTelemetry.selectedStage ?? null,
     firstDirtyStage,
-    finalDirtyStage:
-      cleanupTelemetry.selectedStage && stageAudits[cleanupTelemetry.selectedStage]?.ok === false
-        ? cleanupTelemetry.selectedStage
-        : null,
+    finalDirtyStage: cleanupTelemetry.selectedStage && stageAudits[cleanupTelemetry.selectedStage]?.ok === false ? cleanupTelemetry.selectedStage : null,
     stageAudits
   };
 }
@@ -127,14 +124,7 @@ export function createEmptyStageTelemetry() {
  * @param {object|null} [cleanupStageBudget] - Optional cleanup-stage budget telemetry.
  * @returns {object} Cleanup telemetry payload.
  */
-export function buildCleanupTelemetry(
-  stageExecutions,
-  stageResults,
-  selectedGeometryStage,
-  selectedStage,
-  accumulatedStabilizationRequest = null,
-  cleanupStageBudget = null
-) {
+export function buildCleanupTelemetry(stageExecutions, stageResults, selectedGeometryStage, selectedStage, accumulatedStabilizationRequest = null, cleanupStageBudget = null) {
   const stages = {};
   let stagesRan = 0;
   let stagesSkipped = 0;

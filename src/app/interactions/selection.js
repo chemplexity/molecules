@@ -122,12 +122,24 @@ export function createSelectionActions(context) {
   const elementSync = createButtonSynchronizer(DRAW_ELEMENTS, element => context.dom.getElementButton(element));
   const bondTypeSync = createButtonSynchronizer(DRAW_BOND_TYPES, type => context.dom.getBondDrawTypeButton?.(type));
 
-  function syncChargeButtons() { chargeSync.sync(context.state.overlayState.getChargeTool?.() ?? null); }
-  function clearChargeButtons() { chargeSync.clear(); }
-  function syncElementButtons() { elementSync.sync(context.state.overlayState.getDrawBondElement()); }
-  function clearElementButtons() { elementSync.clear(); }
-  function syncBondDrawTypeButtons() { bondTypeSync.sync(context.state.overlayState.getDrawBondType?.() ?? 'single'); }
-  function clearBondDrawTypeButtons() { bondTypeSync.clear(); }
+  function syncChargeButtons() {
+    chargeSync.sync(context.state.overlayState.getChargeTool?.() ?? null);
+  }
+  function clearChargeButtons() {
+    chargeSync.clear();
+  }
+  function syncElementButtons() {
+    elementSync.sync(context.state.overlayState.getDrawBondElement());
+  }
+  function clearElementButtons() {
+    elementSync.clear();
+  }
+  function syncBondDrawTypeButtons() {
+    bondTypeSync.sync(context.state.overlayState.getDrawBondType?.() ?? 'single');
+  }
+  function clearBondDrawTypeButtons() {
+    bondTypeSync.clear();
+  }
 
   function rerenderToolOverlay() {
     if (context.state.viewState.getMode() === 'force') {

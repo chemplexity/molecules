@@ -60,10 +60,7 @@ function _segmentIntersectsExpandedBox(segment, box, padding = DEFAULT_BLOCKER_P
   if (bbox.maxX < minX || bbox.minX > maxX || bbox.maxY < minY || bbox.minY > maxY) {
     return false;
   }
-  if (
-    (segment.x1 >= minX && segment.x1 <= maxX && segment.y1 >= minY && segment.y1 <= maxY) ||
-    (segment.x2 >= minX && segment.x2 <= maxX && segment.y2 >= minY && segment.y2 <= maxY)
-  ) {
+  if ((segment.x1 >= minX && segment.x1 <= maxX && segment.y1 >= minY && segment.y1 <= maxY) || (segment.x2 >= minX && segment.x2 <= maxX && segment.y2 >= minY && segment.y2 <= maxY)) {
     return true;
   }
   const edges = [
@@ -182,14 +179,7 @@ export function buildBondOverlayBlockerSegments({
  * @param {number} [options.wedgeHalfWidth] - Wide-end half-width for wedge/dash bonds.
  * @returns {number} Suggested base label offset in pixels.
  */
-export function defaultBondOverlayBaseOffset({
-  bond = null,
-  order = null,
-  stereoType = null,
-  fontSize = 10,
-  bondOffset = DEFAULT_2D_BOND_OFFSET,
-  wedgeHalfWidth = DEFAULT_WEDGE_HALF_WIDTH
-}) {
+export function defaultBondOverlayBaseOffset({ bond = null, order = null, stereoType = null, fontSize = 10, bondOffset = DEFAULT_2D_BOND_OFFSET, wedgeHalfWidth = DEFAULT_WEDGE_HALF_WIDTH }) {
   const resolvedOrder = order ?? renderBondOrder(bond);
   const resolvedStereoType = stereoType ?? bond?.properties?.display?.as ?? null;
   if (resolvedStereoType === 'wedge' || resolvedStereoType === 'dash') {
@@ -217,16 +207,7 @@ export function defaultBondOverlayBaseOffset({
  * @param {number} [options.baseOffset] - Starting normal offset in pixels.
  * @returns {{cx: number, cy: number, hw: number, hh: number}} Chosen label box center and half extents.
  */
-export function pickBondOverlayLabelPlacement({
-  start,
-  end,
-  label,
-  fontSize,
-  preferredSide = 1,
-  placedBoxes = [],
-  blockerSegments = [],
-  baseOffset = defaultBondOverlayBaseOffset({ fontSize })
-}) {
+export function pickBondOverlayLabelPlacement({ start, end, label, fontSize, preferredSide = 1, placedBoxes = [], blockerSegments = [], baseOffset = defaultBondOverlayBaseOffset({ fontSize }) }) {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;

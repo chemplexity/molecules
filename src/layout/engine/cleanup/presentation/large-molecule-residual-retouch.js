@@ -1,24 +1,18 @@
 /** @module cleanup/presentation/large-molecule-residual-retouch */
 
 import { auditLayout } from '../../audit/audit.js';
-import {
-  buildAtomGrid,
-  countVisibleHeavyBondCrossings,
-  findSevereOverlaps,
-  findVisibleHeavyBondCrossings
-} from '../../audit/invariants.js';
+import { buildAtomGrid, countVisibleHeavyBondCrossings, findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
 import { atomPairKey, IDEAL_DIVALENT_CONTINUATION_ELEMENTS, SEVERE_OVERLAP_FACTOR } from '../../constants.js';
 import { cloneCoords, rotateAround } from '../../geometry/transforms.js';
 import { angleOf, angularDifference, sub, wrapAngle } from '../../geometry/vec2.js';
-import {
-  isExactVisibleTrigonalBisectorEligible,
-  isPlanarDivalentNitrogenContinuationPair
-} from '../../placement/branch-placement/angle-selection.js';
+import { isExactVisibleTrigonalBisectorEligible, isPlanarDivalentNitrogenContinuationPair } from '../../placement/branch-placement/angle-selection.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 
 const MAX_RETOUCH_PASSES = 14;
 const MAX_ANGLE_RETOUCH_PASSES = 40;
+const LARGE_LOW_RING_ANGLE_POLISH_HEAVY_ATOM_MIN = 300;
+const LARGE_LOW_RING_ANGLE_POLISH_RING_SYSTEM_MAX = 4;
 const MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MIN = 80;
 const MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MAX = 120;
 const MEDIUM_ACYCLIC_ANGLE_RETOUCH_RING_SYSTEM_MAX = 2;
@@ -93,23 +87,8 @@ const EXACT_THREE_HEAVY_PROTECTION_RETRY_CENTER_LIMIT = 4;
 const ANGLE_CENTER_MIN_SEPARATION_THRESHOLD = 70;
 const ANGLE_CENTER_MAX_SEPARATION_THRESHOLD = 160;
 const ANGLE_RELIEF_TARGET_OFFSETS = [0, Math.PI / 36, -Math.PI / 36];
-const RESIDUAL_RELIEF_TARGET_OFFSETS = [
-  0,
-  Math.PI / 36,
-  -Math.PI / 36,
-  Math.PI / 18,
-  -Math.PI / 18
-];
-const ANGLE_RELIEF_FINE_STEPS = [
-  Math.PI / 72,
-  -Math.PI / 72,
-  Math.PI / 36,
-  -Math.PI / 36,
-  Math.PI / 24,
-  -Math.PI / 24,
-  Math.PI / 18,
-  -Math.PI / 18
-];
+const RESIDUAL_RELIEF_TARGET_OFFSETS = [0, Math.PI / 36, -Math.PI / 36, Math.PI / 18, -Math.PI / 18];
+const ANGLE_RELIEF_FINE_STEPS = [Math.PI / 72, -Math.PI / 72, Math.PI / 36, -Math.PI / 36, Math.PI / 24, -Math.PI / 24, Math.PI / 18, -Math.PI / 18];
 const FINAL_ANGLE_POLISH_FINE_STEPS = [Math.PI / 144, -Math.PI / 144];
 const RETOUCH_SCORE_EPSILON = 1e-9;
 const ROTATION_STEPS = [
@@ -132,7 +111,6 @@ const ROTATION_STEPS = [
   Math.PI
 ];
 
-
 function visibleHeavyAtomCount(layoutGraph, atomIds) {
   let count = 0;
   for (const atomId of atomIds) {
@@ -143,7 +121,6 @@ function visibleHeavyAtomCount(layoutGraph, atomIds) {
   }
   return count;
 }
-
 
 function isVisibleLayoutAtom(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
@@ -204,11 +181,7 @@ function getRotationDescriptorBase(layoutGraph, rootAtomId, anchorAtomId, descri
   }
   const rootAtom = layoutGraph.atoms.get(rootAtomId);
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
-  if (
-    !rootAtom
-    || !anchorAtom
-    || rootAtom.element === 'H'
-  ) {
+  if (!rootAtom || !anchorAtom || rootAtom.element === 'H') {
     descriptorCache?.set(cacheKey, null);
     return null;
   }
@@ -250,12 +223,7 @@ function getRotationDescriptorBase(layoutGraph, rootAtomId, anchorAtomId, descri
 }
 
 function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId, currentScore, frozenAtomIds, options = {}) {
-  if (
-    !coords.has(rootAtomId)
-    || !coords.has(anchorAtomId)
-    || frozenAtomIds?.has(rootAtomId)
-    || frozenAtomIds?.has(anchorAtomId)
-  ) {
+  if (!coords.has(rootAtomId) || !coords.has(anchorAtomId) || frozenAtomIds?.has(rootAtomId) || frozenAtomIds?.has(anchorAtomId)) {
     return null;
   }
 
@@ -265,24 +233,16 @@ function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId
   }
 
   const subtreeAtomIds = descriptorBase.subtreeAtomIds.filter(atomId => coords.has(atomId));
-  if (
-    subtreeAtomIds.length === 0
-    || subtreeAtomIds.includes(anchorAtomId)
-    || subtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))
-  ) {
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(anchorAtomId) || subtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))) {
     return null;
   }
-  const heavyAtomCount = subtreeAtomIds.length === descriptorBase.subtreeAtomIds.length
-    ? descriptorBase.heavyAtomCount
-    : visibleHeavyAtomCount(layoutGraph, subtreeAtomIds);
-  const smallSubtree =
-    subtreeAtomIds.length <= MAX_SMALL_SUBTREE_ATOMS
-    && heavyAtomCount <= MAX_SMALL_SUBTREE_HEAVY_ATOMS;
+  const heavyAtomCount = subtreeAtomIds.length === descriptorBase.subtreeAtomIds.length ? descriptorBase.heavyAtomCount : visibleHeavyAtomCount(layoutGraph, subtreeAtomIds);
+  const smallSubtree = subtreeAtomIds.length <= MAX_SMALL_SUBTREE_ATOMS && heavyAtomCount <= MAX_SMALL_SUBTREE_HEAVY_ATOMS;
   const largeSwingSubtree =
-    descriptorBase.isSingleBond
-    && currentScore.severeOverlapCount <= (options.largeSwingOverlapLimit ?? LARGE_SWING_OVERLAP_LIMIT)
-    && subtreeAtomIds.length <= MAX_SWING_SUBTREE_ATOMS
-    && heavyAtomCount <= MAX_SWING_SUBTREE_HEAVY_ATOMS;
+    descriptorBase.isSingleBond &&
+    currentScore.severeOverlapCount <= (options.largeSwingOverlapLimit ?? LARGE_SWING_OVERLAP_LIMIT) &&
+    subtreeAtomIds.length <= MAX_SWING_SUBTREE_ATOMS &&
+    heavyAtomCount <= MAX_SWING_SUBTREE_HEAVY_ATOMS;
   if (!smallSubtree && !largeSwingSubtree) {
     return null;
   }
@@ -305,10 +265,7 @@ function scoreCoords(layoutGraph, coords, bondLength, trackedAngularContexts = n
     const deficit = Math.max(0, threshold - overlap.distance);
     return penalty + deficit * deficit;
   }, 0);
-  const minSevereOverlapDistance =
-    overlaps.length > 0
-      ? overlaps.reduce((minimumDistance, overlap) => Math.min(minimumDistance, overlap.distance), Number.POSITIVE_INFINITY)
-      : null;
+  const minSevereOverlapDistance = overlaps.length > 0 ? overlaps.reduce((minimumDistance, overlap) => Math.min(minimumDistance, overlap.distance), Number.POSITIVE_INFINITY) : null;
   const crossings = findVisibleHeavyBondCrossings(layoutGraph, coords);
   const angularDistortion = measureTrackedAngularDistortion(layoutGraph, coords, trackedAngularContexts);
   return {
@@ -347,9 +304,9 @@ function repairScoreIsBetter(candidateScore, incumbentScore) {
     return true;
   }
   if (
-    candidateScore.severeOverlapCount !== incumbentScore.severeOverlapCount
-    || candidateScore.visibleHeavyBondCrossingCount !== incumbentScore.visibleHeavyBondCrossingCount
-    || Math.abs(candidateScore.severeOverlapPenalty - incumbentScore.severeOverlapPenalty) > RETOUCH_SCORE_EPSILON
+    candidateScore.severeOverlapCount !== incumbentScore.severeOverlapCount ||
+    candidateScore.visibleHeavyBondCrossingCount !== incumbentScore.visibleHeavyBondCrossingCount ||
+    Math.abs(candidateScore.severeOverlapPenalty - incumbentScore.severeOverlapPenalty) > RETOUCH_SCORE_EPSILON
   ) {
     return false;
   }
@@ -368,27 +325,24 @@ function candidateIsAllowed(descriptor, candidateScore, currentScore) {
     return false;
   }
   if (
-    candidateScore.severeOverlapCount === currentScore.severeOverlapCount
-    && candidateScore.visibleHeavyBondCrossingCount < currentScore.visibleHeavyBondCrossingCount
-    && candidateScore.severeOverlapPenalty > currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON
+    candidateScore.severeOverlapCount === currentScore.severeOverlapCount &&
+    candidateScore.visibleHeavyBondCrossingCount < currentScore.visibleHeavyBondCrossingCount &&
+    candidateScore.severeOverlapPenalty > currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON
   ) {
     return false;
   }
   if (!descriptor.largeSwing) {
     return true;
   }
-  if (
-    candidateScore.severeOverlapCount < currentScore.severeOverlapCount
-  ) {
+  if (candidateScore.severeOverlapCount < currentScore.severeOverlapCount) {
     return (
-      candidateScore.severeOverlapPenalty <= currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON
-      && candidateScore.visibleHeavyBondCrossingCount <= currentScore.visibleHeavyBondCrossingCount
+      candidateScore.severeOverlapPenalty <= currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON && candidateScore.visibleHeavyBondCrossingCount <= currentScore.visibleHeavyBondCrossingCount
     );
   }
   return (
-    candidateScore.severeOverlapCount <= currentScore.severeOverlapCount
-    && candidateScore.severeOverlapPenalty <= currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON
-    && currentScore.visibleHeavyBondCrossingCount - candidateScore.visibleHeavyBondCrossingCount >= LARGE_SWING_MIN_CROSSING_REDUCTION
+    candidateScore.severeOverlapCount <= currentScore.severeOverlapCount &&
+    candidateScore.severeOverlapPenalty <= currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON &&
+    currentScore.visibleHeavyBondCrossingCount - candidateScore.visibleHeavyBondCrossingCount >= LARGE_SWING_MIN_CROSSING_REDUCTION
   );
 }
 
@@ -408,25 +362,19 @@ function largeSwingCandidateIsWorthResidualRepair(descriptor, candidateScore, cu
     return false;
   }
   if (
-    candidateScore.severeOverlapCount > currentScore.severeOverlapCount + LARGE_SWING_REPAIR_OVERLAP_SLACK
-    || candidateScore.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount + LARGE_SWING_REPAIR_CROSSING_SLACK
+    candidateScore.severeOverlapCount > currentScore.severeOverlapCount + LARGE_SWING_REPAIR_OVERLAP_SLACK ||
+    candidateScore.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount + LARGE_SWING_REPAIR_CROSSING_SLACK
   ) {
     return false;
   }
-  return (
-    candidateScore.severeOverlapCount > 0
-    || candidateScore.visibleHeavyBondCrossingCount > 0
-  );
+  return candidateScore.severeOverlapCount > 0 || candidateScore.visibleHeavyBondCrossingCount > 0;
 }
 
 function shouldRunAngleRelief(score) {
   return (
-    score.severeOverlapCount === 0
-    && score.visibleHeavyBondCrossingCount <= ANGLE_RELIEF_REPAIR_CROSSING_LIMIT
-    && (
-      score.angularDistortionTotal > ANGLE_RELIEF_TOTAL_THRESHOLD
-      || score.angularDistortionWorst > ANGLE_RELIEF_WORST_THRESHOLD
-    )
+    score.severeOverlapCount === 0 &&
+    score.visibleHeavyBondCrossingCount <= ANGLE_RELIEF_REPAIR_CROSSING_LIMIT &&
+    (score.angularDistortionTotal > ANGLE_RELIEF_TOTAL_THRESHOLD || score.angularDistortionWorst > ANGLE_RELIEF_WORST_THRESHOLD)
   );
 }
 
@@ -435,14 +383,14 @@ function angleCandidateIsBetter(candidateScore, incumbentScore) {
     return false;
   }
   if (
-    candidateScore.angularDistortionWorst + ANGLE_RELIEF_MIN_WORST_IMPROVEMENT < incumbentScore.angularDistortionWorst
-    && candidateScore.angularDistortionTotal <= incumbentScore.angularDistortionTotal + ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT
+    candidateScore.angularDistortionWorst + ANGLE_RELIEF_MIN_WORST_IMPROVEMENT < incumbentScore.angularDistortionWorst &&
+    candidateScore.angularDistortionTotal <= incumbentScore.angularDistortionTotal + ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT
   ) {
     return true;
   }
   if (
-    candidateScore.angularDistortionWorst <= incumbentScore.angularDistortionWorst + RETOUCH_SCORE_EPSILON
-    && candidateScore.angularDistortionTotal + ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT < incumbentScore.angularDistortionTotal
+    candidateScore.angularDistortionWorst <= incumbentScore.angularDistortionWorst + RETOUCH_SCORE_EPSILON &&
+    candidateScore.angularDistortionTotal + ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT < incumbentScore.angularDistortionTotal
   ) {
     return true;
   }
@@ -450,10 +398,7 @@ function angleCandidateIsBetter(candidateScore, incumbentScore) {
 }
 
 function angleCandidateIsWorthRepair(candidateScore, incumbentScore) {
-  if (
-    candidateScore.severeOverlapCount > ANGLE_RELIEF_REPAIR_OVERLAP_LIMIT
-    || candidateScore.visibleHeavyBondCrossingCount > ANGLE_RELIEF_REPAIR_CROSSING_LIMIT
-  ) {
+  if (candidateScore.severeOverlapCount > ANGLE_RELIEF_REPAIR_OVERLAP_LIMIT || candidateScore.visibleHeavyBondCrossingCount > ANGLE_RELIEF_REPAIR_CROSSING_LIMIT) {
     return false;
   }
   if (candidateScore.angularDistortionWorst + ANGLE_RELIEF_REPAIR_MIN_WORST_IMPROVEMENT < incumbentScore.angularDistortionWorst) {
@@ -472,12 +417,7 @@ function angleCenterDistortion(layoutGraph, coords, atomId) {
     return null;
   }
   const centerPosition = coords.get(atomId);
-  const idealSeparation =
-    covalentBonds.length === 4
-      ? Math.PI / 2
-      : covalentBonds.length === 2 && covalentBonds.some(({ bond }) => (bond.order ?? 1) >= 3)
-        ? Math.PI
-        : (2 * Math.PI) / 3;
+  const idealSeparation = covalentBonds.length === 4 ? Math.PI / 2 : covalentBonds.length === 2 && covalentBonds.some(({ bond }) => (bond.order ?? 1) >= 3) ? Math.PI : (2 * Math.PI) / 3;
   let maxDeviation = 0;
   let minimumSeparation = Number.POSITIVE_INFINITY;
   let maximumSeparation = 0;
@@ -504,9 +444,9 @@ function angleCenterDistortion(layoutGraph, coords, atomId) {
   const minimumSeparationDegrees = (minimumSeparation * 180) / Math.PI;
   const maximumSeparationDegrees = (maximumSeparation * 180) / Math.PI;
   if (
-    maxDeviationDegrees <= ANGLE_CENTER_MAX_DEVIATION_THRESHOLD
-    && minimumSeparationDegrees >= ANGLE_CENTER_MIN_SEPARATION_THRESHOLD
-    && maximumSeparationDegrees <= ANGLE_CENTER_MAX_SEPARATION_THRESHOLD
+    maxDeviationDegrees <= ANGLE_CENTER_MAX_DEVIATION_THRESHOLD &&
+    minimumSeparationDegrees >= ANGLE_CENTER_MIN_SEPARATION_THRESHOLD &&
+    maximumSeparationDegrees <= ANGLE_CENTER_MAX_SEPARATION_THRESHOLD
   ) {
     return null;
   }
@@ -561,10 +501,7 @@ function measureLocalAngleDeviation(layoutGraph, coords, atomId) {
 }
 
 function localAngleCandidateCanImprove(candidateDistortion, currentDistortion, minTotalImprovement, minWorstImprovement) {
-  return (
-    candidateDistortion.maxDeviation + minWorstImprovement < currentDistortion.maxDeviation
-    || candidateDistortion.totalDeviation + minTotalImprovement < currentDistortion.totalDeviation
-  );
+  return candidateDistortion.maxDeviation + minWorstImprovement < currentDistortion.maxDeviation || candidateDistortion.totalDeviation + minTotalImprovement < currentDistortion.totalDeviation;
 }
 
 function sortedAngularSeparations(angles) {
@@ -589,10 +526,7 @@ function measureThreeCoordinateDeviationAtAtom(coords, covalentBonds, atomId) {
     return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
   });
   const idealSeparation = (Math.PI * 2) / 3;
-  return sortedAngularSeparations(neighborAngles).reduce(
-    (sum, separation) => sum + (separation - idealSeparation) ** 2,
-    0
-  );
+  return sortedAngularSeparations(neighborAngles).reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0);
 }
 
 function shouldMeasureTrigonalDistortionAtAtom(layoutGraph, atomId, covalentBonds) {
@@ -607,11 +541,7 @@ function shouldMeasureTrigonalDistortionAtAtom(layoutGraph, atomId, covalentBond
   if (multipleBondCount === 1) {
     return true;
   }
-  return covalentBonds.some(({ bond, neighborAtomId }) => (
-    !bond.aromatic
-    && (bond.order ?? 1) === 1
-    && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId)
-  ));
+  return covalentBonds.some(({ bond, neighborAtomId }) => !bond.aromatic && (bond.order ?? 1) === 1 && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId));
 }
 
 function shouldMeasureDivalentContinuationDistortionAtAtom(layoutGraph, atomId, covalentBonds) {
@@ -623,12 +553,8 @@ function shouldMeasureDivalentContinuationDistortionAtAtom(layoutGraph, atomId, 
     return false;
   }
   const isExactDivalentElement =
-    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
-    || (atom.element === 'N' && isPlanarDivalentNitrogenContinuationPair(
-      layoutGraph,
-      covalentBonds[0]?.neighborAtomId,
-      covalentBonds[1]?.neighborAtomId
-    ));
+    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element) ||
+    (atom.element === 'N' && isPlanarDivalentNitrogenContinuationPair(layoutGraph, covalentBonds[0]?.neighborAtomId, covalentBonds[1]?.neighborAtomId));
   if (!isExactDivalentElement) {
     return false;
   }
@@ -747,9 +673,7 @@ function harmedExactThreeHeavyProtectionCenters(layoutGraph, coords, protectedCe
 }
 
 function protectedCenterDistortionTotal(layoutGraph, coords, protectedCenterAtomIds, trackedAngularContexts) {
-  return protectedCenterAtomIds.reduce((total, atomId) => (
-    total + measureTrackedAngularDistortionAtAtom(layoutGraph, coords, atomId, trackedAngularContexts).totalDeviation
-  ), 0);
+  return protectedCenterAtomIds.reduce((total, atomId) => total + measureTrackedAngularDistortionAtAtom(layoutGraph, coords, atomId, trackedAngularContexts).totalDeviation, 0);
 }
 
 function smallestVisibleHeavyCutNeighborAtomId(layoutGraph, coords, centerAtomId) {
@@ -766,11 +690,7 @@ function smallestVisibleHeavyCutNeighborAtomId(layoutGraph, coords, centerAtomId
     if (heavyAtomCount === 0) {
       continue;
     }
-    if (
-      !bestNeighbor
-      || heavyAtomCount < bestNeighbor.heavyAtomCount
-      || (heavyAtomCount === bestNeighbor.heavyAtomCount && subtreeAtomIds.length < bestNeighbor.atomCount)
-    ) {
+    if (!bestNeighbor || heavyAtomCount < bestNeighbor.heavyAtomCount || (heavyAtomCount === bestNeighbor.heavyAtomCount && subtreeAtomIds.length < bestNeighbor.atomCount)) {
       bestNeighbor = {
         atomId: neighborAtomId,
         atomCount: subtreeAtomIds.length,
@@ -838,10 +758,7 @@ function measureTrackedAngularDistortionAtAtom(layoutGraph, coords, atomId, trac
     const secondNeighborPosition = coords.get(covalentBonds[1].neighborAtomId);
     if (atomPosition && firstNeighborPosition && secondNeighborPosition) {
       const idealSeparation = (2 * Math.PI) / 3;
-      const bondAngle = angularDifference(
-        angleOf(sub(firstNeighborPosition, atomPosition)),
-        angleOf(sub(secondNeighborPosition, atomPosition))
-      );
+      const bondAngle = angularDifference(angleOf(sub(firstNeighborPosition, atomPosition)), angleOf(sub(secondNeighborPosition, atomPosition)));
       const deviation = (bondAngle - idealSeparation) ** 2;
       totalDeviation += deviation;
       maxDeviation = Math.max(maxDeviation, deviation);
@@ -943,10 +860,7 @@ function buildCleanAngularCandidateScore(currentScore, currentLocalDistortion, c
     visibleHeavyBondCrossingCount: 0,
     overlaps: [],
     crossings: [],
-    angularDistortionTotal:
-      currentScore.angularDistortionTotal
-      - currentLocalDistortion.totalDeviation
-      + candidateLocalDistortion.totalDeviation,
+    angularDistortionTotal: currentScore.angularDistortionTotal - currentLocalDistortion.totalDeviation + candidateLocalDistortion.totalDeviation,
     angularDistortionWorst: anchorIsCurrentWorst
       ? Math.max(currentScore.angularDistortionSecondWorst ?? 0, candidateLocalDistortion.maxDeviation)
       : Math.max(currentScore.angularDistortionWorst, candidateLocalDistortion.maxDeviation),
@@ -1202,18 +1116,7 @@ function addDescriptor(layoutGraph, coords, descriptors, seenDescriptors, rootAt
   }
 }
 
-function addDescriptorContainingEndpoint(
-  layoutGraph,
-  coords,
-  descriptors,
-  seenDescriptors,
-  rootAtomId,
-  anchorAtomId,
-  endpointAtomId,
-  currentScore,
-  frozenAtomIds,
-  descriptorOptions = {}
-) {
+function addDescriptorContainingEndpoint(layoutGraph, coords, descriptors, seenDescriptors, rootAtomId, anchorAtomId, endpointAtomId, currentScore, frozenAtomIds, descriptorOptions = {}) {
   const key = `${rootAtomId}:${anchorAtomId}`;
   if (seenDescriptors.has(key)) {
     return;
@@ -1225,16 +1128,7 @@ function addDescriptorContainingEndpoint(
   }
 }
 
-function addNearbyContainingEndpointDescriptors(
-  layoutGraph,
-  coords,
-  descriptors,
-  seenDescriptors,
-  endpointAtomId,
-  currentScore,
-  frozenAtomIds,
-  descriptorOptions = {}
-) {
+function addNearbyContainingEndpointDescriptors(layoutGraph, coords, descriptors, seenDescriptors, endpointAtomId, currentScore, frozenAtomIds, descriptorOptions = {}) {
   const endpointAtom = layoutGraph.atoms.get(endpointAtomId);
   if (!endpointAtom || endpointAtom.element === 'H' || !coords.has(endpointAtomId)) {
     return;
@@ -1253,30 +1147,8 @@ function addNearbyContainingEndpointDescriptors(
       if (neighborAtom?.element === 'H' || !coords.has(neighborAtomId)) {
         continue;
       }
-      addDescriptorContainingEndpoint(
-        layoutGraph,
-        coords,
-        descriptors,
-        seenDescriptors,
-        atomId,
-        neighborAtomId,
-        endpointAtomId,
-        currentScore,
-        frozenAtomIds,
-        descriptorOptions
-      );
-      addDescriptorContainingEndpoint(
-        layoutGraph,
-        coords,
-        descriptors,
-        seenDescriptors,
-        neighborAtomId,
-        atomId,
-        endpointAtomId,
-        currentScore,
-        frozenAtomIds,
-        descriptorOptions
-      );
+      addDescriptorContainingEndpoint(layoutGraph, coords, descriptors, seenDescriptors, atomId, neighborAtomId, endpointAtomId, currentScore, frozenAtomIds, descriptorOptions);
+      addDescriptorContainingEndpoint(layoutGraph, coords, descriptors, seenDescriptors, neighborAtomId, atomId, endpointAtomId, currentScore, frozenAtomIds, descriptorOptions);
       if (depth < ANGLE_RELIEF_REPAIR_NEARBY_RADIUS && !visitedAtomIds.has(neighborAtomId)) {
         visitedAtomIds.add(neighborAtomId);
         queue.push({ atomId: neighborAtomId, depth: depth + 1 });
@@ -1293,26 +1165,8 @@ function collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAt
     addDescriptorForEndpoint(layoutGraph, coords, descriptors, seenDescriptors, overlap.firstAtomId, currentScore, frozenAtomIds, options);
     addDescriptorForEndpoint(layoutGraph, coords, descriptors, seenDescriptors, overlap.secondAtomId, currentScore, frozenAtomIds, options);
     if (options.includeNearbyContainingEndpointDescriptors) {
-      addNearbyContainingEndpointDescriptors(
-        layoutGraph,
-        coords,
-        descriptors,
-        seenDescriptors,
-        overlap.firstAtomId,
-        currentScore,
-        frozenAtomIds,
-        options
-      );
-      addNearbyContainingEndpointDescriptors(
-        layoutGraph,
-        coords,
-        descriptors,
-        seenDescriptors,
-        overlap.secondAtomId,
-        currentScore,
-        frozenAtomIds,
-        options
-      );
+      addNearbyContainingEndpointDescriptors(layoutGraph, coords, descriptors, seenDescriptors, overlap.firstAtomId, currentScore, frozenAtomIds, options);
+      addNearbyContainingEndpointDescriptors(layoutGraph, coords, descriptors, seenDescriptors, overlap.secondAtomId, currentScore, frozenAtomIds, options);
     }
   }
 
@@ -1320,16 +1174,7 @@ function collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAt
     for (const atomId of [...crossing.firstAtomIds, ...crossing.secondAtomIds]) {
       addDescriptorForEndpoint(layoutGraph, coords, descriptors, seenDescriptors, atomId, currentScore, frozenAtomIds, options);
       if (options.includeNearbyContainingEndpointDescriptors) {
-        addNearbyContainingEndpointDescriptors(
-          layoutGraph,
-          coords,
-          descriptors,
-          seenDescriptors,
-          atomId,
-          currentScore,
-          frozenAtomIds,
-          options
-        );
+        addNearbyContainingEndpointDescriptors(layoutGraph, coords, descriptors, seenDescriptors, atomId, currentScore, frozenAtomIds, options);
       }
     }
   }
@@ -1367,17 +1212,7 @@ function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, fro
     for (const { neighborAtomId } of center.covalentBonds) {
       const neighborInRing = layoutGraph.ringAtomIdSet.has(neighborAtomId);
       if (!neighborInRing || !centerInRing) {
-        addDescriptor(
-          layoutGraph,
-          coords,
-          descriptors,
-          seenDescriptors,
-          neighborAtomId,
-          center.atomId,
-          currentScore,
-          frozenAtomIds,
-          descriptorOptions
-        );
+        addDescriptor(layoutGraph, coords, descriptors, seenDescriptors, neighborAtomId, center.atomId, currentScore, frozenAtomIds, descriptorOptions);
       }
     }
   }
@@ -1391,11 +1226,7 @@ function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, froze
   const centers = [];
   for (const atomId of coords.keys()) {
     const center = measureLocalAngleDeviation(layoutGraph, coords, atomId);
-    if (
-      center
-      && center.totalDeviation > 0
-      && center.maxDeviationDegrees > FINAL_ANGLE_POLISH_MAX_DEVIATION_THRESHOLD
-    ) {
+    if (center && center.totalDeviation > 0 && center.maxDeviationDegrees > FINAL_ANGLE_POLISH_MAX_DEVIATION_THRESHOLD) {
       centers.push(center);
     }
   }
@@ -1413,23 +1244,12 @@ function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, froze
         continue;
       }
       seenEntries.add(key);
-      const descriptor = collectRotationDescriptor(
-        layoutGraph,
-        coords,
-        neighborAtomId,
-        center.atomId,
-        currentScore,
-        frozenAtomIds,
-        descriptorOptions
-      );
+      const descriptor = collectRotationDescriptor(layoutGraph, coords, neighborAtomId, center.atomId, currentScore, frozenAtomIds, descriptorOptions);
       if (descriptor) {
         entries.push({
           centerAtomId: center.atomId,
           centerScore: center.totalDeviation,
-          protectedMovedAtomIds: new Set([
-            center.atomId,
-            ...center.covalentBonds.map(({ neighborAtomId }) => neighborAtomId)
-          ]),
+          protectedMovedAtomIds: new Set([center.atomId, ...center.covalentBonds.map(({ neighborAtomId }) => neighborAtomId)]),
           descriptor
         });
       }
@@ -1439,26 +1259,14 @@ function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, froze
   return entries;
 }
 
-function repairCandidateResiduals(
-  layoutGraph,
-  inputCoords,
-  inputScore,
-  bondLength,
-  frozenAtomIds,
-  trackedAngularContexts,
-  visibleAtomIds,
-  options = {}
-) {
+function repairCandidateResiduals(layoutGraph, inputCoords, inputScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, options = {}) {
   let coords = inputCoords;
   let currentScore = inputScore;
   const movedAtomIds = new Set();
   let passes = 0;
   const maxRepairPasses = options.maxPasses ?? ANGLE_RELIEF_REPAIR_PASSES;
 
-  while (
-    passes < maxRepairPasses
-    && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)
-  ) {
+  while (passes < maxRepairPasses && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)) {
     const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, {
       includeNearbyContainingEndpointDescriptors: options.includeNearbyContainingEndpointDescriptors === true,
       largeSwingOverlapLimit: options.largeSwingOverlapLimit,
@@ -1468,12 +1276,8 @@ function repairCandidateResiduals(
 
     for (const descriptor of descriptors) {
       for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
-        const candidateScore = withRotatedSubtree(
-          layoutGraph,
-          coords,
-          descriptor,
-          angle,
-          candidateCoords => scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
+        const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+          scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
         );
         if (!candidateIsAllowed(descriptor, candidateScore, currentScore)) {
           continue;
@@ -1515,8 +1319,8 @@ function finalAnglePolishCandidateIsBetter(candidateScore, currentScore) {
     return false;
   }
   return (
-    candidateScore.angularDistortionTotal + FINAL_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT < currentScore.angularDistortionTotal
-    && candidateScore.angularDistortionWorst <= currentScore.angularDistortionWorst + FINAL_ANGLE_POLISH_WORST_TOLERANCE
+    candidateScore.angularDistortionTotal + FINAL_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT < currentScore.angularDistortionTotal &&
+    candidateScore.angularDistortionWorst <= currentScore.angularDistortionWorst + FINAL_ANGLE_POLISH_WORST_TOLERANCE
   );
 }
 
@@ -1533,9 +1337,9 @@ function finalAnglePolishCenterPriorityCandidateIsAllowed(candidateScore, curren
     return false;
   }
   return (
-    centerImprovement >= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT
-    && candidateScore.angularDistortionTotal <= currentScore.angularDistortionTotal + FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT
-    && candidateScore.angularDistortionWorst <= currentScore.angularDistortionWorst + FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT
+    centerImprovement >= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT &&
+    candidateScore.angularDistortionTotal <= currentScore.angularDistortionTotal + FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT &&
+    candidateScore.angularDistortionWorst <= currentScore.angularDistortionWorst + FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT
   );
 }
 
@@ -1556,15 +1360,12 @@ function finalAnglePolishCandidateIsWorthRepair(candidateScore, currentScore, ce
   if (!allowCenterPriorityRepair) {
     return false;
   }
-  if (
-    candidateScore.severeOverlapCount > ANGLE_RELIEF_REPAIR_OVERLAP_LIMIT
-    || candidateScore.visibleHeavyBondCrossingCount > ANGLE_RELIEF_REPAIR_CROSSING_LIMIT
-  ) {
+  if (candidateScore.severeOverlapCount > ANGLE_RELIEF_REPAIR_OVERLAP_LIMIT || candidateScore.visibleHeavyBondCrossingCount > ANGLE_RELIEF_REPAIR_CROSSING_LIMIT) {
     return false;
   }
   return (
-    centerImprovement >= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT
-    && candidateScore.angularDistortionTotal + (ANGLE_RELIEF_REPAIR_MIN_TOTAL_IMPROVEMENT / 2) < currentScore.angularDistortionTotal
+    centerImprovement >= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT &&
+    candidateScore.angularDistortionTotal + ANGLE_RELIEF_REPAIR_MIN_TOTAL_IMPROVEMENT / 2 < currentScore.angularDistortionTotal
   );
 }
 
@@ -1585,9 +1386,7 @@ function finalAnglePolishSelectionIsBetter(candidate, incumbent) {
 }
 
 function ringFanAnglePolishAuditOptions(bondLength, bondValidationClasses) {
-  return bondValidationClasses
-    ? { bondLength, bondValidationClasses }
-    : { bondLength };
+  return bondValidationClasses ? { bondLength, bondValidationClasses } : { bondLength };
 }
 
 function ringFanAnglePolishCenter(layoutGraph, coords, atomId) {
@@ -1643,8 +1442,8 @@ function ringFanAnglePolishScoreImproves(candidateScore, incumbentScore) {
     return true;
   }
   return (
-    candidateScore.maxDeviation <= incumbentScore.maxDeviation + RING_FAN_ANGLE_POLISH_WORST_TOLERANCE
-    && candidateScore.totalDeviation + RING_FAN_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT < incumbentScore.totalDeviation
+    candidateScore.maxDeviation <= incumbentScore.maxDeviation + RING_FAN_ANGLE_POLISH_WORST_TOLERANCE &&
+    candidateScore.totalDeviation + RING_FAN_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT < incumbentScore.totalDeviation
   );
 }
 
@@ -1667,9 +1466,7 @@ function ringFanAnglePolishAuditAllows(candidateAudit, incumbentAudit, bondLengt
   if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
     return false;
   }
-  return candidateAudit.maxBondLengthDeviation <= (
-    incumbentAudit.maxBondLengthDeviation + bondLength * RING_FAN_ANGLE_POLISH_BOND_DEVIATION_TOLERANCE
-  );
+  return candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + bondLength * RING_FAN_ANGLE_POLISH_BOND_DEVIATION_TOLERANCE;
 }
 
 function ringFanAnglePolishTopologicalDistance(layoutGraph, firstAtomId, secondAtomId, maxDepth) {
@@ -1724,9 +1521,9 @@ function ringFanAnglePolishSoftContactScore(layoutGraph, coords, bondLength, foc
   const focusSet = focusAtomIds ? new Set(focusAtomIds) : null;
   const scannedAtomIds = focusSet
     ? [...focusSet].filter(atomId => {
-      const atom = layoutGraph.atoms.get(atomId);
-      return atom?.visible !== false && atom?.element !== 'H' && coords.has(atomId);
-    })
+        const atom = layoutGraph.atoms.get(atomId);
+        return atom?.visible !== false && atom?.element !== 'H' && coords.has(atomId);
+      })
     : allAtomIds;
 
   let contactCount = 0;
@@ -1759,10 +1556,7 @@ function ringFanAnglePolishSoftContactScore(layoutGraph, coords, bondLength, foc
       if (ringFanAnglePolishTopologicalDistance(layoutGraph, firstAtomId, secondAtomId, 3) <= 3) {
         continue;
       }
-      const distance = Math.hypot(
-        dx,
-        dy
-      );
+      const distance = Math.hypot(dx, dy);
       if (distance >= threshold) {
         continue;
       }
@@ -1863,13 +1657,7 @@ function ringFanAnglePolishSoftContactDeltaIsBetter(candidateDelta, incumbentDel
 
 function ringFanAnglePolishTerminalLeafAnchor(layoutGraph, leafAtomId) {
   const leafAtom = layoutGraph.atoms.get(leafAtomId);
-  if (
-    !leafAtom
-    || leafAtom.element === 'H'
-    || leafAtom.heavyDegree !== 1
-    || layoutGraph.ringAtomIdSet.has(leafAtomId)
-    || layoutGraph.fixedCoords.has(leafAtomId)
-  ) {
+  if (!leafAtom || leafAtom.element === 'H' || leafAtom.heavyDegree !== 1 || layoutGraph.ringAtomIdSet.has(leafAtomId) || layoutGraph.fixedCoords.has(leafAtomId)) {
     return null;
   }
 
@@ -1898,13 +1686,7 @@ function ringFanAnglePolishAnchorHasPairedTerminalHeteroLeaves(layoutGraph, anch
     }
     const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (
-      neighborAtom
-      && neighborAtom.element !== 'C'
-      && neighborAtom.element !== 'H'
-      && neighborAtom.heavyDegree === 1
-      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
-    ) {
+    if (neighborAtom && neighborAtom.element !== 'C' && neighborAtom.element !== 'H' && neighborAtom.heavyDegree === 1 && !layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       terminalHeteroLeafCount++;
     }
   }
@@ -1960,10 +1742,7 @@ function ringFanAnglePolishRotatedLeafCoords(coords, descriptor, angle) {
   if (!anchorPosition || !leafPosition) {
     return coords;
   }
-  const radius = Math.hypot(
-    leafPosition.x - anchorPosition.x,
-    leafPosition.y - anchorPosition.y
-  );
+  const radius = Math.hypot(leafPosition.x - anchorPosition.x, leafPosition.y - anchorPosition.y);
   if (radius <= 1e-9) {
     return coords;
   }
@@ -1984,18 +1763,9 @@ function ringFanAnglePolishContactLeafAngles(coords, descriptor) {
     return [];
   }
 
-  const currentAngle = Math.atan2(
-    leafPosition.y - anchorPosition.y,
-    leafPosition.x - anchorPosition.x
-  );
-  const targetAwayAngle = Math.atan2(
-    anchorPosition.y - targetPosition.y,
-    anchorPosition.x - targetPosition.x
-  );
-  return [
-    targetAwayAngle,
-    ...RING_FAN_ANGLE_POLISH_CONTACT_LEAF_ANGLE_OFFSETS.map(offset => currentAngle + offset)
-  ];
+  const currentAngle = Math.atan2(leafPosition.y - anchorPosition.y, leafPosition.x - anchorPosition.x);
+  const targetAwayAngle = Math.atan2(anchorPosition.y - targetPosition.y, anchorPosition.x - targetPosition.x);
+  return [targetAwayAngle, ...RING_FAN_ANGLE_POLISH_CONTACT_LEAF_ANGLE_OFFSETS.map(offset => currentAngle + offset)];
 }
 
 function ringFanAnglePolishContactLeafSelectionIsBetter(candidate, incumbent) {
@@ -2016,8 +1786,8 @@ function ringFanAnglePolishContactLeafSelectionIsBetter(candidate, incumbent) {
 
 function ringFanAnglePolishContactLeafCandidateAllowed(candidateScore, currentScore) {
   return (
-    candidateScore.maxDeviation <= currentScore.maxDeviation + RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_DEVIATION_SLACK
-    && candidateScore.totalDeviation <= currentScore.totalDeviation + RING_FAN_ANGLE_POLISH_CONTACT_LEAF_TOTAL_SLACK
+    candidateScore.maxDeviation <= currentScore.maxDeviation + RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_DEVIATION_SLACK &&
+    candidateScore.totalDeviation <= currentScore.totalDeviation + RING_FAN_ANGLE_POLISH_CONTACT_LEAF_TOTAL_SLACK
   );
 }
 
@@ -2034,17 +1804,9 @@ function runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, inputCoords, in
     let bestCandidate = null;
 
     for (const descriptor of descriptors) {
-      const candidateCoordsList = [
-        ...RING_FAN_ANGLE_POLISH_CONTACT_LEAF_BACKOFF_FACTORS.map(factor =>
-          ringFanAnglePolishBackedOffLeafCoords(coords, descriptor, factor)
-        )
-      ];
+      const candidateCoordsList = [...RING_FAN_ANGLE_POLISH_CONTACT_LEAF_BACKOFF_FACTORS.map(factor => ringFanAnglePolishBackedOffLeafCoords(coords, descriptor, factor))];
       if (descriptor.allowRotation) {
-        candidateCoordsList.push(
-          ...ringFanAnglePolishContactLeafAngles(coords, descriptor).map(angle =>
-            ringFanAnglePolishRotatedLeafCoords(coords, descriptor, angle)
-          )
-        );
+        candidateCoordsList.push(...ringFanAnglePolishContactLeafAngles(coords, descriptor).map(angle => ringFanAnglePolishRotatedLeafCoords(coords, descriptor, angle)));
       }
 
       for (const candidateCoords of candidateCoordsList) {
@@ -2205,18 +1967,8 @@ function ringFanAnglePolishDirectedCandidateCoords(coords, center, pair, step) {
 
   const directionSign = pair.separation < (2 * Math.PI) / 3 ? 1 : -1;
   return [
-    translatedSingleAtomCoords(
-      coords,
-      center.atomId,
-      midpointUnit.x * step * directionSign,
-      midpointUnit.y * step * directionSign
-    ),
-    translatedSingleAtomCoords(
-      coords,
-      center.atomId,
-      -midpointUnit.x * step * directionSign,
-      -midpointUnit.y * step * directionSign
-    ),
+    translatedSingleAtomCoords(coords, center.atomId, midpointUnit.x * step * directionSign, midpointUnit.y * step * directionSign),
+    translatedSingleAtomCoords(coords, center.atomId, -midpointUnit.x * step * directionSign, -midpointUnit.y * step * directionSign),
     translatedMultiAtomCoords(coords, [
       {
         atomId: pair.firstAtomId,
@@ -2283,14 +2035,7 @@ function ringFanAnglePolishAggregateCandidate(layoutGraph, coords, centers, step
     const weight = Math.min(pair.deviation / (Math.PI / 3), 1);
     const centerAtom = layoutGraph.atoms.get(center.atomId);
     if (centerAtom?.element !== 'H' && !layoutGraph.fixedCoords.has(center.atomId)) {
-      addRingFanAnglePolishTranslation(
-        translations,
-        translationWeights,
-        center.atomId,
-        midpointUnit.x * step * directionSign,
-        midpointUnit.y * step * directionSign,
-        weight
-      );
+      addRingFanAnglePolishTranslation(translations, translationWeights, center.atomId, midpointUnit.x * step * directionSign, midpointUnit.y * step * directionSign, weight);
       movedAtomIds.add(center.atomId);
     }
 
@@ -2379,10 +2124,7 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
   const movedAtomIds = new Set();
   let passes = 0;
 
-  while (
-    passes < RING_FAN_ANGLE_POLISH_MAX_PASSES
-    && currentScore.maxDeviationDegrees > RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES
-  ) {
+  while (passes < RING_FAN_ANGLE_POLISH_MAX_PASSES && currentScore.maxDeviationDegrees > RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES) {
     const centers = currentScore.centers.slice(0, RING_FAN_ANGLE_POLISH_CENTER_SCAN_LIMIT);
     const movableAtomIds = ringFanAnglePolishMovableAtomIds(layoutGraph, centers);
     let bestCandidate = null;
@@ -2419,12 +2161,7 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
         const step = bondLength * stepFactor;
         for (let directionIndex = 0; directionIndex < RING_FAN_ANGLE_POLISH_DIRECTION_COUNT; directionIndex++) {
           const angle = (2 * Math.PI * directionIndex) / RING_FAN_ANGLE_POLISH_DIRECTION_COUNT;
-          const candidateCoords = translatedSingleAtomCoords(
-            coords,
-            atomId,
-            Math.cos(angle) * step,
-            Math.sin(angle) * step
-          );
+          const candidateCoords = translatedSingleAtomCoords(coords, atomId, Math.cos(angle) * step, Math.sin(angle) * step);
           evaluateCandidateCoords(candidateCoords, [atomId]);
         }
       }
@@ -2442,12 +2179,7 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
     }
 
     for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
-      const candidate = ringFanAnglePolishAggregateCandidate(
-        layoutGraph,
-        coords,
-        centers,
-        bondLength * stepFactor
-      );
+      const candidate = ringFanAnglePolishAggregateCandidate(layoutGraph, coords, centers, bondLength * stepFactor);
       if (candidate) {
         evaluateCandidateCoords(candidate.coords, candidate.atomIds);
       }
@@ -2465,14 +2197,7 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
     passes++;
   }
 
-  const softContactLeafRetouch = runMacrocycleRingFanSoftContactLeafRetouch(
-    layoutGraph,
-    coords,
-    currentScore,
-    currentAudit,
-    bondLength,
-    auditOptions
-  );
+  const softContactLeafRetouch = runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, coords, currentScore, currentAudit, bondLength, auditOptions);
   if (softContactLeafRetouch.passes > 0) {
     coords = softContactLeafRetouch.coords;
     currentScore = softContactLeafRetouch.score;
@@ -2503,73 +2228,33 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
   };
 }
 
-function runFinalAnglePolish(
-  layoutGraph,
-  inputCoords,
-  inputScore,
-  bondLength,
-  frozenAtomIds,
-  trackedAngularContexts,
-  visibleAtomIds,
-  descriptorCache = null
-) {
+function runFinalAnglePolish(layoutGraph, inputCoords, inputScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, descriptorCache = null) {
   let coords = inputCoords;
   let currentScore = inputScore;
   const movedAtomIds = new Set();
   let passes = 0;
 
-  while (
-    passes < MAX_FINAL_ANGLE_POLISH_PASSES
-    && currentScore.severeOverlapCount === 0
-    && currentScore.visibleHeavyBondCrossingCount === 0
-  ) {
+  while (passes < MAX_FINAL_ANGLE_POLISH_PASSES && currentScore.severeOverlapCount === 0 && currentScore.visibleHeavyBondCrossingCount === 0) {
     const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds });
     const entries = collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, frozenAtomIds, { descriptorCache });
-    const allowCenterPriorityRepair =
-      visibleHeavyAtomCount(layoutGraph, visibleAtomIds) <= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS;
+    const allowCenterPriorityRepair = visibleHeavyAtomCount(layoutGraph, visibleAtomIds) <= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS;
     let bestCandidate = null;
 
     for (const entry of entries) {
-      const currentTrackedLocalDistortion = measureTrackedAngularDistortionAtAtom(
-        layoutGraph,
-        coords,
-        entry.descriptor.anchorAtomId,
-        trackedAngularContexts
-      );
+      const currentTrackedLocalDistortion = measureTrackedAngularDistortionAtAtom(layoutGraph, coords, entry.descriptor.anchorAtomId, trackedAngularContexts);
       for (const angle of candidateFinalAnglePolishSteps(layoutGraph, coords, entry.descriptor)) {
         const candidate = withRotatedSubtree(layoutGraph, coords, entry.descriptor, angle, candidateCoords => {
           const candidateCenterScore = measureLocalAngleDeviation(layoutGraph, candidateCoords, entry.centerAtomId);
-          if (
-            !candidateCenterScore
-            || candidateCenterScore.totalDeviation + FINAL_ANGLE_POLISH_MIN_CENTER_IMPROVEMENT >= entry.centerScore
-          ) {
+          if (!candidateCenterScore || candidateCenterScore.totalDeviation + FINAL_ANGLE_POLISH_MIN_CENTER_IMPROVEMENT >= entry.centerScore) {
             return null;
           }
 
-          const candidateTrackedLocalDistortion = measureTrackedAngularDistortionAtAtom(
-            layoutGraph,
-            candidateCoords,
-            entry.descriptor.anchorAtomId,
-            trackedAngularContexts
-          );
-          const candidateScore = buildCleanAngularCandidateScore(
-            currentScore,
-            currentTrackedLocalDistortion,
-            candidateTrackedLocalDistortion
-          );
+          const candidateTrackedLocalDistortion = measureTrackedAngularDistortionAtAtom(layoutGraph, candidateCoords, entry.descriptor.anchorAtomId, trackedAngularContexts);
+          const candidateScore = buildCleanAngularCandidateScore(currentScore, currentTrackedLocalDistortion, candidateTrackedLocalDistortion);
           if (
-            !localCandidateHasNoResiduals(layoutGraph, candidateCoords, entry.descriptor, currentScore, bondLength, atomGrid)
-            || (
-              !finalAnglePolishCandidateIsBetter(candidateScore, currentScore)
-              && (
-                !allowCenterPriorityRepair
-                || !finalAnglePolishCenterPriorityCandidateIsAllowed(
-                  candidateScore,
-                  currentScore,
-                  entry.centerScore - candidateCenterScore.totalDeviation
-                )
-              )
-            )
+            !localCandidateHasNoResiduals(layoutGraph, candidateCoords, entry.descriptor, currentScore, bondLength, atomGrid) ||
+            (!finalAnglePolishCandidateIsBetter(candidateScore, currentScore) &&
+              (!allowCenterPriorityRepair || !finalAnglePolishCenterPriorityCandidateIsAllowed(candidateScore, currentScore, entry.centerScore - candidateCenterScore.totalDeviation)))
           ) {
             return null;
           }
@@ -2584,20 +2269,12 @@ function runFinalAnglePolish(
         if (!selectedCandidate && allowCenterPriorityRepair) {
           selectedCandidate = withRotatedSubtree(layoutGraph, coords, entry.descriptor, angle, candidateCoords => {
             const candidateCenterScore = measureLocalAngleDeviation(layoutGraph, candidateCoords, entry.centerAtomId);
-            if (
-              !candidateCenterScore
-              || candidateCenterScore.totalDeviation + FINAL_ANGLE_POLISH_MIN_CENTER_IMPROVEMENT >= entry.centerScore
-            ) {
+            if (!candidateCenterScore || candidateCenterScore.totalDeviation + FINAL_ANGLE_POLISH_MIN_CENTER_IMPROVEMENT >= entry.centerScore) {
               return null;
             }
             const candidateScore = scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds);
             const candidateCenterImprovement = entry.centerScore - candidateCenterScore.totalDeviation;
-            if (!finalAnglePolishCandidateIsWorthRepair(
-              candidateScore,
-              currentScore,
-              candidateCenterImprovement,
-              allowCenterPriorityRepair
-            )) {
+            if (!finalAnglePolishCandidateIsWorthRepair(candidateScore, currentScore, candidateCenterImprovement, allowCenterPriorityRepair)) {
               return null;
             }
             const repairedCandidate = repairCandidateResiduals(
@@ -2614,28 +2291,13 @@ function runFinalAnglePolish(
                 maxPasses: 3
               }
             );
-            const repairedCenterScore = measureLocalAngleDeviation(
-              layoutGraph,
-              repairedCandidate.coords,
-              entry.centerAtomId
-            );
-            const repairedCenterImprovement = repairedCenterScore
-              ? entry.centerScore - repairedCenterScore.totalDeviation
-              : 0;
+            const repairedCenterScore = measureLocalAngleDeviation(layoutGraph, repairedCandidate.coords, entry.centerAtomId);
+            const repairedCenterImprovement = repairedCenterScore ? entry.centerScore - repairedCenterScore.totalDeviation : 0;
             if (
-              !repairedCenterScore
-              || (
-                !finalAnglePolishCandidateIsBetter(repairedCandidate.score, currentScore)
-                && (
-                  !allowCenterPriorityRepair
-                  || !finalAnglePolishCenterPriorityCandidateIsAllowed(
-                    repairedCandidate.score,
-                    currentScore,
-                    repairedCenterImprovement
-                  )
-                )
-              )
-              || auditLayout(layoutGraph, repairedCandidate.coords, { bondLength }).ok !== true
+              !repairedCenterScore ||
+              (!finalAnglePolishCandidateIsBetter(repairedCandidate.score, currentScore) &&
+                (!allowCenterPriorityRepair || !finalAnglePolishCenterPriorityCandidateIsAllowed(repairedCandidate.score, currentScore, repairedCenterImprovement))) ||
+              auditLayout(layoutGraph, repairedCandidate.coords, { bondLength }).ok !== true
             ) {
               return null;
             }
@@ -2648,10 +2310,7 @@ function runFinalAnglePolish(
             };
           });
         }
-        if (
-          !selectedCandidate
-          || (bestCandidate && !finalAnglePolishSelectionIsBetter(selectedCandidate, bestCandidate))
-        ) {
+        if (!selectedCandidate || (bestCandidate && !finalAnglePolishSelectionIsBetter(selectedCandidate, bestCandidate))) {
           continue;
         }
         bestCandidate = {
@@ -2696,33 +2355,14 @@ function runFinalAnglePolish(
  * @param {object} [descriptorOptions] - Descriptor collection options.
  * @returns {{coords: Map<string, {x: number, y: number}>, score: object, descriptor: object}|null} Best allowed rotation candidate, or null.
  */
-function selectBestResidualRotationCandidate(
-  layoutGraph,
-  coords,
-  currentScore,
-  bondLength,
-  trackedAngularContexts,
-  visibleAtomIds,
-  frozenAtomIds,
-  descriptorOptions = {}
-) {
-  const descriptors = collectCandidateDescriptors(
-    layoutGraph,
-    coords,
-    currentScore,
-    frozenAtomIds,
-    descriptorOptions
-  );
+function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, descriptorOptions = {}) {
+  const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, descriptorOptions);
   let bestCandidate = null;
 
   for (const descriptor of descriptors) {
     for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
-      const candidateScore = withRotatedSubtree(
-        layoutGraph,
-        coords,
-        descriptor,
-        angle,
-        candidateCoords => scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
+      const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+        scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
       );
       let selectedCandidate = null;
       if (candidateIsAllowed(descriptor, candidateScore, currentScore)) {
@@ -2732,26 +2372,14 @@ function selectBestResidualRotationCandidate(
           descriptor,
           repairedMovedAtomIds: null
         };
-      } else if (
-        descriptorOptions.allowCandidateRepair === true
-        && largeSwingCandidateIsWorthResidualRepair(descriptor, candidateScore, currentScore)
-      ) {
+      } else if (descriptorOptions.allowCandidateRepair === true && largeSwingCandidateIsWorthResidualRepair(descriptor, candidateScore, currentScore)) {
         const candidateCoords = rotateSubtree(coords, descriptor, angle);
-        const repairedCandidate = repairCandidateResiduals(
-          layoutGraph,
-          candidateCoords,
-          candidateScore,
-          bondLength,
-          frozenAtomIds,
-          trackedAngularContexts,
-          visibleAtomIds,
-          {
-            includeNearbyContainingEndpointDescriptors: true,
-            largeSwingOverlapLimit: descriptorOptions.largeSwingOverlapLimit,
-            maxPasses: LARGE_SWING_REPAIR_PASSES,
-            descriptorCache: descriptorOptions.descriptorCache ?? null
-          }
-        );
+        const repairedCandidate = repairCandidateResiduals(layoutGraph, candidateCoords, candidateScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, {
+          includeNearbyContainingEndpointDescriptors: true,
+          largeSwingOverlapLimit: descriptorOptions.largeSwingOverlapLimit,
+          maxPasses: LARGE_SWING_REPAIR_PASSES,
+          descriptorCache: descriptorOptions.descriptorCache ?? null
+        });
         if (scoreIsBetter(repairedCandidate.score, currentScore)) {
           selectedCandidate = {
             coords: repairedCandidate.coords,
@@ -2795,23 +2423,21 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
   const visibleHeavyCount = visibleHeavyAtomCount(layoutGraph, visibleAtomIds);
   const allowUltraLargeResidualRepair = visibleHeavyCount > FINAL_ANGLE_POLISH_ULTRA_LARGE_HEAVY_ATOM_LIMIT;
   const mostlyAcyclicMediumLargeMolecule =
-    visibleHeavyCount >= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MIN
-    && visibleHeavyCount <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MAX
-    && (layoutGraph.ringSystems?.length ?? 0) <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_RING_SYSTEM_MAX;
-  const maxAngleRetouchPasses = mostlyAcyclicMediumLargeMolecule ? 0 : MAX_ANGLE_RETOUCH_PASSES;
-  const exactThreeHeavyProtectionCenterAtomIds = options._skipExactThreeHeavyProtectionRetry === true
-    ? []
-    : collectExactThreeHeavyProtectionCenters(layoutGraph, coords, trackedAngularContexts, initialScore);
+    visibleHeavyCount >= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MIN &&
+    visibleHeavyCount <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MAX &&
+    (layoutGraph.ringSystems?.length ?? 0) <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_RING_SYSTEM_MAX;
+  const shouldSkipLargeLowRingAnglePolish =
+    visibleHeavyCount >= LARGE_LOW_RING_ANGLE_POLISH_HEAVY_ATOM_MIN &&
+    (layoutGraph.ringSystems?.length ?? 0) <= LARGE_LOW_RING_ANGLE_POLISH_RING_SYSTEM_MAX;
+  const maxAngleRetouchPasses = mostlyAcyclicMediumLargeMolecule || shouldSkipLargeLowRingAnglePolish ? 0 : MAX_ANGLE_RETOUCH_PASSES;
+  const exactThreeHeavyProtectionCenterAtomIds =
+    options._skipExactThreeHeavyProtectionRetry === true ? [] : collectExactThreeHeavyProtectionCenters(layoutGraph, coords, trackedAngularContexts, initialScore);
   const movedAtomIds = new Set();
   let passes = 0;
   let angleReliefPasses = 0;
   let finalAnglePolishPasses = 0;
 
-  if (
-    initialScore.severeOverlapCount === 0
-    && initialScore.visibleHeavyBondCrossingCount === 0
-    && !shouldRunAngleRelief(initialScore)
-  ) {
+  if (initialScore.severeOverlapCount === 0 && initialScore.visibleHeavyBondCrossingCount === 0 && !shouldRunAngleRelief(initialScore)) {
     return {
       changed: false,
       coords: inputCoords,
@@ -2826,36 +2452,15 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     };
   }
 
-  while (
-    passes < MAX_RETOUCH_PASSES
-    && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)
-  ) {
-    let bestCandidate = selectBestResidualRotationCandidate(
-      layoutGraph,
-      coords,
-      currentScore,
-      bondLength,
-      trackedAngularContexts,
-      visibleAtomIds,
-      frozenAtomIds,
-      { descriptorCache }
-    );
+  while (passes < MAX_RETOUCH_PASSES && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)) {
+    let bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, { descriptorCache });
     if (!bestCandidate && currentScore.severeOverlapCount > 0) {
-      bestCandidate = selectBestResidualRotationCandidate(
-        layoutGraph,
-        coords,
-        currentScore,
-        bondLength,
-        trackedAngularContexts,
-        visibleAtomIds,
-        frozenAtomIds,
-        {
-          includeNearbyContainingEndpointDescriptors: true,
-          largeSwingOverlapLimit: allowUltraLargeResidualRepair ? LARGE_SWING_CLUSTER_OVERLAP_LIMIT : undefined,
-          allowCandidateRepair: allowUltraLargeResidualRepair,
-          descriptorCache
-        }
-      );
+      bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, {
+        includeNearbyContainingEndpointDescriptors: true,
+        largeSwingOverlapLimit: allowUltraLargeResidualRepair ? LARGE_SWING_CLUSTER_OVERLAP_LIMIT : undefined,
+        allowCandidateRepair: allowUltraLargeResidualRepair,
+        descriptorCache
+      });
     }
 
     if (!bestCandidate) {
@@ -2876,59 +2481,25 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     let bestCandidate = null;
 
     for (const descriptor of descriptors) {
-      const currentLocalDistortion = measureTrackedAngularDistortionAtAtom(
-        layoutGraph,
-        coords,
-        descriptor.anchorAtomId,
-        trackedAngularContexts
-      );
+      const currentLocalDistortion = measureTrackedAngularDistortionAtAtom(layoutGraph, coords, descriptor.anchorAtomId, trackedAngularContexts);
       for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, true)) {
-        const candidateLocalDistortion = withRotatedSubtree(
-          layoutGraph,
-          coords,
-          descriptor,
-          angle,
-          candidateCoords => measureTrackedAngularDistortionAtAtom(
-            layoutGraph,
-            candidateCoords,
-            descriptor.anchorAtomId,
-            trackedAngularContexts
-          )
+        const candidateLocalDistortion = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+          measureTrackedAngularDistortionAtAtom(layoutGraph, candidateCoords, descriptor.anchorAtomId, trackedAngularContexts)
         );
-        if (
-          !localAngleCandidateCanImprove(
-            candidateLocalDistortion,
-            currentLocalDistortion,
-            ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT,
-            ANGLE_RELIEF_MIN_WORST_IMPROVEMENT
-          )
-        ) {
+        if (!localAngleCandidateCanImprove(candidateLocalDistortion, currentLocalDistortion, ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT, ANGLE_RELIEF_MIN_WORST_IMPROVEMENT)) {
           continue;
         }
-        const candidateApproximateScore = withRotatedSubtree(
-          layoutGraph,
-          coords,
-          descriptor,
-          angle,
-          candidateCoords => {
-            if (!localCandidateHasNoResiduals(layoutGraph, candidateCoords, descriptor, currentScore, bondLength, atomGrid)) {
-              return null;
-            }
-            return buildCleanAngularCandidateScore(currentScore, currentLocalDistortion, candidateLocalDistortion);
+        const candidateApproximateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords => {
+          if (!localCandidateHasNoResiduals(layoutGraph, candidateCoords, descriptor, currentScore, bondLength, atomGrid)) {
+            return null;
           }
-        );
-        if (
-          !candidateApproximateScore
-          || !angleCandidateIsBetter(candidateApproximateScore, currentScore)
-        ) {
+          return buildCleanAngularCandidateScore(currentScore, currentLocalDistortion, candidateLocalDistortion);
+        });
+        if (!candidateApproximateScore || !angleCandidateIsBetter(candidateApproximateScore, currentScore)) {
           continue;
         }
-        const candidateScore = withRotatedSubtree(
-          layoutGraph,
-          coords,
-          descriptor,
-          angle,
-          candidateCoords => scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
+        const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+          scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
         );
         if (!angleCandidateIsBetter(candidateScore, currentScore)) {
           continue;
@@ -2945,59 +2516,25 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
 
     if (!bestCandidate) {
       for (const descriptor of descriptors) {
-        const currentLocalDistortion = measureTrackedAngularDistortionAtAtom(
-          layoutGraph,
-          coords,
-          descriptor.anchorAtomId,
-          trackedAngularContexts
-        );
+        const currentLocalDistortion = measureTrackedAngularDistortionAtAtom(layoutGraph, coords, descriptor.anchorAtomId, trackedAngularContexts);
         for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, true)) {
-          const candidateLocalDistortion = withRotatedSubtree(
-            layoutGraph,
-            coords,
-            descriptor,
-            angle,
-            candidateCoords => measureTrackedAngularDistortionAtAtom(
-              layoutGraph,
-              candidateCoords,
-              descriptor.anchorAtomId,
-              trackedAngularContexts
-            )
+          const candidateLocalDistortion = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+            measureTrackedAngularDistortionAtAtom(layoutGraph, candidateCoords, descriptor.anchorAtomId, trackedAngularContexts)
           );
-          if (
-            !localAngleCandidateCanImprove(
-              candidateLocalDistortion,
-              currentLocalDistortion,
-              ANGLE_RELIEF_REPAIR_MIN_TOTAL_IMPROVEMENT,
-              ANGLE_RELIEF_REPAIR_MIN_WORST_IMPROVEMENT
-            )
-          ) {
+          if (!localAngleCandidateCanImprove(candidateLocalDistortion, currentLocalDistortion, ANGLE_RELIEF_REPAIR_MIN_TOTAL_IMPROVEMENT, ANGLE_RELIEF_REPAIR_MIN_WORST_IMPROVEMENT)) {
             continue;
           }
-          const candidateScore = withRotatedSubtree(
-            layoutGraph,
-            coords,
-            descriptor,
-            angle,
-            candidateCoords => scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
+          const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+            scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
           );
           if (!angleCandidateIsWorthRepair(candidateScore, currentScore)) {
             continue;
           }
           const candidateCoords = rotateSubtree(coords, descriptor, angle);
-          const repairedCandidate = repairCandidateResiduals(
-            layoutGraph,
-            candidateCoords,
-            candidateScore,
-            bondLength,
-            frozenAtomIds,
-            trackedAngularContexts,
-            visibleAtomIds,
-            {
-              includeNearbyContainingEndpointDescriptors: descriptor.terminalMultipleLeaf === true,
-              descriptorCache
-            }
-          );
+          const repairedCandidate = repairCandidateResiduals(layoutGraph, candidateCoords, candidateScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, {
+            includeNearbyContainingEndpointDescriptors: descriptor.terminalMultipleLeaf === true,
+            descriptorCache
+          });
           if (!angleCandidateIsBetter(repairedCandidate.score, currentScore)) {
             continue;
           }
@@ -3031,17 +2568,8 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     angleReliefPasses++;
   }
 
-  if (!allowUltraLargeResidualRepair) {
-    const finalAnglePolish = runFinalAnglePolish(
-      layoutGraph,
-      coords,
-      currentScore,
-      bondLength,
-      frozenAtomIds,
-      trackedAngularContexts,
-      visibleAtomIds,
-      descriptorCache
-    );
+  if (!allowUltraLargeResidualRepair && !shouldSkipLargeLowRingAnglePolish) {
+    const finalAnglePolish = runFinalAnglePolish(layoutGraph, coords, currentScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, descriptorCache);
     if (finalAnglePolish.passes > 0) {
       coords = finalAnglePolish.coords;
       currentScore = finalAnglePolish.score;
@@ -3052,19 +2580,10 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     }
   }
 
-  const harmedProtectionCenters = harmedExactThreeHeavyProtectionCenters(
-    layoutGraph,
-    coords,
-    exactThreeHeavyProtectionCenterAtomIds,
-    trackedAngularContexts
-  );
+  const harmedProtectionCenters = harmedExactThreeHeavyProtectionCenters(layoutGraph, coords, exactThreeHeavyProtectionCenterAtomIds, trackedAngularContexts);
   if (harmedProtectionCenters.length > 0) {
     const protectedCenterAtomIds = harmedProtectionCenters.map(({ atomId }) => atomId);
-    const protectionFrozenAtomIds = exactThreeHeavyProtectionRetryFrozenAtomIds(
-      layoutGraph,
-      inputCoords,
-      protectedCenterAtomIds
-    );
+    const protectionFrozenAtomIds = exactThreeHeavyProtectionRetryFrozenAtomIds(layoutGraph, inputCoords, protectedCenterAtomIds);
     const retryFrozenAtomIds = mergeFrozenAtomIds(frozenAtomIds, protectionFrozenAtomIds);
     const retry = runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, {
       ...options,
@@ -3073,23 +2592,13 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
       _skipExactThreeHeavyProtectionRetry: true
     });
     const retryScore = scoreCoords(layoutGraph, retry.coords, bondLength, trackedAngularContexts, visibleAtomIds);
-    const retryProtectedDistortion = protectedCenterDistortionTotal(
-      layoutGraph,
-      retry.coords,
-      protectedCenterAtomIds,
-      trackedAngularContexts
-    );
-    const currentProtectedDistortion = protectedCenterDistortionTotal(
-      layoutGraph,
-      coords,
-      protectedCenterAtomIds,
-      trackedAngularContexts
-    );
+    const retryProtectedDistortion = protectedCenterDistortionTotal(layoutGraph, retry.coords, protectedCenterAtomIds, trackedAngularContexts);
+    const currentProtectedDistortion = protectedCenterDistortionTotal(layoutGraph, coords, protectedCenterAtomIds, trackedAngularContexts);
     if (
-      retryScore.severeOverlapCount <= currentScore.severeOverlapCount
-      && retryScore.visibleHeavyBondCrossingCount <= currentScore.visibleHeavyBondCrossingCount
-      && retryProtectedDistortion + RETOUCH_SCORE_EPSILON < currentProtectedDistortion
-      && auditLayout(layoutGraph, retry.coords, { bondLength }).ok === true
+      retryScore.severeOverlapCount <= currentScore.severeOverlapCount &&
+      retryScore.visibleHeavyBondCrossingCount <= currentScore.visibleHeavyBondCrossingCount &&
+      retryProtectedDistortion + RETOUCH_SCORE_EPSILON < currentProtectedDistortion &&
+      auditLayout(layoutGraph, retry.coords, { bondLength }).ok === true
     ) {
       return retry;
     }

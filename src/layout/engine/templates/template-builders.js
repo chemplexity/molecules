@@ -381,10 +381,7 @@ function createPeryleneTemplate() {
  * @returns {Molecule} Amino-bromo diaza ketone scaffold template molecule.
  */
 function createAminoBromoDiazaKetonePericondensedCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'amino-bromo-diaza-ketone-pericondensed-core',
-    'Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br'
-  );
+  return createRingSystemTemplateFromSmiles('amino-bromo-diaza-ketone-pericondensed-core', 'Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br');
 }
 
 /**
@@ -409,10 +406,7 @@ function createPorphineTemplate() {
  * @returns {Molecule} Calixarene guanidine scaffold template molecule.
  */
 function createCalixareneGuanidineCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'calixarene-guanidine-core',
-    'NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O'
-  );
+  return createRingSystemTemplateFromSmiles('calixarene-guanidine-core', 'NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O');
 }
 
 /**
@@ -422,10 +416,7 @@ function createCalixareneGuanidineCoreTemplate() {
  * @returns {Molecule} Trans-polyene macrolide scaffold template molecule.
  */
 function createTransPolyeneMacrolideTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'trans-polyene-macrolide',
-    String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`
-  );
+  return createRingSystemTemplateFromSmiles('trans-polyene-macrolide', String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`);
 }
 
 /**
@@ -627,10 +618,7 @@ function createNorbornaneTemplate() {
  * @returns {Molecule} Amino acyl aryl norbornane scaffold template molecule.
  */
 function createAminoAcylArylNorbornaneCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'amino-acyl-aryl-norbornane-core',
-    '[H][C@]12CC[C@]([H])(C1)[C@](N)(C(=O)C1=CC=CC=C1)[C@]2([H])C1=CC=CC=C1'
-  );
+  return createRingSystemTemplateFromSmiles('amino-acyl-aryl-norbornane-core', '[H][C@]12CC[C@]([H])(C1)[C@](N)(C(=O)C1=CC=CC=C1)[C@]2([H])C1=CC=CC=C1');
 }
 
 /**
@@ -682,10 +670,7 @@ function createHydroxyDiformylBicyclooctadieneCoreTemplate() {
  * @returns {Molecule} Alkenyl phenyl oxabicycloheptane scaffold template molecule.
  */
 function createAlkenylPhenylOxabicycloheptaneCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'alkenyl-phenyl-oxabicycloheptane-core',
-    'CCCCC(C)(C)C(O)C=CC1C2CC(CO2)(C1CC=CCCCC([O-])=O)C1=CC=CC=C1'
-  );
+  return createRingSystemTemplateFromSmiles('alkenyl-phenyl-oxabicycloheptane-core', 'CCCCC(C)(C)C(O)C=CC1C2CC(CO2)(C1CC=CCCCC([O-])=O)C1=CC=CC=C1');
 }
 
 /**
@@ -694,10 +679,7 @@ function createAlkenylPhenylOxabicycloheptaneCoreTemplate() {
  * @returns {Molecule} Caged hydroxy lactone scaffold template molecule.
  */
 function createCagedHydroxyLactoneCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'caged-hydroxy-lactone-core',
-    '[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O'
-  );
+  return createRingSystemTemplateFromSmiles('caged-hydroxy-lactone-core', '[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O');
 }
 
 /**
@@ -1005,10 +987,7 @@ function createHydroxyAminoOxabicyclicAcetalCoreTemplate() {
  * @returns {Molecule} Aryl phosphite spiro scaffold template molecule.
  */
 function createArylPhosphiteSpiroCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'aryl-phosphite-spiro-core',
-    'COP1OC2=CC=CC3=C2C2(C4=CC=CC=C4OC4=CC=CC(O1)=C24)C1=CC=CC=C1O3'
-  );
+  return createRingSystemTemplateFromSmiles('aryl-phosphite-spiro-core', 'COP1OC2=CC=CC3=C2C2(C4=CC=CC=C4OC4=CC=CC(O1)=C24)C1=CC=CC=C1O3');
 }
 
 /**
@@ -1145,10 +1124,7 @@ function createSulfonylAzaCyclohepteneCyclopropaneCoreTemplate() {
  * @returns {Molecule} Sulfonyl aromatic bridged heterocycle scaffold template molecule.
  */
 function createSulfonylAromaticBridgedHeterocycleCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'sulfonyl-aromatic-bridged-heterocycle-core',
-    'CCC12OCC(N)(CNS1(=O)=O)C1=NSN=C21'
-  );
+  return createRingSystemTemplateFromSmiles('sulfonyl-aromatic-bridged-heterocycle-core', 'CCC12OCC(N)(CNS1(=O)=O)C1=NSN=C21');
 }
 
 /**
@@ -1203,10 +1179,7 @@ function createCyclobutaneOxadecalinCoreTemplate() {
  * @returns {Molecule} Bridged pyrrolizidine dione scaffold template molecule.
  */
 function createBridgedPyrrolizidineDioneCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'bridged-pyrrolizidine-dione-core',
-    String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`
-  );
+  return createRingSystemTemplateFromSmiles('bridged-pyrrolizidine-dione-core', String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`);
 }
 
 /**
@@ -1225,10 +1198,7 @@ function createBridgedDiketoneTricycloCoreTemplate() {
  * @returns {Molecule} Acetal amino decalin scaffold template molecule.
  */
 function createAcetalAminoDecalinCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'acetal-amino-decalin-core',
-    'COC(OC)[C@@]12CC[C@@H]3CCCC3(C1)[C@@H](N[C@@H]2C(=O)OC)C(=O)OC'
-  );
+  return createRingSystemTemplateFromSmiles('acetal-amino-decalin-core', 'COC(OC)[C@@]12CC[C@@H]3CCCC3(C1)[C@@H](N[C@@H]2C(=O)OC)C(=O)OC');
 }
 
 /**
@@ -1372,10 +1342,7 @@ function createCyclobutaneThiopheneCoreTemplate() {
  * @returns {Molecule} Oxygen-bridged bisindole lactam scaffold template molecule.
  */
 function createOxygenBridgedBisindoleLactamCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'oxygen-bridged-bisindole-lactam-core',
-    '[H][C@@]12C[C@H](C(=O)OOC)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'
-  );
+  return createRingSystemTemplateFromSmiles('oxygen-bridged-bisindole-lactam-core', '[H][C@@]12C[C@H](C(=O)OOC)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13');
 }
 
 /**
@@ -1384,10 +1351,7 @@ function createOxygenBridgedBisindoleLactamCoreTemplate() {
  * @returns {Molecule} Indoline aza-bridged heptacyclic ring-system template molecule.
  */
 function createIndolineAzaBridgedHeptacycleCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'indoline-aza-bridged-heptacycle-core',
-    'CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'
-  );
+  return createRingSystemTemplateFromSmiles('indoline-aza-bridged-heptacycle-core', 'CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O');
 }
 
 /**
@@ -1414,10 +1378,7 @@ function createSaturatedMorphinanCoreTemplate() {
  * @returns {Molecule} Oripavine-style ring-system template molecule.
  */
 function createOripavineCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'oripavine-core',
-    '[H][C@@]12OC3=C(O)C=CC4=C3[C@@]11CCN(CC3CC3)[C@]([H])(C4)[C@]11CC[C@@]2(OC)[C@H](C1)C(C)(C)O'
-  );
+  return createRingSystemTemplateFromSmiles('oripavine-core', '[H][C@@]12OC3=C(O)C=CC4=C3[C@@]11CCN(CC3CC3)[C@]([H])(C4)[C@]11CC[C@@]2(OC)[C@H](C1)C(C)(C)O');
 }
 
 /**
@@ -1426,10 +1387,7 @@ function createOripavineCoreTemplate() {
  * @returns {Molecule} Oxygen-bridged aza-morphinan ring-system template molecule.
  */
 function createOxazaMorphinanCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'oxaza-morphinan-core',
-    'COC1(NC(=O)C(=CC2=CC=CC=C2)C(F)(F)F)C=C(O)C2=C3C1OC1CCCC4C(C2)[N+](CC2CC2)(CCC314)C(C)C'
-  );
+  return createRingSystemTemplateFromSmiles('oxaza-morphinan-core', 'COC1(NC(=O)C(=CC2=CC=CC=C2)C(F)(F)F)C=C(O)C2=C3C1OC1CCCC4C(C2)[N+](CC2CC2)(CCC314)C(C)C');
 }
 
 /**
@@ -1439,10 +1397,7 @@ function createOxazaMorphinanCoreTemplate() {
  * @returns {Molecule} Phenolic oxygen-bridged aza-morphinan ring-system template molecule.
  */
 function createPhenolicOxazaMorphinanCoreTemplate() {
-  return createRingSystemTemplateFromSmiles(
-    'phenolic-oxaza-morphinan-core',
-    'O[C@H]1CC[C@@]2(O)[C@H]3CC4=CC=C(O)C5=C4[C@@]2(CCN3CC2CCC2)[C@H]1O5'
-  );
+  return createRingSystemTemplateFromSmiles('phenolic-oxaza-morphinan-core', 'O[C@H]1CC[C@@]2(O)[C@H]3CC4=CC=C(O)C5=C4[C@@]2(CCN3CC2CCC2)[C@H]1O5');
 }
 
 /**
@@ -2205,11 +2160,11 @@ function createCagedHydroxyLactoneCoreGeometry() {
     ['C11', { x: -2.653825, y: -0.104642 }],
     ['C12', { x: 0.406603, y: 0.455854 }],
     ['C13', { x: 1.329074, y: 1.465429 }],
-    ['C14', { x: 2.700000, y: 1.400000 }],
-    ['C15', { x: 2.900000, y: 0.110000 }],
-    ['C18', { x: 1.648680, y: -0.427585 }],
-    ['C20', { x: 1.718060, y: 0.272484 }],
-    ['O22', { x: 1.100000, y: 0.650000 }],
+    ['C14', { x: 2.7, y: 1.4 }],
+    ['C15', { x: 2.9, y: 0.11 }],
+    ['C18', { x: 1.64868, y: -0.427585 }],
+    ['C20', { x: 1.71806, y: 0.272484 }],
+    ['O22', { x: 1.1, y: 0.65 }],
     ['C23', { x: 0.665153, y: -0.329353 }],
     ['C25', { x: -0.039519, y: -0.899416 }]
   ]);
@@ -2607,10 +2562,10 @@ function createNMethylLactamDiazatricycloCoreGeometry() {
     ['C4', { x: -0.440608, y: -1.239799 }],
     ['C3', { x: -1.227406, y: -0.598131 }],
     ['N2', { x: -1.288691, y: 0.419539 }],
-    ['C10', { x: 1.355810, y: -0.282069 }],
+    ['C10', { x: 1.35581, y: -0.282069 }],
     ['C13', { x: 0.729554, y: 0.901707 }],
     ['N7', { x: 0.181913, y: 0.553758 }],
-    ['C8', { x: 1.020000, y: 0.334700 }]
+    ['C8', { x: 1.02, y: 0.3347 }]
   ]);
 }
 
@@ -2623,12 +2578,12 @@ function createNMethylLactamDiazatricycloCoreGeometry() {
  */
 function createAmmoniumCyclobutylPyrrolidineCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C1', { x: -0.540000, y: 0.000000 }],
-    ['C2', { x: 0.000000, y: -0.840000 }],
-    ['C3', { x: 0.540000, y: 0.000000 }],
-    ['C4', { x: 0.000000, y: 0.480000 }],
-    ['C5', { x: 0.690000, y: 0.710000 }],
-    ['N6', { x: -0.690000, y: 0.710000 }]
+    ['C1', { x: -0.54, y: 0.0 }],
+    ['C2', { x: 0.0, y: -0.84 }],
+    ['C3', { x: 0.54, y: 0.0 }],
+    ['C4', { x: 0.0, y: 0.48 }],
+    ['C5', { x: 0.69, y: 0.71 }],
+    ['N6', { x: -0.69, y: 0.71 }]
   ]);
 }
 
@@ -2640,12 +2595,12 @@ function createAmmoniumCyclobutylPyrrolidineCoreGeometry() {
  */
 function createAzabicycloPyrrolidineCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C1', { x: -0.550000, y: 0.000000 }],
-    ['C2', { x: 0.000000, y: 0.800000 }],
-    ['N3', { x: 0.550000, y: 0.000000 }],
-    ['C4', { x: 0.000000, y: -0.550000 }],
-    ['C5', { x: 0.680000, y: -1.050000 }],
-    ['C6', { x: -0.680000, y: -1.050000 }]
+    ['C1', { x: -0.55, y: 0.0 }],
+    ['C2', { x: 0.0, y: 0.8 }],
+    ['N3', { x: 0.55, y: 0.0 }],
+    ['C4', { x: 0.0, y: -0.55 }],
+    ['C5', { x: 0.68, y: -1.05 }],
+    ['C6', { x: -0.68, y: -1.05 }]
   ]);
 }
 
@@ -2657,20 +2612,20 @@ function createAzabicycloPyrrolidineCoreGeometry() {
  */
 function createSharedEdgeTricyclicEtherCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C12', { x: 0.000000, y: 0.500000 }],
-    ['C8', { x: 0.000000, y: -0.500000 }],
-    ['C2', { x: -0.780000, y: 1.000000 }],
-    ['C3', { x: -1.550000, y: 0.720000 }],
-    ['O4', { x: -1.950000, y: 0.100000 }],
-    ['C5', { x: -1.950000, y: -0.600000 }],
-    ['C6', { x: -1.550000, y: -1.180000 }],
-    ['C7', { x: -0.780000, y: -1.000000 }],
-    ['C11', { x: 0.720000, y: 0.700000 }],
-    ['C10', { x: 1.330000, y: 0.000000 }],
-    ['C9', { x: 0.720000, y: -0.700000 }],
-    ['C13', { x: 1.250000, y: 0.950000 }],
-    ['C14', { x: 2.050000, y: 0.000000 }],
-    ['C15', { x: 1.250000, y: -0.950000 }]
+    ['C12', { x: 0.0, y: 0.5 }],
+    ['C8', { x: 0.0, y: -0.5 }],
+    ['C2', { x: -0.78, y: 1.0 }],
+    ['C3', { x: -1.55, y: 0.72 }],
+    ['O4', { x: -1.95, y: 0.1 }],
+    ['C5', { x: -1.95, y: -0.6 }],
+    ['C6', { x: -1.55, y: -1.18 }],
+    ['C7', { x: -0.78, y: -1.0 }],
+    ['C11', { x: 0.72, y: 0.7 }],
+    ['C10', { x: 1.33, y: 0.0 }],
+    ['C9', { x: 0.72, y: -0.7 }],
+    ['C13', { x: 1.25, y: 0.95 }],
+    ['C14', { x: 2.05, y: 0.0 }],
+    ['C15', { x: 1.25, y: -0.95 }]
   ]);
 }
 
@@ -2686,12 +2641,12 @@ function createNMethylAminoDiazaTricycloCoreGeometry() {
     ['C4', { x: 0.290903, y: 0.536545 }],
     ['C13', { x: -0.554928, y: 0.475074 }],
     ['C10', { x: -1.099898, y: -0.222952 }],
-    ['C5', { x: 0.914564, y: -0.423550 }],
+    ['C5', { x: 0.914564, y: -0.42355 }],
     ['C6', { x: 0.355955, y: -1.365977 }],
-    ['C9', { x: -0.732550, y: -1.262975 }],
-    ['C3', { x: -0.361735, y: 1.366710 }],
+    ['C9', { x: -0.73255, y: -1.262975 }],
+    ['C3', { x: -0.361735, y: 1.36671 }],
     ['N2', { x: -1.447413, y: 0.778925 }],
-    ['C11', { x: -0.243640, y: -0.885651 }],
+    ['C11', { x: -0.24364, y: -0.885651 }],
     ['N12', { x: 0.330298, y: -0.112035 }]
   ]);
 }
@@ -2704,12 +2659,12 @@ function createNMethylAminoDiazaTricycloCoreGeometry() {
  */
 function createSubstitutedBicyclo211HexaneCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C1', { x: -0.750000, y: 0.000000 }],
-    ['C2', { x: 0.000000, y: 0.750000 }],
-    ['C3', { x: 0.750000, y: 0.000000 }],
-    ['C4', { x: 0.000000, y: -0.550000 }],
-    ['C5', { x: 0.700000, y: -1.150000 }],
-    ['C6', { x: -0.700000, y: -1.150000 }]
+    ['C1', { x: -0.75, y: 0.0 }],
+    ['C2', { x: 0.0, y: 0.75 }],
+    ['C3', { x: 0.75, y: 0.0 }],
+    ['C4', { x: 0.0, y: -0.55 }],
+    ['C5', { x: 0.7, y: -1.15 }],
+    ['C6', { x: -0.7, y: -1.15 }]
   ]);
 }
 
@@ -2722,12 +2677,12 @@ function createSubstitutedBicyclo211HexaneCoreGeometry() {
  */
 function createTrigonalCarbonBicyclo211HexaneCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C1', { x: -0.750000, y: 0.000000 }],
-    ['C2', { x: 0.000000, y: 0.750000 }],
-    ['C3', { x: 0.750000, y: 0.000000 }],
-    ['C4', { x: 0.000000, y: -0.550000 }],
-    ['C5', { x: 0.700000, y: -1.150000 }],
-    ['C6', { x: -0.700000, y: -1.150000 }]
+    ['C1', { x: -0.75, y: 0.0 }],
+    ['C2', { x: 0.0, y: 0.75 }],
+    ['C3', { x: 0.75, y: 0.0 }],
+    ['C4', { x: 0.0, y: -0.55 }],
+    ['C5', { x: 0.7, y: -1.15 }],
+    ['C6', { x: -0.7, y: -1.15 }]
   ]);
 }
 
@@ -2739,18 +2694,18 @@ function createTrigonalCarbonBicyclo211HexaneCoreGeometry() {
  */
 function createCyclopropaneAzacyclooctaneCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C2', { x: -0.550000, y: 0.000000 }],
-    ['C8', { x: 0.550000, y: 0.000000 }],
-    ['C3', { x: -0.800000, y: -0.900000 }],
-    ['C4', { x: 0.000000, y: -1.450000 }],
-    ['C5', { x: 0.850000, y: -0.900000 }],
-    ['C6', { x: 1.650000, y: -1.350000 }],
-    ['C7', { x: 1.750000, y: -0.450000 }],
-    ['C17', { x: -1.600000, y: -0.550000 }],
-    ['C14', { x: -2.000000, y: 0.350000 }],
-    ['N12', { x: -1.450000, y: 1.100000 }],
-    ['C11', { x: -0.450000, y: 1.250000 }],
-    ['C9', { x: 0.450000, y: 0.850000 }]
+    ['C2', { x: -0.55, y: 0.0 }],
+    ['C8', { x: 0.55, y: 0.0 }],
+    ['C3', { x: -0.8, y: -0.9 }],
+    ['C4', { x: 0.0, y: -1.45 }],
+    ['C5', { x: 0.85, y: -0.9 }],
+    ['C6', { x: 1.65, y: -1.35 }],
+    ['C7', { x: 1.75, y: -0.45 }],
+    ['C17', { x: -1.6, y: -0.55 }],
+    ['C14', { x: -2.0, y: 0.35 }],
+    ['N12', { x: -1.45, y: 1.1 }],
+    ['C11', { x: -0.45, y: 1.25 }],
+    ['C9', { x: 0.45, y: 0.85 }]
   ]);
 }
 
@@ -2762,17 +2717,17 @@ function createCyclopropaneAzacyclooctaneCoreGeometry() {
  */
 function createHydroxyAminopropylCyclobutaneDecalinCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C4', { x: -1.000000, y: 0.000000 }],
+    ['C4', { x: -1.0, y: 0.0 }],
     ['C6', { x: -0.227424, y: -1.039169 }],
     ['C7', { x: 0.856222, y: -0.927161 }],
-    ['C9', { x: 1.385254, y: 0.209200 }],
-    ['C10', { x: 0.514255, y: 0.988010 }],
+    ['C9', { x: 1.385254, y: 0.2092 }],
+    ['C10', { x: 0.514255, y: 0.98801 }],
     ['C11', { x: -0.434749, y: 0.933701 }],
     ['C12', { x: -0.016081, y: 0.148941 }],
-    ['C17', { x: 0.924370, y: -0.128096 }],
-    ['C5', { x: -1.700000, y: -0.600000 }],
-    ['C2', { x: -2.300000, y: 0.100000 }],
-    ['C3', { x: -1.650000, y: 0.800000 }]
+    ['C17', { x: 0.92437, y: -0.128096 }],
+    ['C5', { x: -1.7, y: -0.6 }],
+    ['C2', { x: -2.3, y: 0.1 }],
+    ['C3', { x: -1.65, y: 0.8 }]
   ]);
 }
 
@@ -3828,22 +3783,22 @@ function createOripavineCoreGeometry() {
   return createCenteredFrozenGeometry([
     ['C2', { x: -0.149116, y: -1.662136 }],
     ['O3', { x: -1.143917, y: -1.752225 }],
-    ['C4', { x: -1.301000, y: -0.765000 }],
-    ['C5', { x: -2.167000, y: -0.265000 }],
-    ['C7', { x: -2.167000, y: 0.735000 }],
-    ['C8', { x: -1.301000, y: 1.235000 }],
-    ['C9', { x: -0.435000, y: 0.735000 }],
-    ['C10', { x: -0.435000, y: -0.265000 }],
-    ['C11', { x: 0.431000, y: -0.765000 }],
-    ['C12', { x: 0.044988, y: 0.205440 }],
+    ['C4', { x: -1.301, y: -0.765 }],
+    ['C5', { x: -2.167, y: -0.265 }],
+    ['C7', { x: -2.167, y: 0.735 }],
+    ['C8', { x: -1.301, y: 1.235 }],
+    ['C9', { x: -0.435, y: 0.735 }],
+    ['C10', { x: -0.435, y: -0.265 }],
+    ['C11', { x: 0.431, y: -0.765 }],
+    ['C12', { x: 0.044988, y: 0.20544 }],
     ['C13', { x: 0.898667, y: 0.231343 }],
     ['N14', { x: 1.962189, y: 0.037944 }],
-    ['C19', { x: 1.297000, y: 0.735000 }],
-    ['C21', { x: 0.431000, y: 1.235000 }],
-    ['C22', { x: 1.297000, y: -0.265000 }],
-    ['C23', { x: 1.752023, y: -1.246220 }],
+    ['C19', { x: 1.297, y: 0.735 }],
+    ['C21', { x: 0.431, y: 1.235 }],
+    ['C22', { x: 1.297, y: -0.265 }],
+    ['C23', { x: 1.752023, y: -1.24622 }],
     ['C24', { x: 1.185812, y: -2.154354 }],
-    ['C25', { x: 0.239300, y: -2.668457 }],
+    ['C25', { x: 0.2393, y: -2.668457 }],
     ['C28', { x: 0.534436, y: -1.832202 }],
     ['C30', { x: 1.055017, y: -1.132125 }]
   ]);
@@ -3891,8 +3846,8 @@ function createPhenolicOxazaMorphinanCoreGeometry() {
     ['C4', { x: 3, y: 0 }],
     ['C5', { x: 2.5, y: 0.8660254037844386 }],
     ['C2', { x: 2.5, y: -0.8660254037844386 }],
-    ['C19', { x: 2.000000, y: 0.250000 }],
-    ['C20', { x: 2.150000, y: 1.350000 }],
+    ['C19', { x: 2.0, y: 0.25 }],
+    ['C20', { x: 2.15, y: 1.35 }],
     ['C10', { x: 0, y: 1.7320508075688772 }],
     ['C12', { x: -1.5, y: 0.8660254037844386 }],
     ['C11', { x: -0.5, y: 0.8660254037844386 }],
@@ -3903,7 +3858,7 @@ function createPhenolicOxazaMorphinanCoreGeometry() {
     ['C16', { x: -0.5, y: -0.8660254037844386 }],
     ['C14', { x: -1.5, y: -0.8660254037844386 }],
     ['C18', { x: 1, y: 0 }],
-    ['N21', { x: 1.550000, y: 2.250000 }],
+    ['N21', { x: 1.55, y: 2.25 }],
     ['O29', { x: 0.5, y: -1.4 }]
   ]);
 }
@@ -3916,24 +3871,24 @@ function createPhenolicOxazaMorphinanCoreGeometry() {
  */
 function createOxygenBridgedBisindoleLactamCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['C26', { x: -1.000000, y: 0.000000 }],
-    ['C31', { x: -0.500000, y: 0.866025 }],
-    ['C32', { x: 0.500000, y: 0.866025 }],
-    ['C44', { x: 1.000000, y: 0.000000 }],
-    ['C45', { x: 0.500000, y: -0.866025 }],
-    ['C25', { x: -0.500000, y: -0.866025 }],
-    ['C29', { x: -1.169131, y: 1.609170 }],
+    ['C26', { x: -1.0, y: 0.0 }],
+    ['C31', { x: -0.5, y: 0.866025 }],
+    ['C32', { x: 0.5, y: 0.866025 }],
+    ['C44', { x: 1.0, y: 0.0 }],
+    ['C45', { x: 0.5, y: -0.866025 }],
+    ['C25', { x: -0.5, y: -0.866025 }],
+    ['C29', { x: -1.169131, y: 1.60917 }],
     ['N28', { x: -2.082676, y: 1.202434 }],
     ['C27', { x: -1.978148, y: 0.207912 }],
     ['N14', { x: 0.809017, y: -1.817082 }],
-    ['C15', { x: 0.000000, y: -2.404867 }],
+    ['C15', { x: 0.0, y: -2.404867 }],
     ['C16', { x: -0.809017, y: -1.817082 }],
-    ['C33', { x: 1.169131, y: 1.609170 }],
+    ['C33', { x: 1.169131, y: 1.60917 }],
     ['C34', { x: 2.082676, y: 1.202434 }],
     ['N43', { x: 1.978148, y: 0.207912 }],
     ['C24', { x: -0.104528, y: -3.399389 }],
     ['C23', { x: -1.018074, y: -3.806126 }],
-    ['C18', { x: -1.827091, y: -3.218340 }],
+    ['C18', { x: -1.827091, y: -3.21834 }],
     ['C17', { x: -1.722562, y: -2.223819 }],
     ['C35', { x: 2.891693, y: 1.790219 }],
     ['C36', { x: 2.787165, y: 2.784741 }],
@@ -3941,9 +3896,9 @@ function createOxygenBridgedBisindoleLactamCoreGeometry() {
     ['C42', { x: 1.064602, y: 2.603692 }],
     ['C11', { x: 1.803946, y: -1.716507 }],
     ['O13', { x: 2.798876, y: -1.615932 }],
-    ['C2', { x: 2.388512, y: -0.704010 }],
-    ['C4', { x: 2.700750, y: -2.190800 }],
-    ['C3', { x: 3.247600, y: -1.243500 }]
+    ['C2', { x: 2.388512, y: -0.70401 }],
+    ['C4', { x: 2.70075, y: -2.1908 }],
+    ['C3', { x: 3.2476, y: -1.2435 }]
   ]);
 }
 
@@ -3960,7 +3915,7 @@ function createIndolineAzaBridgedHeptacycleCoreGeometry() {
     ['C16', { x: 1.756262, y: -0.411797 }],
     ['C18', { x: 0.342775, y: -1.487872 }],
     ['C15', { x: 0.924305, y: 0.175278 }],
-    ['C7', { x: -1.788556, y: 2.331450 }],
+    ['C7', { x: -1.788556, y: 2.33145 }],
     ['C21', { x: -1.906025, y: -0.508759 }],
     ['C19', { x: 0.034936, y: -0.518285 }],
     ['C14', { x: -0.014407, y: 0.508645 }],
@@ -3973,7 +3928,7 @@ function createIndolineAzaBridgedHeptacycleCoreGeometry() {
     ['C25', { x: -1.754941, y: 0.099079 }],
     ['C29', { x: -3.813889, y: 0.520123 }],
     ['C20', { x: -0.919788, y: -0.404465 }],
-    ['N12', { x: -0.748085, y: 1.211630 }],
+    ['N12', { x: -0.748085, y: 1.21163 }],
     ['N28', { x: -2.918999, y: 0.933406 }]
   ]);
 }
@@ -4005,14 +3960,14 @@ function createTropaneGeometry() {
  */
 function createScopolamineEpoxideCoreGeometry() {
   return createCenteredFrozenGeometry([
-    ['N2', { x: 1.0, y: 2.286600 }],
-    ['C3', { x: 2.0, y: 2.286600 }],
-    ['C4', { x: 2.5, y: 1.420600 }],
-    ['C5', { x: 2.0, y: 0.554600 }],
-    ['C6', { x: 1.0, y: 0.554600 }],
-    ['C7', { x: 0.5, y: 1.420600 }],
-    ['C8', { x: 0.351700, y: 2.409533 }],
-    ['O9', { x: 0.351700, y: 3.409567 }],
+    ['N2', { x: 1.0, y: 2.2866 }],
+    ['C3', { x: 2.0, y: 2.2866 }],
+    ['C4', { x: 2.5, y: 1.4206 }],
+    ['C5', { x: 2.0, y: 0.5546 }],
+    ['C6', { x: 1.0, y: 0.5546 }],
+    ['C7', { x: 0.5, y: 1.4206 }],
+    ['C8', { x: 0.3517, y: 2.409533 }],
+    ['O9', { x: 0.3517, y: 3.409567 }],
     ['C10', { x: 1.217733, y: 2.909533 }]
   ]);
 }
@@ -4075,10 +4030,14 @@ function freezeMatchContext(matchContext) {
   return Object.freeze({
     exocyclicNeighbors: Object.freeze((matchContext.exocyclicNeighbors ?? []).map(constraint => Object.freeze({ ...constraint }))),
     mappedAtoms: Object.freeze((matchContext.mappedAtoms ?? []).map(constraint => Object.freeze({ ...constraint }))),
-    mappedBonds: Object.freeze((matchContext.mappedBonds ?? []).map(constraint => Object.freeze({
-      ...constraint,
-      templateAtomIds: Object.freeze([...(constraint.templateAtomIds ?? [])])
-    })))
+    mappedBonds: Object.freeze(
+      (matchContext.mappedBonds ?? []).map(constraint =>
+        Object.freeze({
+          ...constraint,
+          templateAtomIds: Object.freeze([...(constraint.templateAtomIds ?? [])])
+        })
+      )
+    )
   });
 }
 
@@ -4156,68 +4115,43 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'caged-hydroxy-lactone-core',
-      'bridged',
-      59.4,
-      createCagedHydroxyLactoneCoreTemplate(),
-      geometrySpec('normalized-xy', createCagedHydroxyLactoneCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C6', element: 'C', bondOrder: 2, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C15', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C18', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C20', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C25', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
-          ]
-        }
+    createTemplate('caged-hydroxy-lactone-core', 'bridged', 59.4, createCagedHydroxyLactoneCoreTemplate(), geometrySpec('normalized-xy', createCagedHydroxyLactoneCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'C6', element: 'C', bondOrder: 2, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C15', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C18', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C20', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C25', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+        ]
       }
-    ),
+    }),
     createTemplate('oxabicyclo-2-2-2', 'bridged', 59, createOxabicyclo222Template(), geometrySpec('normalized-xy', createOxabicyclo222Geometry(), BRIDGED_VALIDATION)),
     createTemplate('quinuclidine', 'bridged', 58, createQuinuclidineTemplate(), geometrySpec('normalized-xy', createQuinuclidineGeometry(), BRIDGED_VALIDATION)),
     createTemplate('quinuclidinium-oxygen-exit', 'bridged', 57.95, createQuinuclidiniumTemplate(), geometrySpec('normalized-xy', createQuinuclidiniumGeometry(), BRIDGED_VALIDATION), {
       matchContext: {
-        exocyclicNeighbors: [
-          { templateAtomId: 'C3', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
-        ]
+        exocyclicNeighbors: [{ templateAtomId: 'C3', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }]
       }
     }),
     createTemplate('quinuclidinium', 'bridged', 57.9, createQuinuclidiniumTemplate(), geometrySpec('normalized-xy', createQuinuclidiniumGeometry(), BRIDGED_VALIDATION)),
     createTemplate('diazatricyclodecane-core', 'bridged', 57.85, createDiazatricyclodecaneCoreTemplate(), geometrySpec('normalized-xy', createDiazatricyclodecaneCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate('triazaadamantane-core', 'bridged', 57.8, createTriazaadamantaneCoreTemplate(), geometrySpec('normalized-xy', createTriazaadamantaneCoreGeometry(), TRIAZAADAMANTANE_VALIDATION)),
-    createTemplate(
-      'scopolamine-epoxide-core',
-      'bridged',
-      57.1,
-      createScopolamineEpoxideCoreTemplate(),
-      geometrySpec('normalized-xy', createScopolamineEpoxideCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'N2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C5', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
-          ]
-        }
+    createTemplate('scopolamine-epoxide-core', 'bridged', 57.1, createScopolamineEpoxideCoreTemplate(), geometrySpec('normalized-xy', createScopolamineEpoxideCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'N2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C5', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
+        ]
       }
-    ),
+    }),
     createTemplate('tropane', 'bridged', 57, createTropaneTemplate(), geometrySpec('normalized-xy', createTropaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),
-    createTemplate(
-      'bridged-lactone-core',
-      'bridged',
-      53.9,
-      createBridgedLactoneCoreTemplate(),
-      geometrySpec('normalized-xy', createBridgedLactoneCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C17', element: 'O', bondOrder: 2, minCount: 1 }
-          ]
-        }
+    createTemplate('bridged-lactone-core', 'bridged', 53.9, createBridgedLactoneCoreTemplate(), geometrySpec('normalized-xy', createBridgedLactoneCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [{ templateAtomId: 'C17', element: 'O', bondOrder: 2, minCount: 1 }]
       }
-    ),
+    }),
     createTemplate(
       'oxabicyclic-lactone-ammonium-core',
       'bridged',
@@ -4233,21 +4167,14 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'oxazabicyclic-lactam-core',
-      'bridged',
-      53.88,
-      createOxazabicyclicLactamCoreTemplate(),
-      geometrySpec('normalized-xy', createOxazabicyclicLactamCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C11', element: 'O', bondOrder: 2, minCount: 1 },
-            { templateAtomId: 'C2', element: 'C', minCount: 2, maxCount: 2 }
-          ]
-        }
+    createTemplate('oxazabicyclic-lactam-core', 'bridged', 53.88, createOxazabicyclicLactamCoreTemplate(), geometrySpec('normalized-xy', createOxazabicyclicLactamCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'C11', element: 'O', bondOrder: 2, minCount: 1 },
+          { templateAtomId: 'C2', element: 'C', minCount: 2, maxCount: 2 }
+        ]
       }
-    ),
+    }),
     createTemplate(
       'hydroxy-oxazabicyclic-lactam-core',
       'bridged',
@@ -4301,9 +4228,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createCyanoacylAzabicycloCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'N5', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'N5', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4315,9 +4240,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createAminonitrileAcetalBridgedCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C7', element: 'C', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'C7', element: 'C', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4472,9 +4395,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createTrigonalCarbonBicyclo211HexaneCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C1', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'C1', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4486,9 +4407,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createSubstitutedBicyclo211HexaneCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C1', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'C1', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4515,9 +4434,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createCyclopropaneAzabicyclicEnoneCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C7', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'C7', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4529,9 +4446,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createCyclopropaneAzacyclooctaneCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          mappedAtoms: [
-            { templateAtomId: 'N12', element: 'N', charge: 1 }
-          ],
+          mappedAtoms: [{ templateAtomId: 'N12', element: 'N', charge: 1 }],
           exocyclicNeighbors: [
             { templateAtomId: 'C2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C9', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
@@ -4596,9 +4511,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createArylPhosphiteSpiroCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'P3', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'P3', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4633,24 +4546,15 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'azabicyclo-nitrile-core',
-      'bridged',
-      53.8705,
-      createAzabicycloNitrileCoreTemplate(),
-      geometrySpec('normalized-xy', createAzabicycloNitrileCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          mappedAtoms: [
-            { templateAtomId: 'N2', element: 'N', charge: 1 }
-          ],
-          exocyclicNeighbors: [
-            { templateAtomId: 'N2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 }
-          ]
-        }
+    createTemplate('azabicyclo-nitrile-core', 'bridged', 53.8705, createAzabicycloNitrileCoreTemplate(), geometrySpec('normalized-xy', createAzabicycloNitrileCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        mappedAtoms: [{ templateAtomId: 'N2', element: 'N', charge: 1 }],
+        exocyclicNeighbors: [
+          { templateAtomId: 'N2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 }
+        ]
       }
-    ),
+    }),
     createTemplate(
       'bridged-decalin-lactam-core',
       'bridged',
@@ -4659,27 +4563,18 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createBridgedDecalinLactamCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C12', element: 'O', bondOrder: 2, minCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'C12', element: 'O', bondOrder: 2, minCount: 1 }]
         }
       }
     ),
-    createTemplate(
-      'bridged-oxadecalin-core',
-      'bridged',
-      53.86,
-      createBridgedOxadecalinCoreTemplate(),
-      geometrySpec('normalized-xy', createBridgedOxadecalinCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C11', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 },
-            { templateAtomId: 'C14', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
-          ]
-        }
+    createTemplate('bridged-oxadecalin-core', 'bridged', 53.86, createBridgedOxadecalinCoreTemplate(), geometrySpec('normalized-xy', createBridgedOxadecalinCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'C11', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 },
+          { templateAtomId: 'C14', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+        ]
       }
-    ),
+    }),
     createTemplate(
       'hydroxy-acetal-oxadecalin-core',
       'bridged',
@@ -4734,9 +4629,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createEthylDioxatricycloOxetaneCoreGeometry(), BRIDGED_VALIDATION),
       {
         matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C3', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
-          ]
+          exocyclicNeighbors: [{ templateAtomId: 'C3', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }]
         }
       }
     ),
@@ -4935,29 +4828,16 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'acetal-amino-decalin-core',
-      'bridged',
-      53.84,
-      createAcetalAminoDecalinCoreTemplate(),
-      geometrySpec('normalized-xy', createAcetalAminoDecalinCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C6', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C16', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 },
-            { templateAtomId: 'C19', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
-          ]
-        }
+    createTemplate('acetal-amino-decalin-core', 'bridged', 53.84, createAcetalAminoDecalinCoreTemplate(), geometrySpec('normalized-xy', createAcetalAminoDecalinCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'C6', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C16', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 },
+          { templateAtomId: 'C19', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+        ]
       }
-    ),
-    createTemplate(
-      'amino-oxaza-tricyclo-core',
-      'bridged',
-      53.8,
-      createAminoOxazaTricycloCoreTemplate(),
-      geometrySpec('normalized-xy', createAminoOxazaTricycloCoreGeometry(), BRIDGED_VALIDATION)
-    ),
+    }),
+    createTemplate('amino-oxaza-tricyclo-core', 'bridged', 53.8, createAminoOxazaTricycloCoreTemplate(), geometrySpec('normalized-xy', createAminoOxazaTricycloCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate(
       'aza-oxa-cyclopropyl-oxetane-core',
       'bridged',
@@ -4973,21 +4853,14 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'amino-diaza-tricyclo-core',
-      'bridged',
-      53.78,
-      createAminoDiazaTricycloCoreTemplate(),
-      geometrySpec('normalized-xy', createAminoDiazaTricycloCoreGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C9', element: 'N', bondOrder: 2, minCount: 1 },
-            { templateAtomId: 'C4', element: 'O', bondOrder: 1, minCount: 1 }
-          ]
-        }
+    createTemplate('amino-diaza-tricyclo-core', 'bridged', 53.78, createAminoDiazaTricycloCoreTemplate(), geometrySpec('normalized-xy', createAminoDiazaTricycloCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'C9', element: 'N', bondOrder: 2, minCount: 1 },
+          { templateAtomId: 'C4', element: 'O', bondOrder: 1, minCount: 1 }
+        ]
       }
-    ),
+    }),
     createTemplate(
       'imino-thiazole-oxaza-tricyclo-core',
       'bridged',
@@ -5020,41 +4893,17 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'spiro-bridged-aza-cage',
-      'bridged',
-      53.75,
-      createSpiroBridgedAzaCageTemplate(),
-      geometrySpec('normalized-xy', createSpiroBridgedAzaCageGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C1', element: 'C', minCount: 1 }
-          ]
-        }
+    createTemplate('spiro-bridged-aza-cage', 'bridged', 53.75, createSpiroBridgedAzaCageTemplate(), geometrySpec('normalized-xy', createSpiroBridgedAzaCageGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [{ templateAtomId: 'C1', element: 'C', minCount: 1 }]
       }
-    ),
-    createTemplate(
-      'spiro-bridged-oxetane',
-      'bridged',
-      53.5,
-      createSpiroBridgedOxetaneTemplate(),
-      geometrySpec('normalized-xy', createSpiroBridgedOxetaneGeometry(), BRIDGED_VALIDATION)
-    ),
-    createTemplate(
-      'sulfonyl-azatricyclo-cage',
-      'bridged',
-      53.25,
-      createSulfonylAzatricycloCageTemplate(),
-      geometrySpec('normalized-xy', createSulfonylAzatricycloCageGeometry(), BRIDGED_VALIDATION),
-      {
-        matchContext: {
-          exocyclicNeighbors: [
-            { templateAtomId: 'C9', element: 'S', minCount: 1 }
-          ]
-        }
+    }),
+    createTemplate('spiro-bridged-oxetane', 'bridged', 53.5, createSpiroBridgedOxetaneTemplate(), geometrySpec('normalized-xy', createSpiroBridgedOxetaneGeometry(), BRIDGED_VALIDATION)),
+    createTemplate('sulfonyl-azatricyclo-cage', 'bridged', 53.25, createSulfonylAzatricycloCageTemplate(), geometrySpec('normalized-xy', createSulfonylAzatricycloCageGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [{ templateAtomId: 'C9', element: 'S', minCount: 1 }]
       }
-    ),
+    }),
     createTemplate(
       'sulfonyl-cyclopentenyl-azocane-core',
       'bridged',
@@ -5106,13 +4955,7 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate(
-      'benzoxathiobicyclo-core',
-      'bridged',
-      53,
-      createBenzoxathiobicycloCoreTemplate(),
-      geometrySpec('normalized-xy', createBenzoxathiobicycloCoreGeometry(), BRIDGED_VALIDATION)
-    ),
+    createTemplate('benzoxathiobicyclo-core', 'bridged', 53, createBenzoxathiobicycloCoreTemplate(), geometrySpec('normalized-xy', createBenzoxathiobicycloCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate(
       'cyclobutane-thiophene-core',
       'bridged',
@@ -5223,36 +5066,17 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createCalixareneGuanidineCoreGeometry(), PLANAR_VALIDATION)
     ),
     createTemplate('porphine', 'macrocycle', 40.985, createPorphineTemplate(), geometrySpec('normalized-xy', createPorphineGeometry(), PLANAR_VALIDATION)),
-    createTemplate(
-      'trans-polyene-macrolide',
-      'macrocycle',
-      40.982,
-      createTransPolyeneMacrolideTemplate(),
-      geometrySpec('normalized-xy', createTransPolyeneMacrolideGeometry(), PLANAR_VALIDATION),
-      {
-        matchContext: {
-          mappedBonds: [
-            { templateAtomIds: ['C28', 'C29'], order: 2, ez: 'E' },
-            { templateAtomIds: ['C31', 'C32'], order: 2, ez: 'E' },
-            { templateAtomIds: ['C37', 'C38'], order: 2, ez: 'E' }
-          ]
-        }
+    createTemplate('trans-polyene-macrolide', 'macrocycle', 40.982, createTransPolyeneMacrolideTemplate(), geometrySpec('normalized-xy', createTransPolyeneMacrolideGeometry(), PLANAR_VALIDATION), {
+      matchContext: {
+        mappedBonds: [
+          { templateAtomIds: ['C28', 'C29'], order: 2, ez: 'E' },
+          { templateAtomIds: ['C31', 'C32'], order: 2, ez: 'E' },
+          { templateAtomIds: ['C37', 'C38'], order: 2, ez: 'E' }
+        ]
       }
-    ),
-    createTemplate(
-      'steroid-core-unsaturated',
-      'fused',
-      40.97,
-      createSteroidCoreUnsaturatedTemplate(),
-      geometrySpec('normalized-xy', createSteroidCoreUnsaturatedGeometry(), PLANAR_VALIDATION)
-    ),
-    createTemplate(
-      'steroid-core-saturated',
-      'fused',
-      40.96,
-      createSteroidCoreSaturatedTemplate(),
-      geometrySpec('normalized-xy', createSteroidCoreSaturatedGeometry(), PLANAR_VALIDATION)
-    ),
+    }),
+    createTemplate('steroid-core-unsaturated', 'fused', 40.97, createSteroidCoreUnsaturatedTemplate(), geometrySpec('normalized-xy', createSteroidCoreUnsaturatedGeometry(), PLANAR_VALIDATION)),
+    createTemplate('steroid-core-saturated', 'fused', 40.96, createSteroidCoreSaturatedTemplate(), geometrySpec('normalized-xy', createSteroidCoreSaturatedGeometry(), PLANAR_VALIDATION)),
     createTemplate(
       'amino-bromo-diaza-ketone-pericondensed-core',
       'fused',

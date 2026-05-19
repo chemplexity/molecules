@@ -105,7 +105,7 @@ function visiblePlacedHeavyNeighborIds(layoutGraph, coords, atomId) {
   }
   return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
     .filter(bond => bond?.kind === 'covalent')
-    .map(bond => bond.a === atomId ? bond.b : bond.a)
+    .map(bond => (bond.a === atomId ? bond.b : bond.a))
     .filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H' && coords.has(neighborAtomId));
 }
 
@@ -114,8 +114,9 @@ function collectLocalAngleEntries(layoutGraph, coords, centerAtomId) {
   if (!centerPosition) {
     return [];
   }
-  const neighborAtomIds = visiblePlacedHeavyNeighborIds(layoutGraph, coords, centerAtomId)
-    .sort((firstAtomId, secondAtomId) => String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true }));
+  const neighborAtomIds = visiblePlacedHeavyNeighborIds(layoutGraph, coords, centerAtomId).sort((firstAtomId, secondAtomId) =>
+    String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true })
+  );
   const entries = [];
   for (let firstIndex = 0; firstIndex < neighborAtomIds.length; firstIndex++) {
     for (let secondIndex = firstIndex + 1; secondIndex < neighborAtomIds.length; secondIndex++) {
@@ -151,10 +152,7 @@ function wouldAxisSnapDistortLocalGeometry(layoutGraph, coords, atomId, nextPosi
   let maxAngleChange = 0;
   for (const focusAtomId of focusAtomIds) {
     const baseEntries = collectLocalAngleEntries(layoutGraph, coords, focusAtomId);
-    const candidateEntries = new Map(
-      collectLocalAngleEntries(layoutGraph, candidateCoords, focusAtomId)
-        .map(entry => [entry.key, entry.angle])
-    );
+    const candidateEntries = new Map(collectLocalAngleEntries(layoutGraph, candidateCoords, focusAtomId).map(entry => [entry.key, entry.angle]));
     for (const entry of baseEntries) {
       const candidateAngle = candidateEntries.get(entry.key);
       if (candidateAngle == null) {
@@ -221,10 +219,7 @@ function hasAxisSnapNeed(inputCoords, epsilon) {
     if (!position) {
       continue;
     }
-    if (
-      (Math.abs(position.x) > IDEMPOTENT_AXIS_EPSILON && Math.abs(position.x) <= epsilon)
-      || (Math.abs(position.y) > IDEMPOTENT_AXIS_EPSILON && Math.abs(position.y) <= epsilon)
-    ) {
+    if ((Math.abs(position.x) > IDEMPOTENT_AXIS_EPSILON && Math.abs(position.x) <= epsilon) || (Math.abs(position.y) > IDEMPOTENT_AXIS_EPSILON && Math.abs(position.y) <= epsilon)) {
       return true;
     }
   }

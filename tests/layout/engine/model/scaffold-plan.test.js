@@ -573,10 +573,7 @@ describe('layout/engine/model/scaffold-plan', () => {
   });
 
   it('uses the trans-polyene macrolide template for fused E-alkene macrolides', () => {
-    const graph = createLayoutGraph(
-      parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'macrocycle');
     assert.equal(plan.rootScaffold.templateId, 'trans-polyene-macrolide');

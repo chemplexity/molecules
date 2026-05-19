@@ -23,10 +23,7 @@ function internalRingAngle(coords, ring, atomIndex) {
   if (!atomPosition || !previousPosition || !nextPosition) {
     return null;
   }
-  return angularDifference(
-    angleOf(sub(previousPosition, atomPosition)),
-    angleOf(sub(nextPosition, atomPosition))
-  );
+  return angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition)));
 }
 
 function ringRegularity(layoutGraph, coords, rings) {
@@ -85,8 +82,7 @@ function findInterAromaticRingAnchorAtomId(layoutGraph, ring) {
       if (ringAtomIds.has(neighborAtomId)) {
         continue;
       }
-      const neighborAromaticRing = (layoutGraph.atomToRings.get(neighborAtomId) ?? [])
-        .some(candidateRing => candidateRing.aromatic && candidateRing.atomIds.length >= 5);
+      const neighborAromaticRing = (layoutGraph.atomToRings.get(neighborAtomId) ?? []).some(candidateRing => candidateRing.aromatic && candidateRing.atomIds.length >= 5);
       if (neighborAromaticRing) {
         return atomId;
       }
@@ -351,10 +347,10 @@ function auditDoesNotRegress(candidateAudit, baseAudit, bondLength) {
     return false;
   }
   return (
-    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount
-    && candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount
-    && candidateAudit.collapsedMacrocycleCount <= baseAudit.collapsedMacrocycleCount
-    && candidateAudit.maxBondLengthDeviation <= baseAudit.maxBondLengthDeviation + bondLength * RING_RETOUCH_BOND_DEVIATION_SLACK_FACTOR
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
+    candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount &&
+    candidateAudit.collapsedMacrocycleCount <= baseAudit.collapsedMacrocycleCount &&
+    candidateAudit.maxBondLengthDeviation <= baseAudit.maxBondLengthDeviation + bondLength * RING_RETOUCH_BOND_DEVIATION_SLACK_FACTOR
   );
 }
 

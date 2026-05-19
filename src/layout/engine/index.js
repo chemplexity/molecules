@@ -17,13 +17,7 @@ export { measureTemplateGeometry, validateTemplateGeometry } from './templates/v
 export { layoutBridgedFamily } from './families/bridged.js';
 export { actualAlkeneStereo, highestPriorityAlkeneSubstituentId, inspectEZStereo } from './stereo/ez.js';
 export { pickWedgeAssignments } from './stereo/wedge-selection.js';
-export {
-  buildCanonicalComponentSignature,
-  buildCanonicalRingSignature,
-  compareCanonicalAtomIds,
-  computeCanonicalAtomRanks,
-  sortAtomIdsCanonical
-} from './topology/canonical-order.js';
+export { buildCanonicalComponentSignature, buildCanonicalRingSignature, compareCanonicalAtomIds, computeCanonicalAtomRanks, sortAtomIdsCanonical } from './topology/canonical-order.js';
 export { evaluateRingDependencyCorpus, inspectRingDependency } from './topology/ring-dependency.js';
 export { assignComponentRoles, getConnectedComponents } from './topology/components.js';
 export { exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';

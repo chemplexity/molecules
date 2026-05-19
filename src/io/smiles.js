@@ -1399,9 +1399,7 @@ export function decode(tokens) {
       atoms[targetID].bonds.electrons += bondOrder;
     };
 
-    const shouldSkipHydrogenTraversal = atom =>
-      atom?.name === 'H' &&
-      (isAuxiliaryBracketHydrogen(atom) || atom.bonds.atoms.some(targetID => atoms[targetID]?.name !== 'H'));
+    const shouldSkipHydrogenTraversal = atom => atom?.name === 'H' && (isAuxiliaryBracketHydrogen(atom) || atom.bonds.atoms.some(targetID => atoms[targetID]?.name !== 'H'));
 
     for (let i = 0; i < keys.atoms.length - 1; i++) {
       let sourceAtom = atoms[keys.atoms[i]];
@@ -2185,6 +2183,117 @@ function _serializeComponent(mol, sortFn = null) {
   dfs1(startId);
 
   const ringBondSet = new Set(ringBondId.keys());
+
+  // ---- E/Z stereo normalisation ----
+  // Two valid SMILES representations of the same E/Z geometry (e.g. /C=C/ and
+  // \C=C\) have different stored stereo characters even though they encode
+  // identical geometry.  Without normalisation, toCanonicalSMILES produces
+  // different strings for them, breaking sameMolecule() comparisons.
+  //
+  // Fix: for every C=C double bond that has stereo bonds set on both sides,
+  // rewrite the heavy-subgraph bond stereo so that the A-side bond is always
+  // written as '/' in the canonical DFS direction, and the B-side direction
+  // preserves the same/different relationship (which encodes E vs Z).
+  //
+  // This modifies only the heavy-subgraph bond copies, not the original mol.
+  {
+    // Return the atom that the canonical DFS traverses a bond FROM.
+    // For spanning-tree bonds: from = parent (atom whose entryBond ≠ this bond).
+    // For ring-closure bonds: from = opener (isOpener === true in atomRings).
+    const getFromAtomId = bondId => {
+      if (ringBondSet.has(bondId)) {
+        for (const [atomId, rings] of atomRings) {
+          if (rings.some(r => r.bond.id === bondId && r.isOpener)) {
+            return atomId;
+          }
+        }
+        return null;
+      }
+      const b = heavy.bonds.get(bondId);
+      if (!b) {
+        return null;
+      }
+      const [a0, a1] = b.atoms;
+      if (entryBond.get(a0) === bondId) {
+        return a1;
+      } // a0 is child → a1 is parent
+      if (entryBond.get(a1) === bondId) {
+        return a0;
+      } // a1 is child → a0 is parent
+      return null;
+    };
+
+    for (const dblBond of heavy.bonds.values()) {
+      if ((dblBond.properties.order ?? 1) !== 2) {
+        continue;
+      }
+      const [idA, idB] = dblBond.atoms;
+
+      const findStereoInHeavy = sp2Id => {
+        for (const bId of heavy.atoms.get(sp2Id)?.bonds ?? []) {
+          if (bId === dblBond.id) {
+            continue;
+          }
+          const b = heavy.bonds.get(bId);
+          if (b?.properties.stereo) {
+            return { bId, b };
+          }
+        }
+        return null;
+      };
+
+      const sAInfo = findStereoInHeavy(idA);
+      const sBInfo = findStereoInHeavy(idB);
+      if (!sAInfo || !sBInfo) {
+        continue;
+      }
+
+      const { bId: sAId, b: sA } = sAInfo;
+      const { bId: sBId, b: sB } = sBInfo;
+      const fromA = getFromAtomId(sAId);
+      const fromB = getFromAtomId(sBId);
+      if (fromA === null || fromB === null) {
+        continue;
+      }
+
+      // Get expected parity from the original molecule BEFORE any modifications.
+      // mol.getEZStereo uses original stereo (unmodified); heavy still matches
+      // mol here since we haven't touched the bonds yet.
+      const expectedParity = mol.getEZStereo(dblBond.id);
+      if (!expectedParity) {
+        continue;
+      }
+
+      // Clear stereo on secondary bonds (all stereo bonds at each sp2 atom
+      // except the primary one).  This ensures a single stereo bond per side,
+      // which gives consistent CIP correction in getEZStereo for both parsed
+      // and InChI-reconstructed molecules.
+      for (const [sp2Id, primaryId] of [
+        [idA, sAId],
+        [idB, sBId]
+      ]) {
+        for (const bId of heavy.atoms.get(sp2Id)?.bonds ?? []) {
+          if (bId !== dblBond.id && bId !== primaryId) {
+            const b = heavy.bonds.get(bId);
+            if (b?.properties.stereo) {
+              b.properties.stereo = null;
+            }
+          }
+        }
+      }
+
+      // Canonical form: A-side always written as '/'.
+      sA.properties.stereo = sA.atoms[0] === fromA ? '/' : '\\';
+
+      // Determine B-side by trial: try '/' first; if heavy.getEZStereo (after
+      // the secondary-bond clearing and A-side normalisation) does not match
+      // the expected parity, use '\' instead.
+      sB.properties.stereo = sB.atoms[0] === fromB ? '/' : '\\';
+      if (heavy.getEZStereo(dblBond.id) !== expectedParity) {
+        sB.properties.stereo = sB.atoms[0] === fromB ? '\\' : '/';
+      }
+    }
+  }
 
   // ---- Pass 2: DFS emission ----
   const emitted = new Set();

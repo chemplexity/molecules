@@ -403,5 +403,5 @@ export const bugMolecules = [
   'CC(=C)C(=O)OC(OCCCCC(F)(F)C(F)(F)S([O-])(=O)=O)(C(=O)OCC1=CC=CC=C1)C(F)(F)F',
   'CCOC(=O)C(=C)CCCCOCC([O-])(C(F)(F)F)C(F)(F)F',
   'CC(C)C(NC(=O)CCC1=CC=CC=C1)P([O-])(=O)CC(C([O-])=O)C1=CC=CC(C[NH3+])=C1',
-  'CN1CC2=CC=CC(NC3=CC=NC(NC4=CC(Cl)=CC=C4OCCNC(=O)C1)=N3)=C2',
+  'CN1CC2=CC=CC(NC3=CC=NC(NC4=CC(Cl)=CC=C4OCCNC(=O)C1)=N3)=C2'
 ];

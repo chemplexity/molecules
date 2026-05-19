@@ -52,10 +52,7 @@ describe('layout/engine/stereo/ez', () => {
   it('tracks unsupported annotated ring double bonds without counting them as contradictions', () => {
     const graph = createLayoutGraph(parseSMILES('C1CC/C=C/CC1'), { suppressH: true, bondLength: 1.5 });
     const coords = runPipeline(parseSMILES('C1CC/C=C\\CC1'), { suppressH: true }).coords;
-    const summary = inspectEZStereo(
-      graph,
-      coords
-    );
+    const summary = inspectEZStereo(graph, coords);
 
     assert.equal(summary.checkedBondCount, 1);
     assert.equal(summary.supportedCheckCount, 0);
@@ -68,7 +65,9 @@ describe('layout/engine/stereo/ez', () => {
 
   it('does not count cyclic E/Z contradictions for incomplete ring-system coordinates', () => {
     const graph = createLayoutGraph(
-      parseSMILES(String.raw`CC[C@H](C)[C@@H]1O[C@]2(CC[C@@H]1C)C[C@H]3C[C@H](C\C=C(/C)\[C@@H](O[C@H]4C[C@H](OC)[C@H](O[C@H]5C[C@H](OC)[C@H](O)[C@H](C)O5)[C@H](C)O4)[C@@H](C)\C=C\C=C6CO[C@@H]7[C@@H](O)C(=C[C@H](C(=O)O3)[C@@]67O)C)O2`),
+      parseSMILES(
+        String.raw`CC[C@H](C)[C@@H]1O[C@]2(CC[C@@H]1C)C[C@H]3C[C@H](C\C=C(/C)\[C@@H](O[C@H]4C[C@H](OC)[C@H](O[C@H]5C[C@H](OC)[C@H](O)[C@H](C)O5)[C@H](C)O4)[C@@H](C)\C=C\C=C6CO[C@@H]7[C@@H](O)C(=C[C@H](C(=O)O3)[C@@]67O)C)O2`
+      ),
       { suppressH: true, bondLength: 1.5 }
     );
     const summary = inspectEZStereo(

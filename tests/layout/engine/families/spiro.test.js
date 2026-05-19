@@ -28,8 +28,7 @@ function buildSpiroAdjacency(layoutGraph) {
     }
     ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
     ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-    const key =
-      connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
+    const key = connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
     ringConnectionByPair.set(key, connection);
   }
 
@@ -40,7 +39,7 @@ function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighb
   const firstVector = sub(coords.get(firstNeighborAtomId), coords.get(centerAtomId));
   const secondVector = sub(coords.get(secondNeighborAtomId), coords.get(centerAtomId));
   const denominator = Math.hypot(firstVector.x, firstVector.y) * Math.hypot(secondVector.x, secondVector.y);
-  const cosine = Math.max(-1, Math.min(1, ((firstVector.x * secondVector.x) + (firstVector.y * secondVector.y)) / denominator));
+  const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / denominator));
   return Math.acos(cosine);
 }
 
@@ -81,8 +80,7 @@ describe('layout/engine/families/spiro', () => {
       }
       ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
       ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-      const key =
-        connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
+      const key = connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
       ringConnectionByPair.set(key, connection);
     }
     const result = layoutSpiroFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph, templateId: 'spiro-5-5' });
@@ -128,11 +126,11 @@ describe('layout/engine/families/spiro', () => {
 
       assert.ok(
         Math.min(...cyclopropylExitAngles) >= Math.PI / 3 - 1e-6,
-        `expected ${label} cyclopropyl exits to clear the parent ring by at least 60 degrees, got ${(Math.min(...cyclopropylExitAngles) * 180 / Math.PI).toFixed(2)}`
+        `expected ${label} cyclopropyl exits to clear the parent ring by at least 60 degrees, got ${((Math.min(...cyclopropylExitAngles) * 180) / Math.PI).toFixed(2)}`
       );
       assert.ok(
         Math.min(...cyclobutylExitAngles) >= Math.PI / 3 - 1e-6,
-        `expected ${label} cyclobutyl exits to clear the parent ring by at least 60 degrees, got ${(Math.min(...cyclobutylExitAngles) * 180 / Math.PI).toFixed(2)}`
+        `expected ${label} cyclobutyl exits to clear the parent ring by at least 60 degrees, got ${((Math.min(...cyclobutylExitAngles) * 180) / Math.PI).toFixed(2)}`
       );
     };
 
@@ -167,14 +165,8 @@ describe('layout/engine/families/spiro', () => {
         bondAngleAtAtom(coords, 'C4', 'C5', 'C3')
       ];
 
-      assert.ok(
-        Math.min(...sixMemberJunctionAngles) >= Math.PI / 3 - 1e-6,
-        `expected ${label} six-member spiro exits to stay at least 60 degrees apart`
-      );
-      assert.ok(
-        Math.min(...cyclopropaneJunctionAngles) >= Math.PI / 2 - 1e-6,
-        `expected ${label} cyclopropane spiro exits to stay centered in the exterior gap`
-      );
+      assert.ok(Math.min(...sixMemberJunctionAngles) >= Math.PI / 3 - 1e-6, `expected ${label} six-member spiro exits to stay at least 60 degrees apart`);
+      assert.ok(Math.min(...cyclopropaneJunctionAngles) >= Math.PI / 2 - 1e-6, `expected ${label} cyclopropane spiro exits to stay centered in the exterior gap`);
     };
 
     assert.equal(result.placementMode, 'constructed-path');

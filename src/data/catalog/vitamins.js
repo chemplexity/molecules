@@ -3,8 +3,7 @@
 const vitaminsCatalog = {
   id: 'vitamins',
   name: 'Vitamins',
-  description:
-    'Essential organic micronutrients required in small amounts for normal physiological function, spanning fat-soluble (A, D, E, K) and water-soluble (B-complex, C) classes.',
+  description: 'Essential organic micronutrients required in small amounts for normal physiological function, spanning fat-soluble (A, D, E, K) and water-soluble (B-complex, C) classes.',
   tags: ['vitamins', 'micronutrients', 'biomolecules', 'cofactors'],
   molecules: [
     {

@@ -2,12 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import {
-  BRIDGE_PROJECTION_FACTORS,
-  enumerateBridgePaths,
-  pickBridgeheads,
-  projectBridgePaths
-} from '../../../../src/layout/engine/families/bridge-projection.js';
+import { BRIDGE_PROJECTION_FACTORS, enumerateBridgePaths, pickBridgeheads, projectBridgePaths } from '../../../../src/layout/engine/families/bridge-projection.js';
 import { layoutKamadaKawai } from '../../../../src/layout/engine/geometry/kk-layout.js';
 import { makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
 
@@ -46,9 +41,7 @@ describe('layout/engine/families/bridge-projection', () => {
   });
 
   it('skips bridge-face projection when a dense cage produces too many bridgehead paths', () => {
-    const mol = parseSMILES(
-      'COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45'
-    );
+    const mol = parseSMILES('COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45');
     mol.hideHydrogens();
     const graph = createLayoutGraph(mol, { suppressH: true, bondLength: 1.5 });
     const atomIds = [...new Set(graph.rings.flatMap(ring => ring.atomIds))];

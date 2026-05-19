@@ -1,9 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  isPreferredCleanupGeometryStage,
-  isPreferredFinalStereoStage
-} from '../../../../src/layout/engine/cleanup/stage-comparators.js';
+import { isPreferredCleanupGeometryStage, isPreferredFinalStereoStage } from '../../../../src/layout/engine/cleanup/stage-comparators.js';
 
 function stageAudit(overrides = {}) {
   return {
@@ -90,5 +87,4 @@ describe('layout/engine/cleanup/stage-comparators', () => {
 
     assert.equal(isPreferredFinalStereoStage(candidate, incumbent), true);
   });
-
 });

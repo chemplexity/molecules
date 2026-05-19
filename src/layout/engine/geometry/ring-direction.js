@@ -40,15 +40,10 @@ function chooseSingleRingOutwardAngle(neighborAngles, fallbackOutwardAngle) {
   }
 
   const internalBisector = Math.atan2(bisectorY, bisectorX);
-  const candidateAngles = [
-    wrapAngle(internalBisector),
-    wrapAngle(internalBisector + Math.PI)
-  ];
-  return candidateAngles.reduce((bestAngle, candidateAngle) => (
-    angularDifference(candidateAngle, fallbackOutwardAngle) < angularDifference(bestAngle, fallbackOutwardAngle)
-      ? candidateAngle
-      : bestAngle
-  ));
+  const candidateAngles = [wrapAngle(internalBisector), wrapAngle(internalBisector + Math.PI)];
+  return candidateAngles.reduce((bestAngle, candidateAngle) =>
+    angularDifference(candidateAngle, fallbackOutwardAngle) < angularDifference(bestAngle, fallbackOutwardAngle) ? candidateAngle : bestAngle
+  );
 }
 
 /**
@@ -79,10 +74,7 @@ export function computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, getP
     }
 
     const fallbackOutwardAngle = angleOf(sub(anchorPosition, centroid(ringPositions)));
-    const outwardAngle = chooseSingleRingOutwardAngle(
-      incidentRingNeighborAngles(layoutGraph, anchorAtomId, ring, getPosition, anchorPosition),
-      fallbackOutwardAngle
-    );
+    const outwardAngle = chooseSingleRingOutwardAngle(incidentRingNeighborAngles(layoutGraph, anchorAtomId, ring, getPosition, anchorPosition), fallbackOutwardAngle);
     if (!ringAngles.some(ringAngle => angularDifference(ringAngle, outwardAngle) <= RING_DIRECTION_EPSILON)) {
       ringAngles.push(outwardAngle);
     }

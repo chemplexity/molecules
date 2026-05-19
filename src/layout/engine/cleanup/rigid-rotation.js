@@ -61,16 +61,16 @@ export function forEachRigidRotationCandidate(layoutGraph, coords, descriptor, o
   }
 
   const buildPositionsFn =
-    typeof options.buildPositionsFn === 'function'
-      ? options.buildPositionsFn
-      : (inputCoords, inputDescriptor, angle) => rotateRigidDescriptorPositions(inputCoords, inputDescriptor, angle);
+    typeof options.buildPositionsFn === 'function' ? options.buildPositionsFn : (inputCoords, inputDescriptor, angle) => rotateRigidDescriptorPositions(inputCoords, inputDescriptor, angle);
 
   for (const angle of options.angles ?? []) {
     const overridePositions = buildPositionsFn(coords, descriptor, angle, layoutGraph);
     if (!overridePositions) {
       continue;
     }
-    options.visitCandidate(overridePositions, angle);
+    if (options.visitCandidate(overridePositions, angle) === true) {
+      break;
+    }
   }
 }
 
@@ -87,6 +87,7 @@ export function probeRigidRotation(layoutGraph, coords, descriptor, options = {}
   let bestScore = null;
   let bestAngle = null;
   const isBetterScoreFn = typeof options.isBetterScoreFn === 'function' ? options.isBetterScoreFn : (candidateScore, incumbentScore) => candidateScore < incumbentScore;
+  const isFullyResolvedFn = typeof options.isFullyResolvedFn === 'function' ? options.isFullyResolvedFn : null;
 
   forEachRigidRotationCandidate(layoutGraph, coords, descriptor, {
     ...options,
@@ -99,6 +100,9 @@ export function probeRigidRotation(layoutGraph, coords, descriptor, options = {}
         bestOverridePositions = overridePositions;
         bestScore = score;
         bestAngle = angle;
+        if (isFullyResolvedFn?.(score) === true) {
+          return true;
+        }
       }
     }
   });

@@ -8,9 +8,7 @@ function compareStrings(firstValue, secondValue) {
 }
 
 function templateCompatible(template, candidate) {
-  return (
-    template.family === candidate.family && template.atomCount === candidate.atomCount && template.bondCount === candidate.bondCount && template.ringCount === candidate.ringCount
-  );
+  return template.family === candidate.family && template.atomCount === candidate.atomCount && template.bondCount === candidate.bondCount && template.ringCount === candidate.ringCount;
 }
 
 /**

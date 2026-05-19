@@ -7,8 +7,7 @@ import { collectCutSubtree } from '../subtree-utils.js';
 
 const SIDE_BRANCH_DESCENDANT_ROTATION_CANDIDATES = Object.freeze([
   0,
-  ...Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 12)
-    .flatMap(angle => (Math.abs(angle - Math.PI) <= 1e-9 ? [Math.PI] : [angle, -angle]))
+  ...Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 12).flatMap(angle => (Math.abs(angle - Math.PI) <= 1e-9 ? [Math.PI] : [angle, -angle]))
 ]);
 const NEIGHBOR_SIDE_BRANCH_RELIEF_ROTATIONS = Object.freeze([
   Math.PI / 72,
@@ -31,9 +30,7 @@ function otherBondAtomId(bond, atomId) {
 }
 
 function centroidOf(coords, atomIds) {
-  const positions = atomIds
-    .map(atomId => coords.get(atomId))
-    .filter(Boolean);
+  const positions = atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
   if (positions.length === 0) {
     return null;
   }
@@ -44,16 +41,13 @@ function centroidOf(coords, atomIds) {
 }
 
 function edgeBetween(ringChain, firstRingSystemId, secondRingSystemId) {
-  return (ringChain.edges ?? []).find(edge =>
-    (
-      edge.firstRingSystemId === firstRingSystemId
-      && edge.secondRingSystemId === secondRingSystemId
-    )
-    || (
-      edge.firstRingSystemId === secondRingSystemId
-      && edge.secondRingSystemId === firstRingSystemId
-    )
-  ) ?? null;
+  return (
+    (ringChain.edges ?? []).find(
+      edge =>
+        (edge.firstRingSystemId === firstRingSystemId && edge.secondRingSystemId === secondRingSystemId) ||
+        (edge.firstRingSystemId === secondRingSystemId && edge.secondRingSystemId === firstRingSystemId)
+    ) ?? null
+  );
 }
 
 function orderedEdgeAttachment(edge, previousRingSystemId, nextRingSystemId) {
@@ -81,11 +75,7 @@ function orderedLinkEdges(ringChain) {
   const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
   const edges = [];
   for (let index = 1; index < orderedRingSystemIds.length; index++) {
-    const edge = orderedEdgeAttachment(
-      edgeBetween(ringChain, orderedRingSystemIds[index - 1], orderedRingSystemIds[index]),
-      orderedRingSystemIds[index - 1],
-      orderedRingSystemIds[index]
-    );
+    const edge = orderedEdgeAttachment(edgeBetween(ringChain, orderedRingSystemIds[index - 1], orderedRingSystemIds[index]), orderedRingSystemIds[index - 1], orderedRingSystemIds[index]);
     if (!edge) {
       return [];
     }
@@ -207,9 +197,7 @@ function rotatedAtomsCoords(coords, atomIds, origin, angle) {
 
 function ringNeighborIds(layoutGraph, ringSystem, atomId) {
   const ringAtomIds = new Set(ringSystem?.atomIds ?? []);
-  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
-    .map(bond => otherBondAtomId(bond, atomId))
-    .filter(neighborAtomId => ringAtomIds.has(neighborAtomId));
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? []).map(bond => otherBondAtomId(bond, atomId)).filter(neighborAtomId => ringAtomIds.has(neighborAtomId));
 }
 
 function localOutwardVector(layoutGraph, inputCoords, ringSystem, center, atomId) {
@@ -244,9 +232,7 @@ function localOutwardVector(layoutGraph, inputCoords, ringSystem, center, atomId
   if (!bisector || !radial) {
     return radial;
   }
-  return (bisector.x * radial.x + bisector.y * radial.y) >= 0
-    ? bisector
-    : { x: -bisector.x, y: -bisector.y };
+  return bisector.x * radial.x + bisector.y * radial.y >= 0 ? bisector : { x: -bisector.x, y: -bisector.y };
 }
 
 function rotationForRingUnit(inputCoords, center, previousAttachmentAtomId, nextAttachmentAtomId) {
@@ -280,13 +266,7 @@ function singleSideBranchRootAtomId(layoutGraph, inputCoords, anchorAtomId, ring
     }
     const rootAtomId = otherBondAtomId(bond, anchorAtomId);
     const rootAtom = layoutGraph.atoms.get(rootAtomId);
-    if (
-      !rootAtom
-      || rootAtom.element === 'H'
-      || !inputCoords.has(rootAtomId)
-      || ringAtomIds.has(rootAtomId)
-      || linkerAtomIds.has(rootAtomId)
-    ) {
+    if (!rootAtom || rootAtom.element === 'H' || !inputCoords.has(rootAtomId) || ringAtomIds.has(rootAtomId) || linkerAtomIds.has(rootAtomId)) {
       continue;
     }
     rootAtomIds.push(rootAtomId);
@@ -319,14 +299,14 @@ function auditCountsDoNotWorsen(candidateAudit, baseAudit) {
 
 function auditScore(audit) {
   return (
-    (audit.bondLengthFailureCount ?? 0) * 100_000_000
-    + (audit.severeOverlapCount ?? 0) * 10_000_000
-    + (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000
-    + (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000
-    + (audit.inwardRingSubstituentCount ?? 0) * 100_000
-    + (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 100_000
-    + (audit.labelOverlapCount ?? 0) * 10_000
-    + (audit.severeOverlapPenalty ?? 0) * 1_000
+    (audit.bondLengthFailureCount ?? 0) * 100_000_000 +
+    (audit.severeOverlapCount ?? 0) * 10_000_000 +
+    (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000 +
+    (audit.inwardRingSubstituentCount ?? 0) * 100_000 +
+    (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 100_000 +
+    (audit.labelOverlapCount ?? 0) * 10_000 +
+    (audit.severeOverlapPenalty ?? 0) * 1_000
   );
 }
 
@@ -352,13 +332,13 @@ function angleBetweenPositions(firstPosition, centerPosition, secondPosition) {
   if (!(denominator > 0)) {
     return null;
   }
-  const cosine = Math.max(-1, Math.min(1, ((firstVector.x * secondVector.x) + (firstVector.y * secondVector.y)) / denominator));
+  const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / denominator));
   return Math.acos(cosine);
 }
 
 function angularDifference(firstAngle, secondAngle) {
   const difference = Math.abs(normalizeAngle(firstAngle - secondAngle));
-  return Math.min(difference, (Math.PI * 2) - difference);
+  return Math.min(difference, Math.PI * 2 - difference);
 }
 
 function sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId, targetAngle = (Math.PI * 2) / 3) {
@@ -417,8 +397,7 @@ const HYPERVALENT_CROSS_TARGET_OFFSETS = Object.freeze([Math.PI, Math.PI / 2, -M
  * @returns {number} Minimum summed angular deviation in radians.
  */
 function hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchorAtomId) {
-  const centerAtomId = visibleHeavyNeighborAtomIds(layoutGraph, coords, rootAtomId)
-    .find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
+  const centerAtomId = visibleHeavyNeighborAtomIds(layoutGraph, coords, rootAtomId).find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
   const centerAtom = centerAtomId ? layoutGraph.atoms.get(centerAtomId) : null;
   const centerPosition = centerAtomId ? coords.get(centerAtomId) : null;
   const rootPosition = coords.get(rootAtomId);
@@ -440,10 +419,7 @@ function hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchor
   for (const permutation of THREE_LIGAND_PERMUTATIONS) {
     let deviation = 0;
     for (let index = 0; index < permutation.length; index++) {
-      deviation += angularDifference(
-        normalizeAngle(ligandAngles[permutation[index]] - rootAngle),
-        HYPERVALENT_CROSS_TARGET_OFFSETS[index]
-      );
+      deviation += angularDifference(normalizeAngle(ligandAngles[permutation[index]] - rootAngle), HYPERVALENT_CROSS_TARGET_OFFSETS[index]);
     }
     bestDeviation = Math.min(bestDeviation, deviation);
   }
@@ -452,17 +428,16 @@ function hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchor
 
 function sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit) {
   return (
-    auditScore(audit)
-    + (sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId) * 1_000)
-    + (hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchorAtomId) * HYPERVALENT_CROSS_GEOMETRY_SCORE_WEIGHT)
+    auditScore(audit) +
+    sideBranchRootAngleDeviation(layoutGraph, coords, rootAtomId) * 1_000 +
+    hypervalentBranchCrossDeviation(layoutGraph, coords, rootAtomId, anchorAtomId) * HYPERVALENT_CROSS_GEOMETRY_SCORE_WEIGHT
   );
 }
 
 function exactRootAngleRotations(layoutGraph, coords, rootAtomId, anchorAtomId, targetAngle = (Math.PI * 2) / 3) {
   const rootPosition = coords.get(rootAtomId);
   const anchorPosition = coords.get(anchorAtomId);
-  const descendantAtomIds = visibleHeavyNeighborAtomIds(layoutGraph, coords, rootAtomId)
-    .filter(neighborAtomId => neighborAtomId !== anchorAtomId);
+  const descendantAtomIds = visibleHeavyNeighborAtomIds(layoutGraph, coords, rootAtomId).filter(neighborAtomId => neighborAtomId !== anchorAtomId);
   if (!rootPosition || !anchorPosition || descendantAtomIds.length !== 1) {
     return [];
   }
@@ -472,10 +447,7 @@ function exactRootAngleRotations(layoutGraph, coords, rootAtomId, anchorAtomId, 
   }
   const anchorAngle = Math.atan2(anchorPosition.y - rootPosition.y, anchorPosition.x - rootPosition.x);
   const descendantAngle = Math.atan2(descendantPosition.y - rootPosition.y, descendantPosition.x - rootPosition.x);
-  return [
-    normalizeAngle(anchorAngle + targetAngle - descendantAngle),
-    normalizeAngle(anchorAngle - targetAngle - descendantAngle)
-  ];
+  return [normalizeAngle(anchorAngle + targetAngle - descendantAngle), normalizeAngle(anchorAngle - targetAngle - descendantAngle)];
 }
 
 function sideBranchDescendantAtomIds(layoutGraph, coords, rootAtomId, anchorAtomId) {
@@ -539,12 +511,8 @@ function nearestRingSideBranchCut(layoutGraph, coords, atomId, blockedAtomIds) {
 
 function bestNeighboringSideBranchReliefCoords(layoutGraph, inputCoords, rootAtomId, anchorAtomId, baseAudit, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const activeAtomIds = new Set([
-    rootAtomId,
-    ...sideBranchDescendantAtomIds(layoutGraph, inputCoords, rootAtomId, anchorAtomId)
-  ]);
-  const overlaps = findSevereOverlaps(layoutGraph, inputCoords, bondLength)
-    .filter(overlap => activeAtomIds.has(overlap.firstAtomId) !== activeAtomIds.has(overlap.secondAtomId));
+  const activeAtomIds = new Set([rootAtomId, ...sideBranchDescendantAtomIds(layoutGraph, inputCoords, rootAtomId, anchorAtomId)]);
+  const overlaps = findSevereOverlaps(layoutGraph, inputCoords, bondLength).filter(overlap => activeAtomIds.has(overlap.firstAtomId) !== activeAtomIds.has(overlap.secondAtomId));
   let best = null;
   for (const overlap of overlaps) {
     const externalAtomId = activeAtomIds.has(overlap.firstAtomId) ? overlap.secondAtomId : overlap.firstAtomId;
@@ -552,12 +520,8 @@ function bestNeighboringSideBranchReliefCoords(layoutGraph, inputCoords, rootAto
     if (!cut) {
       continue;
     }
-    const reliefAtomIds = [...collectCutSubtree(layoutGraph, cut.rootAtomId, cut.anchorAtomId)]
-      .filter(candidateAtomId => inputCoords.has(candidateAtomId));
-    if (
-      reliefAtomIds.length === 0
-      || reliefAtomIds.some(candidateAtomId => activeAtomIds.has(candidateAtomId) || isRingAtom(layoutGraph, candidateAtomId))
-    ) {
+    const reliefAtomIds = [...collectCutSubtree(layoutGraph, cut.rootAtomId, cut.anchorAtomId)].filter(candidateAtomId => inputCoords.has(candidateAtomId));
+    if (reliefAtomIds.length === 0 || reliefAtomIds.some(candidateAtomId => activeAtomIds.has(candidateAtomId) || isRingAtom(layoutGraph, candidateAtomId))) {
       continue;
     }
     const anchorPosition = inputCoords.get(cut.anchorAtomId);
@@ -573,10 +537,7 @@ function bestNeighboringSideBranchReliefCoords(layoutGraph, inputCoords, rootAto
       if (!auditCountsDoNotWorsen(audit, baseAudit)) {
         continue;
       }
-      const score = (
-        sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit)
-        + Math.abs(rotation)
-      );
+      const score = sideBranchCandidateScore(layoutGraph, coords, rootAtomId, anchorAtomId, audit) + Math.abs(rotation);
       if (!best || score < best.score - 1e-9) {
         best = {
           coords,
@@ -595,10 +556,7 @@ function bestAuditedSideBranchCoords(layoutGraph, candidateCoords, rootAtomId, a
     return null;
   }
   const descendantAtomIds = sideBranchDescendantAtomIds(layoutGraph, candidateCoords, rootAtomId, anchorAtomId);
-  const rotationCandidates = [
-    ...exactRootAngleRotations(layoutGraph, candidateCoords, rootAtomId, anchorAtomId),
-    ...SIDE_BRANCH_DESCENDANT_ROTATION_CANDIDATES
-  ];
+  const rotationCandidates = [...exactRootAngleRotations(layoutGraph, candidateCoords, rootAtomId, anchorAtomId), ...SIDE_BRANCH_DESCENDANT_ROTATION_CANDIDATES];
   let best = null;
   for (const descendantRotation of rotationCandidates) {
     const coords = rotatedAtomsCoords(candidateCoords, descendantAtomIds, rootPosition, descendantRotation);
@@ -609,9 +567,7 @@ function bestAuditedSideBranchCoords(layoutGraph, candidateCoords, rootAtomId, a
     if (!auditCountsDoNotWorsen(audit, baseAudit)) {
       const internalRelief = bestInternalLigandReliefCoords(layoutGraph, coords, rootAtomId, anchorAtomId, baseAudit, options);
       const neighborRelief = bestNeighboringSideBranchReliefCoords(layoutGraph, coords, rootAtomId, anchorAtomId, baseAudit, options);
-      const relief = [internalRelief, neighborRelief]
-        .filter(Boolean)
-        .sort((first, second) => first.score - second.score)[0] ?? null;
+      const relief = [internalRelief, neighborRelief].filter(Boolean).sort((first, second) => first.score - second.score)[0] ?? null;
       if (!relief || (best && relief.score >= best.score - 1e-9)) {
         continue;
       }
@@ -638,8 +594,7 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
   if (sideBranchRootAngleDeviation(layoutGraph, inputCoords, rootAtomId) > INTERNAL_LIGAND_RELIEF_MAX_ROOT_DEVIATION) {
     return null;
   }
-  const centerAtomId = visibleHeavyNeighborAtomIds(layoutGraph, inputCoords, rootAtomId)
-    .find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
+  const centerAtomId = visibleHeavyNeighborAtomIds(layoutGraph, inputCoords, rootAtomId).find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
   const centerAtom = centerAtomId ? layoutGraph.atoms.get(centerAtomId) : null;
   const centerPosition = centerAtomId ? inputCoords.get(centerAtomId) : null;
   if (!centerAtom || !HYPERVALENT_BRANCH_CENTER_ELEMENTS.has(centerAtom.element) || !centerPosition) {
@@ -648,8 +603,7 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
 
   let best = null;
   const rootPosition = inputCoords.get(rootAtomId);
-  const ligandAtomIds = visibleHeavyNeighborAtomIds(layoutGraph, inputCoords, centerAtomId)
-    .filter(ligandAtomId => ligandAtomId !== rootAtomId);
+  const ligandAtomIds = visibleHeavyNeighborAtomIds(layoutGraph, inputCoords, centerAtomId).filter(ligandAtomId => ligandAtomId !== rootAtomId);
   if (rootPosition && ligandAtomIds.length === 3) {
     const rootAngle = Math.atan2(rootPosition.y - centerPosition.y, rootPosition.x - centerPosition.x);
     for (const permutation of THREE_LIGAND_PERMUTATIONS) {
@@ -660,8 +614,7 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
         if (!ligandPosition) {
           continue;
         }
-        const ligandSubtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)]
-          .filter(atomId => coords.has(atomId));
+        const ligandSubtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
         if (ligandSubtreeAtomIds.length === 0 || ligandSubtreeAtomIds.includes(rootAtomId) || ligandSubtreeAtomIds.includes(anchorAtomId)) {
           continue;
         }
@@ -690,8 +643,7 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
     if (ligandAtomId === rootAtomId) {
       continue;
     }
-    const ligandSubtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)]
-      .filter(atomId => inputCoords.has(atomId));
+    const ligandSubtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)].filter(atomId => inputCoords.has(atomId));
     if (ligandSubtreeAtomIds.length === 0 || ligandSubtreeAtomIds.includes(rootAtomId) || ligandSubtreeAtomIds.includes(anchorAtomId)) {
       continue;
     }
@@ -720,23 +672,13 @@ function bestInternalLigandReliefCoords(layoutGraph, inputCoords, rootAtomId, an
   return best;
 }
 
-function retouchRingSideBranches(
-  layoutGraph,
-  inputCoords,
-  ringChain,
-  ringSystemById,
-  ringCenterBySystemId,
-  ringAtomIds,
-  linkerAtomIds,
-  bondLength,
-  options = {}
-) {
+function retouchRingSideBranches(layoutGraph, inputCoords, ringChain, ringSystemById, ringCenterBySystemId, ringAtomIds, linkerAtomIds, bondLength, options = {}) {
   let coords = inputCoords;
   let audit = options.auditCandidates
     ? auditLayout(layoutGraph, coords, {
-      bondLength,
-      bondValidationClasses: options.bondValidationClasses ?? null
-    })
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses ?? null
+      })
     : null;
   const retouchedAtomIds = new Set();
   const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
@@ -753,12 +695,8 @@ function retouchRingSideBranches(
       if (!rootAtomId) {
         continue;
       }
-      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)]
-        .filter(atomId => coords.has(atomId));
-      if (
-        subtreeAtomIds.length === 0
-        || subtreeAtomIds.some(atomId => ringAtomIds.has(atomId) || linkerAtomIds.has(atomId) || retouchedAtomIds.has(atomId))
-      ) {
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+      if (subtreeAtomIds.length === 0 || subtreeAtomIds.some(atomId => ringAtomIds.has(atomId) || linkerAtomIds.has(atomId) || retouchedAtomIds.has(atomId))) {
         continue;
       }
 
@@ -776,14 +714,11 @@ function retouchRingSideBranches(
         continue;
       }
 
-      const angle = normalizeAngle(
-        Math.atan2(outwardVector.y, outwardVector.x)
-        - Math.atan2(currentVector.y, currentVector.x)
-      );
+      const angle = normalizeAngle(Math.atan2(outwardVector.y, outwardVector.x) - Math.atan2(currentVector.y, currentVector.x));
       const rotatedRoot = rotateRelative(rootPosition, anchorPosition, angle);
       const targetRoot = {
-        x: anchorPosition.x + (bondLength * outwardVector.x),
-        y: anchorPosition.y + (bondLength * outwardVector.y)
+        x: anchorPosition.x + bondLength * outwardVector.x,
+        y: anchorPosition.y + bondLength * outwardVector.y
       };
       const shift = {
         x: targetRoot.x - (anchorPosition.x + rotatedRoot.x),
@@ -870,18 +805,10 @@ function buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bond
       return null;
     }
     centers.push(center);
-    const rotation = rotationForRingUnit(
-      inputCoords,
-      center,
-      previousAttachmentByRingSystemId.get(ringSystemId) ?? null,
-      nextAttachmentByRingSystemId.get(ringSystemId) ?? null
-    );
+    const rotation = rotationForRingUnit(inputCoords, center, previousAttachmentByRingSystemId.get(ringSystemId) ?? null, nextAttachmentByRingSystemId.get(ringSystemId) ?? null);
     const relativePositions = new Map();
     const outwardVectors = new Map();
-    for (const attachmentAtomId of [
-      previousAttachmentByRingSystemId.get(ringSystemId) ?? null,
-      nextAttachmentByRingSystemId.get(ringSystemId) ?? null
-    ]) {
+    for (const attachmentAtomId of [previousAttachmentByRingSystemId.get(ringSystemId) ?? null, nextAttachmentByRingSystemId.get(ringSystemId) ?? null]) {
       if (!attachmentAtomId) {
         continue;
       }
@@ -916,14 +843,8 @@ function buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bond
 
     const previousCenter = targetCenters[index - 1];
     const nextCenter = {
-      x: previousCenter.x
-        + previousRelativeAttachment.x
-        - nextRelativeAttachment.x
-        + bondLength * (previousOutwardVector.x - nextOutwardVector.x),
-      y: previousCenter.y
-        + previousRelativeAttachment.y
-        - nextRelativeAttachment.y
-        + bondLength * (previousOutwardVector.y - nextOutwardVector.y)
+      x: previousCenter.x + previousRelativeAttachment.x - nextRelativeAttachment.x + bondLength * (previousOutwardVector.x - nextOutwardVector.x),
+      y: previousCenter.y + previousRelativeAttachment.y - nextRelativeAttachment.y + bondLength * (previousOutwardVector.y - nextOutwardVector.y)
     };
     if (!Number.isFinite(nextCenter.x) || !Number.isFinite(nextCenter.y)) {
       return null;
@@ -952,16 +873,7 @@ function buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bond
     coords.set(linkerAtomId, linkerPosition);
   }
 
-  const sideBranchCoords = retouchRingSideBranches(
-    layoutGraph,
-    coords,
-    ringChain,
-    ringSystemById,
-    targetCenterByRingSystemId,
-    ringAtomIds,
-    linkerAtomIds,
-    bondLength
-  );
+  const sideBranchCoords = retouchRingSideBranches(layoutGraph, coords, ringChain, ringSystemById, targetCenterByRingSystemId, ringAtomIds, linkerAtomIds, bondLength);
 
   return translateToInputCentroid(inputCoords, sideBranchCoords);
 }
@@ -1002,11 +914,7 @@ export function runRingChainSideBranchExitRetouch(layoutGraph, inputCoords, opti
     const movedAtomIds = [...coords.keys()].filter(atomId => {
       const previousPosition = inputCoords.get(atomId);
       const nextPosition = coords.get(atomId);
-      return (
-        previousPosition
-        && nextPosition
-        && Math.hypot(nextPosition.x - previousPosition.x, nextPosition.y - previousPosition.y) > 1e-9
-      );
+      return previousPosition && nextPosition && Math.hypot(nextPosition.x - previousPosition.x, nextPosition.y - previousPosition.y) > 1e-9;
     });
     return {
       coords,
@@ -1054,11 +962,7 @@ export function runRingChainUnitProjectionRetouch(layoutGraph, inputCoords, opti
     const movedAtomIds = [...coords.keys()].filter(atomId => {
       const previousPosition = inputCoords.get(atomId);
       const nextPosition = coords.get(atomId);
-      return (
-        previousPosition
-        && nextPosition
-        && Math.hypot(nextPosition.x - previousPosition.x, nextPosition.y - previousPosition.y) > 1e-9
-      );
+      return previousPosition && nextPosition && Math.hypot(nextPosition.x - previousPosition.x, nextPosition.y - previousPosition.y) > 1e-9;
     });
     return {
       coords,

@@ -5,29 +5,8 @@ import { collectLabelBoxes, labelBoxesOverlap } from '../geometry/label-box.js';
 import { buildAtomGrid } from '../audit/invariants.js';
 import { centroid } from '../geometry/vec2.js';
 
-const TERMINAL_LABEL_ROTATION_OFFSETS = Object.freeze([
-  0,
-  Math.PI / 12,
-  -Math.PI / 12,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 4,
-  -Math.PI / 4,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2
-]);
-const TERMINAL_LABEL_LOCAL_ROTATION_OFFSETS = Object.freeze([
-  Math.PI / 36,
-  -Math.PI / 36,
-  Math.PI / 18,
-  -Math.PI / 18,
-  Math.PI / 12,
-  -Math.PI / 12,
-  Math.PI / 9,
-  -Math.PI / 9
-]);
+const TERMINAL_LABEL_ROTATION_OFFSETS = Object.freeze([0, Math.PI / 12, -Math.PI / 12, Math.PI / 6, -Math.PI / 6, Math.PI / 4, -Math.PI / 4, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2]);
+const TERMINAL_LABEL_LOCAL_ROTATION_OFFSETS = Object.freeze([Math.PI / 36, -Math.PI / 36, Math.PI / 18, -Math.PI / 18, Math.PI / 12, -Math.PI / 12, Math.PI / 9, -Math.PI / 9]);
 
 /**
  * Computes a scalar penalty for the overlap between two axis-aligned label boxes.
@@ -201,17 +180,7 @@ function introducesSevereOverlap(layoutGraph, coords, atomGrid, atomId, candidat
  * @param {boolean} [allowMultipleBondLeafRotation] - Whether terminal multiple-bond leaves may rotate.
  * @returns {{position: {x: number, y: number}, penalty: number}|null} Best terminal rotation candidate.
  */
-function selectTerminalLabelRotation(
-  layoutGraph,
-  coords,
-  atomGrid,
-  labels,
-  labelIndex,
-  otherLabel,
-  padding,
-  overlapDistanceThreshold,
-  allowMultipleBondLeafRotation = false
-) {
+function selectTerminalLabelRotation(layoutGraph, coords, atomGrid, labels, labelIndex, otherLabel, padding, overlapDistanceThreshold, allowMultipleBondLeafRotation = false) {
   const label = labels[labelIndex];
   const atomId = label.atomId;
   const anchorAtomId = terminalRotatableLabelAnchorAtomId(layoutGraph, coords, atomId, {
@@ -237,10 +206,7 @@ function selectTerminalLabelRotation(
   const awayAngle = Math.atan2(anchorPosition.y - otherLabel.y, anchorPosition.x - otherLabel.x);
   const candidateAngles = isMultipleBondLeaf
     ? TERMINAL_LABEL_LOCAL_ROTATION_OFFSETS.map(offset => currentAngle + offset)
-    : [
-        ...TERMINAL_LABEL_LOCAL_ROTATION_OFFSETS.map(offset => currentAngle + offset),
-        ...TERMINAL_LABEL_ROTATION_OFFSETS.map(offset => awayAngle + offset)
-      ];
+    : [...TERMINAL_LABEL_LOCAL_ROTATION_OFFSETS.map(offset => currentAngle + offset), ...TERMINAL_LABEL_ROTATION_OFFSETS.map(offset => awayAngle + offset)];
   let bestCandidate = null;
 
   for (const angle of candidateAngles) {
@@ -265,6 +231,9 @@ function selectTerminalLabelRotation(
         position: candidatePosition,
         penalty: candidatePenalty
       };
+      if (candidatePenalty <= CLEANUP_EPSILON) {
+        break;
+      }
     }
   }
   return bestCandidate;
@@ -307,31 +276,11 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       }
 
       let rotationCandidate = allowTerminalLeafRotation
-        ? selectTerminalLabelRotation(
-            layoutGraph,
-            coords,
-            atomGrid,
-            labels,
-            firstIndex,
-            secondLabel,
-            padding,
-            overlapDistanceThreshold,
-            allowTerminalMultipleBondLeafRotation
-          )
+        ? selectTerminalLabelRotation(layoutGraph, coords, atomGrid, labels, firstIndex, secondLabel, padding, overlapDistanceThreshold, allowTerminalMultipleBondLeafRotation)
         : null;
       let movedLabel = firstLabel;
       if (allowTerminalLeafRotation && !rotationCandidate) {
-        rotationCandidate = selectTerminalLabelRotation(
-          layoutGraph,
-          coords,
-          atomGrid,
-          labels,
-          secondIndex,
-          firstLabel,
-          padding,
-          overlapDistanceThreshold,
-          allowTerminalMultipleBondLeafRotation
-        );
+        rotationCandidate = selectTerminalLabelRotation(layoutGraph, coords, atomGrid, labels, secondIndex, firstLabel, padding, overlapDistanceThreshold, allowTerminalMultipleBondLeafRotation);
         movedLabel = secondLabel;
       }
       if (rotationCandidate) {

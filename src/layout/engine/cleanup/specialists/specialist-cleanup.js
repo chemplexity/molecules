@@ -1,30 +1,11 @@
 /** @module cleanup/specialists/specialist-cleanup */
 
-import {
-  hasBridgedBondTidyNeed,
-  runBridgedBondTidy
-} from '../bridged-bond-tidy.js';
-import {
-  hasMediumBridgedRingAngleRelaxationNeed,
-  runMediumBridgedRingAngleRelaxation
-} from '../../families/bridged.js';
-import {
-  hasHypervalentAngleTidyNeed,
-  measureOrthogonalHypervalentDeviation,
-  runHypervalentAngleTidy
-} from '../hypervalent-angle-tidy.js';
-import {
-  hasLigandAngleTidyNeed,
-  runLigandAngleTidy
-} from '../ligand-angle-tidy.js';
-import {
-  hasOutstandingRingPresentationNeed,
-  runRingPresentationCleanup
-} from '../presentation/ring-presentation.js';
-import {
-  hasRingPerimeterCorrectionNeed,
-  runRingPerimeterCorrection
-} from '../ring-perimeter-correction.js';
+import { hasBridgedBondTidyNeed, runBridgedBondTidy } from '../bridged-bond-tidy.js';
+import { hasMediumBridgedRingAngleRelaxationNeed, runMediumBridgedRingAngleRelaxation } from '../../families/bridged.js';
+import { hasHypervalentAngleTidyNeed, measureOrthogonalHypervalentDeviation, runHypervalentAngleTidy } from '../hypervalent-angle-tidy.js';
+import { hasLigandAngleTidyNeed, runLigandAngleTidy } from '../ligand-angle-tidy.js';
+import { hasOutstandingRingPresentationNeed, runRingPresentationCleanup } from '../presentation/ring-presentation.js';
+import { hasRingPerimeterCorrectionNeed, runRingPerimeterCorrection } from '../ring-perimeter-correction.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
 
 const SPECIALIST_DEFINITIONS = new Map([
@@ -52,8 +33,8 @@ const SPECIALIST_DEFINITIONS = new Map([
         return (
           hasBridgedBondTidyNeed(layoutGraph, coords, {
             bondLength: options.bondLength
-          })
-          || hasMediumBridgedRingAngleRelaxationNeed(layoutGraph, coords, {
+          }) ||
+          hasMediumBridgedRingAngleRelaxationNeed(layoutGraph, coords, {
             bondLength: options.bondLength
           })
         );
@@ -208,10 +189,7 @@ function isSafeFinalHypervalentRetouch(layoutGraph, candidateState, incumbentSta
   if ((candidateAudit.bridgedReadabilityFailure ?? false) && !(incumbentAudit.bridgedReadabilityFailure ?? false)) {
     return false;
   }
-  return (
-    candidateAudit.bondLengthFailureCount <= incumbentAudit.bondLengthFailureCount
-    || candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9
-  );
+  return candidateAudit.bondLengthFailureCount <= incumbentAudit.bondLengthFailureCount || candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9;
 }
 
 /**
@@ -329,20 +307,9 @@ export function runSpecialistCleanup(layoutGraph, inputCoords, policy, options =
     }
 
     const previousState = currentState;
-    currentState = evaluateSpecialistStep(
-      currentState,
-      hookName,
-      specialist.id,
-      specialist.run(layoutGraph, currentState.coords, options),
-      options
-    );
+    currentState = evaluateSpecialistStep(currentState, hookName, specialist.id, specialist.run(layoutGraph, currentState.coords, options), options);
 
-    if (
-      hookName !== 'hypervalent-angle-tidy'
-      || currentState === previousState
-      || allowPresentationRescue !== true
-      || !hasOutstandingRingPresentationNeed(layoutGraph, currentState)
-    ) {
+    if (hookName !== 'hypervalent-angle-tidy' || currentState === previousState || allowPresentationRescue !== true || !hasOutstandingRingPresentationNeed(layoutGraph, currentState)) {
       continue;
     }
 
@@ -369,13 +336,7 @@ export function runSpecialistCleanup(layoutGraph, inputCoords, policy, options =
       continue;
     }
 
-    currentState = evaluateSpecialistStep(
-      rescuedState,
-      'hypervalent-angle-retouch',
-      specialist.id,
-      specialist.run(layoutGraph, rescuedState.coords, options),
-      options
-    );
+    currentState = evaluateSpecialistStep(rescuedState, 'hypervalent-angle-retouch', specialist.id, specialist.run(layoutGraph, rescuedState.coords, options), options);
   }
 
   if (hookNames.includes('hypervalent-angle-tidy')) {

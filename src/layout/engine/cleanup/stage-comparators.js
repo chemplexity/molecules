@@ -65,10 +65,7 @@ function comparePenalty(candidate, incumbent, key) {
  * @returns {boolean} True when the small-ring exterior fan penalty regresses.
  */
 function worsensSmallRingExteriorFan(candidate, incumbent) {
-  return (
-    (candidate?.smallRingExteriorFanExactPenalty ?? 0)
-      > (incumbent?.smallRingExteriorFanExactPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
-  );
+  return (candidate?.smallRingExteriorFanExactPenalty ?? 0) > (incumbent?.smallRingExteriorFanExactPenalty ?? 0) + PRESENTATION_METRIC_EPSILON;
 }
 
 /**
@@ -81,13 +78,7 @@ function worsensSmallRingExteriorFan(candidate, incumbent) {
  * @returns {boolean} True when the stereo candidate should be rejected.
  */
 function hasUnsafeStereoRescueBondRegression(candidate, incumbent) {
-  if (
-    !candidate?.audit
-    || !incumbent?.audit
-    || incumbent.audit.stereoContradiction !== true
-    || candidate.audit.stereoContradiction !== false
-    || candidate.audit.ok === true
-  ) {
+  if (!candidate?.audit || !incumbent?.audit || incumbent.audit.stereoContradiction !== true || candidate.audit.stereoContradiction !== false || candidate.audit.ok === true) {
     return false;
   }
 
@@ -96,9 +87,8 @@ function hasUnsafeStereoRescueBondRegression(candidate, incumbent) {
   }
 
   return (
-    candidate.audit.bondLengthFailureCount >= incumbent.audit.bondLengthFailureCount
-    && candidate.audit.maxBondLengthDeviation
-      > incumbent.audit.maxBondLengthDeviation + MAX_STEREO_RESCUE_BOND_DEVIATION_REGRESSION
+    candidate.audit.bondLengthFailureCount >= incumbent.audit.bondLengthFailureCount &&
+    candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + MAX_STEREO_RESCUE_BOND_DEVIATION_REGRESSION
   );
 }
 
@@ -151,13 +141,7 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   const trigonalDistortionImprovement = (incumbent.trigonalDistortionPenalty ?? 0) - (candidate.trigonalDistortionPenalty ?? 0);
   if ((r = compareCount(candidate.audit.labelOverlapCount, incumbent.audit.labelOverlapCount)) !== null) {
     const labelOverlapIncrease = (candidate.audit.labelOverlapCount ?? 0) - (incumbent.audit.labelOverlapCount ?? 0);
-    if (
-      !(
-        allowPresentationTieBreak &&
-        labelOverlapIncrease === 1 &&
-        trigonalDistortionImprovement > PRESENTATION_METRIC_EPSILON
-      )
-    ) {
+    if (!(allowPresentationTieBreak && labelOverlapIncrease === 1 && trigonalDistortionImprovement > PRESENTATION_METRIC_EPSILON)) {
       return r;
     }
   }
@@ -166,8 +150,7 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   const phosphateArylTailImprovement = (incumbent.phosphateArylTailPenalty ?? 0) - (candidate.phosphateArylTailPenalty ?? 0);
   const allowsDivalentPresentationTradeoff =
     allowPresentationTieBreak &&
-    (omittedHydrogenTrigonalImprovement > divalentContinuationIncrease + PRESENTATION_METRIC_EPSILON ||
-      phosphateArylTailImprovement > divalentContinuationIncrease + PRESENTATION_METRIC_EPSILON);
+    (omittedHydrogenTrigonalImprovement > divalentContinuationIncrease + PRESENTATION_METRIC_EPSILON || phosphateArylTailImprovement > divalentContinuationIncrease + PRESENTATION_METRIC_EPSILON);
   if (divalentContinuationIncrease > PRESENTATION_METRIC_EPSILON && !allowsDivalentPresentationTradeoff) {
     return false;
   }
@@ -286,10 +269,8 @@ export function shouldPreferAuditCleanOverlapCleanupStage(candidate, incumbent) 
     return false;
   }
   return (
-    (candidate.audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY)
-      <= PROTECTED_CLEANUP_STAGE_LIMITS.maxAuditCleanOverlapWinBondDeviation
-    && (candidate.audit.meanBondLengthDeviation ?? Number.POSITIVE_INFINITY)
-      <= PROTECTED_CLEANUP_STAGE_LIMITS.maxAuditCleanOverlapWinMeanBondDeviation
+    (candidate.audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) <= PROTECTED_CLEANUP_STAGE_LIMITS.maxAuditCleanOverlapWinBondDeviation &&
+    (candidate.audit.meanBondLengthDeviation ?? Number.POSITIVE_INFINITY) <= PROTECTED_CLEANUP_STAGE_LIMITS.maxAuditCleanOverlapWinMeanBondDeviation
   );
 }
 

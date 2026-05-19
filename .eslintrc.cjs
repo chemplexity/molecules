@@ -36,15 +36,18 @@ module.exports = {
     'spaced-comment': 'error',
 
     // JSDoc — warn on missing docs so gaps surface without blocking builds
-    'jsdoc/require-jsdoc': ['warn', {
-      publicOnly: true,
-      require: {
-        FunctionDeclaration: true,
-        ArrowFunctionExpression: false,
-        ClassDeclaration: true,
-        MethodDefinition: false
+    'jsdoc/require-jsdoc': [
+      'warn',
+      {
+        publicOnly: true,
+        require: {
+          FunctionDeclaration: true,
+          ArrowFunctionExpression: false,
+          ClassDeclaration: true,
+          MethodDefinition: false
+        }
       }
-    }],
+    ],
     'jsdoc/require-param': 'warn',
     'jsdoc/require-returns': 'warn',
     'jsdoc/check-param-names': 'error',

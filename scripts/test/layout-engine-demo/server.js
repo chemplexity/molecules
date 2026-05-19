@@ -73,9 +73,7 @@ function injectDiffHighlights(svgContent, cellW, cellH, cx, cy, mol, coords, mov
     const tooltip = `${atomId}: moved ${dist.toFixed(2)} Å`;
     const prevPos = prev ? molToSVG(prev.x, prev.y, cx, cy, cellW, cellH) : null;
     const prevAttrs = prevPos ? ` data-px="${prevPos.x.toFixed(1)}" data-py="${prevPos.y.toFixed(1)}"` : '';
-    circles.push(
-      `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="rgba(251,146,60,0.3)" stroke="#f97316" stroke-width="1.5"${prevAttrs}><title>${tooltip}</title></circle>`
-    );
+    circles.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="rgba(251,146,60,0.3)" stroke="#f97316" stroke-width="1.5"${prevAttrs}><title>${tooltip}</title></circle>`);
   }
   return { svgContent: svgContent + (circles.length ? '\n' + circles.join('\n') : ''), visibleCount: circles.length };
 }
@@ -115,17 +113,16 @@ function buildGhostData(mol, movedVisibleIds, prevCoords, cx, cy, cellW, cellH) 
 function buildRejectReason(candidateAudit, incumbentAudit) {
   if (!candidateAudit || !incumbentAudit) return 'Did not improve over current best.';
 
-  const delta = (key, fallback = 0) =>
-    (candidateAudit[key] ?? fallback) - (incumbentAudit[key] ?? fallback);
+  const delta = (key, fallback = 0) => (candidateAudit[key] ?? fallback) - (incumbentAudit[key] ?? fallback);
 
   const fmt = (a, b) => `${a} → ${b}`;
 
   const dOverlaps = delta('severeOverlapCount');
-  const dFail     = delta('bondLengthFailureCount');
-  const dDev      = delta('meanBondLengthDeviation');
-  const dRead     = delta('ringSubstituentReadabilityFailureCount');
-  const dInward   = delta('inwardRingSubstituentCount');
-  const dLabel    = delta('labelOverlapCount');
+  const dFail = delta('bondLengthFailureCount');
+  const dDev = delta('meanBondLengthDeviation');
+  const dRead = delta('ringSubstituentReadabilityFailureCount');
+  const dInward = delta('inwardRingSubstituentCount');
+  const dLabel = delta('labelOverlapCount');
 
   const worse = [];
   const better = [];
@@ -136,7 +133,10 @@ function buildRejectReason(candidateAudit, incumbentAudit) {
   if (dFail > 0) worse.push(`+${dFail} bond failure${dFail !== 1 ? 's' : ''} (${fmt(incumbentAudit.bondLengthFailureCount ?? 0, candidateAudit.bondLengthFailureCount ?? 0)})`);
   else if (dFail < 0) better.push(`bond fails ${fmt(incumbentAudit.bondLengthFailureCount ?? 0, candidateAudit.bondLengthFailureCount ?? 0)}`);
 
-  if (dRead > 0) worse.push(`+${dRead} ring readability failure${dRead !== 1 ? 's' : ''} (${fmt(incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0, candidateAudit.ringSubstituentReadabilityFailureCount ?? 0)})`);
+  if (dRead > 0)
+    worse.push(
+      `+${dRead} ring readability failure${dRead !== 1 ? 's' : ''} (${fmt(incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0, candidateAudit.ringSubstituentReadabilityFailureCount ?? 0)})`
+    );
   else if (dRead < 0) better.push(`ring readability ${fmt(incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0, candidateAudit.ringSubstituentReadabilityFailureCount ?? 0)}`);
 
   if (dInward > 0) worse.push(`+${dInward} inward substituent${dInward !== 1 ? 's' : ''} (${fmt(incumbentAudit.inwardRingSubstituentCount ?? 0, candidateAudit.inwardRingSubstituentCount ?? 0)})`);
@@ -275,9 +275,7 @@ const server = http.createServer((req, res) => {
         renderStep(mol, snap.coords, null);
       }
       // Strip internal fields (prefixed _) before sending to client.
-      const stepMetadata = snap.stepMetadata
-        ? Object.fromEntries(Object.entries(snap.stepMetadata).filter(([k]) => !k.startsWith('_')))
-        : {};
+      const stepMetadata = snap.stepMetadata ? Object.fromEntries(Object.entries(snap.stepMetadata).filter(([k]) => !k.startsWith('_'))) : {};
       const meta = result.metadata;
       steps.push({
         label: snap.label,

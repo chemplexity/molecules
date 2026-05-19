@@ -1159,9 +1159,7 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
     const atomBond = mol.getBond(atom.id, parent.id);
     const parentHeavyNeighbors = parent.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     const parentHasTrigonalEditedGeometry =
-      _reactionPreviewEditedProductAtomIds.has(parent.id) &&
-      parentHeavyNeighbors.length === 3 &&
-      parentHeavyNeighbors.some(nb => (mol.getBond(parent.id, nb.id)?.properties.order ?? 1) >= 2);
+      _reactionPreviewEditedProductAtomIds.has(parent.id) && parentHeavyNeighbors.length === 3 && parentHeavyNeighbors.some(nb => (mol.getBond(parent.id, nb.id)?.properties.order ?? 1) >= 2);
     if (parentHasTrigonalEditedGeometry) {
       continue;
     }
@@ -1177,9 +1175,7 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
     const lostReactantNeighbors = reactantParent
       ? reactantParent
           .getNeighbors(mol)
-          .filter(
-            nb => _reactionPreviewReactantAtomIds.has(nb.id) && nb.id !== parentSourceId && nb.name !== 'H' && nb.x != null && nb.y != null && !mappedSiblingSourceIds.has(nb.id)
-          )
+          .filter(nb => _reactionPreviewReactantAtomIds.has(nb.id) && nb.id !== parentSourceId && nb.name !== 'H' && nb.x != null && nb.y != null && !mappedSiblingSourceIds.has(nb.id))
       : [];
     const siblings = parent.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.id !== atom.id && nb.name !== 'H' && nb.x != null);
     const carbonylLikeParent = siblings.some(sibling => {

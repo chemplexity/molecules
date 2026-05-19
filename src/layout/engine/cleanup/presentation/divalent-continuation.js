@@ -655,13 +655,25 @@ export function runDivalentContinuationTidy(layoutGraph, inputCoords, options = 
 export function runTerminalAlkeneContinuationRelief(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const frozenAtomIds = options.frozenAtomIds ?? null;
-  const baseAudit = auditLayout(layoutGraph, inputCoords, { bondLength });
-  let bestCandidate = null;
+  const descriptors = [];
   for (const centerAtomId of inputCoords.keys()) {
     const descriptor = terminalAlkeneContinuationDescriptor(layoutGraph, inputCoords, centerAtomId, frozenAtomIds);
     if (!descriptor) {
       continue;
     }
+    descriptors.push(descriptor);
+  }
+  if (descriptors.length === 0) {
+    return {
+      coords: inputCoords,
+      nudges: 0,
+      changed: false
+    };
+  }
+
+  const baseAudit = auditLayout(layoutGraph, inputCoords, { bondLength });
+  let bestCandidate = null;
+  for (const descriptor of descriptors) {
     for (const rotation of TERMINAL_ALKENE_PARENT_ROTATIONS) {
       const parentRotatedCoords = rotateAtomIdsAroundAtom(inputCoords, descriptor.parentSubtreeAtomIds, descriptor.grandParentAtomId, rotation);
       const candidateCoords = parentRotatedCoords ? restoreTerminalAlkeneLeafAngle(parentRotatedCoords, descriptor) : null;

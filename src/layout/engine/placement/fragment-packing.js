@@ -86,8 +86,7 @@ function compareIonicHubCandidates(firstPlacement, secondPlacement) {
 }
 
 function resolvePrincipalFragment(componentPlacements) {
-  const anchoredPrincipal =
-    componentPlacements.find(placement => placement.role === 'principal' && placement.anchored) ?? componentPlacements.find(placement => placement.anchored) ?? null;
+  const anchoredPrincipal = componentPlacements.find(placement => placement.role === 'principal' && placement.anchored) ?? componentPlacements.find(placement => placement.anchored) ?? null;
   if (anchoredPrincipal) {
     return anchoredPrincipal;
   }
@@ -218,11 +217,19 @@ export function packComponentPlacements(componentPlacements, bondLength, policy 
   if (anchoredBounds.length > 0) {
     if (packingMode === 'principal-below') {
       let minY = anchoredBounds[0].minY;
-      for (let i = 1; i < anchoredBounds.length; i++) { if (anchoredBounds[i].minY < minY) { minY = anchoredBounds[i].minY; } }
+      for (let i = 1; i < anchoredBounds.length; i++) {
+        if (anchoredBounds[i].minY < minY) {
+          minY = anchoredBounds[i].minY;
+        }
+      }
       cursorY = minY - gap;
     } else {
       let maxX = anchoredBounds[0].maxX;
-      for (let i = 1; i < anchoredBounds.length; i++) { if (anchoredBounds[i].maxX > maxX) { maxX = anchoredBounds[i].maxX; } }
+      for (let i = 1; i < anchoredBounds.length; i++) {
+        if (anchoredBounds[i].maxX > maxX) {
+          maxX = anchoredBounds[i].maxX;
+        }
+      }
       cursorX = maxX + gap;
     }
   }

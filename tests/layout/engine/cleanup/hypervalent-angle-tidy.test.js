@@ -2,10 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../../src/io/smiles.js';
-import {
-  measureOrthogonalHypervalentDeviation,
-  runHypervalentAngleTidy
-} from '../../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
+import { measureOrthogonalHypervalentDeviation, runHypervalentAngleTidy } from '../../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
 import { angleOf, angularDifference, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
@@ -16,9 +13,7 @@ function angleAt(coords, centerAtomId, ligandAtomId) {
 
 function assertOrthogonalCross(angles) {
   const sortedAngles = [...angles].map(angle => ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)).sort((first, second) => first - second);
-  const deltas = sortedAngles.map(
-    (angle, index) => ((sortedAngles[(index + 1) % sortedAngles.length] - angle) + Math.PI * 2) % (Math.PI * 2)
-  );
+  const deltas = sortedAngles.map((angle, index) => (sortedAngles[(index + 1) % sortedAngles.length] - angle + Math.PI * 2) % (Math.PI * 2));
   for (const delta of deltas) {
     assert.ok(Math.abs(delta - Math.PI / 2) < 1e-6);
   }
@@ -63,7 +58,7 @@ function seedTetraarylSilaneCoords(graph, centerAtomId, ligandAnglesByAtomId) {
     const ringCenter = pointAt(ligandPosition, ligandAngle, bondLength);
     for (let index = 0; index < ring.atomIds.length; index++) {
       const atomId = ring.atomIds[index];
-      const vertexAngle = ligandAngle + Math.PI + ((index - ligandIndex) * Math.PI / 3);
+      const vertexAngle = ligandAngle + Math.PI + ((index - ligandIndex) * Math.PI) / 3;
       coords.set(atomId, pointAt(ringCenter, vertexAngle, bondLength));
     }
   }
@@ -83,12 +78,7 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
     ]);
 
     const result = runHypervalentAngleTidy(graph, coords);
-    const ligandAngles = [
-      angleAt(result.coords, 'P2', 'C1'),
-      angleAt(result.coords, 'P2', 'O3'),
-      angleAt(result.coords, 'P2', 'O4'),
-      angleAt(result.coords, 'P2', 'O5')
-    ];
+    const ligandAngles = [angleAt(result.coords, 'P2', 'C1'), angleAt(result.coords, 'P2', 'O3'), angleAt(result.coords, 'P2', 'O4'), angleAt(result.coords, 'P2', 'O5')];
 
     assert.ok(result.nudges >= 3);
     assertOrthogonalCross(ligandAngles);
@@ -96,12 +86,16 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
 
   it('squares tetraaryl silane ligands into a perfect orthogonal cross', () => {
     const graph = createLayoutGraph(parseSMILES('c1ccc([Si](c2ccccc2)(c2ccccc2)c2ccccc2)cc1'), { suppressH: true });
-    const coords = seedTetraarylSilaneCoords(graph, 'Si5', new Map([
-      ['C4', Math.PI],
-      ['C6', -Math.PI / 2],
-      ['C12', 0],
-      ['C18', 102 * (Math.PI / 180)]
-    ]));
+    const coords = seedTetraarylSilaneCoords(
+      graph,
+      'Si5',
+      new Map([
+        ['C4', Math.PI],
+        ['C6', -Math.PI / 2],
+        ['C12', 0],
+        ['C18', 102 * (Math.PI / 180)]
+      ])
+    );
 
     assert.ok(measureOrthogonalHypervalentDeviation(graph, coords) > 0.01);
 

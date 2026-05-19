@@ -46,11 +46,7 @@ function bondOrderBetween(layoutGraph, firstAtomId, secondAtomId) {
  * @returns {boolean} True when one single-bond ligand is hydrogen.
  */
 function hasExplicitHydrogenSingleLigand(layoutGraph, crossLikeCenter) {
-  return Boolean(
-    layoutGraph
-    && crossLikeCenter
-    && crossLikeCenter.singleNeighborIds.some(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element === 'H')
-  );
+  return Boolean(layoutGraph && crossLikeCenter && crossLikeCenter.singleNeighborIds.some(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element === 'H'));
 }
 
 /**
@@ -74,10 +70,10 @@ function isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
 
   const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, atomId);
   return (
-    crossLikeCenter != null
-    && !hasExplicitHydrogenSingleLigand(layoutGraph, crossLikeCenter)
-    && crossLikeCenter.singleNeighborIds.includes(previousAtomId)
-    && crossLikeCenter.singleNeighborIds.includes(nextAtomId)
+    crossLikeCenter != null &&
+    !hasExplicitHydrogenSingleLigand(layoutGraph, crossLikeCenter) &&
+    crossLikeCenter.singleNeighborIds.includes(previousAtomId) &&
+    crossLikeCenter.singleNeighborIds.includes(nextAtomId)
   );
 }
 
@@ -104,12 +100,9 @@ function isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, neighborAtomId)
     return false;
   }
 
-  return (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []).some(candidateBond => (
-    candidateBond !== bond
-    && candidateBond.kind === 'covalent'
-    && !candidateBond.aromatic
-    && (candidateBond.order ?? 1) >= 2
-  ));
+  return (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []).some(
+    candidateBond => candidateBond !== bond && candidateBond.kind === 'covalent' && !candidateBond.aromatic && (candidateBond.order ?? 1) >= 2
+  );
 }
 
 /**
@@ -127,18 +120,11 @@ function isConjugatedHeteroBackboneCentre(layoutGraph, previousAtomId, atomId, n
     return false;
   }
   const atom = layoutGraph.atoms.get(atomId);
-  if (
-    !atom
-    || atom.aromatic
-    || !CONJUGATED_BACKBONE_HETERO_ELEMENTS.has(atom.element)
-    || atom.heavyDegree !== 2
-    || layoutGraph.ringAtomIdSet.has(atomId)
-  ) {
+  if (!atom || atom.aromatic || !CONJUGATED_BACKBONE_HETERO_ELEMENTS.has(atom.element) || atom.heavyDegree !== 2 || layoutGraph.ringAtomIdSet.has(atomId)) {
     return false;
   }
 
-  return isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, previousAtomId)
-    || isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, nextAtomId);
+  return isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, previousAtomId) || isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, nextAtomId);
 }
 
 /**
@@ -331,11 +317,7 @@ function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomI
 
   return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
     .map(bond => (bond.a === atomId ? bond.b : bond.a))
-    .some(neighborAtomId => (
-      neighborAtomId !== previousAtomId
-      && neighborAtomId !== nextAtomId
-      && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId)
-    ));
+    .some(neighborAtomId => neighborAtomId !== previousAtomId && neighborAtomId !== nextAtomId && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId));
 }
 
 /**
@@ -373,14 +355,14 @@ function terminalFluorineLeafCount(layoutGraph, atomId) {
 function isFullySubstitutedFluorinatedCarbon(layoutGraph, atomId) {
   const atom = atomId == null ? null : layoutGraph?.atoms.get(atomId);
   return Boolean(
-    layoutGraph
-    && atom
-    && atom.element === 'C'
-    && !atom.aromatic
-    && atom.heavyDegree === 4
-    && atom.degree === 4
-    && !layoutGraph.ringAtomIdSet.has(atomId)
-    && terminalFluorineLeafCount(layoutGraph, atomId) >= 2
+    layoutGraph &&
+    atom &&
+    atom.element === 'C' &&
+    !atom.aromatic &&
+    atom.heavyDegree === 4 &&
+    atom.degree === 4 &&
+    !layoutGraph.ringAtomIdSet.has(atomId) &&
+    terminalFluorineLeafCount(layoutGraph, atomId) >= 2
   );
 }
 
@@ -397,9 +379,7 @@ function isFullySubstitutedFluorinatedCarbon(layoutGraph, atomId) {
  * @returns {boolean} True when the center should avoid a square-grid backbone turn.
  */
 function isInternalFluorinatedProjectedRunCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
-  return isFullySubstitutedFluorinatedCarbon(layoutGraph, previousAtomId)
-    && isFullySubstitutedFluorinatedCarbon(layoutGraph, atomId)
-    && isFullySubstitutedFluorinatedCarbon(layoutGraph, nextAtomId);
+  return isFullySubstitutedFluorinatedCarbon(layoutGraph, previousAtomId) && isFullySubstitutedFluorinatedCarbon(layoutGraph, atomId) && isFullySubstitutedFluorinatedCarbon(layoutGraph, nextAtomId);
 }
 
 /**
@@ -419,11 +399,7 @@ function terminalCarbonLeafCount(layoutGraph, atomId) {
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (
-      neighborAtom?.element === 'C'
-      && neighborAtom.heavyDegree === 1
-      && !layoutGraph.ringAtomIdSet.has(neighborAtomId)
-    ) {
+    if (neighborAtom?.element === 'C' && neighborAtom.heavyDegree === 1 && !layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       carbonLeafCount++;
     }
   }
@@ -520,15 +496,15 @@ function hasCrossLikeHypervalentSingleNeighbor(layoutGraph, atomId) {
 function isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
   return Boolean(
-    layoutGraph
-    && atom
-    && atom.element === 'C'
-    && !atom.aromatic
-    && atom.heavyDegree === 4
-    && atom.degree === 4
-    && !layoutGraph.ringAtomIdSet.has(atomId)
-    && terminalCarbonLeafCount(layoutGraph, atomId) >= 3
-    && hasCrossLikeHypervalentSingleNeighbor(layoutGraph, atomId)
+    layoutGraph &&
+    atom &&
+    atom.element === 'C' &&
+    !atom.aromatic &&
+    atom.heavyDegree === 4 &&
+    atom.degree === 4 &&
+    !layoutGraph.ringAtomIdSet.has(atomId) &&
+    terminalCarbonLeafCount(layoutGraph, atomId) >= 3 &&
+    hasCrossLikeHypervalentSingleNeighbor(layoutGraph, atomId)
   );
 }
 
@@ -544,15 +520,15 @@ function isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId) {
 function isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
   return Boolean(
-    layoutGraph
-    && atom
-    && atom.element === 'C'
-    && !atom.aromatic
-    && atom.heavyDegree === 4
-    && atom.degree === 4
-    && !layoutGraph.ringAtomIdSet.has(atomId)
-    && compactProjectedTerminalSubstituentCount(layoutGraph, atomId) >= 2
-    && hasLinearSingleBondNeighbor(layoutGraph, atomId)
+    layoutGraph &&
+    atom &&
+    atom.element === 'C' &&
+    !atom.aromatic &&
+    atom.heavyDegree === 4 &&
+    atom.degree === 4 &&
+    !layoutGraph.ringAtomIdSet.has(atomId) &&
+    compactProjectedTerminalSubstituentCount(layoutGraph, atomId) >= 2 &&
+    hasLinearSingleBondNeighbor(layoutGraph, atomId)
   );
 }
 
@@ -580,30 +556,19 @@ function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomI
     return false;
   }
   const atom = layoutGraph.atoms.get(atomId);
-  if (
-    !supportsProjectedTetrahedralGeometry(layoutGraph, atomId)
-    || bondOrderBetween(layoutGraph, previousAtomId, atomId) !== 1
-    || bondOrderBetween(layoutGraph, atomId, nextAtomId) !== 1
-  ) {
+  if (!supportsProjectedTetrahedralGeometry(layoutGraph, atomId) || bondOrderBetween(layoutGraph, previousAtomId, atomId) !== 1 || bondOrderBetween(layoutGraph, atomId, nextAtomId) !== 1) {
     return false;
   }
 
   if (atom?.element === 'C') {
     return (
-      (terminalFluorineLeafCount(layoutGraph, atomId) >= 2 && !isInternalFluorinatedProjectedRunCentre(layoutGraph, previousAtomId, atomId, nextAtomId))
-      || isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId)
-      || isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId)
+      (terminalFluorineLeafCount(layoutGraph, atomId) >= 2 && !isInternalFluorinatedProjectedRunCentre(layoutGraph, previousAtomId, atomId, nextAtomId)) ||
+      isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId) ||
+      isHypervalentAdjacentTerminalCarbonSlotCentre(layoutGraph, atomId)
     );
   }
 
-  return (
-    atom?.heavyDegree === 4
-    && atom.degree === 4
-    && (
-      PROJECTED_TETRAHEDRAL_GROUP14_ELEMENTS.has(atom.element)
-      || (atom.element === 'N' && (atom.charge ?? 0) > 0)
-    )
-  );
+  return atom?.heavyDegree === 4 && atom.degree === 4 && (PROJECTED_TETRAHEDRAL_GROUP14_ELEMENTS.has(atom.element) || (atom.element === 'N' && (atom.charge ?? 0) > 0));
 }
 
 /**
@@ -613,9 +578,7 @@ function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomI
  * @returns {number} Outgoing step angle in radians.
  */
 function projectedTetrahedralBackboneStepAngle(previousStepAngle, fallbackTurnSign) {
-  const turnSign = Math.abs(previousStepAngle) > ANGLE_EPSILON
-    ? -Math.sign(previousStepAngle)
-    : fallbackTurnSign;
+  const turnSign = Math.abs(previousStepAngle) > ANGLE_EPSILON ? -Math.sign(previousStepAngle) : fallbackTurnSign;
   return wrapAngle(previousStepAngle + turnSign * PROJECTED_TETRAHEDRAL_BACKBONE_TURN);
 }
 
@@ -627,10 +590,8 @@ function projectedTetrahedralBackboneStepAngle(previousStepAngle, fallbackTurnSi
  * @returns {number} Outgoing step angle in radians.
  */
 function regularZigzagBackboneStepAngle(previousStepAngle, fallbackTurnSign) {
-  const turnSign = Math.abs(previousStepAngle) > ANGLE_EPSILON
-    ? -Math.sign(previousStepAngle)
-    : fallbackTurnSign;
-  return wrapAngle(previousStepAngle + turnSign * TRIGONAL_TARGET_ANGLE / 2);
+  const turnSign = Math.abs(previousStepAngle) > ANGLE_EPSILON ? -Math.sign(previousStepAngle) : fallbackTurnSign;
+  return wrapAngle(previousStepAngle + (turnSign * TRIGONAL_TARGET_ANGLE) / 2);
 }
 
 /**
@@ -651,19 +612,15 @@ function isSaturatedBackboneZigzagCentre(layoutGraph, previousAtomId, atomId, ne
   }
 
   const atom = layoutGraph.atoms.get(atomId);
-  if (
-    !atom
-    || atom.element !== 'C'
-    || atom.aromatic
-    || atom.heavyDegree !== 2
-    || layoutGraph.ringAtomIdSet.has(atomId)
-  ) {
+  if (!atom || atom.element !== 'C' || atom.aromatic || atom.heavyDegree !== 2 || layoutGraph.ringAtomIdSet.has(atomId)) {
     return false;
   }
 
-  return bondOrderBetween(layoutGraph, previousAtomId, atomId) === 1
-    && bondOrderBetween(layoutGraph, atomId, nextAtomId) === 1
-    && (hasSp2Bond(layoutGraph, previousAtomId) || hasSp2Bond(layoutGraph, nextAtomId));
+  return (
+    bondOrderBetween(layoutGraph, previousAtomId, atomId) === 1 &&
+    bondOrderBetween(layoutGraph, atomId, nextAtomId) === 1 &&
+    (hasSp2Bond(layoutGraph, previousAtomId) || hasSp2Bond(layoutGraph, nextAtomId))
+  );
 }
 
 /**
@@ -727,18 +684,14 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
     const currentTurn = wrapAngle(nextDirection - previousDirection);
     const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
     const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
-    const sideRootAtomId = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
-      .map(bond => (bond.a === centerAtomId ? bond.b : bond.a))
-      .find(neighborAtomId => {
-        const bondOrder = bondOrderBetween(layoutGraph, centerAtomId, neighborAtomId);
-        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-        return neighborAtomId !== previousAtomId
-          && neighborAtomId !== nextAtomId
-          && !!neighborAtom
-          && neighborAtom.element !== 'H'
-          && bondOrder === 1
-          && coords.has(neighborAtomId);
-      }) ?? null;
+    const sideRootAtomId =
+      (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
+        .map(bond => (bond.a === centerAtomId ? bond.b : bond.a))
+        .find(neighborAtomId => {
+          const bondOrder = bondOrderBetween(layoutGraph, centerAtomId, neighborAtomId);
+          const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+          return neighborAtomId !== previousAtomId && neighborAtomId !== nextAtomId && !!neighborAtom && neighborAtom.element !== 'H' && bondOrder === 1 && coords.has(neighborAtomId);
+        }) ?? null;
     const candidateTurnSigns = stereoBonds.length > 0 ? [currentTurnSign, -currentTurnSign] : [currentTurnSign];
     const sideRootAtomIds = sideRootAtomId ? collectSideAtomIds(layoutGraph, sideRootAtomId, centerAtomId) : null;
     let bestCandidate = null;
@@ -759,12 +712,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
       if (sideRootAtomId && sideRootAtomIds && candidateCoords.has(sideRootAtomId)) {
         const targetAngle = angleOf(sub(centerPosition, centroid([previousPosition, candidateCoords.get(nextAtomId)])));
         const currentRootAngle = angleOf(sub(candidateCoords.get(sideRootAtomId), centerPosition));
-        rotateSubtreeAroundCenter(
-          candidateCoords,
-          sideRootAtomIds,
-          centerPosition,
-          wrapAngle(targetAngle - currentRootAngle)
-        );
+        rotateSubtreeAroundCenter(candidateCoords, sideRootAtomIds, centerPosition, wrapAngle(targetAngle - currentRootAngle));
       }
 
       const candidate = {
@@ -1020,18 +968,20 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
       continue;
     }
     const baseAngle = angleOf(sub(primaryPosition, centerPosition));
-    const assignments = rootBonds.map(bond => {
-      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
-      const rootPosition = coords.get(rootAtomId);
-      if (!rootPosition) {
-        return null;
-      }
-      return {
-        rootAtomId,
-        currentAngle: angleOf(sub(rootPosition, centerPosition)),
-        movedAtomIds: collectSideAtomIds(layoutGraph, rootAtomId, atom.id)
-      };
-    }).filter(Boolean);
+    const assignments = rootBonds
+      .map(bond => {
+        const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+        const rootPosition = coords.get(rootAtomId);
+        if (!rootPosition) {
+          return null;
+        }
+        return {
+          rootAtomId,
+          currentAngle: angleOf(sub(rootPosition, centerPosition)),
+          movedAtomIds: collectSideAtomIds(layoutGraph, rootAtomId, atom.id)
+        };
+      })
+      .filter(Boolean);
     if (assignments.length === 0) {
       continue;
     }
@@ -1042,12 +992,7 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
       const excludedAtomIds = new Set([atom.id, ...assignment.movedAtomIds]);
       const candidateTargetAngles = [baseAngle + TRIGONAL_TARGET_ANGLE, baseAngle - TRIGONAL_TARGET_ANGLE].map(targetAngle => {
         const candidateCoords = cloneCoords(coords);
-        rotateSubtreeAroundCenter(
-          candidateCoords,
-          assignment.movedAtomIds,
-          centerPosition,
-          wrapAngle(targetAngle - assignment.currentAngle)
-        );
+        rotateSubtreeAroundCenter(candidateCoords, assignment.movedAtomIds, centerPosition, wrapAngle(targetAngle - assignment.currentAngle));
         return {
           targetAngle,
           rotationMagnitude: Math.abs(wrapAngle(targetAngle - assignment.currentAngle)),
@@ -1064,25 +1009,14 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
     } else {
       const positiveTarget = baseAngle + TRIGONAL_TARGET_ANGLE;
       const negativeTarget = baseAngle - TRIGONAL_TARGET_ANGLE;
-      const directCost =
-        Math.abs(wrapAngle(assignments[0].currentAngle - positiveTarget))
-        + Math.abs(wrapAngle(assignments[1].currentAngle - negativeTarget));
-      const swappedCost =
-        Math.abs(wrapAngle(assignments[0].currentAngle - negativeTarget))
-        + Math.abs(wrapAngle(assignments[1].currentAngle - positiveTarget));
-      targetAngles = directCost <= swappedCost
-        ? [positiveTarget, negativeTarget]
-        : [negativeTarget, positiveTarget];
+      const directCost = Math.abs(wrapAngle(assignments[0].currentAngle - positiveTarget)) + Math.abs(wrapAngle(assignments[1].currentAngle - negativeTarget));
+      const swappedCost = Math.abs(wrapAngle(assignments[0].currentAngle - negativeTarget)) + Math.abs(wrapAngle(assignments[1].currentAngle - positiveTarget));
+      targetAngles = directCost <= swappedCost ? [positiveTarget, negativeTarget] : [negativeTarget, positiveTarget];
     }
 
     for (let index = 0; index < assignments.length; index++) {
       const assignment = assignments[index];
-      rotateSubtreeAroundCenter(
-        coords,
-        assignment.movedAtomIds,
-        centerPosition,
-        wrapAngle(targetAngles[index] - assignment.currentAngle)
-      );
+      rotateSubtreeAroundCenter(coords, assignment.movedAtomIds, centerPosition, wrapAngle(targetAngles[index] - assignment.currentAngle));
     }
   }
 
@@ -1110,13 +1044,13 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
 
   for (const atom of layoutGraph.atoms.values()) {
     if (
-      (targetAtomIdSet != null && !targetAtomIdSet.has(atom.id))
-      || !coords.has(atom.id)
-      || atom.element === 'H'
-      || atom.element !== 'C'
-      || atom.aromatic
-      || atom.heavyDegree !== 3
-      || layoutGraph.ringAtomIdSet.has(atom.id)
+      (targetAtomIdSet != null && !targetAtomIdSet.has(atom.id)) ||
+      !coords.has(atom.id) ||
+      atom.element === 'H' ||
+      atom.element !== 'C' ||
+      atom.aromatic ||
+      atom.heavyDegree !== 3 ||
+      layoutGraph.ringAtomIdSet.has(atom.id)
     ) {
       continue;
     }
@@ -1157,18 +1091,20 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
       continue;
     }
     const baseAngle = angleOf(sub(primaryPosition, centerPosition));
-    const assignments = rootBonds.map(bond => {
-      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
-      const rootPosition = coords.get(rootAtomId);
-      if (!rootPosition) {
-        return null;
-      }
-      return {
-        rootAtomId,
-        currentAngle: angleOf(sub(rootPosition, centerPosition)),
-        movedAtomIds: collectSideAtomIds(layoutGraph, rootAtomId, atom.id)
-      };
-    }).filter(Boolean);
+    const assignments = rootBonds
+      .map(bond => {
+        const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+        const rootPosition = coords.get(rootAtomId);
+        if (!rootPosition) {
+          return null;
+        }
+        return {
+          rootAtomId,
+          currentAngle: angleOf(sub(rootPosition, centerPosition)),
+          movedAtomIds: collectSideAtomIds(layoutGraph, rootAtomId, atom.id)
+        };
+      })
+      .filter(Boolean);
     if (assignments.length === 0) {
       continue;
     }
@@ -1180,25 +1116,14 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
     } else {
       const positiveTarget = baseAngle + TRIGONAL_TARGET_ANGLE;
       const negativeTarget = baseAngle - TRIGONAL_TARGET_ANGLE;
-      const directCost =
-        Math.abs(wrapAngle(assignments[0].currentAngle - positiveTarget))
-        + Math.abs(wrapAngle(assignments[1].currentAngle - negativeTarget));
-      const swappedCost =
-        Math.abs(wrapAngle(assignments[0].currentAngle - negativeTarget))
-        + Math.abs(wrapAngle(assignments[1].currentAngle - positiveTarget));
-      targetAngles = directCost <= swappedCost
-        ? [positiveTarget, negativeTarget]
-        : [negativeTarget, positiveTarget];
+      const directCost = Math.abs(wrapAngle(assignments[0].currentAngle - positiveTarget)) + Math.abs(wrapAngle(assignments[1].currentAngle - negativeTarget));
+      const swappedCost = Math.abs(wrapAngle(assignments[0].currentAngle - negativeTarget)) + Math.abs(wrapAngle(assignments[1].currentAngle - positiveTarget));
+      targetAngles = directCost <= swappedCost ? [positiveTarget, negativeTarget] : [negativeTarget, positiveTarget];
     }
 
     for (let index = 0; index < assignments.length; index++) {
       const assignment = assignments[index];
-      rotateSubtreeAroundCenter(
-        coords,
-        assignment.movedAtomIds,
-        centerPosition,
-        wrapAngle(targetAngles[index] - assignment.currentAngle)
-      );
+      rotateSubtreeAroundCenter(coords, assignment.movedAtomIds, centerPosition, wrapAngle(targetAngles[index] - assignment.currentAngle));
     }
   }
 
@@ -1221,14 +1146,7 @@ function realignConjugatedNitrogenSingleBondRoots(layoutGraph, coords, backbone 
   const backboneAtomIds = new Set(backbone);
 
   for (const atom of layoutGraph.atoms.values()) {
-    if (
-      !coords.has(atom.id)
-      || atom.element !== 'N'
-      || atom.aromatic
-      || atom.heavyDegree !== 3
-      || atom.degree !== 3
-      || layoutGraph.ringAtomIdSet.has(atom.id)
-    ) {
+    if (!coords.has(atom.id) || atom.element !== 'N' || atom.aromatic || atom.heavyDegree !== 3 || atom.degree !== 3 || layoutGraph.ringAtomIdSet.has(atom.id)) {
       continue;
     }
 
@@ -1246,8 +1164,7 @@ function realignConjugatedNitrogenSingleBondRoots(layoutGraph, coords, backbone 
 
     const rootBonds = heavyBonds.filter(bond => {
       const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
-      return !(backboneAtomIds.has(atom.id) && backboneAtomIds.has(rootAtomId))
-        && isExactVisibleTrigonalBisectorEligible(layoutGraph, atom.id, rootAtomId);
+      return !(backboneAtomIds.has(atom.id) && backboneAtomIds.has(rootAtomId)) && isExactVisibleTrigonalBisectorEligible(layoutGraph, atom.id, rootAtomId);
     });
     if (rootBonds.length !== 1) {
       continue;
@@ -1267,12 +1184,7 @@ function realignConjugatedNitrogenSingleBondRoots(layoutGraph, coords, backbone 
 
     const targetAngle = angleOf(sub(centerPosition, centroid(otherPositions)));
     const currentAngle = angleOf(sub(rootPosition, centerPosition));
-    rotateSubtreeAroundCenter(
-      coords,
-      collectSideAtomIds(layoutGraph, rootAtomId, atom.id),
-      centerPosition,
-      wrapAngle(targetAngle - currentAngle)
-    );
+    rotateSubtreeAroundCenter(coords, collectSideAtomIds(layoutGraph, rootAtomId, atom.id), centerPosition, wrapAngle(targetAngle - currentAngle));
   }
 
   return coords;
@@ -1316,9 +1228,7 @@ function realignTerminalMultipleBondLeaves(layoutGraph, coords, bondLength) {
 
     const leafBond = terminalMultipleBondLeafBonds[0];
     const leafAtomId = leafBond.a === atom.id ? leafBond.b : leafBond.a;
-    const otherNeighborIds = heavyBonds
-      .map(bond => (bond.a === atom.id ? bond.b : bond.a))
-      .filter(neighborAtomId => neighborAtomId !== leafAtomId);
+    const otherNeighborIds = heavyBonds.map(bond => (bond.a === atom.id ? bond.b : bond.a)).filter(neighborAtomId => neighborAtomId !== leafAtomId);
     if (otherNeighborIds.length !== 2) {
       continue;
     }
@@ -1351,24 +1261,14 @@ function realignTerminalMultipleBondLeaves(layoutGraph, coords, bondLength) {
  */
 function isTerminalHalogenBackboneLeaf(layoutGraph, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
-  if (
-    !atom
-    || !TERMINAL_HALOGEN_BACKBONE_LEAF_ELEMENTS.has(atom.element)
-    || atom.heavyDegree !== 1
-    || layoutGraph.ringAtomIdSet.has(atomId)
-  ) {
+  if (!atom || !TERMINAL_HALOGEN_BACKBONE_LEAF_ELEMENTS.has(atom.element) || atom.heavyDegree !== 1 || layoutGraph.ringAtomIdSet.has(atomId)) {
     return false;
   }
 
-  const neighborAtomId = (layoutGraph.bondsByAtomId.get(atomId) ?? [])
-    .map(bond => (bond.a === atomId ? bond.b : bond.a))
-    .find(candidateAtomId => layoutGraph.atoms.get(candidateAtomId)?.element !== 'H') ?? null;
+  const neighborAtomId =
+    (layoutGraph.bondsByAtomId.get(atomId) ?? []).map(bond => (bond.a === atomId ? bond.b : bond.a)).find(candidateAtomId => layoutGraph.atoms.get(candidateAtomId)?.element !== 'H') ?? null;
   const neighborAtom = neighborAtomId == null ? null : layoutGraph.atoms.get(neighborAtomId);
-  return Boolean(
-    neighborAtom
-    && neighborAtom.heavyDegree === 4
-    && supportsProjectedTetrahedralGeometry(layoutGraph, neighborAtomId)
-  );
+  return Boolean(neighborAtom && neighborAtom.heavyDegree === 4 && supportsProjectedTetrahedralGeometry(layoutGraph, neighborAtomId));
 }
 
 /**
@@ -1391,9 +1291,7 @@ function backboneCandidateAtomIds(layoutGraph, atomIdsToPlace) {
     return heavyAtomIds.size >= 2 ? heavyAtomIds : atomIdsToPlace;
   }
 
-  const structuralAtomIds = new Set(
-    [...heavyAtomIds].filter(atomId => !isTerminalHalogenBackboneLeaf(layoutGraph, atomId))
-  );
+  const structuralAtomIds = new Set([...heavyAtomIds].filter(atomId => !isTerminalHalogenBackboneLeaf(layoutGraph, atomId)));
   return structuralAtomIds.size >= 2 ? structuralAtomIds : heavyAtomIds;
 }
 
@@ -1477,10 +1375,7 @@ function breadthFirstFarthest(adjacency, canonicalAtomRank, startAtomId, atomIds
   while (queueHead < queue.length) {
     const atomId = queue[queueHead++];
     const currentDistance = distance.get(atomId);
-    if (
-      currentDistance > distance.get(farthestAtomId) ||
-      (currentDistance === distance.get(farthestAtomId) && compareCanonicalAtomIds(atomId, farthestAtomId, canonicalAtomRank) < 0)
-    ) {
+    if (currentDistance > distance.get(farthestAtomId) || (currentDistance === distance.get(farthestAtomId) && compareCanonicalAtomIds(atomId, farthestAtomId, canonicalAtomRank) < 0)) {
       farthestAtomId = atomId;
     }
     if (isPreferredBackboneEndpoint(layoutGraph, adjacency, atomId, atomIdsToPlace)) {

@@ -292,9 +292,7 @@ function auditOrganometallicPlacement(layoutGraph, participantAtomIds, placement
   }
   return auditLayout(layoutGraph, placement.coords, {
     bondLength,
-    bondValidationClasses:
-      placement.bondValidationClasses
-      ?? buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds)
+    bondValidationClasses: placement.bondValidationClasses ?? buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds)
   });
 }
 
@@ -327,10 +325,7 @@ function isAcceptablePolyoxoRescuePlacement(candidateAudit, incumbentAudit) {
   if (candidateAudit.maxBondLengthDeviation > incumbentAudit.maxBondLengthDeviation + 1e-9) {
     return false;
   }
-  return candidateAudit.severeOverlapCount <= Math.max(
-    incumbentAudit.severeOverlapCount,
-    ORGANOMETALLIC_RESCUE_LIMITS.polyoxoRescueMaxSevereOverlapCount
-  );
+  return candidateAudit.severeOverlapCount <= Math.max(incumbentAudit.severeOverlapCount, ORGANOMETALLIC_RESCUE_LIMITS.polyoxoRescueMaxSevereOverlapCount);
 }
 
 function scoreClusterLigandPosition(position, existingCoords, frameworkCentroid, anchorIds) {
@@ -385,7 +380,7 @@ function placeDoubleAnchorClusterLigands(recordGroup, anchorIds, frameworkCoords
   const edgeVector = sub(secondAnchorPosition, firstAnchorPosition);
   const edgeLength = distance(firstAnchorPosition, secondAnchorPosition);
   const perpendicular = normalize(perpLeft(edgeVector));
-  const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - (edgeLength ** 2) / 4, 0));
+  const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - edgeLength ** 2 / 4, 0));
   const firstCandidate = add(midpoint, scale(perpendicular, offsetLength));
   const secondCandidate = add(midpoint, scale(perpendicular, -offsetLength));
   const orderedRecords = sortRecordsByCanonicalId(recordGroup);
@@ -533,13 +528,7 @@ function snapTerminalMetalTrigonalAnchors(layoutGraph, coords, metalAtomIds, bon
       continue;
     }
 
-    const targetRecords = targetableTrigonalMetalAnchorRecords(
-      layoutGraph,
-      anchorRecord.anchorAtomId,
-      metalAtomId,
-      primaryRecord.bond,
-      coords
-    );
+    const targetRecords = targetableTrigonalMetalAnchorRecords(layoutGraph, anchorRecord.anchorAtomId, metalAtomId, primaryRecord.bond, coords);
     if (targetRecords.length === 0 || targetRecords[0].atomId !== metalAtomId || targetRecords.length > 2) {
       continue;
     }
@@ -548,31 +537,32 @@ function snapTerminalMetalTrigonalAnchors(layoutGraph, coords, metalAtomIds, bon
     const primaryPosition = coords.get(primaryRecord.atomId);
     const baseAngle = angleOf(sub(primaryPosition, anchorPosition));
     const targetAngles = [baseAngle + TRIGONAL_ANCHOR_ANGLE, baseAngle - TRIGONAL_ANCHOR_ANGLE];
-    const assignments = targetRecords.length === 1
-      ? [{
-          record: targetRecords[0],
-          targetAngle: targetAngles.reduce((bestAngle, candidateAngle) => {
-            const currentAngle = angleOf(sub(coords.get(targetRecords[0].atomId), anchorPosition));
-            return angularDistance(candidateAngle, currentAngle) < angularDistance(bestAngle, currentAngle)
-              ? candidateAngle
-              : bestAngle;
-          }, targetAngles[0])
-        }]
-      : (() => {
-          const firstCurrentAngle = angleOf(sub(coords.get(targetRecords[0].atomId), anchorPosition));
-          const secondCurrentAngle = angleOf(sub(coords.get(targetRecords[1].atomId), anchorPosition));
-          const directCost = angularDistance(firstCurrentAngle, targetAngles[0]) + angularDistance(secondCurrentAngle, targetAngles[1]);
-          const swappedCost = angularDistance(firstCurrentAngle, targetAngles[1]) + angularDistance(secondCurrentAngle, targetAngles[0]);
-          return directCost <= swappedCost
-            ? [
-                { record: targetRecords[0], targetAngle: targetAngles[0] },
-                { record: targetRecords[1], targetAngle: targetAngles[1] }
-              ]
-            : [
-                { record: targetRecords[0], targetAngle: targetAngles[1] },
-                { record: targetRecords[1], targetAngle: targetAngles[0] }
-              ];
-        })();
+    const assignments =
+      targetRecords.length === 1
+        ? [
+            {
+              record: targetRecords[0],
+              targetAngle: targetAngles.reduce((bestAngle, candidateAngle) => {
+                const currentAngle = angleOf(sub(coords.get(targetRecords[0].atomId), anchorPosition));
+                return angularDistance(candidateAngle, currentAngle) < angularDistance(bestAngle, currentAngle) ? candidateAngle : bestAngle;
+              }, targetAngles[0])
+            }
+          ]
+        : (() => {
+            const firstCurrentAngle = angleOf(sub(coords.get(targetRecords[0].atomId), anchorPosition));
+            const secondCurrentAngle = angleOf(sub(coords.get(targetRecords[1].atomId), anchorPosition));
+            const directCost = angularDistance(firstCurrentAngle, targetAngles[0]) + angularDistance(secondCurrentAngle, targetAngles[1]);
+            const swappedCost = angularDistance(firstCurrentAngle, targetAngles[1]) + angularDistance(secondCurrentAngle, targetAngles[0]);
+            return directCost <= swappedCost
+              ? [
+                  { record: targetRecords[0], targetAngle: targetAngles[0] },
+                  { record: targetRecords[1], targetAngle: targetAngles[1] }
+                ]
+              : [
+                  { record: targetRecords[0], targetAngle: targetAngles[1] },
+                  { record: targetRecords[1], targetAngle: targetAngles[0] }
+                ];
+          })();
 
     for (const assignment of assignments) {
       const currentPosition = coords.get(assignment.record.atomId);
@@ -593,11 +583,12 @@ function shouldTryMetalFrameworkRescue(metalAtomIds, fragmentRecords, incumbentA
   if (metalAtomIds.length < ORGANOMETALLIC_RESCUE_LIMITS.frameworkMinMetalCount || fragmentRecords.length === 0) {
     return false;
   }
-  const allFragmentsSimple = fragmentRecords.every(record =>
-    record.atomIds.length <= ORGANOMETALLIC_RESCUE_LIMITS.maxLigandFragmentAtomCount
-    && record.anchorAtomIds.length === 1
-    && record.anchorMetalIds.length >= 1
-    && record.anchorMetalIds.length <= ORGANOMETALLIC_RESCUE_LIMITS.maxAnchorMetalCount
+  const allFragmentsSimple = fragmentRecords.every(
+    record =>
+      record.atomIds.length <= ORGANOMETALLIC_RESCUE_LIMITS.maxLigandFragmentAtomCount &&
+      record.anchorAtomIds.length === 1 &&
+      record.anchorMetalIds.length >= 1 &&
+      record.anchorMetalIds.length <= ORGANOMETALLIC_RESCUE_LIMITS.maxAnchorMetalCount
   );
   return allFragmentsSimple && fragmentRecords.some(record => record.anchorMetalIds.length === 2);
 }
@@ -772,14 +763,7 @@ function layoutOctahedralMetalClusterRescue(layoutGraph, participantAtomIds, met
   if (!oppositePairs) {
     return null;
   }
-  if (
-    fragmentRecords.some(record =>
-      record.atomIds.length !== 1 ||
-      record.anchorAtomIds.length !== 1 ||
-      record.anchorMetalIds.length === 0 ||
-      record.anchorMetalIds.length > 2
-    )
-  ) {
+  if (fragmentRecords.some(record => record.atomIds.length !== 1 || record.anchorAtomIds.length !== 1 || record.anchorMetalIds.length === 0 || record.anchorMetalIds.length > 2)) {
     return null;
   }
 
@@ -805,12 +789,7 @@ function layoutOctahedralMetalClusterRescue(layoutGraph, participantAtomIds, met
     const anchorIds = key.split('|').filter(Boolean);
     const orderedRecords = sortRecordsByCanonicalId(recordGroup);
     if (anchorIds.length === 1) {
-      const placements = placeSingleAnchorClusterLigands(
-        orderedRecords,
-        coords.get(anchorIds[0]),
-        frameworkCentroid,
-        bondLength
-      );
+      const placements = placeSingleAnchorClusterLigands(orderedRecords, coords.get(anchorIds[0]), frameworkCentroid, bondLength);
       for (const placement of placements) {
         coords.set(placement.atomId, placement.position);
       }
@@ -831,21 +810,16 @@ function layoutOctahedralMetalClusterRescue(layoutGraph, participantAtomIds, met
     const edgeDirection = scale(edgeVector, 1 / edgeLength);
     const firstNormal = normalize(perpLeft(edgeVector));
     const secondNormal = scale(firstNormal, -1);
-    const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - (edgeLength ** 2) / 4, 0));
+    const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - edgeLength ** 2 / 4, 0));
     const firstCandidate = add(midpoint, scale(firstNormal, offsetLength));
     const secondCandidate = add(midpoint, scale(secondNormal, offsetLength));
-    const outwardNormal =
-      distance(firstCandidate, frameworkCentroid) >= distance(secondCandidate, frameworkCentroid) ? firstNormal : secondNormal;
+    const outwardNormal = distance(firstCandidate, frameworkCentroid) >= distance(secondCandidate, frameworkCentroid) ? firstNormal : secondNormal;
     const centerIndex = (orderedRecords.length - 1) / 2;
     for (let index = 0; index < orderedRecords.length; index++) {
-      const alongEdgeOffset =
-        (index - centerIndex) * bondLength * ORGANOMETALLIC_RESCUE_LIMITS.octahedralDuplicateBridgeSpreadFactor;
+      const alongEdgeOffset = (index - centerIndex) * bondLength * ORGANOMETALLIC_RESCUE_LIMITS.octahedralDuplicateBridgeSpreadFactor;
       coords.set(
         orderedRecords[index].atomIds[0],
-        add(
-          add(midpoint, scale(outwardNormal, offsetLength * ORGANOMETALLIC_RESCUE_LIMITS.octahedralBridgeOffsetFactor)),
-          scale(edgeDirection, alongEdgeOffset)
-        )
+        add(add(midpoint, scale(outwardNormal, offsetLength * ORGANOMETALLIC_RESCUE_LIMITS.octahedralBridgeOffsetFactor)), scale(edgeDirection, alongEdgeOffset))
       );
     }
   }
@@ -854,12 +828,7 @@ function layoutOctahedralMetalClusterRescue(layoutGraph, participantAtomIds, met
     coords,
     placementMode: 'metal-framework-rescue',
     displayAssignments: [],
-    bondValidationClasses: buildMultiAnchorMetalBondValidationClasses(
-      layoutGraph,
-      participantAtomIds,
-      fragmentRecords,
-      'bridged'
-    )
+    bondValidationClasses: buildMultiAnchorMetalBondValidationClasses(layoutGraph, participantAtomIds, fragmentRecords, 'bridged')
   };
 }
 
@@ -869,10 +838,7 @@ function positionPolyoxoPairBridge(firstAnchorPosition, secondAnchorPosition, br
   const edgeLength = distance(firstAnchorPosition, secondAnchorPosition);
   const normal = normalize(perpLeft(edgeVector));
   const direction = bridgeIndex % 2 === 0 ? 1 : -1;
-  const offset = Math.min(
-    bondLength * ORGANOMETALLIC_RESCUE_LIMITS.polyoxoPairBridgeOffsetFactor,
-    edgeLength * 0.1
-  );
+  const offset = Math.min(bondLength * ORGANOMETALLIC_RESCUE_LIMITS.polyoxoPairBridgeOffsetFactor, edgeLength * 0.1);
   return add(midpoint, scale(normal, direction * offset));
 }
 
@@ -892,9 +858,7 @@ function traceSimpleMetalCycle(layoutGraph, metalAtomIds, edgeRecords) {
     if (neighbors.length !== 2) {
       return null;
     }
-    neighbors.sort((firstNeighborId, secondNeighborId) =>
-      compareCanonicalAtomIds(firstNeighborId, secondNeighborId, layoutGraph.canonicalAtomRank)
-    );
+    neighbors.sort((firstNeighborId, secondNeighborId) => compareCanonicalAtomIds(firstNeighborId, secondNeighborId, layoutGraph.canonicalAtomRank));
   }
 
   const startMetalId = sortedMetalAtomIds[0];
@@ -928,11 +892,10 @@ function chooseOutwardPairBridgePosition(firstAnchorPosition, secondAnchorPositi
   }
   const firstNormal = normalize(perpLeft(edgeVector));
   const secondNormal = scale(firstNormal, -1);
-  const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - (edgeLength ** 2) / 4, 0));
+  const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - edgeLength ** 2 / 4, 0));
   const firstCandidate = add(midpoint, scale(firstNormal, offsetLength));
   const secondCandidate = add(midpoint, scale(secondNormal, offsetLength));
-  const outwardNormal =
-    distance(firstCandidate, frameworkCentroid) >= distance(secondCandidate, frameworkCentroid) ? firstNormal : secondNormal;
+  const outwardNormal = distance(firstCandidate, frameworkCentroid) >= distance(secondCandidate, frameworkCentroid) ? firstNormal : secondNormal;
   return add(midpoint, scale(outwardNormal, offsetLength * offsetScale));
 }
 
@@ -948,15 +911,13 @@ function positionPolyoxoTripleBridge(anchorPositions, frameworkCentroid, bridgeI
 
 function choosePolyoxoTerminalAngles(metalPosition, frameworkCentroid, occupiedAngles, terminalCount) {
   const outwardAngle = angleOf(sub(metalPosition, frameworkCentroid));
-  const slotAngles = Array.from({ length: ORGANOMETALLIC_RESCUE_LIMITS.polyoxoTerminalSlotCount }, (_, index) =>
-    Math.PI / 2 - index * ((Math.PI * 2) / ORGANOMETALLIC_RESCUE_LIMITS.polyoxoTerminalSlotCount)
+  const slotAngles = Array.from(
+    { length: ORGANOMETALLIC_RESCUE_LIMITS.polyoxoTerminalSlotCount },
+    (_, index) => Math.PI / 2 - index * ((Math.PI * 2) / ORGANOMETALLIC_RESCUE_LIMITS.polyoxoTerminalSlotCount)
   );
   const scoredSlots = slotAngles
     .map(angle => {
-      const minSeparation =
-        occupiedAngles.length > 0
-          ? Math.min(...occupiedAngles.map(otherAngle => angularDistance(angle, otherAngle)))
-          : Math.PI;
+      const minSeparation = occupiedAngles.length > 0 ? Math.min(...occupiedAngles.map(otherAngle => angularDistance(angle, otherAngle))) : Math.PI;
       return {
         angle,
         score: minSeparation * 2 - angularDistance(angle, outwardAngle)
@@ -966,11 +927,7 @@ function choosePolyoxoTerminalAngles(metalPosition, frameworkCentroid, occupiedA
 
   const chosenAngles = [];
   for (const slot of scoredSlots) {
-    if (
-      chosenAngles.some(chosenAngle =>
-        angularDistance(chosenAngle, slot.angle) < ORGANOMETALLIC_RESCUE_LIMITS.polyoxoTerminalMinSlotSeparation
-      )
-    ) {
+    if (chosenAngles.some(chosenAngle => angularDistance(chosenAngle, slot.angle) < ORGANOMETALLIC_RESCUE_LIMITS.polyoxoTerminalMinSlotSeparation)) {
       continue;
     }
     chosenAngles.push(slot.angle);
@@ -996,10 +953,7 @@ function layoutPolyoxoWheelRescue(layoutGraph, participantAtomIds, metalAtomIds,
     metalAtomIds.filter(metalAtomId => metalAtomId !== centerMetalId)
   );
   const outerMetalIdSet = new Set(outerMetalIds);
-  const outerPairRecords = fragmentRecords.filter(record =>
-    record.anchorMetalIds.length === 2 &&
-    record.anchorMetalIds.every(metalAtomId => outerMetalIdSet.has(metalAtomId))
-  );
+  const outerPairRecords = fragmentRecords.filter(record => record.anchorMetalIds.length === 2 && record.anchorMetalIds.every(metalAtomId => outerMetalIdSet.has(metalAtomId)));
   if (outerPairRecords.length !== outerMetalIds.length) {
     return null;
   }
@@ -1037,13 +991,10 @@ function layoutPolyoxoWheelRescue(layoutGraph, participantAtomIds, metalAtomIds,
     if (!metalPosition) {
       return null;
     }
-    const outwardAngle =
-      metalAtomId === centerMetalId ? 0 : angleOf(sub(metalPosition, frameworkCentroid));
+    const outwardAngle = metalAtomId === centerMetalId ? 0 : angleOf(sub(metalPosition, frameworkCentroid));
     const centerIndex = (records.length - 1) / 2;
     for (let index = 0; index < records.length; index++) {
-      const angle =
-        outwardAngle +
-        (index - centerIndex) * 2 * ORGANOMETALLIC_RESCUE_LIMITS.polyoxoWheelTerminalFanAngle;
+      const angle = outwardAngle + (index - centerIndex) * 2 * ORGANOMETALLIC_RESCUE_LIMITS.polyoxoWheelTerminalFanAngle;
       coords.set(records[index].atomIds[0], add(metalPosition, fromAngle(angle, bondLength)));
     }
   }
@@ -1057,12 +1008,7 @@ function layoutPolyoxoWheelRescue(layoutGraph, participantAtomIds, metalAtomIds,
       return null;
     }
     if (record.anchorMetalIds.length === 2) {
-      const position = chooseOutwardPairBridgePosition(
-        anchorPositions[0],
-        anchorPositions[1],
-        frameworkCentroid,
-        bondLength
-      );
+      const position = chooseOutwardPairBridgePosition(anchorPositions[0], anchorPositions[1], frameworkCentroid, bondLength);
       if (!position) {
         return null;
       }
@@ -1073,13 +1019,7 @@ function layoutPolyoxoWheelRescue(layoutGraph, participantAtomIds, metalAtomIds,
     const bridgeCenter = centroid(anchorPositions);
     const outward = normalize(sub(bridgeCenter, frameworkCentroid));
     const direction = Math.hypot(outward.x, outward.y) <= 1e-12 ? { x: 1, y: 0 } : outward;
-    coords.set(
-      record.atomIds[0],
-      add(
-        bridgeCenter,
-        scale(direction, bondLength * ORGANOMETALLIC_RESCUE_LIMITS.polyoxoWheelMultiBridgeRadialFactor)
-      )
-    );
+    coords.set(record.atomIds[0], add(bridgeCenter, scale(direction, bondLength * ORGANOMETALLIC_RESCUE_LIMITS.polyoxoWheelMultiBridgeRadialFactor)));
   }
 
   return {
@@ -1137,10 +1077,7 @@ function layoutPolyoxoClusterRescue(layoutGraph, participantAtomIds, metalAtomId
       const key = anchorMetalIds.join('|');
       const bridgeIndex = pairBridgeCounts.get(key) ?? 0;
       pairBridgeCounts.set(key, bridgeIndex + 1);
-      coords.set(
-        record.atomIds[0],
-        positionPolyoxoPairBridge(anchorPositions[0], anchorPositions[1], bridgeIndex, bondLength)
-      );
+      coords.set(record.atomIds[0], positionPolyoxoPairBridge(anchorPositions[0], anchorPositions[1], bridgeIndex, bondLength));
       continue;
     }
     const key = anchorMetalIds.join('|');
@@ -1160,10 +1097,7 @@ function layoutPolyoxoClusterRescue(layoutGraph, participantAtomIds, metalAtomId
       .map(record => angleOf(sub(coords.get(record.atomIds[0]), metalPosition)));
     const chosenAngles = choosePolyoxoTerminalAngles(metalPosition, frameworkCentroid, occupiedAngles, terminalRecords.length);
     for (let index = 0; index < terminalRecords.length; index++) {
-      coords.set(
-        terminalRecords[index].atomIds[0],
-        add(metalPosition, fromAngle(chosenAngles[index] ?? angleOf(sub(metalPosition, frameworkCentroid)), bondLength))
-      );
+      coords.set(terminalRecords[index].atomIds[0], add(metalPosition, fromAngle(chosenAngles[index] ?? angleOf(sub(metalPosition, frameworkCentroid)), bondLength)));
     }
   }
 
@@ -1193,13 +1127,7 @@ function layoutPolyoxoClusterRescue(layoutGraph, participantAtomIds, metalAtomId
 }
 
 function layoutMetalFrameworkRescue(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength) {
-  const octahedralRescue = layoutOctahedralMetalClusterRescue(
-    layoutGraph,
-    participantAtomIds,
-    metalAtomIds,
-    fragmentRecords,
-    bondLength
-  );
+  const octahedralRescue = layoutOctahedralMetalClusterRescue(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);
   if (octahedralRescue) {
     return octahedralRescue;
   }
@@ -1252,9 +1180,7 @@ function layoutMetalFrameworkRescue(layoutGraph, participantAtomIds, metalAtomId
     coords,
     placementMode: 'metal-framework-rescue',
     displayAssignments: [],
-    bondValidationClasses: buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds, [
-      metalFramework.bondValidationClasses
-    ])
+    bondValidationClasses: buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds, [metalFramework.bondValidationClasses])
   };
 }
 
@@ -1301,15 +1227,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
 
       const spec = specs[index] ?? { angle: 0, displayType: null };
       const targetAnchorCenter = add(provisionalMetalPosition, fromAngle(spec.angle, bondLength));
-      const transformed = chooseTransformedFragment(
-        layoutGraph,
-        ligandLayout.coords,
-        record.anchorAtomIds,
-        targetAnchorCenter,
-        spec.angle,
-        fragmentCoords,
-        bondLength
-      );
+      const transformed = chooseTransformedFragment(layoutGraph, ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle, fragmentCoords, bondLength);
       for (const [atomId, position] of transformed) {
         fragmentCoords.set(atomId, position);
       }
@@ -1363,11 +1281,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
     coords,
     placementMode: 'ligand-first',
     displayAssignments,
-    bondValidationClasses: markHapticMetalBondValidation(
-      layoutGraph,
-      fragmentRecords,
-      buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds, bondValidationClassMaps)
-    )
+    bondValidationClasses: markHapticMetalBondValidation(layoutGraph, fragmentRecords, buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds, bondValidationClassMaps))
   };
 }
 
@@ -1444,34 +1358,13 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
       anchorMetalIds
     };
   });
-  const cleanPolyoxoWheelPlacement = layoutPolyoxoWheelRescue(
-    layoutGraph,
-    participantAtomIds,
-    metalAtomIds,
-    fragmentRecords,
-    bondLength
-  );
-  const cleanPolyoxoWheelAudit = auditOrganometallicPlacement(
-    layoutGraph,
-    participantAtomIds,
-    cleanPolyoxoWheelPlacement,
-    bondLength
-  );
-  if (
-    cleanPolyoxoWheelAudit?.severeOverlapCount === 0 &&
-    cleanPolyoxoWheelAudit.labelOverlapCount === 0 &&
-    cleanPolyoxoWheelAudit.bondLengthFailureCount === 0
-  ) {
+  const cleanPolyoxoWheelPlacement = layoutPolyoxoWheelRescue(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);
+  const cleanPolyoxoWheelAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, cleanPolyoxoWheelPlacement, bondLength);
+  if (cleanPolyoxoWheelAudit?.severeOverlapCount === 0 && cleanPolyoxoWheelAudit.labelOverlapCount === 0 && cleanPolyoxoWheelAudit.bondLengthFailureCount === 0) {
     return cleanPolyoxoWheelPlacement;
   }
 
-  const ligandFirstPlacement = layoutLigandFirstOrganometallicPlacement(
-    layoutGraph,
-    participantAtomIds,
-    metalAtomIds,
-    fragmentRecords,
-    bondLength
-  );
+  const ligandFirstPlacement = layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);
   if (!ligandFirstPlacement) {
     return null;
   }
@@ -1481,13 +1374,7 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
   let bestAudit = ligandFirstAudit;
 
   if (hasDirectMetalFramework(layoutGraph, metalAtomIds) && shouldTryMetalFrameworkRescue(metalAtomIds, fragmentRecords, bestAudit)) {
-    const frameworkRescuePlacement = layoutMetalFrameworkRescue(
-      layoutGraph,
-      participantAtomIds,
-      metalAtomIds,
-      fragmentRecords,
-      bondLength
-    );
+    const frameworkRescuePlacement = layoutMetalFrameworkRescue(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);
     const frameworkRescueAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, frameworkRescuePlacement, bondLength);
     if (isBetterOrganometallicPlacement(frameworkRescueAudit, bestAudit)) {
       bestPlacement = frameworkRescuePlacement;
@@ -1496,18 +1383,9 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
   }
 
   if (shouldTryPolyoxoClusterRescue(layoutGraph, metalAtomIds, fragmentRecords, bestAudit)) {
-    const polyoxoRescuePlacement = layoutPolyoxoClusterRescue(
-      layoutGraph,
-      participantAtomIds,
-      metalAtomIds,
-      fragmentRecords,
-      bondLength
-    );
+    const polyoxoRescuePlacement = layoutPolyoxoClusterRescue(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);
     const polyoxoRescueAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, polyoxoRescuePlacement, bondLength);
-    if (
-      isBetterOrganometallicPlacement(polyoxoRescueAudit, bestAudit)
-      || isAcceptablePolyoxoRescuePlacement(polyoxoRescueAudit, bestAudit)
-    ) {
+    if (isBetterOrganometallicPlacement(polyoxoRescueAudit, bestAudit) || isAcceptablePolyoxoRescuePlacement(polyoxoRescueAudit, bestAudit)) {
       bestPlacement = polyoxoRescuePlacement;
       bestAudit = polyoxoRescueAudit;
     }

@@ -398,13 +398,7 @@ describe('createForceSceneRenderer', () => {
         }
         return entry[0] === 'call' && entry[1] === 'zoomTransform';
       }),
-      [
-        ['setForceAutoFitEnabled', true],
-        ['disableKeepInView'],
-        ['syncSelectionToMolecule', 'mol-sync'],
-        ['setPreserveSelectionOnNextRender', false],
-        ['call', 'zoomTransform', { kind: 'identity' }]
-      ]
+      [['setForceAutoFitEnabled', true], ['disableKeepInView'], ['syncSelectionToMolecule', 'mol-sync'], ['setPreserveSelectionOnNextRender', false], ['call', 'zoomTransform', { kind: 'identity' }]]
     );
   });
 

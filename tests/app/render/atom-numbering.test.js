@@ -1,16 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  atomNumberingLabelDistance,
-  multipleBondSideBlockerAngle,
-  pickAtomAnnotationAngle,
-  pickAtomAnnotationPlacement
-} from '../../../src/app/render/atom-numbering.js';
+import { atomNumberingLabelDistance, multipleBondSideBlockerAngle, pickAtomAnnotationAngle, pickAtomAnnotationPlacement } from '../../../src/app/render/atom-numbering.js';
 
 function boxesOverlap(a, b, padding = 3) {
-  return Math.abs(a.cx - b.cx) < a.hw + b.hw + padding
-    && Math.abs(a.cy - b.cy) < a.hh + b.hh + padding;
+  return Math.abs(a.cx - b.cx) < a.hw + b.hw + padding && Math.abs(a.cy - b.cy) < a.hh + b.hh + padding;
 }
 
 describe('pickAtomAnnotationAngle', () => {

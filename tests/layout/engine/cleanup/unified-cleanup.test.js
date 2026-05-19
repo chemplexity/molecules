@@ -109,10 +109,7 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     assert.ok(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length <= beforeOverlapCount);
     assert.ok(result.overlapMoves > 0);
     assert.ok(result.passes >= result.overlapMoves);
-    assert.ok(
-      afterAudit.severeOverlapCount < beforeOverlapCount,
-      `expected cleanup to reduce severe overlaps, got ${beforeOverlapCount} before and ${afterAudit.severeOverlapCount} after`
-    );
+    assert.ok(afterAudit.severeOverlapCount < beforeOverlapCount, `expected cleanup to reduce severe overlaps, got ${beforeOverlapCount} before and ${afterAudit.severeOverlapCount} after`);
     assert.equal(afterAudit.severeBondLengthFailureCount, 0);
     assert.ok(
       afterAudit.maxBondLengthDeviation < graph.options.bondLength * 0.07,
@@ -197,11 +194,8 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     assert.equal(plainAudit.bondLengthFailureCount, 0);
     assert.equal(blockAwareAudit.bondLengthFailureCount, 0);
     assert.ok(
-      blockAwareFirstPassAudit.severeOverlapCount < plainFirstPassAudit.severeOverlapCount
-      || (
-        blockAwareFirstPassAudit.severeOverlapCount === plainFirstPassAudit.severeOverlapCount
-        && blockAwareFirstPassAudit.severeOverlapPenalty <= plainFirstPassAudit.severeOverlapPenalty
-      )
+      blockAwareFirstPassAudit.severeOverlapCount < plainFirstPassAudit.severeOverlapCount ||
+        (blockAwareFirstPassAudit.severeOverlapCount === plainFirstPassAudit.severeOverlapCount && blockAwareFirstPassAudit.severeOverlapPenalty <= plainFirstPassAudit.severeOverlapPenalty)
     );
     assert.ok(blockAwareAudit.severeOverlapCount <= plainAudit.severeOverlapCount);
     assert.ok(blockAwareFirstPassCleanup.overlapMoves >= plainFirstPassCleanup.overlapMoves);

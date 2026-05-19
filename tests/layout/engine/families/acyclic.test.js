@@ -122,7 +122,7 @@ function sortedHeavyNeighborSeparations(layoutGraph, coords, atomId) {
     const currentAngle = neighborAngles[index];
     const nextAngle = neighborAngles[(index + 1) % neighborAngles.length];
     const rawGap = nextAngle - currentAngle;
-    separations.push((rawGap > 0 ? rawGap : rawGap + (2 * Math.PI)) * (180 / Math.PI));
+    separations.push((rawGap > 0 ? rawGap : rawGap + 2 * Math.PI) * (180 / Math.PI));
   }
 
   return separations.sort((firstSeparation, secondSeparation) => firstSeparation - secondSeparation);
@@ -164,13 +164,7 @@ describe('layout/engine/families/acyclic', () => {
   it('batch-places deferred chlorosilane leaves so both silicon centers keep an even fanout', () => {
     const graph = createLayoutGraph(parseSMILES('C[Si](Cl)(Cl)CC[Si](C)(Cl)Cl'), { suppressH: true });
     const atomIdsToPlace = new Set(graph.components[0].atomIds);
-    const coords = layoutAcyclicFamily(
-      buildAdjacency(graph, atomIdsToPlace),
-      atomIdsToPlace,
-      graph.canonicalAtomRank,
-      graph.options.bondLength,
-      { layoutGraph: graph }
-    );
+    const coords = layoutAcyclicFamily(buildAdjacency(graph, atomIdsToPlace), atomIdsToPlace, graph.canonicalAtomRank, graph.options.bondLength, { layoutGraph: graph });
 
     for (const siliconAtomId of ['Si2', 'Si7']) {
       const separations = sortedHeavyNeighborSeparations(graph, coords, siliconAtomId);
@@ -185,10 +179,7 @@ describe('layout/engine/families/acyclic', () => {
       if (!['Si2', 'Si7'].includes(bond.a) && !['Si2', 'Si7'].includes(bond.b)) {
         continue;
       }
-      assert.ok(
-        Math.abs(distance(coords.get(bond.a), coords.get(bond.b)) - graph.options.bondLength) < 1e-6,
-        `expected ${bond.a}-${bond.b} to keep the canonical bond length`
-      );
+      assert.ok(Math.abs(distance(coords.get(bond.a), coords.get(bond.b)) - graph.options.bondLength) < 1e-6, `expected ${bond.a}-${bond.b} to keep the canonical bond length`);
     }
   });
 
@@ -207,10 +198,7 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(distance(result.coords.get('C19'), result.coords.get('C28')) > result.layoutGraph.options.bondLength);
     assert.ok(distance(result.coords.get('C1'), result.coords.get('O44')) > result.layoutGraph.options.bondLength);
     for (const atomId of ['C25', 'C38']) {
-      assert.ok(
-        sortedHeavyNeighborSeparations(result.layoutGraph, result.coords, atomId)[0] >= 80 - 1e-6,
-        `expected ${atomId} terminal methyls to avoid collapsed projected-tetrahedral slots`
-      );
+      assert.ok(sortedHeavyNeighborSeparations(result.layoutGraph, result.coords, atomId)[0] >= 80 - 1e-6, `expected ${atomId} terminal methyls to avoid collapsed projected-tetrahedral slots`);
     }
   });
 
@@ -279,11 +267,7 @@ describe('layout/engine/families/acyclic', () => {
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.ok(Math.abs(bondAngle(result.coords, 'C6', 'O7', 'C8') - 120) < 1e-6);
-    for (const angle of [
-      bondAngle(result.coords, 'O7', 'C8', 'O9'),
-      bondAngle(result.coords, 'O7', 'C8', 'C10'),
-      bondAngle(result.coords, 'O9', 'C8', 'C10')
-    ]) {
+    for (const angle of [bondAngle(result.coords, 'O7', 'C8', 'O9'), bondAngle(result.coords, 'O7', 'C8', 'C10'), bondAngle(result.coords, 'O9', 'C8', 'C10')]) {
       assert.ok(Math.abs(angle - 120) < 1e-6, `expected carbonyl fan to stay exact, got ${angle.toFixed(2)} degrees`);
     }
   });
@@ -397,7 +381,7 @@ describe('layout/engine/families/acyclic', () => {
   it('keeps the backbone zigzag approaching terminal phosphonate groups instead of routing through phosphonate oxygens', () => {
     const result = runPipeline(parseSMILES('OC(=O)C[NH2+]CP(O)(O)=O'), { suppressH: true });
     const phosphonateOxygenAngles = (result.layoutGraph.bondsByAtomId.get('P8') ?? [])
-      .map(bond => bond.a === 'P8' ? bond.b : bond.a)
+      .map(bond => (bond.a === 'P8' ? bond.b : bond.a))
       .filter(atomId => result.layoutGraph.atoms.get(atomId)?.element === 'O')
       .map(atomId => bondAngle(result.coords, 'C7', 'P8', atomId))
       .sort((firstAngle, secondAngle) => secondAngle - firstAngle);
@@ -473,10 +457,7 @@ describe('layout/engine/families/acyclic', () => {
     for (const testCase of cases) {
       const result = runPipeline(parseSMILES(testCase.smiles), { suppressH: true });
       const alkeneBond = [...result.layoutGraph.bonds.values()].find(bond => bond.order === 2);
-      const adjacency = buildAdjacency(
-        result.layoutGraph,
-        new Set(result.layoutGraph.components[0].atomIds.filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H'))
-      );
+      const adjacency = buildAdjacency(result.layoutGraph, new Set(result.layoutGraph.components[0].atomIds.filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H')));
       const path = linearBackbonePath(adjacency);
 
       assert.ok(alkeneBond);
@@ -503,14 +484,14 @@ describe('layout/engine/families/acyclic', () => {
 
     for (const carbonylCarbonId of ['C2', 'C6']) {
       const carbonylCarbon = molecule.atoms.get(carbonylCarbonId);
-      const heavyNeighborIds = carbonylCarbon.getNeighbors(molecule).filter(atom => atom.name !== 'H').map(atom => atom.id);
+      const heavyNeighborIds = carbonylCarbon
+        .getNeighbors(molecule)
+        .filter(atom => atom.name !== 'H')
+        .map(atom => atom.id);
       assert.equal(heavyNeighborIds.length, 3);
       for (let firstIndex = 0; firstIndex < heavyNeighborIds.length; firstIndex++) {
         for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighborIds.length; secondIndex++) {
-          assert.ok(
-            Math.abs(angle(heavyNeighborIds[firstIndex], carbonylCarbonId, heavyNeighborIds[secondIndex]) - 120) < 1e-6,
-            `expected ${carbonylCarbonId} to stay trigonal-planar`
-          );
+          assert.ok(Math.abs(angle(heavyNeighborIds[firstIndex], carbonylCarbonId, heavyNeighborIds[secondIndex]) - 120) < 1e-6, `expected ${carbonylCarbonId} to stay trigonal-planar`);
         }
       }
     }
@@ -519,13 +500,7 @@ describe('layout/engine/families/acyclic', () => {
   it('looks ahead through carboxylate sidechain roots so downstream oxygens stay off existing hetero branches', () => {
     const graph = createLayoutGraph(parseSMILES('OCC(O)C[NH+](CCN(CCS([O-])(=O)=O)CC([O-])=O)CC([O-])=O'), { suppressH: true });
     const atomIdsToPlace = new Set(graph.components[0].atomIds);
-    const coords = layoutAcyclicFamily(
-      buildAdjacency(graph, atomIdsToPlace),
-      atomIdsToPlace,
-      graph.canonicalAtomRank,
-      graph.options.bondLength,
-      { layoutGraph: graph }
-    );
+    const coords = layoutAcyclicFamily(buildAdjacency(graph, atomIdsToPlace), atomIdsToPlace, graph.canonicalAtomRank, graph.options.bondLength, { layoutGraph: graph });
     const audit = auditLayout(graph, coords, { bondLength: graph.options.bondLength });
 
     assert.equal(audit.severeOverlapCount, 0);
@@ -600,9 +575,7 @@ describe('layout/engine/families/acyclic', () => {
     const yValues = [...coords.values()].map(position => position.y);
     const width = Math.max(...xValues) - Math.min(...xValues);
     const height = Math.max(...yValues) - Math.min(...yValues);
-    const stereoChecks = [...graph.bonds.values()]
-      .filter(bond => (bond.order ?? 1) === 2 && graph.sourceMolecule.getEZStereo?.(bond.id))
-      .map(bond => actualAlkeneStereo(graph, coords, bond));
+    const stereoChecks = [...graph.bonds.values()].filter(bond => (bond.order ?? 1) === 2 && graph.sourceMolecule.getEZStereo?.(bond.id)).map(bond => actualAlkeneStereo(graph, coords, bond));
 
     assert.ok(width > height * 6, `expected an extended polyene layout, got width ${width.toFixed(3)} and height ${height.toFixed(3)}`);
     assert.ok(height < 4, `expected the long fatty-acid polyene to stay fairly shallow, got height ${height.toFixed(3)}`);

@@ -171,7 +171,10 @@ export function initGestureInteractions(context) {
     const bondIds = new Set(selectionBaseBondIds);
     let links;
     if (mode === 'force') {
-      links = context.simulation.force('link').links().map(link => ({ id: link.id, atomIds: [link.source.id, link.target.id] }));
+      links = context.simulation
+        .force('link')
+        .links()
+        .map(link => ({ id: link.id, atomIds: [link.source.id, link.target.id] }));
     } else {
       const mol2d = context.state.documentState.getMol2d();
       links = [...mol2d.bonds.values()]
@@ -524,12 +527,7 @@ export function initGestureInteractions(context) {
   });
 
   svg.on('dblclick.select-all', event => {
-    if (
-      context.state.overlayState.getDrawBondMode() ||
-      context.drawBond.hasDrawBondState() ||
-      context.state.overlayState.getEraseMode() ||
-      context.state.overlayState.getChargeTool?.()
-    ) {
+    if (context.state.overlayState.getDrawBondMode() || context.drawBond.hasDrawBondState() || context.state.overlayState.getEraseMode() || context.state.overlayState.getChargeTool?.()) {
       return;
     }
     const mol = context.state.viewState.getMode() === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();

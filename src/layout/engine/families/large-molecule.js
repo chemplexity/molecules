@@ -22,21 +22,14 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   densePartitionRetryHeavyAtomCap: 42,
   fineDensePartitionRetryHeavyAtomCap: 24,
   fineDensePartitionRetryComponentHeavyAtomCap: 160,
-  linearRingChainDensePartitionHeavyAtomCap: 18
+  linearRingChainDensePartitionHeavyAtomCap: 18,
+  extremeFallbackFastPathHeavyAtomFloor: 500,
+  extremeFallbackFastPathRingSystemFloor: 20,
+  extremeFallbackFastPathBlockFloor: 8
 });
 
-const PACKING_ROTATION_ANGLES = Object.freeze([
-  -Math.PI / 2,
-  -Math.PI / 3,
-  -Math.PI / 6,
-  Math.PI / 6,
-  Math.PI / 3,
-  Math.PI / 2
-]);
-const OVERLAP_RESOLUTION_ROTATION_ANGLES = Object.freeze([
-  ...PACKING_ROTATION_ANGLES,
-  Math.PI
-]);
+const PACKING_ROTATION_ANGLES = Object.freeze([-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2]);
+const OVERLAP_RESOLUTION_ROTATION_ANGLES = Object.freeze([...PACKING_ROTATION_ANGLES, Math.PI]);
 
 function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
@@ -196,11 +189,7 @@ function createBlock(layoutGraph, atomIds, id) {
  * @returns {boolean} True when the block is still oversized.
  */
 function isOversized(block, threshold) {
-  return (
-    block.heavyAtomCount > threshold.heavyAtomCount
-    || block.participantCount > participantThresholdFor(threshold)
-    || block.ringSystemCount > threshold.ringSystemCount
-  );
+  return block.heavyAtomCount > threshold.heavyAtomCount || block.participantCount > participantThresholdFor(threshold) || block.ringSystemCount > threshold.ringSystemCount;
 }
 
 function partitionBlocks(layoutGraph, component, threshold) {
@@ -529,17 +518,8 @@ function updatePackingState(layoutGraph, packingState, coords, affectedBlockIds,
     nextBoundsByBlockId.set(blockId, bounds);
   }
 
-  const currentAffectedPenalty = trackedBlockOverlapPenalty(
-    packingState.blockIds,
-    packingState.boundsByBlockId,
-    affectedBlockIdSet
-  );
-  const nextAffectedPenalty = trackedBlockOverlapPenalty(
-    packingState.blockIds,
-    packingState.boundsByBlockId,
-    affectedBlockIdSet,
-    affectedBoundsByBlockId
-  );
+  const currentAffectedPenalty = trackedBlockOverlapPenalty(packingState.blockIds, packingState.boundsByBlockId, affectedBlockIdSet);
+  const nextAffectedPenalty = trackedBlockOverlapPenalty(packingState.blockIds, packingState.boundsByBlockId, affectedBlockIdSet, affectedBoundsByBlockId);
   let nextAtomGrid = packingState.atomGrid;
   let nextAtomClashPenalty = packingState.atomClashPenalty;
 
@@ -785,10 +765,10 @@ function shouldRetryWithAlternateRoot(placement, placementAudit, rankedRootBlock
     return false;
   }
   return (
-    placement.blockCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryBlockCountFloor
-    && placement.repulsionMoveCount <= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryRepulsionMoveCeiling
-    && placementAudit.bondLengthFailureCount === 0
-    && placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryOverlapFloor
+    placement.blockCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryBlockCountFloor &&
+    placement.repulsionMoveCount <= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryRepulsionMoveCeiling &&
+    placementAudit.bondLengthFailureCount === 0 &&
+    placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryOverlapFloor
   );
 }
 
@@ -820,9 +800,7 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
       : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {
     ...threshold,
-    heavyAtomCount: pathLikeIsolatedRingChain
-      ? LARGE_MOLECULE_LAYOUT_LIMITS.linearRingChainDensePartitionHeavyAtomCap
-      : denseHeavyAtomCap
+    heavyAtomCount: pathLikeIsolatedRingChain ? LARGE_MOLECULE_LAYOUT_LIMITS.linearRingChainDensePartitionHeavyAtomCap : denseHeavyAtomCap
   };
 }
 
@@ -838,22 +816,32 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
  * @returns {boolean} True when a denser partition retry is warranted.
  */
 function shouldRetryWithDensePartition(placement, placementAudit, layoutGraph, component, threshold, options) {
-  if (
-    options.disableDensePartitionRetry
-    || options.partitionThreshold
-    || options.rootBlock
-    || !placement
-    || !placementAudit
-  ) {
+  if (options.disableDensePartitionRetry || options.partitionThreshold || options.rootBlock || !placement || !placementAudit) {
     return false;
   }
   if (!densePartitionRetryThreshold(layoutGraph, component, threshold)) {
     return false;
   }
   return (
-    placement.blockCount <= LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryBlockCountCeiling
-    && placementAudit.bondLengthFailureCount === 0
-    && placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryOverlapFloor
+    placement.blockCount <= LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryBlockCountCeiling &&
+    placementAudit.bondLengthFailureCount === 0 &&
+    placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryOverlapFloor
+  );
+}
+
+function shouldUseExtremeLargeFallbackPlacementFastPath(layoutGraph, component, blocks, options) {
+  if (options.disableExtremeLargeFallbackFastPath || options.partitionThreshold || options.rootBlock || options.forceAlternateRootRetry) {
+    return false;
+  }
+  if ((layoutGraph.fixedCoords?.size ?? 0) > 0) {
+    return false;
+  }
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? countHeavyAtoms(layoutGraph, component.atomIds);
+  const ringSystemCount = countRingSystems(layoutGraph, component.atomIds);
+  return (
+    heavyAtomCount >= LARGE_MOLECULE_LAYOUT_LIMITS.extremeFallbackFastPathHeavyAtomFloor &&
+    ringSystemCount >= LARGE_MOLECULE_LAYOUT_LIMITS.extremeFallbackFastPathRingSystemFloor &&
+    blocks.length >= LARGE_MOLECULE_LAYOUT_LIMITS.extremeFallbackFastPathBlockFloor
   );
 }
 
@@ -903,14 +891,7 @@ function compactBlockRotations(layoutGraph, inputCoords, blockAtomIdsById, child
           atomGrid: rotatedState.atomGrid
         }).length;
         const improvesOverlappingLayout =
-          baseSevereOverlapCount > 0
-          && (
-            rotatedSevereOverlapCount < bestSevereOverlapCount
-            || (
-              rotatedSevereOverlapCount === bestSevereOverlapCount
-              && rotatedCost + 1e-6 < bestCost
-            )
-          );
+          baseSevereOverlapCount > 0 && (rotatedSevereOverlapCount < bestSevereOverlapCount || (rotatedSevereOverlapCount === bestSevereOverlapCount && rotatedCost + 1e-6 < bestCost));
         const improvesCleanLayout = baseSevereOverlapCount === 0 && rotatedCost + 1e-6 < bestCost;
         if (improvesOverlappingLayout || improvesCleanLayout) {
           bestState = rotatedState;
@@ -972,8 +953,9 @@ function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, chil
         let bestPairOverlap = basePairOverlap;
 
         const preferredMovableBlockId = chooseMovableBlockId(firstBlockId, secondBlockId, rootBlockId, blockAtomIdsById, depthByBlockId);
-        const movableBlockIds = [preferredMovableBlockId, preferredMovableBlockId === firstBlockId ? secondBlockId : firstBlockId]
-          .filter((blockId, index, list) => blockId !== rootBlockId && list.indexOf(blockId) === index && attachmentAtomByBlockId.has(blockId));
+        const movableBlockIds = [preferredMovableBlockId, preferredMovableBlockId === firstBlockId ? secondBlockId : firstBlockId].filter(
+          (blockId, index, list) => blockId !== rootBlockId && list.indexOf(blockId) === index && attachmentAtomByBlockId.has(blockId)
+        );
 
         for (const movableBlockId of movableBlockIds) {
           const fixedBlockId = movableBlockId === firstBlockId ? secondBlockId : firstBlockId;
@@ -991,10 +973,7 @@ function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, chil
             const { overlapX: rotatedOverlapX, overlapY: rotatedOverlapY } = measureBlockOverlap(rotatedFirstBounds, rotatedSecondBounds);
             const rotatedPairOverlap = rotatedOverlapX > 0 && rotatedOverlapY > 0 ? rotatedOverlapX * rotatedOverlapY : 0;
             const rotatedCost = packingCostForState(rotatedState, bondLength, 200);
-            if (
-              rotatedPairOverlap + 1e-6 < bestPairOverlap
-              || (rotatedPairOverlap <= bestPairOverlap + 1e-6 && rotatedCost + 1e-6 < bestCost)
-            ) {
+            if (rotatedPairOverlap + 1e-6 < bestPairOverlap || (rotatedPairOverlap <= bestPairOverlap + 1e-6 && rotatedCost + 1e-6 < bestCost)) {
               bestState = rotatedState;
               bestCost = rotatedCost;
               bestPairOverlap = rotatedPairOverlap;
@@ -1029,6 +1008,7 @@ function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, chil
  * @param {boolean} [options.disableRotationPacking] - Disables rigid subtree rotation packing for test comparisons.
  * @param {boolean} [options.disableAlternateRootRetry] - Disables the alternate-root retry for overlap-heavy bond-clean placements.
  * @param {boolean} [options.disableDensePartitionRetry] - Disables the denser partition retry for coarse overlap-heavy ring-rich placements.
+ * @param {boolean} [options.disableExtremeLargeFallbackFastPath] - Disables the coarse placement fast path for extreme fallback-scale molecules.
  * @param {boolean} [options.forceAlternateRootRetry] - Forces one alternate-root retry for test coverage.
  * @param {{heavyAtomCount: number, ringSystemCount: number, blockCount: number}|null} [options.partitionThreshold] - Optional internal block partition threshold.
  * @param {{id: string, atomIds: string[], canonicalSignature: string, heavyAtomCount: number, participantCount: number, ringSystemCount: number}|null} [options.rootBlock] - Optional explicit root block override.
@@ -1041,13 +1021,15 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     return null;
   }
 
-  const sliceLayouter = options.sliceLayouter ?? ((innerLayoutGraph, block, innerBondLength) => {
-    return layoutAtomSlice(innerLayoutGraph, block, innerBondLength, {
-      mixedOptions: {
-        conservativeAttachmentScoring: true
-      }
+  const sliceLayouter =
+    options.sliceLayouter ??
+    ((innerLayoutGraph, block, innerBondLength) => {
+      return layoutAtomSlice(innerLayoutGraph, block, innerBondLength, {
+        mixedOptions: {
+          conservativeAttachmentScoring: true
+        }
+      });
     });
-  });
   const blockById = new Map(blocks.map(block => [block.id, block]));
   const blockAdjacency = buildBlockAdjacency(blocks, cutBonds);
   const rankedRootBlocks = rankRootBlocks(blocks);
@@ -1146,20 +1128,15 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     }
   }
 
-  const cleanupRigidSubtreesByAtomId = buildCleanupRigidSubtreesByAtomId(
-    layoutGraph,
-    placedBlockAtomIds,
-    childBlocksByParentId,
-    attachmentAtomByBlockId,
-    rootAtomByBlockId
-  );
+  const cleanupRigidSubtreesByAtomId = buildCleanupRigidSubtreesByAtomId(layoutGraph, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootAtomByBlockId);
+  const useExtremeLargeFallbackFastPath = shouldUseExtremeLargeFallbackPlacementFastPath(layoutGraph, component, blocks, options);
   const repulsion = repelOverlappingBlocks(layoutGraph, coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
   const packed = options.disableRotationPacking
     ? { coords: repulsion.coords, rotationMoveCount: 0 }
     : compactBlockRotations(layoutGraph, repulsion.coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
   const primaryPlacement = {
     coords: packed.coords,
-    placementMode: 'block-stitched',
+    placementMode: useExtremeLargeFallbackFastPath ? 'block-stitched-retry-fast-path' : 'block-stitched',
     blockCount: blocks.length,
     refinedStitchCount,
     linearFallbackCount,
@@ -1171,11 +1148,15 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     rootRetryUsed: false,
     densePartitionRetryAttemptCount: 0,
     densePartitionRetryUsed: false,
+    extremeLargeFallbackFastPathUsed: useExtremeLargeFallbackFastPath,
     bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false }),
     cleanupRigidSubtreesByAtomId
   };
 
   const primaryAudit = auditLargeMoleculePlacement(layoutGraph, primaryPlacement, bondLength);
+  if (useExtremeLargeFallbackFastPath) {
+    return primaryPlacement;
+  }
   let densePartitionRetryAttemptCount = 0;
   if (shouldRetryWithDensePartition(primaryPlacement, primaryAudit, layoutGraph, component, threshold, options)) {
     densePartitionRetryAttemptCount = 1;

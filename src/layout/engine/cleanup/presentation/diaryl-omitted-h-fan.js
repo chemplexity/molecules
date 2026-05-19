@@ -10,14 +10,7 @@ import { measureTerminalCationRingProximityPenalty } from './terminal-cation-rin
 const IDEAL_THREE_HEAVY_ANGLE = (2 * Math.PI) / 3;
 const MIN_DIARYL_FAN_DEVIATION = Math.PI / 9;
 const MIN_DIARYL_FAN_IMPROVEMENT = 1e-4;
-const DIARYL_FAN_ROTATIONS = Object.freeze([
-  Math.PI / 6,
-  -(Math.PI / 6),
-  Math.PI / 12,
-  -(Math.PI / 12),
-  Math.PI / 4,
-  -(Math.PI / 4)
-]);
+const DIARYL_FAN_ROTATIONS = Object.freeze([Math.PI / 6, -(Math.PI / 6), Math.PI / 12, -(Math.PI / 12), Math.PI / 4, -(Math.PI / 4)]);
 const COUPLED_RELIEF_ROTATIONS = Object.freeze([
   Math.PI / 6,
   -(Math.PI / 6),
@@ -32,7 +25,6 @@ const COUPLED_RELIEF_ROTATIONS = Object.freeze([
 ]);
 const MAX_COUPLED_RELIEF_HEAVY_ATOMS = 28;
 const TIDY_EPSILON = 1e-6;
-
 
 function heavyCovalentNeighborIds(layoutGraph, atomId) {
   const neighborIds = [];
@@ -50,8 +42,7 @@ function heavyCovalentNeighborIds(layoutGraph, atomId) {
 }
 
 function isAromaticRingRoot(layoutGraph, atomId) {
-  return (layoutGraph?.atomToRings.get(atomId) ?? [])
-    .some(ring => ring?.aromatic === true && Array.isArray(ring.atomIds));
+  return (layoutGraph?.atomToRings.get(atomId) ?? []).some(ring => ring?.aromatic === true && Array.isArray(ring.atomIds));
 }
 
 function atomAngle(coords, centerAtomId, firstAtomId, secondAtomId) {
@@ -61,10 +52,7 @@ function atomAngle(coords, centerAtomId, firstAtomId, secondAtomId) {
   if (!center || !first || !second) {
     return null;
   }
-  return angularDifference(
-    angleOf(sub(first, center)),
-    angleOf(sub(second, center))
-  );
+  return angularDifference(angleOf(sub(first, center)), angleOf(sub(second, center)));
 }
 
 function measureThreeHeavyFan(coords, centerAtomId, neighborAtomIds) {
@@ -87,13 +75,7 @@ function measureThreeHeavyFan(coords, centerAtomId, neighborAtomIds) {
 function collectDiarylFanDescriptors(layoutGraph, coords) {
   const descriptors = [];
   for (const [atomId, atom] of layoutGraph?.atoms ?? []) {
-    if (
-      !coords.has(atomId)
-      || atom.element !== 'C'
-      || atom.aromatic
-      || atom.heavyDegree !== 3
-      || layoutGraph.ringAtomIdSet.has(atomId)
-    ) {
+    if (!coords.has(atomId) || atom.element !== 'C' || atom.aromatic || atom.heavyDegree !== 3 || layoutGraph.ringAtomIdSet.has(atomId)) {
       continue;
     }
 
@@ -142,13 +124,8 @@ function collectCoupledReliefDescriptors(layoutGraph, coords, descriptor) {
       if (reliefRootAtomId === descriptor.parentAtomId || !coords.has(reliefRootAtomId)) {
         continue;
       }
-      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, reliefRootAtomId, parentSiblingAtomId)]
-        .filter(atomId => coords.has(atomId));
-      if (
-        subtreeAtomIds.length === 0
-        || subtreeAtomIds.includes(descriptor.centerAtomId)
-        || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_COUPLED_RELIEF_HEAVY_ATOMS
-      ) {
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, reliefRootAtomId, parentSiblingAtomId)].filter(atomId => coords.has(atomId));
+      if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(descriptor.centerAtomId) || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_COUPLED_RELIEF_HEAVY_ATOMS) {
         continue;
       }
       reliefDescriptors.push({
@@ -165,8 +142,7 @@ function rotateSubtreeAroundPivot(layoutGraph, coords, rootAtomId, pivotAtomId, 
   if (!pivotPosition) {
     return null;
   }
-  const atomIds = [...collectCutSubtree(layoutGraph, rootAtomId, pivotAtomId)]
-    .filter(atomId => coords.has(atomId));
+  const atomIds = [...collectCutSubtree(layoutGraph, rootAtomId, pivotAtomId)].filter(atomId => coords.has(atomId));
   if (atomIds.length === 0) {
     return null;
   }
@@ -189,10 +165,7 @@ function maxCovalentBondLengthDeviation(layoutGraph, coords, bondLength) {
     if (!first || !second) {
       continue;
     }
-    maxDeviation = Math.max(
-      maxDeviation,
-      Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - bondLength)
-    );
+    maxDeviation = Math.max(maxDeviation, Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - bondLength));
   }
   return maxDeviation;
 }
@@ -296,13 +269,7 @@ export function runDiarylOmittedHydrogenFanTidy(layoutGraph, inputCoords, option
 
     for (const rootAtomId of descriptor.ringRootAtomIds) {
       for (const rotation of DIARYL_FAN_ROTATIONS) {
-        const rotatedCoords = rotateSubtreeAroundPivot(
-          layoutGraph,
-          coords,
-          rootAtomId,
-          descriptor.centerAtomId,
-          rotation
-        );
+        const rotatedCoords = rotateSubtreeAroundPivot(layoutGraph, coords, rootAtomId, descriptor.centerAtomId, rotation);
         if (!rotatedCoords) {
           continue;
         }
@@ -322,13 +289,7 @@ export function runDiarylOmittedHydrogenFanTidy(layoutGraph, inputCoords, option
         const reliefDescriptors = collectCoupledReliefDescriptors(layoutGraph, rotatedCoords, descriptor);
         for (const reliefDescriptor of reliefDescriptors) {
           for (const reliefRotation of COUPLED_RELIEF_ROTATIONS) {
-            const relievedCoords = rotateSubtreeAroundPivot(
-              layoutGraph,
-              rotatedCoords,
-              reliefDescriptor.rootAtomId,
-              reliefDescriptor.pivotAtomId,
-              reliefRotation
-            );
+            const relievedCoords = rotateSubtreeAroundPivot(layoutGraph, rotatedCoords, reliefDescriptor.rootAtomId, reliefDescriptor.pivotAtomId, reliefRotation);
             if (!relievedCoords) {
               continue;
             }

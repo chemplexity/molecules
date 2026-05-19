@@ -56,6 +56,7 @@ const RING_BRANCH_BOND_CROSSING_RESCUE_STEP = Math.PI / 36;
 const RING_BRANCH_BOND_CROSSING_RESCUE_LIMIT = Math.PI / 2;
 const RING_BRANCH_BOND_CROSSING_RESCUE_CLEARANCE_FACTOR = 0.68;
 const RING_BRANCH_BOND_CROSSING_RESCUE_MAX_SUBTREE = 12;
+const BRIDGED_RING_ANCHOR_LOOKAHEAD_MAX_ANGLES = 4;
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
@@ -65,10 +66,25 @@ function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   }
 
   const ringIds = new Set(ringSystem.ringIds);
-  const systemConnections = (layoutGraph.ringConnections ?? []).filter(connection => (
-    ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
-  ));
+  const systemConnections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
   return systemConnections.length > 0 && systemConnections.every(connection => connection.kind === 'fused');
+}
+
+function isBridgedRingSystemAnchor(layoutGraph, atomId) {
+  const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
+  const ringSystem = ringSystemId != null ? layoutGraph.ringSystems?.find(candidate => candidate.id === ringSystemId) : null;
+  if (!ringSystem || (ringSystem.ringIds?.length ?? 0) <= 1) {
+    return false;
+  }
+  const ringIds = new Set(ringSystem.ringIds);
+  return (layoutGraph.ringConnections ?? []).some(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId) && connection.kind === 'bridged');
+}
+
+function boundedRingAnchorLookaheadAngles(layoutGraph, anchorAtomId, candidateAngles) {
+  if (!isBridgedRingSystemAnchor(layoutGraph, anchorAtomId) || candidateAngles.length <= BRIDGED_RING_ANCHOR_LOOKAHEAD_MAX_ANGLES) {
+    return candidateAngles;
+  }
+  return candidateAngles.slice(0, BRIDGED_RING_ANCHOR_LOOKAHEAD_MAX_ANGLES);
 }
 
 /**
@@ -102,16 +118,16 @@ function branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId
   const childPosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
   for (const bond of layoutGraph.bonds?.values?.() ?? []) {
     if (
-      !bond
-      || bond.kind !== 'covalent'
-      || bond.a === anchorAtomId
-      || bond.b === anchorAtomId
-      || bond.a === childAtomId
-      || bond.b === childAtomId
-      || !isVisibleHeavyLayoutAtom(layoutGraph, bond.a)
-      || !isVisibleHeavyLayoutAtom(layoutGraph, bond.b)
-      || !coords.has(bond.a)
-      || !coords.has(bond.b)
+      !bond ||
+      bond.kind !== 'covalent' ||
+      bond.a === anchorAtomId ||
+      bond.b === anchorAtomId ||
+      bond.a === childAtomId ||
+      bond.b === childAtomId ||
+      !isVisibleHeavyLayoutAtom(layoutGraph, bond.a) ||
+      !isVisibleHeavyLayoutAtom(layoutGraph, bond.b) ||
+      !coords.has(bond.a) ||
+      !coords.has(bond.b)
     ) {
       continue;
     }
@@ -134,18 +150,18 @@ function isTerminalCarbonRingBranchLeaf(layoutGraph, anchorAtomId, childAtomId, 
   const anchorAtom = layoutGraph?.atoms?.get(anchorAtomId);
   const childAtom = layoutGraph?.atoms?.get(childAtomId);
   return Boolean(
-    anchorAtom
-    && childAtom
-    && childBond
-    && childBond.kind === 'covalent'
-    && !childBond.aromatic
-    && (childBond.order ?? 1) === 1
-    && childAtom.element === 'C'
-    && !childAtom.aromatic
-    && !childAtom.chirality
-    && childAtom.heavyDegree === 1
-    && layoutGraph.ringAtomIdSet.has(anchorAtomId)
-    && !layoutGraph.ringAtomIdSet.has(childAtomId)
+    anchorAtom &&
+    childAtom &&
+    childBond &&
+    childBond.kind === 'covalent' &&
+    !childBond.aromatic &&
+    (childBond.order ?? 1) === 1 &&
+    childAtom.element === 'C' &&
+    !childAtom.aromatic &&
+    !childAtom.chirality &&
+    childAtom.heavyDegree === 1 &&
+    layoutGraph.ringAtomIdSet.has(anchorAtomId) &&
+    !layoutGraph.ringAtomIdSet.has(childAtomId)
   );
 }
 
@@ -168,20 +184,20 @@ function isRingBranchBondCrossingRescueEligible(layoutGraph, anchorAtomId, child
   const anchorRingCount = layoutGraph?.ringCountByAtomId.get(anchorAtomId) ?? 0;
   const anchorIsHeteroAtom = anchorAtom && anchorAtom.element !== 'C' && anchorAtom.element !== 'H';
   return Boolean(
-    layoutGraph
-    && anchorAtom
-    && childAtom
-    && childBond
-    && childBond.kind === 'covalent'
-    && !childBond.aromatic
-    && (childBond.order ?? 1) === 1
-    && anchorRingCount >= 2
-    && anchorIsHeteroAtom
-    && childAtom.element !== 'H'
-    && !childAtom.aromatic
-    && !layoutGraph.ringAtomIdSet.has(childAtomId)
-    && childSubtreeSize > 1
-    && childSubtreeSize <= RING_BRANCH_BOND_CROSSING_RESCUE_MAX_SUBTREE
+    layoutGraph &&
+    anchorAtom &&
+    childAtom &&
+    childBond &&
+    childBond.kind === 'covalent' &&
+    !childBond.aromatic &&
+    (childBond.order ?? 1) === 1 &&
+    anchorRingCount >= 2 &&
+    anchorIsHeteroAtom &&
+    childAtom.element !== 'H' &&
+    !childAtom.aromatic &&
+    !layoutGraph.ringAtomIdSet.has(childAtomId) &&
+    childSubtreeSize > 1 &&
+    childSubtreeSize <= RING_BRANCH_BOND_CROSSING_RESCUE_MAX_SUBTREE
   );
 }
 
@@ -193,11 +209,7 @@ function isRingBranchBondCrossingRescueEligible(layoutGraph, anchorAtomId, child
  */
 function ringBranchBondCrossingRescueAngles(preferredAngles, fallbackAngles = []) {
   const rescueOffsets = [];
-  for (
-    let offset = RING_BRANCH_BOND_CROSSING_RESCUE_STEP;
-    offset <= RING_BRANCH_BOND_CROSSING_RESCUE_LIMIT + 1e-9;
-    offset += RING_BRANCH_BOND_CROSSING_RESCUE_STEP
-  ) {
+  for (let offset = RING_BRANCH_BOND_CROSSING_RESCUE_STEP; offset <= RING_BRANCH_BOND_CROSSING_RESCUE_LIMIT + 1e-9; offset += RING_BRANCH_BOND_CROSSING_RESCUE_STEP) {
     rescueOffsets.push(-offset, offset);
   }
   return mergeCandidateAngles(
@@ -267,12 +279,13 @@ function chooseRingBranchBondCrossingRescueAngle(
     placementState,
     ringPolygons,
     atomGrid
-  ).filter(candidate => (
-    candidate.isSafe !== false
-    && (candidate.insideRingCount ?? 0) === 0
-    && (candidate.minSeparation ?? 0) >= Math.PI / 6
-    && !branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, candidate.angle, bondLength)
-  ));
+  ).filter(
+    candidate =>
+      candidate.isSafe !== false &&
+      (candidate.insideRingCount ?? 0) === 0 &&
+      (candidate.minSeparation ?? 0) >= Math.PI / 6 &&
+      !branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, candidate.angle, bondLength)
+  );
   const viableCandidates = candidates.filter(candidate => {
     const candidatePosition = add(anchorPosition, fromAngle(candidate.angle, bondLength));
     for (const [atomId, position] of coords) {
@@ -303,10 +316,7 @@ function chooseRingBranchBondCrossingRescueAngle(
       bestCandidate = candidate;
       continue;
     }
-    if (
-      (candidate.minSeparation ?? 0) === (bestCandidate.minSeparation ?? 0)
-      && candidate.centerDistanceScore > bestCandidate.centerDistanceScore
-    ) {
+    if ((candidate.minSeparation ?? 0) === (bestCandidate.minSeparation ?? 0) && candidate.centerDistanceScore > bestCandidate.centerDistanceScore) {
       bestCandidate = candidate;
     }
   }
@@ -325,9 +335,7 @@ function chooseRingBranchBondCrossingRescueAngle(
  * @returns {number[]} Non-crossing candidates, or the original set when all cross.
  */
 function filterFirstBondCrossingAngles(layoutGraph, coords, anchorAtomId, childAtomId, candidateAngles, bondLength) {
-  const cleanAngles = candidateAngles.filter(candidateAngle =>
-    !branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, candidateAngle, bondLength)
-  );
+  const cleanAngles = candidateAngles.filter(candidateAngle => !branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, candidateAngle, bondLength));
   return cleanAngles.length > 0 ? cleanAngles : candidateAngles;
 }
 
@@ -396,12 +404,7 @@ function isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
   }
 
   const bond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
-  return Boolean(
-    bond
-    && bond.kind === 'covalent'
-    && !bond.aromatic
-    && (bond.order ?? 1) === 1
-  );
+  return Boolean(bond && bond.kind === 'covalent' && !bond.aromatic && (bond.order ?? 1) === 1);
 }
 
 /**
@@ -421,10 +424,10 @@ function isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
  */
 function shouldDeferTerminalCarbonLeafForPendingTrigonalNeighbor(adjacency, atomIdsToPlace, coords, anchorAtomId, neighborAtomId, layoutGraph) {
   if (
-    !layoutGraph
-    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
-    || !isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
-    || !hasPendingNonAromaticRingNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph)
+    !layoutGraph ||
+    layoutGraph.ringAtomIdSet.has(anchorAtomId) ||
+    !isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId) ||
+    !hasPendingNonAromaticRingNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph)
   ) {
     return false;
   }
@@ -449,12 +452,7 @@ function shouldDeferTerminalCarbonLeafForPendingTrigonalNeighbor(adjacency, atom
  * @returns {boolean} True when the deferred leaves should use batch placement.
  */
 function shouldBatchSmallRingExteriorDeferredLeaves(layoutGraph, anchorAtomId, deferredHeavyNeighborIds) {
-  return (
-    deferredHeavyNeighborIds.length >= 2
-    && deferredHeavyNeighborIds.every(neighborAtomId =>
-      isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, neighborAtomId)
-    )
-  );
+  return deferredHeavyNeighborIds.length >= 2 && deferredHeavyNeighborIds.every(neighborAtomId => isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, neighborAtomId));
 }
 
 function buildBranchPlacementAtomGrid(layoutGraph, coords, bondLength) {
@@ -482,12 +480,12 @@ function resetBranchPlacementContext(placementContext, layoutGraph, coords, bond
 function ensureBranchPlacementContext(layoutGraph, coords, bondLength, placementContext = null) {
   const resolvedContext = placementContext ?? {};
   if (
-    resolvedContext.layoutGraph !== layoutGraph
-    || resolvedContext.coords !== coords
-    || resolvedContext.bondLength !== bondLength
-    || !resolvedContext.placementState
-    || resolvedContext.needsResync === true
-    || (!!resolvedContext.atomGrid) !== (bondLength > 0 && coords.size >= 160)
+    resolvedContext.layoutGraph !== layoutGraph ||
+    resolvedContext.coords !== coords ||
+    resolvedContext.bondLength !== bondLength ||
+    !resolvedContext.placementState ||
+    resolvedContext.needsResync === true ||
+    !!resolvedContext.atomGrid !== (bondLength > 0 && coords.size >= 160)
   ) {
     return resetBranchPlacementContext(resolvedContext, layoutGraph, coords, bondLength);
   }
@@ -495,7 +493,7 @@ function ensureBranchPlacementContext(layoutGraph, coords, bondLength, placement
 }
 
 function incidentRingPolygonsForAnchor(layoutGraph, coords, anchorAtomId, placementContext = null) {
-  if (!placementContext) {
+  if (!placementContext?.ringPolygonsByAnchor) {
     return incidentRingPolygons(layoutGraph, coords, anchorAtomId);
   }
   if (!placementContext.ringPolygonsByAnchor.has(anchorAtomId)) {
@@ -514,10 +512,7 @@ function incidentRingPolygonsForAnchor(layoutGraph, coords, anchorAtomId, placem
  * @returns {boolean} True when single-branch lookahead may run.
  */
 function allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) {
-  return (
-    (layoutGraph?.traits?.heavyAtomCount ?? 0) <= SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS
-    && (atomIdsToPlace?.size ?? 0) <= SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS
-  );
+  return (layoutGraph?.traits?.heavyAtomCount ?? 0) <= SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS && (atomIdsToPlace?.size ?? 0) <= SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS;
 }
 
 /**
@@ -627,15 +622,15 @@ function isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId
 function isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, childBond) {
   const childAtom = layoutGraph?.atoms.get(childAtomId);
   if (
-    !layoutGraph
-    || !childAtom
-    || childAtom.element === 'H'
-    || childAtom.aromatic
-    || layoutGraph.ringAtomIdSet.has(childAtomId)
-    || !childBond
-    || childBond.kind !== 'covalent'
-    || childBond.aromatic
-    || (childBond.order ?? 1) !== 1
+    !layoutGraph ||
+    !childAtom ||
+    childAtom.element === 'H' ||
+    childAtom.aromatic ||
+    layoutGraph.ringAtomIdSet.has(childAtomId) ||
+    !childBond ||
+    childBond.kind !== 'covalent' ||
+    childBond.aromatic ||
+    (childBond.order ?? 1) !== 1
   ) {
     return false;
   }
@@ -663,16 +658,14 @@ function isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, ch
 
 function phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, preferredAngles) {
   if (
-    layoutGraph?.atoms.get(anchorAtomId)?.aromatic !== true
-    || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
-    || !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
-    || !isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize)
+    layoutGraph?.atoms.get(anchorAtomId)?.aromatic !== true ||
+    (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1 ||
+    !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId) ||
+    !isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize)
   ) {
     return [];
   }
-  return (preferredAngles ?? []).flatMap(preferredAngle =>
-    PHOSPHATE_AROMATIC_TAIL_LOOKAHEAD_OFFSETS.map(offset => preferredAngle + offset)
-  );
+  return (preferredAngles ?? []).flatMap(preferredAngle => PHOSPHATE_AROMATIC_TAIL_LOOKAHEAD_OFFSETS.map(offset => preferredAngle + offset));
 }
 
 /**
@@ -690,79 +683,61 @@ function phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAt
  * @param {number[]} fallbackAngles - Fallback candidate angles.
  * @returns {boolean} True when single-branch lookahead should score the tail.
  */
-function shouldUseRingAnchorSingleBranchLookahead(
-  layoutGraph,
-  anchorAtomId,
-  childAtomId,
-  childBond,
-  currentPlacedNeighborIds,
-  childSubtreeSize,
-  fallbackAngles
-) {
+function shouldUseRingAnchorSingleBranchLookahead(layoutGraph, anchorAtomId, childAtomId, childBond, currentPlacedNeighborIds, childSubtreeSize, fallbackAngles) {
   const anchorAtom = layoutGraph?.atoms.get(anchorAtomId);
-  const placedRingNeighborCount = currentPlacedNeighborIds.filter(neighborAtomId => (
-    layoutGraph?.ringAtomIdSet?.has(neighborAtomId)
-  )).length;
+  const placedRingNeighborCount = currentPlacedNeighborIds.filter(neighborAtomId => layoutGraph?.ringAtomIdSet?.has(neighborAtomId)).length;
   const ringCount = layoutGraph?.ringCountByAtomId.get(anchorAtomId) ?? 0;
   const useAromaticTailLookahead =
-    anchorAtom?.aromatic === true
-    && ringCount === 1
-    && isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
-    && isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize);
+    anchorAtom?.aromatic === true &&
+    ringCount === 1 &&
+    isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId) &&
+    isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize);
   const useSaturatedMultiRingLookahead = anchorAtom?.aromatic !== true && ringCount >= 2;
   const useTerminalMultipleLookahead = isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, childBond);
   return (
-    layoutGraph
-    && isRingAnchor(layoutGraph, anchorAtomId)
-    && (useSaturatedMultiRingLookahead || useAromaticTailLookahead)
-    && !layoutGraph.ringAtomIdSet.has(childAtomId)
-    && childBond != null
-    && !childBond.aromatic
-    && (childBond.order ?? 1) === 1
-    && placedRingNeighborCount >= 2
-    && (childSubtreeSize >= RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE || useTerminalMultipleLookahead)
-    && fallbackAngles.length >= 2
+    layoutGraph &&
+    isRingAnchor(layoutGraph, anchorAtomId) &&
+    (useSaturatedMultiRingLookahead || useAromaticTailLookahead) &&
+    !layoutGraph.ringAtomIdSet.has(childAtomId) &&
+    childBond != null &&
+    !childBond.aromatic &&
+    (childBond.order ?? 1) === 1 &&
+    placedRingNeighborCount >= 2 &&
+    (childSubtreeSize >= RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE || useTerminalMultipleLookahead) &&
+    fallbackAngles.length >= 2
   );
 }
 
 function shouldPreferFineAlkylTailRescue(layoutGraph, anchorAtomId, parentAtomId, childAtomId, currentPlacedNeighborIds, preferredAngles) {
   if (
-    !layoutGraph
-    || !parentAtomId
-    || !childAtomId
-    || currentPlacedNeighborIds.length !== 1
-    || preferredAngles.length < 2
-    || layoutGraph.ringAtomIdSet.has(anchorAtomId)
-    || layoutGraph.ringAtomIdSet.has(childAtomId)
+    !layoutGraph ||
+    !parentAtomId ||
+    !childAtomId ||
+    currentPlacedNeighborIds.length !== 1 ||
+    preferredAngles.length < 2 ||
+    layoutGraph.ringAtomIdSet.has(anchorAtomId) ||
+    layoutGraph.ringAtomIdSet.has(childAtomId)
   ) {
     return false;
   }
 
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   const childAtom = layoutGraph.atoms.get(childAtomId);
-  if (
-    !anchorAtom
-    || !childAtom
-    || anchorAtom.element !== 'C'
-    || childAtom.element !== 'C'
-    || anchorAtom.aromatic
-    || childAtom.aromatic
-    || anchorAtom.heavyDegree !== 2
-  ) {
+  if (!anchorAtom || !childAtom || anchorAtom.element !== 'C' || childAtom.element !== 'C' || anchorAtom.aromatic || childAtom.aromatic || anchorAtom.heavyDegree !== 2) {
     return false;
   }
 
   const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
   const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
   return (
-    !!parentBond
-    && !!childBond
-    && parentBond.kind === 'covalent'
-    && childBond.kind === 'covalent'
-    && !parentBond.aromatic
-    && !childBond.aromatic
-    && (parentBond.order ?? 1) === 1
-    && (childBond.order ?? 1) === 1
+    !!parentBond &&
+    !!childBond &&
+    parentBond.kind === 'covalent' &&
+    childBond.kind === 'covalent' &&
+    !parentBond.aromatic &&
+    !childBond.aromatic &&
+    (parentBond.order ?? 1) === 1 &&
+    (childBond.order ?? 1) === 1
   );
 }
 
@@ -796,12 +771,7 @@ function terminalRingLeafIds(layoutGraph, anchorAtomId, skipLeafAtomId) {
       continue;
     }
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (
-      !neighborAtom
-      || !EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS.has(neighborAtom.element)
-      || (neighborAtom.heavyDegree ?? 0) !== 1
-      || layoutGraph.ringAtomIdSet.has(neighborAtomId)
-    ) {
+    if (!neighborAtom || !EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS.has(neighborAtom.element) || (neighborAtom.heavyDegree ?? 0) !== 1 || layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       continue;
     }
     leafAtomIds.push(neighborAtomId);
@@ -945,34 +915,13 @@ function futureTerminalRingLeafSlotPoints(adjacency, layoutGraph, coords, atomId
         continue;
       }
       const ringRootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
-      if (
-        coords.has(ringRootAtomId)
-        || seenRingRoots.has(ringRootAtomId)
-        || !ringRootHasPreviewableNeighbors(layoutGraph, ringRootAtomId)
-      ) {
+      if (coords.has(ringRootAtomId) || seenRingRoots.has(ringRootAtomId) || !ringRootHasPreviewableNeighbors(layoutGraph, ringRootAtomId)) {
         continue;
       }
       seenRingRoots.add(ringRootAtomId);
-      const attachmentAngle = chooseAttachmentAngle(
-        adjacency,
-        coords,
-        anchorAtomId,
-        atomIdsToPlace,
-        null,
-        layoutGraph,
-        ringRootAtomId,
-        branchConstraints
-      );
+      const attachmentAngle = chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsToPlace, null, layoutGraph, ringRootAtomId, branchConstraints);
       const ringRootPosition = add(anchorPosition, fromAngle(attachmentAngle, bondLength));
-      slotPoints.push(
-        ...futureRingTerminalLeafSlotPoints(
-          layoutGraph,
-          ringRootPosition,
-          attachmentAngle + Math.PI,
-          bondLength,
-          ringRootAtomId
-        )
-      );
+      slotPoints.push(...futureRingTerminalLeafSlotPoints(layoutGraph, ringRootPosition, attachmentAngle + Math.PI, bondLength, ringRootAtomId));
     }
   }
   return slotPoints;
@@ -1014,138 +963,80 @@ function placeNeighborSequence(
       filterAnglesByBudget(scoringPreferredAngles, anchorAtomId, branchConstraints),
       childIsHydrogen ? [] : budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
-    const constrainedFallbackAngles = mergeCandidateAngles(
-      filterAnglesByBudget(DISCRETE_BRANCH_ANGLES, anchorAtomId, branchConstraints),
-      budgetPreferredAngles(anchorAtomId, branchConstraints)
-    );
-    const shouldHonorProjectedTetrahedralAngle =
-      preferredAngles.length > 0
-      && !childIsHydrogen
-      && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
+    const constrainedFallbackAngles = mergeCandidateAngles(filterAnglesByBudget(DISCRETE_BRANCH_ANGLES, anchorAtomId, branchConstraints), budgetPreferredAngles(anchorAtomId, branchConstraints));
+    const shouldHonorProjectedTetrahedralAngle = preferredAngles.length > 0 && !childIsHydrogen && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
     const shouldHonorOmittedHydrogenTrigonalAngle =
-      preferredAngles.length > 0
-      && !childIsHydrogen
-      && currentPlacedNeighborIds.length === 2
-      && childBond != null
-      && !childBond.aromatic
-      && (childBond.order ?? 1) === 1
-      && shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId);
+      preferredAngles.length > 0 &&
+      !childIsHydrogen &&
+      currentPlacedNeighborIds.length === 2 &&
+      childBond != null &&
+      !childBond.aromatic &&
+      (childBond.order ?? 1) === 1 &&
+      shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId);
     const shouldHonorVisibleTrigonalBisectorAngle =
-      preferredAngles.length > 0
-      && !childIsHydrogen
-      && currentPlacedNeighborIds.length === 2
-      && childBond != null
-      && !childBond.aromatic
-      && (childBond.order ?? 1) === 1
-      && isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
+      preferredAngles.length > 0 &&
+      !childIsHydrogen &&
+      currentPlacedNeighborIds.length === 2 &&
+      childBond != null &&
+      !childBond.aromatic &&
+      (childBond.order ?? 1) === 1 &&
+      isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
     const shouldHonorPreferredAngle =
-      preferredAngles.length > 0
-      && !childIsHydrogen
-      && (
-        currentPlacedNeighborIds.length === 1
-        || isRingAnchor(layoutGraph, anchorAtomId)
-        || shouldHonorProjectedTetrahedralAngle
-        || shouldHonorOmittedHydrogenTrigonalAngle
-        || shouldHonorVisibleTrigonalBisectorAngle
-      );
+      preferredAngles.length > 0 &&
+      !childIsHydrogen &&
+      (currentPlacedNeighborIds.length === 1 ||
+        isRingAnchor(layoutGraph, anchorAtomId) ||
+        shouldHonorProjectedTetrahedralAngle ||
+        shouldHonorOmittedHydrogenTrigonalAngle ||
+        shouldHonorVisibleTrigonalBisectorAngle);
     const allowFinePreferredAngles = shouldHonorPreferredAngle && isRingAnchor(layoutGraph, anchorAtomId);
-    const shouldForceExactTrigonalAngle =
-      preferredAngles.length > 0
-      && !childIsHydrogen
-      && childBond != null
-      && isTerminalMultipleBondLeaf(layoutGraph, anchorAtomId, childBond);
-    const shouldForceExactRingTrigonalBisectorAngle =
-      preferredAngles.length > 0
-      && !childIsHydrogen
-      && isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
-    const shouldForceExactSimpleAcyclicAngle =
-      shouldHonorPreferredAngle
-      && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
-    const shouldForceExactOmittedHydrogenTrigonalAngle =
-      shouldHonorOmittedHydrogenTrigonalAngle;
-    const shouldForceExactVisibleTrigonalAngle =
-      shouldHonorVisibleTrigonalBisectorAngle;
-    const shouldForceExactProjectedTetrahedralAngle =
-      shouldHonorProjectedTetrahedralAngle
-      && currentPlacedNeighborIds.length >= 2;
+    const shouldForceExactTrigonalAngle = preferredAngles.length > 0 && !childIsHydrogen && childBond != null && isTerminalMultipleBondLeaf(layoutGraph, anchorAtomId, childBond);
+    const shouldForceExactRingTrigonalBisectorAngle = preferredAngles.length > 0 && !childIsHydrogen && isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
+    const shouldForceExactSimpleAcyclicAngle = shouldHonorPreferredAngle && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
+    const shouldForceExactOmittedHydrogenTrigonalAngle = shouldHonorOmittedHydrogenTrigonalAngle;
+    const shouldForceExactVisibleTrigonalAngle = shouldHonorVisibleTrigonalBisectorAngle;
+    const shouldForceExactProjectedTetrahedralAngle = shouldHonorProjectedTetrahedralAngle && currentPlacedNeighborIds.length >= 2;
     const shouldUseNearPreferredTerminalMultipleHeteroRescue =
-      shouldForceExactTrigonalAngle
-      && layoutGraph?.atoms.get(childAtomId)?.element !== 'C'
-      && isFusedOnlyRingSystemAnchor(layoutGraph, anchorAtomId);
-    const shouldUseFineAlkylTailRescue = shouldPreferFineAlkylTailRescue(
-      layoutGraph,
-      anchorAtomId,
-      parentAtomId,
-      childAtomId,
-      currentPlacedNeighborIds,
-      constrainedPreferredAngles
-    );
+      shouldForceExactTrigonalAngle && layoutGraph?.atoms.get(childAtomId)?.element !== 'C' && isFusedOnlyRingSystemAnchor(layoutGraph, anchorAtomId);
+    const shouldUseFineAlkylTailRescue = shouldPreferFineAlkylTailRescue(layoutGraph, anchorAtomId, parentAtomId, childAtomId, currentPlacedNeighborIds, constrainedPreferredAngles);
     const allowDirectPreferredAngle =
-      !shouldHonorPreferredAngle
-      || shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId)
-      || shouldForceExactTrigonalAngle
-      || shouldForceExactRingTrigonalBisectorAngle
-      || shouldForceExactSimpleAcyclicAngle
-      || shouldForceExactOmittedHydrogenTrigonalAngle
-      || shouldForceExactVisibleTrigonalAngle
-      || shouldForceExactProjectedTetrahedralAngle
-      || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
-    const shouldAvoidTerminalRingLeafSlots =
-      shouldForceExactSimpleAcyclicAngle
-      && !layoutGraph?.ringAtomIdSet?.has(childAtomId);
-    const exactPreferredAvoidPoints = shouldAvoidTerminalRingLeafSlots && constrainedPreferredAngles.length > 1
-      ? [
-          ...exactTerminalRingLeafSlotPoints(layoutGraph, coords, bondLength, childAtomId),
-          ...futureTerminalRingLeafSlotPoints(adjacency, layoutGraph, coords, atomIdsToPlace, bondLength, branchConstraints)
-        ]
-      : [];
+      !shouldHonorPreferredAngle ||
+      shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId) ||
+      shouldForceExactTrigonalAngle ||
+      shouldForceExactRingTrigonalBisectorAngle ||
+      shouldForceExactSimpleAcyclicAngle ||
+      shouldForceExactOmittedHydrogenTrigonalAngle ||
+      shouldForceExactVisibleTrigonalAngle ||
+      shouldForceExactProjectedTetrahedralAngle ||
+      isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
+    const shouldAvoidTerminalRingLeafSlots = shouldForceExactSimpleAcyclicAngle && !layoutGraph?.ringAtomIdSet?.has(childAtomId);
+    const exactPreferredAvoidPoints =
+      shouldAvoidTerminalRingLeafSlots && constrainedPreferredAngles.length > 1
+        ? [
+            ...exactTerminalRingLeafSlotPoints(layoutGraph, coords, bondLength, childAtomId),
+            ...futureTerminalRingLeafSlotPoints(adjacency, layoutGraph, coords, atomIdsToPlace, bondLength, branchConstraints)
+          ]
+        : [];
     const exactPreferredAngle =
-      (
-        (shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId))
-        || shouldForceExactTrigonalAngle
-        || shouldForceExactRingTrigonalBisectorAngle
-        || shouldForceExactSimpleAcyclicAngle
-        || shouldForceExactOmittedHydrogenTrigonalAngle
-        || shouldForceExactVisibleTrigonalAngle
-        || shouldForceExactProjectedTetrahedralAngle
-      )
-        ? chooseExactPreferredAngle(
-            anchorPosition,
-            bondLength,
-            coords,
-            occupiedAngles,
-            constrainedPreferredAngles,
-            excludedAtomIds,
-            placementState,
-            ringPolygons,
-            atomGrid,
-            {
-              ...(shouldForceExactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: 0.5 } : {}),
-              avoidPoints: exactPreferredAvoidPoints
-            }
-          )
+      (shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) ||
+      shouldForceExactTrigonalAngle ||
+      shouldForceExactRingTrigonalBisectorAngle ||
+      shouldForceExactSimpleAcyclicAngle ||
+      shouldForceExactOmittedHydrogenTrigonalAngle ||
+      shouldForceExactVisibleTrigonalAngle ||
+      shouldForceExactProjectedTetrahedralAngle
+        ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons, atomGrid, {
+            ...(shouldForceExactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: 0.5 } : {}),
+            avoidPoints: exactPreferredAvoidPoints
+          })
         : null;
-    const shouldUseFirstBondCrossingRescue =
-      isRingBranchBondCrossingRescueEligible(layoutGraph, anchorAtomId, childAtomId, childBond, childSubtreeSize);
+    const shouldUseFirstBondCrossingRescue = isRingBranchBondCrossingRescueEligible(layoutGraph, anchorAtomId, childAtomId, childBond, childSubtreeSize);
     const nearPreferredRescueAngle =
-      exactPreferredAngle == null
-      && shouldUseNearPreferredTerminalMultipleHeteroRescue
-        ? chooseNearPreferredRescueAngle(
-            anchorPosition,
-            bondLength,
-            coords,
-            occupiedAngles,
-            constrainedPreferredAngles,
-            excludedAtomIds,
-            placementState,
-            ringPolygons,
-            atomGrid
-          )
+      exactPreferredAngle == null && shouldUseNearPreferredTerminalMultipleHeteroRescue
+        ? chooseNearPreferredRescueAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons, atomGrid)
         : null;
     const exactPreferredBondCrossingRescueAngle =
-      exactPreferredAngle != null
-      && shouldUseFirstBondCrossingRescue
-      && branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, exactPreferredAngle, bondLength)
+      exactPreferredAngle != null && shouldUseFirstBondCrossingRescue && branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, exactPreferredAngle, bondLength)
         ? chooseRingBranchBondCrossingRescueAngle(
             layoutGraph,
             coords,
@@ -1198,37 +1089,33 @@ function placeNeighborSequence(
             excludedAtomIds
           }));
     const firstBondCrossingRescueAngle =
-      exactPreferredBondCrossingRescueAngle == null
-      && shouldUseFirstBondCrossingRescue
-      && branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, initialChosenAngle, bondLength)
-        ? (
-            chooseRingBranchBondCrossingRescueAngle(
-              layoutGraph,
-              coords,
-              anchorAtomId,
-              childAtomId,
-              bondLength,
-              occupiedAngles,
-              constrainedPreferredAngles.length > 0 ? constrainedPreferredAngles : [initialChosenAngle],
-              excludedAtomIds,
-              placementState,
-              ringPolygons,
-              atomGrid,
-              constrainedFallbackAngles
-            ) ?? initialChosenAngle
-          )
+      exactPreferredBondCrossingRescueAngle == null &&
+      shouldUseFirstBondCrossingRescue &&
+      branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, initialChosenAngle, bondLength)
+        ? (chooseRingBranchBondCrossingRescueAngle(
+            layoutGraph,
+            coords,
+            anchorAtomId,
+            childAtomId,
+            bondLength,
+            occupiedAngles,
+            constrainedPreferredAngles.length > 0 ? constrainedPreferredAngles : [initialChosenAngle],
+            excludedAtomIds,
+            placementState,
+            ringPolygons,
+            atomGrid,
+            constrainedFallbackAngles
+          ) ?? initialChosenAngle)
         : null;
-    const chosenAngle =
-      firstBondCrossingRescueAngle ??
-      initialChosenAngle;
+    const chosenAngle = firstBondCrossingRescueAngle ?? initialChosenAngle;
     const shouldUseClassicSingleBranchLookahead =
-      childBond != null
-      && !childBond.aromatic
-      && (childBond.order ?? 1) === 1
-      && currentPlacedNeighborIds.length === 1
-      && constrainedPreferredAngles.length >= 2
-      && childSubtreeSize >= 3
-      && hasNonAromaticMultipleBond(layoutGraph, childAtomId);
+      childBond != null &&
+      !childBond.aromatic &&
+      (childBond.order ?? 1) === 1 &&
+      currentPlacedNeighborIds.length === 1 &&
+      constrainedPreferredAngles.length >= 2 &&
+      childSubtreeSize >= 3 &&
+      hasNonAromaticMultipleBond(layoutGraph, childAtomId);
     const shouldUseRingAnchorLookahead = shouldUseRingAnchorSingleBranchLookahead(
       layoutGraph,
       anchorAtomId,
@@ -1239,38 +1126,23 @@ function placeNeighborSequence(
       constrainedFallbackAngles
     );
     const shouldUseSingleBranchLookahead =
-      !childIsHydrogen
-      && allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace)
-      && (shouldUseClassicSingleBranchLookahead || shouldUseRingAnchorLookahead);
+      placementContext?.disableSingleBranchLookahead !== true &&
+      !childIsHydrogen &&
+      allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) &&
+      (shouldUseClassicSingleBranchLookahead || shouldUseRingAnchorLookahead);
     if (shouldUseSingleBranchLookahead) {
       const phosphateTailLookaheadAngles = shouldUseRingAnchorLookahead
-        ? phosphateAromaticTailLookaheadAngles(
-            layoutGraph,
-            anchorAtomId,
-            childAtomId,
-            childSubtreeSize,
-            constrainedPreferredAngles
-          )
+        ? phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, constrainedPreferredAngles)
         : [];
       const lookaheadCandidateAngles = shouldUseRingAnchorLookahead
-        ? mergeCandidateAngles(
-            mergeCandidateAngles(
-              mergeCandidateAngles([chosenAngle], constrainedPreferredAngles),
-              phosphateTailLookaheadAngles
-            ),
-            constrainedFallbackAngles
-          )
+        ? mergeCandidateAngles(mergeCandidateAngles(mergeCandidateAngles([chosenAngle], constrainedPreferredAngles), phosphateTailLookaheadAngles), constrainedFallbackAngles)
         : mergeCandidateAngles([chosenAngle], constrainedPreferredAngles);
       const filteredLookaheadCandidateAngles = shouldUseFirstBondCrossingRescue
-        ? filterFirstBondCrossingAngles(
-            layoutGraph,
-            coords,
-            anchorAtomId,
-            childAtomId,
-            lookaheadCandidateAngles,
-            bondLength
-          )
+        ? filterFirstBondCrossingAngles(layoutGraph, coords, anchorAtomId, childAtomId, lookaheadCandidateAngles, bondLength)
         : lookaheadCandidateAngles;
+      const boundedLookaheadCandidateAngles = shouldUseRingAnchorLookahead
+        ? boundedRingAnchorLookaheadAngles(layoutGraph, anchorAtomId, filteredLookaheadCandidateAngles)
+        : filteredLookaheadCandidateAngles;
       const lookaheadAngle = chooseSingleBranchAngleWithLookahead(
         adjacency,
         canonicalAtomRank,
@@ -1280,7 +1152,7 @@ function placeNeighborSequence(
         anchorAtomId,
         parentAtomId,
         childAtomId,
-        filteredLookaheadCandidateAngles,
+        boundedLookaheadCandidateAngles,
         bondLength,
         placeChildren,
         layoutGraph,
@@ -1336,40 +1208,29 @@ function placeChildren(
   );
   const pendingTrigonalLeafNeighborIdSet = new Set(pendingTrigonalLeafNeighborIds);
   const basePrimaryNeighborIds = splitNeighbors.primaryNeighborIds.filter(neighborAtomId => !pendingTrigonalLeafNeighborIdSet.has(neighborAtomId));
-  const baseDeferredNeighborIds = pendingTrigonalLeafNeighborIds.length > 0
-    ? neighborOrder([...splitNeighbors.deferredNeighborIds, ...pendingTrigonalLeafNeighborIds], canonicalAtomRank)
-    : splitNeighbors.deferredNeighborIds;
+  const baseDeferredNeighborIds =
+    pendingTrigonalLeafNeighborIds.length > 0 ? neighborOrder([...splitNeighbors.deferredNeighborIds, ...pendingTrigonalLeafNeighborIds], canonicalAtomRank) : splitNeighbors.deferredNeighborIds;
   const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
   const primaryHypervalentHydrogenIds = crossLikeCenter
-    ? baseDeferredNeighborIds.filter(neighborAtomId => (
-        isHydrogenAtom(layoutGraph, neighborAtomId)
-        && crossLikeCenter.singleNeighborIds.includes(neighborAtomId)
-      ))
+    ? baseDeferredNeighborIds.filter(neighborAtomId => isHydrogenAtom(layoutGraph, neighborAtomId) && crossLikeCenter.singleNeighborIds.includes(neighborAtomId))
     : [];
-  const primaryNeighborIds = primaryHypervalentHydrogenIds.length > 0
-    ? neighborOrder([...basePrimaryNeighborIds, ...primaryHypervalentHydrogenIds], canonicalAtomRank)
-    : basePrimaryNeighborIds;
+  const primaryNeighborIds = primaryHypervalentHydrogenIds.length > 0 ? neighborOrder([...basePrimaryNeighborIds, ...primaryHypervalentHydrogenIds], canonicalAtomRank) : basePrimaryNeighborIds;
   const primaryHypervalentHydrogenIdSet = new Set(primaryHypervalentHydrogenIds);
-  const deferredNeighborIds = primaryHypervalentHydrogenIds.length > 0
-    ? baseDeferredNeighborIds.filter(neighborAtomId => !primaryHypervalentHydrogenIdSet.has(neighborAtomId))
-    : baseDeferredNeighborIds;
+  const deferredNeighborIds =
+    primaryHypervalentHydrogenIds.length > 0 ? baseDeferredNeighborIds.filter(neighborAtomId => !primaryHypervalentHydrogenIdSet.has(neighborAtomId)) : baseDeferredNeighborIds;
   const deferredHeavyNeighborIds = deferredNeighborIds.filter(neighborAtomId => !isHydrogenAtom(layoutGraph, neighborAtomId));
   const deferredHydrogenNeighborIds = deferredNeighborIds.filter(neighborAtomId => isHydrogenAtom(layoutGraph, neighborAtomId));
   const shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral =
-    hasCrossLikeHypervalentNeighbor(layoutGraph, anchorAtomId)
-    && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
-    && primaryNeighborIds.length > 0
-    && deferredHeavyNeighborIds.length > 0;
+    hasCrossLikeHypervalentNeighbor(layoutGraph, anchorAtomId) &&
+    supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId) &&
+    primaryNeighborIds.length > 0 &&
+    deferredHeavyNeighborIds.length > 0;
   const placementPrimaryNeighborIds = shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral
     ? neighborOrder([...primaryNeighborIds, ...deferredHeavyNeighborIds], canonicalAtomRank)
     : primaryNeighborIds;
-  const placementDeferredHeavyNeighborIds = shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral
-    ? []
-    : deferredHeavyNeighborIds;
+  const placementDeferredHeavyNeighborIds = shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral ? [] : deferredHeavyNeighborIds;
   const shouldLeaveDeferredLeavesForLaterPass =
-    placementPrimaryNeighborIds.length === 0
-    && deferredNeighborIds.length > 0
-    && hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph);
+    placementPrimaryNeighborIds.length === 0 && deferredNeighborIds.length > 0 && hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph);
   const childDescriptors = placementPrimaryNeighborIds.map(childAtomId => ({
     childAtomId,
     subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
@@ -1410,11 +1271,8 @@ function placeChildren(
     );
   }
   const shouldBatchDeferredHeavyLeaves =
-    placementDeferredHeavyNeighborIds.length >= 2
-    && (
-      supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
-      || shouldBatchSmallRingExteriorDeferredLeaves(layoutGraph, anchorAtomId, placementDeferredHeavyNeighborIds)
-    );
+    placementDeferredHeavyNeighborIds.length >= 2 &&
+    (supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId) || shouldBatchSmallRingExteriorDeferredLeaves(layoutGraph, anchorAtomId, placementDeferredHeavyNeighborIds));
   if (placementDeferredHeavyNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
     if (shouldBatchDeferredHeavyLeaves) {
       chooseBatchAngleAssignments(
@@ -1489,7 +1347,18 @@ function placeChildren(
  * @param {{placementState?: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null, ringPolygonsByAnchor?: Map<string, Array<Array<{x: number, y: number}>>>, needsResync?: boolean}|null} [placementContext] - Optional reusable branch-placement context.
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
  */
-export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null, branchConstraints = null, depth = 0, placementContext = null) {
+export function placeRemainingBranches(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  atomIdsToPlace,
+  seedAtomIds,
+  bondLength,
+  layoutGraph = null,
+  branchConstraints = null,
+  depth = 0,
+  placementContext = null
+) {
   if (depth > MAX_BRANCH_RECURSION_DEPTH) {
     return coords;
   }

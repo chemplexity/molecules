@@ -69,12 +69,7 @@ function buildEngineInputMolecule(molecule, options, hiddenHydrogenAtomIds) {
   }
   const clone = molecule.clone();
   for (const atom of clone.atoms.values()) {
-    if (
-      atom.name === 'H'
-      && atom.visible === false
-      && hiddenHydrogenAtomIds?.has?.(atom.id)
-      && !isStereoHydrogen(clone, atom)
-    ) {
+    if (atom.name === 'H' && atom.visible === false && hiddenHydrogenAtomIds?.has?.(atom.id) && !isStereoHydrogen(clone, atom)) {
       atom.visible = true;
     }
   }
@@ -100,14 +95,7 @@ function stripHiddenHydrogenCoords(result, hiddenHydrogenAtomIds) {
       if (atom?.element !== 'H' || atom.visible === false) {
         continue;
       }
-      if (
-        hiddenHydrogenAtomIds.has(atom.id)
-        || (
-          layoutGraph.options?.suppressH === true
-          && coords instanceof Map
-          && !coords.has(atom.id)
-        )
-      ) {
+      if (hiddenHydrogenAtomIds.has(atom.id) || (layoutGraph.options?.suppressH === true && coords instanceof Map && !coords.has(atom.id))) {
         atom.visible = false;
         restoredAnyVisibility = true;
       }

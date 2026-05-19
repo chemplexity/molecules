@@ -19,29 +19,8 @@ const MAX_BRANCH_CLEARANCE_HEAVY_ATOMS = 24;
 const RESOLVED_OVERLAP_CLEARANCE_FACTOR = 0.7;
 const MIN_PROJECTED_FAN_RELIEF_DEVIATION = Math.PI / 12;
 const MIN_PROJECTED_FAN_RELIEF_IMPROVEMENT = 1e-4;
-const BRANCH_CLEARANCE_ROTATION_STEPS = [
-  Math.PI / 12,
-  -Math.PI / 12,
-  Math.PI / 9,
-  -Math.PI / 9,
-  Math.PI / 18,
-  -Math.PI / 18,
-  (5 * Math.PI) / 36,
-  (-5 * Math.PI) / 36,
-  Math.PI / 6,
-  -Math.PI / 6
-];
-const PROJECTED_FAN_RELIEF_ROTATION_STEPS = [
-  Math.PI / 36,
-  -(Math.PI / 36),
-  Math.PI / 18,
-  -(Math.PI / 18),
-  Math.PI / 12,
-  -(Math.PI / 12),
-  Math.PI / 9,
-  -(Math.PI / 9)
-];
-
+const BRANCH_CLEARANCE_ROTATION_STEPS = [Math.PI / 12, -Math.PI / 12, Math.PI / 9, -Math.PI / 9, Math.PI / 18, -Math.PI / 18, (5 * Math.PI) / 36, (-5 * Math.PI) / 36, Math.PI / 6, -Math.PI / 6];
+const PROJECTED_FAN_RELIEF_ROTATION_STEPS = [Math.PI / 36, -(Math.PI / 36), Math.PI / 18, -(Math.PI / 18), Math.PI / 12, -(Math.PI / 12), Math.PI / 9, -(Math.PI / 9)];
 
 function projectedCenterPenalty(coords, centerAtomId, neighborAtomIds) {
   const centerPosition = coords.get(centerAtomId);
@@ -63,10 +42,7 @@ function projectedCenterPenalty(coords, centerAtomId, neighborAtomIds) {
         return null;
       }
       const separation = angularDifference(firstAngle, angleOf(sub(secondPosition, centerPosition)));
-      const deviation = Math.min(
-        Math.abs(separation - IDEAL_PROJECTED_SLOT_ANGLE),
-        Math.abs(separation - IDEAL_PROJECTED_OPPOSITE_ANGLE)
-      );
+      const deviation = Math.min(Math.abs(separation - IDEAL_PROJECTED_SLOT_ANGLE), Math.abs(separation - IDEAL_PROJECTED_OPPOSITE_ANGLE));
       maxDeviation = Math.max(maxDeviation, deviation);
       totalDeviation += deviation;
     }
@@ -77,19 +53,11 @@ function projectedCenterPenalty(coords, centerAtomId, neighborAtomIds) {
 
 function isProjectedTetrahedralCenter(layoutGraph, coords, centerAtomId) {
   const centerAtom = layoutGraph.atoms.get(centerAtomId);
-  if (
-    !centerAtom
-    || centerAtom.element === 'H'
-    || centerAtom.aromatic
-    || layoutGraph.ringAtomIdSet.has(centerAtomId)
-  ) {
+  if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic || layoutGraph.ringAtomIdSet.has(centerAtomId)) {
     return null;
   }
   const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
-  if (
-    heavyBonds.length !== 4
-    || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)
-  ) {
+  if (heavyBonds.length !== 4 || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)) {
     return null;
   }
   const neighborAtomIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId);
@@ -102,24 +70,13 @@ function isProjectedTetrahedralCenter(layoutGraph, coords, centerAtomId) {
 
 function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, frozenAtomIds) {
   const centerAtom = layoutGraph.atoms.get(centerAtomId);
-  if (
-    !centerAtom
-    || centerAtom.element !== 'C'
-    || centerAtom.aromatic
-    || centerAtom.chirality
-    || centerAtom.heavyDegree !== 4
-    || layoutGraph.ringAtomIdSet.has(centerAtomId)
-  ) {
+  if (!centerAtom || centerAtom.element !== 'C' || centerAtom.aromatic || centerAtom.chirality || centerAtom.heavyDegree !== 4 || layoutGraph.ringAtomIdSet.has(centerAtomId)) {
     return null;
   }
 
   const centerPosition = coords.get(centerAtomId);
   const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
-  if (
-    !centerPosition
-    || heavyBonds.length !== 4
-    || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)
-  ) {
+  if (!centerPosition || heavyBonds.length !== 4 || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)) {
     return null;
   }
 
@@ -129,13 +86,8 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
     if (!neighborAtom || frozenAtomIds?.has(neighborAtomId)) {
       return null;
     }
-    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, centerAtomId)]
-      .filter(atomId => coords.has(atomId));
-    if (
-      subtreeAtomIds.length === 0
-      || subtreeAtomIds.includes(centerAtomId)
-      || subtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))
-    ) {
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+    if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerAtomId) || subtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))) {
       return null;
     }
     let heavyAtomCount = 0;
@@ -159,20 +111,9 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
   }
 
   const attachedRingRootCount = records.filter(record => record.isAttachedRingRoot).length;
-  const hasCationDialkylNitrogenBranch = records.some(record => (
-    !record.isAttachedRingRoot
-    && record.element === 'N'
-    && record.heavyDegree === 2
-  ));
-  const acyclicCarbonContinuationCount = records.filter(record => (
-    !record.isAttachedRingRoot
-    && record.element === 'C'
-    && record.heavyDegree > 1
-  )).length;
-  if (
-    attachedRingRootCount < 2
-    || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)
-  ) {
+  const hasCationDialkylNitrogenBranch = records.some(record => !record.isAttachedRingRoot && record.element === 'N' && record.heavyDegree === 2);
+  const acyclicCarbonContinuationCount = records.filter(record => !record.isAttachedRingRoot && record.element === 'C' && record.heavyDegree > 1).length;
+  if (attachedRingRootCount < 2 || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)) {
     return null;
   }
 
@@ -248,20 +189,12 @@ function collectBranchClearanceDescriptors(layoutGraph, coords, centerDescriptor
       continue;
     }
     const parentAtom = layoutGraph.atoms.get(parentAtomId);
-    if (
-      !parentAtom
-      || parentAtom.element === 'H'
-      || parentAtom.aromatic
-      || layoutGraph.ringAtomIdSet.has(parentAtomId)
-    ) {
+    if (!parentAtom || parentAtom.element === 'H' || parentAtom.aromatic || layoutGraph.ringAtomIdSet.has(parentAtomId)) {
       continue;
     }
-    const childBonds = visibleHeavyCovalentBonds(layoutGraph, coords, parentAtomId)
-      .filter(({ neighborAtomId, bond }) => (
-        neighborAtomId !== centerDescriptor.centerAtomId
-        && !bond.aromatic
-        && (bond.order ?? 1) === 1
-      ));
+    const childBonds = visibleHeavyCovalentBonds(layoutGraph, coords, parentAtomId).filter(
+      ({ neighborAtomId, bond }) => neighborAtomId !== centerDescriptor.centerAtomId && !bond.aromatic && (bond.order ?? 1) === 1
+    );
     if (childBonds.length !== 1) {
       continue;
     }
@@ -269,13 +202,8 @@ function collectBranchClearanceDescriptors(layoutGraph, coords, centerDescriptor
     if (frozenAtomIds?.has(rootAtomId)) {
       continue;
     }
-    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)]
-      .filter(atomId => coords.has(atomId));
-    if (
-      subtreeAtomIds.length === 0
-      || subtreeAtomIds.includes(centerDescriptor.centerAtomId)
-      || subtreeAtomIds.includes(parentAtomId)
-    ) {
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)].filter(atomId => coords.has(atomId));
+    if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerDescriptor.centerAtomId) || subtreeAtomIds.includes(parentAtomId)) {
       continue;
     }
     let heavyAtomCount = 0;
@@ -305,10 +233,7 @@ function collectBranchClearanceDescriptors(layoutGraph, coords, centerDescriptor
 
 function descriptorsAreDisjoint(firstDescriptor, secondDescriptor) {
   const firstAtomIds = new Set(firstDescriptor.subtreeAtomIds);
-  if (
-    firstAtomIds.has(secondDescriptor.parentAtomId)
-    || secondDescriptor.subtreeAtomIds.includes(firstDescriptor.parentAtomId)
-  ) {
+  if (firstAtomIds.has(secondDescriptor.parentAtomId) || secondDescriptor.subtreeAtomIds.includes(firstDescriptor.parentAtomId)) {
     return false;
   }
   return secondDescriptor.subtreeAtomIds.every(atomId => !firstAtomIds.has(atomId));
@@ -337,10 +262,7 @@ function branchBend(coords, descriptor) {
   if (!parentPosition || !centerPosition || !rootPosition) {
     return null;
   }
-  return angularDifference(
-    angleOf(sub(centerPosition, parentPosition)),
-    angleOf(sub(rootPosition, parentPosition))
-  );
+  return angularDifference(angleOf(sub(centerPosition, parentPosition)), angleOf(sub(rootPosition, parentPosition)));
 }
 
 function candidateKeepsBranchBends(coords, descriptors) {
@@ -367,23 +289,22 @@ function applyDescriptorRotations(coords, descriptorRotations) {
 
 function auditCountsAcceptCleanCandidate(candidateAudit, baseAudit) {
   return (
-    candidateAudit?.ok === true
-    && (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit?.bondLengthFailureCount ?? 0)
-    && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit?.visibleHeavyBondCrossingCount ?? 0)
-    && (candidateAudit.collapsedMacrocycleCount ?? 0) <= (baseAudit?.collapsedMacrocycleCount ?? 0)
-    && (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (baseAudit?.ringSubstituentReadabilityFailureCount ?? 0)
-    && !((candidateAudit.stereoContradiction ?? false) && !(baseAudit?.stereoContradiction ?? false))
+    candidateAudit?.ok === true &&
+    (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit?.bondLengthFailureCount ?? 0) &&
+    (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit?.visibleHeavyBondCrossingCount ?? 0) &&
+    (candidateAudit.collapsedMacrocycleCount ?? 0) <= (baseAudit?.collapsedMacrocycleCount ?? 0) &&
+    (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (baseAudit?.ringSubstituentReadabilityFailureCount ?? 0) &&
+    !((candidateAudit.stereoContradiction ?? false) && !(baseAudit?.stereoContradiction ?? false))
   );
 }
 
 function scoreCandidate(candidate) {
   return (
-    (candidate.resolvedOverlapClearancePenalty ?? 0) * 100
-    +
-    candidate.centerPenalty.maxDeviation * 1000
-    + candidate.centerPenalty.totalDeviation * 100
-    + candidate.totalRotation
-    + candidate.movedHeavyAtomCount * CLEANUP_EPSILON
+    (candidate.resolvedOverlapClearancePenalty ?? 0) * 100 +
+    candidate.centerPenalty.maxDeviation * 1000 +
+    candidate.centerPenalty.totalDeviation * 100 +
+    candidate.totalRotation +
+    candidate.movedHeavyAtomCount * CLEANUP_EPSILON
   );
 }
 
@@ -410,12 +331,7 @@ function findExactProjectedBranchClearanceCandidate(layoutGraph, inputCoords, op
     if (!centerDescriptor) {
       continue;
     }
-    const descriptors = collectBranchClearanceDescriptors(
-      layoutGraph,
-      inputCoords,
-      centerDescriptor,
-      options.frozenAtomIds ?? null
-    );
+    const descriptors = collectBranchClearanceDescriptors(layoutGraph, inputCoords, centerDescriptor, options.frozenAtomIds ?? null);
     if (descriptors.length < 2) {
       continue;
     }
@@ -436,15 +352,11 @@ function findExactProjectedBranchClearanceCandidate(layoutGraph, inputCoords, op
             if (!candidateCoords || !candidateKeepsBranchBends(candidateCoords, [firstDescriptor, secondDescriptor])) {
               continue;
             }
-            const centerPenalty = projectedCenterPenalty(
-              candidateCoords,
-              centerDescriptor.centerAtomId,
-              centerDescriptor.neighborAtomIds
-            );
+            const centerPenalty = projectedCenterPenalty(candidateCoords, centerDescriptor.centerAtomId, centerDescriptor.neighborAtomIds);
             if (
-              !centerPenalty
-              || centerPenalty.maxDeviation > centerDescriptor.penalty.maxDeviation + PRESENTATION_METRIC_EPSILON
-              || centerPenalty.totalDeviation > centerDescriptor.penalty.totalDeviation + PRESENTATION_METRIC_EPSILON
+              !centerPenalty ||
+              centerPenalty.maxDeviation > centerDescriptor.penalty.maxDeviation + PRESENTATION_METRIC_EPSILON ||
+              centerPenalty.totalDeviation > centerDescriptor.penalty.totalDeviation + PRESENTATION_METRIC_EPSILON
             ) {
               continue;
             }
@@ -481,12 +393,7 @@ function findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, opt
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   let bestCandidate = null;
   for (const centerAtomId of inputCoords.keys()) {
-    const descriptor = collectDirectSlotCenterDescriptor(
-      layoutGraph,
-      inputCoords,
-      centerAtomId,
-      options.frozenAtomIds ?? null
-    );
+    const descriptor = collectDirectSlotCenterDescriptor(layoutGraph, inputCoords, centerAtomId, options.frozenAtomIds ?? null);
     if (!descriptor || descriptor.penalty.maxDeviation <= MAX_PROJECTED_CENTER_DEVIATION) {
       continue;
     }
@@ -526,10 +433,8 @@ function findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, opt
           if (!finalCenterPenalty || finalCenterPenalty.maxDeviation > MAX_PROJECTED_CENTER_DEVIATION) {
             return;
           }
-          const totalRotation = assignments.reduce((total, assignment) => total + Math.abs(assignment.rotation), 0)
-            + (branchCandidate?.totalRotation ?? 0);
-          const movedHeavyAtomCount = descriptor.records.reduce((total, record) => total + record.heavyAtomCount, 0)
-            + (branchCandidate?.movedHeavyAtomCount ?? 0);
+          const totalRotation = assignments.reduce((total, assignment) => total + Math.abs(assignment.rotation), 0) + (branchCandidate?.totalRotation ?? 0);
+          const movedHeavyAtomCount = descriptor.records.reduce((total, record) => total + record.heavyAtomCount, 0) + (branchCandidate?.movedHeavyAtomCount ?? 0);
           const candidate = {
             coords: candidateCoords,
             audit: candidateAudit,
@@ -540,10 +445,7 @@ function findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, opt
               })),
               ...(branchCandidate?.descriptors ?? [])
             ],
-            rotations: [
-              ...assignments.map(assignment => assignment.rotation),
-              ...(branchCandidate?.rotations ?? [])
-            ],
+            rotations: [...assignments.map(assignment => assignment.rotation), ...(branchCandidate?.rotations ?? [])],
             totalRotation,
             movedHeavyAtomCount,
             resolvedOverlapClearancePenalty: resolvedOverlapClearancePenalty(candidateCoords, baseOverlaps, bondLength)
@@ -588,24 +490,14 @@ function applyProjectedFanReliefRotations(coords, descriptor, rotations) {
 }
 
 function scoreProjectedFanReliefCandidate(candidate) {
-  return (
-    candidate.centerPenalty.maxDeviation * 1000
-    + candidate.centerPenalty.totalDeviation * 100
-    + candidate.totalRotation
-    + candidate.movedHeavyAtomCount * CLEANUP_EPSILON
-  );
+  return candidate.centerPenalty.maxDeviation * 1000 + candidate.centerPenalty.totalDeviation * 100 + candidate.totalRotation + candidate.movedHeavyAtomCount * CLEANUP_EPSILON;
 }
 
 function findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   let bestCandidate = null;
   for (const centerAtomId of inputCoords.keys()) {
-    const descriptor = collectDirectSlotCenterDescriptor(
-      layoutGraph,
-      inputCoords,
-      centerAtomId,
-      options.frozenAtomIds ?? null
-    );
+    const descriptor = collectDirectSlotCenterDescriptor(layoutGraph, inputCoords, centerAtomId, options.frozenAtomIds ?? null);
     if (!descriptor || descriptor.penalty.maxDeviation < MIN_PROJECTED_FAN_RELIEF_DEVIATION) {
       continue;
     }
@@ -625,9 +517,9 @@ function findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, base
             }
             const centerPenalty = projectedCenterPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
             if (
-              !centerPenalty
-              || centerPenalty.totalDeviation > descriptor.penalty.totalDeviation - MIN_PROJECTED_FAN_RELIEF_IMPROVEMENT
-              || centerPenalty.maxDeviation > descriptor.penalty.maxDeviation + PRESENTATION_METRIC_EPSILON
+              !centerPenalty ||
+              centerPenalty.totalDeviation > descriptor.penalty.totalDeviation - MIN_PROJECTED_FAN_RELIEF_IMPROVEMENT ||
+              centerPenalty.maxDeviation > descriptor.penalty.maxDeviation + PRESENTATION_METRIC_EPSILON
             ) {
               continue;
             }
@@ -642,18 +534,12 @@ function findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, base
               coords: candidateCoords,
               audit: candidateAudit,
               centerPenalty,
-              descriptors: [
-                { subtreeAtomIds: firstRecord.subtreeAtomIds },
-                { subtreeAtomIds: secondRecord.subtreeAtomIds }
-              ],
+              descriptors: [{ subtreeAtomIds: firstRecord.subtreeAtomIds }, { subtreeAtomIds: secondRecord.subtreeAtomIds }],
               rotations: [firstRotation, secondRotation],
               totalRotation: Math.abs(firstRotation) + Math.abs(secondRotation),
               movedHeavyAtomCount: firstRecord.heavyAtomCount + secondRecord.heavyAtomCount
             };
-            if (
-              !bestCandidate
-              || scoreProjectedFanReliefCandidate(candidate) < scoreProjectedFanReliefCandidate(bestCandidate) - PRESENTATION_METRIC_EPSILON
-            ) {
+            if (!bestCandidate || scoreProjectedFanReliefCandidate(candidate) < scoreProjectedFanReliefCandidate(bestCandidate) - PRESENTATION_METRIC_EPSILON) {
               bestCandidate = candidate;
             }
           }
@@ -668,22 +554,19 @@ function findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, base
 function hasProjectedFanReliefNeed(layoutGraph, coords) {
   for (const [centerAtomId, centerAtom] of layoutGraph?.atoms ?? []) {
     if (
-      !coords.has(centerAtomId)
-      || !centerAtom
-      || centerAtom.element !== 'C'
-      || centerAtom.aromatic
-      || centerAtom.chirality
-      || centerAtom.heavyDegree !== 4
-      || layoutGraph.ringAtomIdSet.has(centerAtomId)
+      !coords.has(centerAtomId) ||
+      !centerAtom ||
+      centerAtom.element !== 'C' ||
+      centerAtom.aromatic ||
+      centerAtom.chirality ||
+      centerAtom.heavyDegree !== 4 ||
+      layoutGraph.ringAtomIdSet.has(centerAtomId)
     ) {
       continue;
     }
 
     const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
-    if (
-      heavyBonds.length !== 4
-      || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)
-    ) {
+    if (heavyBonds.length !== 4 || heavyBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)) {
       continue;
     }
     let attachedRingRootCount = 0;
@@ -699,10 +582,7 @@ function hasProjectedFanReliefNeed(layoutGraph, coords) {
         hasCationDialkylNitrogenBranch = true;
       }
     }
-    if (
-      attachedRingRootCount < 2
-      || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)
-    ) {
+    if (attachedRingRootCount < 2 || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)) {
       continue;
     }
     const penalty = projectedCenterPenalty(
@@ -744,13 +624,12 @@ export function runProjectedTetrahedralBranchClearance(layoutGraph, inputCoords,
     bondLength,
     bondValidationClasses: options.bondValidationClasses
   });
-  const bestCandidate = baseOverlaps.length > 0
-    ? (
-        findExactProjectedBranchClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps)
-        ?? findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps)
-        ?? (shouldTryFanRelief ? findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit) : null)
-      )
-    : findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit);
+  const bestCandidate =
+    baseOverlaps.length > 0
+      ? (findExactProjectedBranchClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps) ??
+        findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, options, baseAudit, baseOverlaps) ??
+        (shouldTryFanRelief ? findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit) : null))
+      : findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit);
 
   if (!bestCandidate) {
     return {

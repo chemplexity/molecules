@@ -8,10 +8,7 @@ function bondAngleAtAtom(molecule, centerAtomId, firstNeighborAtomId, secondNeig
   const center = molecule.atoms.get(centerAtomId);
   const first = molecule.atoms.get(firstNeighborAtomId);
   const second = molecule.atoms.get(secondNeighborAtomId);
-  return angularDifference(
-    angleOf(sub(first, center)),
-    angleOf(sub(second, center))
-  );
+  return angularDifference(angleOf(sub(first, center)), angleOf(sub(second, center)));
 }
 
 describe('layout/public-api', () => {
@@ -26,10 +23,7 @@ describe('layout/public-api', () => {
       ['N11', 'C3']
     ]) {
       const angle = bondAngleAtAtom(molecule, 'C2', firstNeighborAtomId, secondNeighborAtomId);
-      assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${firstNeighborAtomId}-C2-${secondNeighborAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${firstNeighborAtomId}-C2-${secondNeighborAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
     }
     assert.equal([...molecule.atoms.values()].filter(atom => atom.name === 'H' && atom.visible !== false).length, 0);
   });
@@ -45,10 +39,7 @@ describe('layout/public-api', () => {
       ['C2', 'C6']
     ]) {
       const angle = bondAngleAtAtom(molecule, 'C4', firstNeighborAtomId, secondNeighborAtomId);
-      assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${firstNeighborAtomId}-C4-${secondNeighborAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${firstNeighborAtomId}-C4-${secondNeighborAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
     }
     assert.equal([...molecule.atoms.values()].filter(atom => atom.name === 'H' && atom.visible !== false).length, 0);
   });
@@ -59,10 +50,7 @@ describe('layout/public-api', () => {
     generateCoords(molecule, { suppressH: true, bondLength: 1.5 });
 
     const phenylRingAtomIds = ['C16', 'C17', 'C18', 'C19', 'C21', 'C22'];
-    const outwardAngle = angleOf(sub(
-      molecule.atoms.get('C16'),
-      centroid(phenylRingAtomIds.map(atomId => molecule.atoms.get(atomId)))
-    ));
+    const outwardAngle = angleOf(sub(molecule.atoms.get('C16'), centroid(phenylRingAtomIds.map(atomId => molecule.atoms.get(atomId)))));
     const exitAngle = angleOf(sub(molecule.atoms.get('C14'), molecule.atoms.get('C16')));
     assert.ok(
       angularDifference(outwardAngle, exitAngle) < 1e-6,
@@ -81,7 +69,7 @@ describe('layout/public-api', () => {
     ]) {
       const angle = bondAngleAtAtom(molecule, centerAtomId, firstNeighborAtomId, secondNeighborAtomId);
       assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+        Math.abs(angle - (2 * Math.PI) / 3) < 1e-6,
         `expected ${firstNeighborAtomId}-${centerAtomId}-${secondNeighborAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
       );
     }

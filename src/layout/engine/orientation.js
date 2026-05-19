@@ -534,11 +534,7 @@ export function normalizeOrientation(coords, molecule) {
 
   const fallbackBounds = computeBounds(coords, heavyAtomIds);
   if (fallbackBounds && fallbackBounds.height > fallbackBounds.width) {
-    rotateCoords(
-      coords,
-      vec(centerX, centerY),
-      bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAtomIds) ?? Math.PI / 2
-    );
+    rotateCoords(coords, vec(centerX, centerY), bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAtomIds) ?? Math.PI / 2);
   }
 
   const rings = molecule.getRings();

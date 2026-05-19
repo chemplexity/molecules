@@ -141,9 +141,7 @@ function summarizeCorpus(corpusName) {
   return {
     corpusName,
     size: corpus.length,
-    timing: Object.fromEntries(
-      Object.entries(timing).map(([key, value]) => [key, corpus.length > 0 ? value / corpus.length : 0])
-    ),
+    timing: Object.fromEntries(Object.entries(timing).map(([key, value]) => [key, corpus.length > 0 ? value / corpus.length : 0])),
     counts,
     stages: [...stageAccumulators.values()].sort((left, right) => right.elapsedMs - left.elapsedMs),
     slowestEntries: entries.sort((left, right) => right.totalMs - left.totalMs).slice(0, 5)
@@ -159,9 +157,7 @@ function printSummary(summary) {
   writeLine(
     `  avg timing: total ${formatMs(summary.timing.totalMs)} ms | placement ${formatMs(summary.timing.placementMs)} ms | cleanup ${formatMs(summary.timing.cleanupMs)} ms | label ${formatMs(summary.timing.labelClearanceMs)} ms | stereo ${formatMs(summary.timing.stereoMs)} ms | audit ${formatMs(summary.timing.auditMs)} ms`
   );
-  writeLine(
-    `  fallback counts: stabilization ${summary.counts.stabilizationRequests} | presentation ${summary.counts.presentationFallbackEscalations}`
-  );
+  writeLine(`  fallback counts: stabilization ${summary.counts.stabilizationRequests} | presentation ${summary.counts.presentationFallbackEscalations}`);
   writeLine('  stages:');
   for (const stage of summary.stages) {
     const averageStageMs = summary.size > 0 ? stage.elapsedMs / summary.size : 0;

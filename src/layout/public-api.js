@@ -113,15 +113,7 @@ export function refineExistingCoords(molecule, options = {}) {
  */
 export function generateAndRefine2dCoords(
   mol,
-  {
-    suppressH = true,
-    bondLength = 1.5,
-    maxPasses = 6,
-    finalLandscapeOrientation = true,
-    freezeRings = true,
-    freezeChiralCenters = false,
-    allowBranchReflect = true
-  } = {}
+  { suppressH = true, bondLength = 1.5, maxPasses = 6, finalLandscapeOrientation = true, freezeRings = true, freezeChiralCenters = false, allowBranchReflect = true } = {}
 ) {
   generateCoords(mol, { suppressH, bondLength, finalLandscapeOrientation });
   return refineExistingCoords(mol, {

@@ -1,14 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../../../src/core/index.js';
-import {
-  buildRingConnections,
-  classifyRingConnection,
-  getRingConnection,
-  isBridgedConnection,
-  isFusedConnection,
-  isSpiroConnection
-} from '../../../../src/layout/engine/topology/ring-connections.js';
+import { buildRingConnections, classifyRingConnection, getRingConnection, isBridgedConnection, isFusedConnection, isSpiroConnection } from '../../../../src/layout/engine/topology/ring-connections.js';
 import { makeBridgedConnectionFixture, makeNaphthalene, makeSpiro } from '../support/molecules.js';
 
 /**

@@ -94,11 +94,7 @@ function makeDeps() {
         calls.push(['restorePanelState', panelState]);
       },
       restoreInteractionState(snapshot) {
-        calls.push([
-          'restoreInteractionState',
-          snapshot.toolMode ?? snapshot.interactionState?.toolMode ?? null,
-          snapshot.drawBondType ?? snapshot.interactionState?.drawBondType ?? null
-        ]);
+        calls.push(['restoreInteractionState', snapshot.toolMode ?? snapshot.interactionState?.toolMode ?? null, snapshot.drawBondType ?? snapshot.interactionState?.drawBondType ?? null]);
       },
       restoreZoomTransform(snapshot) {
         calls.push(['restoreZoomTransform', snapshot]);

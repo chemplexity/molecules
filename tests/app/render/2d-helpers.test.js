@@ -466,11 +466,8 @@ describe('create2DRenderHelpers', () => {
 
     for (const expectedLine of expectedLines) {
       assert.ok(
-        lines.some(line =>
-          Math.abs(line.x1 - expectedLine.x1) < 1e-6 &&
-          Math.abs(line.y1 - expectedLine.y1) < 1e-6 &&
-          Math.abs(line.x2 - expectedLine.x2) < 1e-6 &&
-          Math.abs(line.y2 - expectedLine.y2) < 1e-6
+        lines.some(
+          line => Math.abs(line.x1 - expectedLine.x1) < 1e-6 && Math.abs(line.y1 - expectedLine.y1) < 1e-6 && Math.abs(line.x2 - expectedLine.x2) < 1e-6 && Math.abs(line.y2 - expectedLine.y2) < 1e-6
         ),
         `expected a centered double-bond segment matching ${JSON.stringify(expectedLine)}`
       );

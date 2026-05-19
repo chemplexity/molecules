@@ -123,11 +123,11 @@ function isHypervalentSingleLigandBond(atoms, bondsByAtomId, atomToRings, center
   const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
   const neighborAtom = atoms.get(neighborAtomId);
   return Boolean(
-    neighborAtom
-    && neighborAtom.element !== 'H'
-    && indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) > 1
-    && (atomToRings.get(centerAtomId)?.length ?? 0) > 0
-    && (atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+    neighborAtom &&
+    neighborAtom.element !== 'H' &&
+    indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) > 1 &&
+    (atomToRings.get(centerAtomId)?.length ?? 0) > 0 &&
+    (atomToRings.get(neighborAtomId)?.length ?? 0) > 0
   );
 }
 
@@ -138,19 +138,13 @@ function isOrthogonalOrganosiliconSingleLigand(atoms, atomId) {
 
 function isOrthogonalOrganosiliconArylLigand(atoms, atomToRings, atomId) {
   const atom = atoms.get(atomId);
-  return Boolean(
-    atom
-    && atom.element === 'C'
-    && atom.aromatic === true
-    && (atomToRings.get(atomId)?.length ?? 0) > 0
-  );
+  return Boolean(atom && atom.element === 'C' && atom.aromatic === true && (atomToRings.get(atomId)?.length ?? 0) > 0);
 }
 
 function isOrthogonalOrganosiliconLigandSet(atoms, atomToRings, atomIds) {
   return (
-    atomIds.every(atomId => isOrthogonalOrganosiliconSingleLigand(atoms, atomId))
-    && atomIds.filter(atomId => isOrthogonalOrganosiliconArylLigand(atoms, atomToRings, atomId)).length
-      >= ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS
+    atomIds.every(atomId => isOrthogonalOrganosiliconSingleLigand(atoms, atomId)) &&
+    atomIds.filter(atomId => isOrthogonalOrganosiliconArylLigand(atoms, atomToRings, atomId)).length >= ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS
   );
 }
 
@@ -197,20 +191,17 @@ function isPhosphazeneMultipleBondHetero(atoms, bondsByAtomId, centerAtomId, bon
   const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
   const neighborAtom = atoms.get(neighborAtomId);
   return Boolean(
-    centerAtom
-    && centerAtom.element === 'P'
-    && neighborAtom
-    && neighborAtom.element === 'N'
-    && describePhosphazeneTrigonalNitrogen(atoms, bondsByAtomId, neighborAtomId)?.multiplePhosphorusNeighborIds.includes(centerAtomId)
+    centerAtom &&
+    centerAtom.element === 'P' &&
+    neighborAtom &&
+    neighborAtom.element === 'N' &&
+    describePhosphazeneTrigonalNitrogen(atoms, bondsByAtomId, neighborAtomId)?.multiplePhosphorusNeighborIds.includes(centerAtomId)
   );
 }
 
 function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) {
   for (const atom of atoms.values()) {
-    if (
-      !ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)
-      && !ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element)
-    ) {
+    if (!ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element) && !ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element)) {
       continue;
     }
     let ligandCount = 0;
@@ -236,13 +227,7 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) 
         valid = false;
         break;
       }
-      if (
-        neighborAtom.element !== 'C'
-        && (
-          indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) === 1
-          || isPhosphazeneMultipleBondHetero(atoms, bondsByAtomId, atom.id, bond)
-        )
-      ) {
+      if (neighborAtom.element !== 'C' && (indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) === 1 || isPhosphazeneMultipleBondHetero(atoms, bondsByAtomId, atom.id, bond))) {
         terminalMultipleNeighborCount++;
         continue;
       }
@@ -251,18 +236,14 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) 
     }
 
     if (
-      valid
-      && ligandCount === 4
-      && (
-        (singleNeighborCount === 2 && terminalMultipleNeighborCount === 2)
-        || (singleNeighborCount === 3 && terminalMultipleNeighborCount === 1)
-        || (
-          ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element)
-          && singleNeighborCount === 4
-          && terminalMultipleNeighborCount === 0
-          && isOrthogonalOrganosiliconLigandSet(atoms, atomToRings, singleNeighborIds)
-        )
-      )
+      valid &&
+      ligandCount === 4 &&
+      ((singleNeighborCount === 2 && terminalMultipleNeighborCount === 2) ||
+        (singleNeighborCount === 3 && terminalMultipleNeighborCount === 1) ||
+        (ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element) &&
+          singleNeighborCount === 4 &&
+          terminalMultipleNeighborCount === 0 &&
+          isOrthogonalOrganosiliconLigandSet(atoms, atomToRings, singleNeighborIds)))
     ) {
       return true;
     }

@@ -9,7 +9,8 @@ import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js'
 import { layoutAtomSlice } from '../../../../src/layout/engine/placement/atom-slice.js';
 import { makeLargeExplicitHydrogenPeptide, makeLargePolyaryl } from '../support/molecules.js';
 
-const SULFATED_GLYCOSIDE_SMILES = 'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
+const SULFATED_GLYCOSIDE_SMILES =
+  'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
 
 /**
  * Returns the area of the current placed coordinate bounds.

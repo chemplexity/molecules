@@ -1,12 +1,29 @@
 # Change Log
 
+## 2026-05-19
+
+- Reduce timeout-prone mixed layouts by skipping attached-ring fallback during alternate-root presentation previews while keeping the full fallback in final cleanup.
+- Skip expensive hypervalent-deviation tie-break scoring inside speculative attached-ring fallback cleanup probes so repeated one-pass candidates avoid redundant sulfone/phosphate geometry fitting.
+- Bound recursive single-branch lookahead angle menus for bridged ring anchors, cutting one compact bridged mixed timeout case from the 30-second cap to a bounded audit-clean layout.
+- Replace locale-aware mixed candidate signature sorting with a simple stable comparator and prevent nested single-branch lookahead during lookahead scoring, dropping sampled short timeout rows into bounded placement times.
+- Reduce layout audit/scoring overhead by reusing cached auditable bond lists, avoiding focused-crossing Set copies, skipping tetrahedral filtering for non-four-coordinate centers, inlining representative centroids, and fast-pathing one-atom sparse candidate keys.
+- Cache final terminal multiple-bond leaf endpoint discovery, reuse static paired-terminal compression factors, and skip clone/audit setup in terminal alkene, paired terminal hetero, and omitted-H collateral retouches until candidate descriptors exist.
+- Add a cached terminal multiple-bond fan center index and use it across presentation scoring, terminal leaf tidy, paired hetero tidy, support-fan cleanup, and duplicate presentation passes so no-op terminal-leaf scans skip non-candidate atoms.
+- Cache terminal ring-hetero structural pairs, reuse per-anchor outward-angle calculations, defer atom-grid/coordinate clone setup until candidate descriptors exist, and use the atom grid for exact-outward blocker relief scans.
+- Restore guanidine mobile-hydrogen tautomer cleanup so terminal imine preference can move one hydrogen from terminal `NH2` to the internal guanidino nitrogen.
+- Let terminal carbonyl fan cleanup rotate a small center-side branch around a ring support before snapping the oxo leaf, preserving exact omitted-H hub fans while avoiding neighboring ring overlaps.
+- Keep final mixed acyl branch cleanup eligible when a layout still has visible heavy-bond crossings, even if the rest of the final audit is clean.
+
 ## 2026-05-18
 
+- Add macrocycle seed/audit short-circuits, terminal multiple-bond retouch prefiltering, and an extreme large-molecule coarse placement fast path to reduce layout compute time on placement-heavy cases.
+- Bump package metadata to 2026.5.18 and refresh allowed dev dependency patch/minor lockfile updates during daily maintenance.
 - Add a cleanup-stage budget with skip telemetry so audit-clean layouts can avoid late optional retouch cascades after cleanup time has already crossed the per-molecule budget.
 - Cap mixed attached-block full-score candidate evaluation for small and mid-sized mixed layouts, with scoring-budget telemetry for prescores, full scores, and budget bailouts.
 - Cache mixed attached-block full-score snapshots by base/transform/meta signature so repeated direct-ring rescue and refinement passes reuse branch-placement scoring instead of rebuilding identical candidate layouts.
 - Cache large-molecule residual retouch rotation descriptors and skip expensive angle-relief sweeps for medium mostly acyclic layouts once safety contacts are clear, while keeping the full angle-polish path for ring-rich and ultra-large peptide layouts.
 - Short-circuit huge bond-clean, overlap-dirty large-molecule generic-fallback layouts before cleanup and final retouch cascades, cutting the representative 540-heavy-atom audit row from roughly two minutes to a few seconds in focused runs.
+- Move browser layout determinism checks and the slowest mixed-family stress regressions behind opt-in layout stress scripts so default npm test avoids browser launches and multi-minute pathological molecule sweeps.
 - Cache E/Z priority-substituent lookups on the layout graph and skip acyclic E/Z enforcement work when all supported stereo bonds already match.
 - Expose final-retouch timing buckets and mixed/cleanup optimization counters in timing metadata so profile runs can separate placement, cleanup, retouch, and scoring overhead.
 - Add guarded connector-subtree label clearance so crowded phosphate linkers can clear residual label contacts without worsening layout audits.

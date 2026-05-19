@@ -662,223 +662,215 @@ let _clearMolecule;
 let _parseAndRender;
 let _parseAndRenderInchi;
 
-const {
-  navigationActions,
-  selectionActions,
-  editingActions,
-  dragGestureActions,
-  drawBondPreviewActions,
-  drawBondCommitActions,
-  primitiveSelectionActions,
-  primitiveEventHandlers
-} = initializeInteractionRuntime(
-  createInteractionRuntimeDeps({
-    appState,
-    takeSnapshot: options => _takeSnapshot(options),
-    captureAppSnapshot: options => _captureAppSnapshot(options),
-    discardLastSnapshot: () => _discardLastSnapshot(),
-    renderRuntime,
-    hasReactionPreview: () => _hasReactionPreview(),
-    reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
-    resetActiveResonanceView,
-    alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
-    spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
-    centerReaction2dPairCoords: _centerReaction2dPairCoords,
-    viewportFitPadding: _viewportFitPadding,
-    refineExistingCoords: refineActive2dCoords,
-    atomBBox,
-    flipDisplayStereo,
-    clearPrimitiveHover: () => _clearPrimitiveHover(),
-    restorePersistentHighlight: () => _restorePersistentHighlight(),
-    getFitCurrent2dView: () => fitCurrent2dView,
-    getZoomTransform: () => d3.zoomTransform(svg.node()),
-    setZoomTransform: transform => svg.call(zoom.transform, transform),
-    makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
-    syncStereoMap2d: mol => {
-      runtimeState.stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
-    },
-    flipStereoMap2d: mol => {
-      runtimeState.stereoMap2d = flipDisplayStereo(mol, runtimeState.stereoMap2d);
-      const preview = mol.__reactionPreview;
-      if (preview) {
-        if (preview.forcedStereoBondTypes?.size) {
-          for (const [bondId] of preview.forcedStereoBondTypes) {
-            const newType = runtimeState.stereoMap2d.get(bondId);
-            if (newType !== undefined) {
-              preview.forcedStereoBondTypes.set(bondId, newType);
+const { navigationActions, selectionActions, editingActions, dragGestureActions, drawBondPreviewActions, drawBondCommitActions, primitiveSelectionActions, primitiveEventHandlers } =
+  initializeInteractionRuntime(
+    createInteractionRuntimeDeps({
+      appState,
+      takeSnapshot: options => _takeSnapshot(options),
+      captureAppSnapshot: options => _captureAppSnapshot(options),
+      discardLastSnapshot: () => _discardLastSnapshot(),
+      renderRuntime,
+      hasReactionPreview: () => _hasReactionPreview(),
+      reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
+      resetActiveResonanceView,
+      alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
+      spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
+      centerReaction2dPairCoords: _centerReaction2dPairCoords,
+      viewportFitPadding: _viewportFitPadding,
+      refineExistingCoords: refineActive2dCoords,
+      atomBBox,
+      flipDisplayStereo,
+      clearPrimitiveHover: () => _clearPrimitiveHover(),
+      restorePersistentHighlight: () => _restorePersistentHighlight(),
+      getFitCurrent2dView: () => fitCurrent2dView,
+      getZoomTransform: () => d3.zoomTransform(svg.node()),
+      setZoomTransform: transform => svg.call(zoom.transform, transform),
+      makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
+      syncStereoMap2d: mol => {
+        runtimeState.stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
+      },
+      flipStereoMap2d: mol => {
+        runtimeState.stereoMap2d = flipDisplayStereo(mol, runtimeState.stereoMap2d);
+        const preview = mol.__reactionPreview;
+        if (preview) {
+          if (preview.forcedStereoBondTypes?.size) {
+            for (const [bondId] of preview.forcedStereoBondTypes) {
+              const newType = runtimeState.stereoMap2d.get(bondId);
+              if (newType !== undefined) {
+                preview.forcedStereoBondTypes.set(bondId, newType);
+              }
+            }
+          }
+          if (preview.forcedStereoByCenter?.size) {
+            for (const [centerId, info] of preview.forcedStereoByCenter) {
+              const newType = runtimeState.stereoMap2d.get(info.bondId);
+              if (newType !== undefined) {
+                preview.forcedStereoByCenter.set(centerId, { ...info, type: newType });
+              }
             }
           }
         }
-        if (preview.forcedStereoByCenter?.size) {
-          for (const [centerId, info] of preview.forcedStereoByCenter) {
-            const newType = runtimeState.stereoMap2d.get(info.bondId);
-            if (newType !== undefined) {
-              preview.forcedStereoByCenter.set(centerId, { ...info, type: newType });
-            }
-          }
+      },
+      setPreserveSelectionOnNextRender: value => {
+        runtimeState.preserveSelectionOnNextRender = value;
+      },
+      scale: SCALE,
+      bondOffset2d: BOND_OFF_2D,
+      patchForceNodePositions: (patchPos, options = {}) => forceHelpers.patchForceNodePositions(patchPos, options),
+      forceFitTransform: (nodes, pad, options = {}) => forceHelpers.forceFitTransform(nodes, pad, options),
+      forceFitPad: FORCE_LAYOUT_FIT_PAD,
+      forceInitialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+      zoomTransformsDiffer: (a, b, epsilon) => forceHelpers.zoomTransformsDiffer(a, b, epsilon),
+      parseSMILES,
+      parseINCHI,
+      simulation,
+      plotEl,
+      clean2dButton: domElements.getClean2dButtonElement(),
+      cleanForceButton: domElements.getCleanForceButtonElement(),
+      updateModeChrome: _updateModeChrome,
+      getDraw2D: () => draw2d,
+      applyForceSelection,
+      panButton: domElements.getPanButtonElement(),
+      selectButton: domElements.getSelectButtonElement(),
+      drawBondButton: domElements.getDrawBondButtonElement(),
+      drawTools: domElements.getDrawToolsElement(),
+      eraseButton: domElements.getEraseButtonElement(),
+      getChargeToolButton: tool => (tool === 'positive' ? domElements.getPositiveChargeButtonElement() : tool === 'negative' ? domElements.getNegativeChargeButtonElement() : null),
+      getElementButton: element => domElements.getElementButtonElement(element),
+      getBondDrawTypeButton: type => domElements.getBondDrawTypeButtonElement(type),
+      performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
+      prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds),
+      reactionPreviewBlock: ReactionPreviewPolicy.block,
+      normalizeResonanceForEdit: ResonancePolicy.normalizeForEdit,
+      takeSnapshotPolicy: SnapshotPolicy.take,
+      viewportNonePolicy: ViewportPolicy.none,
+      clearStereoAnnotations: (mol, affectedIds) => mol.clearStereoAnnotations(affectedIds),
+      kekulize,
+      refreshAromaticity,
+      patchNodePositions: patchPos => forceHelpers.patchForceNodePositions(patchPos),
+      reseatHydrogensAroundPatched: patchPos => forceHelpers.reseatHydrogensAroundPatched(patchPos),
+      refreshSelectionOverlay: () => _refreshSelectionOverlay(),
+      flashEraseButton: () => {
+        const btn = domElements.getEraseButtonElement();
+        if (!btn) {
+          return;
         }
-      }
-    },
-    setPreserveSelectionOnNextRender: value => {
-      runtimeState.preserveSelectionOnNextRender = value;
-    },
-    scale: SCALE,
-    bondOffset2d: BOND_OFF_2D,
-    patchForceNodePositions: (patchPos, options = {}) => forceHelpers.patchForceNodePositions(patchPos, options),
-    forceFitTransform: (nodes, pad, options = {}) => forceHelpers.forceFitTransform(nodes, pad, options),
-    forceFitPad: FORCE_LAYOUT_FIT_PAD,
-    forceInitialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
-    zoomTransformsDiffer: (a, b, epsilon) => forceHelpers.zoomTransformsDiffer(a, b, epsilon),
-    parseSMILES,
-    parseINCHI,
-    simulation,
-    plotEl,
-    clean2dButton: domElements.getClean2dButtonElement(),
-    cleanForceButton: domElements.getCleanForceButtonElement(),
-    updateModeChrome: _updateModeChrome,
-    getDraw2D: () => draw2d,
-    applyForceSelection,
-    panButton: domElements.getPanButtonElement(),
-    selectButton: domElements.getSelectButtonElement(),
-    drawBondButton: domElements.getDrawBondButtonElement(),
-    drawTools: domElements.getDrawToolsElement(),
-    eraseButton: domElements.getEraseButtonElement(),
-    getChargeToolButton: tool => (tool === 'positive' ? domElements.getPositiveChargeButtonElement() : tool === 'negative' ? domElements.getNegativeChargeButtonElement() : null),
-    getElementButton: element => domElements.getElementButtonElement(element),
-    getBondDrawTypeButton: type => domElements.getBondDrawTypeButtonElement(type),
-    performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
-    prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds),
-    reactionPreviewBlock: ReactionPreviewPolicy.block,
-    normalizeResonanceForEdit: ResonancePolicy.normalizeForEdit,
-    takeSnapshotPolicy: SnapshotPolicy.take,
-    viewportNonePolicy: ViewportPolicy.none,
-    clearStereoAnnotations: (mol, affectedIds) => mol.clearStereoAnnotations(affectedIds),
-    kekulize,
-    refreshAromaticity,
-    patchNodePositions: patchPos => forceHelpers.patchForceNodePositions(patchPos),
-    reseatHydrogensAroundPatched: patchPos => forceHelpers.reseatHydrogensAroundPatched(patchPos),
-    refreshSelectionOverlay: () => _refreshSelectionOverlay(),
-    flashEraseButton: () => {
-      const btn = domElements.getEraseButtonElement();
-      if (!btn) {
-        return;
-      }
-      btn.textContent = '✓';
-      setTimeout(() => {
-        btn.textContent = '🗑️';
-      }, 1500);
-    },
-    createDrag: () => d3.drag(),
-    getDrawBondMode: () => runtimeState.drawBondMode,
-    getEraseMode: () => runtimeState.eraseMode,
-    getChargeTool: () => runtimeState.chargeTool,
-    captureSnapshot: () => _captureAppSnapshot(),
-    getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
-    getCurrentMolecule: () => runtimeState.currentMol,
-    setAutoFitEnabled: value => {
-      runtimeState.forceAutoFitEnabled = value;
-    },
-    disableKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
-    refresh2dSelection: () => selectionOverlayManager.redraw2dSelection(),
-    hideTooltip: () => {
-      tooltip.transition().duration(50).style('opacity', 0);
-    },
-    setElementCursor: (element, value) => {
-      d3.select(element).style('cursor', value);
-    },
-    g,
-    getMode: () => runtimeState.mode,
-    getDrawBondElement: () => runtimeState.drawBondElement,
-    getDrawBondType: () => runtimeState.drawBondType,
-    getDrawElemProtons: () => DRAW_ELEM_PROTONS,
-    isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
-    getDrawBondState: () => runtimeState.drawBondState,
-    setDrawBondState: value => {
-      runtimeState.drawBondState = value;
-    },
-    clearHoveredAtomIds: () => runtimeState.hoveredAtomIds.clear(),
-    clearHoveredBondIds: () => runtimeState.hoveredBondIds.clear(),
-    addHoveredAtomId: atomId => runtimeState.hoveredAtomIds.add(atomId),
-    redraw2dSelection: () => selectionOverlayManager.redraw2dSelection(),
-    getPlotSize: () => ({
-      width: plotEl.clientWidth || 600,
-      height: plotEl.clientHeight || 400
-    }),
-    getForceNodeById: atomId => simulation.nodes().find(node => node.id === atomId),
-    getForceNodes: () => simulation.nodes(),
-    get2DAtomById: atomId => runtimeState.mol2d?.atoms.get(atomId),
-    get2DAtoms: () => (runtimeState.mol2d ? [...runtimeState.mol2d.atoms.values()] : []),
-    get2DCenterX: () => runtimeState.cx2d,
-    get2DCenterY: () => runtimeState.cy2d,
-    toSelectionSVGPt2d: atom => scene2DRenderer.toSVGPt?.(atom) ?? render2DHelpers.toSVGPt2d(atom),
-    forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
-    strokeWidth: STROKE_W,
-    fontSize: runtimeState.fontSize,
-    atomRadius,
-    atomColor,
-    strokeColor,
-    singleBondWidth,
-    labelHalfW,
-    setDrawBondHoverSuppressed: value => {
-      runtimeState.drawBondHoverSuppressed = value;
-    },
-    captureZoomTransform: () => zoomTransformHelpers.captureZoomTransformSnapshot(),
-    restore2dEditViewport: (zoomSnapshot, options = {}) => _restore2dEditViewport(zoomSnapshot, options),
-    forceScale: 25,
-    restoreSnapshot: snap => _restoreSnapshot(snap),
-    prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
-    prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol),
-    getActiveMolecule: () => (runtimeState.mode === 'force' ? runtimeState.currentMol : runtimeState.mol2d),
-    ensureActiveMolecule: () => _ensureMol(),
-    enableKeepInView: () => forceViewportStateHelpers.enableKeepInView(),
-    sync2DDerivedState: mol => render2DHelpers.sync2dDerivedState(mol),
-    syncInputField: mol => _syncInputField(mol),
-    updateFormula: mol => updateFormula(mol),
-    updateDescriptors: mol => updateDescriptors(mol),
-    updatePanels: mol => _updateAnalysisPanels(mol),
-    draw2d: () => renderRuntime.draw2d(),
-    updateForce: (mol, options = {}) => renderRuntime.updateForce(mol, options),
-    clearSelection: () => runtimeState.clearSelection(),
-    changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
-    changeAtomCharge: (atomId, options = {}) => _changeAtomCharge(atomId, options),
-    promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
-    isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
-    hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
-    replaceForceHydrogenAtom: (atomId, mol) => _replaceForceHydrogenWithDrawElement(atomId, mol),
-    showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
-    isDrawBondHoverSuppressed: () => runtimeState.drawBondHoverSuppressed,
-    isPrimitiveHoverSuppressed: () => runtimeState.primitiveHoverSuppressed,
-    setPrimitiveHoverSuppressed: value => {
-      runtimeState.primitiveHoverSuppressed = value;
-    },
-    showDelayedTooltip: (html, event, delay = 150) => {
-      tooltip.transition().delay(delay).style('opacity', 0.9);
-      tooltip
-        .html(html)
-        .style('left', `${event.clientX + 13}px`)
-        .style('top', `${event.clientY - 20}px`);
-    },
-    showImmediateTooltip: (html, event) => {
-      tooltip.interrupt().style('opacity', 0.9);
-      tooltip
-        .html(html)
-        .style('left', `${event.clientX + 13}px`)
-        .style('top', `${event.clientY - 20}px`);
-    },
-    moveTooltip: event => {
-      tooltip.style('left', `${event.clientX + 13}px`).style('top', `${event.clientY - 20}px`);
-    },
-    getSelectionValenceTooltipAtomId: () => runtimeState.selectionValenceTooltipAtomId,
-    setSelectionValenceTooltipAtomId: value => {
-      runtimeState.selectionValenceTooltipAtomId = value;
-    },
-    getRenderOptions,
-    atomTooltipHtml,
-    bondTooltipHtml,
-    pointer: (event, node) => d3.pointer(event, node),
-    getGNode: () => g.node()
-  })
-);
+        btn.textContent = '✓';
+        setTimeout(() => {
+          btn.textContent = '🗑️';
+        }, 1500);
+      },
+      createDrag: () => d3.drag(),
+      getDrawBondMode: () => runtimeState.drawBondMode,
+      getEraseMode: () => runtimeState.eraseMode,
+      getChargeTool: () => runtimeState.chargeTool,
+      captureSnapshot: () => _captureAppSnapshot(),
+      getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
+      getCurrentMolecule: () => runtimeState.currentMol,
+      setAutoFitEnabled: value => {
+        runtimeState.forceAutoFitEnabled = value;
+      },
+      disableKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
+      refresh2dSelection: () => selectionOverlayManager.redraw2dSelection(),
+      hideTooltip: () => {
+        tooltip.transition().duration(50).style('opacity', 0);
+      },
+      setElementCursor: (element, value) => {
+        d3.select(element).style('cursor', value);
+      },
+      g,
+      getMode: () => runtimeState.mode,
+      getDrawBondElement: () => runtimeState.drawBondElement,
+      getDrawBondType: () => runtimeState.drawBondType,
+      getDrawElemProtons: () => DRAW_ELEM_PROTONS,
+      isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
+      getDrawBondState: () => runtimeState.drawBondState,
+      setDrawBondState: value => {
+        runtimeState.drawBondState = value;
+      },
+      clearHoveredAtomIds: () => runtimeState.hoveredAtomIds.clear(),
+      clearHoveredBondIds: () => runtimeState.hoveredBondIds.clear(),
+      addHoveredAtomId: atomId => runtimeState.hoveredAtomIds.add(atomId),
+      redraw2dSelection: () => selectionOverlayManager.redraw2dSelection(),
+      getPlotSize: () => ({
+        width: plotEl.clientWidth || 600,
+        height: plotEl.clientHeight || 400
+      }),
+      getForceNodeById: atomId => simulation.nodes().find(node => node.id === atomId),
+      getForceNodes: () => simulation.nodes(),
+      get2DAtomById: atomId => runtimeState.mol2d?.atoms.get(atomId),
+      get2DAtoms: () => (runtimeState.mol2d ? [...runtimeState.mol2d.atoms.values()] : []),
+      get2DCenterX: () => runtimeState.cx2d,
+      get2DCenterY: () => runtimeState.cy2d,
+      toSelectionSVGPt2d: atom => scene2DRenderer.toSVGPt?.(atom) ?? render2DHelpers.toSVGPt2d(atom),
+      forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
+      strokeWidth: STROKE_W,
+      fontSize: runtimeState.fontSize,
+      atomRadius,
+      atomColor,
+      strokeColor,
+      singleBondWidth,
+      labelHalfW,
+      setDrawBondHoverSuppressed: value => {
+        runtimeState.drawBondHoverSuppressed = value;
+      },
+      captureZoomTransform: () => zoomTransformHelpers.captureZoomTransformSnapshot(),
+      restore2dEditViewport: (zoomSnapshot, options = {}) => _restore2dEditViewport(zoomSnapshot, options),
+      forceScale: 25,
+      restoreSnapshot: snap => _restoreSnapshot(snap),
+      prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
+      prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol),
+      getActiveMolecule: () => (runtimeState.mode === 'force' ? runtimeState.currentMol : runtimeState.mol2d),
+      ensureActiveMolecule: () => _ensureMol(),
+      enableKeepInView: () => forceViewportStateHelpers.enableKeepInView(),
+      sync2DDerivedState: mol => render2DHelpers.sync2dDerivedState(mol),
+      syncInputField: mol => _syncInputField(mol),
+      updateFormula: mol => updateFormula(mol),
+      updateDescriptors: mol => updateDescriptors(mol),
+      updatePanels: mol => _updateAnalysisPanels(mol),
+      draw2d: () => renderRuntime.draw2d(),
+      updateForce: (mol, options = {}) => renderRuntime.updateForce(mol, options),
+      clearSelection: () => runtimeState.clearSelection(),
+      changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
+      changeAtomCharge: (atomId, options = {}) => _changeAtomCharge(atomId, options),
+      promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
+      isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
+      hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
+      replaceForceHydrogenAtom: (atomId, mol) => _replaceForceHydrogenWithDrawElement(atomId, mol),
+      showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
+      isDrawBondHoverSuppressed: () => runtimeState.drawBondHoverSuppressed,
+      isPrimitiveHoverSuppressed: () => runtimeState.primitiveHoverSuppressed,
+      setPrimitiveHoverSuppressed: value => {
+        runtimeState.primitiveHoverSuppressed = value;
+      },
+      showDelayedTooltip: (html, event, delay = 150) => {
+        tooltip.transition().delay(delay).style('opacity', 0.9);
+        tooltip
+          .html(html)
+          .style('left', `${event.clientX + 13}px`)
+          .style('top', `${event.clientY - 20}px`);
+      },
+      showImmediateTooltip: (html, event) => {
+        tooltip.interrupt().style('opacity', 0.9);
+        tooltip
+          .html(html)
+          .style('left', `${event.clientX + 13}px`)
+          .style('top', `${event.clientY - 20}px`);
+      },
+      moveTooltip: event => {
+        tooltip.style('left', `${event.clientX + 13}px`).style('top', `${event.clientY - 20}px`);
+      },
+      getSelectionValenceTooltipAtomId: () => runtimeState.selectionValenceTooltipAtomId,
+      setSelectionValenceTooltipAtomId: value => {
+        runtimeState.selectionValenceTooltipAtomId = value;
+      },
+      getRenderOptions,
+      atomTooltipHtml,
+      bondTooltipHtml,
+      pointer: (event, node) => d3.pointer(event, node),
+      getGNode: () => g.node()
+    })
+  );
 
 const { inputFlowManager, inputControls } = initializeAppRuntime(
   createAppRuntimeDeps({

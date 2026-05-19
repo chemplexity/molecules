@@ -148,9 +148,7 @@ describe('parseINCHI — hydrogen isotopes from /i layer', () => {
     const deuteriums = [...mol.atoms.values()].filter(atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 1);
     const protiums = [...mol.atoms.values()].filter(atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 0);
     const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
-    const carbonWithTwoD = [...mol.atoms.values()].find(
-      atom => atom.name === 'C' && atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2
-    );
+    const carbonWithTwoD = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2);
 
     assert.equal(deuteriums.length, 3);
     assert.equal(protiums.length, 3);
@@ -228,9 +226,7 @@ describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () =
 
   it('keeps the side-chain nitrogen single-bonded to the guanidino carbon', () => {
     const nitrogens = [...mol.atoms.values()].filter(atom => atom.name === 'N');
-    const internalNitrogen = nitrogens.find(
-      atom => atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') && atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2
-    );
+    const internalNitrogen = nitrogens.find(atom => atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') && atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2);
     assert.ok(internalNitrogen);
     const doubleBonds = internalNitrogen.bonds
       .map(bondId => mol.bonds.get(bondId))

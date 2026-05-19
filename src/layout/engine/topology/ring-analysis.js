@@ -17,10 +17,7 @@ function ringContainsBond(ringAtomIds, firstAtomId, secondAtomId) {
     return false;
   }
   const ringSize = ringAtomIds.length;
-  return (
-    ringAtomIds[(firstIndex + 1) % ringSize] === secondAtomId
-    || ringAtomIds[(firstIndex - 1 + ringSize) % ringSize] === secondAtomId
-  );
+  return ringAtomIds[(firstIndex + 1) % ringSize] === secondAtomId || ringAtomIds[(firstIndex - 1 + ringSize) % ringSize] === secondAtomId;
 }
 
 function ringListContainsBond(rings, firstAtomId, secondAtomId) {
@@ -98,13 +95,7 @@ function withSupplementalBondCoveringRings(molecule, rings, canonicalAtomRank) {
 
   for (const bond of molecule.bonds.values()) {
     const [firstAtomId, secondAtomId] = bond.atoms ?? [];
-    if (
-      !firstAtomId
-      || !secondAtomId
-      || ringListContainsBond(supplementedRings, firstAtomId, secondAtomId)
-      || typeof bond.isInRing !== 'function'
-      || !bond.isInRing(molecule)
-    ) {
+    if (!firstAtomId || !secondAtomId || ringListContainsBond(supplementedRings, firstAtomId, secondAtomId) || typeof bond.isInRing !== 'function' || !bond.isInRing(molecule)) {
       continue;
     }
 
@@ -117,13 +108,7 @@ function withSupplementalBondCoveringRings(molecule, rings, canonicalAtomRank) {
       continue;
     }
     seenRingKeys.add(key);
-    supplementedRings.push(createRingDescriptor(
-      molecule,
-      cycleAtomIds,
-      canonicalAtomRank,
-      supplementedRings.length,
-      true
-    ));
+    supplementedRings.push(createRingDescriptor(molecule, cycleAtomIds, canonicalAtomRank, supplementedRings.length, true));
   }
 
   return supplementedRings;
@@ -217,12 +202,7 @@ export function getRingAtomIds(molecule) {
 export function analyzeRings(molecule, canonicalAtomRank = new Map()) {
   const adaptedRings = withSupplementalBondCoveringRings(
     molecule,
-    getRingAtomIds(molecule).map((ringAtomIds, rawIndex) => createRingDescriptor(
-      molecule,
-      [...ringAtomIds],
-      canonicalAtomRank,
-      rawIndex
-    )),
+    getRingAtomIds(molecule).map((ringAtomIds, rawIndex) => createRingDescriptor(molecule, [...ringAtomIds], canonicalAtomRank, rawIndex)),
     canonicalAtomRank
   )
     .sort((firstRing, secondRing) => {

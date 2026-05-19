@@ -22,7 +22,7 @@ function nowMs(context) {
 export function createStageExecutionEntry(stageName, parentStage, overrides = {}) {
   return {
     name: stageName,
-    parentStage: Array.isArray(parentStage) ? [...parentStage] : parentStage ?? null,
+    parentStage: Array.isArray(parentStage) ? [...parentStage] : (parentStage ?? null),
     ran: overrides.ran === true,
     skipped: overrides.skipped === true,
     skipReason: typeof overrides.skipReason === 'string' ? overrides.skipReason : null,

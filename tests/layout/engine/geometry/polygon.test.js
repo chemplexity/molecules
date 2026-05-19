@@ -1,12 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  apothemForRegularPolygon,
-  countPointInPolygons,
-  circumradiusForRegularPolygon,
-  placeRegularPolygon,
-  pointInPolygon
-} from '../../../../src/layout/engine/geometry/polygon.js';
+import { apothemForRegularPolygon, countPointInPolygons, circumradiusForRegularPolygon, placeRegularPolygon, pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
 import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
 
 describe('layout/engine/geometry/polygon', () => {

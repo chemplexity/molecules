@@ -1,18 +1,7 @@
 /** @module stereo/enforcement */
 
-import {
-  countVisibleHeavyBondCrossings,
-  findSevereOverlaps,
-  measureDivalentContinuationDistortion,
-  measureLayoutCost
-} from '../audit/invariants.js';
-import {
-  actualAlkeneStereo,
-  hasEnforceableCyclicEZContext,
-  highestPriorityAlkeneSubstituentIdForLayoutGraph,
-  isSupportedAnnotatedDoubleBond,
-  smallestQualifyingStereoRing
-} from './ez.js';
+import { countVisibleHeavyBondCrossings, findSevereOverlaps, measureDivalentContinuationDistortion, measureLayoutCost } from '../audit/invariants.js';
+import { actualAlkeneStereo, hasEnforceableCyclicEZContext, highestPriorityAlkeneSubstituentIdForLayoutGraph, isSupportedAnnotatedDoubleBond, smallestQualifyingStereoRing } from './ez.js';
 import { cloneCoords, rotateAround } from '../geometry/transforms.js';
 import { wrapAngle } from '../geometry/vec2.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
@@ -377,10 +366,7 @@ function buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLen
     coords: candidateCoords,
     matchedStereoCount: countMatchedStereo(layoutGraph, candidateCoords, stereoBonds),
     severeOverlapCount: severeOverlaps.length,
-    severeOverlapPenalty: severeOverlaps.reduce(
-      (penalty, overlap) => penalty + Math.max(0, severeOverlapThreshold - overlap.distance) ** 2,
-      0
-    ),
+    severeOverlapPenalty: severeOverlaps.reduce((penalty, overlap) => penalty + Math.max(0, severeOverlapThreshold - overlap.distance) ** 2, 0),
     heavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords),
     divalentContinuationPenalty: divalentContinuation.totalDeviation,
     divalentContinuationMaxPenalty: divalentContinuation.maxDeviation,
@@ -398,58 +384,35 @@ function isBetterStereoCandidate(candidate, incumbent) {
     return true;
   }
   return (
-    candidate.matchedStereoCount > incumbent.matchedStereoCount
-    || (
-      candidate.matchedStereoCount === incumbent.matchedStereoCount
-      && (
-        candidate.severeOverlapCount < incumbent.severeOverlapCount
-        || (
-          candidate.severeOverlapCount === incumbent.severeOverlapCount
-          && candidate.severeOverlapPenalty < incumbent.severeOverlapPenalty - 1e-6
-        )
-        || (
-          candidate.severeOverlapCount === incumbent.severeOverlapCount
-          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
-          && candidate.heavyBondCrossingCount < incumbent.heavyBondCrossingCount
-        )
-        || (
-          candidate.severeOverlapCount === incumbent.severeOverlapCount
-          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
-          && candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount
-          && candidate.divalentContinuationPenalty < incumbent.divalentContinuationPenalty - 1e-6
-        )
-        || (
-          candidate.severeOverlapCount === incumbent.severeOverlapCount
-          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
-          && candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount
-          && Math.abs(candidate.divalentContinuationPenalty - incumbent.divalentContinuationPenalty) <= 1e-6
-          && candidate.divalentContinuationMaxPenalty < incumbent.divalentContinuationMaxPenalty - 1e-6
-        )
-        || (
-          candidate.severeOverlapCount === incumbent.severeOverlapCount
-          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
-          && candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount
-          && Math.abs(candidate.divalentContinuationPenalty - incumbent.divalentContinuationPenalty) <= 1e-6
-          && Math.abs(candidate.divalentContinuationMaxPenalty - incumbent.divalentContinuationMaxPenalty) <= 1e-6
-          && candidate.layoutCost < incumbent.layoutCost - 1e-6
-        )
-        || (
-          candidate.severeOverlapCount === incumbent.severeOverlapCount
-          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
-          && candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount
-          && Math.abs(candidate.divalentContinuationPenalty - incumbent.divalentContinuationPenalty) <= 1e-6
-          && Math.abs(candidate.divalentContinuationMaxPenalty - incumbent.divalentContinuationMaxPenalty) <= 1e-6
-          && Math.abs(candidate.layoutCost - incumbent.layoutCost) <= 1e-6
-          && (
-            candidate.heavyAtomSpan > incumbent.heavyAtomSpan + 1e-6
-            || (
-              Math.abs(candidate.heavyAtomSpan - incumbent.heavyAtomSpan) <= 1e-6
-              && candidate.heavyAtomCount < incumbent.heavyAtomCount
-            )
-          )
-        )
-      )
-    )
+    candidate.matchedStereoCount > incumbent.matchedStereoCount ||
+    (candidate.matchedStereoCount === incumbent.matchedStereoCount &&
+      (candidate.severeOverlapCount < incumbent.severeOverlapCount ||
+        (candidate.severeOverlapCount === incumbent.severeOverlapCount && candidate.severeOverlapPenalty < incumbent.severeOverlapPenalty - 1e-6) ||
+        (candidate.severeOverlapCount === incumbent.severeOverlapCount &&
+          Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6 &&
+          candidate.heavyBondCrossingCount < incumbent.heavyBondCrossingCount) ||
+        (candidate.severeOverlapCount === incumbent.severeOverlapCount &&
+          Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6 &&
+          candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount &&
+          candidate.divalentContinuationPenalty < incumbent.divalentContinuationPenalty - 1e-6) ||
+        (candidate.severeOverlapCount === incumbent.severeOverlapCount &&
+          Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6 &&
+          candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount &&
+          Math.abs(candidate.divalentContinuationPenalty - incumbent.divalentContinuationPenalty) <= 1e-6 &&
+          candidate.divalentContinuationMaxPenalty < incumbent.divalentContinuationMaxPenalty - 1e-6) ||
+        (candidate.severeOverlapCount === incumbent.severeOverlapCount &&
+          Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6 &&
+          candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount &&
+          Math.abs(candidate.divalentContinuationPenalty - incumbent.divalentContinuationPenalty) <= 1e-6 &&
+          Math.abs(candidate.divalentContinuationMaxPenalty - incumbent.divalentContinuationMaxPenalty) <= 1e-6 &&
+          candidate.layoutCost < incumbent.layoutCost - 1e-6) ||
+        (candidate.severeOverlapCount === incumbent.severeOverlapCount &&
+          Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6 &&
+          candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount &&
+          Math.abs(candidate.divalentContinuationPenalty - incumbent.divalentContinuationPenalty) <= 1e-6 &&
+          Math.abs(candidate.divalentContinuationMaxPenalty - incumbent.divalentContinuationMaxPenalty) <= 1e-6 &&
+          Math.abs(candidate.layoutCost - incumbent.layoutCost) <= 1e-6 &&
+          (candidate.heavyAtomSpan > incumbent.heavyAtomSpan + 1e-6 || (Math.abs(candidate.heavyAtomSpan - incumbent.heavyAtomSpan) <= 1e-6 && candidate.heavyAtomCount < incumbent.heavyAtomCount)))))
   );
 }
 
@@ -469,9 +432,7 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
     return null;
   }
 
-  const substituentNeighborIds = [...centerAtom.getNeighbors(layoutGraph.sourceMolecule)]
-    .map(atom => atom?.id)
-    .filter(atomId => atomId && atomId !== otherAtomId);
+  const substituentNeighborIds = [...centerAtom.getNeighbors(layoutGraph.sourceMolecule)].map(atom => atom?.id).filter(atomId => atomId && atomId !== otherAtomId);
   if (substituentNeighborIds.length === 0) {
     return null;
   }
@@ -519,12 +480,7 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
     if (!branchPoint) {
       return null;
     }
-    const desiredSign =
-      substituentNeighborIds.length === 1
-        ? desiredPrioritySign
-        : branch.neighborAtomId === prioritySubstituentId
-          ? desiredPrioritySign
-          : -desiredPrioritySign;
+    const desiredSign = substituentNeighborIds.length === 1 ? desiredPrioritySign : branch.neighborAtomId === prioritySubstituentId ? desiredPrioritySign : -desiredPrioritySign;
     const desiredAngle = bondAngle + desiredSign * ((2 * Math.PI) / 3);
     const currentAngle = angleOf(centerPoint, branchPoint);
     const deltaAngle = wrapAngle(desiredAngle - currentAngle);
@@ -542,14 +498,7 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
   }
 
   let bestCandidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds);
-  for (const reliefCandidate of buildTerminalBranchReliefCandidates(
-    layoutGraph,
-    candidateCoords,
-    movedAtomIds,
-    bondLength,
-    bond,
-    targetStereo
-  )) {
+  for (const reliefCandidate of buildTerminalBranchReliefCandidates(layoutGraph, candidateCoords, movedAtomIds, bondLength, bond, targetStereo)) {
     const candidate = buildStereoCandidate(layoutGraph, reliefCandidate.coords, stereoBonds, bondLength, reliefCandidate.movedAtomIds);
     if (isBetterStereoCandidate(candidate, bestCandidate)) {
       bestCandidate = candidate;
@@ -559,26 +508,9 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
   return bestCandidate;
 }
 
-const PRIORITY_SUBSTITUENT_SWEEP_OFFSETS = Object.freeze([
-  2.5,
-  5,
-  7.5,
-  10,
-  12.5,
-  15,
-  17.5,
-  20,
-  22.5,
-  25,
-  27.5,
-  30,
-  35,
-  40,
-  45,
-  60,
-  90,
-  120
-].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180]));
+const PRIORITY_SUBSTITUENT_SWEEP_OFFSETS = Object.freeze(
+  [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 35, 40, 45, 60, 90, 120].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180])
+);
 
 /**
  * Builds bounded single-substituent rotations for stereo rescues where the
@@ -713,33 +645,13 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         continue;
       }
 
-      let bestCandidate = buildLocalBranchRotationCandidate(
-        layoutGraph,
-        coords,
-        bond,
-        stereoBonds,
-        bondLength,
-        bond.a,
-        bond.b,
-        ringAtomIdSet
-      );
-      const secondCenterLocalCandidate = buildLocalBranchRotationCandidate(
-        layoutGraph,
-        coords,
-        bond,
-        stereoBonds,
-        bondLength,
-        bond.b,
-        bond.a,
-        ringAtomIdSet
-      );
+      let bestCandidate = buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, bond.a, bond.b, ringAtomIdSet);
+      const secondCenterLocalCandidate = buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, bond.b, bond.a, ringAtomIdSet);
       if (isBetterStereoCandidate(secondCenterLocalCandidate, bestCandidate)) {
         bestCandidate = secondCenterLocalCandidate;
       }
 
-      const sideCandidates = bond.inRing
-        ? collectRingReflectionSides(layoutGraph, bond)
-        : [collectSideAtoms(layoutGraph, bond.a, bond.b), collectSideAtoms(layoutGraph, bond.b, bond.a)];
+      const sideCandidates = bond.inRing ? collectRingReflectionSides(layoutGraph, bond) : [collectSideAtoms(layoutGraph, bond.a, bond.b), collectSideAtoms(layoutGraph, bond.b, bond.a)];
 
       for (const sideAtomIds of sideCandidates) {
         const reflectedSide = reflectSideCoords(coords, sideAtomIds, bond.a, bond.b);

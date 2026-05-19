@@ -1,11 +1,7 @@
 /** @module audit/stage-metrics */
 
 import { auditLayout } from './audit.js';
-import {
-  measureDirectAttachedRingJunctionContinuationDistortion,
-  measureDivalentContinuationDistortion,
-  measureThreeHeavyContinuationDistortion
-} from './invariants.js';
+import { measureDirectAttachedRingJunctionContinuationDistortion, measureDivalentContinuationDistortion, measureThreeHeavyContinuationDistortion } from './invariants.js';
 import { measureSmallRingExteriorGapSpreadPenalty } from '../placement/branch-placement.js';
 import { measureOrthogonalHypervalentDeviation } from '../cleanup/hypervalent-angle-tidy.js';
 import { measureLigandAngleDeviation } from '../cleanup/ligand-angle-tidy.js';
@@ -86,13 +82,13 @@ export function measureCleanupStagePresentationPenalty(layoutGraph, coords, opti
     measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
       focusAtomIds,
       includeLinkedRingBridgePenalty: true
-    })
-    + measureOrthogonalHypervalentDeviation(layoutGraph, coords, { focusAtomIds })
-    + measureLigandAngleDeviation(layoutGraph, coords, { focusAtomIds })
-    + measureDivalentContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
-    + measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
-    + measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
-    + (includeSmallRingExteriorPenalty ? measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords, focusAtomIds) : 0)
+    }) +
+    measureOrthogonalHypervalentDeviation(layoutGraph, coords, { focusAtomIds }) +
+    measureLigandAngleDeviation(layoutGraph, coords, { focusAtomIds }) +
+    measureDivalentContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation +
+    measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation +
+    measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation +
+    (includeSmallRingExteriorPenalty ? measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords, focusAtomIds) : 0)
   );
 }
 

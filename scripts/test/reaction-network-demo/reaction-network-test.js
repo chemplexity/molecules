@@ -2,7 +2,7 @@ import { ReactionNetwork } from '../../../src/network/index.js';
 import { parseSMILES, toCanonicalSMILES } from '../../../src/io/index.js';
 import { reactionTemplates } from '../../../src/smirks/index.js';
 
-// Parse process arguments securely 
+// Parse process arguments securely
 const seedSmiles = process.argv[2] || 'C';
 const maxDepth = parseInt(process.argv[3] || '5', 10);
 const flatten = process.argv[4] === 'true';
@@ -32,64 +32,68 @@ const templates = Object.values(reactionTemplates);
 const globalPrintedIds = new Set([currentQueue[0].molecule.id]);
 
 while (currentQueue.length > 0) {
-    const nextQueue = [];
+  const nextQueue = [];
 
-    for (const { molecule, depth } of currentQueue) {
-        if (depth >= maxDepth) {continue;}
-        
-        // Hard cap — prevents combinatorial explosion from bidirectional template pairs
-        if (network.moleculeNodes.size >= maxNodes) {
-            console.log(`\x1b[33m[!]\x1b[0m Node cap reached (${maxNodes}). Stopping BFS.`);
-            currentQueue = [];
-            break;
-        }
-
-        const canon = toCanonicalSMILES(molecule);
-        if (processedSmiles.has(canon)) {continue;}
-        processedSmiles.add(canon);
-        
-        for (const template of templates) {
-            // Skip if this exact (molecule, template) pair has already been executed
-            const attemptKey = `${canon}||${template.name}`;
-            if (attemptedReactions.has(attemptKey)) {continue;}
-            attemptedReactions.add(attemptKey);
-
-            let createdReactions = [];
-            try {
-                 createdReactions = network.executeReactionTemplate(
-                     [molecule], 
-                     template.smirks, 
-                     { templateName: template.name }
-                 );
-            } catch (e) {
-                continue;
-            }
-            
-            for (const rxn of createdReactions) {
-                // Instantly print the reaction FIRST!
-                console.log(`\x1b[35m[⚡]\x1b[0m Reaction Executed: ${template.name} (${rxn.reactants.join(' + ')} -> ${rxn.products.join(' + ')}) [ID: ${rxn.id}]`);
-                
-                for (const prodId of rxn.products) {
-                    const prodMolNode = network.moleculeNodes.get(prodId);
-                    if (!prodMolNode) {continue;}
-                    const prodCanon = toCanonicalSMILES(prodMolNode.molecule);
-                    
-                    if (!globalPrintedIds.has(prodId)) {
-                        globalPrintedIds.add(prodId);
-                        console.log(`\x1b[32m[+]\x1b[0m Molecule Discovered: ${prodCanon} [ID: ${prodId}]`);
-                        
-                        if (!processedSmiles.has(prodCanon)) {
-                            nextQueue.push({ molecule: prodMolNode.molecule, depth: depth + 1 });
-                        }
-                    } else {
-                        console.log(`\x1b[33m[!]\x1b[0m Duplicate Structure Skipped: ${prodCanon} [Merged -> ${prodId}]`);
-                    }
-                }
-            }
-        }
+  for (const { molecule, depth } of currentQueue) {
+    if (depth >= maxDepth) {
+      continue;
     }
-    
-    currentQueue = nextQueue;
+
+    // Hard cap — prevents combinatorial explosion from bidirectional template pairs
+    if (network.moleculeNodes.size >= maxNodes) {
+      console.log(`\x1b[33m[!]\x1b[0m Node cap reached (${maxNodes}). Stopping BFS.`);
+      currentQueue = [];
+      break;
+    }
+
+    const canon = toCanonicalSMILES(molecule);
+    if (processedSmiles.has(canon)) {
+      continue;
+    }
+    processedSmiles.add(canon);
+
+    for (const template of templates) {
+      // Skip if this exact (molecule, template) pair has already been executed
+      const attemptKey = `${canon}||${template.name}`;
+      if (attemptedReactions.has(attemptKey)) {
+        continue;
+      }
+      attemptedReactions.add(attemptKey);
+
+      let createdReactions = [];
+      try {
+        createdReactions = network.executeReactionTemplate([molecule], template.smirks, { templateName: template.name });
+      } catch (e) {
+        continue;
+      }
+
+      for (const rxn of createdReactions) {
+        // Instantly print the reaction FIRST!
+        console.log(`\x1b[35m[⚡]\x1b[0m Reaction Executed: ${template.name} (${rxn.reactants.join(' + ')} -> ${rxn.products.join(' + ')}) [ID: ${rxn.id}]`);
+
+        for (const prodId of rxn.products) {
+          const prodMolNode = network.moleculeNodes.get(prodId);
+          if (!prodMolNode) {
+            continue;
+          }
+          const prodCanon = toCanonicalSMILES(prodMolNode.molecule);
+
+          if (!globalPrintedIds.has(prodId)) {
+            globalPrintedIds.add(prodId);
+            console.log(`\x1b[32m[+]\x1b[0m Molecule Discovered: ${prodCanon} [ID: ${prodId}]`);
+
+            if (!processedSmiles.has(prodCanon)) {
+              nextQueue.push({ molecule: prodMolNode.molecule, depth: depth + 1 });
+            }
+          } else {
+            console.log(`\x1b[33m[!]\x1b[0m Duplicate Structure Skipped: ${prodCanon} [Merged -> ${prodId}]`);
+          }
+        }
+      }
+    }
+  }
+
+  currentQueue = nextQueue;
 }
 
 console.log('--------------------------------------------------');

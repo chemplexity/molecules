@@ -812,10 +812,7 @@ describe('createStructuralEditActions', () => {
       assert.equal(replaced?.name, newElement);
       assert.equal(replaced?.visible, true);
       assert.ok(Number.isFinite(replaced?.x) && Number.isFinite(replaced?.y), 'expected replacement atom to have placed 2D coords');
-      assert.ok(
-        Math.hypot(replaced.x - parent.x, replaced.y - parent.y) > 1,
-        `expected replacement atom ${newElement} to be moved off the parent atom instead of staying coincident`
-      );
+      assert.ok(Math.hypot(replaced.x - parent.x, replaced.y - parent.y) > 1, `expected replacement atom ${newElement} to be moved off the parent atom instead of staying coincident`);
     }
   });
 

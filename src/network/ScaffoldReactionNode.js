@@ -13,7 +13,7 @@ export class ScaffoldReactionNode {
     this.id = id;
     this.reactants = reactants;
     this.products = products;
-    
+
     /** @type {string[]} */
     this.reactionIds = []; // Underlying base ReactionNetwork reaction IDs
   }

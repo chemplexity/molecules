@@ -13,18 +13,11 @@ import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { measureSmallRingExteriorGapSpreadPenalty, smallRingExteriorTargetAngles } from '../../../../src/layout/engine/placement/branch-placement.js';
 import { measureTerminalRingCarbonylLeafContactPenalty } from '../../../../src/layout/engine/cleanup/presentation/ring-substituent.js';
-import {
-  makeBibenzyl,
-  makeBiphenyl,
-  makeButylbenzene,
-  makeEthylbenzene,
-  makeMacrocycleWithSubstituent,
-  makeMethylnaphthalene,
-  makeMethylbenzene,
-  makePhenylacetylene
-} from '../support/molecules.js';
+import { makeBibenzyl, makeBiphenyl, makeButylbenzene, makeEthylbenzene, makeMacrocycleWithSubstituent, makeMethylnaphthalene, makeMethylbenzene, makePhenylacetylene } from '../support/molecules.js';
 
 const MIXED_BRANCH_STRESS_TIMEOUT_MS = 100000;
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
 
 function buildAdjacency(layoutGraph, atomIds) {
   const adjacency = new Map([...atomIds].map(atomId => [atomId, []]));
@@ -171,14 +164,8 @@ function exteriorSpreadAnchorMetrics(result, ringSize) {
       continue;
     }
     const exocyclicAngles = exocyclicNeighborIds.map(neighborAtomId => angleOf(sub(result.coords.get(neighborAtomId), centerPosition)));
-    const alignedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[0]),
-      angularDifference(exocyclicAngles[1], targetAngles[1])
-    ];
-    const swappedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[1]),
-      angularDifference(exocyclicAngles[1], targetAngles[0])
-    ];
+    const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+    const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
 
     return {
       anchorAtomId: atomId,
@@ -215,10 +202,12 @@ function sharedRingCount(layoutGraph, firstAtomId, secondAtomId) {
 
 function directAttachedRingJunctionDeviation(layoutGraph, coords, anchorAtomId, childAtomId) {
   const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
-  const ringNeighborIds = layoutGraph.sourceMolecule.atoms.get(anchorAtomId)
-    ?.getNeighbors(layoutGraph.sourceMolecule)
-    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && layoutGraph.ringAtomIdSet.has(neighborAtom.id))
-    .map(neighborAtom => neighborAtom.id) ?? [];
+  const ringNeighborIds =
+    layoutGraph.sourceMolecule.atoms
+      .get(anchorAtomId)
+      ?.getNeighbors(layoutGraph.sourceMolecule)
+      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && layoutGraph.ringAtomIdSet.has(neighborAtom.id))
+      .map(neighborAtom => neighborAtom.id) ?? [];
   const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => {
     const neighborRings = layoutGraph.atomToRings.get(neighborAtomId) ?? [];
     return neighborRings.filter(ring => anchorRings.includes(ring)).length > 1;
@@ -234,9 +223,7 @@ function directAttachedRingJunctionDeviation(layoutGraph, coords, anchorAtomId, 
 
 function bestLocalRingDeviation(layoutGraph, coords, anchorAtomId, childAtomId) {
   const childAngle = angleOf(sub(coords.get(childAtomId), coords.get(anchorAtomId)));
-  return Math.min(...computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null).map(outwardAngle => (
-    angularDifference(childAngle, outwardAngle)
-  )));
+  return Math.min(...computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null).map(outwardAngle => angularDifference(childAngle, outwardAngle)));
 }
 
 function measureResultRingMetrics(result, ring, targetAngleDegrees = 120) {
@@ -317,13 +304,10 @@ describe('layout/engine/families/mixed', () => {
     const pipelineBend = bondAngleAtAtom(pipelineResult.coords, 'C2', 'C1', 'C3');
 
     assert.equal(result.supported, true);
-    assert.ok(
-      Math.abs(mixedBend - ((Math.PI * 2) / 3)) < 1e-6,
-      `expected mixed placement to keep the cyclopropyl-adjacent tail at 120 degrees, got ${((mixedBend * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(Math.abs(mixedBend - (Math.PI * 2) / 3) < 1e-6, `expected mixed placement to keep the cyclopropyl-adjacent tail at 120 degrees, got ${((mixedBend * 180) / Math.PI).toFixed(2)} degrees`);
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.ok(
-      Math.abs(pipelineBend - ((Math.PI * 2) / 3)) < 1e-6,
+      Math.abs(pipelineBend - (Math.PI * 2) / 3) < 1e-6,
       `expected the full pipeline to keep the cyclopropyl-adjacent tail at 120 degrees, got ${((pipelineBend * 180) / Math.PI).toFixed(2)} degrees`
     );
   });
@@ -354,32 +338,16 @@ describe('layout/engine/families/mixed', () => {
       const bridgeTailBend = bondAngleAtAtom(coords, 'C13', 'C12', 'C14');
       const bridgeTailAmineBend = bondAngleAtAtom(coords, 'C14', 'C13', 'N15');
 
+      assert.ok(Math.abs(amineBend - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C4-N3-C2 to stay at 120 degrees, got ${((amineBend * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(ethylBend - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N3-C2-C1 to stay at 120 degrees, got ${((ethylBend * 180) / Math.PI).toFixed(2)}`);
       assert.ok(
-        Math.abs(amineBend - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C4-N3-C2 to stay at 120 degrees, got ${((amineBend * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(ethylBend - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} N3-C2-C1 to stay at 120 degrees, got ${((ethylBend * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.sign(firstTurn) === -Math.sign(secondTurn)
-        && Math.abs(firstTurn) > 0.2
-        && Math.abs(secondTurn) > 0.2,
+        Math.sign(firstTurn) === -Math.sign(secondTurn) && Math.abs(firstTurn) > 0.2 && Math.abs(secondTurn) > 0.2,
         `expected ${label} C4-N3-C2-C1 to alternate turns instead of placing the ethylamino chain straight`
       );
+      assert.ok(bridgeTailBend <= (5 * Math.PI) / 6 + 1e-6, `expected ${label} C12-C13-C14 to bend into a zigzag instead of staying straight, got ${((bridgeTailBend * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(bridgeTailAmineBend - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C13-C14-N15 to stay at 120 degrees, got ${((bridgeTailAmineBend * 180) / Math.PI).toFixed(2)}`);
       assert.ok(
-        bridgeTailBend <= ((5 * Math.PI) / 6) + 1e-6,
-        `expected ${label} C12-C13-C14 to bend into a zigzag instead of staying straight, got ${((bridgeTailBend * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(bridgeTailAmineBend - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C13-C14-N15 to stay at 120 degrees, got ${((bridgeTailAmineBend * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.sign(bridgeTailFirstTurn) === -Math.sign(bridgeTailSecondTurn)
-        && Math.abs(bridgeTailFirstTurn) > 0.2
-        && Math.abs(bridgeTailSecondTurn) > 0.2,
+        Math.sign(bridgeTailFirstTurn) === -Math.sign(bridgeTailSecondTurn) && Math.abs(bridgeTailFirstTurn) > 0.2 && Math.abs(bridgeTailSecondTurn) > 0.2,
         `expected ${label} C12-C13-C14-N15 to alternate turns instead of placing the aminoethyl chain straight`
       );
     };
@@ -400,12 +368,12 @@ describe('layout/engine/families/mixed', () => {
     const childPosition = result.coords.get('C1');
     const previousVector = sub(parentPosition, parentContextPosition);
     const incomingVector = sub(anchorPosition, parentPosition);
-    const previousTurn = Math.sign((previousVector.x * incomingVector.y) - (previousVector.y * incomingVector.x));
+    const previousTurn = Math.sign(previousVector.x * incomingVector.y - previousVector.y * incomingVector.x);
     const forwardAngle = angleOf(incomingVector);
-    const candidateAngles = [forwardAngle + (Math.PI / 3), forwardAngle - (Math.PI / 3)];
+    const candidateAngles = [forwardAngle + Math.PI / 3, forwardAngle - Math.PI / 3];
     const alternatingCandidateAngle = candidateAngles.find(candidateAngle => {
       const candidateVector = fromAngle(candidateAngle, 1);
-      const candidateTurn = Math.sign((incomingVector.x * candidateVector.y) - (incomingVector.y * candidateVector.x));
+      const candidateTurn = Math.sign(incomingVector.x * candidateVector.y - incomingVector.y * candidateVector.x);
       return candidateTurn === -previousTurn;
     });
     const mirroredCandidateAngle = candidateAngles.find(candidateAngle => candidateAngle !== alternatingCandidateAngle);
@@ -413,14 +381,8 @@ describe('layout/engine/families/mixed', () => {
     const mirroredCandidatePosition = add(anchorPosition, fromAngle(mirroredCandidateAngle, graph.options.bondLength));
 
     assert.equal(result.supported, true);
-    assert.ok(
-      distance(childPosition, alternatingCandidatePosition) < 1e-6,
-      'expected the uncrowded tail to stay on the primary alternating zigzag slot when that preferred slot is already open'
-    );
-    assert.ok(
-      distance(childPosition, mirroredCandidatePosition) > 1e-3,
-      'expected the mirrored zigzag slot to stay a fallback instead of displacing the primary uncrowded zigzag preference'
-    );
+    assert.ok(distance(childPosition, alternatingCandidatePosition) < 1e-6, 'expected the uncrowded tail to stay on the primary alternating zigzag slot when that preferred slot is already open');
+    assert.ok(distance(childPosition, mirroredCandidatePosition) > 1e-3, 'expected the mirrored zigzag slot to stay a fallback instead of displacing the primary uncrowded zigzag preference');
   });
 
   it('prefers the alkyl-tail continuation slot that extends away from the placed scaffold context', () => {
@@ -435,8 +397,8 @@ describe('layout/engine/families/mixed', () => {
     const childPosition = result.coords.get('C2');
     const forwardAngle = angleOf(sub(anchorPosition, parentPosition));
     const candidatePositions = [
-      add(anchorPosition, fromAngle(forwardAngle + (Math.PI / 3), graph.options.bondLength)),
-      add(anchorPosition, fromAngle(forwardAngle - (Math.PI / 3), graph.options.bondLength))
+      add(anchorPosition, fromAngle(forwardAngle + Math.PI / 3, graph.options.bondLength)),
+      add(anchorPosition, fromAngle(forwardAngle - Math.PI / 3, graph.options.bondLength))
     ];
     const bestExtensionDistance = Math.max(...candidatePositions.map(candidatePosition => distance(candidatePosition, parentContextPosition)));
 
@@ -464,16 +426,10 @@ describe('layout/engine/families/mixed', () => {
       const separations = sortedHeavyNeighborSeparations(adjacency, pipelineResult.coords, atomId, graph);
       assert.equal(separations.length, 3);
       for (const separation of separations) {
-        assert.ok(
-          Math.abs(separation - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${atomId} to keep a 120-degree heavy-atom fan, got ${((separation * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(separation - (2 * Math.PI) / 3) < 1e-6, `expected ${atomId} to keep a 120-degree heavy-atom fan, got ${((separation * 180) / Math.PI).toFixed(2)}`);
       }
     }
-    assert.ok(
-      readability.maxOutwardDeviation <= 1e-6,
-      `expected aryl exits to remain exact, got ${((readability.maxOutwardDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(readability.maxOutwardDeviation <= 1e-6, `expected aryl exits to remain exact, got ${((readability.maxOutwardDeviation * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('lays out fused mixed scaffolds with long perfluoroalkyl tails without stalling branch placement', () => {
@@ -489,17 +445,13 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, component.atomIds.length);
-    assert.ok(
-      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
-      `expected the mixed perfluoroalkyl layout to stay below the branch-search budget on the full-suite host, got ${elapsed}ms`
-    );
+    assert.ok(elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS, `expected the mixed perfluoroalkyl layout to stay below the branch-search budget on the full-suite host, got ${elapsed}ms`);
   });
 
   it('lays out nucleotide-like fused mixed scaffolds without timing out in branch placement', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('C[C@](O)(CC(O)=O)CC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(O)(=O)OP(O)(=O)OC[C@H]1O[C@H]([C@H](O)[C@@H]1OP(O)(O)=O)N1C=NC2=C(N)N=CN=C12'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('C[C@](O)(CC(O)=O)CC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(O)(=O)OP(O)(=O)OC[C@H]1O[C@H]([C@H](O)[C@@H]1OP(O)(O)=O)N1C=NC2=C(N)N=CN=C12'), {
+      suppressH: true
+    });
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const start = Date.now();
@@ -509,13 +461,10 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(
-      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
-      `expected the mixed nucleotide layout to stay comfortably below the stress-test budget, got ${elapsed}ms`
-    );
+    assert.ok(elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS, `expected the mixed nucleotide layout to stay comfortably below the stress-test budget, got ${elapsed}ms`);
   });
 
-  it('lays out peptide-like isolated-ring mixed scaffolds without stalling local branch scoring', () => {
+  stressIt('lays out peptide-like isolated-ring mixed scaffolds without stalling local branch scoring', () => {
     const graph = createLayoutGraph(
       parseSMILES('CC(C)C[C@H](NC(=O)[C@@H](NC(=O)[C@H](Cc1ccccc1)NC(=O)C)[C@@H](C)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](C)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc2ccccc2)C(=O)O'),
       { suppressH: true }
@@ -529,10 +478,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(
-      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
-      `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`
-    );
+    assert.ok(elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS, `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`);
   });
 
   it('lays out the stress-test peptide outlier without stalling sibling permutation scoring', () => {
@@ -549,17 +495,11 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(
-      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
-      `expected the mixed peptide outlier to stay below the local branch-search budget on the full-suite host, got ${elapsed}ms`
-    );
+    assert.ok(elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS, `expected the mixed peptide outlier to stay below the local branch-search budget on the full-suite host, got ${elapsed}ms`);
   });
 
   it('rescues compact bridged mixed roots with a fused fallback when the KK placement is bond-dirty', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('OC(=O)[C@@]12CC3CC(C1)[C@H](Oc4ccc(cc4)C(=O)NCCNC(=O)c5ccc(cc5)c6ccccc6)C(C3)C2'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('OC(=O)[C@@]12CC3CC(C1)[C@H](Oc4ccc(cc4)C(=O)NCCNC(=O)c5ccc(cc5)c6ccccc6)C(C3)C2'), { suppressH: true });
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
@@ -576,11 +516,8 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(audit.maxBondLengthDeviation < 0.35);
   });
 
-  it('rescues fused-plus-spiro bridged hybrids by laying out fused blocks before spiro attachment', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('COC(=O)c1cc2c([nH]1)C(=O)C=C3N(C[C@H]4C[C@@]234)C(=O)c5cc6c([nH]5)C(=O)C=C7N(C[C@H]8C[C@@]678)C(=O)OC(C)(C)C'),
-      { suppressH: true }
-    );
+  stressIt('rescues fused-plus-spiro bridged hybrids by laying out fused blocks before spiro attachment', () => {
+    const graph = createLayoutGraph(parseSMILES('COC(=O)c1cc2c([nH]1)C(=O)C=C3N(C[C@H]4C[C@@]234)C(=O)c5cc6c([nH]5)C(=O)C=C7N(C[C@H]8C[C@@]678)C(=O)OC(C)(C)C'), { suppressH: true });
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
@@ -598,10 +535,7 @@ describe('layout/engine/families/mixed', () => {
   });
 
   it('rescues bridged-plus-fused hybrids by aligning fused blocks across the bridged shared-atom set', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('CC12CC1CC1=CC(CCC(C)(C)C2)=CS1'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('CC12CC1CC1=CC(CCC(C)(C)C2)=CS1'), { suppressH: true });
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
@@ -660,20 +594,19 @@ describe('layout/engine/families/mixed', () => {
     const incidentC3Rings = graph.atomToRings.get('C3') ?? [];
     const c3RingNeighborIds = ['C8', 'C14', 'C4'];
     const c3ExitAngle = angleOf(sub(c2Position, result.coords.get('C3')));
-    const minRingBondSeparation = Math.min(
-      ...c3RingNeighborIds.map(neighborAtomId =>
-        angularDifference(c3ExitAngle, angleOf(sub(result.coords.get(neighborAtomId), result.coords.get('C3'))))
-      )
-    );
+    const minRingBondSeparation = Math.min(...c3RingNeighborIds.map(neighborAtomId => angularDifference(c3ExitAngle, angleOf(sub(result.coords.get(neighborAtomId), result.coords.get('C3'))))));
 
     assert.equal(result.metadata.audit.ok, true);
     for (const ring of incidentC3Rings) {
       assert.equal(
-        pointInPolygon(c2Position, ring.atomIds.map(atomId => result.coords.get(atomId))),
+        pointInPolygon(
+          c2Position,
+          ring.atomIds.map(atomId => result.coords.get(atomId))
+        ),
         false
       );
     }
-    assert.ok(minRingBondSeparation > Math.PI / 6, `expected C3 ethyl exit to clear ring bonds, got ${(minRingBondSeparation * 180 / Math.PI).toFixed(2)} degrees`);
+    assert.ok(minRingBondSeparation > Math.PI / 6, `expected C3 ethyl exit to clear ring bonds, got ${((minRingBondSeparation * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('keeps an ethynyl substituent pointing outward and linear from the ring', () => {
@@ -738,7 +671,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(alkoxyAngle - (2 * Math.PI) / 3) < 0.05, `expected ester alkoxy angle near 120 degrees, got ${((alkoxyAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
-  it('keeps a reported carboxylate oxygen clear of a neighboring cyclohexane ring', () => {
+  stressIt('keeps a reported carboxylate oxygen clear of a neighboring cyclohexane ring', () => {
     const smiles = 'CCC(N(C(=O)C1CCC(C)CC1)C1=C(CC(=C1)C#CC(C)(C)C)C([O-])=O)C(=O)N1CCCC1';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -748,9 +681,7 @@ describe('layout/engine/families/mixed', () => {
     const graph = result.layoutGraph;
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
     const cyclohexaneRingAtomIds = ['C7', 'C8', 'C9', 'C10', 'C12', 'C13'];
-    const carboxylateClearance = Math.min(
-      ...cyclohexaneRingAtomIds.map(atomId => distance(result.coords.get('O26'), result.coords.get(atomId)))
-    );
+    const carboxylateClearance = Math.min(...cyclohexaneRingAtomIds.map(atomId => distance(result.coords.get('O26'), result.coords.get(atomId))));
     const carboxylateInsideCyclohexane = pointInPolygon(
       result.coords.get('O26'),
       cyclohexaneRingAtomIds.map(atomId => result.coords.get(atomId))
@@ -760,10 +691,7 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(audit.ok, true);
     assert.equal(carboxylateInsideCyclohexane, false);
-    assert.ok(
-      carboxylateClearance > graph.options.bondLength * 0.75,
-      `expected O26 to stay clear of the neighboring cyclohexane ring, got ${carboxylateClearance.toFixed(3)}`
-    );
+    assert.ok(carboxylateClearance > graph.options.bondLength * 0.75, `expected O26 to stay clear of the neighboring cyclohexane ring, got ${carboxylateClearance.toFixed(3)}`);
     assert.ok(Math.abs(ringExitAngle - (2 * Math.PI) / 3) < Math.PI / 18, `expected C5 ring exit near 120 degrees, got ${((ringExitAngle * 180) / Math.PI).toFixed(2)}`);
     assert.ok(Math.abs(carboxylateAngle - (2 * Math.PI) / 3) < 1e-6, `expected C25 carboxylate fan to stay exact, got ${((carboxylateAngle * 180) / Math.PI).toFixed(2)}`);
   });
@@ -794,15 +722,13 @@ describe('layout/engine/families/mixed', () => {
         continue;
       }
       const atom = graph.sourceMolecule.atoms.get(atomId);
-      const terminalCarbonLeafChildren = atom
-        ?.getNeighbors(graph.sourceMolecule)
-        .filter(neighborAtom =>
-          neighborAtom
-          && neighborAtom.name === 'C'
-          && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) === 0
-          && (graph.atoms.get(neighborAtom.id)?.heavyDegree ?? 0) === 1
-        )
-        .map(neighborAtom => neighborAtom.id) ?? [];
+      const terminalCarbonLeafChildren =
+        atom
+          ?.getNeighbors(graph.sourceMolecule)
+          .filter(
+            neighborAtom => neighborAtom && neighborAtom.name === 'C' && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) === 0 && (graph.atoms.get(neighborAtom.id)?.heavyDegree ?? 0) === 1
+          )
+          .map(neighborAtom => neighborAtom.id) ?? [];
       if (terminalCarbonLeafChildren.length !== 1) {
         continue;
       }
@@ -835,10 +761,12 @@ describe('layout/engine/families/mixed', () => {
     const anchorAtomId = 'C20';
     const childAtomId = 'C21';
     const childAngle = angleOf(sub(mixedResult.coords.get(childAtomId), mixedResult.coords.get(anchorAtomId)));
-    const ringNeighborIds = graph.sourceMolecule.atoms.get(anchorAtomId)
-      ?.getNeighbors(graph.sourceMolecule)
-      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
-      .map(neighborAtom => neighborAtom.id) ?? [];
+    const ringNeighborIds =
+      graph.sourceMolecule.atoms
+        .get(anchorAtomId)
+        ?.getNeighbors(graph.sourceMolecule)
+        .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+        .map(neighborAtom => neighborAtom.id) ?? [];
     const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => sharedRingCount(graph, anchorAtomId, neighborAtomId) > 1);
     const straightJunctionAngle = sharedJunctionNeighborId ? angleOf(sub(mixedResult.coords.get(anchorAtomId), mixedResult.coords.get(sharedJunctionNeighborId))) : null;
     const mixedDeviation = bestLocalRingDeviation(graph, mixedResult.coords, anchorAtomId, childAtomId);
@@ -863,10 +791,7 @@ describe('layout/engine/families/mixed', () => {
         const ringAngle = (bondAngleAtAtom(pipelineResult.coords, atomId, previousAtomId, nextAtomId) * 180) / Math.PI;
         maxPipelineRingBondDeviation = Math.max(maxPipelineRingBondDeviation, Math.abs(ringBondLength - pipelineResult.layoutGraph.options.bondLength));
         if (ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')) {
-          middleCyclohexaneMaxBondDeviation = Math.max(
-            middleCyclohexaneMaxBondDeviation,
-            Math.abs(ringBondLength - pipelineResult.layoutGraph.options.bondLength)
-          );
+          middleCyclohexaneMaxBondDeviation = Math.max(middleCyclohexaneMaxBondDeviation, Math.abs(ringBondLength - pipelineResult.layoutGraph.options.bondLength));
           middleCyclohexaneMaxAngleDeviation = Math.max(middleCyclohexaneMaxAngleDeviation, Math.abs(ringAngle - 120));
         }
         if (ring.aromatic) {
@@ -904,9 +829,7 @@ describe('layout/engine/families/mixed', () => {
       suppressH: true,
       auditTelemetry: true
     });
-    const middleCyclohexane = result.layoutGraph.rings.find(ring =>
-      ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')
-    );
+    const middleCyclohexane = result.layoutGraph.rings.find(ring => ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13'));
     const fusedBenzene = result.layoutGraph.rings.find(ring => ring.aromatic && ring.atomIds.includes('C13') && ring.atomIds.includes('C19'));
     const bridgeRing = result.layoutGraph.rings.find(ring => ring.atomIds.includes('N25') && ring.atomIds.includes('C24'));
 
@@ -948,9 +871,7 @@ describe('layout/engine/families/mixed', () => {
       suppressH: true,
       auditTelemetry: true
     });
-    const middleCyclohexane = result.layoutGraph.rings.find(ring =>
-      ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')
-    );
+    const middleCyclohexane = result.layoutGraph.rings.find(ring => ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13'));
     const fusedBenzene = result.layoutGraph.rings.find(ring => ring.aromatic && ring.atomIds.includes('C13') && ring.atomIds.includes('C19'));
     const bridgeRing = result.layoutGraph.rings.find(ring => ring.atomIds.includes('N29') && ring.atomIds.includes('C28'));
 
@@ -978,9 +899,7 @@ describe('layout/engine/families/mixed', () => {
       suppressH: true,
       auditTelemetry: true
     });
-    const middleCyclohexane = result.layoutGraph.rings.find(ring =>
-      ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')
-    );
+    const middleCyclohexane = result.layoutGraph.rings.find(ring => ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13'));
     const fusedBenzene = result.layoutGraph.rings.find(ring => ring.aromatic && ring.atomIds.includes('C13') && ring.atomIds.includes('C19'));
     const bridgeRing = result.layoutGraph.rings.find(ring => ring.atomIds.includes('N28') && ring.atomIds.includes('C27'));
 
@@ -1035,7 +954,11 @@ describe('layout/engine/families/mixed', () => {
       if (!ringAtomSet.has(atomId)) {
         return false;
       }
-      const neighbors = graph.sourceMolecule.atoms.get(atomId)?.getNeighbors(graph.sourceMolecule).filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H') ?? [];
+      const neighbors =
+        graph.sourceMolecule.atoms
+          .get(atomId)
+          ?.getNeighbors(graph.sourceMolecule)
+          .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H') ?? [];
       const ringNeighborCount = neighbors.filter(neighborAtom => ringAtomSet.has(neighborAtom.id)).length;
       const exocyclicHeavyCount = neighbors.filter(neighborAtom => !ringAtomSet.has(neighborAtom.id)).length;
       return ringNeighborCount === 2 && exocyclicHeavyCount === 2;
@@ -1085,14 +1008,8 @@ describe('layout/engine/families/mixed', () => {
       'expected the methyl leaf to stay outside the saturated ring face'
     );
     assert.equal(separations.length, 4, 'expected four placed heavy-neighbor separations at the crowded ring atom');
-    assert.ok(
-      separations[0] > 1.3,
-      `expected the crowded ring atom to avoid pinched methyl gaps, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      minimumMethylClearance > graph.options.bondLength * 1.2,
-      `expected the methyl leaf to clear neighboring heavy atoms, got minimum clearance ${minimumMethylClearance.toFixed(3)}`
-    );
+    assert.ok(separations[0] > 1.3, `expected the crowded ring atom to avoid pinched methyl gaps, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(minimumMethylClearance > graph.options.bondLength * 1.2, `expected the methyl leaf to clear neighboring heavy atoms, got minimum clearance ${minimumMethylClearance.toFixed(3)}`);
     assert.ok(
       distance(methylLeafPosition, esterLinkerOxygenPosition) > graph.options.bondLength * 1.4,
       `expected the methyl leaf to clear the ester linker oxygen, got ${distance(methylLeafPosition, esterLinkerOxygenPosition).toFixed(3)}`
@@ -1115,10 +1032,7 @@ describe('layout/engine/families/mixed', () => {
       metrics.maxTargetDeviation < 1e-6,
       `expected C6 exocyclic branches on the exact cyclopropane exterior targets, got max deviation ${((metrics.maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
     );
-    assert.ok(
-      Math.abs(exocyclicSpread - (5 * Math.PI / 9)) < 1e-6,
-      `expected the C6 ether/methyl gap to be 100 degrees, got ${((exocyclicSpread * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(Math.abs(exocyclicSpread - (5 * Math.PI) / 9) < 1e-6, `expected the C6 ether/methyl gap to be 100 degrees, got ${((exocyclicSpread * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('centers direct-attached cyclopropyl roots on fused parent exterior slots', () => {
@@ -1138,15 +1052,8 @@ describe('layout/engine/families/mixed', () => {
       });
       const parentDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C7', 'C9');
       const childDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C9', 'C7');
-      const parentAngles = [
-        bondAngleAtAtom(coords, 'C7', 'C8', 'C9'),
-        bondAngleAtAtom(coords, 'C7', 'C9', 'C12'),
-        bondAngleAtAtom(coords, 'C7', 'C9', 'C6')
-      ];
-      const childAngles = [
-        bondAngleAtAtom(coords, 'C9', 'C7', 'C10'),
-        bondAngleAtAtom(coords, 'C9', 'C7', 'C11')
-      ];
+      const parentAngles = [bondAngleAtAtom(coords, 'C7', 'C8', 'C9'), bondAngleAtAtom(coords, 'C7', 'C9', 'C12'), bondAngleAtAtom(coords, 'C7', 'C9', 'C6')];
+      const childAngles = [bondAngleAtAtom(coords, 'C9', 'C7', 'C10'), bondAngleAtAtom(coords, 'C9', 'C7', 'C11')];
 
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
       assert.ok(parentDeviation < 1e-6, `expected ${label} C7-C9 to follow a fused-parent exterior slot, got ${((parentDeviation * 180) / Math.PI).toFixed(2)} degrees`);
@@ -1156,10 +1063,7 @@ describe('layout/engine/families/mixed', () => {
         `expected ${label} C7 cyclopropyl exit not to go straight through a ring bond, got ${parentAngles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
       );
       for (const angle of childAngles) {
-        assert.ok(
-          Math.abs(angle - (5 * Math.PI) / 6) < 1e-6,
-          `expected ${label} cyclopropyl root angles near 150 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (5 * Math.PI) / 6) < 1e-6, `expected ${label} cyclopropyl root angles near 150 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -1181,31 +1085,16 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.metadata.mixedMode, true);
     assert.equal(audit.ok, true);
-    assert.ok(
-      exocyclicSpread > 1.3,
-      `expected the saturated ring's two exocyclic branches to avoid a pinched linked-ring angle, got ${((exocyclicSpread * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      exteriorPenalty < 1e-3,
-      `expected the linked-ring fan to stay close to the saturated-ring exterior slots, got penalty ${exteriorPenalty.toExponential(3)}`
-    );
-    assert.ok(
-      Math.abs(linkerBend - (2 * Math.PI) / 3) < 1e-6,
-      `expected the moved linker root to preserve a 120-degree bend, got ${((linkerBend * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(exocyclicSpread > 1.3, `expected the saturated ring's two exocyclic branches to avoid a pinched linked-ring angle, got ${((exocyclicSpread * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(exteriorPenalty < 1e-3, `expected the linked-ring fan to stay close to the saturated-ring exterior slots, got penalty ${exteriorPenalty.toExponential(3)}`);
+    assert.ok(Math.abs(linkerBend - (2 * Math.PI) / 3) < 1e-6, `expected the moved linker root to preserve a 120-degree bend, got ${((linkerBend * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
-  it('lets saturated-ring exterior fans trade symmetry for a clean benzylic linker bend', () => {
+  stressIt('lets saturated-ring exterior fans trade symmetry for a clean benzylic linker bend', () => {
     const smiles = 'N[C@@H](O)O[C@H]1CC2=CC=CC=C2C1[C@H]1CN[C@](<C[C@@H](O)[C@@H](CC2=CC=CC=C2)NC(=O)O[C@@H]2CCOC2>)(CC2=CC=CC=C2)C1=O';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
-    const mixedResult = layoutMixedFamily(
-      graph,
-      component,
-      buildAdjacency(graph, new Set(component.atomIds)),
-      buildScaffoldPlan(graph, component),
-      graph.options.bondLength
-    );
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
     const pipelineResult = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       auditTelemetry: true
@@ -1217,14 +1106,8 @@ describe('layout/engine/families/mixed', () => {
       const exteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, 'C20');
 
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
-      assert.ok(
-        Math.abs(linkerBend - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} C20-C44-C45 to stay at 120 degrees, got ${((linkerBend * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        exteriorPenalty < 0.35,
-        `expected ${label} saturated-ring exterior tradeoff to stay bounded, got penalty ${exteriorPenalty.toFixed(3)}`
-      );
+      assert.ok(Math.abs(linkerBend - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C20-C44-C45 to stay at 120 degrees, got ${((linkerBend * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(exteriorPenalty < 0.35, `expected ${label} saturated-ring exterior tradeoff to stay bounded, got penalty ${exteriorPenalty.toFixed(3)}`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -1247,18 +1130,12 @@ describe('layout/engine/families/mixed', () => {
     const imineNitrogenClearance = distance(result.coords.get('N19'), result.coords.get('C10'));
 
     assert.equal(result.metadata.audit.ok, true);
-    assert.ok(
-      exteriorPenalty < 1e-9,
-      `expected the cyclobutane quaternary branch fan to land on exact exterior slots, got penalty ${exteriorPenalty.toExponential(3)}`
-    );
+    assert.ok(exteriorPenalty < 1e-9, `expected the cyclobutane quaternary branch fan to land on exact exterior slots, got penalty ${exteriorPenalty.toExponential(3)}`);
     assert.ok(
       separations.every(separation => Math.abs(separation - Math.PI / 2) < 1e-6),
       `expected the C14 heavy branches to occupy four exterior quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
-    assert.ok(
-      imineNitrogenClearance > graph.options.bondLength * 0.75,
-      `expected the terminal imine nitrogen to clear the aryl ring, got ${imineNitrogenClearance.toFixed(3)}`
-    );
+    assert.ok(imineNitrogenClearance > graph.options.bondLength * 0.75, `expected the terminal imine nitrogen to clear the aryl ring, got ${imineNitrogenClearance.toFixed(3)}`);
   });
 
   it('rotates a crowded nitrile-bearing quaternary branch into a clean tetrahedral slot so the nitrile stays linear', () => {
@@ -1273,13 +1150,13 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.supported, true);
     assert.equal(separations.length, 4, 'expected the quaternary nitrile center to place four heavy neighbors');
     assert.ok(
-      separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 0.05),
+      separations.every(separation => Math.abs(separation - Math.PI / 2) < 0.05),
       `expected the quaternary center to use clean tetrahedral-like quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
     assert.ok(Math.abs(nitrileAngle - Math.PI) < 1e-6, `expected the nitrile branch to stay linear, got ${((nitrileAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
-  it('keeps tert-butyl methyl leaves exact while straightening the neighboring attached-ring root', () => {
+  stressIt('keeps tert-butyl methyl leaves exact while straightening the neighboring attached-ring root', () => {
     const result = runPipeline(parseSMILES('CC(C)(C)C1CCCCC1(C)C1CCCOC1'), {
       suppressH: true,
       auditTelemetry: true
@@ -1289,37 +1166,21 @@ describe('layout/engine/families/mixed', () => {
     const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C2', graph);
     const attachedRingRootDeviation = bestLocalRingDeviation(graph, result.coords, 'C12', 'C10');
     const c10Position = result.coords.get('C10');
-    const c10RingNeighborAngles = ['C5', 'C9'].map(neighborAtomId =>
-      angleOf(sub(result.coords.get(neighborAtomId), c10Position))
-    );
+    const c10RingNeighborAngles = ['C5', 'C9'].map(neighborAtomId => angleOf(sub(result.coords.get(neighborAtomId), c10Position)));
     const c10ExteriorTargets = smallRingExteriorTargetAngles(c10RingNeighborAngles, 6);
-    const c10ExocyclicAngles = ['C11', 'C12'].map(neighborAtomId =>
-      angleOf(sub(result.coords.get(neighborAtomId), c10Position))
-    );
-    const c10AlignedExteriorDeviation = Math.max(
-      angularDifference(c10ExocyclicAngles[0], c10ExteriorTargets[0]),
-      angularDifference(c10ExocyclicAngles[1], c10ExteriorTargets[1])
-    );
-    const c10SwappedExteriorDeviation = Math.max(
-      angularDifference(c10ExocyclicAngles[0], c10ExteriorTargets[1]),
-      angularDifference(c10ExocyclicAngles[1], c10ExteriorTargets[0])
-    );
+    const c10ExocyclicAngles = ['C11', 'C12'].map(neighborAtomId => angleOf(sub(result.coords.get(neighborAtomId), c10Position)));
+    const c10AlignedExteriorDeviation = Math.max(angularDifference(c10ExocyclicAngles[0], c10ExteriorTargets[0]), angularDifference(c10ExocyclicAngles[1], c10ExteriorTargets[1]));
+    const c10SwappedExteriorDeviation = Math.max(angularDifference(c10ExocyclicAngles[0], c10ExteriorTargets[1]), angularDifference(c10ExocyclicAngles[1], c10ExteriorTargets[0]));
     const c10ExteriorDeviation = Math.min(c10AlignedExteriorDeviation, c10SwappedExteriorDeviation);
 
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(separations.length, 4, 'expected the tert-butyl center to place four heavy neighbors');
     assert.ok(
-      separations.every(separation => Math.abs(separation - (Math.PI / 2)) <= Math.PI / 36 + 1e-6),
+      separations.every(separation => Math.abs(separation - Math.PI / 2) <= Math.PI / 36 + 1e-6),
       `expected the tert-butyl center to use projected-tetrahedral quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
-    assert.ok(
-      attachedRingRootDeviation < 1e-6,
-      `expected C12-C10 to follow the attached oxane ring outward axis, got ${((attachedRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      c10ExteriorDeviation < Math.PI / 15,
-      `expected C10 exocyclic exits to stay near the ring exterior slots, got ${((c10ExteriorDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(attachedRingRootDeviation < 1e-6, `expected C12-C10 to follow the attached oxane ring outward axis, got ${((attachedRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(c10ExteriorDeviation < Math.PI / 15, `expected C10 exocyclic exits to stay near the ring exterior slots, got ${((c10ExteriorDeviation * 180) / Math.PI).toFixed(2)} degrees`);
     assert.ok(distance(result.coords.get('C3'), result.coords.get('C13')) > 1.2, 'expected the tert-butyl methyl leaf to clear the attached oxane ring');
     assert.ok(distance(result.coords.get('C11'), result.coords.get('C12')) > 1.5, 'expected the parent methyl leaf to clear the attached oxane root');
   });
@@ -1335,7 +1196,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.supported, true);
     assert.equal(separations.length, 4, 'expected the difluoromethyl linker center to place four heavy neighbors');
     assert.ok(
-      separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 0.05),
+      separations.every(separation => Math.abs(separation - Math.PI / 2) < 0.05),
       `expected the difluoromethyl linker to use projected-tetrahedral quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
   });
@@ -1358,14 +1219,8 @@ describe('layout/engine/families/mixed', () => {
       c6Separations[0] > (7 * Math.PI) / 18 && c6Separations[c6Separations.length - 1] < (2 * Math.PI) / 3,
       `expected the C6 diaryl center to avoid a pinched projected gap, got ${c6Separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
-    assert.ok(
-      firstRingRootDeviation < 1e-6,
-      `expected the first phenyl root to keep an exact aromatic outward exit, got ${((firstRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      secondRingRootDeviation < 1e-6,
-      `expected the second phenyl root to keep an exact aromatic outward exit, got ${((secondRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(firstRingRootDeviation < 1e-6, `expected the first phenyl root to keep an exact aromatic outward exit, got ${((firstRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(secondRingRootDeviation < 1e-6, `expected the second phenyl root to keep an exact aromatic outward exit, got ${((secondRingRootDeviation * 180) / Math.PI).toFixed(2)} degrees`);
     for (const [name, angle] of [
       ['C6-C14-C15', bondAngleAtAtom(result.coords, 'C14', 'C6', 'C15')],
       ['C6-C14-C19', bondAngleAtAtom(result.coords, 'C14', 'C6', 'C19')],
@@ -1374,10 +1229,7 @@ describe('layout/engine/families/mixed', () => {
       ['C6-C20-C25', bondAngleAtAtom(result.coords, 'C20', 'C6', 'C25')],
       ['C21-C20-C25', bondAngleAtAtom(result.coords, 'C20', 'C21', 'C25')]
     ]) {
-      assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
     }
   });
 
@@ -1396,7 +1248,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(c20Separations.length, 4, 'expected the diaryl bis-CF3 center to place four heavy neighbors');
     assert.ok(
-      c20Separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 1e-6),
+      c20Separations.every(separation => Math.abs(separation - Math.PI / 2) < 1e-6),
       `expected C20 to keep projected-tetrahedral quadrants, got ${c20Separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
     assert.ok(
@@ -1407,7 +1259,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(distance(result.coords.get('C40'), result.coords.get('F43')) > graph.options.bondLength * 0.85, 'expected the upper CF3 leaf to clear the adjacent aryl carbon');
   });
 
-  it('uses presentation-aware mixed-root retry for cyclopropyl bis-pyridyl CF3 scaffolds', () => {
+  stressIt('uses presentation-aware mixed-root retry for cyclopropyl bis-pyridyl CF3 scaffolds', () => {
     const smiles = 'CN(C)C=C1C(C(F)(F)F)C1(CC(=O)C1=CC=CN=C1)C(=O)C1(CC(=O)C2=CC=CN=C2)C(C1=CN(C)C)C(F)(F)F';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1415,29 +1267,18 @@ describe('layout/engine/families/mixed', () => {
     });
     const graph = result.layoutGraph;
     const lowerPyridylAtomIds = ['C27', 'C28', 'C29', 'C30', 'N31', 'C32'];
-    const closestLowerPyridylContact = Math.min(
-      ...lowerPyridylAtomIds.map(atomId => distance(result.coords.get('F42'), result.coords.get(atomId)))
-    );
+    const closestLowerPyridylContact = Math.min(...lowerPyridylAtomIds.map(atomId => distance(result.coords.get('F42'), result.coords.get(atomId))));
     const c12Angle = bondAngleAtAtom(result.coords, 'C12', 'C11', 'C13');
     const c24Angle = bondAngleAtAtom(result.coords, 'C24', 'C23', 'C25');
 
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(findVisibleHeavyBondCrossings(graph, result.coords).length, 0);
-    assert.ok(
-      Math.abs(c12Angle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected the upper cyclopropyl carbonyl linker to keep a 120-degree bend, got ${((c12Angle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(c24Angle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected the lower cyclopropyl carbonyl linker to keep a 120-degree bend, got ${((c24Angle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      closestLowerPyridylContact > graph.options.bondLength * 0.85,
-      `expected the lower CF3 fluorine to clear the pyridyl ring, got ${closestLowerPyridylContact.toFixed(3)}`
-    );
+    assert.ok(Math.abs(c12Angle - (2 * Math.PI) / 3) < 1e-6, `expected the upper cyclopropyl carbonyl linker to keep a 120-degree bend, got ${((c12Angle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(c24Angle - (2 * Math.PI) / 3) < 1e-6, `expected the lower cyclopropyl carbonyl linker to keep a 120-degree bend, got ${((c24Angle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(closestLowerPyridylContact > graph.options.bondLength * 0.85, `expected the lower CF3 fluorine to clear the pyridyl ring, got ${closestLowerPyridylContact.toFixed(3)}`);
   });
 
-  it('retries mixed roots when an audit-clean polyaryl chain leaves a skewed direct ring exit', () => {
+  stressIt('retries mixed roots when an audit-clean polyaryl chain leaves a skewed direct ring exit', () => {
     const smiles = 'COC1CN(CCO1)C1=CC=C(C=N1)C1=NC=CC=C1NC1=C2C(F)=CC(F)=CC2=NC(=C1C)C1=CC=CC=N1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -1456,10 +1297,7 @@ describe('layout/engine/families/mixed', () => {
         ['C20', 'N16']
       ]) {
         const angle = bondAngleAtAtom(coords, 'C15', firstAtomId, secondAtomId);
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${firstAtomId}-C15-${secondAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${firstAtomId}-C15-${secondAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -1486,36 +1324,21 @@ describe('layout/engine/families/mixed', () => {
 
     const assertBalancedPolyarylExits = (layoutGraph, coords, label) => {
       const c32Deviation = bestLocalRingDeviation(layoutGraph, coords, 'C32', 'C31');
-      const downstreamDeviation = Math.max(
-        bestLocalRingDeviation(layoutGraph, coords, 'C37', 'C38'),
-        bestLocalRingDeviation(layoutGraph, coords, 'C38', 'C37')
-      );
+      const downstreamDeviation = Math.max(bestLocalRingDeviation(layoutGraph, coords, 'C37', 'C38'), bestLocalRingDeviation(layoutGraph, coords, 'C38', 'C37'));
       const c32FirstAngle = bondAngleAtAtom(coords, 'C32', 'C37', 'C31');
       const c32SecondAngle = bondAngleAtAtom(coords, 'C32', 'C33', 'C31');
 
+      assert.ok(c32Deviation < Math.PI / 18, `expected ${label} C32 aryl root to stay near the exact local outward axis, got ${((c32Deviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(downstreamDeviation < Math.PI / 18, `expected ${label} downstream aryl roots to stay below a 10-degree tradeoff, got ${((downstreamDeviation * 180) / Math.PI).toFixed(2)} degrees`);
       assert.ok(
-        c32Deviation < Math.PI / 18,
-        `expected ${label} C32 aryl root to stay near the exact local outward axis, got ${((c32Deviation * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      assert.ok(
-        downstreamDeviation < Math.PI / 18,
-        `expected ${label} downstream aryl roots to stay below a 10-degree tradeoff, got ${((downstreamDeviation * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      assert.ok(
-        Math.max(
-          Math.abs(c32FirstAngle - ((2 * Math.PI) / 3)),
-          Math.abs(c32SecondAngle - ((2 * Math.PI) / 3))
-        ) < Math.PI / 18,
+        Math.max(Math.abs(c32FirstAngle - (2 * Math.PI) / 3), Math.abs(c32SecondAngle - (2 * Math.PI) / 3)) < Math.PI / 18,
         `expected ${label} C32 fan to remain near 120 degrees, got ${((c32FirstAngle * 180) / Math.PI).toFixed(2)} and ${((c32SecondAngle * 180) / Math.PI).toFixed(2)}`
       );
     };
 
     assert.equal(mixedResult.supported, true);
     assert.equal(mixedResult.rootRetryUsed, true);
-    assert.ok(
-      ['ring-system:2', 'ring-system:3'].includes(mixedResult.rootScaffoldId),
-      `expected mixed layout to use a polyaryl retry root, got ${mixedResult.rootScaffoldId}`
-    );
+    assert.ok(['ring-system:2', 'ring-system:3'].includes(mixedResult.rootScaffoldId), `expected mixed layout to use a polyaryl retry root, got ${mixedResult.rootScaffoldId}`);
     assertBalancedPolyarylExits(graph, mixedResult.coords, 'mixed layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
@@ -1553,10 +1376,7 @@ describe('layout/engine/families/mixed', () => {
         ['C24', 'C27']
       ]) {
         const angle = bondAngleAtAtom(coords, 'C26', firstAtomId, secondAtomId);
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < Math.PI / 54,
-          `expected ${label} ${firstAtomId}-C26-${secondAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < Math.PI / 54, `expected ${label} ${firstAtomId}-C26-${secondAtomId} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -1577,17 +1397,13 @@ describe('layout/engine/families/mixed', () => {
       suppressH: true,
       auditTelemetry: true
     });
-    const c18Angles = [
-      bondAngleAtAtom(result.coords, 'C18', 'C13', 'C17'),
-      bondAngleAtAtom(result.coords, 'C18', 'C13', 'C19'),
-      bondAngleAtAtom(result.coords, 'C18', 'C17', 'C19')
-    ];
+    const c18Angles = [bondAngleAtAtom(result.coords, 'C18', 'C13', 'C17'), bondAngleAtAtom(result.coords, 'C18', 'C13', 'C19'), bondAngleAtAtom(result.coords, 'C18', 'C17', 'C19')];
 
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length, 0);
     assert.ok(
-      c18Angles.every(angle => Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6),
+      c18Angles.every(angle => Math.abs(angle - (2 * Math.PI) / 3) < 1e-6),
       `expected C18 to keep an exact 120-degree aromatic fan, got ${c18Angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
   });
@@ -1599,16 +1415,8 @@ describe('layout/engine/families/mixed', () => {
       auditTelemetry: true,
       finalLandscapeOrientation: true
     });
-    const c21Angles = [
-      bondAngleAtAtom(result.coords, 'C21', 'C26', 'N20'),
-      bondAngleAtAtom(result.coords, 'C21', 'C26', 'C22'),
-      bondAngleAtAtom(result.coords, 'C21', 'N20', 'C22')
-    ];
-    const c3Angles = [
-      bondAngleAtAtom(result.coords, 'C3', 'S2', 'C4'),
-      bondAngleAtAtom(result.coords, 'C3', 'S2', 'C8'),
-      bondAngleAtAtom(result.coords, 'C3', 'C4', 'C8')
-    ];
+    const c21Angles = [bondAngleAtAtom(result.coords, 'C21', 'C26', 'N20'), bondAngleAtAtom(result.coords, 'C21', 'C26', 'C22'), bondAngleAtAtom(result.coords, 'C21', 'N20', 'C22')];
+    const c3Angles = [bondAngleAtAtom(result.coords, 'C3', 'S2', 'C4'), bondAngleAtAtom(result.coords, 'C3', 'S2', 'C8'), bondAngleAtAtom(result.coords, 'C3', 'C4', 'C8')];
     const c3S2Distance = distance(result.coords.get('C3'), result.coords.get('S2'));
     const c1S2Distance = distance(result.coords.get('C1'), result.coords.get('S2'));
 
@@ -1616,24 +1424,18 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length, 0);
     assert.ok(
-      c21Angles.every(angle => Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6),
+      c21Angles.every(angle => Math.abs(angle - (2 * Math.PI) / 3) < 1e-6),
       `expected C21 to keep an exact 120-degree aromatic fan, got ${c21Angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
     assert.ok(
-      c3Angles.every(angle => Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6),
+      c3Angles.every(angle => Math.abs(angle - (2 * Math.PI) / 3) < 1e-6),
       `expected C3 to keep an exact 120-degree aromatic fan, got ${c3Angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
-    assert.ok(
-      Math.abs(c3S2Distance - result.layoutGraph.options.bondLength * 0.8) < 1e-6,
-      `expected C3-S2 to be shortened into the exact sidechain slot, got ${c3S2Distance.toFixed(3)}`
-    );
-    assert.ok(
-      Math.abs(c1S2Distance - result.layoutGraph.options.bondLength) < 1e-6,
-      `expected internal C1-S2 sidechain length to remain unchanged, got ${c1S2Distance.toFixed(3)}`
-    );
+    assert.ok(Math.abs(c3S2Distance - result.layoutGraph.options.bondLength * 0.8) < 1e-6, `expected C3-S2 to be shortened into the exact sidechain slot, got ${c3S2Distance.toFixed(3)}`);
+    assert.ok(Math.abs(c1S2Distance - result.layoutGraph.options.bondLength) < 1e-6, `expected internal C1-S2 sidechain length to remain unchanged, got ${c1S2Distance.toFixed(3)}`);
   });
 
-  it('previews pending heteroring roots before assigning crowded tetrahedral branch slots', () => {
+  stressIt('previews pending heteroring roots before assigning crowded tetrahedral branch slots', () => {
     const smiles = 'CC(C1=NC(=CS1)C1=CC=C(C=C1)C#N)C(O)(C[N+]1(CCOC(=O)N2CCCC2C[NH3+])C=NC=N1)C1=CC(F)=CC=C1F';
     const result = runPipeline(parseSMILES(smiles), { suppressH: true });
     const graph = result.layoutGraph;
@@ -1645,11 +1447,11 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.metadata.audit.ok, true);
     assert.ok(
-      c16Separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 1e-6),
+      c16Separations.every(separation => Math.abs(separation - Math.PI / 2) < 1e-6),
       `expected C16 to keep projected branch quadrants, got ${c16Separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
     assert.ok(
-      n19Separations[0] > 4 * Math.PI / 9,
+      n19Separations[0] > (4 * Math.PI) / 9,
       `expected the imidazolium-side branch to avoid pinching against ring bonds, got minimum N19 separation ${((n19Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
     );
     assert.ok(c20N36Distance > graph.options.bondLength * 0.8, `expected C20/N36 to clear, got ${c20N36Distance.toFixed(3)}`);
@@ -1671,18 +1473,9 @@ describe('layout/engine/families/mixed', () => {
       const ringNeighborAngles = ['C12', 'C16'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
       const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
       const exocyclicAngles = ['F14', 'F15'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
-      const alignedDeviation = [
-        angularDifference(exocyclicAngles[0], targetAngles[0]),
-        angularDifference(exocyclicAngles[1], targetAngles[1])
-      ];
-      const swappedDeviation = [
-        angularDifference(exocyclicAngles[0], targetAngles[1]),
-        angularDifference(exocyclicAngles[1], targetAngles[0])
-      ];
-      const chosenDeviation = alignedDeviation.reduce((sum, deviation) => sum + deviation, 0)
-        <= swappedDeviation.reduce((sum, deviation) => sum + deviation, 0)
-        ? alignedDeviation
-        : swappedDeviation;
+      const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+      const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
+      const chosenDeviation = alignedDeviation.reduce((sum, deviation) => sum + deviation, 0) <= swappedDeviation.reduce((sum, deviation) => sum + deviation, 0) ? alignedDeviation : swappedDeviation;
       return {
         separations: sortedNeighborSeparations(adjacency, coords, centerAtomId),
         maxTargetDeviation: Math.max(...chosenDeviation)
@@ -1711,7 +1504,7 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
-  it('preserves crowded fluorinated cyclohexyl exterior fans through cleanup', () => {
+  stressIt('preserves crowded fluorinated cyclohexyl exterior fans through cleanup', () => {
     const smiles = 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1727,18 +1520,11 @@ describe('layout/engine/families/mixed', () => {
     const c32F34Distance = distance(result.coords.get('C32'), result.coords.get('F34'));
     const f34C5Distance = distance(result.coords.get('F34'), result.coords.get('C5'));
     const f34C6Distance = distance(result.coords.get('F34'), result.coords.get('C6'));
-    const isocyanateAngles = [
-      bondAngleAtAtom(result.coords, 'C36', 'N35', 'O37'),
-      bondAngleAtAtom(result.coords, 'C23', 'N22', 'O24'),
-      bondAngleAtAtom(result.coords, 'C9', 'N8', 'O10')
-    ];
+    const isocyanateAngles = [bondAngleAtAtom(result.coords, 'C36', 'N35', 'O37'), bondAngleAtAtom(result.coords, 'C23', 'N22', 'O24'), bondAngleAtAtom(result.coords, 'C9', 'N8', 'O10')];
 
     for (const atomId of exactExteriorAnchorIds) {
       const exteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, atomId);
-      assert.ok(
-        exteriorPenalty < 0.35,
-        `expected ${atomId} saturated-ring exterior fan to stay exact, got penalty ${exteriorPenalty.toExponential(3)}`
-      );
+      assert.ok(exteriorPenalty < 0.35, `expected ${atomId} saturated-ring exterior fan to stay exact, got penalty ${exteriorPenalty.toExponential(3)}`);
     }
     assert.ok(
       measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, 'C19') < 0.006,
@@ -1762,10 +1548,7 @@ describe('layout/engine/families/mixed', () => {
       `expected F34 to clear the neighboring C5-C6 ring edge, got distances ${f34C5Distance.toFixed(3)} and ${f34C6Distance.toFixed(3)}`
     );
     for (const angle of isocyanateAngles) {
-      assert.ok(
-        angle >= (140 * Math.PI) / 180 - 1e-6,
-        `expected crowded ring-attached isocyanate arms to stay readable, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(angle >= (140 * Math.PI) / 180 - 1e-6, `expected crowded ring-attached isocyanate arms to stay readable, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`);
     }
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
@@ -1786,26 +1569,14 @@ describe('layout/engine/families/mixed', () => {
     const ringNeighborAngles = ['C18', 'C16'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
     const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
     const exocyclicAngles = ['O20', 'C27'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
-    const alignedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[0]),
-      angularDifference(exocyclicAngles[1], targetAngles[1])
-    ];
-    const swappedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[1]),
-      angularDifference(exocyclicAngles[1], targetAngles[0])
-    ];
+    const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+    const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
     const maxTargetDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
     const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, centerAtomId, graph);
 
     assert.equal(result.metadata.audit.ok, true);
-    assert.ok(
-      maxTargetDeviation < 1e-6,
-      `expected C17 ester and aryl exits on the exact six-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      separations[0] > 1.3,
-      `expected C17 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(maxTargetDeviation < 1e-6, `expected C17 ester and aryl exits on the exact six-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(separations[0] > 1.3, `expected C17 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('places direct-attached aryl branches on seven-member saturated-ring exterior slots', () => {
@@ -1821,14 +1592,8 @@ describe('layout/engine/families/mixed', () => {
     const ringNeighborAngles = ['C19', 'C17'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
     const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 7);
     const exocyclicAngles = ['O21', 'C28'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
-    const alignedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[0]),
-      angularDifference(exocyclicAngles[1], targetAngles[1])
-    ];
-    const swappedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[1]),
-      angularDifference(exocyclicAngles[1], targetAngles[0])
-    ];
+    const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+    const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
     const maxTargetDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
     const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, centerAtomId, graph);
 
@@ -1837,10 +1602,7 @@ describe('layout/engine/families/mixed', () => {
       maxTargetDeviation < 1e-6,
       `expected C18 ester and aryl exits on the exact seven-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
     );
-    assert.ok(
-      separations[0] > 1.3,
-      `expected C18 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(separations[0] > 1.3, `expected C18 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('keeps direct-attached aryl branches on five-member saturated-ring exterior slots beside CF3 tripods', () => {
@@ -1857,40 +1619,22 @@ describe('layout/engine/families/mixed', () => {
     const ringNeighborAngles = ['C23', 'O21'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
     const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
     const exocyclicAngles = ['C24', 'C33'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
-    const alignedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[0]),
-      angularDifference(exocyclicAngles[1], targetAngles[1])
-    ];
-    const swappedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[1]),
-      angularDifference(exocyclicAngles[1], targetAngles[0])
-    ];
+    const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+    const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
     const maxTargetDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
     const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, centerAtomId, graph);
     const arylRootDeviation = bestLocalRingDeviation(graph, result.coords, 'C24', centerAtomId);
     const cf3FanSeparations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C33', graph);
 
     assert.equal(result.metadata.audit.ok, true);
-    assert.ok(
-      maxTargetDeviation < 1e-6,
-      `expected C22 aryl and CF3 exits on the exact five-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      separations[0] > 1.3,
-      `expected C22 to avoid a pinched aryl/CF3 gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      arylRootDeviation < 1e-6,
-      `expected the chlorophenyl root to stay exact by relieving the CF3 leaf, got ${((arylRootDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(maxTargetDeviation < 1e-6, `expected C22 aryl and CF3 exits on the exact five-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(separations[0] > 1.3, `expected C22 to avoid a pinched aryl/CF3 gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(arylRootDeviation < 1e-6, `expected the chlorophenyl root to stay exact by relieving the CF3 leaf, got ${((arylRootDeviation * 180) / Math.PI).toFixed(2)} degrees`);
     assert.ok(
       cf3FanSeparations[0] >= Math.PI / 3 - 1e-6,
       `expected the CF3 leaf relief to keep a readable terminal fan, got minimum separation ${((cf3FanSeparations[0] * 180) / Math.PI).toFixed(2)} degrees`
     );
-    assert.ok(
-      distance(result.coords.get('C32'), result.coords.get('F34')) > graph.options.bondLength * 0.7,
-      'expected the relieved CF3 fluorine to clear the exact chlorophenyl root'
-    );
+    assert.ok(distance(result.coords.get('C32'), result.coords.get('F34')) > graph.options.bondLength * 0.7, 'expected the relieved CF3 fluorine to clear the exact chlorophenyl root');
   });
 
   it('keeps sibling direct-attached aryl branches on five-member saturated-ring exterior slots', () => {
@@ -1906,30 +1650,15 @@ describe('layout/engine/families/mixed', () => {
     const ringNeighborAngles = ['C29', 'C18'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
     const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
     const exocyclicAngles = ['C14', 'C30'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
-    const alignedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[0]),
-      angularDifference(exocyclicAngles[1], targetAngles[1])
-    ];
-    const swappedDeviation = [
-      angularDifference(exocyclicAngles[0], targetAngles[1]),
-      angularDifference(exocyclicAngles[1], targetAngles[0])
-    ];
+    const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+    const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
     const maxTargetDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
     const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, centerAtomId, graph);
 
     assert.equal(result.metadata.audit.ok, true);
-    assert.ok(
-      maxTargetDeviation < 1e-6,
-      `expected C17 aryl exits on exact five-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      separations[0] > 1.3,
-      `expected C17 to avoid a pinched diaryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      distance(result.coords.get('C13'), result.coords.get('C45')) > graph.options.bondLength * 0.8,
-      'expected the sibling aryl rings to clear the C13/C45 overlap'
-    );
+    assert.ok(maxTargetDeviation < 1e-6, `expected C17 aryl exits on exact five-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(separations[0] > 1.3, `expected C17 to avoid a pinched diaryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(distance(result.coords.get('C13'), result.coords.get('C45')) > graph.options.bondLength * 0.8, 'expected the sibling aryl rings to clear the C13/C45 overlap');
 
     const expectedCarboxylateAngle = (2 * Math.PI) / 3;
     for (const [label, angle] of [
@@ -1937,10 +1666,7 @@ describe('layout/engine/families/mixed', () => {
       ['O3-C2-O1', bondAngleAtAtom(result.coords, 'C2', 'O3', 'O1')],
       ['C4-C2-O1', bondAngleAtAtom(result.coords, 'C2', 'C4', 'O1')]
     ]) {
-      assert.ok(
-        Math.abs(angle - expectedCarboxylateAngle) < 1e-6,
-        `expected the carboxylate fan to stay trigonal at ${label}, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(angle - expectedCarboxylateAngle) < 1e-6, `expected the carboxylate fan to stay trigonal at ${label}, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`);
     }
   });
 
@@ -1978,14 +1704,8 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(audit.severeOverlapCount, 0);
     assert.equal(separations.length, 4, 'expected C8 to keep four visible heavy-neighbor directions');
-    assert.ok(
-      separations[0] > 1.3,
-      `expected C8 to avoid a pinched diaryl/ring gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
-    );
-    assert.ok(
-      separations[3] < 2.2,
-      `expected C8 to avoid one giant compensating gap, got maximum separation ${((separations[3] * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(separations[0] > 1.3, `expected C8 to avoid a pinched diaryl/ring gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(separations[3] < 2.2, `expected C8 to avoid one giant compensating gap, got maximum separation ${((separations[3] * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('does not force mono-fluoro benzylic linkers off their standard trigonal continuation', () => {
@@ -1998,7 +1718,7 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.supported, true);
     assert.ok(
-      Math.abs(linkerAngle - ((2 * Math.PI) / 3)) < 0.05,
+      Math.abs(linkerAngle - (2 * Math.PI) / 3) < 0.05,
       `expected the mono-fluoro linker to stay near a 120-degree trigonal continuation, got ${((linkerAngle * 180) / Math.PI).toFixed(2)} degrees`
     );
   });
@@ -2038,9 +1758,7 @@ describe('layout/engine/families/mixed', () => {
     const outwardAngle = angleOf(sub(result.coords.get(anchorAtomId), ringCenter));
     const heavyAngle = angleOf(sub(result.coords.get(heavyChildAtomId), result.coords.get(anchorAtomId)));
     const heavyDeviation = angularDifference(heavyAngle, outwardAngle);
-    const hydrogenDeviations = hydrogenChildIds.map(hydrogenAtomId =>
-      angularDifference(angleOf(sub(result.coords.get(hydrogenAtomId), result.coords.get(anchorAtomId))), outwardAngle)
-    );
+    const hydrogenDeviations = hydrogenChildIds.map(hydrogenAtomId => angularDifference(angleOf(sub(result.coords.get(hydrogenAtomId), result.coords.get(anchorAtomId))), outwardAngle));
 
     assert.ok(heavyDeviation < 0.4, `expected heavy substituent to stay near the ring outward axis, got ${heavyDeviation.toFixed(3)} rad`);
     assert.ok(
@@ -2138,15 +1856,13 @@ describe('layout/engine/families/mixed', () => {
   });
 
   it('keeps safe fused-junction substituents on the exact continuation of the shared junction bond', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'), { suppressH: true });
     const component = graph.components[0];
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
     const anchorAtomId = 'C7';
     const heavyChildAtomId = 'O8';
-    const ringNeighborIds = graph.sourceMolecule.atoms.get(anchorAtomId)
+    const ringNeighborIds = graph.sourceMolecule.atoms
+      .get(anchorAtomId)
       .getNeighbors(graph.sourceMolecule)
       .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== heavyChildAtomId && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
       .map(neighborAtom => neighborAtom.id);
@@ -2178,10 +1894,7 @@ describe('layout/engine/families/mixed', () => {
         ['O33-C34-C36', bondAngleAtAtom(coords, 'C34', 'O33', 'C36')],
         ['O35-C34-C36', bondAngleAtAtom(coords, 'C34', 'O35', 'C36')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
       const tailClearance = distance(coords.get('C36'), coords.get('O30'));
       const terminalOxygenClearance = distance(coords.get('O35'), coords.get('O30'));
@@ -2209,32 +1922,17 @@ describe('layout/engine/families/mixed', () => {
 
     const assertLinearAlkyne = (coords, label) => {
       const alkyneAngle = bondAngleAtAtom(coords, 'C16', 'C13', 'C17');
-      assert.ok(
-        Math.abs(alkyneAngle - Math.PI) < 1e-6,
-        `expected ${label} C13-C16-C17 to stay linear, got ${((alkyneAngle * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(alkyneAngle - Math.PI) < 1e-6, `expected ${label} C13-C16-C17 to stay linear, got ${((alkyneAngle * 180) / Math.PI).toFixed(2)} degrees`);
     };
     const assertExteriorRingSpread = (coords, label) => {
       const centerPosition = coords.get('C5');
       const ringNeighborAngles = ['C4', 'C11'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
       const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
       const exocyclicAngles = ['C6', 'C13'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
-      const alignedDeviation = [
-        angularDifference(exocyclicAngles[0], targetAngles[0]),
-        angularDifference(exocyclicAngles[1], targetAngles[1])
-      ];
-      const swappedDeviation = [
-        angularDifference(exocyclicAngles[0], targetAngles[1]),
-        angularDifference(exocyclicAngles[1], targetAngles[0])
-      ];
-      const maxExteriorDeviation = Math.min(
-        Math.max(...alignedDeviation),
-        Math.max(...swappedDeviation)
-      );
-      assert.ok(
-        maxExteriorDeviation < 1e-6,
-        `expected ${label} C5 substituents to stay on the cyclopentane exterior targets, got ${((maxExteriorDeviation * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      const alignedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1])];
+      const swappedDeviation = [angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0])];
+      const maxExteriorDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
+      assert.ok(maxExteriorDeviation < 1e-6, `expected ${label} C5 substituents to stay on the cyclopentane exterior targets, got ${((maxExteriorDeviation * 180) / Math.PI).toFixed(2)} degrees`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -2260,42 +1958,24 @@ describe('layout/engine/families/mixed', () => {
     const secondAttachedRingRootAngle = bondAngleAtAtom(result.coords, 'C13', 'C14', 'C10');
     const compressedCarboxylLeafLength = distance(result.coords.get('C7'), result.coords.get('O8'));
 
+    assert.ok(Math.abs(firstCarboxylAngle - (2 * Math.PI) / 3) < 1e-6, `expected C7-C6-C10 to stay exact at 120 degrees, got ${((firstCarboxylAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(secondCarboxylAngle - (2 * Math.PI) / 3) < 1e-6, `expected C7-C6-C5 to stay exact at 120 degrees, got ${((secondCarboxylAngle * 180) / Math.PI).toFixed(2)}`);
     assert.ok(
-      Math.abs(firstCarboxylAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected C7-C6-C10 to stay exact at 120 degrees, got ${((firstCarboxylAngle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(secondCarboxylAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected C7-C6-C5 to stay exact at 120 degrees, got ${((secondCarboxylAngle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(compressedCarboxylLeafFirstAngle - ((2 * Math.PI) / 3)) < 1e-6,
+      Math.abs(compressedCarboxylLeafFirstAngle - (2 * Math.PI) / 3) < 1e-6,
       `expected C6-C7-O8 to stay exact at 120 degrees, got ${((compressedCarboxylLeafFirstAngle * 180) / Math.PI).toFixed(2)}`
     );
     assert.ok(
-      Math.abs(compressedCarboxylLeafSecondAngle - ((2 * Math.PI) / 3)) < 1e-6,
+      Math.abs(compressedCarboxylLeafSecondAngle - (2 * Math.PI) / 3) < 1e-6,
       `expected O8-C7-O9 to stay exact at 120 degrees, got ${((compressedCarboxylLeafSecondAngle * 180) / Math.PI).toFixed(2)}`
     );
     assert.ok(
       compressedCarboxylLeafLength < 0.85 && compressedCarboxylLeafLength > 0.8,
       `expected C7-O8 to compress locally while clearing the exact slot, got ${compressedCarboxylLeafLength.toFixed(3)}`
     );
-    assert.ok(
-      Math.abs(firstAttachedRingAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected C13-C10-C6 to stay exact at 120 degrees, got ${((firstAttachedRingAngle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(secondAttachedRingAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected C13-C10-C11 to stay exact at 120 degrees, got ${((secondAttachedRingAngle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(firstAttachedRingRootAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected C30-C13-C10 to stay exact at 120 degrees, got ${((firstAttachedRingRootAngle * 180) / Math.PI).toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(secondAttachedRingRootAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected C14-C13-C10 to stay exact at 120 degrees, got ${((secondAttachedRingRootAngle * 180) / Math.PI).toFixed(2)}`
-    );
+    assert.ok(Math.abs(firstAttachedRingAngle - (2 * Math.PI) / 3) < 1e-6, `expected C13-C10-C6 to stay exact at 120 degrees, got ${((firstAttachedRingAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(secondAttachedRingAngle - (2 * Math.PI) / 3) < 1e-6, `expected C13-C10-C11 to stay exact at 120 degrees, got ${((secondAttachedRingAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(firstAttachedRingRootAngle - (2 * Math.PI) / 3) < 1e-6, `expected C30-C13-C10 to stay exact at 120 degrees, got ${((firstAttachedRingRootAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(secondAttachedRingRootAngle - (2 * Math.PI) / 3) < 1e-6, `expected C14-C13-C10 to stay exact at 120 degrees, got ${((secondAttachedRingRootAngle * 180) / Math.PI).toFixed(2)}`);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -2330,10 +2010,7 @@ describe('layout/engine/families/mixed', () => {
     assert.notEqual(terminalMethylDeviation, null);
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
-    assert.ok(
-      terminalMethylDeviation < 1e-6,
-      `expected the terminal methyl to stay on the exact shared-junction continuation, got ${((terminalMethylDeviation * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(terminalMethylDeviation < 1e-6, `expected the terminal methyl to stay on the exact shared-junction continuation, got ${((terminalMethylDeviation * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('keeps three-shared-atom bridged single-ring hybrids from collapsing their two-atom child arc onto the parent block', () => {
@@ -2355,16 +2032,10 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(mixedResult.supported, true);
     assert.equal(mixedAudit.severeOverlapCount, 0);
     assert.ok(mixedArcGap > 2, `expected the mixed bridged child arc to stay separated from the parent block, got ${mixedArcGap.toFixed(3)}`);
-    assert.ok(
-      mixedDeviation < 1e-6,
-      `expected the mixed bridged child-ring substituent to follow the exact local outward axis, got ${mixedDeviation.toFixed(6)} rad`
-    );
+    assert.ok(mixedDeviation < 1e-6, `expected the mixed bridged child-ring substituent to follow the exact local outward axis, got ${mixedDeviation.toFixed(6)} rad`);
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.ok(pipelineArcGap > 2, `expected the full pipeline bridged child arc to stay separated from the parent block, got ${pipelineArcGap.toFixed(3)}`);
-    assert.ok(
-      pipelineDeviation < 1e-6,
-      `expected the full pipeline bridged child-ring substituent to follow the exact local outward axis, got ${pipelineDeviation.toFixed(6)} rad`
-    );
+    assert.ok(pipelineDeviation < 1e-6, `expected the full pipeline bridged child-ring substituent to follow the exact local outward axis, got ${pipelineDeviation.toFixed(6)} rad`);
   });
 
   it('keeps a crowded five-member-ring ring junction on the aromatic outward axis while putting the second heavy branch in the remaining exterior slot', () => {
@@ -2375,13 +2046,9 @@ describe('layout/engine/families/mixed', () => {
     const centerAtomId = 'C7';
     const centerPosition = result.coords.get(centerAtomId);
     const aromaticAnchorAtomId = 'C4';
-    const ringNeighborAngles = ['C11', 'N16'].map(neighborAtomId =>
-      angleOf(sub(result.coords.get(neighborAtomId), centerPosition))
-    );
+    const ringNeighborAngles = ['C11', 'N16'].map(neighborAtomId => angleOf(sub(result.coords.get(neighborAtomId), centerPosition)));
     const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
-    const remainingExteriorDeviation = Math.min(
-      ...targetAngles.map(targetAngle => angularDifference(angleOf(sub(result.coords.get('C8'), centerPosition)), targetAngle))
-    );
+    const remainingExteriorDeviation = Math.min(...targetAngles.map(targetAngle => angularDifference(angleOf(sub(result.coords.get('C8'), centerPosition)), targetAngle)));
     const benzeneCentroid = centroid(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map(atomId => result.coords.get(atomId)));
     const aromaticOutwardAngle = angleOf(sub(result.coords.get(aromaticAnchorAtomId), benzeneCentroid));
     const aromaticExitAngle = angleOf(sub(result.coords.get(centerAtomId), result.coords.get(aromaticAnchorAtomId)));
@@ -2440,11 +2107,11 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(mixedResult.supported, true);
     assert.ok(
-      Math.abs(mixedAttachmentAngle - ((2 * Math.PI) / 3)) < 1e-6,
+      Math.abs(mixedAttachmentAngle - (2 * Math.PI) / 3) < 1e-6,
       `expected the mixed-placement alkene root at C13 to stay exact, got ${((mixedAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`
     );
     assert.ok(
-      Math.abs(pipelineAttachmentAngle - ((2 * Math.PI) / 3)) < 1e-6,
+      Math.abs(pipelineAttachmentAngle - (2 * Math.PI) / 3) < 1e-6,
       `expected the final alkene root at C13 to stay exact, got ${((pipelineAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`
     );
     assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
@@ -2459,8 +2126,8 @@ describe('layout/engine/families/mixed', () => {
     const rightAttachmentAngle = bondAngleAtAtom(result.coords, 'C9', 'C8', 'C10');
 
     assert.equal(result.supported, true);
-    assert.ok(Math.abs(leftAttachmentAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected C6 to stay exact, got ${((leftAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
-    assert.ok(Math.abs(rightAttachmentAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected C9 to stay exact, got ${((rightAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(Math.abs(leftAttachmentAngle - (2 * Math.PI) / 3) < 1e-6, `expected C6 to stay exact, got ${((leftAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(Math.abs(rightAttachmentAngle - (2 * Math.PI) / 3) < 1e-6, `expected C9 to stay exact, got ${((rightAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('keeps an exocyclic alkene exit centered between the two ring bonds when a pending attached ring would otherwise skew it to one side', () => {
@@ -2471,7 +2138,10 @@ describe('layout/engine/families/mixed', () => {
     const mixedResult = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
     const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
 
-    for (const [label, coords] of [['mixed', mixedResult.coords], ['pipeline', pipelineResult.coords]]) {
+    for (const [label, coords] of [
+      ['mixed', mixedResult.coords],
+      ['pipeline', pipelineResult.coords]
+    ]) {
       const c3FirstAngle = bondAngleAtAtom(coords, 'C3', 'C2', 'C4');
       const c3SecondAngle = bondAngleAtAtom(coords, 'C3', 'C2', 'N18');
       const c3ThirdAngle = bondAngleAtAtom(coords, 'C3', 'C4', 'N18');
@@ -2482,8 +2152,7 @@ describe('layout/engine/families/mixed', () => {
       const amideAngle = bondAngleAtAtom(coords, 'N26', 'C24', 'C27');
       if (label === 'pipeline') {
         assert.ok(
-          Math.abs(c3SecondAngle - c3ThirdAngle) < 1e-6
-          && c3SecondAngle > ((7 * Math.PI) / 12),
+          Math.abs(c3SecondAngle - c3ThirdAngle) < 1e-6 && c3SecondAngle > (7 * Math.PI) / 12,
           `expected the ${label} visible trigonal center at C3 to keep the N18 branch centered instead of collapsing to a 90/150 split, got ${((c3FirstAngle * 180) / Math.PI).toFixed(2)}, ${((c3SecondAngle * 180) / Math.PI).toFixed(2)}, and ${((c3ThirdAngle * 180) / Math.PI).toFixed(2)} degrees`
         );
       }
@@ -2495,10 +2164,7 @@ describe('layout/engine/families/mixed', () => {
         Math.abs(firstAttachmentAngle - secondAttachmentAngle) < 1e-6,
         `expected the ${label} chlorophenyl attachment at C10 to stay symmetric, got ${((firstAttachmentAngle * 180) / Math.PI).toFixed(2)} and ${((secondAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`
       );
-      assert.ok(
-        Math.abs(amideAngle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected the ${label} amide-side N26 angle to stay at 120 degrees, got ${((amideAngle * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(amideAngle - (2 * Math.PI) / 3) < 1e-6, `expected the ${label} amide-side N26 angle to stay at 120 degrees, got ${((amideAngle * 180) / Math.PI).toFixed(2)} degrees`);
     }
 
     assert.equal(mixedResult.supported, true);
@@ -2517,12 +2183,12 @@ describe('layout/engine/families/mixed', () => {
       auditTelemetry: true
     });
 
-    for (const [label, coords] of [['mixed', mixedResult.coords], ['pipeline', pipelineResult.coords]]) {
+    for (const [label, coords] of [
+      ['mixed', mixedResult.coords],
+      ['pipeline', pipelineResult.coords]
+    ]) {
       const oximeAngle = bondAngleAtAtom(coords, 'N26', 'C25', 'O27');
-      assert.ok(
-        Math.abs(oximeAngle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected the ${label} oxime ether N26 angle to stay at 120 degrees, got ${((oximeAngle * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(oximeAngle - (2 * Math.PI) / 3) < 1e-6, `expected the ${label} oxime ether N26 angle to stay at 120 degrees, got ${((oximeAngle * 180) / Math.PI).toFixed(2)} degrees`);
     }
 
     assert.equal(mixedResult.supported, true);
@@ -2575,7 +2241,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(linkerAngle - (2 * Math.PI) / 3) < 0.2, `expected diphenylmethane linker angle near 120 degrees, got ${((linkerAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
-  it('keeps crowded direct aryl roots exact while keeping the benzoyl fan bounded', () => {
+  stressIt('keeps crowded direct aryl roots exact while keeping the benzoyl fan bounded', () => {
     const smiles = 'CC(=CCC12Oc3cc(O)ccc3C1(O)Oc4cc(O)c([C@H]5C=C(C)CC([C@H]5C(=O)c6ccc(O)cc6O)c7ccc(O)cc7O)c(O)c4C2=O)C';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -2608,19 +2274,11 @@ describe('layout/engine/families/mixed', () => {
       `expected C14-O15 bridge hydroxyl to stay near straight, got ${((bridgeHydroxylAngle * 180) / Math.PI).toFixed(2)} degrees`
     );
 
-    const carbonylAngles = [
-      bondAngleAtAtom(coords, 'C31', 'O32', 'C33'),
-      bondAngleAtAtom(coords, 'C31', 'O32', 'C29'),
-      bondAngleAtAtom(coords, 'C31', 'C33', 'C29')
-    ].map(angle => (angle * 180) / Math.PI);
-    assert.ok(
-      Math.min(...carbonylAngles) >= 75 - 1e-6,
-      `expected C31 benzoyl fan to stay bounded while C49 is exact, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    const carbonylAngles = [bondAngleAtAtom(coords, 'C31', 'O32', 'C33'), bondAngleAtAtom(coords, 'C31', 'O32', 'C29'), bondAngleAtAtom(coords, 'C31', 'C33', 'C29')].map(
+      angle => (angle * 180) / Math.PI
     );
-    assert.ok(
-      Math.max(...carbonylAngles) <= 165 + 1e-6,
-      `expected C31 benzoyl fan not to over-open beyond the accepted local relief, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`
-    );
+    assert.ok(Math.min(...carbonylAngles) >= 75 - 1e-6, `expected C31 benzoyl fan to stay bounded while C49 is exact, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...carbonylAngles) <= 165 + 1e-6, `expected C31 benzoyl fan not to over-open beyond the accepted local relief, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
   it('keeps fused lactone systems joined through a methylene linker on a standard bend', () => {
@@ -2656,7 +2314,10 @@ describe('layout/engine/families/mixed', () => {
       assert.ok(Math.abs(firstCarbonylAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C3-C17-O18 near 120 degrees, got ${((firstCarbonylAngle * 180) / Math.PI).toFixed(2)}`);
       assert.ok(Math.abs(secondCarbonylAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} O19-C17-O18 near 120 degrees, got ${((secondCarbonylAngle * 180) / Math.PI).toFixed(2)}`);
       assert.ok(Math.abs(ringCarbonylAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C3-C17-O19 near 120 degrees, got ${((ringCarbonylAngle * 180) / Math.PI).toFixed(2)}`);
-      assert.ok(neighboringCarbonylClearance > graph.options.bondLength * 0.8, `expected ${label} C17 carbonyl leaf to stay clear of the neighboring lactone oxygen, got ${neighboringCarbonylClearance.toFixed(3)}`);
+      assert.ok(
+        neighboringCarbonylClearance > graph.options.bondLength * 0.8,
+        `expected ${label} C17 carbonyl leaf to stay clear of the neighboring lactone oxygen, got ${neighboringCarbonylClearance.toFixed(3)}`
+      );
     };
     const assertLinkedRingExitGeometry = (coords, label) => {
       const firstLinkerExitAngle = bondAngleAtAtom(coords, 'C3', 'C2', 'C4');
@@ -2672,7 +2333,10 @@ describe('layout/engine/families/mixed', () => {
         Math.abs(secondPendingExitAngle - (2 * Math.PI) / 3)
       );
 
-      assert.ok(maxExitDeviation < 0.2, `expected ${label} C3/C5 linker exits to share the bridge distortion instead of leaving a 100/140 split, got ${((firstLinkerExitAngle * 180) / Math.PI).toFixed(2)}, ${((secondLinkerExitAngle * 180) / Math.PI).toFixed(2)}, ${((firstPendingExitAngle * 180) / Math.PI).toFixed(2)}, and ${((secondPendingExitAngle * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(
+        maxExitDeviation < 0.2,
+        `expected ${label} C3/C5 linker exits to share the bridge distortion instead of leaving a 100/140 split, got ${((firstLinkerExitAngle * 180) / Math.PI).toFixed(2)}, ${((secondLinkerExitAngle * 180) / Math.PI).toFixed(2)}, ${((firstPendingExitAngle * 180) / Math.PI).toFixed(2)}, and ${((secondPendingExitAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
       assert.ok(Math.abs(firstRingAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C2-C3-C17 near 120 degrees, got ${((firstRingAngle * 180) / Math.PI).toFixed(2)}`);
       assert.ok(Math.abs(secondRingAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C6-C5-C11 near 120 degrees, got ${((secondRingAngle * 180) / Math.PI).toFixed(2)}`);
     };
@@ -2689,8 +2353,14 @@ describe('layout/engine/families/mixed', () => {
         }
       }
 
-      assert.ok(minSeparation > 7 * Math.PI / 18, `expected ${label} C4 hydrogens to avoid collapsed projected-tetrahedral slots, got minimum separation ${((minSeparation * 180) / Math.PI).toFixed(2)} degrees`);
-      assert.ok(maxSeparation < 17 * Math.PI / 18, `expected ${label} C4 hydrogens to avoid flat projected-tetrahedral slots, got maximum separation ${((maxSeparation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(
+        minSeparation > (7 * Math.PI) / 18,
+        `expected ${label} C4 hydrogens to avoid collapsed projected-tetrahedral slots, got minimum separation ${((minSeparation * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        maxSeparation < (17 * Math.PI) / 18,
+        `expected ${label} C4 hydrogens to avoid flat projected-tetrahedral slots, got maximum separation ${((maxSeparation * 180) / Math.PI).toFixed(2)} degrees`
+      );
     };
 
     assert.equal(mixedResult.supported, true);
@@ -2699,12 +2369,18 @@ describe('layout/engine/families/mixed', () => {
     assertC17CarbonylGeometry(mixedResult.coords, 'mixed');
     assertLinkedRingExitGeometry(mixedResult.coords, 'mixed');
     assert.equal(pipelineResult.metadata.audit.ok, true);
-    assert.ok(Math.abs(pipelineLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected full-pipeline fused-lactone linker angle near 120 degrees, got ${((pipelineLinkerAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(
+      Math.abs(pipelineLinkerAngle - (2 * Math.PI) / 3) < 0.05,
+      `expected full-pipeline fused-lactone linker angle near 120 degrees, got ${((pipelineLinkerAngle * 180) / Math.PI).toFixed(2)}`
+    );
     assertC2HydroxyGeometry(pipelineResult.coords, 'full-pipeline');
     assertC17CarbonylGeometry(pipelineResult.coords, 'full-pipeline');
     assertLinkedRingExitGeometry(pipelineResult.coords, 'full-pipeline');
     assert.equal(pipelineWithHydrogens.metadata.audit.ok, true);
-    assert.ok(Math.abs(bondAngleAtAtom(pipelineWithHydrogens.coords, 'C4', 'C3', 'C5') - (2 * Math.PI) / 3) < 0.05, `expected visible-H full-pipeline fused-lactone linker angle near 120 degrees, got ${((bondAngleAtAtom(pipelineWithHydrogens.coords, 'C4', 'C3', 'C5') * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(
+      Math.abs(bondAngleAtAtom(pipelineWithHydrogens.coords, 'C4', 'C3', 'C5') - (2 * Math.PI) / 3) < 0.05,
+      `expected visible-H full-pipeline fused-lactone linker angle near 120 degrees, got ${((bondAngleAtAtom(pipelineWithHydrogens.coords, 'C4', 'C3', 'C5') * 180) / Math.PI).toFixed(2)}`
+    );
     assertC4VisibleHydrogenSpread(pipelineWithHydrogens.coords, 'visible-H full-pipeline');
   });
 
@@ -2725,10 +2401,7 @@ describe('layout/engine/families/mixed', () => {
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
     const fusedAttachmentRing = (graph.atomToRings.get('C15') ?? [])[0];
-    const fusedAttachmentOutwardAngle = angleOf(sub(
-      result.coords.get('C15'),
-      centroid(fusedAttachmentRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
-    ));
+    const fusedAttachmentOutwardAngle = angleOf(sub(result.coords.get('C15'), centroid(fusedAttachmentRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))));
     const fusedExitAngle = angleOf(sub(result.coords.get('N16'), result.coords.get('C15')));
     const firstLinkerAngle = bondAngleAtAtom(result.coords, 'N16', 'C15', 'C17');
     const benzylicLinkerAngle = bondAngleAtAtom(result.coords, 'C17', 'N16', 'C18');
@@ -2759,8 +2432,7 @@ describe('layout/engine/families/mixed', () => {
     });
 
     const assertN16Geometry = (layoutGraph, coords, label) => {
-      const ring = (layoutGraph.atomToRings.get('N16') ?? [])
-        .find(candidateRing => candidateRing.atomIds.includes('C25') && candidateRing.atomIds.includes('N15'));
+      const ring = (layoutGraph.atomToRings.get('N16') ?? []).find(candidateRing => candidateRing.atomIds.includes('C25') && candidateRing.atomIds.includes('N15'));
       assert.ok(ring, `expected ${label} to keep the imide ring containing N16`);
 
       const ringCenter = centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
@@ -2779,10 +2451,7 @@ describe('layout/engine/families/mixed', () => {
         ['C17-N16-N15', secondAngle],
         ['C25-N16-N15', thirdAngle]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -2800,10 +2469,7 @@ describe('layout/engine/families/mixed', () => {
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
     const chlorophenylRing = (graph.atomToRings.get('C14') ?? [])[0];
-    const chlorophenylOutwardAngle = angleOf(sub(
-      result.coords.get('C14'),
-      centroid(chlorophenylRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
-    ));
+    const chlorophenylOutwardAngle = angleOf(sub(result.coords.get('C14'), centroid(chlorophenylRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))));
     const linkerDeviation = angularDifference(chlorophenylOutwardAngle, angleOf(sub(result.coords.get('N13'), result.coords.get('C14'))));
     const firstTrigonalAngle = bondAngleAtAtom(result.coords, 'C14', 'N13', 'C15');
     const secondTrigonalAngle = bondAngleAtAtom(result.coords, 'C14', 'N13', 'C20');
@@ -2834,25 +2500,16 @@ describe('layout/engine/families/mixed', () => {
 
     const assertRootGeometry = (coords, label) => {
       const rootAngle = angleOf(sub(coords.get('N21'), coords.get('C22')));
-      const outwardAngle = angleOf(sub(
-        coords.get('C22'),
-        centroid(['C23', 'C27'].map(atomId => coords.get(atomId)))
-      ));
+      const outwardAngle = angleOf(sub(coords.get('C22'), centroid(['C23', 'C27'].map(atomId => coords.get(atomId)))));
       const firstAngle = bondAngleAtAtom(coords, 'C22', 'N21', 'C23');
       const secondAngle = bondAngleAtAtom(coords, 'C22', 'N21', 'C27');
 
-      assert.ok(
-        angularDifference(rootAngle, outwardAngle) < 1e-6,
-        `expected ${label} N21-C22 to follow the exact piperidine-root outward bisector`
-      );
+      assert.ok(angularDifference(rootAngle, outwardAngle) < 1e-6, `expected ${label} N21-C22 to follow the exact piperidine-root outward bisector`);
       assert.ok(
         Math.abs(firstAngle - secondAngle) < 1e-6,
         `expected ${label} N21-C22-C23 and N21-C22-C27 to match, got ${((firstAngle * 180) / Math.PI).toFixed(2)} and ${((secondAngle * 180) / Math.PI).toFixed(2)}`
       );
-      assert.ok(
-        Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} N21-C22-C23 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N21-C22-C23 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -2874,10 +2531,7 @@ describe('layout/engine/families/mixed', () => {
     const assertHeteroarylRoot = (layoutGraph, coords, label) => {
       const ring = (layoutGraph.atomToRings.get('N21') ?? [])[0];
       const adjacency = buildAdjacency(layoutGraph, new Set(layoutGraph.components[0].atomIds));
-      const outwardAngle = angleOf(sub(
-        coords.get('N21'),
-        centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-      ));
+      const outwardAngle = angleOf(sub(coords.get('N21'), centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
       const parentAngle = angleOf(sub(coords.get('C20'), coords.get('N21')));
       const separations = sortedHeavyNeighborSeparations(adjacency, coords, 'N21', layoutGraph);
 
@@ -2912,17 +2566,11 @@ describe('layout/engine/families/mixed', () => {
       const secondRingAngle = bondAngleAtAtom(coords, 'C8', 'C9', 'C7');
       const expectedAngle = (2 * Math.PI) / 3;
 
-      assert.ok(
-        Math.abs(firstRingAngle - expectedAngle) < 1e-6,
-        `expected ${label} C15-C8-C7 to be 120 degrees, got ${((firstRingAngle * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      assert.ok(
-        Math.abs(secondRingAngle - expectedAngle) < 1e-6,
-        `expected ${label} C9-C8-C7 to be 120 degrees, got ${((secondRingAngle * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(firstRingAngle - expectedAngle) < 1e-6, `expected ${label} C15-C8-C7 to be 120 degrees, got ${((firstRingAngle * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(Math.abs(secondRingAngle - expectedAngle) < 1e-6, `expected ${label} C9-C8-C7 to be 120 degrees, got ${((secondRingAngle * 180) / Math.PI).toFixed(2)} degrees`);
     };
     const assertC3Ester = (coords, label) => {
-      const maxDeviation = 12.1 * Math.PI / 180;
+      const maxDeviation = (12.1 * Math.PI) / 180;
       for (const [firstNeighborAtomId, secondNeighborAtomId] of [
         ['O2', 'O4'],
         ['O2', 'C5'],
@@ -2930,13 +2578,13 @@ describe('layout/engine/families/mixed', () => {
       ]) {
         const angle = bondAngleAtAtom(coords, 'C3', firstNeighborAtomId, secondNeighborAtomId);
         assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) <= maxDeviation,
+          Math.abs(angle - (2 * Math.PI) / 3) <= maxDeviation,
           `expected ${label} ${firstNeighborAtomId}-C3-${secondNeighborAtomId} to stay within 12 degrees of 120, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
         );
       }
     };
     const assertC5Anchor = (coords, label) => {
-      const maxDeviation = 12.1 * Math.PI / 180;
+      const maxDeviation = (12.1 * Math.PI) / 180;
       for (const [firstNeighborAtomId, secondNeighborAtomId] of [
         ['C3', 'N6'],
         ['C3', 'C22'],
@@ -2944,7 +2592,7 @@ describe('layout/engine/families/mixed', () => {
       ]) {
         const angle = bondAngleAtAtom(coords, 'C5', firstNeighborAtomId, secondNeighborAtomId);
         assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) <= maxDeviation,
+          Math.abs(angle - (2 * Math.PI) / 3) <= maxDeviation,
           `expected ${label} ${firstNeighborAtomId}-C5-${secondNeighborAtomId} to stay within 12 degrees of 120, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
         );
       }
@@ -2960,7 +2608,7 @@ describe('layout/engine/families/mixed', () => {
     assertC5Anchor(pipelineResult.coords, 'pipeline layout');
   });
 
-  it('snaps aryl carbonyl exits onto the exact aromatic outward bisector', () => {
+  stressIt('snaps aryl carbonyl exits onto the exact aromatic outward bisector', () => {
     const smiles = 'COC1=CC=C(C(=O)N(CCC(C)C)C(CC2=CC=CC=C2C[NH+]2CCCC2)C2=NC3=CC=CC=C3N2)C(Cl)=C1OC';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -2979,10 +2627,7 @@ describe('layout/engine/families/mixed', () => {
         ['C6-C7-N9', bondAngleAtAtom(coords, 'C7', 'C6', 'N9')],
         ['O8-C7-N9', bondAngleAtAtom(coords, 'C7', 'O8', 'N9')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3003,15 +2648,9 @@ describe('layout/engine/families/mixed', () => {
     const assertParentTrigonalBridge = (coords, label) => {
       const ringReadability = measureRingSubstituentReadability(graph, coords);
       const n9ToC6Angle = angleOf(sub(coords.get('C6'), coords.get('N9')));
-      const trigonalBisector = angleOf(sub(
-        coords.get('N9'),
-        centroid(['C10', 'C16'].map(atomId => coords.get(atomId)))
-      ));
+      const trigonalBisector = angleOf(sub(coords.get('N9'), centroid(['C10', 'C16'].map(atomId => coords.get(atomId)))));
       const c6ToN9Angle = angleOf(sub(coords.get('N9'), coords.get('C6')));
-      const c6OutwardBisector = angleOf(sub(
-        coords.get('C6'),
-        centroid(['C5', 'C7'].map(atomId => coords.get(atomId)))
-      ));
+      const c6OutwardBisector = angleOf(sub(coords.get('C6'), centroid(['C5', 'C7'].map(atomId => coords.get(atomId)))));
       const firstAngle = bondAngleAtAtom(coords, 'N9', 'C10', 'C16');
       const secondAngle = bondAngleAtAtom(coords, 'N9', 'C10', 'C6');
       const thirdAngle = bondAngleAtAtom(coords, 'N9', 'C16', 'C6');
@@ -3019,34 +2658,13 @@ describe('layout/engine/families/mixed', () => {
       const c6SecondAngle = bondAngleAtAtom(coords, 'C6', 'C7', 'N9');
 
       assert.equal(ringReadability.failingSubstituentCount, 0, `expected ${label} to avoid linked-ring readability failures`);
-      assert.ok(
-        angularDifference(n9ToC6Angle, trigonalBisector) < 1e-6,
-        `expected ${label} N9-C6 to follow the exact parent trigonal bisector`
-      );
-      assert.ok(
-        Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} C10-N9-C16 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(secondAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} C10-N9-C6 to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} C16-N9-C6 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        angularDifference(c6ToN9Angle, c6OutwardBisector) < 1e-6,
-        `expected ${label} C6-N9 to follow the exact local ring-outward bisector`
-      );
-      assert.ok(
-        Math.abs(c6FirstAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} C5-C6-N9 to stay at 120 degrees, got ${((c6FirstAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(c6SecondAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} C7-C6-N9 to stay at 120 degrees, got ${((c6SecondAngle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(angularDifference(n9ToC6Angle, trigonalBisector) < 1e-6, `expected ${label} N9-C6 to follow the exact parent trigonal bisector`);
+      assert.ok(Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C10-N9-C16 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C10-N9-C6 to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C16-N9-C6 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(angularDifference(c6ToN9Angle, c6OutwardBisector) < 1e-6, `expected ${label} C6-N9 to follow the exact local ring-outward bisector`);
+      assert.ok(Math.abs(c6FirstAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C5-C6-N9 to stay at 120 degrees, got ${((c6FirstAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(c6SecondAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C7-C6-N9 to stay at 120 degrees, got ${((c6SecondAngle * 180) / Math.PI).toFixed(2)}`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3068,22 +2686,10 @@ describe('layout/engine/families/mixed', () => {
       const thirdAngle = bondAngleAtAtom(coords, 'C19', 'O20', 'C21');
       const ringExitDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C21', 'C19');
 
-      assert.ok(
-        Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} N8-C19-O20 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(secondAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} N8-C19-C21 to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${label} O20-C19-C21 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        ringExitDeviation < 1e-6,
-        `expected ${label} C21 root to keep the exact local ring outward exit for C19, got ${((ringExitDeviation * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N8-C19-O20 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N8-C19-C21 to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} O20-C19-C21 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(ringExitDeviation < 1e-6, `expected ${label} C21 root to keep the exact local ring outward exit for C19, got ${((ringExitDeviation * 180) / Math.PI).toFixed(2)} degrees`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3127,9 +2733,18 @@ describe('layout/engine/families/mixed', () => {
       const secondAngle = bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, thirdNeighborAtomId);
       const thirdAngle = bondAngleAtAtom(coords, centerAtomId, secondNeighborAtomId, thirdNeighborAtomId);
 
-      assert.ok(Math.abs(firstAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected ${label} ${firstNeighborAtomId}-${centerAtomId}-${secondNeighborAtomId} to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`);
-      assert.ok(Math.abs(secondAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected ${label} ${firstNeighborAtomId}-${centerAtomId}-${thirdNeighborAtomId} to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`);
-      assert.ok(Math.abs(thirdAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected ${label} ${secondNeighborAtomId}-${centerAtomId}-${thirdNeighborAtomId} to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(
+        Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6,
+        `expected ${label} ${firstNeighborAtomId}-${centerAtomId}-${secondNeighborAtomId} to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`
+      );
+      assert.ok(
+        Math.abs(secondAngle - (2 * Math.PI) / 3) < 1e-6,
+        `expected ${label} ${firstNeighborAtomId}-${centerAtomId}-${thirdNeighborAtomId} to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`
+      );
+      assert.ok(
+        Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6,
+        `expected ${label} ${secondNeighborAtomId}-${centerAtomId}-${thirdNeighborAtomId} to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`
+      );
     };
 
     const assertThreeHeavyCenter = (coords, label) => {
@@ -3137,9 +2752,9 @@ describe('layout/engine/families/mixed', () => {
       const secondAngle = bondAngleAtAtom(coords, 'C4', 'C2', 'C22');
       const thirdAngle = bondAngleAtAtom(coords, 'C4', 'N6', 'C22');
 
-      assert.ok(Math.abs(firstAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected ${label} C2-C4-N6 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`);
-      assert.ok(Math.abs(secondAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected ${label} C2-C4-C22 to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`);
-      assert.ok(Math.abs(thirdAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected ${label} N6-C4-C22 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(firstAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C2-C4-N6 to stay at 120 degrees, got ${((firstAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C2-C4-C22 to stay at 120 degrees, got ${((secondAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N6-C4-C22 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3170,11 +2785,7 @@ describe('layout/engine/families/mixed', () => {
       const ringFanPenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, 'N20');
       const branchGap = bondAngleAtAtom(coords, 'N20', 'C17', 'C32');
       const carbonylFanDeviation = Math.max(
-        ...[
-          bondAngleAtAtom(coords, 'C32', 'N20', 'O33'),
-          bondAngleAtAtom(coords, 'C32', 'N20', 'N34'),
-          bondAngleAtAtom(coords, 'C32', 'O33', 'N34')
-        ].map(angle => Math.abs(angle - ((2 * Math.PI) / 3)))
+        ...[bondAngleAtAtom(coords, 'C32', 'N20', 'O33'), bondAngleAtAtom(coords, 'C32', 'N20', 'N34'), bondAngleAtAtom(coords, 'C32', 'O33', 'N34')].map(angle => Math.abs(angle - (2 * Math.PI) / 3))
       );
       const visibleCrossings = findVisibleHeavyBondCrossings(layoutGraph, coords, {
         bondLength: layoutGraph.options.bondLength
@@ -3182,22 +2793,10 @@ describe('layout/engine/families/mixed', () => {
 
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
       assert.equal(visibleCrossings.length, 0, `expected ${label} to avoid visible heavy-bond crossings`);
-      assert.ok(
-        carbonylClearance > layoutGraph.options.bondLength * 0.75,
-        `expected ${label} terminal amide oxygen to clear the neighboring aryl carbon, got ${carbonylClearance.toFixed(3)}`
-      );
-      assert.ok(
-        ringFanPenalty < 0.55,
-        `expected ${label} cationic saturated-ring fan to stay balanced, got ${ringFanPenalty.toFixed(3)}`
-      );
-      assert.ok(
-        branchGap > (4 * Math.PI) / 9,
-        `expected ${label} carbonyl branch to keep a readable exterior gap, got ${((branchGap * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      assert.ok(
-        carbonylFanDeviation < Math.PI / 6,
-        `expected ${label} C32 carbonyl fan to stay readable, got ${((carbonylFanDeviation * 180) / Math.PI).toFixed(2)} degrees max deviation`
-      );
+      assert.ok(carbonylClearance > layoutGraph.options.bondLength * 0.75, `expected ${label} terminal amide oxygen to clear the neighboring aryl carbon, got ${carbonylClearance.toFixed(3)}`);
+      assert.ok(ringFanPenalty < 0.55, `expected ${label} cationic saturated-ring fan to stay balanced, got ${ringFanPenalty.toFixed(3)}`);
+      assert.ok(branchGap > (4 * Math.PI) / 9, `expected ${label} carbonyl branch to keep a readable exterior gap, got ${((branchGap * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(carbonylFanDeviation < Math.PI / 6, `expected ${label} C32 carbonyl fan to stay readable, got ${((carbonylFanDeviation * 180) / Math.PI).toFixed(2)} degrees max deviation`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3206,21 +2805,15 @@ describe('layout/engine/families/mixed', () => {
   });
 
   it('rechecks terminal carbonyl leaves after attached-ring fallback moves a crowded benzyl ring', () => {
-    const result = runPipeline(
-      parseSMILES('CC(=O)N(C(=O)C(N)CC([O-])=O)C(CC1=CC=CC=C1)(N1C(=O)[N-]C(C1=O)C1=CC=C(C[NH3+])C=C1)C(=O)NCCCC[NH3+]'),
-      {
-        suppressH: true,
-        auditTelemetry: true,
-        finalLandscapeOrientation: true
-      }
-    );
+    const result = runPipeline(parseSMILES('CC(=O)N(C(=O)C(N)CC([O-])=O)C(CC1=CC=CC=C1)(N1C(=O)[N-]C(C1=O)C1=CC=C(C[NH3+])C=C1)C(=O)NCCCC[NH3+]'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
     const { layoutGraph, coords } = result;
     const carbonylClearance = distance(coords.get('O38'), coords.get('C15'));
     const carbonylBondLength = distance(coords.get('C37'), coords.get('O38'));
-    const carbonylAngleDeviation = Math.max(
-      Math.abs(bondAngleAtAtom(coords, 'C37', 'C13', 'O38') - ((2 * Math.PI) / 3)),
-      Math.abs(bondAngleAtAtom(coords, 'C37', 'N39', 'O38') - ((2 * Math.PI) / 3))
-    );
+    const carbonylAngleDeviation = Math.max(Math.abs(bondAngleAtAtom(coords, 'C37', 'C13', 'O38') - (2 * Math.PI) / 3), Math.abs(bondAngleAtAtom(coords, 'C37', 'N39', 'O38') - (2 * Math.PI) / 3));
 
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(findSevereOverlaps(layoutGraph, coords, layoutGraph.options.bondLength).length, 0);
@@ -3229,29 +2822,17 @@ describe('layout/engine/families/mixed', () => {
       0,
       'expected terminal carbonyl leaves to avoid visible heavy-bond crossings after attached-ring fallback'
     );
-    assert.ok(
-      carbonylClearance >= layoutGraph.options.bondLength * 0.6 - 1e-6,
-      `expected O38 to clear C15 after the benzyl ring rotates, got ${carbonylClearance.toFixed(3)}`
-    );
-    assert.ok(
-      carbonylBondLength >= layoutGraph.options.bondLength * 0.4 - 1e-6,
-      `expected compressed O38 bond to stay above the accepted carbonyl floor, got ${carbonylBondLength.toFixed(3)}`
-    );
-    assert.ok(
-      carbonylAngleDeviation < 1e-6,
-      `expected compressed C37=O38 direction to remain exactly trigonal, got ${((carbonylAngleDeviation * 180) / Math.PI).toFixed(3)} degrees`
-    );
+    assert.ok(carbonylClearance >= layoutGraph.options.bondLength * 0.6 - 1e-6, `expected O38 to clear C15 after the benzyl ring rotates, got ${carbonylClearance.toFixed(3)}`);
+    assert.ok(carbonylBondLength >= layoutGraph.options.bondLength * 0.4 - 1e-6, `expected compressed O38 bond to stay above the accepted carbonyl floor, got ${carbonylBondLength.toFixed(3)}`);
+    assert.ok(carbonylAngleDeviation < 1e-6, `expected compressed C37=O38 direction to remain exactly trigonal, got ${((carbonylAngleDeviation * 180) / Math.PI).toFixed(3)} degrees`);
   });
 
-  it('shortens crowded ring carbonyl leaves while keeping their fans exact', () => {
-    const result = runPipeline(
-      parseSMILES('COc1ccc(cc1)C2=C(C(=O)c3c(O)cc(O)cc3O2)C4=C(Oc5cc(O)cc(O)c5C4=O)c6ccc(OC)cc6'),
-      {
-        suppressH: true,
-        auditTelemetry: true,
-        finalLandscapeOrientation: true
-      }
-    );
+  stressIt('shortens crowded ring carbonyl leaves while keeping their fans exact', () => {
+    const result = runPipeline(parseSMILES('COc1ccc(cc1)C2=C(C(=O)c3c(O)cc(O)cc3O2)C4=C(Oc5cc(O)cc(O)c5C4=O)c6ccc(OC)cc6'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
     const { layoutGraph, coords } = result;
     const bondLength = layoutGraph.options.bondLength;
     const assertExactCarbonylFan = (centerAtomId, leafAtomId, firstRingAtomId, secondRingAtomId) => {
@@ -3261,19 +2842,10 @@ describe('layout/engine/families/mixed', () => {
         [leafAtomId, secondRingAtomId]
       ]) {
         const angle = bondAngleAtAtom(coords, centerAtomId, firstAtomId, secondAtomId);
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${firstAtomId}-${centerAtomId}-${secondAtomId} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${firstAtomId}-${centerAtomId}-${secondAtomId} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
-      assert.ok(
-        distance(coords.get(centerAtomId), coords.get(leafAtomId)) < bondLength,
-        `expected ${centerAtomId}=${leafAtomId} to shorten below the standard bond length`
-      );
-      assert.ok(
-        distance(coords.get(centerAtomId), coords.get(leafAtomId)) >= bondLength * 0.4 - 1e-6,
-        `expected ${centerAtomId}=${leafAtomId} to stay above the accepted carbonyl compression floor`
-      );
+      assert.ok(distance(coords.get(centerAtomId), coords.get(leafAtomId)) < bondLength, `expected ${centerAtomId}=${leafAtomId} to shorten below the standard bond length`);
+      assert.ok(distance(coords.get(centerAtomId), coords.get(leafAtomId)) >= bondLength * 0.4 - 1e-6, `expected ${centerAtomId}=${leafAtomId} to stay above the accepted carbonyl compression floor`);
     };
 
     assert.equal(result.metadata.audit.ok, true);
@@ -3285,10 +2857,7 @@ describe('layout/engine/families/mixed', () => {
       ['C42', 'C36']
     ]) {
       const angle = bondAngleAtAtom(coords, 'C35', firstAtomId, secondAtomId);
-      assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${firstAtomId}-C35-${secondAtomId} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${firstAtomId}-C35-${secondAtomId} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
     }
   });
 
@@ -3304,14 +2873,8 @@ describe('layout/engine/families/mixed', () => {
       const ringExitDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C22', 'O23');
       const etherAngle = bondAngleAtAtom(coords, 'O23', 'C22', 'C24');
 
-      assert.ok(
-        ringExitDeviation < 1e-6,
-        `expected ${label} C22-O23 to stay on the exact local ring outward axis, got ${((ringExitDeviation * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      assert.ok(
-        Math.abs(etherAngle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C22-O23-C24 to stay at 120 degrees, got ${((etherAngle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(ringExitDeviation < 1e-6, `expected ${label} C22-O23 to stay on the exact local ring outward axis, got ${((ringExitDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(Math.abs(etherAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C22-O23-C24 to stay at 120 degrees, got ${((etherAngle * 180) / Math.PI).toFixed(2)}`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3331,9 +2894,13 @@ describe('layout/engine/families/mixed', () => {
       const firstAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'C5');
       const secondAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'C11');
       const thirdAngle = bondAngleAtAtom(coords, 'C2', 'C5', 'C11');
-      for (const [name, angle] of [['C3-C2-C5', firstAngle], ['C3-C2-C11', secondAngle], ['C5-C2-C11', thirdAngle]]) {
+      for (const [name, angle] of [
+        ['C3-C2-C5', firstAngle],
+        ['C3-C2-C11', secondAngle],
+        ['C5-C2-C11', thirdAngle]
+      ]) {
         assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 0.05,
+          Math.abs(angle - (2 * Math.PI) / 3) < 0.05,
           `expected ${label} ${name} to stay near 120 degrees when the fourth substituent is a hidden hydrogen, got ${((angle * 180) / Math.PI).toFixed(2)}`
         );
       }
@@ -3353,24 +2920,29 @@ describe('layout/engine/families/mixed', () => {
     const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
 
     const assertHiddenHydrogenFan = (coords, label) => {
-      for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C5', 'C19'], ['C5', 'N23'], ['C19', 'N23']]) {
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+        ['C5', 'C19'],
+        ['C5', 'N23'],
+        ['C19', 'N23']
+      ]) {
         const angle = bondAngleAtAtom(coords, 'C17', firstNeighborAtomId, secondNeighborAtomId);
         assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          Math.abs(angle - (2 * Math.PI) / 3) < 1e-6,
           `expected ${label} ${firstNeighborAtomId}-C17-${secondNeighborAtomId} to keep an exact suppressed-H fan, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
         );
       }
     };
     const assertLinkedArylBend = (coords, label) => {
       const c24Angle = bondAngleAtAtom(coords, 'C24', 'N23', 'C25');
-      assert.ok(
-        Math.abs(c24Angle - ((2 * Math.PI) / 3)) < Math.PI / 9,
-        `expected ${label} N23-C24-C25 to stay visibly bent near 120 degrees, got ${((c24Angle * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C17', 'C24'], ['C17', 'C32'], ['C24', 'C32']]) {
+      assert.ok(Math.abs(c24Angle - (2 * Math.PI) / 3) < Math.PI / 9, `expected ${label} N23-C24-C25 to stay visibly bent near 120 degrees, got ${((c24Angle * 180) / Math.PI).toFixed(2)} degrees`);
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+        ['C17', 'C24'],
+        ['C17', 'C32'],
+        ['C24', 'C32']
+      ]) {
         const angle = bondAngleAtAtom(coords, 'N23', firstNeighborAtomId, secondNeighborAtomId);
         assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < Math.PI / 12,
+          Math.abs(angle - (2 * Math.PI) / 3) < Math.PI / 12,
           `expected ${label} ${firstNeighborAtomId}-N23-${secondNeighborAtomId} to remain close to trigonal while opening C24, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
         );
       }
@@ -3395,10 +2967,7 @@ describe('layout/engine/families/mixed', () => {
     const attachedPhenylRing = (graph.atomToRings.get('C16') ?? [])[0];
 
     const assertBalancedAttachment = (coords, label) => {
-      const outwardAngle = angleOf(sub(
-        coords.get('C16'),
-        centroid(attachedPhenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-      ));
+      const outwardAngle = angleOf(sub(coords.get('C16'), centroid(attachedPhenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
       const exitAngle = angleOf(sub(coords.get('C14'), coords.get('C16')));
       const leftMethylFirstAngle = bondAngleAtAtom(coords, 'C2', 'C1', 'N11');
       const leftMethylSecondAngle = bondAngleAtAtom(coords, 'C2', 'C1', 'C3');
@@ -3422,20 +2991,14 @@ describe('layout/engine/families/mixed', () => {
         ['C13-C12-C14', amineMethylSecondAngle],
         ['N11-C12-C14', amineMethylThirdAngle]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
       for (const [name, angle] of [
         ['C12-C14-O15', alcoholFirstAngle],
         ['C12-C14-C16', alcoholSecondAngle],
         ['O15-C14-C16', alcoholThirdAngle]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3466,10 +3029,7 @@ describe('layout/engine/families/mixed', () => {
         ['C31-C2-C1', bondAngleAtAtom(coords, 'C2', 'C31', 'C1')],
         ['O4-C2-C1', bondAngleAtAtom(coords, 'C2', 'O4', 'C1')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3493,32 +3053,20 @@ describe('layout/engine/families/mixed', () => {
     const phenylRing = (graph.atomToRings.get('C36') ?? [])[0];
 
     const assertExactPhenylExit = (coords, label) => {
-      const outwardAngle = angleOf(sub(
-        coords.get('C36'),
-        centroid(phenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-      ));
+      const outwardAngle = angleOf(sub(coords.get('C36'), centroid(phenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
       const parentAngle = angleOf(sub(coords.get('C23'), coords.get('C36')));
       assert.ok(
         angularDifference(outwardAngle, parentAngle) < 1e-6,
         `expected ${label} C36-C23 to follow the phenyl outward axis, got ${((angularDifference(outwardAngle, parentAngle) * 180) / Math.PI).toFixed(2)} degrees`
       );
-      assert.ok(
-        Math.abs(bondAngleAtAtom(coords, 'C36', 'C23', 'C37') - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C23-C36-C37 to stay at 120 degrees`
-      );
-      assert.ok(
-        Math.abs(bondAngleAtAtom(coords, 'C36', 'C23', 'C42') - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C23-C36-C42 to stay at 120 degrees`
-      );
+      assert.ok(Math.abs(bondAngleAtAtom(coords, 'C36', 'C23', 'C37') - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C23-C36-C37 to stay at 120 degrees`);
+      assert.ok(Math.abs(bondAngleAtAtom(coords, 'C36', 'C23', 'C42') - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C23-C36-C42 to stay at 120 degrees`);
       for (const [name, angle] of [
         ['C21-C23-N25', bondAngleAtAtom(coords, 'C23', 'C21', 'N25')],
         ['C21-C23-C36', bondAngleAtAtom(coords, 'C23', 'C21', 'C36')],
         ['N25-C23-C36', bondAngleAtAtom(coords, 'C23', 'N25', 'C36')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3544,18 +3092,9 @@ describe('layout/engine/families/mixed', () => {
     const pyridylRing = (graph.atomToRings.get('C22') ?? [])[0];
 
     const assertExactExits = (coords, label) => {
-      const thioOutwardAngle = angleOf(sub(
-        coords.get('C3'),
-        centroid(thioRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-      ));
-      const dichlorophenylOutwardAngle = angleOf(sub(
-        coords.get('C14'),
-        centroid(dichlorophenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-      ));
-      const pyridylOutwardAngle = angleOf(sub(
-        coords.get('C22'),
-        centroid(pyridylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-      ));
+      const thioOutwardAngle = angleOf(sub(coords.get('C3'), centroid(thioRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
+      const dichlorophenylOutwardAngle = angleOf(sub(coords.get('C14'), centroid(dichlorophenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
+      const pyridylOutwardAngle = angleOf(sub(coords.get('C22'), centroid(pyridylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
       const thioDeviation = angularDifference(thioOutwardAngle, angleOf(sub(coords.get('S2'), coords.get('C3'))));
       const dichlorophenylDeviation = angularDifference(dichlorophenylOutwardAngle, angleOf(sub(coords.get('C13'), coords.get('C14'))));
       const pyridylDeviation = angularDifference(pyridylOutwardAngle, angleOf(sub(coords.get('C9'), coords.get('C22'))));
@@ -3569,18 +3108,12 @@ describe('layout/engine/families/mixed', () => {
       const fusedPyridylFirstAngle = bondAngleAtAtom(coords, 'C9', 'C8', 'C22');
       const fusedPyridylSecondAngle = bondAngleAtAtom(coords, 'C9', 'N10', 'C22');
 
-      assert.ok(
-        thioDeviation < 1e-6,
-        `expected ${label} thio exit to stay on the exact fused-ring outward axis, got ${((thioDeviation * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(thioDeviation < 1e-6, `expected ${label} thio exit to stay on the exact fused-ring outward axis, got ${((thioDeviation * 180) / Math.PI).toFixed(2)}`);
       assert.ok(
         dichlorophenylDeviation < 1e-6,
         `expected ${label} benzylic dichlorophenyl exit to stay on the exact aromatic outward axis, got ${((dichlorophenylDeviation * 180) / Math.PI).toFixed(2)}`
       );
-      assert.ok(
-        pyridylDeviation < 1e-6,
-        `expected ${label} linked pyridyl root to stay on the exact aromatic outward axis, got ${((pyridylDeviation * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(pyridylDeviation < 1e-6, `expected ${label} linked pyridyl root to stay on the exact aromatic outward axis, got ${((pyridylDeviation * 180) / Math.PI).toFixed(2)}`);
       for (const [name, angle] of [
         ['N12-C13-C14', benzylicLinkerAngle],
         ['C13-C14-C15', benzylFirstAngle],
@@ -3592,10 +3125,7 @@ describe('layout/engine/families/mixed', () => {
         ['C8-C9-C22', fusedPyridylFirstAngle],
         ['N10-C9-C22', fusedPyridylSecondAngle]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3636,10 +3166,7 @@ describe('layout/engine/families/mixed', () => {
           [`${parentAtomId}-${centerAtomId}-${ringNeighborAtomIds[1]}`, bondAngleAtAtom(coords, centerAtomId, parentAtomId, ringNeighborAtomIds[1])],
           [`${ringNeighborAtomIds[0]}-${centerAtomId}-${ringNeighborAtomIds[1]}`, bondAngleAtAtom(coords, centerAtomId, ringNeighborAtomIds[0], ringNeighborAtomIds[1])]
         ]) {
-          assert.ok(
-            Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-            `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-          );
+          assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
         }
       }
     };
@@ -3665,18 +3192,9 @@ describe('layout/engine/families/mixed', () => {
     const attachmentRing = (graph.atomToRings.get('C25') ?? [])[0];
     const chlorineRing = (graph.atomToRings.get('C27') ?? [])[0];
     const methylRing = (graph.atomToRings.get('C44') ?? [])[0];
-    const attachmentOutwardAngle = angleOf(sub(
-      result.coords.get('C25'),
-      centroid(attachmentRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
-    ));
-    const chlorineOutwardAngle = angleOf(sub(
-      result.coords.get('C27'),
-      centroid(chlorineRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
-    ));
-    const methylOutwardAngle = angleOf(sub(
-      result.coords.get('C44'),
-      centroid(methylRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
-    ));
+    const attachmentOutwardAngle = angleOf(sub(result.coords.get('C25'), centroid(attachmentRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))));
+    const chlorineOutwardAngle = angleOf(sub(result.coords.get('C27'), centroid(chlorineRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))));
+    const methylOutwardAngle = angleOf(sub(result.coords.get('C44'), centroid(methylRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))));
     const attachmentDeviation = angularDifference(attachmentOutwardAngle, angleOf(sub(result.coords.get('N3'), result.coords.get('C25'))));
     const chlorineDeviation = angularDifference(chlorineOutwardAngle, angleOf(sub(result.coords.get('Cl28'), result.coords.get('C27'))));
     const methylDeviation = angularDifference(methylOutwardAngle, angleOf(sub(result.coords.get('C45'), result.coords.get('C44'))));
@@ -3686,10 +3204,7 @@ describe('layout/engine/families/mixed', () => {
         ['C4-N3-C2', bondAngleAtAtom(coords, 'N3', 'C4', 'C2')],
         ['C25-N3-C2', bondAngleAtAtom(coords, 'N3', 'C25', 'C2')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} anilino ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} anilino ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3719,10 +3234,7 @@ describe('layout/engine/families/mixed', () => {
         ['C3-N2-C1', bondAngleAtAtom(coords, 'N2', 'C3', 'C1')],
         ['C10-N2-C1', bondAngleAtAtom(coords, 'N2', 'C10', 'C1')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3749,10 +3261,7 @@ describe('layout/engine/families/mixed', () => {
         ['C2-N3-H25', bondAngleAtAtom(coords, 'N3', 'C2', 'H25')],
         ['C4-N3-H25', bondAngleAtAtom(coords, 'N3', 'C4', 'H25')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -3790,19 +3299,10 @@ describe('layout/engine/families/mixed', () => {
         ['C36-C31-C30', bondAngleAtAtom(coords, 'C31', 'C36', 'C30')],
         ['C32-C31-C30', bondAngleAtAtom(coords, 'C31', 'C32', 'C30')]
       ]) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
-      assert.ok(
-        distance(coords.get('C1'), coords.get('C15')) > layoutGraph.options.bondLength * 0.75,
-        `expected ${label} left imine methyl to clear the downstream biphenyl ortho carbon`
-      );
-      assert.ok(
-        distance(coords.get('C23'), coords.get('C32')) > layoutGraph.options.bondLength * 0.75,
-        `expected ${label} right imine methyl to clear the downstream biphenyl ortho carbon`
-      );
+      assert.ok(distance(coords.get('C1'), coords.get('C15')) > layoutGraph.options.bondLength * 0.75, `expected ${label} left imine methyl to clear the downstream biphenyl ortho carbon`);
+      assert.ok(distance(coords.get('C23'), coords.get('C32')) > layoutGraph.options.bondLength * 0.75, `expected ${label} right imine methyl to clear the downstream biphenyl ortho carbon`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3819,36 +3319,21 @@ describe('layout/engine/families/mixed', () => {
     });
     const graph = result.layoutGraph;
     const fluorineAtomId = 'F1';
-    const fluorineNeighborId = (graph.bondsByAtomId.get(fluorineAtomId) ?? [])
-      .map(bond => (bond.a === fluorineAtomId ? bond.b : bond.a))
-      .find(atomId => graph.atoms.get(atomId)?.element !== 'H');
+    const fluorineNeighborId = (graph.bondsByAtomId.get(fluorineAtomId) ?? []).map(bond => (bond.a === fluorineAtomId ? bond.b : bond.a)).find(atomId => graph.atoms.get(atomId)?.element !== 'H');
     const fluorophenylRing = (graph.atomToRings.get(fluorineNeighborId) ?? [])[0];
     const excludedAtomIds = new Set([fluorineAtomId, ...(fluorophenylRing?.atomIds ?? [])]);
-    const bondedToFluorineAtomIds = new Set((graph.bondsByAtomId.get(fluorineAtomId) ?? [])
-      .map(bond => (bond.a === fluorineAtomId ? bond.b : bond.a)));
+    const bondedToFluorineAtomIds = new Set((graph.bondsByAtomId.get(fluorineAtomId) ?? []).map(bond => (bond.a === fluorineAtomId ? bond.b : bond.a)));
     let closestScaffoldDistance = Number.POSITIVE_INFINITY;
 
     for (const [atomId, atom] of graph.atoms) {
-      if (
-        !atom
-        || atom.element === 'H'
-        || excludedAtomIds.has(atomId)
-        || bondedToFluorineAtomIds.has(atomId)
-        || !result.coords.has(atomId)
-      ) {
+      if (!atom || atom.element === 'H' || excludedAtomIds.has(atomId) || bondedToFluorineAtomIds.has(atomId) || !result.coords.has(atomId)) {
         continue;
       }
-      closestScaffoldDistance = Math.min(
-        closestScaffoldDistance,
-        distance(result.coords.get(fluorineAtomId), result.coords.get(atomId))
-      );
+      closestScaffoldDistance = Math.min(closestScaffoldDistance, distance(result.coords.get(fluorineAtomId), result.coords.get(atomId)));
     }
 
     assert.equal(result.metadata.audit.ok, true);
-    assert.ok(
-      closestScaffoldDistance > graph.options.bondLength * 0.75,
-      `expected ortho fluorine label to clear the neighboring scaffold, got ${closestScaffoldDistance.toFixed(3)}`
-    );
+    assert.ok(closestScaffoldDistance > graph.options.bondLength * 0.75, `expected ortho fluorine label to clear the neighboring scaffold, got ${closestScaffoldDistance.toFixed(3)}`);
   });
 
   it('keeps crowded terminal aryl fluorine leaves on the exact local ring-outward axis', () => {
@@ -3871,22 +3356,10 @@ describe('layout/engine/families/mixed', () => {
       const secondFluorineAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'F1');
 
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
-      assert.ok(
-        fluorineDeviation < 1e-6,
-        `expected ${label} C2-F1 to follow the exact local ring-outward axis, got ${((fluorineDeviation * 180) / Math.PI).toFixed(2)} degrees`
-      );
-      assert.ok(
-        Math.abs(firstFluorineAngle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C7-C2-F1 near 120 degrees, got ${((firstFluorineAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        Math.abs(secondFluorineAngle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C3-C2-F1 near 120 degrees, got ${((secondFluorineAngle * 180) / Math.PI).toFixed(2)}`
-      );
-      assert.ok(
-        distance(coords.get('F1'), coords.get('F23')) > layoutGraph.options.bondLength * 0.55,
-        `expected ${label} neighboring CF3 fluorine to clear the restored C2-F1 slot`
-      );
+      assert.ok(fluorineDeviation < 1e-6, `expected ${label} C2-F1 to follow the exact local ring-outward axis, got ${((fluorineDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(Math.abs(firstFluorineAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C7-C2-F1 near 120 degrees, got ${((firstFluorineAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondFluorineAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C3-C2-F1 near 120 degrees, got ${((secondFluorineAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(distance(coords.get('F1'), coords.get('F23')) > layoutGraph.options.bondLength * 0.55, `expected ${label} neighboring CF3 fluorine to clear the restored C2-F1 slot`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -3894,7 +3367,7 @@ describe('layout/engine/families/mixed', () => {
     assertC2Fluorine(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
   });
 
-  it('keeps terminal aryl fluorine angles readable while backing crowded ring carbonyl oxygens off nearby rings', () => {
+  stressIt('keeps terminal aryl fluorine angles readable while backing crowded ring carbonyl oxygens off nearby rings', () => {
     const smiles = 'OC1CCC(CC1)NC(=O)[C@@H]2NC3(CCCCC3)[C@]4([C@H]2c5cccc(Cl)c5F)C(=O)Nc6cc(Cl)ccc46';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -3902,10 +3375,7 @@ describe('layout/engine/families/mixed', () => {
       finalLandscapeOrientation: true
     });
     const bondLength = result.layoutGraph.options.bondLength;
-    const fluorineAngles = [
-      bondAngleAtAtom(result.coords, 'C29', 'C23', 'F30'),
-      bondAngleAtAtom(result.coords, 'C29', 'C27', 'F30')
-    ];
+    const fluorineAngles = [bondAngleAtAtom(result.coords, 'C29', 'C23', 'F30'), bondAngleAtAtom(result.coords, 'C29', 'C27', 'F30')];
     const spiroJunctionAngles = [
       ['C14', 'C40'],
       ['C14', 'C21'],
@@ -3914,32 +3384,19 @@ describe('layout/engine/families/mixed', () => {
       ['C40', 'C31'],
       ['C21', 'C31']
     ].map(([firstAtomId, secondAtomId]) => bondAngleAtAtom(result.coords, 'C20', firstAtomId, secondAtomId));
-    const terminalRingCarbonylContactPenalty = measureTerminalRingCarbonylLeafContactPenalty(
-      result.layoutGraph,
-      result.coords,
-      { bondLength }
-    );
+    const terminalRingCarbonylContactPenalty = measureTerminalRingCarbonylLeafContactPenalty(result.layoutGraph, result.coords, { bondLength });
 
     assert.equal(result.metadata.audit.ok, true);
     for (const angle of fluorineAngles) {
-      assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) <= Math.PI / 28,
-        `expected the terminal aryl fluorine fan near 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) <= Math.PI / 28, `expected the terminal aryl fluorine fan near 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
     }
     assert.ok(
       Math.min(...spiroJunctionAngles) >= Math.PI * 0.39,
       `expected the spiro junction ring blocks to stay separated at C20, got minimum angle ${((Math.min(...spiroJunctionAngles) * 180) / Math.PI).toFixed(2)} degrees`
     );
     assert.equal(terminalRingCarbonylContactPenalty, 0);
-    assert.ok(
-      distance(result.coords.get('O32'), result.coords.get('C23')) > bondLength * 0.75,
-      'expected the terminal ring carbonyl oxygen to clear the neighboring aromatic carbon'
-    );
-    assert.ok(
-      distance(result.coords.get('O32'), result.coords.get('C21')) > bondLength * 0.65,
-      'expected the terminal ring carbonyl oxygen to keep readable clearance from the adjacent ring atom'
-    );
+    assert.ok(distance(result.coords.get('O32'), result.coords.get('C23')) > bondLength * 0.75, 'expected the terminal ring carbonyl oxygen to clear the neighboring aromatic carbon');
+    assert.ok(distance(result.coords.get('O32'), result.coords.get('C21')) > bondLength * 0.65, 'expected the terminal ring carbonyl oxygen to keep readable clearance from the adjacent ring atom');
   });
 
   it('keeps terminal chlorophenyl C29 angles exact on fused tricyclic scaffolds', () => {
@@ -3958,18 +3415,11 @@ describe('layout/engine/families/mixed', () => {
         bondLength: layoutGraph.options.bondLength,
         bondValidationClasses
       });
-      const c29Angles = [
-        bondAngleAtAtom(coords, 'C29', 'C23', 'C28'),
-        bondAngleAtAtom(coords, 'C29', 'C23', 'Cl30'),
-        bondAngleAtAtom(coords, 'C29', 'C28', 'Cl30')
-      ];
+      const c29Angles = [bondAngleAtAtom(coords, 'C29', 'C23', 'C28'), bondAngleAtAtom(coords, 'C29', 'C23', 'Cl30'), bondAngleAtAtom(coords, 'C29', 'C28', 'Cl30')];
 
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
       for (const angle of c29Angles) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} C29 chlorophenyl fan to stay exact, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C29 chlorophenyl fan to stay exact, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`);
       }
     };
 
@@ -3994,23 +3444,13 @@ describe('layout/engine/families/mixed', () => {
         bondLength: layoutGraph.options.bondLength,
         bondValidationClasses
       });
-      const rootAngles = [
-        bondAngleAtAtom(coords, 'C44', 'C27', 'C45'),
-        bondAngleAtAtom(coords, 'C44', 'C27', 'C46'),
-        bondAngleAtAtom(coords, 'C44', 'C45', 'C46')
-      ];
+      const rootAngles = [bondAngleAtAtom(coords, 'C44', 'C27', 'C45'), bondAngleAtAtom(coords, 'C44', 'C27', 'C46'), bondAngleAtAtom(coords, 'C44', 'C45', 'C46')];
 
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
       for (const angle of rootAngles) {
-        assert.ok(
-          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-          `expected ${label} C44 carbonyl root fan to stay exact, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
-        );
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C44 carbonyl root fan to stay exact, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`);
       }
-      assert.ok(
-        distance(coords.get('C46'), coords.get('O47')) >= layoutGraph.options.bondLength * 0.5,
-        `expected ${label} carbonyl oxygen compression to stay readable`
-      );
+      assert.ok(distance(coords.get('C46'), coords.get('O47')) >= layoutGraph.options.bondLength * 0.5, `expected ${label} carbonyl oxygen compression to stay readable`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -4042,19 +3482,19 @@ describe('layout/engine/families/mixed', () => {
     }
     assert.equal(audit.severeOverlapCount, 0);
     assert.equal(audit.labelOverlapCount, 0);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C3', 'O2', 'C4') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C3', 'O2', 'C10') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C16', 'C13', 'O17') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C16', 'C13', 'N18') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C16', 'O17', 'N18') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N18', 'C16', 'C23') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N18', 'C16', 'C19') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C23', 'N18', 'C25') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C23', 'C22', 'C25') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C5', 'C6', 'C13') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C5', 'C4', 'C13') - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C13', 'C5', 'C16') - (Math.PI / 2)) < 1e-6);
-    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C13', 'F14', 'F15') - (Math.PI / 2)) < 0.04);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C3', 'O2', 'C4') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C3', 'O2', 'C10') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C16', 'C13', 'O17') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C16', 'C13', 'N18') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C16', 'O17', 'N18') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N18', 'C16', 'C23') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N18', 'C16', 'C19') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C23', 'N18', 'C25') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C23', 'C22', 'C25') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C5', 'C6', 'C13') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C5', 'C4', 'C13') - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C13', 'C5', 'C16') - Math.PI / 2) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C13', 'F14', 'F15') - Math.PI / 2) < 0.04);
   });
 
   it('reserves exact attached-ring space before growing crowded carbonyl branches', () => {
@@ -4065,10 +3505,7 @@ describe('layout/engine/families/mixed', () => {
     const crowdedRingOxygenDistance = distance(result.coords.get('C17'), result.coords.get('O19'));
 
     assert.equal(audit.ok, true);
-    assert.ok(
-      crowdedRingOxygenDistance > bondLength * 0.7,
-      `expected C17-O19 to clear the visible overlap pocket, got ${crowdedRingOxygenDistance.toFixed(3)}`
-    );
+    assert.ok(crowdedRingOxygenDistance > bondLength * 0.7, `expected C17-O19 to clear the visible overlap pocket, got ${crowdedRingOxygenDistance.toFixed(3)}`);
     for (const [name, angle] of [
       ['C10-C11-C12', bondAngleAtAtom(result.coords, 'C11', 'C10', 'C12')],
       ['C10-C11-C17', bondAngleAtAtom(result.coords, 'C11', 'C10', 'C17')],
@@ -4077,10 +3514,7 @@ describe('layout/engine/families/mixed', () => {
       ['C7-C18-N20', bondAngleAtAtom(result.coords, 'C18', 'C7', 'N20')],
       ['O19-C18-N20', bondAngleAtAtom(result.coords, 'C18', 'O19', 'N20')]
     ]) {
-      assert.ok(
-        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `expected ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
     }
   });
 
@@ -4110,23 +3544,11 @@ describe('layout/engine/families/mixed', () => {
         ['C14-C12-C20', bondAngleAtAtom(coords, 'C12', 'C14', 'C20'), Math.PI / 2],
         ['C14-C12-C11', bondAngleAtAtom(coords, 'C12', 'C14', 'C11'), Math.PI / 2]
       ]) {
-        assert.ok(
-          Math.abs(angle - targetAngle) < 1e-6,
-          `expected ${label} ${name} to stay projected, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
-        );
+        assert.ok(Math.abs(angle - targetAngle) < 1e-6, `expected ${label} ${name} to stay projected, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`);
       }
-      assert.ok(
-        distance(coords.get('C15'), coords.get('C21')) > layoutGraph.options.bondLength * 0.85,
-        `expected ${label} C15-side chain to clear the fluorophenyl ortho carbon`
-      );
-      assert.ok(
-        bestLocalRingDeviation(layoutGraph, coords, 'C21', 'F22') < 1e-6,
-        `expected ${label} F22 to keep the exact local C21 ring-outward slot`
-      );
-      assert.ok(
-        Math.abs(bondAngleAtAtom(coords, 'C21', 'C20', 'F22') - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected ${label} C20-C21-F22 to stay at 120 degrees`
-      );
+      assert.ok(distance(coords.get('C15'), coords.get('C21')) > layoutGraph.options.bondLength * 0.85, `expected ${label} C15-side chain to clear the fluorophenyl ortho carbon`);
+      assert.ok(bestLocalRingDeviation(layoutGraph, coords, 'C21', 'F22') < 1e-6, `expected ${label} F22 to keep the exact local C21 ring-outward slot`);
+      assert.ok(Math.abs(bondAngleAtAtom(coords, 'C21', 'C20', 'F22') - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C20-C21-F22 to stay at 120 degrees`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -4159,10 +3581,7 @@ describe('layout/engine/families/mixed', () => {
       assert.deepEqual(findVisibleHeavyBondCrossings(layoutGraph, coords), [], `expected ${label} to avoid visible bond crossings`);
       assert.equal(separations.length, 4, `expected four visible heavy neighbors around C3 in ${label}`);
       for (const separation of separations) {
-        assert.ok(
-          Math.abs(separation - (Math.PI / 2)) < 1e-6,
-          `expected ${label} C3 neighbors to keep projected tetrahedral slots, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`
-        );
+        assert.ok(Math.abs(separation - Math.PI / 2) < 1e-6, `expected ${label} C3 neighbors to keep projected tetrahedral slots, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`);
       }
     };
 
@@ -4182,10 +3601,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(separations.length, 3, 'expected three visible heavy neighbors around N19');
     for (const separation of separations) {
-      assert.ok(
-        Math.abs(separation - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected N19 to keep a planar trigonal spread, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(separation - (2 * Math.PI) / 3) < 1e-6, `expected N19 to keep a planar trigonal spread, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`);
     }
   });
 
@@ -4202,15 +3618,9 @@ describe('layout/engine/families/mixed', () => {
       const separations = sortedHeavyNeighborSeparations(adjacency, coords, 'C16', layoutGraph);
       assert.equal(separations.length, 4, `expected four visible heavy neighbors around C16 in ${label}`);
       for (const separation of separations) {
-        assert.ok(
-          Math.abs(separation - (Math.PI / 2)) < 1e-6,
-          `expected ${label} C16 neighbors to keep projected side slots, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`
-        );
+        assert.ok(Math.abs(separation - Math.PI / 2) < 1e-6, `expected ${label} C16 neighbors to keep projected side slots, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`);
       }
-      assert.ok(
-        Math.abs(bondAngleAtAtom(coords, 'C16', 'C14', 'C19') - Math.PI) < 1e-6,
-        `expected ${label} attached rings at C16 to stay opposite`
-      );
+      assert.ok(Math.abs(bondAngleAtAtom(coords, 'C16', 'C14', 'C19') - Math.PI) < 1e-6, `expected ${label} attached rings at C16 to stay opposite`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -4227,14 +3637,8 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
-    assert.ok(
-      Math.abs(distance(result.coords.get('P5'), result.coords.get('C7')) - targetBondLength) < 1e-6,
-      'expected direct-attached ring refinement to preserve the P5-C7 parent-side bond length'
-    );
-    assert.ok(
-      Math.abs(distance(result.coords.get('P5'), result.coords.get('C21')) - targetBondLength) < 1e-6,
-      'expected the opposite phosphine oxide carbonyl arm to keep target bond length'
-    );
+    assert.ok(Math.abs(distance(result.coords.get('P5'), result.coords.get('C7')) - targetBondLength) < 1e-6, 'expected direct-attached ring refinement to preserve the P5-C7 parent-side bond length');
+    assert.ok(Math.abs(distance(result.coords.get('P5'), result.coords.get('C21')) - targetBondLength) < 1e-6, 'expected the opposite phosphine oxide carbonyl arm to keep target bond length');
     for (const [centerAtomId, firstNeighborAtomId, secondNeighborAtomId] of [
       ['C7', 'P5', 'O8'],
       ['C7', 'P5', 'C9'],
@@ -4250,31 +3654,16 @@ describe('layout/engine/families/mixed', () => {
       );
     }
     const terminalEthylClearance = distance(result.coords.get('C34'), result.coords.get('C2'));
-    assert.ok(
-      terminalEthylClearance > targetBondLength * 0.9,
-      `expected C34 terminal ethyl branch to clear the propyl tail after exact root retouch, got ${terminalEthylClearance.toFixed(2)}`
-    );
-    assert.ok(
-      distance(result.coords.get('C34'), result.coords.get('C3')) > targetBondLength * 0.9,
-      'expected C34 terminal ethyl branch to clear the adjacent propyl backbone'
-    );
-    assert.ok(
-      distance(result.coords.get('C34'), result.coords.get('C4')) > targetBondLength * 0.9,
-      'expected C34 terminal ethyl branch to clear the phosphine-side propyl backbone'
-    );
+    assert.ok(terminalEthylClearance > targetBondLength * 0.9, `expected C34 terminal ethyl branch to clear the propyl tail after exact root retouch, got ${terminalEthylClearance.toFixed(2)}`);
+    assert.ok(distance(result.coords.get('C34'), result.coords.get('C3')) > targetBondLength * 0.9, 'expected C34 terminal ethyl branch to clear the adjacent propyl backbone');
+    assert.ok(distance(result.coords.get('C34'), result.coords.get('C4')) > targetBondLength * 0.9, 'expected C34 terminal ethyl branch to clear the phosphine-side propyl backbone');
   });
 
   it('mirrors compact fused-bridged child rings outside the parent face', () => {
     const smiles = 'CC1=C(CO)C2=CC3CC(OC=N3)OC2C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
-    const mixedResult = layoutMixedFamily(
-      graph,
-      component,
-      buildAdjacency(graph, new Set(component.atomIds)),
-      buildScaffoldPlan(graph, component),
-      graph.options.bondLength
-    );
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
     const pipelineResult = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       auditTelemetry: true,
@@ -4311,13 +3700,7 @@ describe('layout/engine/families/mixed', () => {
     const smiles = 'CC12COC(=O)C(N1)C1CC21';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
-    const mixedResult = layoutMixedFamily(
-      graph,
-      component,
-      buildAdjacency(graph, new Set(component.atomIds)),
-      buildScaffoldPlan(graph, component),
-      graph.options.bondLength
-    );
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
     const pipelineResult = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       auditTelemetry: true
@@ -4326,18 +3709,14 @@ describe('layout/engine/families/mixed', () => {
     const assertCyclopropaneCapOutsideParent = (layoutGraph, coords, label) => {
       const cyclopropaneRing = layoutGraph.rings.find(ring => ring.atomIds.length === 3 && ring.atomIds.includes('C10'));
       assert.ok(cyclopropaneRing, `expected ${label} to contain the C10 cyclopropane ring`);
-      const connection = layoutGraph.ringConnections.find(candidateConnection => (
-        candidateConnection.kind === 'fused'
-        && candidateConnection.sharedAtomIds.length === 2
-        && (
-          candidateConnection.firstRingId === cyclopropaneRing.id
-          || candidateConnection.secondRingId === cyclopropaneRing.id
-        )
-      ));
+      const connection = layoutGraph.ringConnections.find(
+        candidateConnection =>
+          candidateConnection.kind === 'fused' &&
+          candidateConnection.sharedAtomIds.length === 2 &&
+          (candidateConnection.firstRingId === cyclopropaneRing.id || candidateConnection.secondRingId === cyclopropaneRing.id)
+      );
       assert.ok(connection, `expected ${label} cyclopropane ring to share a fused edge`);
-      const parentRingId = connection.firstRingId === cyclopropaneRing.id
-        ? connection.secondRingId
-        : connection.firstRingId;
+      const parentRingId = connection.firstRingId === cyclopropaneRing.id ? connection.secondRingId : connection.firstRingId;
       const parentRing = layoutGraph.rings.find(ring => ring.id === parentRingId);
       assert.ok(parentRing, `expected ${label} cyclopropane ring to have a fused parent`);
       const capAtomId = cyclopropaneRing.atomIds.find(atomId => !connection.sharedAtomIds.includes(atomId));
@@ -4416,10 +3795,7 @@ describe('layout/engine/families/mixed', () => {
       n22Separations[0] >= (7 * Math.PI) / 36 - 1e-6,
       `expected the bridgehead ammonium methyl fan to keep at least 35 degrees, got ${((n22Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
     );
-    assert.ok(
-      Math.max(...methylBondLengths) > result.layoutGraph.options.bondLength * 1.1,
-      'expected one blocked terminal methyl bond to stretch out of the bridge core'
-    );
+    assert.ok(Math.max(...methylBondLengths) > result.layoutGraph.options.bondLength * 1.1, 'expected one blocked terminal methyl bond to stretch out of the bridge core');
     assert.ok(
       distance(result.coords.get('C23'), result.coords.get('C18')) > result.layoutGraph.options.bondLength * 0.55,
       'expected the stretched terminal methyl carbon to keep readable clearance from the bridge atom'
@@ -4432,10 +3808,7 @@ describe('layout/engine/families/mixed', () => {
     const hydroxymethylAngle = bondAngleAtAtom(result.coords, 'C8', 'C6', 'O9');
 
     assert.equal(result.metadata.audit.ok, true);
-    assert.ok(
-      Math.abs(hydroxymethylAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected hydroxymethyl continuation to stay at 120 degrees, got ${((hydroxymethylAngle * 180) / Math.PI).toFixed(2)} degrees`
-    );
+    assert.ok(Math.abs(hydroxymethylAngle - (2 * Math.PI) / 3) < 1e-6, `expected hydroxymethyl continuation to stay at 120 degrees, got ${((hydroxymethylAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

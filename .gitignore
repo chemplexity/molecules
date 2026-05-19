@@ -73,5 +73,6 @@ test-results/
 junit.xml
 
 # Folders
+agent/
 docs/agent/
 docs/api/

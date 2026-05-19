@@ -180,7 +180,7 @@ export function bondAtomColor(sym) {
   if (_renderOptions.twoDColorStyle === 'color-atoms-bonds') {
     const color = baseAtomColor(sym);
     // Carbon is #111 in CPK — keep bonds solid black for C to avoid grey bonds
-    return (color === '#111111' || color === '#333333' || sym === 'C') ? '#111' : color;
+    return color === '#111111' || color === '#333333' || sym === 'C' ? '#111' : color;
   }
   return '#111';
 }
@@ -418,15 +418,7 @@ export function renderAtomLabel(group, label, color, xOffset = 0, yOffset = 0, f
 export function renderLonePairDots(group, dots, { radius = 1.5, fill = '#111111', stroke = 'none', strokeWidth = 0, className = 'lone-pair' } = {}) {
   const dotGroup = group.append('g').attr('class', 'lone-pair-dots').attr('pointer-events', 'none');
   for (const dot of dots) {
-    dotGroup
-      .append('circle')
-      .attr('class', className)
-      .attr('cx', dot.x)
-      .attr('cy', dot.y)
-      .attr('r', radius)
-      .attr('fill', fill)
-      .attr('stroke', stroke)
-      .attr('stroke-width', strokeWidth);
+    dotGroup.append('circle').attr('class', className).attr('cx', dot.x).attr('cy', dot.y).attr('r', radius).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', strokeWidth);
   }
   return dotGroup;
 }

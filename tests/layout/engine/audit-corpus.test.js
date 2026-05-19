@@ -46,10 +46,7 @@ describe('layout/engine/audit-corpus', () => {
       const audit = result.metadata.audit;
 
       assert.equal(result.metadata.primaryFamily, entry.expected.primaryFamily);
-      assert.ok(
-        audit.severeOverlapCount <= entry.expected.maxSevereOverlapCount,
-        `expected ${entry.name} severe overlaps <= ${entry.expected.maxSevereOverlapCount}, got ${audit.severeOverlapCount}`
-      );
+      assert.ok(audit.severeOverlapCount <= entry.expected.maxSevereOverlapCount, `expected ${entry.name} severe overlaps <= ${entry.expected.maxSevereOverlapCount}, got ${audit.severeOverlapCount}`);
       assert.ok(
         audit.bondLengthFailureCount <= entry.expected.maxBondLengthFailureCount,
         `expected ${entry.name} bond failures <= ${entry.expected.maxBondLengthFailureCount}, got ${audit.bondLengthFailureCount}`

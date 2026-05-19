@@ -7,12 +7,7 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { assignBondValidationClass } from '../../../../src/layout/engine/placement/bond-validation.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
-import {
-  layoutFusedCageKamadaKawai,
-  layoutFusedFamily,
-  shouldShortCircuitToFusedCageKk,
-  shouldTryBridgedRescueForFusedSystem
-} from '../../../../src/layout/engine/families/fused.js';
+import { layoutFusedCageKamadaKawai, layoutFusedFamily, shouldShortCircuitToFusedCageKk, shouldTryBridgedRescueForFusedSystem } from '../../../../src/layout/engine/families/fused.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeNaphthalene } from '../support/molecules.js';
 
@@ -46,10 +41,7 @@ function assertPlanarLayoutQuality(graph, coords) {
   const bondStats = measureBondLengthDeviation(graph, coords, graph.options.bondLength);
   assert.equal(findSevereOverlaps(graph, coords, graph.options.bondLength).length, 0);
   assert.ok(bondStats.failingBondCount <= AUDIT_PLANAR_VALIDATION.maxSevereOverlapCount);
-  assert.ok(
-    bondStats.maxDeviation <=
-      graph.options.bondLength * Math.max(Math.abs(1 - AUDIT_PLANAR_VALIDATION.minBondLengthFactor), Math.abs(AUDIT_PLANAR_VALIDATION.maxBondLengthFactor - 1))
-  );
+  assert.ok(bondStats.maxDeviation <= graph.options.bondLength * Math.max(Math.abs(1 - AUDIT_PLANAR_VALIDATION.minBondLengthFactor), Math.abs(AUDIT_PLANAR_VALIDATION.maxBondLengthFactor - 1)));
 }
 
 /**
@@ -66,10 +58,7 @@ function assertExactHexagonalRings(graph, coords) {
       const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
       const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
       const bondLength = distance(coords.get(atomId), coords.get(nextAtomId));
-      const angle = angularDifference(
-        angleOf(sub(coords.get(previousAtomId), coords.get(atomId))),
-        angleOf(sub(coords.get(nextAtomId), coords.get(atomId)))
-      );
+      const angle = angularDifference(angleOf(sub(coords.get(previousAtomId), coords.get(atomId))), angleOf(sub(coords.get(nextAtomId), coords.get(atomId))));
 
       assert.ok(Math.abs(bondLength - graph.options.bondLength) < 1e-6, `${atomId}-${nextAtomId} bond length should stay exact`);
       assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `${atomId} ring angle should stay 120 degrees`);
@@ -139,18 +128,9 @@ describe('layout/engine/families/fused', () => {
   });
 
   it('tries bridged rescue heuristics for large high-ring-count fused cages even when they are not compact', () => {
-    assert.equal(
-      shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 29 }),
-      true
-    );
-    assert.equal(
-      shouldTryBridgedRescueForFusedSystem(40, 11, 'template-id', { bondLengthFailureCount: 29 }),
-      false
-    );
-    assert.equal(
-      shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 0 }),
-      false
-    );
+    assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 29 }), true);
+    assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, 'template-id', { bondLengthFailureCount: 29 }), false);
+    assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 0 }), false);
   });
 
   it('short-circuits only giant dense no-template fused cages to the cage KK path', () => {
@@ -165,11 +145,7 @@ describe('layout/engine/families/fused', () => {
       { suppressH: true }
     );
     const result = layoutFusedCageKamadaKawai(graph.rings, graph.options.bondLength, { layoutGraph: graph });
-    const bondValidationClasses = assignBondValidationClass(
-      graph,
-      graph.ringSystems[0].atomIds,
-      'bridged'
-    );
+    const bondValidationClasses = assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged');
     const audit = auditLayout(graph, result.coords, {
       bondLength: graph.options.bondLength,
       bondValidationClasses

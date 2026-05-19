@@ -289,10 +289,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       unsupportedCenterIds.push(centerId);
       continue;
     }
-    if (
-      isMetalAtom(preparedEntries.center)
-      && covalentStereoDisplayEntries(preparedEntries.entries, centerId).length === 0
-    ) {
+    if (isMetalAtom(preparedEntries.center) && covalentStereoDisplayEntries(preparedEntries.entries, centerId).length === 0) {
       unsupportedCenterIds.push(centerId);
       continue;
     }

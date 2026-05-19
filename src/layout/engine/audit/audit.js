@@ -1,21 +1,11 @@
 /** @module audit/audit */
 
 import { recommendFallback } from './fallback.js';
-import {
-  detectCollapsedMacrocycles,
-  findSevereOverlaps,
-  countVisibleHeavyBondCrossings,
-  measureBondLengthDeviation,
-  measureLabelOverlap,
-  measureRingSubstituentReadability
-} from './invariants.js';
+import { detectCollapsedMacrocycles, findSevereOverlaps, countVisibleHeavyBondCrossings, measureBondLengthDeviation, measureLabelOverlap, measureRingSubstituentReadability } from './invariants.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function isHeavyAtomOverlap(layoutGraph, overlap) {
-  return (
-    layoutGraph.atoms.get(overlap.firstAtomId)?.element !== 'H'
-    && layoutGraph.atoms.get(overlap.secondAtomId)?.element !== 'H'
-  );
+  return layoutGraph.atoms.get(overlap.firstAtomId)?.element !== 'H' && layoutGraph.atoms.get(overlap.secondAtomId)?.element !== 'H';
 }
 
 /**
@@ -47,12 +37,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bridgedReadabilityFailure = false;
   const ringSubstituentReadabilityFailure = ringSubstituentReadability.failingSubstituentCount > 0;
   const ok =
-    overlaps.length === 0
-    && bondDeviation.failingBondCount === 0
-    && collapsedMacrocycles.length === 0
-    && !stereoContradiction
-    && !bridgedReadabilityFailure
-    && !ringSubstituentReadabilityFailure;
+    overlaps.length === 0 && bondDeviation.failingBondCount === 0 && collapsedMacrocycles.length === 0 && !stereoContradiction && !bridgedReadabilityFailure && !ringSubstituentReadabilityFailure;
   const fallback = recommendFallback({
     bondLengthFailureCount: bondDeviation.failingBondCount,
     severeOverlapCount: heavyAtomOverlapCount,
@@ -61,17 +46,8 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     bridgedReadabilityFailure,
     ringSubstituentReadabilityFailureCount: ringSubstituentReadability.failingSubstituentCount
   });
-  const minSevereOverlapDistance =
-    overlaps.length > 0
-      ? overlaps.reduce(
-          (minimumDistance, overlap) => Math.min(minimumDistance, overlap.distance),
-          Number.POSITIVE_INFINITY
-        )
-      : null;
-  const worstOverlapDeficit =
-    minSevereOverlapDistance == null
-      ? 0
-      : Math.max(0, severeOverlapThreshold - minSevereOverlapDistance);
+  const minSevereOverlapDistance = overlaps.length > 0 ? overlaps.reduce((minimumDistance, overlap) => Math.min(minimumDistance, overlap.distance), Number.POSITIVE_INFINITY) : null;
+  const worstOverlapDeficit = minSevereOverlapDistance == null ? 0 : Math.max(0, severeOverlapThreshold - minSevereOverlapDistance);
   const severeOverlapPenalty = overlaps.reduce((penalty, overlap) => {
     const deficit = Math.max(0, severeOverlapThreshold - overlap.distance);
     return penalty + deficit * deficit;

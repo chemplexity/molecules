@@ -264,8 +264,8 @@ export function create2DRenderHelpers(ctx) {
       // In-chain and ring double bonds keep the existing ring-biased style.
       const hasTerm = heavyDegree(atom1, mol) === 1 || heavyDegree(atom2, mol) === 1;
       if (hasTerm) {
-        const halfOx = nx * ctx.constants.bondOffset2d / 2;
-        const halfOy = ny * ctx.constants.bondOffset2d / 2;
+        const halfOx = (nx * ctx.constants.bondOffset2d) / 2;
+        const halfOy = (ny * ctx.constants.bondOffset2d) / 2;
         const posLine = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + halfOx, y: start.y + halfOy }, { x: end.x + halfOx, y: end.y + halfOy }, toSVGPt);
         addColoredLine(container, posLine.x1, posLine.y1, posLine.x2, posLine.y2);
         const negLine = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x - halfOx, y: start.y - halfOy }, { x: end.x - halfOx, y: end.y - halfOy }, toSVGPt);

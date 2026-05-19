@@ -154,10 +154,18 @@
         flex-shrink: 0;
         color: #ccc;
       }
-      .step-item.done    .step-icon { color: #86efac; }
-      .step-item.reverted .step-icon { color: #fb923c; }
-      .step-item.active  .step-icon { color: #3b82f6; }
-      .step-item.active.reverted .step-icon { color: #f97316; }
+      .step-item.done .step-icon {
+        color: #86efac;
+      }
+      .step-item.reverted .step-icon {
+        color: #fb923c;
+      }
+      .step-item.active .step-icon {
+        color: #3b82f6;
+      }
+      .step-item.active.reverted .step-icon {
+        color: #f97316;
+      }
       .step-label {
         font-size: 12px;
         color: #444;
@@ -226,38 +234,79 @@
       }
       #mol-svg-wrap {
         flex: 1;
-        display: flex; align-items: center; justify-content: center;
-        padding: 20px; box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        box-sizing: border-box;
         overflow: hidden;
         transition: opacity 0.15s;
       }
-      #mol-svg-wrap.fading { opacity: 0; }
+      #mol-svg-wrap.fading {
+        opacity: 0;
+      }
       #mol-svg-wrap svg {
-        max-width: 100%; max-height: 100%; width: auto; height: auto;
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
       }
       #empty-msg {
-        font-size: 13px; color: #aaa; text-align: center;
-        padding: 40px; line-height: 1.7;
+        font-size: 13px;
+        color: #aaa;
+        text-align: center;
+        padding: 40px;
+        line-height: 1.7;
       }
       #moved-badge {
-        position: absolute; top: 8px; right: 8px;
-        font-size: 11px; font-weight: 600; color: #f97316;
-        background: #fff7ed; border: 1px solid #fed7aa;
-        border-radius: 6px; padding: 3px 8px;
-        opacity: 0; transition: opacity 0.2s;
-        pointer-events: none; z-index: 2;
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #f97316;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 6px;
+        padding: 3px 8px;
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+        z-index: 2;
       }
-      #moved-badge.visible { opacity: 1; }
-      #moved-badge.zero { color: #aaa; background: #f5f5f5; border-color: #e5e7eb; }
+      #moved-badge.visible {
+        opacity: 1;
+      }
+      #moved-badge.zero {
+        color: #aaa;
+        background: #f5f5f5;
+        border-color: #e5e7eb;
+      }
       #view-mode-label {
-        position: absolute; top: 8px; left: 8px;
-        font-size: 11px; font-weight: 600;
-        border-radius: 6px; padding: 3px 8px;
-        opacity: 0; transition: opacity 0.2s;
-        pointer-events: none; z-index: 2;
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 3px 8px;
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+        z-index: 2;
       }
-      #view-mode-label.candidate { opacity: 1; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
-      #view-mode-label.incumbent { opacity: 1; background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
+      #view-mode-label.candidate {
+        opacity: 1;
+        background: #fff7ed;
+        color: #c2410c;
+        border: 1px solid #fed7aa;
+      }
+      #view-mode-label.incumbent {
+        opacity: 1;
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #93c5fd;
+      }
 
       /* ── Nav bar ── */
       #nav-bar {
@@ -385,11 +434,22 @@
         color: #dc2626;
       }
       #outcome-chip {
-        display: inline-flex; align-items: center; gap: 5px;
-        font-size: 11px; font-weight: 500; border-radius: 6px; padding: 4px 9px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        font-weight: 500;
+        border-radius: 6px;
+        padding: 4px 9px;
       }
-      #outcome-chip.accepted { background: #f0fdf4; color: #16a34a; }
-      #outcome-chip.reverted { background: #fff7ed; color: #c2410c; }
+      #outcome-chip.accepted {
+        background: #f0fdf4;
+        color: #16a34a;
+      }
+      #outcome-chip.reverted {
+        background: #fff7ed;
+        color: #c2410c;
+      }
       #view-toggle-btn {
         padding: 5px 10px;
         border: 1px solid #e0e0e0;
@@ -399,29 +459,59 @@
         cursor: pointer;
         background: #fff;
         color: #555;
-        transition: background 0.15s, border-color 0.15s;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
         display: none;
         width: 100%;
       }
-      #view-toggle-btn:hover { background: #f5f5f7; border-color: #ccc; }
-      #view-toggle-btn.incumbent-active { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+      #view-toggle-btn:hover {
+        background: #f5f5f7;
+        border-color: #ccc;
+      }
+      #view-toggle-btn.incumbent-active {
+        background: #eff6ff;
+        border-color: #93c5fd;
+        color: #1d4ed8;
+      }
       #reject-reason {
-        font-size: 11px; color: #92400e; background: #fffbeb;
-        border: 1px solid #fde68a; border-radius: 6px;
-        padding: 6px 9px; line-height: 1.5;
+        font-size: 11px;
+        color: #92400e;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 6px;
+        padding: 6px 9px;
+        line-height: 1.5;
       }
       #score-grid {
-        display: flex; flex-direction: column; gap: 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
       .score-row {
-        display: flex; justify-content: space-between; font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
       }
-      .score-key { color: #aaa; }
-      .score-val { font-weight: 500; font-variant-numeric: tabular-nums; }
-      .score-val.s-ok   { color: #22c55e; }
-      .score-val.s-good { color: #ccc; }
-      .score-val.s-warn { color: #f59e0b; }
-      .score-val.s-bad  { color: #ef4444; }
+      .score-key {
+        color: #aaa;
+      }
+      .score-val {
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .score-val.s-ok {
+        color: #22c55e;
+      }
+      .score-val.s-good {
+        color: #ccc;
+      }
+      .score-val.s-warn {
+        color: #f59e0b;
+      }
+      .score-val.s-bad {
+        color: #ef4444;
+      }
     </style>
   </head>
   <body>
@@ -463,9 +553,9 @@
       <div id="info-panel">
         <div id="info-label" style="color: #bbb">No step selected</div>
         <div id="info-desc"></div>
-        <div id="outcome-chip" style="display:none"></div>
+        <div id="outcome-chip" style="display: none"></div>
         <div id="view-toggle-btn">👁 View Incumbent</div>
-        <div id="reject-reason" style="display:none"></div>
+        <div id="reject-reason" style="display: none"></div>
 
         <div>
           <div class="info-section-title">Score</div>
@@ -569,9 +659,7 @@
           item.dataset.index = i;
           const icon = step.accepted === false ? '↩' : '○';
           const timeHtml = step.stepTimeMs != null ? `<div class="step-time">${step.stepTimeMs.toFixed(1)}ms</div>` : '';
-          const badge = step.movedAtomCount > 0
-            ? `<span class="step-badge">${step.movedAtomCount}</span>`
-            : `<span class="step-badge zero">—</span>`;
+          const badge = step.movedAtomCount > 0 ? `<span class="step-badge">${step.movedAtomCount}</span>` : `<span class="step-badge zero">—</span>`;
           item.innerHTML = `<div class="step-icon">${icon}</div><div class="step-label"><div>${step.label}</div>${timeHtml}</div>${badge}`;
           item.addEventListener('click', () => showStep(i));
           stepList.appendChild(item);
@@ -640,18 +728,28 @@
       // never changes during hover (which was causing stutter/flicker).
       function preExpandViewBox(svg, ghostData) {
         const [vx, vy, vw, vh] = svg.getAttribute('viewBox').split(' ').map(Number);
-        const R = 10, PAD = 14;
-        let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity;
+        const R = 10,
+          PAD = 14;
+        let gMinX = Infinity,
+          gMaxX = -Infinity,
+          gMinY = Infinity,
+          gMaxY = -Infinity;
         for (const a of ghostData.atoms) {
-          gMinX = Math.min(gMinX, a.px - R); gMaxX = Math.max(gMaxX, a.px + R);
-          gMinY = Math.min(gMinY, a.py - R); gMaxY = Math.max(gMaxY, a.py + R);
+          gMinX = Math.min(gMinX, a.px - R);
+          gMaxX = Math.max(gMaxX, a.px + R);
+          gMinY = Math.min(gMinY, a.py - R);
+          gMaxY = Math.max(gMaxY, a.py + R);
         }
         for (const b of ghostData.bonds) {
-          gMinX = Math.min(gMinX, b.x1, b.x2); gMaxX = Math.max(gMaxX, b.x1, b.x2);
-          gMinY = Math.min(gMinY, b.y1, b.y2); gMaxY = Math.max(gMaxY, b.y1, b.y2);
+          gMinX = Math.min(gMinX, b.x1, b.x2);
+          gMaxX = Math.max(gMaxX, b.x1, b.x2);
+          gMinY = Math.min(gMinY, b.y1, b.y2);
+          gMaxY = Math.max(gMaxY, b.y1, b.y2);
         }
-        const newMinX = Math.min(vx, gMinX - PAD), newMinY = Math.min(vy, gMinY - PAD);
-        const newMaxX = Math.max(vx + vw, gMaxX + PAD), newMaxY = Math.max(vy + vh, gMaxY + PAD);
+        const newMinX = Math.min(vx, gMinX - PAD),
+          newMinY = Math.min(vy, gMinY - PAD);
+        const newMaxX = Math.max(vx + vw, gMaxX + PAD),
+          newMaxY = Math.max(vy + vh, gMaxY + PAD);
         if (newMinX < vx || newMinY < vy || newMaxX > vx + vw || newMaxY > vy + vh) {
           svg.setAttribute('viewBox', `${newMinX} ${newMinY} ${newMaxX - newMinX} ${newMaxY - newMinY}`);
           svg.setAttribute('width', newMaxX - newMinX);
@@ -677,8 +775,10 @@
         // Ghost bonds
         for (const b of ghostData.bonds) {
           const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', b.x1); line.setAttribute('y1', b.y1);
-          line.setAttribute('x2', b.x2); line.setAttribute('y2', b.y2);
+          line.setAttribute('x1', b.x1);
+          line.setAttribute('y1', b.y1);
+          line.setAttribute('x2', b.x2);
+          line.setAttribute('y2', b.y2);
           line.setAttribute('stroke', 'rgba(96,165,250,0.55)');
           line.setAttribute('stroke-width', '1.5');
           g.appendChild(line);
@@ -687,7 +787,9 @@
         // Ghost atoms
         for (const a of ghostData.atoms) {
           const ghost = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-          ghost.setAttribute('cx', a.px); ghost.setAttribute('cy', a.py); ghost.setAttribute('r', '5');
+          ghost.setAttribute('cx', a.px);
+          ghost.setAttribute('cy', a.py);
+          ghost.setAttribute('r', '5');
           ghost.setAttribute('fill', 'rgba(96,165,250,0.2)');
           ghost.setAttribute('stroke', '#60a5fa');
           ghost.setAttribute('stroke-width', '1');
@@ -700,8 +802,10 @@
         const px = parseFloat(hoveredCircle.getAttribute('data-px'));
         const py = parseFloat(hoveredCircle.getAttribute('data-py'));
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        arrow.setAttribute('x1', px); arrow.setAttribute('y1', py);
-        arrow.setAttribute('x2', cx); arrow.setAttribute('y2', cy);
+        arrow.setAttribute('x1', px);
+        arrow.setAttribute('y1', py);
+        arrow.setAttribute('x2', cx);
+        arrow.setAttribute('y2', cy);
         arrow.setAttribute('stroke', '#f97316');
         arrow.setAttribute('stroke-width', '1.5');
         arrow.setAttribute('stroke-dasharray', '4 3');
@@ -748,13 +852,13 @@
           const devPct = (sa.maxBondLengthDeviation ?? 0) * 100;
           const devCls = devPct < 3 ? 's-good' : devPct < 10 ? 's-warn' : 's-bad';
           const rows = [
-            ['ok',           sa.ok ? '✓ Pass' : '✗ Fail',              sa.ok ? 's-ok' : 's-bad'],
-            ['bond fails',   sa.bondLengthFailureCount ?? 0,             (sa.bondLengthFailureCount ?? 0) > 0 ? 's-bad' : 's-good'],
-            ['max dev',      `${devPct.toFixed(1)}%`,                    devCls],
-            ['overlaps',     sa.severeOverlapCount ?? 0,                 (sa.severeOverlapCount ?? 0) > 0 ? 's-bad' : 's-good'],
-            ['label ovlp',   sa.labelOverlapCount ?? 0,                  (sa.labelOverlapCount ?? 0) > 0 ? 's-warn' : 's-good'],
-            ['ring read.',   sa.ringSubstituentReadabilityFailureCount ?? 0, (sa.ringSubstituentReadabilityFailureCount ?? 0) > 0 ? 's-warn' : 's-good'],
-            ['inward sub.',  sa.inwardRingSubstituentCount ?? 0,         (sa.inwardRingSubstituentCount ?? 0) > 0 ? 's-warn' : 's-good'],
+            ['ok', sa.ok ? '✓ Pass' : '✗ Fail', sa.ok ? 's-ok' : 's-bad'],
+            ['bond fails', sa.bondLengthFailureCount ?? 0, (sa.bondLengthFailureCount ?? 0) > 0 ? 's-bad' : 's-good'],
+            ['max dev', `${devPct.toFixed(1)}%`, devCls],
+            ['overlaps', sa.severeOverlapCount ?? 0, (sa.severeOverlapCount ?? 0) > 0 ? 's-bad' : 's-good'],
+            ['label ovlp', sa.labelOverlapCount ?? 0, (sa.labelOverlapCount ?? 0) > 0 ? 's-warn' : 's-good'],
+            ['ring read.', sa.ringSubstituentReadabilityFailureCount ?? 0, (sa.ringSubstituentReadabilityFailureCount ?? 0) > 0 ? 's-warn' : 's-good'],
+            ['inward sub.', sa.inwardRingSubstituentCount ?? 0, (sa.inwardRingSubstituentCount ?? 0) > 0 ? 's-warn' : 's-good']
           ];
           if (sa.stereoContradiction) rows.splice(1, 0, ['stereo', '✗ Contradiction', 's-bad']);
           if ((sa.collapsedMacrocycleCount ?? 0) > 0) rows.unshift(['macrocycle', `${sa.collapsedMacrocycleCount} collapsed`, 's-bad']);
@@ -895,13 +999,13 @@
             const devPct = (sa.maxBondLengthDeviation ?? 0) * 100;
             const devCls = devPct < 3 ? 's-good' : devPct < 10 ? 's-warn' : 's-bad';
             const rows = [
-              ['ok',           sa.ok ? '✓ Pass' : '✗ Fail',              sa.ok ? 's-ok' : 's-bad'],
-              ['bond fails',   sa.bondLengthFailureCount ?? 0,             (sa.bondLengthFailureCount ?? 0) > 0 ? 's-bad' : 's-good'],
-              ['max dev',      `${devPct.toFixed(1)}%`,                    devCls],
-              ['overlaps',     sa.severeOverlapCount ?? 0,                 (sa.severeOverlapCount ?? 0) > 0 ? 's-bad' : 's-good'],
-              ['label ovlp',   sa.labelOverlapCount ?? 0,                  (sa.labelOverlapCount ?? 0) > 0 ? 's-warn' : 's-good'],
-              ['ring read.',   sa.ringSubstituentReadabilityFailureCount ?? 0, (sa.ringSubstituentReadabilityFailureCount ?? 0) > 0 ? 's-warn' : 's-good'],
-              ['inward sub.',  sa.inwardRingSubstituentCount ?? 0,         (sa.inwardRingSubstituentCount ?? 0) > 0 ? 's-warn' : 's-good'],
+              ['ok', sa.ok ? '✓ Pass' : '✗ Fail', sa.ok ? 's-ok' : 's-bad'],
+              ['bond fails', sa.bondLengthFailureCount ?? 0, (sa.bondLengthFailureCount ?? 0) > 0 ? 's-bad' : 's-good'],
+              ['max dev', `${devPct.toFixed(1)}%`, devCls],
+              ['overlaps', sa.severeOverlapCount ?? 0, (sa.severeOverlapCount ?? 0) > 0 ? 's-bad' : 's-good'],
+              ['label ovlp', sa.labelOverlapCount ?? 0, (sa.labelOverlapCount ?? 0) > 0 ? 's-warn' : 's-good'],
+              ['ring read.', sa.ringSubstituentReadabilityFailureCount ?? 0, (sa.ringSubstituentReadabilityFailureCount ?? 0) > 0 ? 's-warn' : 's-good'],
+              ['inward sub.', sa.inwardRingSubstituentCount ?? 0, (sa.inwardRingSubstituentCount ?? 0) > 0 ? 's-warn' : 's-good']
             ];
             for (const [key, val, cls] of rows) {
               const row = document.createElement('div');

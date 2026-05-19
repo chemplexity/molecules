@@ -90,10 +90,7 @@ export function collectLabelBoxes(layoutGraph, coords, bondLength, options = {})
  * @returns {boolean} True when the boxes overlap.
  */
 export function labelBoxesOverlap(firstBox, secondBox, padding) {
-  return (
-    Math.abs(firstBox.x - secondBox.x) < firstBox.halfWidth + secondBox.halfWidth + padding &&
-    Math.abs(firstBox.y - secondBox.y) < firstBox.halfHeight + secondBox.halfHeight + padding
-  );
+  return Math.abs(firstBox.x - secondBox.x) < firstBox.halfWidth + secondBox.halfWidth + padding && Math.abs(firstBox.y - secondBox.y) < firstBox.halfHeight + secondBox.halfHeight + padding;
 }
 
 /**

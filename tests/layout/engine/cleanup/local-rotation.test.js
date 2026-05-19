@@ -128,11 +128,7 @@ describe('layout/engine/cleanup/local-rotation', () => {
     const result = runLocalCleanup(graph, coords, { maxPasses: 6, bondLength: 1.5 });
     const after = measureLayoutCost(graph, result.coords, 1.5);
 
-    assert.ok(rotatableSubtrees.terminalSubtrees.some(
-      descriptor => descriptor.atomId === 'C2'
-        && descriptor.anchorAtomId === 'C3'
-        && descriptor.subtreeAtomIds.includes('C1')
-    ));
+    assert.ok(rotatableSubtrees.terminalSubtrees.some(descriptor => descriptor.atomId === 'C2' && descriptor.anchorAtomId === 'C3' && descriptor.subtreeAtomIds.includes('C1')));
     assert.ok(after < before);
     assert.ok(result.passes > 0);
     assert.notDeepEqual(result.coords.get('C2'), coords.get('C2'));
@@ -149,19 +145,21 @@ describe('layout/engine/cleanup/local-rotation', () => {
       overlapPairs: findSevereOverlaps(graph, placement.coords, graph.options.bondLength)
     });
 
-    assert.ok(rotatableSubtrees.terminalSubtrees.some(
-      descriptor => descriptor.atomId === 'C15'
-        && descriptor.anchorAtomId === 'C13'
-        && descriptor.subtreeAtomIds.includes('C16')
-        && descriptor.subtreeAtomIds.includes('O17')
-    ));
-    assert.ok(rotatableSubtrees.terminalSubtrees.some(
-      descriptor => descriptor.atomId === 'C13'
-        && descriptor.anchorAtomId === 'C7'
-        && descriptor.subtreeAtomIds.includes('C14')
-        && descriptor.subtreeAtomIds.includes('C15')
-        && descriptor.subtreeAtomIds.includes('O17')
-    ));
+    assert.ok(
+      rotatableSubtrees.terminalSubtrees.some(
+        descriptor => descriptor.atomId === 'C15' && descriptor.anchorAtomId === 'C13' && descriptor.subtreeAtomIds.includes('C16') && descriptor.subtreeAtomIds.includes('O17')
+      )
+    );
+    assert.ok(
+      rotatableSubtrees.terminalSubtrees.some(
+        descriptor =>
+          descriptor.atomId === 'C13' &&
+          descriptor.anchorAtomId === 'C7' &&
+          descriptor.subtreeAtomIds.includes('C14') &&
+          descriptor.subtreeAtomIds.includes('C15') &&
+          descriptor.subtreeAtomIds.includes('O17')
+      )
+    );
     assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
     assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C13', 'C7', 'C14') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C13', 'C7', 'C15') - 120) < 1e-6);
@@ -203,10 +201,7 @@ describe('layout/engine/cleanup/local-rotation', () => {
       ['O3', { x: 0.2, y: -1.35 }],
       ['C4', { x: 0.9, y: 1.1 }]
     ]);
-    const idealAngle = angleOf(sub(
-      coords.get('C2'),
-      centroid([coords.get('N1'), coords.get('C4')])
-    ));
+    const idealAngle = angleOf(sub(coords.get('C2'), centroid([coords.get('N1'), coords.get('C4')])));
     const beforeAngle = angleOf(sub(coords.get('O3'), coords.get('C2')));
     const result = runLocalCleanup(graph, coords, { maxPasses: 4, bondLength: 1.5 });
     const afterAngle = angleOf(sub(result.coords.get('O3'), result.coords.get('C2')));
@@ -224,10 +219,7 @@ describe('layout/engine/cleanup/local-rotation', () => {
       ['O3', { x: 0.2, y: -1.35 }],
       ['C4', { x: 0.9, y: 1.1 }]
     ]);
-    const idealAngle = angleOf(sub(
-      coords.get('C2'),
-      centroid([coords.get('O3'), coords.get('C4')])
-    ));
+    const idealAngle = angleOf(sub(coords.get('C2'), centroid([coords.get('O3'), coords.get('C4')])));
     const beforeAngle = angleOf(sub(coords.get('N1'), coords.get('C2')));
     const result = runLocalCleanup(graph, coords, {
       maxPasses: 2,
@@ -281,12 +273,8 @@ describe('layout/engine/cleanup/local-rotation', () => {
     ]);
     const result = runLocalCleanup(graph, coords, { maxPasses: 1, bondLength: 1.5 });
 
-    const movedAtomIds = [...result.coords.entries()]
-      .filter(([atomId, position]) => Math.hypot(position.x - coords.get(atomId).x, position.y - coords.get(atomId).y) > 1e-6)
-      .map(([atomId]) => atomId);
-    const amineAngles = ['C11', 'C13', 'C14']
-      .map(atomId => angleOf(sub(result.coords.get(atomId), result.coords.get('N12'))))
-      .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+    const movedAtomIds = [...result.coords.entries()].filter(([atomId, position]) => Math.hypot(position.x - coords.get(atomId).x, position.y - coords.get(atomId).y) > 1e-6).map(([atomId]) => atomId);
+    const amineAngles = ['C11', 'C13', 'C14'].map(atomId => angleOf(sub(result.coords.get(atomId), result.coords.get('N12')))).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
     const amineSeparations = amineAngles.map((angle, index) => {
       const nextAngle = amineAngles[(index + 1) % amineAngles.length];
       const rawGap = nextAngle - angle;
@@ -310,16 +298,9 @@ describe('layout/engine/cleanup/local-rotation', () => {
       bondLength: graph.options.bondLength,
       overlapPairs: initialOverlaps
     });
-    const n2Angles = [
-      bondAngleDegrees(result.coords, 'N2', 'C11', 'C1'),
-      bondAngleDegrees(result.coords, 'N2', 'C11', 'C3'),
-      bondAngleDegrees(result.coords, 'N2', 'C1', 'C3')
-    ];
+    const n2Angles = [bondAngleDegrees(result.coords, 'N2', 'C11', 'C1'), bondAngleDegrees(result.coords, 'N2', 'C11', 'C3'), bondAngleDegrees(result.coords, 'N2', 'C1', 'C3')];
 
-    assert.ok(initialOverlaps.some(overlap => (
-      (overlap.firstAtomId === 'C1' && overlap.secondAtomId === 'C14')
-      || (overlap.firstAtomId === 'C14' && overlap.secondAtomId === 'C1')
-    )));
+    assert.ok(initialOverlaps.some(overlap => (overlap.firstAtomId === 'C1' && overlap.secondAtomId === 'C14') || (overlap.firstAtomId === 'C14' && overlap.secondAtomId === 'C1')));
     assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
     for (const angle of n2Angles) {
       assert.ok(Math.abs(angle - 120) < 3, `expected N2 fan near 120 degrees, got ${angle.toFixed(2)}`);

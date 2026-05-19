@@ -122,10 +122,13 @@ function angleWithinNarrowRingVertexSector(angle, firstAngle, secondAngle) {
 function polygonCentroidExcludingCenter(polygon, centerPosition) {
   const points = polygon.filter(point => length(sub(point, centerPosition)) > RING_VERTEX_MATCH_TOLERANCE);
   const centroidPoints = points.length > 0 ? points : polygon;
-  const sum = centroidPoints.reduce((accumulator, point) => ({
-    x: accumulator.x + point.x,
-    y: accumulator.y + point.y
-  }), { x: 0, y: 0 });
+  const sum = centroidPoints.reduce(
+    (accumulator, point) => ({
+      x: accumulator.x + point.x,
+      y: accumulator.y + point.y
+    }),
+    { x: 0, y: 0 }
+  );
   return {
     x: sum.x / centroidPoints.length,
     y: sum.y / centroidPoints.length
@@ -150,10 +153,7 @@ function pointsIntoRingInteriorSector(centerPosition, ringPolygon, candidateAngl
 
   const previousPoint = ringPolygon[(centerIndex - 1 + ringPolygon.length) % ringPolygon.length];
   const nextPoint = ringPolygon[(centerIndex + 1) % ringPolygon.length];
-  if (
-    length(sub(previousPoint, centerPosition)) <= RING_VERTEX_MATCH_TOLERANCE
-    || length(sub(nextPoint, centerPosition)) <= RING_VERTEX_MATCH_TOLERANCE
-  ) {
+  if (length(sub(previousPoint, centerPosition)) <= RING_VERTEX_MATCH_TOLERANCE || length(sub(nextPoint, centerPosition)) <= RING_VERTEX_MATCH_TOLERANCE) {
     return false;
   }
 
@@ -165,12 +165,8 @@ function pointsIntoRingInteriorSector(centerPosition, ringPolygon, candidateAngl
   const centroidVector = sub(polygonCentroidExcludingCenter(ringPolygon, centerPosition), centerPosition);
   const previousToNextDelta = positiveAngleDelta(previousAngle, nextAngle);
   const centroidInsidePreviousToNext =
-    length(centroidVector) > RING_VERTEX_MATCH_TOLERANCE
-      ? angleWithinCounterClockwiseArc(angleOf(centroidVector), previousAngle, nextAngle)
-      : previousToNextDelta <= Math.PI;
-  return centroidInsidePreviousToNext
-    ? angleWithinCounterClockwiseArc(candidateAngle, previousAngle, nextAngle)
-    : angleWithinCounterClockwiseArc(candidateAngle, nextAngle, previousAngle);
+    length(centroidVector) > RING_VERTEX_MATCH_TOLERANCE ? angleWithinCounterClockwiseArc(angleOf(centroidVector), previousAngle, nextAngle) : previousToNextDelta <= Math.PI;
+  return centroidInsidePreviousToNext ? angleWithinCounterClockwiseArc(candidateAngle, previousAngle, nextAngle) : angleWithinCounterClockwiseArc(candidateAngle, nextAngle, previousAngle);
 }
 
 /**
@@ -238,16 +234,7 @@ function evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAn
  * @param {number} minimumAvoidanceDistance - Distance that counts as fully clear of avoid positions.
  * @returns {{x: number, y: number}} Chosen hydrogen position.
  */
-function bestDisplayCandidate(
-  centerPosition,
-  knownPositions,
-  radius,
-  baseAngle,
-  incidentRingPolygons,
-  cardinalAxisSectorTolerance,
-  avoidPositions,
-  minimumAvoidanceDistance
-) {
+function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons, cardinalAxisSectorTolerance, avoidPositions, minimumAvoidanceDistance) {
   const candidates = uniqueAngles([baseAngle, ...gapBisectorAngles(centerPosition, knownPositions), ...CARDINAL_AXIS_ANGLES]).map(angle =>
     evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAngle, incidentRingPolygons, avoidPositions)
   );
@@ -256,9 +243,7 @@ function bestDisplayCandidate(
   const bestContainingRingCount = Math.min(...ringExteriorCandidates.map(candidate => candidate.containingRingCount));
   const ringSafeCandidates = ringExteriorCandidates.filter(candidate => candidate.containingRingCount === bestContainingRingCount);
   const bestAvoidance = Math.max(...ringSafeCandidates.map(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance)));
-  const atomClearCandidates = ringSafeCandidates.filter(candidate =>
-    Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= bestAvoidance - 1e-6
-  );
+  const atomClearCandidates = ringSafeCandidates.filter(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= bestAvoidance - 1e-6);
   const bestSector = Math.max(...atomClearCandidates.map(candidate => candidate.sector));
   const nearBestSectorCandidates = atomClearCandidates.filter(candidate => candidate.sector >= bestSector - cardinalAxisSectorTolerance);
 
@@ -284,41 +269,30 @@ function bestDisplayCandidate(
   }
 
   if (bestCandidate.containingRingCount === 0 && bestCandidate.sector < DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR) {
-    const minimumReadableSector = Math.max(
-      DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR,
-      bestCandidate.sector + DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR * 0.75
-    );
-    const readableEndpointCandidates = candidates.filter(candidate =>
-      candidate.containingRingCount === 0
-      && candidate.sector >= minimumReadableSector - 1e-6
-      && Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= minimumAvoidanceDistance * 0.5
+    const minimumReadableSector = Math.max(DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR, bestCandidate.sector + DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR * 0.75);
+    const readableEndpointCandidates = candidates.filter(
+      candidate =>
+        candidate.containingRingCount === 0 && candidate.sector >= minimumReadableSector - 1e-6 && Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= minimumAvoidanceDistance * 0.5
     );
     if (readableEndpointCandidates.length > 0) {
       const readableBestSector = Math.max(...readableEndpointCandidates.map(candidate => candidate.sector));
       const readableNearBestSectorCandidates = readableEndpointCandidates.filter(candidate => candidate.sector >= readableBestSector - cardinalAxisSectorTolerance);
       const readableBestAvoidance = Math.max(...readableNearBestSectorCandidates.map(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance)));
-      const readableAtomClearCandidates = readableNearBestSectorCandidates.filter(candidate =>
-        Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= readableBestAvoidance - 1e-6
-      );
+      const readableAtomClearCandidates = readableNearBestSectorCandidates.filter(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= readableBestAvoidance - 1e-6);
       bestCandidate = readableAtomClearCandidates[0] ?? readableNearBestSectorCandidates[0] ?? readableEndpointCandidates[0];
     }
   }
 
   if (bestCandidate.containingRingCount > 0) {
     const minimumEndpointExteriorSector = DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR * 0.75;
-    const endpointExteriorCandidates = candidates.filter(candidate =>
-      candidate.containingRingCount < bestCandidate.containingRingCount
-      && candidate.sector >= minimumEndpointExteriorSector - 1e-6
-    );
+    const endpointExteriorCandidates = candidates.filter(candidate => candidate.containingRingCount < bestCandidate.containingRingCount && candidate.sector >= minimumEndpointExteriorSector - 1e-6);
     if (endpointExteriorCandidates.length > 0) {
       const fallbackBestInteriorCount = Math.min(...endpointExteriorCandidates.map(candidate => candidate.ringInteriorCount));
       const fallbackRingCandidates = endpointExteriorCandidates.filter(candidate => candidate.ringInteriorCount === fallbackBestInteriorCount);
       const fallbackBestSector = Math.max(...fallbackRingCandidates.map(candidate => candidate.sector));
       const fallbackNearBestSectorCandidates = fallbackRingCandidates.filter(candidate => candidate.sector >= fallbackBestSector - cardinalAxisSectorTolerance);
       const fallbackBestAvoidance = Math.max(...fallbackNearBestSectorCandidates.map(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance)));
-      const fallbackAtomClearCandidates = fallbackNearBestSectorCandidates.filter(candidate =>
-        Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= fallbackBestAvoidance - 1e-6
-      );
+      const fallbackAtomClearCandidates = fallbackNearBestSectorCandidates.filter(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= fallbackBestAvoidance - 1e-6);
       bestCandidate = fallbackAtomClearCandidates[0] ?? fallbackNearBestSectorCandidates[0] ?? fallbackRingCandidates[0] ?? endpointExteriorCandidates[0];
       for (const candidate of fallbackNearBestSectorCandidates) {
         const candidateAvoidance = Math.min(candidate.avoidDistance, minimumAvoidanceDistance);
@@ -403,24 +377,12 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
   const basePosition = add(centerPosition, scale(direction, radius));
   const minimumAvoidanceDistance = options.minimumAvoidanceDistance ?? radius * 0.6;
   if (preferCardinalAxes) {
-    return bestDisplayCandidate(
-      centerPosition,
-      knownPositions,
-      radius,
-      baseAngle,
-      incidentRingPolygons,
-      cardinalAxisSectorTolerance,
-      avoidPositions,
-      minimumAvoidanceDistance
-    );
+    return bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons, cardinalAxisSectorTolerance, avoidPositions, minimumAvoidanceDistance);
   }
   if (incidentRingPolygons.length === 0) {
     return basePosition;
   }
-  if (
-    countPointInPolygons(incidentRingPolygons, basePosition) === 0
-    && countRingInteriorSectorIntrusions(centerPosition, basePosition, incidentRingPolygons) === 0
-  ) {
+  if (countPointInPolygons(incidentRingPolygons, basePosition) === 0 && countRingInteriorSectorIntrusions(centerPosition, basePosition, incidentRingPolygons) === 0) {
     return basePosition;
   }
 
@@ -501,22 +463,11 @@ export function synthesizeDisplayedStereoHydrogenPosition(centerPosition, knownP
   const relaxedSector = minimumSectorAngle(centerPosition, relaxedPosition, knownPositions);
   const relaxedAvoidDistance = minimumAvoidDistance(relaxedPosition, avoidPositions);
   const preferredIsTooPinchedForDisplay = preferredSector < minimumDisplaySector * 0.5;
-  const relaxedEndpointIsNoWorse =
-    relaxedContainingRingCount <= preferredContainingRingCount
-    || preferredIsTooPinchedForDisplay;
-  if (
-    relaxedEndpointIsNoWorse
-    && relaxedAvoidDistance > preferredAvoidDistance + 1e-6
-    && relaxedSector >= minimumDisplaySector - 1e-6
-  ) {
+  const relaxedEndpointIsNoWorse = relaxedContainingRingCount <= preferredContainingRingCount || preferredIsTooPinchedForDisplay;
+  if (relaxedEndpointIsNoWorse && relaxedAvoidDistance > preferredAvoidDistance + 1e-6 && relaxedSector >= minimumDisplaySector - 1e-6) {
     return relaxedPosition;
   }
-  return (
-    relaxedEndpointIsNoWorse
-    && relaxedSector > preferredSector + minimumDisplaySector
-  )
-    ? relaxedPosition
-    : preferredPosition;
+  return relaxedEndpointIsNoWorse && relaxedSector > preferredSector + minimumDisplaySector ? relaxedPosition : preferredPosition;
 }
 
 /**

@@ -93,7 +93,7 @@ function projectHiddenStereoHydrogens(mol, bondLength) {
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
-      incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id),
+      incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id)
     });
     projectedCoords.set(atom.id, projectedPosition);
   }
@@ -239,8 +239,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
   const { nx, ny } = perpUnit(dx, dy);
 
   const lineEl = (x1, y1, x2, y2, dash) =>
-    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` +
-    ` stroke="#222" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
+    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` + ` stroke="#222" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
 
   if (order === 1) {
     const line = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);

@@ -43,14 +43,14 @@ export class ScaffoldNetwork {
     if (this.autoSync) {
       this.sync();
 
-      this.reactionNetwork.on('nodeAdded', (node) => {
+      this.reactionNetwork.on('nodeAdded', node => {
         if (!this._processedMolecules.has(node.id)) {
           this._processMolecule(node);
           this._processedMolecules.add(node.id);
         }
       });
 
-      this.reactionNetwork.on('reactionAdded', (rxnNode) => {
+      this.reactionNetwork.on('reactionAdded', rxnNode => {
         if (!this._processedReactions.has(rxnNode.id)) {
           this._processReaction(rxnNode);
           this._processedReactions.add(rxnNode.id);
@@ -122,7 +122,7 @@ export class ScaffoldNetwork {
    * @private
    */
   _processReaction(rxnNode) {
-    const getScaffoldIdForMol = (molId) => {
+    const getScaffoldIdForMol = molId => {
       const molNode = this.reactionNetwork.moleculeNodes.get(molId);
       const scaffoldMol = extractMurckoScaffold(molNode.molecule);
       const canonicalSmiles = scaffoldMol.atoms.size > 0 ? toCanonicalSMILES(scaffoldMol) : null;
@@ -277,7 +277,7 @@ export class ScaffoldNetwork {
       if (node.smiles === null) {
         continue;
       }
-      
+
       let renderObject = null;
       if (node.molecule && node.molecule.atoms.size > 0) {
         try {

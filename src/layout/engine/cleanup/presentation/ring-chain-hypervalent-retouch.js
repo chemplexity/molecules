@@ -13,8 +13,7 @@ const MAX_BRANCH_HEAVY_ATOMS = 10;
 const MAX_BRANCH_ATOMS = 16;
 const MAX_RETOUCH_PASSES = 12;
 const ROTATION_CANDIDATES = Object.freeze(
-  Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 12)
-    .flatMap(angle => (Math.abs(angle - Math.PI) <= 1e-9 ? [Math.PI] : [angle, -angle]))
+  Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 12).flatMap(angle => (Math.abs(angle - Math.PI) <= 1e-9 ? [Math.PI] : [angle, -angle]))
 );
 
 function otherBondAtomId(bond, atomId) {
@@ -69,8 +68,7 @@ function hypervalentBranchCandidates(layoutGraph, ringChain) {
       if (!isVisibleHeavyAtom(layoutGraph, rootAtomId) || ringAtomIds.has(rootAtomId)) {
         continue;
       }
-      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)]
-        .filter(atomId => layoutGraph.atoms.has(atomId));
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => layoutGraph.atoms.has(atomId));
       const key = subtreeAtomIds.slice().sort().join(':');
       if (seenKeys.has(key)) {
         continue;
@@ -78,10 +76,10 @@ function hypervalentBranchCandidates(layoutGraph, ringChain) {
       seenKeys.add(key);
       const heavyAtomCount = subtreeHeavyAtomCount(layoutGraph, subtreeAtomIds);
       if (
-        subtreeAtomIds.length > MAX_BRANCH_ATOMS
-        || heavyAtomCount > MAX_BRANCH_HEAVY_ATOMS
-        || subtreeContainsRingAtom(layoutGraph, subtreeAtomIds)
-        || !subtreeContainsHypervalentBranchCenter(layoutGraph, subtreeAtomIds)
+        subtreeAtomIds.length > MAX_BRANCH_ATOMS ||
+        heavyAtomCount > MAX_BRANCH_HEAVY_ATOMS ||
+        subtreeContainsRingAtom(layoutGraph, subtreeAtomIds) ||
+        !subtreeContainsHypervalentBranchCenter(layoutGraph, subtreeAtomIds)
       ) {
         continue;
       }
@@ -115,15 +113,15 @@ function rotateSubtree(inputCoords, anchorPosition, subtreeAtomIds, angle) {
 
 function auditScore(audit, bounds) {
   return (
-    audit.bondLengthFailureCount * 100_000_000
-    + audit.severeOverlapCount * 10_000_000
-    + (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000
-    + (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000
-    + (audit.inwardRingSubstituentCount ?? 0) * 100_000
-    + (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 100_000
-    + audit.labelOverlapCount * 10_000
-    + audit.severeOverlapPenalty * 1_000
-    - Math.min(bounds.width / Math.max(bounds.height, 1e-6), 4) * 1_000
+    audit.bondLengthFailureCount * 100_000_000 +
+    audit.severeOverlapCount * 10_000_000 +
+    (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000 +
+    (audit.inwardRingSubstituentCount ?? 0) * 100_000 +
+    (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 100_000 +
+    audit.labelOverlapCount * 10_000 +
+    audit.severeOverlapPenalty * 1_000 -
+    Math.min(bounds.width / Math.max(bounds.height, 1e-6), 4) * 1_000
   );
 }
 
@@ -146,10 +144,10 @@ function bestBranchRetouch(layoutGraph, inputCoords, candidate, options, baseAud
       bondValidationClasses: options.bondValidationClasses
     });
     if (
-      !countDoesNotWorsen(audit, baseAudit, 'bondLengthFailureCount')
-      || !countDoesNotWorsen(audit, baseAudit, 'severeOverlapCount')
-      || !countDoesNotWorsen(audit, baseAudit, 'visibleHeavyBondCrossingCount')
-      || ((audit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+      !countDoesNotWorsen(audit, baseAudit, 'bondLengthFailureCount') ||
+      !countDoesNotWorsen(audit, baseAudit, 'severeOverlapCount') ||
+      !countDoesNotWorsen(audit, baseAudit, 'visibleHeavyBondCrossingCount') ||
+      ((audit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
     ) {
       continue;
     }
@@ -197,10 +195,16 @@ export function runRingChainHypervalentBranchRetouch(layoutGraph, inputCoords, o
         continue;
       }
       for (const candidate of hypervalentBranchCandidates(layoutGraph, ringChain)) {
-        const retouch = bestBranchRetouch(layoutGraph, coords, candidate, {
-          bondLength,
-          bondValidationClasses
-        }, audit);
+        const retouch = bestBranchRetouch(
+          layoutGraph,
+          coords,
+          candidate,
+          {
+            bondLength,
+            bondValidationClasses
+          },
+          audit
+        );
         if (retouch && (!best || retouch.score < best.score)) {
           best = retouch;
         }

@@ -87,6 +87,17 @@ function visibleHeavyAuditBonds(layoutGraph) {
   return bonds;
 }
 
+function normalizedFocusAtomSet(focusAtomIds) {
+  if (!focusAtomIds) {
+    return null;
+  }
+  if (focusAtomIds instanceof Set) {
+    return focusAtomIds.size > 0 ? focusAtomIds : null;
+  }
+  const focusAtomSet = new Set(focusAtomIds);
+  return focusAtomSet.size > 0 ? focusAtomSet : null;
+}
+
 function collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, options = {}) {
   const visibleBonds = [];
 
@@ -150,10 +161,10 @@ function findFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet)
     }
   }
 
-  return crossings.sort((first, second) => (
-    String(first.firstBondId).localeCompare(String(second.firstBondId), 'en', { numeric: true }) ||
-    String(first.secondBondId).localeCompare(String(second.secondBondId), 'en', { numeric: true })
-  ));
+  return crossings.sort(
+    (first, second) =>
+      String(first.firstBondId).localeCompare(String(second.firstBondId), 'en', { numeric: true }) || String(first.secondBondId).localeCompare(String(second.secondBondId), 'en', { numeric: true })
+  );
 }
 
 function countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet) {
@@ -177,10 +188,7 @@ function countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet
         continue;
       }
       seenBondPairs.add(bondPairKey);
-      if (
-        visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) &&
-        segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)
-      ) {
+      if (visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) && segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
         crossingCount++;
       }
     }
@@ -211,7 +219,7 @@ function visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) {
  * @returns {Array<{firstBondId: string, secondBondId: string, firstAtomIds: [string, string], secondAtomIds: [string, string]}>} Crossing bond pairs.
  */
 export function findVisibleHeavyBondCrossings(layoutGraph, coords, options = {}) {
-  const focusAtomSet = options.focusAtomIds ? new Set(options.focusAtomIds) : null;
+  const focusAtomSet = normalizedFocusAtomSet(options.focusAtomIds);
   if (focusAtomSet) {
     return findFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet);
   }
@@ -250,7 +258,7 @@ export function findVisibleHeavyBondCrossings(layoutGraph, coords, options = {})
  * @returns {number} Number of strictly crossing visible heavy bond pairs.
  */
 export function countVisibleHeavyBondCrossings(layoutGraph, coords, options = {}) {
-  const focusAtomSet = options.focusAtomIds ? new Set(options.focusAtomIds) : null;
+  const focusAtomSet = normalizedFocusAtomSet(options.focusAtomIds);
   if (focusAtomSet) {
     return countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet);
   }
@@ -264,10 +272,7 @@ export function countVisibleHeavyBondCrossings(layoutGraph, coords, options = {}
       if (second.minX > first.maxX) {
         break;
       }
-      if (
-        visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) &&
-        segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)
-      ) {
+      if (visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) && segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
         crossingCount++;
       }
     }
@@ -431,8 +436,8 @@ function isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, dis
     return true;
   }
   return (
-    isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle)
-    || isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId)
+    isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle) ||
+    isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId)
   );
 }
 
@@ -481,11 +486,7 @@ function isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, anc
       ringNeighborCount++;
       continue;
     }
-    if (
-      neighborAtom.element !== 'C' &&
-      !neighborAtom.aromatic &&
-      (neighborAtom.heavyDegree ?? 0) === 1
-    ) {
+    if (neighborAtom.element !== 'C' && !neighborAtom.aromatic && (neighborAtom.heavyDegree ?? 0) === 1) {
       terminalLeafNeighborIds.push(neighborAtomId);
     }
   }
@@ -498,10 +499,7 @@ function isAcceptedCompressedCrowdedGeminalRingLeafBond(layoutGraph, coords, anc
     return false;
   }
   const immediateDeviation = immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, leafAtomId);
-  return (
-    immediateDeviation != null &&
-    immediateDeviation <= RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation + 1e-9
-  );
+  return immediateDeviation != null && immediateDeviation <= RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation + 1e-9;
 }
 
 /**
@@ -626,10 +624,7 @@ function isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond,
 }
 
 function isAcceptedCompressedLeafBond(layoutGraph, coords, bond, distance, bondLength) {
-  return (
-    isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength) ||
-    isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength)
-  );
+  return isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength) || isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength);
 }
 
 function acceptedCompressedTerminalCarbonylLeafEndpointsForAtom(layoutGraph, coords, atomId, bondLength) {
@@ -936,9 +931,7 @@ function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomId
 function compactArylBranchedLeafBondCrossesRingBond(layoutGraph, leafBondId, crossingBondId) {
   const leafBond = layoutGraph.bonds.get(leafBondId);
   const crossingBond = layoutGraph.bonds.get(crossingBondId);
-  return (
-    isCompactArylBranchedLeafBond(layoutGraph, leafBond) && !!crossingBond && crossingBond.kind === 'covalent' && (crossingBond.inRing === true || crossingBond.aromatic === true)
-  );
+  return isCompactArylBranchedLeafBond(layoutGraph, leafBond) && !!crossingBond && crossingBond.kind === 'covalent' && (crossingBond.inRing === true || crossingBond.aromatic === true);
 }
 
 function isCompactArylBranchedLeafBond(layoutGraph, bond) {
@@ -1113,13 +1106,7 @@ function hasConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, childAto
     }
 
     const nitrogenAtom = layoutGraph.atoms.get(nitrogenAtomId);
-    if (
-      !nitrogenAtom ||
-      nitrogenAtom.element !== 'N' ||
-      nitrogenAtom.aromatic ||
-      nitrogenAtom.heavyDegree !== 2 ||
-      layoutGraph.ringAtomIdSet.has(nitrogenAtomId)
-    ) {
+    if (!nitrogenAtom || nitrogenAtom.element !== 'N' || nitrogenAtom.aromatic || nitrogenAtom.heavyDegree !== 2 || layoutGraph.ringAtomIdSet.has(nitrogenAtomId)) {
       continue;
     }
 
@@ -1346,10 +1333,7 @@ function isPathLikeRingChainLinkerChild(layoutGraph, anchorAtomId, childAtomId) 
     }
     result = (ringChain.edges ?? []).some(edge => {
       const linkerAtomIds = new Set(edge.linkerAtomIds ?? []);
-      return (
-        (edge.firstAttachmentAtomId === anchorAtomId && linkerAtomIds.has(childAtomId))
-        || (edge.secondAttachmentAtomId === anchorAtomId && linkerAtomIds.has(childAtomId))
-      );
+      return (edge.firstAttachmentAtomId === anchorAtomId && linkerAtomIds.has(childAtomId)) || (edge.secondAttachmentAtomId === anchorAtomId && linkerAtomIds.has(childAtomId));
     });
     if (result) {
       break;
@@ -1418,10 +1402,7 @@ function hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, 
     if (ringPolygons.some(polygon => pointInPolygon(candidatePosition, polygon))) {
       continue;
     }
-    if (
-      options.considerSegmentCrossing === true &&
-      ringSubstituentSegmentCrossesRingSystemBond(layoutGraph, coords, anchorAtomId, childAtomId, anchorPosition, candidatePosition, ringSystem)
-    ) {
+    if (options.considerSegmentCrossing === true && ringSubstituentSegmentCrossesRingSystemBond(layoutGraph, coords, anchorAtomId, childAtomId, anchorPosition, candidatePosition, ringSystem)) {
       continue;
     }
     if (
@@ -1444,15 +1425,15 @@ function ringSubstituentSegmentCrossesRingSystemBond(layoutGraph, coords, anchor
 
   for (const bond of layoutGraph.bonds.values()) {
     if (
-      bond.kind !== 'covalent'
-      || bond.a === anchorAtomId
-      || bond.b === anchorAtomId
-      || bond.a === childAtomId
-      || bond.b === childAtomId
-      || !ringAtomIds.has(bond.a)
-      || !ringAtomIds.has(bond.b)
-      || !coords.has(bond.a)
-      || !coords.has(bond.b)
+      bond.kind !== 'covalent' ||
+      bond.a === anchorAtomId ||
+      bond.b === anchorAtomId ||
+      bond.a === childAtomId ||
+      bond.b === childAtomId ||
+      !ringAtomIds.has(bond.a) ||
+      !ringAtomIds.has(bond.b) ||
+      !coords.has(bond.a) ||
+      !coords.has(bond.b)
     ) {
       continue;
     }
@@ -1490,10 +1471,7 @@ function isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtom
   }
   if (isNeutralTerminalHetero) {
     const outwardDeviation = immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId);
-    if (
-      outwardDeviation == null
-      || outwardDeviation > RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation
-    ) {
+    if (outwardDeviation == null || outwardDeviation > RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation) {
       return false;
     }
   }
@@ -1587,11 +1565,27 @@ export function ringSubstituentRepresentativePosition(coords, representativeAtom
   if (!Array.isArray(representativeAtomIds) || representativeAtomIds.length === 0) {
     return null;
   }
-  const positions = representativeAtomIds.map(atomId => overridePositions?.get(atomId) ?? coords.get(atomId)).filter(Boolean);
-  if (positions.length === 0) {
+
+  let count = 0;
+  let sumX = 0;
+  let sumY = 0;
+  let firstPosition = null;
+  for (const atomId of representativeAtomIds) {
+    const position = overridePositions?.get(atomId) ?? coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    if (!firstPosition) {
+      firstPosition = position;
+    }
+    sumX += position.x;
+    sumY += position.y;
+    count++;
+  }
+  if (count === 0) {
     return null;
   }
-  return positions.length === 1 ? positions[0] : centroid(positions);
+  return count === 1 ? firstPosition : { x: sumX / count, y: sumY / count };
 }
 
 function sortedAngularSeparations(angles) {
@@ -1678,20 +1672,10 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
         Number.isFinite(forwardSide.outwardDeviation) &&
         forwardSide.outwardDeviation <= maxOutwardDeviation + LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK;
       const pathLikeRingChainLinkerChild = isPathLikeRingChainLinkerChild(layoutGraph, anchorAtomId, childAtomId);
-      const exactChargedSulfoxideLinkerChild = isExactChargedSulfoxideLinkerChild(
-        layoutGraph,
-        anchorAtomId,
-        childAtomId,
-        severeImmediateOutwardDeviation
-      );
-      const forwardOutwardAxisFailure =
-        forwardSide.outwardAxisFailure &&
-        !linkedRepresentativeOutwardFailureRelaxed &&
-        !pathLikeRingChainLinkerChild &&
-        !exactChargedSulfoxideLinkerChild;
+      const exactChargedSulfoxideLinkerChild = isExactChargedSulfoxideLinkerChild(layoutGraph, anchorAtomId, childAtomId, severeImmediateOutwardDeviation);
+      const forwardOutwardAxisFailure = forwardSide.outwardAxisFailure && !linkedRepresentativeOutwardFailureRelaxed && !pathLikeRingChainLinkerChild && !exactChargedSulfoxideLinkerChild;
       const inwardSlotIsUnavoidable =
-        forwardSide.insideIncidentRing &&
-        isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, childDescriptor.representativeAtomIds, ringPolygons);
+        forwardSide.insideIncidentRing && isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, childDescriptor.representativeAtomIds, ringPolygons);
       if (forwardSide.insideIncidentRing && !inwardSlotIsUnavoidable) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
@@ -1719,14 +1703,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       if (reverseRepresentativeAtomIds.length === 0) {
         continue;
       }
-      const reverseSide = evaluateRingSubstituentSide(
-        layoutGraph,
-        coords,
-        childAtomId,
-        reverseRepresentativeAtomIds,
-        incidentRingPolygons(layoutGraph, coords, childAtomId),
-        maxOutwardDeviation
-      );
+      const reverseSide = evaluateRingSubstituentSide(layoutGraph, coords, childAtomId, reverseRepresentativeAtomIds, incidentRingPolygons(layoutGraph, coords, childAtomId), maxOutwardDeviation);
       if (reverseSide.insideIncidentRing) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
@@ -1796,17 +1773,7 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
       const otherPosition = overridePositions.get(otherAtomId) ?? otherBasePosition;
       const separation = distance(position, otherPosition);
       minDistance = Math.min(minDistance, separation);
-      if (
-        separation < threshold &&
-        !isAcceptedCompressedTerminalCarbonylLeafOverlap(
-          layoutGraph,
-          coordsWithOverrides(),
-          atomId,
-          otherAtomId,
-          separation,
-          bondLength
-        )
-      ) {
+      if (separation < threshold && !isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coordsWithOverrides(), atomId, otherAtomId, separation, bondLength)) {
         count++;
       }
     }
@@ -1829,9 +1796,11 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
  */
 export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}) {
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength, {
-    visibleAtomIds: options.visibleAtomIds
-  });
+  const atomGrid =
+    options.atomGrid ??
+    buildAtomGrid(layoutGraph, coords, bondLength, {
+      visibleAtomIds: options.visibleAtomIds
+    });
   return collectNonbondedPairs(
     layoutGraph,
     coords,
@@ -1863,10 +1832,7 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
   let severeFailingBondCount = 0;
   const bondValidationClasses = options.bondValidationClasses ?? new Map();
 
-  for (const bond of layoutGraph.bonds.values()) {
-    if (!isAuditableBond(layoutGraph, bond)) {
-      continue;
-    }
+  for (const bond of visibleHeavyAuditBonds(layoutGraph)) {
     const firstPosition = coords.get(bond.a);
     const secondPosition = coords.get(bond.b);
     if (!firstPosition || !secondPosition) {
@@ -2503,15 +2469,31 @@ function measureAngularDistortions(layoutGraph, coords) {
     }
     const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
 
-    if (shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
+    if (covalentBonds.length === 3 && shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
       const deviation = measureThreeCoordinateDeviation(coords, covalentBonds, atomId, () => undefined);
       trigCenterCount++;
       trigTotalDeviation += deviation;
       trigMaxDeviation = Math.max(trigMaxDeviation, deviation);
     }
 
-    const heavyBonds = covalentBonds.filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
-    if (heavyBonds.length === 4 && heavyBonds.every(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1)) {
+    if (covalentBonds.length !== 4) {
+      continue;
+    }
+    const heavyBonds = [];
+    let allHeavySingleNonAromatic = true;
+    for (const record of covalentBonds) {
+      const neighborAtom = layoutGraph.atoms.get(record.neighborAtomId);
+      if (neighborAtom?.element === 'H') {
+        allHeavySingleNonAromatic = false;
+        break;
+      }
+      if (record.bond.aromatic || (record.bond.order ?? 1) !== 1) {
+        allHeavySingleNonAromatic = false;
+        break;
+      }
+      heavyBonds.push(record);
+    }
+    if (allHeavySingleNonAromatic && heavyBonds.length === 4) {
       const atomPosition = coords.get(atomId);
       if (atomPosition) {
         const neighborAngles = heavyBonds.map(({ neighborAtomId }) => {

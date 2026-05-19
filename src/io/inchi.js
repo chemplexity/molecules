@@ -572,7 +572,9 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   function expandedTerminalOxygenCapacity(centerId, terminalId) {
     const center = mol.atoms.get(centerId);
     const terminal = mol.atoms.get(terminalId);
-    if (!center || !terminal || terminal.name !== 'O') {
+    // O and S can both appear as terminal chalcogens on hypervalent centres
+    // (e.g. S=[Se]=S requires terminal-S promotion just like O=[S]=O).
+    if (!center || !terminal || (terminal.name !== 'O' && terminal.name !== 'S')) {
       return 0;
     }
     const centerEl = elements[center.name];
@@ -695,6 +697,42 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
           aromatic = true;
         }
       }
+      // Rescue for 5-membered rings where a lone-pair donor heteroatom (N, O, S)
+      // has remaining=1 because its H was lost during SMILES→InChI round-trip
+      // (aromatic bond order 1.5 + 1.5 = 3 equals N valence, so implicit H = 0).
+      // If exactly one non-C ring atom has remaining=1 with only ring-internal bonds,
+      // treat it as a lone-pair donor (+1 π). Kekulé assignment will later place a
+      // double bond there, giving remaining=0 after restoration so perceiveAromaticity
+      // correctly re-detects the ring as aromatic.
+      if (!aromatic && ring.length === 5) {
+        const ringSet = new Set(ring);
+        let loneCandidate = null;
+        for (const id of ring) {
+          const a = mol.atoms.get(id);
+          if (!a || a.name === 'C' || remaining(id) !== 1) {
+            continue;
+          }
+          const onlyRingBonds = a.bonds.every(bId => {
+            const b = mol.bonds.get(bId);
+            if (!b) {
+              return true;
+            }
+            const other = b.getOtherAtom(id);
+            return ringSet.has(other) || mol.atoms.get(other)?.name === 'H';
+          });
+          if (!onlyRingBonds) {
+            continue;
+          }
+          if (loneCandidate !== null) {
+            loneCandidate = null;
+            break;
+          }
+          loneCandidate = id;
+        }
+        if (loneCandidate !== null && isHuckel(pi + 1)) {
+          aromatic = true;
+        }
+      }
       if (!aromatic) {
         continue;
       }
@@ -708,7 +746,6 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
         aromaticBondIds.add(b.id);
       }
     }
-    // Close the ring (last atom back to first)
     const close = mol.getBond(ring[ring.length - 1], ring[0]);
     if (close) {
       close.properties.aromatic = true;
@@ -800,6 +837,99 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
     }
   }
 
+  // ---- Phenolate rescue (between Phase A2 and Phase B) --------------------
+  // promoteTerminalUnsaturation (pre-Phase A) may have set an exocyclic C=O
+  // on a ring carbon, leaving it with remaining=0 and blocking aromatic
+  // detection.  For each ring in uniqueRings that has exactly one sp3 carbon
+  // with a promotable exocyclic C=O (or C=S) to a terminal atom, tentatively
+  // demote that bond back to order=1 and re-check Hückel.  If the ring is now
+  // aromatic, keep the demotion and add all ring bonds to aromaticBondIds.
+  {
+    const isHuckel = n => n >= 2 && (n - 2) % 4 === 0;
+    for (const ring of uniqueRings.values()) {
+      if (ring.length < 5 || ring.length > 6) {
+        continue;
+      }
+      // Skip rings that already have aromatic bonds.
+      if (ring.some(id => isAromaticRingAtom(id, aromaticBondIds))) {
+        continue;
+      }
+
+      // Find exactly one sp3 carbon in the ring (remaining=0, name='C').
+      const sp3 = ring.filter(id => remaining(id) === 0 && mol.atoms.get(id)?.name === 'C');
+      if (sp3.length !== 1) {
+        continue;
+      }
+
+      const blockerId = sp3[0];
+      const blocker = mol.atoms.get(blockerId);
+
+      // That carbon must have an exocyclic double bond to a terminal O or S.
+      let rescueBond = null;
+      for (const bondId of blocker.bonds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond || bond.properties.order !== 2) {
+          continue;
+        }
+        const otherId = bond.getOtherAtom(blockerId);
+        if (ring.includes(otherId)) {
+          continue;
+        } // skip in-ring bonds
+        const other = mol.atoms.get(otherId);
+        if (!other || (other.name !== 'O' && other.name !== 'S')) {
+          continue;
+        }
+        // Terminal: exactly one heavy-atom bond.
+        const heavyDeg = other.bonds.filter(b2 => {
+          const ob = mol.bonds.get(b2);
+          return ob && heavySet.has(ob.getOtherAtom(otherId));
+        }).length;
+        if (heavyDeg !== 1) {
+          continue;
+        }
+        rescueBond = bond;
+        break;
+      }
+      if (!rescueBond) {
+        continue;
+      }
+
+      // Tentatively demote and check Hückel.
+      rescueBond.properties.order = 1;
+      let pi = 0;
+      let validRing = true;
+      for (const id of ring) {
+        const rem = remaining(id);
+        const a = mol.atoms.get(id);
+        if (rem === 1) {
+          pi += 1;
+        } else if (rem === 0 && a && a.name !== 'C') {
+          pi += 2;
+        } else {
+          validRing = false;
+          break;
+        }
+      }
+
+      if (validRing && isHuckel(pi)) {
+        for (let i = 0; i < ring.length - 1; i++) {
+          const b = mol.getBond(ring[i], ring[i + 1]);
+          if (b) {
+            b.properties.aromatic = true;
+            aromaticBondIds.add(b.id);
+          }
+        }
+        const close = mol.getBond(ring[ring.length - 1], ring[0]);
+        if (close) {
+          close.properties.aromatic = true;
+          aromaticBondIds.add(close.id);
+        }
+      } else {
+        rescueBond.properties.order = 2; // restore if rescue failed
+      }
+    }
+  }
+
   // ---- Phase B: greedy bond-order promotion --------------------------------
   // Promote bonds that are not aromatic AND whose endpoints are not part of
   // an aromatic ring. Skipping aromatic-ring atoms prevents exocyclic bonds
@@ -879,6 +1009,41 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
       if (!localizedNeed.has(atomId)) {
         localizedNeed.set(atomId, remaining(atomId) === 1 ? 1 : 0);
       }
+    }
+  }
+
+  // For aromatic C atoms with external (non-aromatic) heavy bonds: if skipping
+  // a ring double bond would give the C atom a non-zero formal charge (because
+  // its external bonds alone don't saturate valence), force localizedNeed=1.
+  // This prevents the Kekulé assignment from landing a spurious carbanion on a
+  // substituted junction carbon instead of the intended heteroatom.
+  for (const [atomId, need] of localizedNeed) {
+    if (need !== 0) {
+      continue;
+    }
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name !== 'C') {
+      continue;
+    }
+    let externalBO = 0;
+    let ringDeg = 0;
+    for (const bId of atom.bonds) {
+      const b = mol.bonds.get(bId);
+      if (!b) {
+        continue;
+      }
+      const other = mol.atoms.get(b.getOtherAtom(atomId));
+      if (!other || other.name === 'H') {
+        continue;
+      }
+      if (aromaticBondIds.has(bId)) {
+        ringDeg++;
+      } else {
+        externalBO += b.properties.order ?? 1;
+      }
+    }
+    if (atom.computeCharge(externalBO + ringDeg) !== 0) {
+      localizedNeed.set(atomId, 1);
     }
   }
 
@@ -970,7 +1135,51 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   // both endpoints as aromatic atoms so toSMILES can emit lowercase symbols
   // with correct implicit-H counts rather than bracket notation.
   for (const component of aromaticComponents) {
-    const localizedDoubles = chooseLocalizedDoubleBonds(component);
+    let localizedDoubles = chooseLocalizedDoubleBonds(component);
+
+    // If Kekulé assignment failed and the component has an odd number of need=1
+    // atoms (no perfect matching possible), identify a lone-pair donor heteroatom
+    // and set its need to 0 so the remaining atoms can be matched. This arises for
+    // anionic heteroaromatic rings (e.g. 1,2,3-triazolate) where every ring atom
+    // starts with remaining=1 (odd pi count), but aromaticity was detected only
+    // via charge adjustment — meaning one heteroatom contributes 2π (lone pair)
+    // rather than 1π, which the Kekulé search must reflect.
+    if (!localizedDoubles) {
+      const n1Count = component.atomIds.filter(id => (localizedNeed.get(id) ?? 0) === 1).length;
+      if (n1Count % 2 !== 0) {
+        // Candidates: non-C heteroatoms with need=1 and only ring (aromatic) bonds.
+        const donorCandidates = component.atomIds.filter(id => {
+          if ((localizedNeed.get(id) ?? 0) !== 1) {
+            return false;
+          }
+          const atom = mol.atoms.get(id);
+          if (!atom || atom.name === 'C') {
+            return false;
+          }
+          return atom.bonds.every(bId => {
+            const b = mol.bonds.get(bId);
+            if (!b) {
+              return true;
+            }
+            const other = mol.atoms.get(b.getOtherAtom(id));
+            return !other || other.name === 'H' || aromaticBondIds.has(bId);
+          });
+        });
+        // Prefer heteroatoms not adjacent to another heteroatom: in anionic
+        // aromatic rings the "isolated" N/O is the most common formal charge site.
+        const isolated = donorCandidates.filter(id => (aromaticNeighbors.get(id) ?? []).every(({ other }) => mol.atoms.get(other)?.name === 'C'));
+        const preferred = isolated.length > 0 ? isolated : donorCandidates;
+        for (const donorId of preferred) {
+          localizedNeed.set(donorId, 0);
+          localizedDoubles = chooseLocalizedDoubleBonds(component);
+          if (localizedDoubles) {
+            break;
+          }
+          localizedNeed.set(donorId, 1);
+        }
+      }
+    }
+
     if (!localizedDoubles) {
       continue;
     }
@@ -1029,6 +1238,26 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
       }
     }
     perceiveAromaticity(mol, { preserveKekule: true });
+    // Fall back to InChI-inferred aromaticity for components that perceiveAromaticity
+    // missed (e.g., when the SSSR is deficient due to bridged bicyclic ring competition).
+    for (const component of restorableComponents) {
+      if (component.atomIds.every(id => mol.atoms.get(id)?.properties.aromatic)) {
+        continue;
+      }
+      for (const bondId of component.bondIds) {
+        const bond = mol.bonds.get(bondId);
+        if (bond) {
+          bond.properties.order = 1.5;
+          bond.properties.aromatic = true;
+        }
+      }
+      for (const atomId of component.atomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (atom) {
+          atom.properties.aromatic = true;
+        }
+      }
+    }
   }
 }
 
@@ -1395,12 +1624,28 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
           if (!atom) {
             return null;
           }
+          // Use localizedOrder (integer Kekule bond order) for aromatic bonds so
+          // that ring-junction atoms with 3 × 1.5-order bonds don't produce
+          // fractional computeCharge values (+0.5, −1, …) that corrupt the sum.
           const totalBO = atom.bonds.reduce((sum, bondId) => {
-            return sum + (mol.bonds.get(bondId)?.properties.order ?? 1);
+            const bond = mol.bonds.get(bondId);
+            if (!bond) {
+              return sum;
+            }
+            const order = bond.properties.aromatic && bond.properties.localizedOrder != null ? bond.properties.localizedOrder : (bond.properties.order ?? 1);
+            return sum + order;
           }, 0);
           return { atom, charge: inferredFormalCharge(atom, totalBO) };
         })
         .filter(Boolean);
+
+      // Skip this component if any computed charge is non-integer — this
+      // happens when localizedOrder is absent for some aromatic bonds (complex
+      // fused rings whose Kekule assignment failed), and non-integer charges
+      // would corrupt the total-charge comparison below.
+      if (computedCharges.some(e => !Number.isInteger(e.charge))) {
+        continue;
+      }
 
       let computedToAssign = computedCharges;
       const totalComputedCharge = computedCharges.reduce((sum, entry) => sum + entry.charge, 0);
@@ -1411,6 +1656,26 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         // saturates every C to 3 bonds giving computeCharge = -1 each (total -7),
         // but the correct interpretation is all neutral except one carbocation (+1).
         // Negate all computed charges so the total becomes +charge.
+        // Guard: skip negation when the only non-zero charge is on a carbon
+        // adjacent to an N-H or O-H — in that case fixIminiumCharge will
+        // correctly relocate the charge to the heteroatom after this pass.
+        const nonZero = computedCharges.filter(e => e.charge !== 0);
+        const hasAdjacentNH = nonZero.some(e => {
+          if (e.atom.name !== 'C') {
+            return false;
+          }
+          return e.atom.bonds.some(bId => {
+            const b = mol.bonds.get(bId);
+            if (!b || b.properties.order !== 1) {
+              return false;
+            }
+            const nb = mol.atoms.get(b.getOtherAtom(e.atom.id));
+            return nb && (nb.name === 'N' || nb.name === 'O') && nb.getHydrogenNeighbors(mol).length > 0;
+          });
+        });
+        if (hasAdjacentNH) {
+          continue;
+        }
         computedToAssign = computedCharges.map(e => ({ atom: e.atom, charge: -e.charge }));
       } else {
         continue;
@@ -1694,6 +1959,46 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         }
       }
     }
+
+    // Post-correction: when conjugated systems share a stereo bond between two
+    // double bonds, processing one entry may overwrite the shared bond and leave
+    // a previously-correct entry with wrong parity.  Fix any remaining mismatches
+    // by flipping the non-shared (B-side) stereo bond first, then the A-side.
+    for (const entry of doubleBondStereoEntries) {
+      if (entry.parity === '?') {
+        continue;
+      }
+      const idA = idByIndex.get(entry.atomA);
+      const idB = idByIndex.get(entry.atomB);
+      const dbl = idA && idB ? mol.getBond(idA, idB) : null;
+      if (!dbl || dbl.properties.order !== 2) {
+        continue;
+      }
+      const target = entry.parity === '+' ? 'E' : 'Z';
+      if (mol.getEZStereo(dbl.id) === target) {
+        continue;
+      }
+
+      // Try flipping each stereo bond (B-side first to avoid touching shared bonds).
+      let corrected = false;
+      for (const side of [pickCandidateBonds(idB, dbl.id), pickCandidateBonds(idA, dbl.id)]) {
+        for (const bond of side) {
+          if (!bond.properties.stereo) {
+            continue;
+          }
+          const orig = bond.properties.stereo;
+          bond.properties.stereo = orig === '/' ? '\\' : '/';
+          if (mol.getEZStereo(dbl.id) === target) {
+            corrected = true;
+            break;
+          }
+          bond.properties.stereo = orig;
+        }
+        if (corrected) {
+          break;
+        }
+      }
+    }
   }
 
   applyComponentCharges(baseMol);
@@ -1819,7 +2124,10 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
           return false;
         }
         const nitrogen = mol.atoms.get(bond.getOtherAtom(atom.id));
-        return nitrogen && nitrogen.getHeavyNeighbors(mol).length === 1 && nitrogen.getHydrogenNeighbors(mol).length > 0;
+        if (!nitrogen || nitrogen.getHeavyNeighbors(mol).length !== 1) {
+          return false;
+        }
+        return nitrogen.getHydrogenNeighbors(mol).length > 0;
       });
       if (!terminalAmineBond) {
         continue;
@@ -1846,11 +2154,133 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     }
   }
 
+  // When assignComponentFormalCharges cannot assign a +1 charge (because the
+  // negation fallback is suppressed for C adjacent to N-H), we end up with a
+  // neutral molecule but the net charge is +1.  This pass detects a C atom
+  // that was supposed to carry the charge, recognises it by its single bond to
+  // an N-H, promotes that bond to a double bond, and relocates the +1 to N.
+  // This correctly reconstructs iminium / amidinium ions ([NH+]=C).
+  function fixIminiumCharge(mol) {
+    for (const atomId of heavyAtomIds) {
+      const atom = mol.atoms.get(atomId);
+      if (!atom || atom.name !== 'C' || atom.properties.aromatic) {
+        continue;
+      }
+      for (const bondId of atom.bonds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond || bond.properties.order !== 1 || bond.properties.aromatic) {
+          continue;
+        }
+        const nId = bond.getOtherAtom(atomId);
+        const n = mol.atoms.get(nId);
+        if (!n || n.name !== 'N' || (n.properties.charge ?? 0) !== 0) {
+          continue;
+        }
+        if (n.getHydrogenNeighbors(mol).length === 0) {
+          continue;
+        }
+        // Promoting C-N to a double bond must not over-saturate either atom.
+        const cBO = atom.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
+        const nBO = n.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
+        if (cBO >= 4 || nBO >= 4) {
+          continue;
+        }
+        bond.properties.order = 2;
+        n.setCharge(1);
+        return;
+      }
+    }
+  }
+
+  // When a carbon bearing -1 formal charge is adjacent (directly or via one C)
+  // to a terminal oxygen, the charge belongs on O (phenolate/enolate).
+  // assignComponentFormalCharges can land the charge on C because
+  // promoteTerminalUnsaturation may have already promoted C=O before aromatic
+  // detection, leaving the ring C with an unexpectedly high totalBO.
+  // No early-return on total-charge equality: C(-) and N(+) can balance to the
+  // right total while individual atoms are still wrong.
+  function fixEnolateCharge(mol) {
+    function isTerminalHeteroatom(oId) {
+      const o = mol.atoms.get(oId);
+      if (!o || (o.name !== 'O' && o.name !== 'S') || (o.properties.charge ?? 0) !== 0) {
+        return false;
+      }
+      if (o.getHydrogenNeighbors(mol).length > 0) {
+        return false;
+      }
+      return o.getHeavyNeighbors(mol).length === 1;
+    }
+
+    for (const atomId of heavyAtomIds) {
+      const atom = mol.atoms.get(atomId);
+      if (!atom || atom.name !== 'C' || (atom.properties.charge ?? 0) !== -1) {
+        continue;
+      }
+
+      // Pattern 1 — direct: C(-1) — O (single bond, terminal, no H)
+      for (const bondId of atom.bonds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond || bond.properties.aromatic) {
+          continue;
+        }
+        const oId = bond.getOtherAtom(atomId);
+        if (!isTerminalHeteroatom(oId)) {
+          continue;
+        }
+        atom.setCharge(0);
+        mol.atoms.get(oId).setCharge(-1);
+        return;
+      }
+
+      // Pattern 2 — beta (enolate/phenolate): C(-1) — C — =O  →  C=C — O(-1)
+      for (const bondId of atom.bonds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond || bond.properties.aromatic) {
+          continue;
+        }
+        const cId = bond.getOtherAtom(atomId);
+        const c = mol.atoms.get(cId);
+        if (!c || c.name !== 'C' || (c.properties.charge ?? 0) !== 0) {
+          continue;
+        }
+        for (const bondId2 of c.bonds) {
+          if (bondId2 === bondId) {
+            continue;
+          }
+          const bond2 = mol.bonds.get(bondId2);
+          if (!bond2 || bond2.properties.order !== 2 || bond2.properties.aromatic) {
+            continue;
+          }
+          const oId = bond2.getOtherAtom(cId);
+          if (!isTerminalHeteroatom(oId)) {
+            continue;
+          }
+          atom.setCharge(0);
+          mol.atoms.get(oId).setCharge(-1);
+          bond.properties.order = 2;
+          bond2.properties.order = 1;
+          return;
+        }
+      }
+    }
+  }
+
   function withHydrogenMap(hMap) {
     const mol = baseMol.clone();
     const hydrogenIsotopeQueues = cloneHydrogenIsotopeQueues();
     attachHydrogens(mol, hMap, hydrogenIsotopeQueues);
     if (doInfer) {
+      // Pre-seed /b-layer bonds to order 2 before aromatic detection so that
+      // atoms at the ends of these bonds are seen as committed (remaining=0)
+      // by Phase A and are not incorrectly pulled into aromatic rings.
+      for (const entry of doubleBondStereoEntries) {
+        const idA = idByIndex.get(entry.atomA);
+        const idB = idByIndex.get(entry.atomB);
+        const bond = idA && idB ? mol.getBond(idA, idB) : null;
+        if (bond) {
+          bond.properties.order = 2;
+        }
+      }
       // Run bond-order inference BEFORE removing /p-adjusted excess H so that
       // heteroatom H atoms (e.g. phenol O-H that becomes phenolate O⁻ via /p-1)
       // are present during aromaticity detection.  correctHydrogenDeficit then
@@ -1864,6 +2294,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       preferTerminalImineNitrogens(mol);
       fixMonoanionicArylComponents(mol);
       assignComponentFormalCharges(mol);
+      fixIminiumCharge(mol);
+      assignComponentFormalCharges(mol);
+      fixEnolateCharge(mol);
       fixDelocalisedChargedRings(mol);
     } else {
       correctHydrogenDeficit(mol, hydrogenIsotopeQueues);

@@ -54,9 +54,7 @@ function uniqueAngles(angles) {
 }
 
 function ringSystemCenter(coords, ringSystem) {
-  const positions = (ringSystem?.atomIds ?? [])
-    .map(atomId => coords.get(atomId))
-    .filter(Boolean);
+  const positions = (ringSystem?.atomIds ?? []).map(atomId => coords.get(atomId)).filter(Boolean);
   return positions.length > 0 ? centroid(positions) : null;
 }
 
@@ -131,24 +129,17 @@ function linearityScore(coords, ringChain) {
     const segment = sub(centers[index], centers[index - 1]);
     segmentDeviation += Math.abs(Math.sin(normalizeAngle(angleOf(segment) - axis.angle)));
   }
-  return (
-    offsetSpan / Math.max(projectionSpan, 1e-6)
-    + reverseProgress * 10
-    + segmentDeviation / Math.max(centers.length - 1, 1)
-  );
+  return offsetSpan / Math.max(projectionSpan, 1e-6) + reverseProgress * 10 + segmentDeviation / Math.max(centers.length - 1, 1);
 }
 
 function edgeBetween(ringChain, firstRingSystemId, secondRingSystemId) {
-  return (ringChain.edges ?? []).find(edge =>
-    (
-      edge.firstRingSystemId === firstRingSystemId
-      && edge.secondRingSystemId === secondRingSystemId
-    )
-    || (
-      edge.firstRingSystemId === secondRingSystemId
-      && edge.secondRingSystemId === firstRingSystemId
-    )
-  ) ?? null;
+  return (
+    (ringChain.edges ?? []).find(
+      edge =>
+        (edge.firstRingSystemId === firstRingSystemId && edge.secondRingSystemId === secondRingSystemId) ||
+        (edge.firstRingSystemId === secondRingSystemId && edge.secondRingSystemId === firstRingSystemId)
+    ) ?? null
+  );
 }
 
 function orderedEdgeAttachment(edge, previousRingSystemId, nextRingSystemId) {
@@ -204,12 +195,12 @@ function auditDoesNotWorsen(candidateAudit, baseAudit) {
 
 function auditTieScore(audit) {
   return (
-    audit.bondLengthFailureCount * 100_000_000
-    + audit.severeOverlapCount * 10_000_000
-    + (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000
-    + (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000
-    + audit.labelOverlapCount * 10_000
-    + audit.severeOverlapPenalty
+    audit.bondLengthFailureCount * 100_000_000 +
+    audit.severeOverlapCount * 10_000_000 +
+    (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000 +
+    audit.labelOverlapCount * 10_000 +
+    audit.severeOverlapPenalty
   );
 }
 
@@ -222,29 +213,19 @@ function candidateAnglesForEdge(coords, ringChain, edgeIndex) {
     return [];
   }
   const alignmentAngle = normalizeAngle(axis.angle - angleOf(sub(nextCenter, previousCenter)));
-  return uniqueAngles([
-    0,
-    alignmentAngle,
-    ...ANGLE_CANDIDATE_DELTAS,
-    ...ANGLE_CANDIDATE_DELTAS.map(delta => alignmentAngle + delta)
-  ]);
+  return uniqueAngles([0, alignmentAngle, ...ANGLE_CANDIDATE_DELTAS, ...ANGLE_CANDIDATE_DELTAS.map(delta => alignmentAngle + delta)]);
 }
 
 function bestLinearizedEdge(layoutGraph, inputCoords, ringChain, edgeIndex, options, baseAudit, baseScore) {
   const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
   const previousRingSystemId = orderedRingSystemIds[edgeIndex - 1];
   const nextRingSystemId = orderedRingSystemIds[edgeIndex];
-  const attachment = orderedEdgeAttachment(
-    edgeBetween(ringChain, previousRingSystemId, nextRingSystemId),
-    previousRingSystemId,
-    nextRingSystemId
-  );
+  const attachment = orderedEdgeAttachment(edgeBetween(ringChain, previousRingSystemId, nextRingSystemId), previousRingSystemId, nextRingSystemId);
   const pivot = attachment ? inputCoords.get(attachment.linkerAtomId) : null;
   if (!attachment || !pivot) {
     return null;
   }
-  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, attachment.nextAttachmentAtomId, attachment.linkerAtomId)]
-    .filter(atomId => layoutGraph.atoms.has(atomId));
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, attachment.nextAttachmentAtomId, attachment.linkerAtomId)].filter(atomId => layoutGraph.atoms.has(atomId));
   if (subtreeAtomIds.length === 0) {
     return null;
   }
@@ -264,11 +245,7 @@ function bestLinearizedEdge(layoutGraph, inputCoords, ringChain, edgeIndex, opti
       continue;
     }
     const tieScore = auditTieScore(audit);
-    if (
-      !best
-      || score < best.score - 1e-9
-      || (Math.abs(score - best.score) <= 1e-9 && tieScore < best.tieScore)
-    ) {
+    if (!best || score < best.score - 1e-9 || (Math.abs(score - best.score) <= 1e-9 && tieScore < best.tieScore)) {
       best = {
         coords,
         audit,
@@ -312,11 +289,19 @@ export function runRingChainLinearRetouch(layoutGraph, inputCoords, options = {}
       }
       for (let edgeIndex = 1; edgeIndex < ringChain.orderedRingSystemIds.length; edgeIndex++) {
         const baseScore = linearityScore(coords, ringChain);
-        const retouch = bestLinearizedEdge(layoutGraph, coords, ringChain, edgeIndex, {
-          bondLength,
-          bondValidationClasses,
-          allowAuditWorsening: options.allowAuditWorsening === true
-        }, audit, baseScore);
+        const retouch = bestLinearizedEdge(
+          layoutGraph,
+          coords,
+          ringChain,
+          edgeIndex,
+          {
+            bondLength,
+            bondValidationClasses,
+            allowAuditWorsening: options.allowAuditWorsening === true
+          },
+          audit,
+          baseScore
+        );
         if (!retouch) {
           continue;
         }

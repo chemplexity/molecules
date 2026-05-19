@@ -19,55 +19,26 @@ const MAX_RELIEF_HEAVY_ATOMS = 4;
 const MAX_INTERNAL_RELIEF_HEAVY_ATOMS = 8;
 const SOFT_CONTACT_CLEARANCE_FACTOR = 0.9;
 const RELIEF_ROTATIONS = [-Math.PI / 12, Math.PI / 12, -Math.PI / 6, Math.PI / 6];
-const RING_BLOCKER_RELIEF_ROTATIONS = Object.freeze([
-  -Math.PI / 6,
-  Math.PI / 6,
-  -Math.PI / 3,
-  Math.PI / 3,
-  -Math.PI / 2,
-  Math.PI / 2,
-  (-2 * Math.PI) / 3,
-  (2 * Math.PI) / 3
-]);
+const RING_BLOCKER_RELIEF_ROTATIONS = Object.freeze([-Math.PI / 6, Math.PI / 6, -Math.PI / 3, Math.PI / 3, -Math.PI / 2, Math.PI / 2, (-2 * Math.PI) / 3, (2 * Math.PI) / 3]);
 const ROOT_SUBTREE_LEAF_ROTATIONS = Object.freeze([
   (-2 * Math.PI) / 3,
-  -25 * Math.PI / 36,
-  -13 * Math.PI / 18,
-  -3 * Math.PI / 4,
-  -7 * Math.PI / 9,
-  -5 * Math.PI / 6,
+  (-25 * Math.PI) / 36,
+  (-13 * Math.PI) / 18,
+  (-3 * Math.PI) / 4,
+  (-7 * Math.PI) / 9,
+  (-5 * Math.PI) / 6,
   (2 * Math.PI) / 3,
-  25 * Math.PI / 36,
-  13 * Math.PI / 18,
-  3 * Math.PI / 4,
-  7 * Math.PI / 9,
-  5 * Math.PI / 6,
+  (25 * Math.PI) / 36,
+  (13 * Math.PI) / 18,
+  (3 * Math.PI) / 4,
+  (7 * Math.PI) / 9,
+  (5 * Math.PI) / 6,
   -Math.PI,
   Math.PI
 ]);
-const ROOT_SUBTREE_CROSSING_ESCAPE_ANGLES = Object.freeze(
-  Array.from({ length: 36 }, (_value, index) => (index * Math.PI) / 18)
-);
-const CROWDED_TERMINAL_RING_LEAF_CROSSING_ESCAPE_OFFSETS = Object.freeze(
-  Array.from({ length: 72 }, (_value, index) => ((index + 1) * Math.PI) / 72)
-    .flatMap(offset => [offset, -offset])
-);
-const CROWDED_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([
-  1,
-  0.95,
-  0.9,
-  0.85,
-  0.8,
-  0.75,
-  0.72,
-  0.7,
-  2 / 3,
-  0.65,
-  0.6,
-  0.58,
-  0.56,
-  0.55
-]);
+const ROOT_SUBTREE_CROSSING_ESCAPE_ANGLES = Object.freeze(Array.from({ length: 36 }, (_value, index) => (index * Math.PI) / 18));
+const CROWDED_TERMINAL_RING_LEAF_CROSSING_ESCAPE_OFFSETS = Object.freeze(Array.from({ length: 72 }, (_value, index) => ((index + 1) * Math.PI) / 72).flatMap(offset => [offset, -offset]));
+const CROWDED_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.72, 0.7, 2 / 3, 0.65, 0.6, 0.58, 0.56, 0.55]);
 const INTERNAL_RELIEF_ROTATIONS = Object.freeze([
   -Math.PI / 36,
   Math.PI / 36,
@@ -101,11 +72,8 @@ function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
 }
 
-
 function countHeavyAtoms(layoutGraph, atomIds) {
-  return atomIds.reduce((count, atomId) => (
-    layoutGraph.atoms.get(atomId)?.element === 'H' ? count : count + 1
-  ), 0);
+  return atomIds.reduce((count, atomId) => (layoutGraph.atoms.get(atomId)?.element === 'H' ? count : count + 1), 0);
 }
 
 /**
@@ -129,12 +97,12 @@ function hasRingAtom(layoutGraph, atomIds) {
 function isLinkedRingRootDescriptor(layoutGraph, rootAtomId, rootSubtreeAtomIds) {
   const rootAtom = layoutGraph.atoms.get(rootAtomId);
   return (
-    rootAtom
-    && rootAtom.element !== 'C'
-    && rootAtom.element !== 'H'
-    && rootAtom.heavyDegree === 2
-    && hasRingAtom(layoutGraph, rootSubtreeAtomIds)
-    && countHeavyAtoms(layoutGraph, rootSubtreeAtomIds) <= MAX_LINKED_RING_ROOT_HEAVY_ATOMS
+    rootAtom &&
+    rootAtom.element !== 'C' &&
+    rootAtom.element !== 'H' &&
+    rootAtom.heavyDegree === 2 &&
+    hasRingAtom(layoutGraph, rootSubtreeAtomIds) &&
+    countHeavyAtoms(layoutGraph, rootSubtreeAtomIds) <= MAX_LINKED_RING_ROOT_HEAVY_ATOMS
   );
 }
 
@@ -167,11 +135,7 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
       continue;
     }
     const ringBonds = heavyBonds.filter(({ neighborAtomId }) => layoutGraph.ringAtomIdSet.has(neighborAtomId));
-    const terminalBonds = heavyBonds.filter(({ bond, neighborAtomId }) => (
-      !layoutGraph.ringAtomIdSet.has(neighborAtomId)
-      && !bond.aromatic
-      && (bond.order ?? 1) === 1
-    ));
+    const terminalBonds = heavyBonds.filter(({ bond, neighborAtomId }) => !layoutGraph.ringAtomIdSet.has(neighborAtomId) && !bond.aromatic && (bond.order ?? 1) === 1);
     if (ringBonds.length !== 2 || terminalBonds.length !== 1) {
       continue;
     }
@@ -181,10 +145,7 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
       continue;
     }
     const containsRingAtom = hasRingAtom(layoutGraph, rootSubtreeAtomIds);
-    const isCompactTerminalRoot = (
-      !containsRingAtom
-      && countHeavyAtoms(layoutGraph, rootSubtreeAtomIds) <= MAX_TERMINAL_ROOT_HEAVY_ATOMS
-    );
+    const isCompactTerminalRoot = !containsRingAtom && countHeavyAtoms(layoutGraph, rootSubtreeAtomIds) <= MAX_TERMINAL_ROOT_HEAVY_ATOMS;
     const isLinkedRingRoot = isLinkedRingRootDescriptor(layoutGraph, rootAtomId, rootSubtreeAtomIds);
     if (!isCompactTerminalRoot && !isLinkedRingRoot) {
       continue;
@@ -201,10 +162,7 @@ function collectTerminalRingRootDescriptors(layoutGraph, coords, frozenAtomIds) 
     if (centerIsFrozen && crossingCount === 0) {
       continue;
     }
-    if (
-      rootDeviation(coords, descriptor) > MIN_ROOT_DEVIATION
-      || crossingCount > 0
-    ) {
+    if (rootDeviation(coords, descriptor) > MIN_ROOT_DEVIATION || crossingCount > 0) {
       descriptors.push(descriptor);
     }
   }
@@ -265,11 +223,11 @@ function translateRootSubtreeToAngle(coords, descriptor, targetAngle) {
 
 function auditDoesNotRegressRootEscape(candidateAudit, baseAudit) {
   return (
-    (candidateAudit.severeOverlapCount ?? 0) <= (baseAudit.severeOverlapCount ?? 0)
-    && (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit.bondLengthFailureCount ?? 0)
-    && (candidateAudit.labelOverlapCount ?? 0) <= (baseAudit.labelOverlapCount ?? 0)
-    && (candidateAudit.collapsedMacrocycleCount ?? 0) <= (baseAudit.collapsedMacrocycleCount ?? 0)
-    && (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (baseAudit.ringSubstituentReadabilityFailureCount ?? 0)
+    (candidateAudit.severeOverlapCount ?? 0) <= (baseAudit.severeOverlapCount ?? 0) &&
+    (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit.bondLengthFailureCount ?? 0) &&
+    (candidateAudit.labelOverlapCount ?? 0) <= (baseAudit.labelOverlapCount ?? 0) &&
+    (candidateAudit.collapsedMacrocycleCount ?? 0) <= (baseAudit.collapsedMacrocycleCount ?? 0) &&
+    (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (baseAudit.ringSubstituentReadabilityFailureCount ?? 0)
   );
 }
 
@@ -323,10 +281,10 @@ function escapeCurrentRootSubtreeCrossing(layoutGraph, coords, descriptor, baseA
 function collectReliefDescriptor(layoutGraph, coords, rootAtomId, parentAtomId, protectedAtomIds, frozenAtomIds) {
   const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)].filter(atomId => coords.has(atomId));
   if (
-    subtreeAtomIds.length === 0
-    || subtreeAtomIds.includes(parentAtomId)
-    || subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId) || layoutGraph.ringAtomIdSet.has(atomId))
-    || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
+    subtreeAtomIds.length === 0 ||
+    subtreeAtomIds.includes(parentAtomId) ||
+    subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId) || layoutGraph.ringAtomIdSet.has(atomId)) ||
+    countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
   ) {
     return null;
   }
@@ -350,14 +308,13 @@ function collectRingBlockerReliefDescriptors(layoutGraph, coords, blockerAtomId,
         if (ringAtomIds.has(parentAtomId) || protectedAtomIds.has(parentAtomId) || frozenAtomIds?.has(parentAtomId)) {
           continue;
         }
-        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ringAtomId, parentAtomId)]
-          .filter(atomId => coords.has(atomId));
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ringAtomId, parentAtomId)].filter(atomId => coords.has(atomId));
         if (
-          subtreeAtomIds.length === 0
-          || !subtreeAtomIds.includes(blockerAtomId)
-          || subtreeAtomIds.includes(parentAtomId)
-          || subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId))
-          || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RING_BLOCKER_RELIEF_HEAVY_ATOMS
+          subtreeAtomIds.length === 0 ||
+          !subtreeAtomIds.includes(blockerAtomId) ||
+          subtreeAtomIds.includes(parentAtomId) ||
+          subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId) || frozenAtomIds?.has(atomId)) ||
+          countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RING_BLOCKER_RELIEF_HEAVY_ATOMS
         ) {
           continue;
         }
@@ -395,31 +352,21 @@ function rotateReliefSubtree(coords, descriptor, rotation) {
  */
 function rootSubtreeVisibleBondCrossingCount(layoutGraph, coords, targetDescriptor) {
   const rootSubtreeAtomIds = new Set(targetDescriptor.rootSubtreeAtomIds);
-  return findVisibleHeavyBondCrossings(layoutGraph, coords)
-    .filter(crossing =>
-      (crossing.firstAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId))
-      || (crossing.secondAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId))
-    )
-    .length;
+  return findVisibleHeavyBondCrossings(layoutGraph, coords).filter(
+    crossing => (crossing.firstAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId)) || (crossing.secondAtomIds ?? []).some(atomId => rootSubtreeAtomIds.has(atomId))
+  ).length;
 }
 
 function bondAtomIdsMatch(atomIds, firstAtomId, secondAtomId) {
-  return (
-    atomIds?.length === 2 &&
-    (
-      (atomIds[0] === firstAtomId && atomIds[1] === secondAtomId) ||
-      (atomIds[0] === secondAtomId && atomIds[1] === firstAtomId)
-    )
-  );
+  return atomIds?.length === 2 && ((atomIds[0] === firstAtomId && atomIds[1] === secondAtomId) || (atomIds[0] === secondAtomId && atomIds[1] === firstAtomId));
 }
 
 function terminalRingLeafBondCrossingCount(layoutGraph, coords, descriptor) {
   return findVisibleHeavyBondCrossings(layoutGraph, coords, {
     focusAtomIds: [descriptor.anchorAtomId, descriptor.leafAtomId]
-  }).filter(crossing => (
-    bondAtomIdsMatch(crossing.firstAtomIds, descriptor.anchorAtomId, descriptor.leafAtomId) ||
-    bondAtomIdsMatch(crossing.secondAtomIds, descriptor.anchorAtomId, descriptor.leafAtomId)
-  )).length;
+  }).filter(
+    crossing => bondAtomIdsMatch(crossing.firstAtomIds, descriptor.anchorAtomId, descriptor.leafAtomId) || bondAtomIdsMatch(crossing.secondAtomIds, descriptor.anchorAtomId, descriptor.leafAtomId)
+  ).length;
 }
 
 function terminalRingLeafMinimumClearance(layoutGraph, coords, descriptor) {
@@ -478,11 +425,7 @@ function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, le
     }
     if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
       ringNeighborCount++;
-    } else if (
-      neighborAtom.element !== 'C' &&
-      !neighborAtom.aromatic &&
-      (neighborAtom.heavyDegree ?? 0) === 1
-    ) {
+    } else if (neighborAtom.element !== 'C' && !neighborAtom.aromatic && (neighborAtom.heavyDegree ?? 0) === 1) {
       terminalHeteroLeafCount++;
     }
   }
@@ -491,11 +434,7 @@ function crowdedTerminalRingLeafDescriptor(layoutGraph, coords, anchorAtomId, le
   }
 
   const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
-  if (
-    leafSubtreeAtomIds.length === 0 ||
-    leafSubtreeAtomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId)) ||
-    countHeavyAtoms(layoutGraph, leafSubtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
-  ) {
+  if (leafSubtreeAtomIds.length === 0 || leafSubtreeAtomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId)) || countHeavyAtoms(layoutGraph, leafSubtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS) {
     return null;
   }
   return {
@@ -527,10 +466,9 @@ function collectCrowdedTerminalRingLeafCrossingDescriptors(layoutGraph, coords, 
       }
     }
   }
-  return [...descriptorMap.values()].sort((firstDescriptor, secondDescriptor) => (
-    compareAtomIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId) ||
-    compareAtomIds(firstDescriptor.leafAtomId, secondDescriptor.leafAtomId)
-  ));
+  return [...descriptorMap.values()].sort(
+    (firstDescriptor, secondDescriptor) => compareAtomIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId) || compareAtomIds(firstDescriptor.leafAtomId, secondDescriptor.leafAtomId)
+  );
 }
 
 function compareAtomIds(firstAtomId, secondAtomId) {
@@ -576,12 +514,7 @@ function resolveCrowdedTerminalRingLeafCrossings(layoutGraph, coords, baseAudit,
     let best = null;
     for (const offset of CROWDED_TERMINAL_RING_LEAF_CROSSING_ESCAPE_OFFSETS) {
       for (const compressionFactor of CROWDED_TERMINAL_RING_LEAF_COMPRESSION_FACTORS) {
-        const candidateCoords = translateTerminalRingLeafToAngle(
-          coords,
-          descriptor,
-          wrapAngle(currentAngle + offset),
-          Math.min(currentLength, bondLength) * compressionFactor
-        );
+        const candidateCoords = translateTerminalRingLeafToAngle(coords, descriptor, wrapAngle(currentAngle + offset), Math.min(currentLength, bondLength) * compressionFactor);
         if (!candidateCoords) {
           continue;
         }
@@ -604,14 +537,13 @@ function resolveCrowdedTerminalRingLeafCrossings(layoutGraph, coords, baseAudit,
           continue;
         }
         const clearance = terminalRingLeafMinimumClearance(layoutGraph, candidateCoords, descriptor);
-        const score = (
+        const score =
           (candidateAudit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
           candidateCrossingCount * 100_000 +
           (candidateAudit.labelOverlapCount ?? 0) * 10_000 +
           Math.abs(1 - compressionFactor) * 1_000 +
           Math.abs(offset) * 100 -
-          clearance
-        );
+          clearance;
         if (!best || score < best.score - CLEANUP_EPSILON) {
           best = {
             coords: candidateCoords,
@@ -634,14 +566,14 @@ function resolveCrowdedTerminalRingLeafCrossings(layoutGraph, coords, baseAudit,
  */
 function auditPenalty(audit) {
   return (
-    (audit.bondLengthFailureCount ?? 0) * 100_000_000
-    + (audit.severeOverlapCount ?? 0) * 10_000_000
-    + (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000
-    + (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000
-    + (audit.inwardRingSubstituentCount ?? 0) * 100_000
-    + (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 100_000
-    + (audit.labelOverlapCount ?? 0) * 10_000
-    + (audit.severeOverlapPenalty ?? 0) * 1_000
+    (audit.bondLengthFailureCount ?? 0) * 100_000_000 +
+    (audit.severeOverlapCount ?? 0) * 10_000_000 +
+    (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000_000 +
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100_000 +
+    (audit.inwardRingSubstituentCount ?? 0) * 100_000 +
+    (audit.outwardAxisRingSubstituentFailureCount ?? 0) * 100_000 +
+    (audit.labelOverlapCount ?? 0) * 10_000 +
+    (audit.severeOverlapPenalty ?? 0) * 1_000
   );
 }
 
@@ -676,10 +608,7 @@ function angleBetweenNeighbors(coords, centerAtomId, firstNeighborAtomId, second
   if (!centerPosition || !firstPosition || !secondPosition) {
     return null;
   }
-  return angularDifference(
-    angleOf(sub(firstPosition, centerPosition)),
-    angleOf(sub(secondPosition, centerPosition))
-  );
+  return angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition)));
 }
 
 /**
@@ -710,10 +639,7 @@ function parentFanDeviation(layoutGraph, coords, parentAtomId) {
 function terminalMultipleBondLeafFanRegression(layoutGraph, candidateCoords, baseCoords) {
   const candidatePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, candidateCoords);
   const basePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, baseCoords);
-  return Math.max(
-    (candidatePenalty.maxDeviation ?? 0) - (basePenalty.maxDeviation ?? 0),
-    (candidatePenalty.totalDeviation ?? 0) - (basePenalty.totalDeviation ?? 0)
-  );
+  return Math.max((candidatePenalty.maxDeviation ?? 0) - (basePenalty.maxDeviation ?? 0), (candidatePenalty.totalDeviation ?? 0) - (basePenalty.totalDeviation ?? 0));
 }
 
 /**
@@ -754,12 +680,7 @@ function collectInternalReliefDescriptors(layoutGraph, coords, targetDescriptor,
   const descriptors = [];
   const descriptorKeys = new Set();
   const movedAtomIds = new Set(targetDescriptor.rootSubtreeAtomIds);
-  const protectedAtomIds = new Set([
-    targetDescriptor.centerAtomId,
-    targetDescriptor.rootAtomId,
-    targetDescriptor.firstRingNeighborAtomId,
-    targetDescriptor.secondRingNeighborAtomId
-  ]);
+  const protectedAtomIds = new Set([targetDescriptor.centerAtomId, targetDescriptor.rootAtomId, targetDescriptor.firstRingNeighborAtomId, targetDescriptor.secondRingNeighborAtomId]);
   for (const problemAtomId of problemAtomIds) {
     if (!movedAtomIds.has(problemAtomId)) {
       continue;
@@ -768,23 +689,20 @@ function collectInternalReliefDescriptors(layoutGraph, coords, targetDescriptor,
       if (!bond || bond.kind !== 'covalent') {
         continue;
       }
-      for (const [rootAtomId, parentAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+      for (const [rootAtomId, parentAtomId] of [
+        [bond.a, bond.b],
+        [bond.b, bond.a]
+      ]) {
         if (!movedAtomIds.has(rootAtomId) || !movedAtomIds.has(parentAtomId) || protectedAtomIds.has(rootAtomId)) {
           continue;
         }
-        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)]
-          .filter(atomId => coords.has(atomId));
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)].filter(atomId => coords.has(atomId));
         if (
-          subtreeAtomIds.length === 0
-          || !subtreeAtomIds.includes(problemAtomId)
-          || subtreeAtomIds.includes(parentAtomId)
-          || subtreeAtomIds.some(atomId =>
-            frozenAtomIds?.has(atomId)
-            || protectedAtomIds.has(atomId)
-            || !movedAtomIds.has(atomId)
-            || layoutGraph.ringAtomIdSet.has(atomId)
-          )
-          || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_INTERNAL_RELIEF_HEAVY_ATOMS
+          subtreeAtomIds.length === 0 ||
+          !subtreeAtomIds.includes(problemAtomId) ||
+          subtreeAtomIds.includes(parentAtomId) ||
+          subtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId) || protectedAtomIds.has(atomId) || !movedAtomIds.has(atomId) || layoutGraph.ringAtomIdSet.has(atomId)) ||
+          countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_INTERNAL_RELIEF_HEAVY_ATOMS
         ) {
           continue;
         }
@@ -815,14 +733,7 @@ function relieveCompactOverlaps(layoutGraph, coords, targetDescriptor, options) 
           continue;
         }
         const parentAtomId = bond.a === overlapAtomId ? bond.b : bond.a;
-        const descriptor = collectReliefDescriptor(
-          layoutGraph,
-          coords,
-          overlapAtomId,
-          parentAtomId,
-          protectedAtomIds,
-          options.frozenAtomIds ?? null
-        );
+        const descriptor = collectReliefDescriptor(layoutGraph, coords, overlapAtomId, parentAtomId, protectedAtomIds, options.frozenAtomIds ?? null);
         if (!descriptor) {
           continue;
         }
@@ -851,12 +762,7 @@ function relieveCompactOverlaps(layoutGraph, coords, targetDescriptor, options) 
 
 function relieveExactRootRingBlockerOverlaps(layoutGraph, coords, targetDescriptor, baseAudit, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const protectedAtomIds = new Set([
-    targetDescriptor.centerAtomId,
-    targetDescriptor.firstRingNeighborAtomId,
-    targetDescriptor.secondRingNeighborAtomId,
-    ...targetDescriptor.rootSubtreeAtomIds
-  ]);
+  const protectedAtomIds = new Set([targetDescriptor.centerAtomId, targetDescriptor.firstRingNeighborAtomId, targetDescriptor.secondRingNeighborAtomId, ...targetDescriptor.rootSubtreeAtomIds]);
   const descriptorKeys = new Set();
   const descriptors = [];
   for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
@@ -868,13 +774,7 @@ function relieveExactRootRingBlockerOverlaps(layoutGraph, coords, targetDescript
       if (!protectedAtomIds.has(protectedAtomId) || protectedAtomIds.has(blockerAtomId)) {
         continue;
       }
-      for (const descriptor of collectRingBlockerReliefDescriptors(
-        layoutGraph,
-        coords,
-        blockerAtomId,
-        protectedAtomIds,
-        options.frozenAtomIds ?? null
-      )) {
+      for (const descriptor of collectRingBlockerReliefDescriptors(layoutGraph, coords, blockerAtomId, protectedAtomIds, options.frozenAtomIds ?? null)) {
         const descriptorKey = `${descriptor.rootAtomId}:${descriptor.parentAtomId}`;
         if (descriptorKeys.has(descriptorKey)) {
           continue;
@@ -1009,37 +909,27 @@ function collectRootSubtreeLeafReliefDescriptors(layoutGraph, coords, targetDesc
   const descriptors = [];
   const descriptorKeys = new Set();
   const rootSubtreeAtomIds = new Set(targetDescriptor.rootSubtreeAtomIds);
-  const protectedAtomIds = new Set([
-    targetDescriptor.centerAtomId,
-    targetDescriptor.rootAtomId,
-    targetDescriptor.firstRingNeighborAtomId,
-    targetDescriptor.secondRingNeighborAtomId
-  ]);
+  const protectedAtomIds = new Set([targetDescriptor.centerAtomId, targetDescriptor.rootAtomId, targetDescriptor.firstRingNeighborAtomId, targetDescriptor.secondRingNeighborAtomId]);
   for (const atomId of targetDescriptor.rootSubtreeAtomIds) {
     for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
       if (!bond || bond.kind !== 'covalent') {
         continue;
       }
-      for (const [rootAtomId, parentAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
-        if (
-          protectedAtomIds.has(rootAtomId)
-          || !rootSubtreeAtomIds.has(rootAtomId)
-          || !rootSubtreeAtomIds.has(parentAtomId)
-        ) {
+      for (const [rootAtomId, parentAtomId] of [
+        [bond.a, bond.b],
+        [bond.b, bond.a]
+      ]) {
+        if (protectedAtomIds.has(rootAtomId) || !rootSubtreeAtomIds.has(rootAtomId) || !rootSubtreeAtomIds.has(parentAtomId)) {
           continue;
         }
-        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)]
-          .filter(subtreeAtomId => coords.has(subtreeAtomId));
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
         if (
-          subtreeAtomIds.length === 0
-          || subtreeAtomIds.includes(parentAtomId)
-          || subtreeAtomIds.some(subtreeAtomId =>
-            frozenAtomIds?.has(subtreeAtomId)
-            || protectedAtomIds.has(subtreeAtomId)
-            || !rootSubtreeAtomIds.has(subtreeAtomId)
-            || layoutGraph.ringAtomIdSet.has(subtreeAtomId)
-          )
-          || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
+          subtreeAtomIds.length === 0 ||
+          subtreeAtomIds.includes(parentAtomId) ||
+          subtreeAtomIds.some(
+            subtreeAtomId => frozenAtomIds?.has(subtreeAtomId) || protectedAtomIds.has(subtreeAtomId) || !rootSubtreeAtomIds.has(subtreeAtomId) || layoutGraph.ringAtomIdSet.has(subtreeAtomId)
+          ) ||
+          countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_RELIEF_HEAVY_ATOMS
         ) {
           continue;
         }
@@ -1074,12 +964,7 @@ function relieveRootSubtreeInternalLeafContacts(layoutGraph, coords, targetDescr
     return null;
   }
   let best = null;
-  for (const descriptor of collectRootSubtreeLeafReliefDescriptors(
-    layoutGraph,
-    coords,
-    targetDescriptor,
-    options.frozenAtomIds ?? null
-  )) {
+  for (const descriptor of collectRootSubtreeLeafReliefDescriptors(layoutGraph, coords, targetDescriptor, options.frozenAtomIds ?? null)) {
     for (const rotation of ROOT_SUBTREE_LEAF_ROTATIONS) {
       const candidateCoords = rotateReliefSubtree(coords, descriptor, rotation);
       if (rootDeviation(candidateCoords, targetDescriptor) > PRESENTATION_METRIC_EPSILON) {
@@ -1143,14 +1028,7 @@ function relieveRootSubtreeSoftContacts(layoutGraph, coords, targetDescriptor, b
         continue;
       }
       const parentAtomId = bond.a === blockerAtomId ? bond.b : bond.a;
-      const descriptor = collectReliefDescriptor(
-        layoutGraph,
-        coords,
-        blockerAtomId,
-        parentAtomId,
-        protectedAtomIds,
-        options.frozenAtomIds ?? null
-      );
+      const descriptor = collectReliefDescriptor(layoutGraph, coords, blockerAtomId, parentAtomId, protectedAtomIds, options.frozenAtomIds ?? null);
       if (!descriptor) {
         continue;
       }
@@ -1204,13 +1082,7 @@ function relieveLinkedRootInternalOverlaps(layoutGraph, coords, targetDescriptor
     return null;
   }
   let best = null;
-  for (const descriptor of collectInternalReliefDescriptors(
-    layoutGraph,
-    coords,
-    targetDescriptor,
-    problemAtomIds,
-    options.frozenAtomIds ?? null
-  )) {
+  for (const descriptor of collectInternalReliefDescriptors(layoutGraph, coords, targetDescriptor, problemAtomIds, options.frozenAtomIds ?? null)) {
     for (const rotation of INTERNAL_RELIEF_ROTATIONS) {
       const candidateCoords = rotateReliefSubtree(coords, descriptor, rotation);
       if (rootDeviation(candidateCoords, targetDescriptor) > PRESENTATION_METRIC_EPSILON) {
@@ -1319,10 +1191,7 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
       exactReliefCoords = relieveExactRootRingBlockerOverlaps(layoutGraph, exactCoords, descriptor, baseAudit, options);
     }
     if (exactReliefCoords) {
-      let exactCandidateCoords = (
-        relieveRootSubtreeInternalLeafContacts(layoutGraph, exactReliefCoords, descriptor, baseAudit, options)
-        ?? exactReliefCoords
-      );
+      let exactCandidateCoords = relieveRootSubtreeInternalLeafContacts(layoutGraph, exactReliefCoords, descriptor, baseAudit, options) ?? exactReliefCoords;
       const exactCandidateAudit = auditLayout(layoutGraph, exactCandidateCoords, {
         bondLength,
         bondValidationClasses: options.bondValidationClasses
@@ -1334,11 +1203,7 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
         bondLength,
         bondValidationClasses: options.bondValidationClasses
       });
-      if (
-        finalExactAudit.ok === true
-        && auditPenalty(finalExactAudit) <= auditPenalty(baseAudit)
-        && rootDeviation(exactCandidateCoords, descriptor) <= PRESENTATION_METRIC_EPSILON
-      ) {
+      if (finalExactAudit.ok === true && auditPenalty(finalExactAudit) <= auditPenalty(baseAudit) && rootDeviation(exactCandidateCoords, descriptor) <= PRESENTATION_METRIC_EPSILON) {
         return {
           coords: exactCandidateCoords,
           nudges: 1,
@@ -1359,17 +1224,14 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
       bondLength,
       bondValidationClasses: options.bondValidationClasses
     });
-    const cleanupReliefCoords = cleanupAudit.ok === true
-      ? cleanup.coords
-      : (
-        relieveLinkedRootInternalOverlaps(layoutGraph, cleanup.coords, descriptor, baseAudit, options)
-        ?? relieveCompactOverlaps(layoutGraph, cleanup.coords, descriptor, options)
-      );
-    let candidateCoords = (
-      relieveRootSubtreeInternalLeafContacts(layoutGraph, exactCoords, descriptor, baseAudit, options)
-      ?? relieveRootSubtreeInternalLeafContacts(layoutGraph, cleanupReliefCoords ?? cleanup.coords, descriptor, baseAudit, options)
-      ?? cleanupReliefCoords
-    );
+    const cleanupReliefCoords =
+      cleanupAudit.ok === true
+        ? cleanup.coords
+        : (relieveLinkedRootInternalOverlaps(layoutGraph, cleanup.coords, descriptor, baseAudit, options) ?? relieveCompactOverlaps(layoutGraph, cleanup.coords, descriptor, options));
+    let candidateCoords =
+      relieveRootSubtreeInternalLeafContacts(layoutGraph, exactCoords, descriptor, baseAudit, options) ??
+      relieveRootSubtreeInternalLeafContacts(layoutGraph, cleanupReliefCoords ?? cleanup.coords, descriptor, baseAudit, options) ??
+      cleanupReliefCoords;
     if (!candidateCoords) {
       continue;
     }
@@ -1385,10 +1247,10 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
       bondValidationClasses: options.bondValidationClasses
     });
     if (
-      candidateAudit.ok === true
-      && (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit.bondLengthFailureCount ?? 0)
-      && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit.visibleHeavyBondCrossingCount ?? 0)
-      && rootDeviation(candidateCoords, descriptor) <= PRESENTATION_METRIC_EPSILON
+      candidateAudit.ok === true &&
+      (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit.bondLengthFailureCount ?? 0) &&
+      (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit.visibleHeavyBondCrossingCount ?? 0) &&
+      rootDeviation(candidateCoords, descriptor) <= PRESENTATION_METRIC_EPSILON
     ) {
       return {
         coords: candidateCoords,

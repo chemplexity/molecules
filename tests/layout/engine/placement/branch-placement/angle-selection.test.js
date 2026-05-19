@@ -92,7 +92,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     const saturatedGraph = createLayoutGraph(parseSMILES('CN(C)C'), { suppressH: true });
     const saturatedNitrogenId = [...saturatedGraph.atoms.values()].find(atom => atom.element === 'N')?.id;
     const saturatedMethylId = (saturatedGraph.bondsByAtomId.get(saturatedNitrogenId) ?? [])
-      .map(bond => bond.a === saturatedNitrogenId ? bond.b : bond.a)
+      .map(bond => (bond.a === saturatedNitrogenId ? bond.b : bond.a))
       .find(atomId => saturatedGraph.atoms.get(atomId)?.element === 'C');
 
     assert.equal(isExactVisibleTrigonalBisectorEligible(conjugatedGraph, 'N9', 'C10'), true);
@@ -116,11 +116,12 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
 
     assert.equal(isExactRingOutwardEligibleSubstituent(flexibleGraph, 'C2', 'C6'), false);
 
-    const nitrileCarbonAtomId = [...nitrileGraph.atoms.values()].find(atom =>
-      atom.element === 'C'
-      && atom.heavyDegree === 2
-      && (nitrileGraph.atomToRings.get(atom.id)?.length ?? 0) === 0
-      && (nitrileGraph.bondsByAtomId.get(atom.id) ?? []).some(bond => !bond.aromatic && (bond.order ?? 1) === 3)
+    const nitrileCarbonAtomId = [...nitrileGraph.atoms.values()].find(
+      atom =>
+        atom.element === 'C' &&
+        atom.heavyDegree === 2 &&
+        (nitrileGraph.atomToRings.get(atom.id)?.length ?? 0) === 0 &&
+        (nitrileGraph.bondsByAtomId.get(atom.id) ?? []).some(bond => !bond.aromatic && (bond.order ?? 1) === 3)
     )?.id;
     const nitrileAnchorAtomId = (nitrileGraph.bondsByAtomId.get(nitrileCarbonAtomId) ?? [])
       .map(bond => (bond.a === nitrileCarbonAtomId ? bond.b : bond.a))
@@ -129,11 +130,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.ok(nitrileAnchorAtomId);
     assert.equal(isExactRingOutwardEligibleSubstituent(nitrileGraph, nitrileAnchorAtomId, nitrileCarbonAtomId), true);
 
-    const methylAtomId = [...methylGraph.atoms.values()].find(atom =>
-      atom.element === 'C'
-      && atom.heavyDegree === 1
-      && (methylGraph.atomToRings.get(atom.id)?.length ?? 0) === 0
-    )?.id;
+    const methylAtomId = [...methylGraph.atoms.values()].find(atom => atom.element === 'C' && atom.heavyDegree === 1 && (methylGraph.atomToRings.get(atom.id)?.length ?? 0) === 0)?.id;
     const methylAnchorAtomId = (methylGraph.bondsByAtomId.get(methylAtomId) ?? [])
       .map(bond => (bond.a === methylAtomId ? bond.b : bond.a))
       .find(atomId => (methylGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
@@ -154,24 +151,9 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
       ['N2', fromAngle(degrees(180), 1)]
     ]);
 
-    const angle = chooseContinuationAngle(
-      anchorPosition,
-      1,
-      coords,
-      [degrees(330), degrees(180)],
-      [degrees(10)],
-      [0],
-      new Set(['A0']),
-      null,
-      [],
-      true,
-      true
-    );
+    const angle = chooseContinuationAngle(anchorPosition, 1, coords, [degrees(330), degrees(180)], [degrees(10)], [0], new Set(['A0']), null, [], true, true);
 
-    assert.ok(
-      angularDifference(angle, degrees(10)) < 1e-6,
-      `expected the specific preferred angle before fine rescue, got ${((angle * 180) / Math.PI).toFixed(2)}°`
-    );
+    assert.ok(angularDifference(angle, degrees(10)) < 1e-6, `expected the specific preferred angle before fine rescue, got ${((angle * 180) / Math.PI).toFixed(2)}°`);
   });
 
   it('opens fine continuation offsets only when the specific-angle pool has no safe candidate', () => {
@@ -182,23 +164,8 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
       ['N2', fromAngle(degrees(180), 1)]
     ]);
 
-    const angle = chooseContinuationAngle(
-      anchorPosition,
-      1,
-      coords,
-      [degrees(345), degrees(180)],
-      [degrees(10)],
-      [0],
-      new Set(['A0']),
-      null,
-      [],
-      true,
-      true
-    );
+    const angle = chooseContinuationAngle(anchorPosition, 1, coords, [degrees(345), degrees(180)], [degrees(10)], [0], new Set(['A0']), null, [], true, true);
 
-    assert.ok(
-      angularDifference(angle, degrees(40)) < 1e-6,
-      `expected fine preferred rescue once the specific pool is blocked, got ${((angle * 180) / Math.PI).toFixed(2)}°`
-    );
+    assert.ok(angularDifference(angle, degrees(40)) < 1e-6, `expected fine preferred rescue once the specific pool is blocked, got ${((angle * 180) / Math.PI).toFixed(2)}°`);
   });
 });

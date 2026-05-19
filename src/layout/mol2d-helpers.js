@@ -357,14 +357,10 @@ export function ringLabelOffset(atom, mol, pointForAtom, label, fontSize) {
 
   let dx = baseDx;
   let dy = 0;
-  const heavyNeighbors = atom
-    .getNeighbors(mol)
-    .filter(neighbor => neighbor && neighbor.name !== 'H' && neighbor.x != null && neighbor.y != null);
+  const heavyNeighbors = atom.getNeighbors(mol).filter(neighbor => neighbor && neighbor.name !== 'H' && neighbor.x != null && neighbor.y != null);
   if (heavyNeighbors.length === 1) {
     const anchor = heavyNeighbors[0];
-    const anchorBond = mol.getBond?.(atom.id, anchor.id)
-      ?? [...(mol.bonds?.values() ?? [])].find(bond => bond.atoms.includes(atom.id) && bond.atoms.includes(anchor.id))
-      ?? null;
+    const anchorBond = mol.getBond?.(atom.id, anchor.id) ?? [...(mol.bonds?.values() ?? [])].find(bond => bond.atoms.includes(atom.id) && bond.atoms.includes(anchor.id)) ?? null;
     const bondOrder = anchorBond?.properties?.localizedOrder ?? anchorBond?.properties?.order ?? 1;
     if (bondOrder >= 2) {
       const atomPoint = pointForAtom(atom);
@@ -417,13 +413,7 @@ export function ringLabelOffset(atom, mol, pointForAtom, label, fontSize) {
   const length = vecLen(vx, vy);
   const inwardDirection = { x: -vx / length, y: -vy / length };
   const inwardAngle = Math.atan2(inwardDirection.y, inwardDirection.x);
-  const inwardLabelExtent = rayDistanceToShiftedBox(
-    inwardAngle,
-    dx,
-    dy,
-    labelHalfW(label, fontSize),
-    labelHalfH(label, fontSize)
-  );
+  const inwardLabelExtent = rayDistanceToShiftedBox(inwardAngle, dx, dy, labelHalfW(label, fontSize), labelHalfH(label, fontSize));
   const faceDepth = inwardRingFaceDepth(atomPoint, inwardDirection, ringPolygons);
   if (faceDepth == null) {
     return { dx, dy };
@@ -1073,10 +1063,7 @@ export function computeLonePairDotPositions(
     const pairCenterX = center.x + dirX * distance;
     const pairCenterY = center.y + dirY * distance;
     const halfSpacing = dotSpacing / 2;
-    dots.push(
-      { x: pairCenterX - tangentX * halfSpacing, y: pairCenterY - tangentY * halfSpacing },
-      { x: pairCenterX + tangentX * halfSpacing, y: pairCenterY + tangentY * halfSpacing }
-    );
+    dots.push({ x: pairCenterX - tangentX * halfSpacing, y: pairCenterY - tangentY * halfSpacing }, { x: pairCenterX + tangentX * halfSpacing, y: pairCenterY + tangentY * halfSpacing });
   }
   return dots;
 }
@@ -1140,8 +1127,7 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null, e
   const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
   const excluded = new Set(excludedBondIds ?? []);
   const candidateTiers = [exocyclicHeavy, exocyclic, visible, entries].filter(tier => tier.length > 0);
-  const candidates =
-    candidateTiers.map(tier => tier.filter(entry => !excluded.has(entry.bond.id))).find(tier => tier.length > 0) ?? candidateTiers[0];
+  const candidates = candidateTiers.map(tier => tier.filter(entry => !excluded.has(entry.bond.id))).find(tier => tier.length > 0) ?? candidateTiers[0];
   const hasUnexcludedCandidate = candidateTiers.some(tier => tier.some(entry => !excluded.has(entry.bond.id)));
 
   const preferred =

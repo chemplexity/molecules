@@ -16,9 +16,7 @@ describe('layout/engine/templates/validation', () => {
             severeOverlapCount: result.summary.severeOverlapCount,
             minBondLength: Number.isFinite(result.summary.minBondLength) ? Number(result.summary.minBondLength.toFixed(4)) : result.summary.minBondLength,
             maxBondLength: Number.isFinite(result.summary.maxBondLength) ? Number(result.summary.maxBondLength.toFixed(4)) : result.summary.maxBondLength,
-            meanBondLengthDeviation: Number.isFinite(result.summary.meanBondLengthDeviation)
-              ? Number(result.summary.meanBondLengthDeviation.toFixed(4))
-              : result.summary.meanBondLengthDeviation
+            meanBondLengthDeviation: Number.isFinite(result.summary.meanBondLengthDeviation) ? Number(result.summary.meanBondLengthDeviation.toFixed(4)) : result.summary.meanBondLengthDeviation
           },
           checks: result.checks
         })}`

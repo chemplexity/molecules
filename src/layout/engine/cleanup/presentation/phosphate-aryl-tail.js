@@ -47,13 +47,7 @@ function mergeAngles(angles) {
 
 function isVisibleCarbon(layoutGraph, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
-  return Boolean(
-    atom
-    && atom.element === 'C'
-    && atom.visible !== false
-    && atom.aromatic !== true
-    && !layoutGraph.ringAtomIdSet.has(atomId)
-  );
+  return Boolean(atom && atom.element === 'C' && atom.visible !== false && atom.aromatic !== true && !layoutGraph.ringAtomIdSet.has(atomId));
 }
 
 function isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId) {
@@ -112,12 +106,7 @@ function continuationCarbonNeighborIds(layoutGraph, atomId, parentAtomId) {
 function collectPhosphateArylTailDescriptors(layoutGraph, coords) {
   const descriptors = [];
   for (const [anchorAtomId, anchorAtom] of layoutGraph?.atoms ?? []) {
-    if (
-      anchorAtom?.aromatic !== true
-      || !coords.has(anchorAtomId)
-      || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1
-      || !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
-    ) {
+    if (anchorAtom?.aromatic !== true || !coords.has(anchorAtomId) || (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) !== 1 || !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)) {
       continue;
     }
     for (const anchorBond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
@@ -164,13 +153,7 @@ function collectPhosphateArylTailDescriptors(layoutGraph, coords) {
 function collectPhosphateArylLinkerDescriptors(layoutGraph, coords) {
   const descriptors = [];
   for (const [oxygenAtomId, oxygenAtom] of layoutGraph?.atoms ?? []) {
-    if (
-      !oxygenAtom
-      || oxygenAtom.element !== 'O'
-      || oxygenAtom.aromatic === true
-      || layoutGraph.ringAtomIdSet.has(oxygenAtomId)
-      || !coords.has(oxygenAtomId)
-    ) {
+    if (!oxygenAtom || oxygenAtom.element !== 'O' || oxygenAtom.aromatic === true || layoutGraph.ringAtomIdSet.has(oxygenAtomId) || !coords.has(oxygenAtomId)) {
       continue;
     }
 
@@ -190,10 +173,10 @@ function collectPhosphateArylLinkerDescriptors(layoutGraph, coords) {
         continue;
       }
       if (
-        neighborAtom.element === 'C'
-        && neighborAtom.aromatic === true
-        && (layoutGraph.ringCountByAtomId.get(neighborAtomId) ?? 0) === 1
-        && isPhosphateBoundAromaticRing(layoutGraph, neighborAtomId)
+        neighborAtom.element === 'C' &&
+        neighborAtom.aromatic === true &&
+        (layoutGraph.ringCountByAtomId.get(neighborAtomId) ?? 0) === 1 &&
+        isPhosphateBoundAromaticRing(layoutGraph, neighborAtomId)
       ) {
         arylAtomId = neighborAtomId;
       }
@@ -202,8 +185,7 @@ function collectPhosphateArylLinkerDescriptors(layoutGraph, coords) {
     if (!phosphorusAtomId || !arylAtomId) {
       continue;
     }
-    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, arylAtomId, oxygenAtomId)]
-      .filter(atomId => coords.has(atomId));
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, arylAtomId, oxygenAtomId)].filter(atomId => coords.has(atomId));
     if (subtreeAtomIds.length === 0) {
       continue;
     }
@@ -224,10 +206,7 @@ function tailRootBendAngle(coords, descriptor) {
   if (!rootPosition || !anchorPosition || !middlePosition) {
     return IDEAL_TAIL_ROOT_BEND;
   }
-  return angularDifference(
-    angleOf(sub(anchorPosition, rootPosition)),
-    angleOf(sub(middlePosition, rootPosition))
-  );
+  return angularDifference(angleOf(sub(anchorPosition, rootPosition)), angleOf(sub(middlePosition, rootPosition)));
 }
 
 function tailRootBendPenalty(coords, descriptor) {
@@ -241,11 +220,7 @@ function tailAnchorExitPenalty(layoutGraph, coords, descriptor) {
   if (!anchorPosition || !rootPosition) {
     return 0;
   }
-  const outwardAngles = computeIncidentRingOutwardAngles(
-    layoutGraph,
-    descriptor.anchorAtomId,
-    atomId => coords.get(atomId) ?? null
-  );
+  const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, descriptor.anchorAtomId, atomId => coords.get(atomId) ?? null);
   if (outwardAngles.length === 0) {
     return 0;
   }
@@ -261,10 +236,7 @@ function phosphateLinkerAngle(coords, descriptor) {
   if (!phosphorusPosition || !oxygenPosition || !arylPosition) {
     return IDEAL_PHOSPHATE_LINKER_ANGLE;
   }
-  return angularDifference(
-    angleOf(sub(phosphorusPosition, oxygenPosition)),
-    angleOf(sub(arylPosition, oxygenPosition))
-  );
+  return angularDifference(angleOf(sub(phosphorusPosition, oxygenPosition)), angleOf(sub(arylPosition, oxygenPosition)));
 }
 
 function phosphateLinkerAnglePenalty(coords, descriptor) {
@@ -289,17 +261,8 @@ function descriptorCandidatePoses(layoutGraph, coords, descriptor, bondLength) {
     return [];
   }
   const currentRootAngle = angleOf(sub(rootPosition, anchorPosition));
-  const preferredRootAngles = computeIncidentRingOutwardAngles(
-    layoutGraph,
-    descriptor.anchorAtomId,
-    atomId => coords.get(atomId) ?? null
-  );
-  const rootAngles = mergeAngles([
-    currentRootAngle,
-    ...preferredRootAngles.flatMap(preferredAngle =>
-      ROOT_RESCUE_OFFSETS.map(offset => preferredAngle + offset)
-    )
-  ]);
+  const preferredRootAngles = computeIncidentRingOutwardAngles(layoutGraph, descriptor.anchorAtomId, atomId => coords.get(atomId) ?? null);
+  const rootAngles = mergeAngles([currentRootAngle, ...preferredRootAngles.flatMap(preferredAngle => ROOT_RESCUE_OFFSETS.map(offset => preferredAngle + offset))]);
 
   const poses = [];
   for (const rootAngle of rootAngles) {
@@ -329,10 +292,7 @@ function linkerCandidateAngles(coords, descriptor) {
 
   const currentAngle = angleOf(sub(arylPosition, oxygenPosition));
   const straightAngle = angleOf(sub(oxygenPosition, phosphorusPosition));
-  return mergeAngles([
-    currentAngle,
-    ...LINKER_RESCUE_OFFSETS.map(offset => straightAngle + offset)
-  ]);
+  return mergeAngles([currentAngle, ...LINKER_RESCUE_OFFSETS.map(offset => straightAngle + offset)]);
 }
 
 function applyTailPose(coords, descriptor, pose) {
@@ -403,10 +363,7 @@ function scorePhosphatePresentationGeometry(layoutGraph, coords, tailDescriptors
     bendPenalty,
     anchorExitPenalty,
     linkerAnglePenalty,
-    geometryScore:
-      bendPenalty * PHOSPHATE_TAIL_ROOT_SCORE_WEIGHT
-      + anchorExitPenalty * PHOSPHATE_TAIL_ANCHOR_SCORE_WEIGHT
-      + linkerAnglePenalty * PHOSPHATE_LINKER_SCORE_WEIGHT
+    geometryScore: bendPenalty * PHOSPHATE_TAIL_ROOT_SCORE_WEIGHT + anchorExitPenalty * PHOSPHATE_TAIL_ANCHOR_SCORE_WEIGHT + linkerAnglePenalty * PHOSPHATE_LINKER_SCORE_WEIGHT
   };
 }
 
@@ -423,14 +380,14 @@ function scorePhosphateTailCoords(layoutGraph, coords, bondLength, tailDescripto
     linkerAnglePenalty: geometry.linkerAnglePenalty,
     minimumClearance,
     score:
-      (audit.ok ? 0 : 100000)
-      + audit.severeOverlapCount * 20000
-      + audit.bondLengthFailureCount * 20000
-      + audit.ringSubstituentReadabilityFailureCount * 5000
-      + audit.outwardAxisRingSubstituentFailureCount * 5000
-      + crossingCount * 5000
-      + geometry.geometryScore * 500
-      - minimumClearance * 0.001
+      (audit.ok ? 0 : 100000) +
+      audit.severeOverlapCount * 20000 +
+      audit.bondLengthFailureCount * 20000 +
+      audit.ringSubstituentReadabilityFailureCount * 5000 +
+      audit.outwardAxisRingSubstituentFailureCount * 5000 +
+      crossingCount * 5000 +
+      geometry.geometryScore * 500 -
+      minimumClearance * 0.001
   };
 }
 
@@ -451,9 +408,7 @@ export function measurePhosphateArylTailPresentationPenalty(layoutGraph, coords)
     const crossingPenalty = descriptor.atomIds.some(atomId => crossingAtomIds.has(atomId)) ? 1 : 0;
     return sum + tailRootBendPenalty(coords, descriptor) + tailAnchorExitPenalty(layoutGraph, coords, descriptor) + crossingPenalty;
   }, 0);
-  const linkerPenalty = linkerDescriptors.reduce((sum, descriptor) => (
-    sum + phosphateLinkerAnglePenalty(coords, descriptor)
-  ), 0);
+  const linkerPenalty = linkerDescriptors.reduce((sum, descriptor) => sum + phosphateLinkerAnglePenalty(coords, descriptor), 0);
   const visibleCrossingPenalty = countVisibleHeavyBondCrossings(layoutGraph, coords) * 100;
   return tailPenalty + linkerPenalty + visibleCrossingPenalty;
 }
@@ -473,11 +428,7 @@ function selectActiveTailDescriptors(layoutGraph, coords, descriptors) {
         need: bendPenalty + anchorExitPenalty + (hasCrossing ? 1 : 0)
       };
     })
-    .filter(({ bendPenalty, anchorExitPenalty, hasCrossing }) => (
-      hasCrossing
-      || bendPenalty > PHOSPHATE_TAIL_BEND_NEED
-      || anchorExitPenalty > PHOSPHATE_TAIL_ANCHOR_EXIT_NEED
-    ))
+    .filter(({ bendPenalty, anchorExitPenalty, hasCrossing }) => hasCrossing || bendPenalty > PHOSPHATE_TAIL_BEND_NEED || anchorExitPenalty > PHOSPHATE_TAIL_ANCHOR_EXIT_NEED)
     .sort((first, second) => second.need - first.need)
     .slice(0, MAX_JOINT_TAIL_DESCRIPTORS)
     .map(({ descriptor }) => descriptor);
@@ -513,9 +464,7 @@ function optimizeTailPresentationCoords(layoutGraph, inputCoords, bondLength, ac
     };
   }
 
-  const candidatePoseSets = activeTailDescriptors.map(descriptor =>
-    descriptorCandidatePoses(layoutGraph, inputCoords, descriptor, bondLength)
-  );
+  const candidatePoseSets = activeTailDescriptors.map(descriptor => descriptorCandidatePoses(layoutGraph, inputCoords, descriptor, bondLength));
   if (candidatePoseSets.some(poses => poses.length === 0)) {
     return {
       coords: inputCoords,
@@ -523,10 +472,12 @@ function optimizeTailPresentationCoords(layoutGraph, inputCoords, bondLength, ac
     };
   }
 
-  let beam = [{
-    coords: inputCoords,
-    geometryScore: scorePhosphatePresentationGeometry(layoutGraph, inputCoords, allTailDescriptors, allLinkerDescriptors).geometryScore
-  }];
+  let beam = [
+    {
+      coords: inputCoords,
+      geometryScore: scorePhosphatePresentationGeometry(layoutGraph, inputCoords, allTailDescriptors, allLinkerDescriptors).geometryScore
+    }
+  ];
   for (let descriptorIndex = 0; descriptorIndex < activeTailDescriptors.length; descriptorIndex++) {
     const descriptor = activeTailDescriptors[descriptorIndex];
     const nextBeam = [];
@@ -598,15 +549,7 @@ export function runPhosphateArylTailTidy(layoutGraph, inputCoords, options = {})
 
   const visitLinkers = (descriptorIndex, coords) => {
     if (descriptorIndex >= activeLinkerDescriptors.length) {
-      const tailOptimized = optimizeTailPresentationCoords(
-        layoutGraph,
-        coords,
-        bondLength,
-        activeTailDescriptors,
-        tailDescriptors,
-        linkerDescriptors,
-        baseScore
-      );
+      const tailOptimized = optimizeTailPresentationCoords(layoutGraph, coords, bondLength, activeTailDescriptors, tailDescriptors, linkerDescriptors, baseScore);
       if (isBetterScoredPhosphateCandidate(tailOptimized.score, bestScore, baseScore)) {
         bestScore = tailOptimized.score;
         bestCoords = tailOptimized.coords;
@@ -626,10 +569,7 @@ export function runPhosphateArylTailTidy(layoutGraph, inputCoords, options = {})
   if (bestCoords === inputCoords) {
     return { coords: inputCoords, nudges: 0 };
   }
-  const movedAtomIds = new Set([
-    ...activeTailDescriptors.flatMap(descriptor => descriptor.atomIds),
-    ...activeLinkerDescriptors.flatMap(descriptor => descriptor.subtreeAtomIds)
-  ]);
+  const movedAtomIds = new Set([...activeTailDescriptors.flatMap(descriptor => descriptor.atomIds), ...activeLinkerDescriptors.flatMap(descriptor => descriptor.subtreeAtomIds)]);
   return {
     coords: bestCoords,
     nudges: movedAtomIds.size

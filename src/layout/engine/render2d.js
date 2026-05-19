@@ -7,10 +7,7 @@ import { parseINCHI } from '../../io/inchi.js';
 import { applyCoords } from './apply.js';
 import { generateCoords } from './api.js';
 import { getRingAtomIds } from './topology/ring-analysis.js';
-import {
-  DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
-  synthesizeDisplayedStereoHydrogenPosition
-} from './stereo/wedge-geometry.js';
+import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from './stereo/wedge-geometry.js';
 import {
   atomBBox,
   atomColor,
@@ -125,18 +122,11 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
       continue;
     }
     const bond = molecule.getBond(atom.id, parent.id);
-    const knownNeighbors = parent
-      .getNeighbors(molecule)
-      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null);
+    const knownNeighbors = parent.getNeighbors(molecule).filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null);
     const knownPositions = knownNeighbors.map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const protectedAtomIds = new Set([atom.id, parent.id, ...knownNeighbors.map(neighbor => neighbor.id)]);
     const avoidPositions = [...molecule.atoms.values()]
-      .filter(candidateAtom => (
-        !protectedAtomIds.has(candidateAtom.id)
-        && candidateAtom.visible !== false
-        && candidateAtom.x != null
-        && candidateAtom.y != null
-      ))
+      .filter(candidateAtom => !protectedAtomIds.has(candidateAtom.id) && candidateAtom.visible !== false && candidateAtom.x != null && candidateAtom.y != null)
       .map(candidateAtom => ({ x: candidateAtom.x, y: candidateAtom.y }));
     const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
@@ -270,8 +260,7 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, hCo
   const { nx, ny } = perpUnit(dx, dy);
 
   const lineElement = (x1, y1, x2, y2, dashed) =>
-    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` +
-    ` stroke="#222" stroke-width="${STROKE_W}"${dashed ? ' stroke-dasharray="3,3"' : ''}/>`;
+    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` + ` stroke="#222" stroke-width="${STROKE_W}"${dashed ? ' stroke-dasharray="3,3"' : ''}/>`;
 
   if (order === 1) {
     const trimmed = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
@@ -282,16 +271,7 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, hCo
     output.push(lineElement(primary.x1, primary.y1, primary.x2, primary.y2, false));
     const ox = nx * BOND_OFF * direction;
     const oy = ny * BOND_OFF * direction;
-    const shifted = shortenBondLineWithLabelClearance(
-      firstAtom,
-      secondAtom,
-      { x: start.x + ox, y: start.y + oy },
-      { x: end.x + ox, y: end.y + oy },
-      molecule,
-      toSVG,
-      hCounts,
-      4
-    );
+    const shifted = shortenBondLineWithLabelClearance(firstAtom, secondAtom, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, molecule, toSVG, hCounts, 4);
     output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, false));
   } else if (order === 3) {
     for (const distance of [-BOND_OFF, 0, BOND_OFF]) {
@@ -315,16 +295,7 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, hCo
     output.push(lineElement(primary.x1, primary.y1, primary.x2, primary.y2, false));
     const ox = nx * BOND_OFF * direction;
     const oy = ny * BOND_OFF * direction;
-    const shifted = shortenBondLineWithLabelClearance(
-      firstAtom,
-      secondAtom,
-      { x: start.x + ox, y: start.y + oy },
-      { x: end.x + ox, y: end.y + oy },
-      molecule,
-      toSVG,
-      hCounts,
-      5
-    );
+    const shifted = shortenBondLineWithLabelClearance(firstAtom, secondAtom, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, molecule, toSVG, hCounts, 5);
     output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, true));
   }
 
@@ -551,13 +522,7 @@ export function renderMolSVG(
     }
   }
 
-  const svgContent = [
-    `<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`,
-    ...bondElements,
-    ...labelElements,
-    ...lonePairElements,
-    ...chiralElements
-  ].join('\n');
+  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...bondElements, ...labelElements, ...lonePairElements, ...chiralElements].join('\n');
 
   return { svgContent, cellW, cellH };
 }

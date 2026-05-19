@@ -169,9 +169,7 @@ function derive2dCleanRefinementHints(molecule, { bondLength = DEFAULT_LAYOUT_BO
     }
     const length = Math.hypot(firstAtom.x - secondAtom.x, firstAtom.y - secondAtom.y);
     const bondIsInRing = typeof bond.isInRing === 'function' ? bond.isInRing(molecule) : false;
-    const isArylAdjacentRingBond =
-      bondIsInRing
-      && (firstAtom.properties?.aromatic === true || secondAtom.properties?.aromatic === true);
+    const isArylAdjacentRingBond = bondIsInRing && (firstAtom.properties?.aromatic === true || secondAtom.properties?.aromatic === true);
     const isOverstretched = length > bondLength + maxDeviation && !isArylAdjacentRingBond;
     const isCompressedNonRing = !bondIsInRing && length < bondLength - maxDeviation;
     if (!Number.isFinite(length) || (!isOverstretched && !isCompressedNonRing)) {

@@ -10,9 +10,7 @@ function componentAtomIdSet(componentOrAtomIds) {
 
 function componentRingSystems(layoutGraph, componentOrAtomIds) {
   const atomIds = componentAtomIdSet(componentOrAtomIds);
-  return (layoutGraph.ringSystems ?? []).filter(ringSystem =>
-    ringSystem.atomIds.every(atomId => atomIds.has(atomId))
-  );
+  return (layoutGraph.ringSystems ?? []).filter(ringSystem => ringSystem.atomIds.every(atomId => atomIds.has(atomId)));
 }
 
 function componentHeteroAtomCount(layoutGraph, componentOrAtomIds) {
@@ -28,9 +26,7 @@ function componentHeteroAtomCount(layoutGraph, componentOrAtomIds) {
 
 function ringSystemHasConnections(layoutGraph, ringSystem) {
   const ringIds = new Set(ringSystem.ringIds ?? []);
-  return (layoutGraph.ringConnections ?? []).some(connection =>
-    ringIds.has(connection.firstRingId) || ringIds.has(connection.secondRingId)
-  );
+  return (layoutGraph.ringConnections ?? []).some(connection => ringIds.has(connection.firstRingId) || ringIds.has(connection.secondRingId));
 }
 
 function isSimpleIsolatedRingSystem(layoutGraph, ringSystem) {
@@ -79,9 +75,7 @@ function ringLinkEdges(layoutGraph, ringSystems, componentAtomIds) {
         if (otherRingSystemId == null || otherRingSystemId === ringSystem.id) {
           continue;
         }
-        const edgeKey = ringSystem.id < otherRingSystemId
-          ? `${ringSystem.id}:${otherRingSystemId}`
-          : `${otherRingSystemId}:${ringSystem.id}`;
+        const edgeKey = ringSystem.id < otherRingSystemId ? `${ringSystem.id}:${otherRingSystemId}` : `${otherRingSystemId}:${ringSystem.id}`;
         if (seenEdgeKeys.has(edgeKey)) {
           continue;
         }
@@ -161,8 +155,7 @@ function orderedRingSystemIdsForPath(ringSystems, adjacency) {
   let currentRingSystemId = startRingSystemId;
   while (currentRingSystemId != null) {
     order.push(currentRingSystemId);
-    const nextRingSystemId = (adjacency.get(currentRingSystemId) ?? [])
-      .find(neighborId => neighborId !== previousRingSystemId) ?? null;
+    const nextRingSystemId = (adjacency.get(currentRingSystemId) ?? []).find(neighborId => neighborId !== previousRingSystemId) ?? null;
     previousRingSystemId = currentRingSystemId;
     currentRingSystemId = nextRingSystemId;
   }
@@ -205,8 +198,6 @@ export function describePathLikeIsolatedRingChain(layoutGraph, componentOrAtomId
     edges,
     adjacency,
     orderedRingSystemIds: orderedRingSystemIdsForPath(ringSystems, adjacency),
-    terminalRingSystemIds: ringSystems
-      .filter(ringSystem => (adjacency.get(ringSystem.id)?.length ?? 0) === 1)
-      .map(ringSystem => ringSystem.id)
+    terminalRingSystemIds: ringSystems.filter(ringSystem => (adjacency.get(ringSystem.id)?.length ?? 0) === 1).map(ringSystem => ringSystem.id)
   };
 }

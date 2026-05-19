@@ -141,10 +141,12 @@ function ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords) {
  * @returns {boolean} True when ligand positions should be treated as the fixed pocket.
  */
 function hasChelatingLigandPocket(layoutGraph, ligandAtomIds) {
-  return ligandAtomIds.filter(atomId => {
-    const atom = layoutGraph.atoms.get(atomId);
-    return atom && (atom.heavyDegree ?? 0) > 1;
-  }).length >= 2;
+  return (
+    ligandAtomIds.filter(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom && (atom.heavyDegree ?? 0) > 1;
+    }).length >= 2
+  );
 }
 
 /**

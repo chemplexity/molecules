@@ -20,10 +20,7 @@ function bondAngle(coords, firstAtomId, centerAtomId, secondAtomId) {
   assert.ok(first);
   assert.ok(center);
   assert.ok(second);
-  return angularDifference(
-    angleOf(sub(first, center)),
-    angleOf(sub(second, center))
-  );
+  return angularDifference(angleOf(sub(first, center)), angleOf(sub(second, center)));
 }
 
 function signedTurn(coords, firstAtomId, centerAtomId, secondAtomId) {
@@ -33,7 +30,7 @@ function signedTurn(coords, firstAtomId, centerAtomId, secondAtomId) {
   assert.ok(first);
   assert.ok(center);
   assert.ok(second);
-  return ((first.x - center.x) * (second.y - center.y)) - ((first.y - center.y) * (second.x - center.x));
+  return (first.x - center.x) * (second.y - center.y) - (first.y - center.y) * (second.x - center.x);
 }
 
 function ringOutwardDeviation(graph, coords, anchorAtomId, childAtomId) {
@@ -43,10 +40,7 @@ function ringOutwardDeviation(graph, coords, anchorAtomId, childAtomId) {
   assert.ok(child);
   const outwardAngles = computeIncidentRingOutwardAngles(graph, anchorAtomId, atomId => coords.get(atomId) ?? null);
   assert.ok(outwardAngles.length > 0);
-  return angularDifference(
-    angleOf(sub(child, anchor)),
-    outwardAngles[0]
-  );
+  return angularDifference(angleOf(sub(child, anchor)), outwardAngles[0]);
 }
 
 function preferredRingAttachmentAngle(graph, coords, anchorAtomId) {
@@ -160,26 +154,17 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   });
 
   it('keeps later post-hook cleanup from worsening a borderline ring-substituent readability case', () => {
-    const result = runPipeline(
-      parseSMILES('Cc1cc(NC(=O)CCSc2nc(cc(n2)C(F)(F)F)c3occc3)n(n1)c4ccccc4'),
-      { suppressH: true, auditTelemetry: true }
-    );
+    const result = runPipeline(parseSMILES('Cc1cc(NC(=O)CCSc2nc(cc(n2)C(F)(F)F)c3occc3)n(n1)c4ccccc4'), { suppressH: true, auditTelemetry: true });
     const presentationCleanupAudit = result.metadata.stageTelemetry.stageAudits.presentationCleanup;
 
-    assert.ok(
-      result.metadata.audit.ringSubstituentReadabilityFailureCount
-      <= presentationCleanupAudit.ringSubstituentReadabilityFailureCount
-    );
+    assert.ok(result.metadata.audit.ringSubstituentReadabilityFailureCount <= presentationCleanupAudit.ringSubstituentReadabilityFailureCount);
     assert.ok(result.metadata.audit.severeOverlapCount <= presentationCleanupAudit.severeOverlapCount);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
   });
 
   it('does not rotate an attached anisole ring into a reverse-side outward readability failure', () => {
-    const result = runPipeline(
-      parseSMILES('CCOC(=O)C1C(CC2=NC(=C(C(C2=C1O)c3ccccn3)C(=O)OCC)C)c4ccc(OC)cc4'),
-      { suppressH: true, auditTelemetry: true }
-    );
+    const result = runPipeline(parseSMILES('CCOC(=O)C1C(CC2=NC(=C(C(C2=C1O)c3ccccn3)C(=O)OCC)C)c4ccc(OC)cc4'), { suppressH: true, auditTelemetry: true });
     const presentationCleanupAudit = result.metadata.stageTelemetry.stageAudits.presentationCleanup;
 
     assert.equal(presentationCleanupAudit.ringSubstituentReadabilityFailureCount, 0);
@@ -299,10 +284,7 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   });
 
   it('skips late ring touchups when the incumbent layout is already ring-clean', () => {
-    const result = runPipeline(
-      parseSMILES('CC([NH3+])C1=CC=C(CC(=O)NC2CC(NC3=CC(Cl)=CC(Cl)=C23)C([O-])=O)C=C1'),
-      { suppressH: true, auditTelemetry: true }
-    );
+    const result = runPipeline(parseSMILES('CC([NH3+])C1=CC=C(CC(=O)NC2CC(NC3=CC(Cl)=CC(Cl)=C23)C([O-])=O)C=C1'), { suppressH: true, auditTelemetry: true });
 
     assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
     assert.equal(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryCheckpoint');
@@ -313,10 +295,7 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   });
 
   it('keeps aromatic attached-ring layouts on the late ring-touchup evaluation path even when placement remains selected', () => {
-    const result = runPipeline(
-      parseSMILES('CC(C1=NN=C2C=CC(=NN12)C1=CC=C2N=CSC2=C1)C1=CC=C2N=CC=CC2=C1'),
-      { suppressH: true, auditTelemetry: true }
-    );
+    const result = runPipeline(parseSMILES('CC(C1=NN=C2C=CC(=NN12)C1=CC=C2N=CSC2=C1)C1=CC=C2N=CC=CC2=C1'), { suppressH: true, auditTelemetry: true });
 
     assert.ok('presentationCleanup' in result.metadata.stageTelemetry.stageAudits);
     assert.equal(result.metadata.cleanupTelemetry?.stages?.presentationCleanup?.ran, true);
@@ -345,14 +324,8 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       bondLength: normalizedOptions.bondLength,
       bondValidationClasses: placement.bondValidationClasses
     });
-    const leftDeviation = angularDifference(
-      angleOf(sub(tidied.coords.get('O16'), tidied.coords.get('C15'))),
-      preferredRingAttachmentAngle(graph, tidied.coords, 'C15')
-    );
-    const rightDeviation = angularDifference(
-      angleOf(sub(tidied.coords.get('O16'), tidied.coords.get('C17'))),
-      preferredRingAttachmentAngle(graph, tidied.coords, 'C17')
-    );
+    const leftDeviation = angularDifference(angleOf(sub(tidied.coords.get('O16'), tidied.coords.get('C15'))), preferredRingAttachmentAngle(graph, tidied.coords, 'C15'));
+    const rightDeviation = angularDifference(angleOf(sub(tidied.coords.get('O16'), tidied.coords.get('C17'))), preferredRingAttachmentAngle(graph, tidied.coords, 'C17'));
 
     assert.ok(leftDeviation < 1e-6, `expected the left diaryl-ether exit to become exact, got ${leftDeviation}`);
     assert.ok(rightDeviation < 1e-6, `expected the right diaryl-ether exit to stay exact, got ${rightDeviation}`);
@@ -370,9 +343,7 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       }
       const firstRingCount = graph.atomToRings.get(bond.a)?.length ?? 0;
       const secondRingCount = graph.atomToRings.get(bond.b)?.length ?? 0;
-      return firstRingCount !== secondRingCount
-        && graph.atoms.get(bond.a)?.element !== 'H'
-        && graph.atoms.get(bond.b)?.element !== 'H';
+      return firstRingCount !== secondRingCount && graph.atoms.get(bond.a)?.element !== 'H' && graph.atoms.get(bond.b)?.element !== 'H';
     });
     assert.ok(leafBond);
     const anchorAtomId = (graph.atomToRings.get(leafBond.a)?.length ?? 0) > 0 ? leafBond.a : leafBond.b;
@@ -380,15 +351,12 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     const anchorPosition = coords.get(anchorAtomId);
     const ring = (graph.atomToRings.get(anchorAtomId) ?? [])[0];
     const preferredAngle = angleOf(sub(anchorPosition, centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
-    const badAngle = preferredAngle + (Math.PI / 3);
+    const badAngle = preferredAngle + Math.PI / 3;
     coords.set(leafAtomId, add(anchorPosition, fromAngle(badAngle, graph.options.bondLength)));
 
     const beforeDeviation = angularDifference(angleOf(sub(coords.get(leafAtomId), anchorPosition)), preferredAngle);
     const tidied = runRingSubstituentTidy(graph, coords, { bondLength: graph.options.bondLength });
-    const afterDeviation = angularDifference(
-      angleOf(sub(tidied.coords.get(leafAtomId), tidied.coords.get(anchorAtomId))),
-      preferredAngle
-    );
+    const afterDeviation = angularDifference(angleOf(sub(tidied.coords.get(leafAtomId), tidied.coords.get(anchorAtomId))), preferredAngle);
     const afterAudit = auditLayout(graph, tidied.coords, { bondLength: graph.options.bondLength });
 
     assert.ok(beforeDeviation > 0.5, `expected the seeded terminal leaf to start off-angle, got ${beforeDeviation.toFixed(6)} rad`);
@@ -399,21 +367,12 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   });
 
   it('keeps the representative multi-methoxy fused-ring readability case outward and audit-clean in the full pipeline', () => {
-    const result = runPipeline(
-      parseSMILES('[H][C@]12C[C@@H](OC(=O)C3=CC(OC)=C(OC)C(OC)=C3)[C@H](OC)[C@@H](C(=O)OC)[C@@]1([H])C[C@@]1([H])N(CCC3=C1NC1=C3C=CC(OC)=C1)C2'),
-      { suppressH: true }
-    );
+    const result = runPipeline(parseSMILES('[H][C@]12C[C@@H](OC(=O)C3=CC(OC)=C(OC)C(OC)=C3)[C@H](OC)[C@@H](C(=O)OC)[C@@]1([H])C[C@@]1([H])N(CCC3=C1NC1=C3C=CC(OC)=C1)C2'), { suppressH: true });
 
     const attachedRingDeviation = ringOutwardDeviation(result.layoutGraph, result.coords, 'C9', 'C7');
 
-    assert.ok(
-      attachedRingDeviation < 1e-6,
-      `expected the anisole-linked carbonyl root to stay on the exact outward axis, got ${attachedRingDeviation}`
-    );
-    assert.ok(
-      signedTurn(result.coords, 'C4', 'O6', 'C7') > 0,
-      'expected the ester subtree to keep the preferred swung-down mirror at O6'
-    );
+    assert.ok(attachedRingDeviation < 1e-6, `expected the anisole-linked carbonyl root to stay on the exact outward axis, got ${attachedRingDeviation}`);
+    assert.ok(signedTurn(result.coords, 'C4', 'O6', 'C7') > 0, 'expected the ester subtree to keep the preferred swung-down mirror at O6');
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });

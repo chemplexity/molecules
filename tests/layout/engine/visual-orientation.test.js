@@ -128,7 +128,6 @@ describe('layout/engine/visual-orientation', () => {
     assertHorizontal(chromane);
     assertVerticalBond(chromane.coords, 'C5', 'C10');
     assert.ok(chromane.coords.get('O4').x > chromane.coords.get('C5').x);
-
   });
 
   it('keeps aromatic heterocycles in their expected canonical compass orientations', () => {
@@ -267,12 +266,10 @@ describe('layout/engine/visual-orientation', () => {
   });
 
   it('keeps safe fused-junction stereobonds on the exact continuation of the shared junction bond', () => {
-    const fusedSugar = runPipeline(
-      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
-      { suppressH: true }
-    );
+    const fusedSugar = runPipeline(parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'), { suppressH: true });
     const c7Assignment = pickWedgeAssignments(fusedSugar.layoutGraph, fusedSugar.coords).assignments.find(assignment => assignment.centerId === 'C7');
-    const ringNeighborIds = fusedSugar.layoutGraph.sourceMolecule.atoms.get('C7')
+    const ringNeighborIds = fusedSugar.layoutGraph.sourceMolecule.atoms
+      .get('C7')
       .getNeighbors(fusedSugar.layoutGraph.sourceMolecule)
       .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== 'O8' && (fusedSugar.layoutGraph.ringCountByAtomId.get(neighborAtom.id) ?? 0) > 0)
       .map(neighborAtom => neighborAtom.id);
@@ -298,5 +295,4 @@ describe('layout/engine/visual-orientation', () => {
     assert.ok(Math.abs(histidineLike.coords.get('C1').y - histidineLike.coords.get('C4').y) < 1e-6);
     assert.ok(Math.abs(histidineLike.coords.get('C2').y - histidineLike.coords.get('N3').y) < 1e-6);
   });
-
 });

@@ -79,10 +79,7 @@ describe('parseSMILES', () => {
     assert.equal([...mol.bonds.values()].filter(bond => bond.properties.order === 1.5 && bond.properties.aromatic !== true).length, 0);
     assert.ok(
       [...mol.bonds.values()].some(
-        bond =>
-          ((bond.atoms[0] === 'C23' && bond.atoms[1] === 'C25') || (bond.atoms[0] === 'C25' && bond.atoms[1] === 'C23')) &&
-          bond.properties.order === 1 &&
-          bond.properties.aromatic === false
+        bond => ((bond.atoms[0] === 'C23' && bond.atoms[1] === 'C25') || (bond.atoms[0] === 'C25' && bond.atoms[1] === 'C23')) && bond.properties.order === 1 && bond.properties.aromatic === false
       )
     );
   });
@@ -95,8 +92,7 @@ describe('parseSMILES', () => {
   });
 
   it('keeps dot-separated standalone bracket hydrogens attached to the following chiral fragment', () => {
-    const smiles =
-      String.raw`[Na+].[H][C@]12C[C@@H](O)[C@H](<\C=C[C@@H](O)C(C)CC#CC>)[C@@]1([H])C1=CC=CC(CCCC([O-])=O)=C1O2`;
+    const smiles = String.raw`[Na+].[H][C@]12C[C@@H](O)[C@H](<\C=C[C@@H](O)C(C)CC#CC>)[C@@]1([H])C1=CC=CC(CCCC([O-])=O)=C1O2`;
     const mol = parseSMILES(smiles);
     const hydrogenOnlyBondCount = [...mol.bonds.values()].filter(bond => bond.atoms.map(id => mol.atoms.get(id)).every(atom => atom?.name === 'H')).length;
     assert.equal(validateValence(mol).length, 0);

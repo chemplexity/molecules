@@ -44,10 +44,7 @@ function macrocycleLocalOutwardAngle(rings, coords, atomId) {
     .map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean))
     .filter(points => points.length >= 3)
     .map(points => centroid(points));
-  const center =
-    incidentCenters.length > 0
-      ? centroid(incidentCenters)
-      : centroid([...coords.values()]);
+  const center = incidentCenters.length > 0 ? centroid(incidentCenters) : centroid([...coords.values()]);
   if (!center) {
     return null;
   }
@@ -69,7 +66,7 @@ function previewMacrocycleExocyclicRoots(layoutGraph, rings, coords, bondLength)
     return coords;
   }
 
-  const previewCoords = new Map(coords);
+  let previewCoords = null;
   const ringAtomIds = new Set(rings.flatMap(ring => ring.atomIds));
   const previewedRootIds = new Set();
   for (const anchorAtomId of ringAtomIds) {
@@ -94,14 +91,14 @@ function previewMacrocycleExocyclicRoots(layoutGraph, rings, coords, bondLength)
       if (!rootAtom || rootAtom.element === 'H' || rootAtom.visible === false) {
         continue;
       }
+      previewCoords ??= new Map(coords);
       previewCoords.set(rootAtomId, add(anchorPosition, fromAngle(outwardAngle, bondLength)));
       previewedRootIds.add(rootAtomId);
     }
   }
 
-  return previewCoords;
+  return previewCoords ?? coords;
 }
-
 
 /**
  * Normalizes an angle into the signed `(-pi, pi]` range.
@@ -342,10 +339,7 @@ function fitRegularPolygonCandidatesToPlacedAtoms(ring, coords, radius) {
     const predicted = new Map();
     for (let index = 0; index < ring.atomIds.length; index++) {
       const templatePoint = fromAngle(rotationSign * index * angleStep, radius);
-      predicted.set(
-        ring.atomIds[index],
-        add(observedCentroid, rotate(sub(templatePoint, templateCentroid), rotation))
-      );
+      predicted.set(ring.atomIds[index], add(observedCentroid, rotate(sub(templatePoint, templateCentroid), rotation)));
     }
 
     let score = 0;
@@ -394,7 +388,7 @@ function solveArcStepAngle(chordLength, segmentCount, bondLength) {
   let high = Math.PI - 1e-6;
   for (let iteration = 0; iteration < 80; iteration++) {
     const mid = (low + high) / 2;
-    const estimate = bondLength * Math.sin((segmentCount * mid) / 2) / Math.sin(mid / 2);
+    const estimate = (bondLength * Math.sin((segmentCount * mid) / 2)) / Math.sin(mid / 2);
     if (estimate > chordLength) {
       low = mid;
     } else {
@@ -740,26 +734,20 @@ function growRemainingRingAtoms(rings, coords, bondLength, layoutGraph = null) {
         const bridgeFits = singleMissingAtomBridgeFits(ring, coords, bondLength);
         let selectedCandidate = null;
         for (const bridgeFit of bridgeFits) {
-          const bridgeCandidate = layoutGraph
-            ? scoreRingCompletionCandidate(layoutGraph, coords, bridgeFit, bondLength, rings)
-            : { predictedCoords: bridgeFit };
+          const bridgeCandidate = layoutGraph ? scoreRingCompletionCandidate(layoutGraph, coords, bridgeFit, bondLength, rings) : { predictedCoords: bridgeFit };
           if (isBetterRingCompletionCandidate(bridgeCandidate, selectedCandidate)) {
             selectedCandidate = bridgeCandidate;
           }
         }
         for (const fitted of fittedCandidates) {
           const fittedMissingCoords = new Map(unplacedIds.map(atomId => [atomId, fitted.predicted.get(atomId)]).filter(([, position]) => Boolean(position)));
-          const fittedCandidate = layoutGraph
-            ? scoreRingCompletionCandidate(layoutGraph, coords, fittedMissingCoords, bondLength, rings)
-            : { predictedCoords: fittedMissingCoords };
+          const fittedCandidate = layoutGraph ? scoreRingCompletionCandidate(layoutGraph, coords, fittedMissingCoords, bondLength, rings) : { predictedCoords: fittedMissingCoords };
           if (isBetterRingCompletionCandidate(fittedCandidate, selectedCandidate)) {
             selectedCandidate = fittedCandidate;
           }
         }
         for (const arcFit of arcFits) {
-          const arcCandidate = layoutGraph
-            ? scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength, rings)
-            : { predictedCoords: arcFit.predicted };
+          const arcCandidate = layoutGraph ? scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength, rings) : { predictedCoords: arcFit.predicted };
           if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate)) {
             selectedCandidate = arcCandidate;
           }
@@ -878,6 +866,17 @@ function isBetterMacrocycleSeed(candidate, incumbent) {
   return candidate.candidatePenalty < incumbent.candidatePenalty;
 }
 
+function isCleanMacrocycleSeed(candidate) {
+  return (
+    candidate?.audit?.severeOverlapCount === 0 &&
+    candidate.audit.bondLengthFailureCount === 0 &&
+    (candidate.audit.visibleHeavyBondCrossingCount ?? 0) === 0 &&
+    (candidate.previewAudit?.severeOverlapCount ?? 0) === 0 &&
+    (candidate.previewAudit?.visibleHeavyBondCrossingCount ?? 0) === 0 &&
+    (candidate.previewAudit?.ringSubstituentReadabilityFailureCount ?? 0) === 0
+  );
+}
+
 /**
  * Generates the seed candidates to try for one macrocycle system.
  * Dense multi-ring macrocycles can be sensitive to where the perimeter starts
@@ -889,12 +888,7 @@ function isBetterMacrocycleSeed(candidate, incumbent) {
 function macrocycleSeedCandidates(primaryRing, aspectRatio) {
   const baseStartAngle = Math.PI / 2;
   const halfStep = Math.PI / primaryRing.atomIds.length;
-  const aspectRatios = [
-    aspectRatio,
-    Math.min(aspectRatio + 0.12, 2.05),
-    Math.max(aspectRatio, 1.9),
-    Math.max(aspectRatio, 2.2)
-  ];
+  const aspectRatios = [aspectRatio, Math.min(aspectRatio + 0.12, 2.05), Math.max(aspectRatio, 1.9), Math.max(aspectRatio, 2.2)];
   const offsetCount = Math.min(primaryRing.atomIds.length, 24);
   const startOffsets = [0];
   for (let offsetIndex = 1; offsetIndex <= offsetCount; offsetIndex++) {
@@ -940,23 +934,18 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
   const center = options.center ?? vec(0, 0);
   const aspectRatio = macrocycleAspectRatio(primaryRing.size);
   let bestSeed = null;
+  const canAcceptCleanBaseSeed = options.layoutGraph && rings.length === 1;
 
   for (const candidate of macrocycleSeedCandidates(primaryRing, aspectRatio)) {
     if (!options.layoutGraph && candidate.candidatePenalty > 0) {
       continue;
     }
     const baseScale = solveEllipseScale(primaryRing.size, bondLength, candidate.aspectRatio, candidate.startAngle);
-    const seedCoords = seedMacrocycleEllipse(
-      primaryRing,
-      center,
-      baseScale * candidate.aspectRatio,
-      baseScale / candidate.aspectRatio,
-      candidate.startAngle
-    );
+    const seedCoords = seedMacrocycleEllipse(primaryRing, center, baseScale * candidate.aspectRatio, baseScale / candidate.aspectRatio, candidate.startAngle);
     const coords = completeMacrocycleSeed(rings, primaryRing, seedCoords, bondLength, options.layoutGraph ?? null);
     const audit = options.layoutGraph ? auditLayout(options.layoutGraph, coords, { bondLength }) : { severeOverlapCount: 0, bondLengthFailureCount: 0, maxBondLengthDeviation: 0 };
     const auditCoords = previewMacrocycleExocyclicRoots(options.layoutGraph ?? null, rings, coords, bondLength);
-    const previewAudit = options.layoutGraph ? auditLayout(options.layoutGraph, auditCoords, { bondLength }) : audit;
+    const previewAudit = options.layoutGraph && auditCoords !== coords ? auditLayout(options.layoutGraph, auditCoords, { bondLength }) : audit;
     const scoredCandidate = {
       coords,
       audit,
@@ -965,6 +954,9 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
     };
     if (isBetterMacrocycleSeed(scoredCandidate, bestSeed)) {
       bestSeed = scoredCandidate;
+    }
+    if (canAcceptCleanBaseSeed && candidate.candidatePenalty === 0 && isCleanMacrocycleSeed(scoredCandidate)) {
+      break;
     }
   }
 

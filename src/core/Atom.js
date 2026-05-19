@@ -56,18 +56,7 @@ export class Atom {
   constructor(
     id,
     name,
-    {
-      charge = 0,
-      aromatic = false,
-      protons = undefined,
-      neutrons = undefined,
-      electrons = undefined,
-      group = 0,
-      period = 0,
-      radical = 0,
-      chirality = null,
-      reaction = undefined
-    } = {}
+    { charge = 0, aromatic = false, protons = undefined, neutrons = undefined, electrons = undefined, group = 0, period = 0, radical = 0, chirality = null, reaction = undefined } = {}
   ) {
     /** @type {string} Unique identifier for this atom. */
     this.id = id ?? `${++Atom._nextId}`;

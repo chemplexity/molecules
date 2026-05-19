@@ -182,8 +182,7 @@ function buildCoreAnchoredRigidSubtrees(layoutGraph, component, placementAtomIds
       }
 
       const rootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
-      const allowTerminalMultipleBondRoot =
-        isTerminalMultipleBondHeteroRoot(layoutGraph, bond, anchorAtomId, rootAtomId);
+      const allowTerminalMultipleBondRoot = isTerminalMultipleBondHeteroRoot(layoutGraph, bond, anchorAtomId, rootAtomId);
       if (bond.kind === 'covalent' && (bond.inRing || ((bond.order ?? 1) !== 1 && !allowTerminalMultipleBondRoot))) {
         continue;
       }
@@ -209,10 +208,10 @@ function buildCoreAnchoredRigidSubtrees(layoutGraph, component, placementAtomIds
 
       const heavyAtomCount = subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
       if (
-        heavyAtomCount === 0
-        || heavyAtomCount > PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS.maxHeavyAtomCount
-        || subtreeAtomIds.length > PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS.maxAtomCount
-        || subtreeAtomIds.length >= componentAtomCount * PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS.maxComponentFraction
+        heavyAtomCount === 0 ||
+        heavyAtomCount > PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS.maxHeavyAtomCount ||
+        subtreeAtomIds.length > PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS.maxAtomCount ||
+        subtreeAtomIds.length >= componentAtomCount * PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS.maxComponentFraction
       ) {
         continue;
       }
@@ -237,23 +236,16 @@ function buildProtectedFamilyCleanupRigidSubtreesByAtomId(layoutGraph, component
   const protectedDescriptors = new Map();
   const macrocycleAtomIds = componentMacrocycleAtomIds(macrocycleRings, component);
   if (macrocycleAtomIds.size > 0) {
-    mergeCleanupRigidSubtreesByAtomId(
-      protectedDescriptors,
-      buildCoreAnchoredRigidSubtrees(layoutGraph, component, placement.atomIds, macrocycleAtomIds)
-    );
+    mergeCleanupRigidSubtreesByAtomId(protectedDescriptors, buildCoreAnchoredRigidSubtrees(layoutGraph, component, placement.atomIds, macrocycleAtomIds));
   }
 
   const shouldUseRingCoreDescriptors =
-    placement.family === 'bridged'
-    || placement.family === 'fused'
-    || (placement.family === 'mixed'
-      && (componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'fused')));
+    placement.family === 'bridged' ||
+    placement.family === 'fused' ||
+    (placement.family === 'mixed' && (componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'fused')));
   if (shouldUseRingCoreDescriptors) {
     const ringCoreAtomIds = new Set(component.atomIds.filter(atomId => layoutGraph.ringAtomIdSet?.has(atomId)));
-    mergeCleanupRigidSubtreesByAtomId(
-      protectedDescriptors,
-      buildCoreAnchoredRigidSubtrees(layoutGraph, component, placement.atomIds, ringCoreAtomIds)
-    );
+    mergeCleanupRigidSubtreesByAtomId(protectedDescriptors, buildCoreAnchoredRigidSubtrees(layoutGraph, component, placement.atomIds, ringCoreAtomIds));
   }
 
   const metalAtomIds = componentMetalAtomIds(layoutGraph, component);
@@ -363,38 +355,26 @@ function isClearlyWorseMacrocyclePlacementPreScore(candidateScore, incumbentScor
   if (candidateScore.pre.collapsedMacrocycleCount > incumbentScore.pre.collapsedMacrocycleCount) {
     return true;
   }
-  if (
-    candidateScore.pre.overlapState.bondDeviation.failingBondCount >
-    incumbentScore.pre.overlapState.bondDeviation.failingBondCount + 2
-  ) {
+  if (candidateScore.pre.overlapState.bondDeviation.failingBondCount > incumbentScore.pre.overlapState.bondDeviation.failingBondCount + 2) {
     return true;
   }
   if (candidateScore.pre.overlapState.overlapCount > incumbentScore.pre.overlapState.overlapCount + 1) {
     return true;
   }
-  return (
-    candidateScore.pre.overlapState.bondDeviation.maxDeviation >
-    incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35
-  );
+  return candidateScore.pre.overlapState.bondDeviation.maxDeviation > incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35;
 }
 
 function isClearlyWorsePlacementPreScore(candidateScore, incumbentScore) {
   if (!candidateScore || !incumbentScore) {
     return false;
   }
-  if (
-    candidateScore.pre.overlapState.bondDeviation.failingBondCount >
-    incumbentScore.pre.overlapState.bondDeviation.failingBondCount + 2
-  ) {
+  if (candidateScore.pre.overlapState.bondDeviation.failingBondCount > incumbentScore.pre.overlapState.bondDeviation.failingBondCount + 2) {
     return true;
   }
   if (candidateScore.pre.overlapState.overlapCount > incumbentScore.pre.overlapState.overlapCount + 1) {
     return true;
   }
-  return (
-    candidateScore.pre.overlapState.bondDeviation.maxDeviation >
-    incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35
-  );
+  return candidateScore.pre.overlapState.bondDeviation.maxDeviation > incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35;
 }
 
 function isMacrocyclePreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
@@ -485,8 +465,10 @@ function shouldTryOrganometallicMixedRingRescue(layoutGraph, component, familyPl
   if (componentRingCount(layoutGraph, component) < ORGANOMETALLIC_RESCUE_LIMITS.mixedRingSystemRescueMinRingCount) {
     return false;
   }
-  return componentHasRingConnectionKind(layoutGraph, component, 'fused')
-    && (componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'spiro'));
+  return (
+    componentHasRingConnectionKind(layoutGraph, component, 'fused') &&
+    (componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'spiro'))
+  );
 }
 
 function rescueMixedMetalRingPlacement(layoutGraph, component, familyPlacement, macrocycleRings = []) {
@@ -497,9 +479,7 @@ function rescueMixedMetalRingPlacement(layoutGraph, component, familyPlacement, 
   let bestPlacement = familyPlacement;
   let bestScore = placementAuditScore(layoutGraph, familyPlacement);
   const candidateFamilies = [
-    ...(componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'spiro')
-      ? ['bridged']
-      : []),
+    ...(componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'spiro') ? ['bridged'] : []),
     ...(componentHasRingConnectionKind(layoutGraph, component, 'fused') ? ['fused'] : [])
   ];
 
@@ -528,23 +508,12 @@ function rescueLargeComponentSlicePlacement(layoutGraph, component, familyPlacem
     return familyPlacement;
   }
 
-  let slicePlacement = withProtectedCleanupRigidSubtrees(
-    layoutGraph,
-    component,
-    layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength),
-    macrocycleRings
-  );
+  let slicePlacement = withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings);
   if (componentContainsMetal(layoutGraph, component)) {
     slicePlacement = rescueMixedMetalRingPlacement(layoutGraph, component, slicePlacement, macrocycleRings);
   }
 
-  return isMacrocyclePreferredPlacement(
-    layoutGraph,
-    placementAuditScore(layoutGraph, slicePlacement),
-    placementAuditScore(layoutGraph, familyPlacement)
-  )
-    ? slicePlacement
-    : familyPlacement;
+  return isMacrocyclePreferredPlacement(layoutGraph, placementAuditScore(layoutGraph, slicePlacement), placementAuditScore(layoutGraph, familyPlacement)) ? slicePlacement : familyPlacement;
 }
 
 /**
@@ -558,42 +527,31 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
   if (isLargeComponent(layoutGraph, component)) {
     const containsMacrocycle = componentContainsMacrocycle(macrocycleRings, component);
     const containsMetal = componentContainsMetal(layoutGraph, component);
-    let slicePlacement = (containsMacrocycle || containsMetal)
-      ? withProtectedCleanupRigidSubtrees(
-          layoutGraph,
-          component,
-          layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength),
-          macrocycleRings
-        )
-      : null;
+    let slicePlacement =
+      containsMacrocycle || containsMetal ? withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings) : null;
     if (slicePlacement && containsMetal) {
       slicePlacement = rescueMixedMetalRingPlacement(layoutGraph, component, slicePlacement, macrocycleRings);
     }
     const largeMolecule = layoutLargeMoleculeFamily(layoutGraph, component, layoutGraph.options.bondLength);
-    const largePlacement =
-      largeMolecule
-        ? (() => {
-            const participantAtomIds = component.atomIds.filter(atomId => {
-              const atom = layoutGraph.atoms.get(atomId);
-              return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
-            });
-            return {
-              family: 'large-molecule',
-              supported: true,
-              atomIds: participantAtomIds,
-              coords: largeMolecule.coords,
-              placementMode: largeMolecule.placementMode,
-              bondValidationClasses: largeMolecule.bondValidationClasses,
-              displayAssignments: [],
-              cleanupRigidSubtreesByAtomId: largeMolecule.cleanupRigidSubtreesByAtomId
-            };
-          })()
-        : null;
-    const preferredPlacement = isMacrocyclePreferredPlacement(
-      layoutGraph,
-      placementAuditScore(layoutGraph, slicePlacement),
-      placementAuditScore(layoutGraph, largePlacement)
-    )
+    const largePlacement = largeMolecule
+      ? (() => {
+          const participantAtomIds = component.atomIds.filter(atomId => {
+            const atom = layoutGraph.atoms.get(atomId);
+            return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
+          });
+          return {
+            family: 'large-molecule',
+            supported: true,
+            atomIds: participantAtomIds,
+            coords: largeMolecule.coords,
+            placementMode: largeMolecule.placementMode,
+            bondValidationClasses: largeMolecule.bondValidationClasses,
+            displayAssignments: [],
+            cleanupRigidSubtreesByAtomId: largeMolecule.cleanupRigidSubtreesByAtomId
+          };
+        })()
+      : null;
+    const preferredPlacement = isMacrocyclePreferredPlacement(layoutGraph, placementAuditScore(layoutGraph, slicePlacement), placementAuditScore(layoutGraph, largePlacement))
       ? slicePlacement
       : largePlacement;
     if (preferredPlacement) {
@@ -601,12 +559,7 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
     }
   }
 
-  let familyPlacement = withProtectedCleanupRigidSubtrees(
-    layoutGraph,
-    component,
-    layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength),
-    macrocycleRings
-  );
+  let familyPlacement = withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings);
   if (!componentContainsMetal(layoutGraph, component)) {
     return familyPlacement;
   }
@@ -629,26 +582,27 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
     };
   }
 
-  const organometallicPlacement = withProtectedCleanupRigidSubtrees(layoutGraph, component, {
-    family: 'organometallic',
-    supported: true,
-    atomIds: familyPlacement.atomIds,
-    coords: organometallic.coords,
-    placementMode: organometallic.placementMode,
-    bondValidationClasses: organometallic.bondValidationClasses ?? assignBondValidationClass(layoutGraph, familyPlacement.atomIds, 'planar'),
-    displayAssignments: organometallic.displayAssignments,
-    cleanupRigidSubtreesByAtomId: organometallic.cleanupRigidSubtreesByAtomId
-  }, macrocycleRings);
+  const organometallicPlacement = withProtectedCleanupRigidSubtrees(
+    layoutGraph,
+    component,
+    {
+      family: 'organometallic',
+      supported: true,
+      atomIds: familyPlacement.atomIds,
+      coords: organometallic.coords,
+      placementMode: organometallic.placementMode,
+      bondValidationClasses: organometallic.bondValidationClasses ?? assignBondValidationClass(layoutGraph, familyPlacement.atomIds, 'planar'),
+      displayAssignments: organometallic.displayAssignments,
+      cleanupRigidSubtreesByAtomId: organometallic.cleanupRigidSubtreesByAtomId
+    },
+    macrocycleRings
+  );
 
   if (!familyPlacement.supported) {
     return organometallicPlacement;
   }
 
-  return isOrganometallicPreferredPlacement(
-    layoutGraph,
-    placementAuditScore(layoutGraph, organometallicPlacement),
-    placementAuditScore(layoutGraph, familyPlacement)
-  )
+  return isOrganometallicPreferredPlacement(layoutGraph, placementAuditScore(layoutGraph, organometallicPlacement), placementAuditScore(layoutGraph, familyPlacement))
     ? organometallicPlacement
     : familyPlacement;
 }
@@ -752,10 +706,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       continue;
     }
 
-    const aligned =
-      layoutGraph.options.preserveFixed === false
-        ? { coords: placement.coords, anchored: false }
-        : alignCoordsToFixed(placement.coords, placement.atomIds, componentGraph.fixedCoords);
+    const aligned = layoutGraph.options.preserveFixed === false ? { coords: placement.coords, anchored: false } : alignCoordsToFixed(placement.coords, placement.atomIds, componentGraph.fixedCoords);
 
     componentPlacements.push({
       componentId: component.id,

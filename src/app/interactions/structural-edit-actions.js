@@ -3,10 +3,7 @@
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
-import {
-  DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
-  synthesizeHydrogenPosition
-} from '../../layout/engine/stereo/wedge-geometry.js';
+import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 const DEFAULT_2D_BOND_LENGTH = 1.5;

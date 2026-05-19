@@ -156,30 +156,9 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       1.125,
       {
         incidentRingPolygons: [
-          [
-            { x: 7.176966, y: -1.084312 },
-            { x: 6.908454, y: -2.558206 },
-            { x: 5.521038, y: -3.13205 },
-            { x: 4.402136, y: -2.133888 },
-            { x: 5.330225, y: -0.025003 },
-            c2Position
-          ],
-          [
-            { x: 5.330225, y: -0.025003 },
-            { x: 5.939361, y: 1.298098 },
-            { x: 7.379302, y: 1.710164 },
-            { x: 8.419327, y: 0.629805 },
-            { x: 7.176966, y: -1.084312 },
-            c2Position
-          ],
-          [
-            { x: 4.405035, y: -0.096767 },
-            { x: 3.516425, y: -1.305187 },
-            { x: 4.133064, y: -2.673367 },
-            { x: 5.521038, y: -3.13205 },
-            { x: 7.176966, y: -1.084312 },
-            c2Position
-          ]
+          [{ x: 7.176966, y: -1.084312 }, { x: 6.908454, y: -2.558206 }, { x: 5.521038, y: -3.13205 }, { x: 4.402136, y: -2.133888 }, { x: 5.330225, y: -0.025003 }, c2Position],
+          [{ x: 5.330225, y: -0.025003 }, { x: 5.939361, y: 1.298098 }, { x: 7.379302, y: 1.710164 }, { x: 8.419327, y: 0.629805 }, { x: 7.176966, y: -1.084312 }, c2Position],
+          [{ x: 4.405035, y: -0.096767 }, { x: 3.516425, y: -1.305187 }, { x: 4.133064, y: -2.673367 }, { x: 5.521038, y: -3.13205 }, { x: 7.176966, y: -1.084312 }, c2Position]
         ],
         cardinalAxisSectorTolerance: DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE
       }
@@ -209,21 +188,8 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       1.125,
       {
         incidentRingPolygons: [
-          [
-            { x: 8.598911, y: 0.541575 },
-            center,
-            { x: 6.015113, y: -0.968125 },
-            { x: 7.554398, y: -0.335979 },
-            { x: 8.855028, y: -1.465561 },
-            { x: 9.987574, y: -0.356465 }
-          ],
-          [
-            center,
-            { x: 6.002431, y: 1.953594 },
-            c19Position,
-            { x: 7.554398, y: -0.335979 },
-            { x: 6.015113, y: -0.968125 }
-          ]
+          [{ x: 8.598911, y: 0.541575 }, center, { x: 6.015113, y: -0.968125 }, { x: 7.554398, y: -0.335979 }, { x: 8.855028, y: -1.465561 }, { x: 9.987574, y: -0.356465 }],
+          [center, { x: 6.002431, y: 1.953594 }, c19Position, { x: 7.554398, y: -0.335979 }, { x: 6.015113, y: -0.968125 }]
         ],
         avoidPositions: [c19Position],
         minimumAvoidanceDistance: 0.675
@@ -238,22 +204,8 @@ describe('layout/engine/stereo/wedge-geometry', () => {
   it('keeps displayed steroid stereo hydrogens out of incident ring polygons before chasing atom clearance', () => {
     const c14Position = { x: 6.236969, y: 0.077736 };
     const incidentRingPolygons = [
-      [
-        { x: 7.127934, y: -1.128087 },
-        c14Position,
-        { x: 6.836008, y: 1.376774 },
-        { x: 8.328375, y: 1.532246 },
-        { x: 9.21934, y: 0.326422 },
-        { x: 8.620301, y: -0.972616 }
-      ],
-      [
-        { x: 4.74913, y: -0.077736 },
-        { x: 4.13373, y: -1.447513 },
-        { x: 5.024695, y: -2.653337 },
-        { x: 6.506255, y: -2.506347 },
-        { x: 7.127934, y: -1.128087 },
-        c14Position
-      ]
+      [{ x: 7.127934, y: -1.128087 }, c14Position, { x: 6.836008, y: 1.376774 }, { x: 8.328375, y: 1.532246 }, { x: 9.21934, y: 0.326422 }, { x: 8.620301, y: -0.972616 }],
+      [{ x: 4.74913, y: -0.077736 }, { x: 4.13373, y: -1.447513 }, { x: 5.024695, y: -2.653337 }, { x: 6.506255, y: -2.506347 }, { x: 7.127934, y: -1.128087 }, c14Position]
     ];
     const projectedPosition = synthesizeDisplayedStereoHydrogenPosition(
       c14Position,
@@ -291,12 +243,7 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       x: Math.cos((angleDegrees * Math.PI) / 180),
       y: Math.sin((angleDegrees * Math.PI) / 180)
     });
-    const position = synthesizeHydrogenPosition(
-      { x: 0, y: 0 },
-      [unit(150), unit(18), unit(-90)],
-      1.5,
-      { preferCardinalAxes: true }
-    );
+    const position = synthesizeHydrogenPosition({ x: 0, y: 0 }, [unit(150), unit(18), unit(-90)], 1.5, { preferCardinalAxes: true });
 
     assert.ok(Math.abs(position.x) <= 1e-6, 'expected the snapped display hydrogen to stay on the vertical axis');
     assert.ok(position.y > 1, 'expected the snapped display hydrogen to project upward');
@@ -308,21 +255,11 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       y: Math.sin((angleDegrees * Math.PI) / 180)
     });
     const knownPositions = [unit(-18), unit(180), unit(90)];
-    const unconstrainedPosition = synthesizeHydrogenPosition(
-      { x: 0, y: 0 },
-      knownPositions,
-      1.5,
-      { preferCardinalAxes: true }
-    );
-    const displayedStereoPosition = synthesizeHydrogenPosition(
-      { x: 0, y: 0 },
-      knownPositions,
-      1.5,
-      {
-        preferCardinalAxes: true,
-        cardinalAxisSectorTolerance: DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE
-      }
-    );
+    const unconstrainedPosition = synthesizeHydrogenPosition({ x: 0, y: 0 }, knownPositions, 1.5, { preferCardinalAxes: true });
+    const displayedStereoPosition = synthesizeHydrogenPosition({ x: 0, y: 0 }, knownPositions, 1.5, {
+      preferCardinalAxes: true,
+      cardinalAxisSectorTolerance: DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE
+    });
 
     assert.ok(Math.abs(unconstrainedPosition.x) > 1e-3, 'expected the default snap to stay slightly off-axis');
     assert.ok(Math.abs(displayedStereoPosition.x) <= 1e-6, 'expected displayed stereo hydrogens to snap onto the vertical axis');

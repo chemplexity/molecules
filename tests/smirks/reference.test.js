@@ -279,10 +279,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('amineProtonation preserves unrelated fused aza aromaticity', () => {
-    const product = applySMIRKS(
-      parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'),
-      reactionTemplates.amineProtonation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'), reactionTemplates.amineProtonation.smirks);
 
     assert.ok(product);
     assert.deepEqual(validateValence(product), []);
@@ -291,10 +288,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('imineHydrolysis and phenolateProtonation preserve the adjacent fused aza ring', () => {
-    const afterImineHydrolysis = applySMIRKS(
-      parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'),
-      reactionTemplates.imineHydrolysis.smirks
-    );
+    const afterImineHydrolysis = applySMIRKS(parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'), reactionTemplates.imineHydrolysis.smirks);
     assert.ok(afterImineHydrolysis);
     assert.deepEqual(validateValence(afterImineHydrolysis), []);
 
@@ -318,10 +312,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('aromaticAzaProtonation preserves fused aza aromaticity after protonating the aza site', () => {
-    const product = applySMIRKS(
-      parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'),
-      reactionTemplates.aromaticAzaProtonation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'), reactionTemplates.aromaticAzaProtonation.smirks);
 
     assert.ok(product);
     assert.deepEqual(validateValence(product), []);
@@ -395,10 +386,7 @@ describe('reactionTemplates — example applications', () => {
 
   it('sulfideOxidationToSulfoxide does not oxidize already-oxidized sulfones', () => {
     const dimethylSulfoneProduct = applySMIRKS(parseSMILES('CS(C)(=O)=O'), reactionTemplates.sulfideOxidationToSulfoxide.smirks);
-    const reportedRingSulfoneProduct = applySMIRKS(
-      parseSMILES('CC1C2NC3(COC12C=O)C(C)NCS3(=O)=O'),
-      reactionTemplates.sulfideOxidationToSulfoxide.smirks
-    );
+    const reportedRingSulfoneProduct = applySMIRKS(parseSMILES('CC1C2NC3(COC12C=O)C(C)NCS3(=O)=O'), reactionTemplates.sulfideOxidationToSulfoxide.smirks);
 
     assert.equal(dimethylSulfoneProduct, null);
     assert.equal(reportedRingSulfoneProduct, null);
@@ -412,10 +400,7 @@ describe('reactionTemplates — example applications', () => {
 
   it('sulfoxideOxidationToSulfone does not oxidize sulfones again', () => {
     const dimethylSulfoneProduct = applySMIRKS(parseSMILES('CS(C)(=O)=O'), reactionTemplates.sulfoxideOxidationToSulfone.smirks);
-    const reportedRingSulfoneProduct = applySMIRKS(
-      parseSMILES('CC1C2NC3(COC12C=O)C(C)NCS3(=O)=O'),
-      reactionTemplates.sulfoxideOxidationToSulfone.smirks
-    );
+    const reportedRingSulfoneProduct = applySMIRKS(parseSMILES('CC1C2NC3(COC12C=O)C(C)NCS3(=O)=O'), reactionTemplates.sulfoxideOxidationToSulfone.smirks);
 
     assert.equal(dimethylSulfoneProduct, null);
     assert.equal(reportedRingSulfoneProduct, null);

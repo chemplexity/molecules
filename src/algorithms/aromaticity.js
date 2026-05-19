@@ -68,7 +68,17 @@ function _isSubstitutedPyrrolicLikeNitrogen(atom, ringBonds, ringAtomSet, mol) {
     .filter(bond => bond && !ringAtomSet.has(bond.getOtherAtom(atom.id)))
     .filter(bond => {
       const other = mol.atoms.get(bond.getOtherAtom(atom.id));
-      return other && other.name !== 'H' && !_hasPiOrder(bond);
+      if (!other || other.name === 'H') {
+        return false;
+      }
+      // A bond to an already-aromatic atom in a *different* ring is effectively
+      // a single bond even when written at order 1.5 in SMILES (e.g. N-subst.
+      // pyrrole attached to isoxazole: c(c1)n2...).  Treat it as single so that
+      // the pyrrolic N is correctly classified as a 2-electron donor.
+      if (_hasPiOrder(bond) && other.properties.aromatic) {
+        return true;
+      }
+      return !_hasPiOrder(bond);
     });
 
   if (exocyclicHeavySingleBonds.length === 0) {
@@ -315,10 +325,7 @@ function _canSatisfyFusedHuckelWithAmbiguousN(atomIds, piTotal, mol) {
         const otherAtom = bond ? mol.atoms.get(bond.getOtherAtom(atomId)) : null;
         return otherAtom && otherAtom.name !== 'H';
       });
-    if (
-      heavyBonds.length > 0
-      && heavyBonds.every(bond => atomIds.has(bond.getOtherAtom(atomId)) && _isSourceAromaticBond(bond))
-    ) {
+    if (heavyBonds.length > 0 && heavyBonds.every(bond => atomIds.has(bond.getOtherAtom(atomId)) && _isSourceAromaticBond(bond))) {
       ambiguousCount++;
     }
   }
@@ -568,11 +575,11 @@ function _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds) {
 
     const ringBonds = [...ringBondIds].map(bondId => mol.bonds.get(bondId)).filter(Boolean);
     if (
-      ringBonds.length === 0
-      || ringBonds.every(bond => aromaticBondIds.has(bond.id))
-      || !ringBonds.some(bond => aromaticBondIds.has(bond.id))
-      || !ringBonds.every(_isSourceAromaticBond)
-      || _hasExocyclicMultipleBond(mol, atomIds, ringBondIds)
+      ringBonds.length === 0 ||
+      ringBonds.every(bond => aromaticBondIds.has(bond.id)) ||
+      !ringBonds.some(bond => aromaticBondIds.has(bond.id)) ||
+      !ringBonds.every(_isSourceAromaticBond) ||
+      _hasExocyclicMultipleBond(mol, atomIds, ringBondIds)
     ) {
       continue;
     }

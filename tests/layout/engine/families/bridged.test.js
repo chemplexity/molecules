@@ -59,10 +59,7 @@ function ringInternalAngle(ring, coords, atomId) {
   const atomPosition = coords.get(atomId);
   const previousPosition = coords.get(ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length]);
   const nextPosition = coords.get(ring.atomIds[(index + 1) % ring.atomIds.length]);
-  return angularDifference(
-    angleOf(sub(previousPosition, atomPosition)),
-    angleOf(sub(nextPosition, atomPosition))
-  );
+  return angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition)));
 }
 
 /**
@@ -86,10 +83,7 @@ function assertCompactSaturatedRingShape(graph, coords, label) {
         Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength) < maxBondDeviation,
         `expected ${label} ${atomId}-${nextAtomId} to keep compact saturated ring bond length`
       );
-      assert.ok(
-        Math.abs(ringInternalAngle(ring, coords, atomId) - targetAngle) < maxAngleDeviation,
-        `expected ${label} ${atomId} to avoid visibly deformed ring angles`
-      );
+      assert.ok(Math.abs(ringInternalAngle(ring, coords, atomId) - targetAngle) < maxAngleDeviation, `expected ${label} ${atomId} to avoid visibly deformed ring angles`);
     }
   }
 }
@@ -109,14 +103,8 @@ function bridgedRingShapeMetrics(graph, coords) {
     for (let index = 0; index < ring.atomIds.length; index++) {
       const atomId = ring.atomIds[index];
       const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
-      maxBondDeviation = Math.max(
-        maxBondDeviation,
-        Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength)
-      );
-      maxAngleDeviation = Math.max(
-        maxAngleDeviation,
-        Math.abs(ringInternalAngle(ring, coords, atomId) - targetAngle)
-      );
+      maxBondDeviation = Math.max(maxBondDeviation, Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength));
+      maxAngleDeviation = Math.max(maxAngleDeviation, Math.abs(ringInternalAngle(ring, coords, atomId) - targetAngle));
     }
   }
 
@@ -167,10 +155,7 @@ describe('layout/engine/families/bridged', () => {
   });
 
   it('keeps the KK seed when bridge projection would collapse compact fused-bridged systems', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('N[C@@H](Cc1ccccc1)C(=O)N2C[C@H]3C[C@@H](C2)C4=CC=CC(=O)N4C3'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('N[C@@H](Cc1ccccc1)C(=O)N2C[C@H]3C[C@@H](C2)C4=CC=CC(=O)N4C3'), { suppressH: true });
     const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
     assert.ok(bridgedRingSystem);
     const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
@@ -181,17 +166,11 @@ describe('layout/engine/families/bridged', () => {
 
     assert.equal(result.placementMode, 'projected-kamada-kawai');
     assertBridgedLayoutQuality(graph, result.coords);
-    assert.ok(
-      distance(result.coords.get('C22'), result.coords.get('N27')) > graph.options.bondLength * 1.5,
-      'expected the fused lactam bridge projection to keep C22 and N27 visually separated'
-    );
+    assert.ok(distance(result.coords.get('C22'), result.coords.get('N27')) > graph.options.bondLength * 1.5, 'expected the fused lactam bridge projection to keep C22 and N27 visually separated');
   });
 
   it('keeps saturated bridged six-rings exact when routing a shared bridge run', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('CC12COC(C1)C(CC#N)C[NH2+]2'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('CC12COC(C1)C(CC#N)C[NH2+]2'), { suppressH: true });
     const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
     assert.ok(bridgedRingSystem);
     const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
@@ -207,14 +186,8 @@ describe('layout/engine/families/bridged', () => {
     for (let index = 0; index < sixRing.atomIds.length; index++) {
       const atomId = sixRing.atomIds[index];
       const nextAtomId = sixRing.atomIds[(index + 1) % sixRing.atomIds.length];
-      assert.ok(
-        Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - graph.options.bondLength) < 1e-6,
-        `expected ${atomId}-${nextAtomId} to keep target bond length`
-      );
-      assert.ok(
-        Math.abs(ringInternalAngle(sixRing, result.coords, atomId) - (2 * Math.PI) / 3) < 1e-6,
-        `expected ${atomId} to keep a regular six-ring angle`
-      );
+      assert.ok(Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - graph.options.bondLength) < 1e-6, `expected ${atomId}-${nextAtomId} to keep target bond length`);
+      assert.ok(Math.abs(ringInternalAngle(sixRing, result.coords, atomId) - (2 * Math.PI) / 3) < 1e-6, `expected ${atomId} to keep a regular six-ring angle`);
     }
   });
 
@@ -276,14 +249,8 @@ describe('layout/engine/families/bridged', () => {
 
     assert.equal(result.placementMode, 'projected-kamada-kawai');
     assert.equal(audit.severeOverlapCount, 0);
-    assert.ok(
-      audit.bondLengthFailureCount <= 1,
-      `expected compact bridged ether cage to avoid multiple stretched ring bonds, got ${audit.bondLengthFailureCount}`
-    );
-    assert.ok(
-      audit.maxBondLengthDeviation < graph.options.bondLength * 0.5,
-      `expected compact bridged ether cage bond deviation to stay bounded, got ${audit.maxBondLengthDeviation.toFixed(3)}`
-    );
+    assert.ok(audit.bondLengthFailureCount <= 1, `expected compact bridged ether cage to avoid multiple stretched ring bonds, got ${audit.bondLengthFailureCount}`);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.5, `expected compact bridged ether cage bond deviation to stay bounded, got ${audit.maxBondLengthDeviation.toFixed(3)}`);
   });
 
   it('seeds compact 5-5-4 bridged ether cages from the small ring', () => {
@@ -326,23 +293,11 @@ describe('layout/engine/families/bridged', () => {
 
     assert.equal(result.placementMode, 'projected-kamada-kawai');
     assertBridgedLayoutQuality(graph, result.coords);
-    assert.ok(
-      bridgedShape.maxAngleDeviation < maxVisibleAngleDeviation,
-      'expected bridged placement to distribute fused-spiro angle strain below the visible kink threshold'
-    );
-    assert.ok(
-      bridgedShape.maxBondDeviation < maxSafeBondDeviation,
-      'expected bridged placement to keep balanced junction bonds within standard audit tolerance'
-    );
+    assert.ok(bridgedShape.maxAngleDeviation < maxVisibleAngleDeviation, 'expected bridged placement to distribute fused-spiro angle strain below the visible kink threshold');
+    assert.ok(bridgedShape.maxBondDeviation < maxSafeBondDeviation, 'expected bridged placement to keep balanced junction bonds within standard audit tolerance');
     assert.equal(pipelineResult.metadata.audit.ok, true);
-    assert.ok(
-      pipelineShape.maxAngleDeviation < maxVisibleAngleDeviation,
-      'expected full pipeline to preserve balanced fused-spiro ring angles'
-    );
-    assert.ok(
-      pipelineShape.maxBondDeviation < maxSafeBondDeviation,
-      'expected full pipeline to preserve balanced fused-spiro bond lengths'
-    );
+    assert.ok(pipelineShape.maxAngleDeviation < maxVisibleAngleDeviation, 'expected full pipeline to preserve balanced fused-spiro ring angles');
+    assert.ok(pipelineShape.maxBondDeviation < maxSafeBondDeviation, 'expected full pipeline to preserve balanced fused-spiro bond lengths');
   });
 
   it('balances saturated fused-spiro bridged cages with a constrained triple-ring junction', () => {
@@ -364,23 +319,11 @@ describe('layout/engine/families/bridged', () => {
 
     assert.equal(result.placementMode, 'projected-kamada-kawai');
     assertBridgedLayoutQuality(graph, result.coords);
-    assert.ok(
-      bridgedShape.maxBondDeviation < maxSafeBondDeviation,
-      'expected bridged placement to remove visible stretched-bond ring deformation'
-    );
-    assert.ok(
-      bridgedShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation,
-      'expected bridged placement to balance unavoidable triple-junction angle strain'
-    );
+    assert.ok(bridgedShape.maxBondDeviation < maxSafeBondDeviation, 'expected bridged placement to remove visible stretched-bond ring deformation');
+    assert.ok(bridgedShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation, 'expected bridged placement to balance unavoidable triple-junction angle strain');
     assert.equal(pipelineResult.metadata.audit.ok, true);
-    assert.ok(
-      pipelineShape.maxBondDeviation < maxSafeBondDeviation,
-      'expected full pipeline to preserve balanced bridged bond lengths'
-    );
-    assert.ok(
-      pipelineShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation,
-      'expected full pipeline to preserve balanced triple-junction ring angles'
-    );
+    assert.ok(pipelineShape.maxBondDeviation < maxSafeBondDeviation, 'expected full pipeline to preserve balanced bridged bond lengths');
+    assert.ok(pipelineShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation, 'expected full pipeline to preserve balanced triple-junction ring angles');
   });
 
   it('uses a compact spiro-bridged oxetane template without crossed cage bonds', () => {
@@ -399,10 +342,7 @@ describe('layout/engine/families/bridged', () => {
       finalLandscapeOrientation: true
     });
     const ringShape = bridgedRingShapeMetrics(graph, result.coords);
-    const cyclobutylRing = graph.rings.find(ring => (
-      ring.atomIds.length === 4
-      && ['C3', 'C4', 'C5', 'C6'].every(atomId => ring.atomIds.includes(atomId))
-    ));
+    const cyclobutylRing = graph.rings.find(ring => ring.atomIds.length === 4 && ['C3', 'C4', 'C5', 'C6'].every(atomId => ring.atomIds.includes(atomId)));
     const maxCompactCageBondDeviation = graph.options.bondLength * 0.27;
     const maxCyclobutylBondDeviation = graph.options.bondLength * 0.04;
     const maxCyclobutylAngleDeviation = (5 * Math.PI) / 180;
@@ -411,10 +351,7 @@ describe('layout/engine/families/bridged', () => {
     assert.equal(result.placementMode, 'template');
     assertBridgedLayoutQuality(graph, result.coords);
     assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
-    assert.ok(
-      ringShape.maxBondDeviation < maxCompactCageBondDeviation,
-      'expected compact oxetane cage template to avoid visibly deformed ring bonds'
-    );
+    assert.ok(ringShape.maxBondDeviation < maxCompactCageBondDeviation, 'expected compact oxetane cage template to avoid visibly deformed ring bonds');
     for (let index = 0; index < cyclobutylRing.atomIds.length; index++) {
       const atomId = cyclobutylRing.atomIds[index];
       const nextAtomId = cyclobutylRing.atomIds[(index + 1) % cyclobutylRing.atomIds.length];
@@ -473,10 +410,7 @@ describe('layout/engine/families/bridged', () => {
     const assertCyclopentenylRing = (coords, label) => {
       for (const atomId of cyclopentenylRing.atomIds) {
         const angle = ringInternalAngle(cyclopentenylRing, coords, atomId);
-        assert.ok(
-          Math.abs(angle - ((3 * Math.PI) / 5)) < 1e-6,
-          `expected ${label} ${atomId} cyclopentenyl angle to stay at 108 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
-        );
+        assert.ok(Math.abs(angle - (3 * Math.PI) / 5) < 1e-6, `expected ${label} ${atomId} cyclopentenyl angle to stay at 108 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
 
@@ -506,20 +440,13 @@ describe('layout/engine/families/bridged', () => {
     const cyclopentenylRing = { atomIds: ['C15', 'C14', 'C11', 'C3', 'C5'] };
     const assertCyclopentenylRing = (coords, label) => {
       const angles = cyclopentenylRing.atomIds.map(atomId => ringInternalAngle(cyclopentenylRing, coords, atomId) * (180 / Math.PI));
-      assert.ok(
-        Math.min(...angles) > 80,
-        `expected ${label} cyclopentenyl ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-      );
-      assert.ok(
-        Math.max(...angles) < 145,
-        `expected ${label} cyclopentenyl ring to avoid flattened corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-      );
+      assert.ok(Math.min(...angles) > 80, `expected ${label} cyclopentenyl ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.max(...angles) < 145, `expected ${label} cyclopentenyl ring to avoid flattened corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       for (const atomId of cyclopentenylRing.atomIds) {
         const nextAtomId = cyclopentenylRing.atomIds[(cyclopentenylRing.atomIds.indexOf(atomId) + 1) % cyclopentenylRing.atomIds.length];
         const bondDistance = distance(coords.get(atomId), coords.get(nextAtomId));
         assert.ok(
-          bondDistance >= graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor
-          && bondDistance <= graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor,
+          bondDistance >= graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor && bondDistance <= graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor,
           `expected ${label} ${atomId}-${nextAtomId} cyclopentenyl bond to stay readable, got ${bondDistance.toFixed(3)}`
         );
       }
@@ -530,11 +457,7 @@ describe('layout/engine/families/bridged', () => {
     assertCyclopentenylRing(result.coords, 'template layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assertCyclopentenylRing(pipelineResult.coords, 'pipeline layout');
-    assert.ok(
-      findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords).every(crossing => (
-        crossing.firstAtomIds.includes('C7') || crossing.secondAtomIds.includes('C7')
-      ))
-    );
+    assert.ok(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords).every(crossing => crossing.firstAtomIds.includes('C7') || crossing.secondAtomIds.includes('C7')));
   });
 
   it('uses a quinuclidinium oxygen-exit template so charged six-rings stay structured', () => {
@@ -555,14 +478,8 @@ describe('layout/engine/families/bridged', () => {
     const assertQuinuclidiniumRings = (coords, label) => {
       for (const ring of rings) {
         const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
-        assert.ok(
-          Math.min(...angles) > 75,
-          `expected ${label} quinuclidinium ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
-        assert.ok(
-          Math.max(...angles) < 160,
-          `expected ${label} quinuclidinium ring to avoid flattened corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
+        assert.ok(Math.min(...angles) > 75, `expected ${label} quinuclidinium ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < 160, `expected ${label} quinuclidinium ring to avoid flattened corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       }
     };
 
@@ -604,10 +521,7 @@ describe('layout/engine/families/bridged', () => {
         oxiraneAngles.every(angle => Math.abs(angle - 60) < 0.05),
         `expected ${label} oxirane cap to stay equilateral, got ${oxiraneAngles.map(angle => angle.toFixed(2)).join(', ')}`
       );
-      assert.ok(
-        distance(coords.get('N4'), coords.get('O15')) > graph.options.bondLength * 1.25,
-        `expected ${label} oxirane oxygen to clear the tertiary nitrogen`
-      );
+      assert.ok(distance(coords.get('N4'), coords.get('O15')) > graph.options.bondLength * 1.25, `expected ${label} oxirane oxygen to clear the tertiary nitrogen`);
     };
 
     assert.equal(result.placementMode, 'template');
@@ -641,14 +555,8 @@ describe('layout/engine/families/bridged', () => {
     const assertOxadecalinRings = (coords, label) => {
       for (const ring of rings) {
         const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
-        assert.ok(
-          Math.min(...angles) > 105,
-          `expected ${label} oxadecalin ring to avoid collapsed corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
-        assert.ok(
-          Math.max(...angles) < 155,
-          `expected ${label} oxadecalin ring to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
+        assert.ok(Math.min(...angles) > 105, `expected ${label} oxadecalin ring to avoid collapsed corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < 155, `expected ${label} oxadecalin ring to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       }
     };
 
@@ -680,14 +588,8 @@ describe('layout/engine/families/bridged', () => {
     const assertOpenCompactCage = (coords, label) => {
       for (const ring of rings) {
         const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
-        assert.ok(
-          Math.min(...angles) > 45,
-          `expected ${label} compact tetracyclic ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
-        assert.ok(
-          Math.max(...angles) < 150,
-          `expected ${label} compact tetracyclic ring to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
+        assert.ok(Math.min(...angles) > 45, `expected ${label} compact tetracyclic ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < 150, `expected ${label} compact tetracyclic ring to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       }
     };
 
@@ -719,20 +621,10 @@ describe('layout/engine/families/bridged', () => {
     const assertOpenAcetalCage = (coords, label) => {
       for (const ring of rings) {
         const isCarbocycle = ring.atomIds.length === 5 && ring.atomIds.includes('C2') && ring.atomIds.includes('C3');
-        const limits = ring.atomIds.length === 8
-          ? { min: 90, max: 160 }
-          : isCarbocycle
-            ? { min: 100, max: 116 }
-            : { min: 90, max: 146 };
+        const limits = ring.atomIds.length === 8 ? { min: 90, max: 160 } : isCarbocycle ? { min: 100, max: 116 } : { min: 90, max: 146 };
         const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
-        assert.ok(
-          Math.min(...angles) > limits.min,
-          `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
-        assert.ok(
-          Math.max(...angles) < limits.max,
-          `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
+        assert.ok(Math.min(...angles) > limits.min, `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < limits.max, `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       }
     };
 
@@ -763,17 +655,9 @@ describe('layout/engine/families/bridged', () => {
     const assertOpenFiveFourCage = (coords, label) => {
       for (const ring of rings) {
         const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
-        const limits = ring.atomIds.length === 4
-          ? { min: 80, max: 105 }
-          : { min: 90, max: 125 };
-        assert.ok(
-          Math.min(...angles) > limits.min,
-          `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
-        assert.ok(
-          Math.max(...angles) < limits.max,
-          `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
-        );
+        const limits = ring.atomIds.length === 4 ? { min: 80, max: 105 } : { min: 90, max: 125 };
+        assert.ok(Math.min(...angles) > limits.min, `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < limits.max, `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       }
     };
 
@@ -809,16 +693,10 @@ describe('layout/engine/families/bridged', () => {
     assert.equal(result.placementMode, 'projected-kamada-kawai');
     assertBridgedLayoutQuality(graph, result.coords);
     assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
-    assert.ok(
-      bridgedShape.maxBondDeviation < maxReadableBondDeviation,
-      'expected bridged projection to avoid visibly stretched ring bonds'
-    );
+    assert.ok(bridgedShape.maxBondDeviation < maxReadableBondDeviation, 'expected bridged projection to avoid visibly stretched ring bonds');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
-    assert.ok(
-      pipelineShape.maxBondDeviation < maxReadableBondDeviation,
-      'expected full pipeline to preserve the less deformed bridged ring shape'
-    );
+    assert.ok(pipelineShape.maxBondDeviation < maxReadableBondDeviation, 'expected full pipeline to preserve the less deformed bridged ring shape');
     assert.ok(
       distance(pipelineResult.coords.get('C6'), pipelineResult.coords.get('O16')) > graph.options.bondLength * 0.85,
       'expected the geminal methyl leaf to clear the carbonyl oxygen after branch placement'

@@ -29,23 +29,12 @@ describe('layout/engine/placement/branch-placement/remaining-branches', () => {
       }).coords
     );
 
-    placeRemainingBranches(
-      buildAdjacency(graph, componentAtomIds),
-      graph.canonicalAtomRank,
-      coords,
-      componentAtomIds,
-      [...coords.keys()],
-      graph.options.bondLength,
-      graph
-    );
+    placeRemainingBranches(buildAdjacency(graph, componentAtomIds), graph.canonicalAtomRank, coords, componentAtomIds, [...coords.keys()], graph.options.bondLength, graph);
 
     const incomingAngle = angleOf(sub(coords.get('C4'), coords.get('C3')));
     const outgoingAngle = angleOf(sub(coords.get('C2'), coords.get('C3')));
     const continuationAngle = angularDifference(incomingAngle, outgoingAngle);
 
-    assert.ok(
-      Math.abs(continuationAngle - ((2 * Math.PI) / 3)) < 1e-6,
-      `expected exact 120-degree continuation, got ${((continuationAngle * 180) / Math.PI).toFixed(2)}°`
-    );
+    assert.ok(Math.abs(continuationAngle - (2 * Math.PI) / 3) < 1e-6, `expected exact 120-degree continuation, got ${((continuationAngle * 180) / Math.PI).toFixed(2)}°`);
   });
 });

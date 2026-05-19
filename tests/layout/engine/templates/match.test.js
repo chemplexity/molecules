@@ -143,10 +143,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(peryleneMatch.id, 'perylene');
 
     const aminoBromoDiazaKetoneGraph = createLayoutGraph(parseSMILES('Nc1ccc2nc3C(=O)c4cccnc4c5nccc(c35)c2c1Br'), { suppressH: true });
-    const aminoBromoDiazaKetoneMatch = findTemplateMatch(
-      aminoBromoDiazaKetoneGraph,
-      buildRingCandidate(aminoBromoDiazaKetoneGraph, aminoBromoDiazaKetoneGraph.ringSystems[0], 'fused')
-    );
+    const aminoBromoDiazaKetoneMatch = findTemplateMatch(aminoBromoDiazaKetoneGraph, buildRingCandidate(aminoBromoDiazaKetoneGraph, aminoBromoDiazaKetoneGraph.ringSystems[0], 'fused'));
     assert.equal(aminoBromoDiazaKetoneMatch.id, 'amino-bromo-diaza-ketone-pericondensed-core');
 
     const fluoreneGraph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
@@ -271,10 +268,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(triazaadamantaneMatch.id, 'triazaadamantane-core');
 
     const oxygenExitQuinuclidiniumGraph = createLayoutGraph(parseSMILES('CC[N+]12CCC(CC1)C(C2)OC=O'), { suppressH: true });
-    const oxygenExitQuinuclidiniumMatch = findTemplateMatch(
-      oxygenExitQuinuclidiniumGraph,
-      buildRingCandidate(oxygenExitQuinuclidiniumGraph, oxygenExitQuinuclidiniumGraph.ringSystems[0], 'bridged')
-    );
+    const oxygenExitQuinuclidiniumMatch = findTemplateMatch(oxygenExitQuinuclidiniumGraph, buildRingCandidate(oxygenExitQuinuclidiniumGraph, oxygenExitQuinuclidiniumGraph.ringSystems[0], 'bridged'));
     assert.equal(oxygenExitQuinuclidiniumMatch.id, 'quinuclidinium-oxygen-exit');
 
     const tropaneGraph = createLayoutGraph(parseSMILES('N1C2CCC1CC(C2)'));
@@ -310,20 +304,11 @@ describe('layout/engine/templates/match', () => {
     assert.equal(oxazaMorphinanMatch.id, 'oxaza-morphinan-core');
 
     const phenolicOxazaMorphinanGraph = createLayoutGraph(parseSMILES('O[C@H]1CC[C@@]2(O)[C@H]3CC4=CC=C(O)C5=C4[C@@]2(CCN3CC2CCC2)[C@H]1O5'), { suppressH: true });
-    const phenolicOxazaMorphinanMatch = findTemplateMatch(
-      phenolicOxazaMorphinanGraph,
-      buildRingCandidate(phenolicOxazaMorphinanGraph, phenolicOxazaMorphinanGraph.ringSystems[0], 'bridged')
-    );
+    const phenolicOxazaMorphinanMatch = findTemplateMatch(phenolicOxazaMorphinanGraph, buildRingCandidate(phenolicOxazaMorphinanGraph, phenolicOxazaMorphinanGraph.ringSystems[0], 'bridged'));
     assert.equal(phenolicOxazaMorphinanMatch.id, 'phenolic-oxaza-morphinan-core');
 
-    const cagedHydroxyLactoneGraph = createLayoutGraph(
-      parseSMILES('[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O'),
-      { suppressH: true }
-    );
-    const cagedHydroxyLactoneMatch = findTemplateMatch(
-      cagedHydroxyLactoneGraph,
-      buildRingCandidate(cagedHydroxyLactoneGraph, cagedHydroxyLactoneGraph.ringSystems[0], 'bridged')
-    );
+    const cagedHydroxyLactoneGraph = createLayoutGraph(parseSMILES('[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O'), { suppressH: true });
+    const cagedHydroxyLactoneMatch = findTemplateMatch(cagedHydroxyLactoneGraph, buildRingCandidate(cagedHydroxyLactoneGraph, cagedHydroxyLactoneGraph.ringSystems[0], 'bridged'));
     assert.equal(cagedHydroxyLactoneMatch.id, 'caged-hydroxy-lactone-core');
   });
 
@@ -367,10 +352,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'azabicyclo-ketone-oxadiazole-core');
 
     const withoutOxadiazoleGraph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C'), { suppressH: true });
-    const withoutOxadiazoleMatch = findTemplateMatch(
-      withoutOxadiazoleGraph,
-      buildRingCandidate(withoutOxadiazoleGraph, withoutOxadiazoleGraph.ringSystems[0], 'bridged')
-    );
+    const withoutOxadiazoleMatch = findTemplateMatch(withoutOxadiazoleGraph, buildRingCandidate(withoutOxadiazoleGraph, withoutOxadiazoleGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutOxadiazoleMatch?.id, 'azabicyclo-ketone-oxadiazole-core');
   });
 
@@ -380,10 +362,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'hydroxy-keto-oxadiazole-bridged-core');
 
     const withoutCarbonylGraph = createLayoutGraph(parseSMILES('CCC1CC2(O)C(C)CC3=C(N=CO3)C1C2'), { suppressH: true });
-    const withoutCarbonylMatch = findTemplateMatch(
-      withoutCarbonylGraph,
-      buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged')
-    );
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutCarbonylMatch?.id, 'hydroxy-keto-oxadiazole-bridged-core');
   });
 
@@ -427,10 +406,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'aminonitrile-oxabicyclobutane-core');
 
     const withoutSideChainGraph = createLayoutGraph(parseSMILES('CCC12CC(C1)(OC2)C(N)C#N'), { suppressH: true });
-    const withoutSideChainMatch = findTemplateMatch(
-      withoutSideChainGraph,
-      buildRingCandidate(withoutSideChainGraph, withoutSideChainGraph.ringSystems[0], 'bridged')
-    );
+    const withoutSideChainMatch = findTemplateMatch(withoutSideChainGraph, buildRingCandidate(withoutSideChainGraph, withoutSideChainGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutSideChainMatch?.id, 'aminonitrile-oxabicyclobutane-core');
   });
 
@@ -510,10 +486,7 @@ describe('layout/engine/templates/match', () => {
     assert.notEqual(neutralMatch?.id, 'azabicyclo-nitrile-core');
 
     const withoutGemCarbonGraph = createLayoutGraph(parseSMILES('C[NH+]1C2CCC1C2'), { suppressH: true });
-    const withoutGemCarbonMatch = findTemplateMatch(
-      withoutGemCarbonGraph,
-      buildRingCandidate(withoutGemCarbonGraph, withoutGemCarbonGraph.ringSystems[0], 'bridged')
-    );
+    const withoutGemCarbonMatch = findTemplateMatch(withoutGemCarbonGraph, buildRingCandidate(withoutGemCarbonGraph, withoutGemCarbonGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutGemCarbonMatch?.id, 'azabicyclo-nitrile-core');
   });
 
@@ -555,10 +528,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'bridged-diketone-tricyclo-core');
 
     const withoutSecondCarbonylGraph = createLayoutGraph(parseSMILES('O=C1CC2CC3CCC12C3'), { suppressH: true });
-    const withoutSecondCarbonylMatch = findTemplateMatch(
-      withoutSecondCarbonylGraph,
-      buildRingCandidate(withoutSecondCarbonylGraph, withoutSecondCarbonylGraph.ringSystems[0], 'bridged')
-    );
+    const withoutSecondCarbonylMatch = findTemplateMatch(withoutSecondCarbonylGraph, buildRingCandidate(withoutSecondCarbonylGraph, withoutSecondCarbonylGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutSecondCarbonylMatch?.id, 'bridged-diketone-tricyclo-core');
   });
 
@@ -761,19 +731,13 @@ describe('layout/engine/templates/match', () => {
   });
 
   it('matches the oxygen-bridged bisindole lactam scaffold too', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('[H][C@@]12C[C@H](<C(=O)OOC>)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('[H][C@@]12C[C@H](<C(=O)OOC>)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'oxygen-bridged-bisindole-lactam-core');
   });
 
   it('matches the indoline aza bridged heptacycle scaffold too', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'indoline-aza-bridged-heptacycle-core');
   });
@@ -789,26 +753,17 @@ describe('layout/engine/templates/match', () => {
   });
 
   it('matches the calixarene guanidine core as a macrocycle template', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'macrocycle'));
     assert.equal(match.id, 'calixarene-guanidine-core');
   });
 
   it('matches trans-polyene macrolides only when the annotated macrocycle alkenes are E', () => {
-    const graph = createLayoutGraph(
-      parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'macrocycle'));
     assert.equal(match.id, 'trans-polyene-macrolide');
 
-    const unannotatedGraph = createLayoutGraph(
-      parseSMILES('CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)C=C(C)C=CCNC(=O)C=C[C@H]1C'),
-      { suppressH: true }
-    );
+    const unannotatedGraph = createLayoutGraph(parseSMILES('CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)C=C(C)C=CCNC(=O)C=C[C@H]1C'), { suppressH: true });
     const unannotatedMatch = findTemplateMatch(unannotatedGraph, buildRingCandidate(unannotatedGraph, unannotatedGraph.ringSystems[0], 'macrocycle'));
     assert.notEqual(unannotatedMatch?.id, 'trans-polyene-macrolide');
   });

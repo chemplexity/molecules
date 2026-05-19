@@ -11,10 +11,14 @@ import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { makeAdamantane, makeBenzene, makeBicyclo222, makeNaphthalene, makeNorbornane, makeSpiro } from '../support/molecules.js';
 
 function ringAngles(coords, atomIds) {
-  return atomIds.map((atomId, index) => angularDifference(
-    angleOf(sub(coords.get(atomIds[(index - 1 + atomIds.length) % atomIds.length]), coords.get(atomId))),
-    angleOf(sub(coords.get(atomIds[(index + 1) % atomIds.length]), coords.get(atomId)))
-  ) * (180 / Math.PI));
+  return atomIds.map(
+    (atomId, index) =>
+      angularDifference(
+        angleOf(sub(coords.get(atomIds[(index - 1 + atomIds.length) % atomIds.length]), coords.get(atomId))),
+        angleOf(sub(coords.get(atomIds[(index + 1) % atomIds.length]), coords.get(atomId)))
+      ) *
+      (180 / Math.PI)
+  );
 }
 
 describe('layout/engine/templates/placement', () => {
@@ -44,12 +48,7 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.abs(distance(indoleCoords.get('C2'), indoleCoords.get('C3')) - indoleGraph.options.bondLength) < 1e-6);
 
     const benzimidazoliumGraph = createLayoutGraph(parseSMILES('c1ccc2[nH+]cnc2c1'));
-    const benzimidazoliumCoords = placeTemplateCoords(
-      benzimidazoliumGraph,
-      'benzimidazolium',
-      benzimidazoliumGraph.ringSystems[0].atomIds,
-      benzimidazoliumGraph.options.bondLength
-    );
+    const benzimidazoliumCoords = placeTemplateCoords(benzimidazoliumGraph, 'benzimidazolium', benzimidazoliumGraph.ringSystems[0].atomIds, benzimidazoliumGraph.options.bondLength);
     assert.equal(benzimidazoliumCoords.size, 9);
     assert.ok(Math.abs(distance(benzimidazoliumCoords.get('N5'), benzimidazoliumCoords.get('C7')) - benzimidazoliumGraph.options.bondLength) < 1e-6);
     assert.ok(Math.abs(distance(benzimidazoliumCoords.get('N8'), benzimidazoliumCoords.get('C9')) - benzimidazoliumGraph.options.bondLength) < 1e-6);
@@ -128,9 +127,9 @@ describe('layout/engine/templates/placement', () => {
       aminoBromoDiazaKetoneGraph.options.bondLength
     );
     const aminoBromoDiazaKetoneAngles = aminoBromoDiazaKetoneGraph.rings.flatMap(ring => ringAngles(aminoBromoDiazaKetoneCoords, ring.atomIds));
-    const aminoBromoDiazaKetoneLengths = aminoBromoDiazaKetoneGraph.rings.flatMap(ring => ring.atomIds.map((atomId, index) => (
-      distance(aminoBromoDiazaKetoneCoords.get(atomId), aminoBromoDiazaKetoneCoords.get(ring.atomIds[(index + 1) % ring.atomIds.length]))
-    )));
+    const aminoBromoDiazaKetoneLengths = aminoBromoDiazaKetoneGraph.rings.flatMap(ring =>
+      ring.atomIds.map((atomId, index) => distance(aminoBromoDiazaKetoneCoords.get(atomId), aminoBromoDiazaKetoneCoords.get(ring.atomIds[(index + 1) % ring.atomIds.length])))
+    );
     const aminoBromoDiazaKetoneXs = [...aminoBromoDiazaKetoneCoords.values()].map(position => position.x);
     const aminoBromoDiazaKetoneYs = [...aminoBromoDiazaKetoneCoords.values()].map(position => position.y);
     assert.equal(aminoBromoDiazaKetoneCoords.size, 21);
@@ -146,10 +145,7 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.max(...fluoreneXs) - Math.min(...fluoreneXs) > Math.max(...fluoreneYs) - Math.min(...fluoreneYs));
     assert.ok(Math.abs(fluoreneCoords.get('C1').x + fluoreneCoords.get('C10').x) < 1e-6);
     assert.ok(Math.abs(fluoreneCoords.get('C4').x + fluoreneCoords.get('C13').x) < 1e-6);
-    assert.equal(
-      fluoreneCoords.get('C7').y,
-      Math.max(...['C1', 'C10', 'C2', 'C11', 'C6', 'C9', 'C3', 'C12', 'C7', 'C5', 'C8', 'C4', 'C13'].map(atomId => fluoreneCoords.get(atomId).y))
-    );
+    assert.equal(fluoreneCoords.get('C7').y, Math.max(...['C1', 'C10', 'C2', 'C11', 'C6', 'C9', 'C3', 'C12', 'C7', 'C5', 'C8', 'C4', 'C13'].map(atomId => fluoreneCoords.get(atomId).y)));
 
     const testosteroneGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC=C4C[C@@H](O)CC[C@]34C)[C@@H]1CC[C@@H]2=O'));
     const testosteroneCoords = placeTemplateCoords(testosteroneGraph, 'steroid-core-unsaturated', testosteroneGraph.ringSystems[0].atomIds, testosteroneGraph.options.bondLength);
@@ -245,10 +241,7 @@ describe('layout/engine/templates/placement', () => {
   });
 
   it('places the calixarene guanidine macrocycle with regular aryl walls', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('NC(=N)NCCOc1c2Cc3cccc(Cc4cccc(Cc5cccc(Cc1ccc2)c5O)c4OCC(=O)NC(=N)N)c3O'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'calixarene-guanidine-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
     const audit = auditLayout(graph, coords, {
       bondLength: graph.options.bondLength,
@@ -260,9 +253,7 @@ describe('layout/engine/templates/placement', () => {
       ['C17', 'C18', 'C19', 'C20', 'C21', 'C35'],
       ['C23', 'C24', 'C25', 'C26', 'C27', 'C33']
     ];
-    const maxArylAngleDeviation = Math.max(
-      ...arylRings.flatMap(ring => ringAngles(coords, ring).map(angle => Math.abs(angle - 120)))
-    );
+    const maxArylAngleDeviation = Math.max(...arylRings.flatMap(ring => ringAngles(coords, ring).map(angle => Math.abs(angle - 120))));
 
     assert.equal(coords.size, 28);
     assert.equal(audit.ok, true);
@@ -273,10 +264,7 @@ describe('layout/engine/templates/placement', () => {
   });
 
   it('places the trans-polyene macrolide template with regular fused rings and satisfied E alkenes', () => {
-    const graph = createLayoutGraph(
-      parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'trans-polyene-macrolide', graph.ringSystems[0].atomIds, graph.options.bondLength);
     const stereo = inspectEZStereo(graph, coords);
     const audit = auditLayout(graph, coords, {
@@ -477,10 +465,7 @@ describe('layout/engine/templates/placement', () => {
     const rightSixAngles = ringAngles(coords, ['C18', 'C23', 'C12', 'C13', 'C14', 'C15']);
     const lactoneAngles = ringAngles(coords, ['O22', 'C20', 'C18', 'C23', 'C12']);
     const centralBridgeAngles = ringAngles(coords, ['C25', 'C23', 'C12', 'C8', 'C4']);
-    const c12LactoneExitSeparation = angularDifference(
-      angleOf(sub(coords.get('O22'), coords.get('C12'))),
-      angleOf(sub(coords.get('C13'), coords.get('C12')))
-    ) * (180 / Math.PI);
+    const c12LactoneExitSeparation = angularDifference(angleOf(sub(coords.get('O22'), coords.get('C12'))), angleOf(sub(coords.get('C13'), coords.get('C12')))) * (180 / Math.PI);
 
     assert.equal(coords.size, 17);
     assert.equal(audit.ok, true);
@@ -921,10 +906,7 @@ describe('layout/engine/templates/placement', () => {
     const imineBridgeAngles = ringAngles(coords, ['C11', 'C12', 'C17', 'C6', 'C7', 'N8', 'C9']);
     const diazaCapAtomIds = ['C17', 'N16', 'C15', 'N14', 'C12'];
     const diazaCapAngles = ringAngles(coords, diazaCapAtomIds);
-    const diazaCapLengths = diazaCapAtomIds.map((atomId, index) => distance(
-      coords.get(atomId),
-      coords.get(diazaCapAtomIds[(index + 1) % diazaCapAtomIds.length])
-    ));
+    const diazaCapLengths = diazaCapAtomIds.map((atomId, index) => distance(coords.get(atomId), coords.get(diazaCapAtomIds[(index + 1) % diazaCapAtomIds.length])));
 
     assert.equal(coords.size, 13);
     assert.equal(audit.ok, true);
@@ -1028,10 +1010,7 @@ describe('layout/engine/templates/placement', () => {
     });
     const sixMemberAtomIds = ['C17', 'C16', 'C15', 'C14', 'N13', 'C12'];
     const sixMemberAngles = ringAngles(coords, sixMemberAtomIds);
-    const sixMemberLengths = sixMemberAtomIds.map((atomId, index) => distance(
-      coords.get(atomId),
-      coords.get(sixMemberAtomIds[(index + 1) % sixMemberAtomIds.length])
-    ));
+    const sixMemberLengths = sixMemberAtomIds.map((atomId, index) => distance(coords.get(atomId), coords.get(sixMemberAtomIds[(index + 1) % sixMemberAtomIds.length])));
 
     assert.equal(coords.size, 13);
     assert.equal(audit.ok, true);
@@ -1393,7 +1372,10 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C1').x < coords.get('N3').x);
     assert.ok(coords.get('C1').x < coords.get('N5').x);
     assert.ok(coords.get('C1').x < coords.get('N7').x);
-    assert.ok(exposedCarbonAngles.every(angle => angle < 160), `expected C2/C10 to form visible cage vertices, got ${exposedCarbonAngles.map(angle => angle.toFixed(1)).join(', ')}`);
+    assert.ok(
+      exposedCarbonAngles.every(angle => angle < 160),
+      `expected C2/C10 to form visible cage vertices, got ${exposedCarbonAngles.map(angle => angle.toFixed(1)).join(', ')}`
+    );
   });
 
   it('places the sulfonyl cyclopentenyl azocane core with a structured five-member ring', () => {
@@ -1410,10 +1392,7 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(audit.bondLengthFailureCount, 0);
     assert.equal(audit.visibleHeavyBondCrossingCount, 0);
     for (const angle of fiveRingAngles) {
-      assert.ok(
-        Math.abs(angle - 108) < 1e-3,
-        `expected the sulfonyl cyclopentene ring to stay pentagonal, got ${angle.toFixed(2)} degrees`
-      );
+      assert.ok(Math.abs(angle - 108) < 1e-3, `expected the sulfonyl cyclopentene ring to stay pentagonal, got ${angle.toFixed(2)} degrees`);
     }
   });
 
@@ -1501,10 +1480,7 @@ describe('layout/engine/templates/placement', () => {
         const previousAtomId = ring[(index - 1 + ring.length) % ring.length];
         const nextAtomId = ring[(index + 1) % ring.length];
         const bondLength = distance(coords.get(atomId), coords.get(nextAtomId));
-        const angle = angularDifference(
-          angleOf(sub(coords.get(previousAtomId), coords.get(atomId))),
-          angleOf(sub(coords.get(nextAtomId), coords.get(atomId)))
-        );
+        const angle = angularDifference(angleOf(sub(coords.get(previousAtomId), coords.get(atomId))), angleOf(sub(coords.get(nextAtomId), coords.get(atomId))));
         assert.ok(Math.abs(bondLength - graph.options.bondLength) < 1e-6);
         assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6);
       }
@@ -1559,10 +1535,7 @@ describe('layout/engine/templates/placement', () => {
   });
 
   it('places the oxygen-bridged bisindole lactam core with open aromatic lanes', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('[H][C@@]12C[C@H](<C(=O)OOC>)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('[H][C@@]12C[C@H](<C(=O)OOC>)[C@](C)(O1)N1C3=C(C=C(CSCC)C=C3)C3=C4CNC(=O)C4=C4C5=C(C=CC(CSCC)=C5)N2C4=C13'), { suppressH: true });
     const rootRingSystem = graph.ringSystems[0];
     const coords = placeTemplateCoords(graph, 'oxygen-bridged-bisindole-lactam-core', rootRingSystem.atomIds, graph.options.bondLength);
     const audit = auditLayout(graph, coords, {
@@ -1587,10 +1560,7 @@ describe('layout/engine/templates/placement', () => {
   });
 
   it('places the indoline aza bridged heptacycle core without collapsed bridge bonds', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'), { suppressH: true });
     const rootRingSystem = graph.ringSystems[0];
     const coords = placeTemplateCoords(graph, 'indoline-aza-bridged-heptacycle-core', rootRingSystem.atomIds, graph.options.bondLength);
     const audit = auditLayout(graph, coords, {
@@ -1637,10 +1607,7 @@ describe('layout/engine/templates/placement', () => {
         const previousAtomId = ring[(index - 1 + ring.length) % ring.length];
         const nextAtomId = ring[(index + 1) % ring.length];
         const bondLength = distance(coords.get(atomId), coords.get(nextAtomId));
-        const angle = angularDifference(
-          angleOf(sub(coords.get(previousAtomId), coords.get(atomId))),
-          angleOf(sub(coords.get(nextAtomId), coords.get(atomId)))
-        );
+        const angle = angularDifference(angleOf(sub(coords.get(previousAtomId), coords.get(atomId))), angleOf(sub(coords.get(nextAtomId), coords.get(atomId))));
         assert.ok(Math.abs(bondLength - graph.options.bondLength) < 1e-5);
         assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-5);
       }

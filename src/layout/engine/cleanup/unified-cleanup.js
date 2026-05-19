@@ -1,12 +1,6 @@
 /** @module cleanup/unified-cleanup */
 
-import {
-  buildAtomGrid,
-  computeAtomDistortionCost,
-  measureDivalentContinuationDistortion,
-  measureLayoutState,
-  measureOverlapState
-} from '../audit/invariants.js';
+import { buildAtomGrid, computeAtomDistortionCost, measureDivalentContinuationDistortion, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
 import { CLEANUP_EPSILON, ORTHOGONAL_HYPERVALENT_ELEMENTS, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { computeRotatableSubtrees, runLocalCleanup, runSpiroSmallRingExteriorCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
@@ -29,10 +23,12 @@ function hasOrthogonalHypervalentAtom(layoutGraph) {
   if (layoutGraph._hasOrthogonalHypervalentAtom !== undefined) {
     return layoutGraph._hasOrthogonalHypervalentAtom;
   }
-  layoutGraph._hasOrthogonalHypervalentAtom = [...layoutGraph.atoms.values()].some(
-    atom => ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)
-  );
+  layoutGraph._hasOrthogonalHypervalentAtom = [...layoutGraph.atoms.values()].some(atom => ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element));
   return layoutGraph._hasOrthogonalHypervalentAtom;
+}
+
+function shouldScoreHypervalentDeviation(layoutGraph, options = {}) {
+  return options.scoreHypervalentDeviation !== false && hasOrthogonalHypervalentAtom(layoutGraph);
 }
 
 /**
@@ -58,7 +54,7 @@ function prescoreCandidate(layoutGraph, baseState, candidateCoords, bondLength, 
     improvement: baseState.cost - candidateState.cost,
     overlapReduction: baseState.overlapCount - candidateState.overlapCount,
     bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
-    hypervalentDeviation: hasOrthogonalHypervalentAtom(layoutGraph) ? measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords) : 0,
+    hypervalentDeviation: shouldScoreHypervalentDeviation(layoutGraph, options) ? measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords) : 0,
     presentationImprovement: options.presentationImprovement ?? 0,
     candidateState
   };
@@ -86,7 +82,7 @@ function scoreCandidate(layoutGraph, baseState, candidateCoords, bondLength, opt
     improvement: baseState.cost - candidateState.cost,
     overlapReduction: baseState.overlapCount - candidateState.overlapCount,
     bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
-    hypervalentDeviation: hasOrthogonalHypervalentAtom(layoutGraph) ? measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords) : 0,
+    hypervalentDeviation: shouldScoreHypervalentDeviation(layoutGraph, options) ? measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords) : 0,
     presentationImprovement: options.presentationImprovement ?? 0,
     candidateState
   };
@@ -115,13 +111,8 @@ function candidateExactDivalentContinuationWorsening(candidate) {
 }
 
 function trigonalDistortionWorsening(baseState, candidate) {
-  return (
-    candidate?.candidateState?.trigonalDistortion?.totalDeviation ?? 0
-  ) - (
-    baseState?.trigonalDistortion?.totalDeviation ?? 0
-  );
+  return (candidate?.candidateState?.trigonalDistortion?.totalDeviation ?? 0) - (baseState?.trigonalDistortion?.totalDeviation ?? 0);
 }
-
 
 function shouldProtectExactMultipleBondTrigonalFan(layoutGraph, coords, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
@@ -129,9 +120,7 @@ function shouldProtectExactMultipleBondTrigonalFan(layoutGraph, coords, atomId) 
     return false;
   }
   const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, atomId);
-  return heavyBonds.length === 3
-    && heavyBonds.some(({ bond }) => !bond.aromatic && (bond.order ?? 1) >= 2)
-    && computeAtomDistortionCost(layoutGraph, coords, atomId, null) <= CLEANUP_EPSILON;
+  return heavyBonds.length === 3 && heavyBonds.some(({ bond }) => !bond.aromatic && (bond.order ?? 1) >= 2) && computeAtomDistortionCost(layoutGraph, coords, atomId, null) <= CLEANUP_EPSILON;
 }
 
 function exactMultipleBondTrigonalFanWorsening(layoutGraph, baseCoords, candidateCoords) {
@@ -166,9 +155,7 @@ function sortedAngularFanDistortion(angles) {
   for (let index = 0; index < sortedAngles.length; index++) {
     const currentAngle = sortedAngles[index];
     const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
-    const separation = index === sortedAngles.length - 1
-      ? nextAngle + 2 * Math.PI - currentAngle
-      : nextAngle - currentAngle;
+    const separation = index === sortedAngles.length - 1 ? nextAngle + 2 * Math.PI - currentAngle : nextAngle - currentAngle;
     cost += (separation - idealSeparation) ** 2;
   }
   return cost;
@@ -196,9 +183,7 @@ function exactRingRootFanDistortionCost(layoutGraph, coords, atomId) {
     }
     neighborAngles.push(Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x));
   }
-  return neighborAngles.length === 3 && ringBondCount >= 2
-    ? sortedAngularFanDistortion(neighborAngles)
-    : 0;
+  return neighborAngles.length === 3 && ringBondCount >= 2 ? sortedAngularFanDistortion(neighborAngles) : 0;
 }
 
 function exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) {
@@ -257,9 +242,10 @@ function exactDivalentContinuationWorsening(layoutGraph, baseCoords, candidateCo
 }
 
 function preservesExactProtectedAngles(layoutGraph, baseCoords, candidateCoords) {
-  return exactMultipleBondTrigonalFanWorsening(layoutGraph, baseCoords, candidateCoords).maxWorsening
-    <= EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT
-    && exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) <= EXACT_RING_ROOT_FAN_WORSENING_LIMIT;
+  return (
+    exactMultipleBondTrigonalFanWorsening(layoutGraph, baseCoords, candidateCoords).maxWorsening <= EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT &&
+    exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) <= EXACT_RING_ROOT_FAN_WORSENING_LIMIT
+  );
 }
 
 /**
@@ -285,10 +271,7 @@ function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
   if (protectCleanupBondIntegrity(options) && candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount) {
     return candidate.bondLengthFailureCount < bestCandidate.bondLengthFailureCount;
   }
-  if (
-    candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount
-    && Math.abs(candidate.overlapCount - bestCandidate.overlapCount) <= 1
-  ) {
+  if (candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount && Math.abs(candidate.overlapCount - bestCandidate.overlapCount) <= 1) {
     return candidate.bondLengthFailureCount < bestCandidate.bondLengthFailureCount;
   }
   if (candidate.overlapCount !== bestCandidate.overlapCount) {
@@ -342,45 +325,35 @@ function shouldSkipRotationProbe(visibleHeavyAtomCount, baseOverlapCount, bestCa
   if (candidateExactDivalentContinuationWorsening(bestCandidate) > EXACT_DIVALENT_CONTINUATION_WORSENING_LIMIT) {
     return false;
   }
-  return visibleHeavyAtomCount >= UNIFIED_CLEANUP_LIMITS.overlapPriorityAtomCount
-    && baseOverlapCount > 0
-    && !!bestCandidate
-    && bestCandidate.bondLengthFailureCount === 0
-    && bestCandidate.overlapReduction > 0;
+  return (
+    visibleHeavyAtomCount >= UNIFIED_CLEANUP_LIMITS.overlapPriorityAtomCount &&
+    baseOverlapCount > 0 &&
+    !!bestCandidate &&
+    bestCandidate.bondLengthFailureCount === 0 &&
+    bestCandidate.overlapReduction > 0
+  );
 }
 
 function shouldAcceptCandidate(baseState, candidate, epsilon, options = {}) {
-  if (!(
-    candidate.overlapReduction > 0
-    || candidate.improvement > epsilon
-    || (
-      candidate.presentationImprovement > epsilon
-      && candidate.overlapCount <= baseState.overlapCount
-      && candidate.bondLengthFailureCount <= baseState.bondDeviation.failingBondCount
+  if (
+    !(
+      candidate.overlapReduction > 0 ||
+      candidate.improvement > epsilon ||
+      (candidate.presentationImprovement > epsilon && candidate.overlapCount <= baseState.overlapCount && candidate.bondLengthFailureCount <= baseState.bondDeviation.failingBondCount)
     )
-  )) {
+  ) {
     return false;
   }
   if (protectLargeMoleculeBackbone(options) && candidate.overlapCount > baseState.overlapCount) {
     return false;
   }
-  if (
-    protectLargeMoleculeBackbone(options)
-    && candidateMaxBondDeviation(candidate) > Math.max(PROTECTED_BACKBONE_MAX_BOND_DEVIATION, (baseState.bondDeviation?.maxDeviation ?? 0) + epsilon)
-  ) {
+  if (protectLargeMoleculeBackbone(options) && candidateMaxBondDeviation(candidate) > Math.max(PROTECTED_BACKBONE_MAX_BOND_DEVIATION, (baseState.bondDeviation?.maxDeviation ?? 0) + epsilon)) {
     return false;
   }
-  if (
-    protectCleanupBondIntegrity(options)
-    && candidate.bondLengthFailureCount > baseState.bondDeviation.failingBondCount
-  ) {
+  if (protectCleanupBondIntegrity(options) && candidate.bondLengthFailureCount > baseState.bondDeviation.failingBondCount) {
     return false;
   }
-  if (
-    candidate.overlapReduction > 0
-    && candidate.improvement <= epsilon
-    && trigonalDistortionWorsening(baseState, candidate) > NONIMPROVING_TRIGONAL_WORSENING_LIMIT
-  ) {
+  if (candidate.overlapReduction > 0 && candidate.improvement <= epsilon && trigonalDistortionWorsening(baseState, candidate) > NONIMPROVING_TRIGONAL_WORSENING_LIMIT) {
     return false;
   }
   return true;
@@ -433,6 +406,7 @@ function updateAtomGridForAcceptedMove(layoutGraph, atomGrid, previousCoords, ne
  * @param {Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} [options.cleanupRigidSubtreesByAtomId] - Optional extra rigid-subtree descriptors keyed by atom ID.
  * @param {Set<string>|null} [options.frozenAtomIds] - Atom ids that cleanup must not move.
  * @param {boolean} [options.protectBondIntegrity] - Whether cleanup should refuse moves that increase bond failures for the current family.
+ * @param {boolean} [options.scoreHypervalentDeviation] - Whether candidate tie-breaks should measure supported hypervalent center deviation.
  * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number, overlapMoves: number}} Cleanup result.
  */
 export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
@@ -453,7 +427,9 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   }
   let pendantRigidSubtreesByAtomId = null;
   let coords = new Map();
-  for (const [atomId, position] of inputCoords) { coords.set(atomId, { x: position.x, y: position.y }); }
+  for (const [atomId, position] of inputCoords) {
+    coords.set(atomId, { x: position.x, y: position.y });
+  }
   const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, coords);
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
   let passes = 0;
@@ -462,9 +438,11 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   let baseLayoutState = null;
 
   while (passes < maxPasses) {
-    const baseOverlapState = baseLayoutState ?? measureOverlapState(layoutGraph, coords, bondLength, {
-      atomGrid
-    });
+    const baseOverlapState =
+      baseLayoutState ??
+      measureOverlapState(layoutGraph, coords, bondLength, {
+        atomGrid
+      });
     const baseOverlapCount = baseOverlapState.overlapCount;
     let bestPrescoredCandidate = null;
 
@@ -472,14 +450,12 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       pendantRigidSubtreesByAtomId ??= collectRigidPendantRingSubtrees(layoutGraph);
       const rigidSubtreeDescriptorMaps = [pendantRigidSubtreesByAtomId];
       if (
-        protectLargeMoleculeBackbone(options)
-        && baseOverlapCount >= UNIFIED_CLEANUP_LIMITS.largeMoleculeBlockAwareOverlapFloor
-        && options.cleanupRigidSubtreesByAtomId instanceof Map
-        && options.cleanupRigidSubtreesByAtomId.size > 0
+        protectLargeMoleculeBackbone(options) &&
+        baseOverlapCount >= UNIFIED_CLEANUP_LIMITS.largeMoleculeBlockAwareOverlapFloor &&
+        options.cleanupRigidSubtreesByAtomId instanceof Map &&
+        options.cleanupRigidSubtreesByAtomId.size > 0
       ) {
-        rigidSubtreeDescriptorMaps.push(
-          mergeRigidSubtreesByAtomId(pendantRigidSubtreesByAtomId, options.cleanupRigidSubtreesByAtomId)
-        );
+        rigidSubtreeDescriptorMaps.push(mergeRigidSubtreesByAtomId(pendantRigidSubtreesByAtomId, options.cleanupRigidSubtreesByAtomId));
       }
 
       for (const rigidSubtreesByAtomId of rigidSubtreeDescriptorMaps) {
@@ -497,7 +473,8 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
         }
         const prescoredOverlapCandidate = {
           ...prescoreCandidate(layoutGraph, baseOverlapState, overlapCandidate.coords, bondLength, {
-            presentationImprovement: 0
+            presentationImprovement: 0,
+            scoreHypervalentDeviation: options.scoreHypervalentDeviation
           }),
           exactDivalentContinuationWorsening: exactDivalentContinuationWorsening(layoutGraph, coords, overlapCandidate.coords),
           overlapMoves: overlapCandidate.moves,
@@ -514,8 +491,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
 
     if (!shouldSkipRotationProbe(visibleHeavyAtomCount, baseOverlapCount, bestPrescoredCandidate, options)) {
       const rotationProbeMaxPasses =
-        visibleHeavyAtomCount <= UNIFIED_CLEANUP_LIMITS.moderateLayoutRotationProbeAtomCount
-        && baseOverlapCount <= UNIFIED_CLEANUP_LIMITS.smallLayoutRotationProbeOverlapCount
+        visibleHeavyAtomCount <= UNIFIED_CLEANUP_LIMITS.moderateLayoutRotationProbeAtomCount && baseOverlapCount <= UNIFIED_CLEANUP_LIMITS.smallLayoutRotationProbeOverlapCount
           ? UNIFIED_CLEANUP_LIMITS.smallLayoutRotationProbeMaxPasses
           : 1;
       const rotationCandidate = runLocalCleanup(layoutGraph, coords, {
@@ -532,7 +508,8 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       if (rotationCandidate.passes > 0) {
         const prescoredRotationCandidate = {
           ...prescoreCandidate(layoutGraph, baseOverlapState, rotationCandidate.coords, bondLength, {
-            presentationImprovement: rotationCandidate.improvement
+            presentationImprovement: rotationCandidate.improvement,
+            scoreHypervalentDeviation: options.scoreHypervalentDeviation
           }),
           exactDivalentContinuationWorsening: exactDivalentContinuationWorsening(layoutGraph, coords, rotationCandidate.coords),
           overlapMoves: 0
@@ -550,13 +527,16 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       break;
     }
 
-    const baseState = baseLayoutState ?? measureLayoutState(layoutGraph, coords, bondLength, {
-      overlaps: baseOverlapState.overlaps
-    });
+    const baseState =
+      baseLayoutState ??
+      measureLayoutState(layoutGraph, coords, bondLength, {
+        overlaps: baseOverlapState.overlaps
+      });
     const bestCandidate = {
       ...scoreCandidate(layoutGraph, baseState, bestPrescoredCandidate.coords, bondLength, {
         overlaps: bestPrescoredCandidate.candidateState.overlaps,
-        presentationImprovement: bestPrescoredCandidate.presentationImprovement
+        presentationImprovement: bestPrescoredCandidate.presentationImprovement,
+        scoreHypervalentDeviation: options.scoreHypervalentDeviation
       }),
       exactDivalentContinuationWorsening: bestPrescoredCandidate.exactDivalentContinuationWorsening,
       overlapMoves: bestPrescoredCandidate.overlapMoves
@@ -570,7 +550,9 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
 
     updateAtomGridForAcceptedMove(layoutGraph, atomGrid, coords, bestCandidate.coords);
     coords = new Map();
-    for (const [atomId, position] of bestCandidate.coords) { coords.set(atomId, { x: position.x, y: position.y }); }
+    for (const [atomId, position] of bestCandidate.coords) {
+      coords.set(atomId, { x: position.x, y: position.y });
+    }
     passes++;
     overlapMoves += bestCandidate.overlapMoves;
     totalImprovement += Math.max(bestCandidate.improvement, 0);

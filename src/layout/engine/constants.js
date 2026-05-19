@@ -164,9 +164,7 @@ export const RING_SYSTEM_RESCUE_LIMITS = Object.freeze({
  * @returns {string} Canonical pair key.
  */
 export function atomPairKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId
-    ? `${firstAtomId}:${secondAtomId}`
-    : `${secondAtomId}:${firstAtomId}`;
+  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
 }
 
 /** Elements that form orthogonal hypervalent centers (S, P, Se, As, Si). */

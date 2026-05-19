@@ -25,7 +25,6 @@ function buildNeighborMap(molecule) {
   return neighborMap;
 }
 
-
 /**
  * Looks up a ring descriptor by ID.
  * @param {object[]} rings - Ring descriptors.

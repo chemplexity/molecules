@@ -3,12 +3,7 @@ import assert from 'node:assert/strict';
 
 import { generateResonanceStructures } from '../../../src/algorithms/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
-import {
-  _captureReactionPreviewSnapshot,
-  _restoreReactionPreviewSnapshot,
-  _restoreReactionPreviewSource,
-  initReaction2d
-} from '../../../src/app/render/reaction-2d.js';
+import { _captureReactionPreviewSnapshot, _restoreReactionPreviewSnapshot, _restoreReactionPreviewSource, initReaction2d } from '../../../src/app/render/reaction-2d.js';
 
 function serializePreviewMol(mol) {
   if (!mol) {

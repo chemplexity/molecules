@@ -74,7 +74,7 @@ function _normalizeScaffoldHydrogens(scaffold) {
  */
 function _extractAcyclicBackbone(molecule) {
   const backbone = molecule.clone();
-  
+
   // 1. Remove all explicit hydrogens
   for (const [atomId, atom] of [...backbone.atoms.entries()]) {
     if (atom.name === 'H') {

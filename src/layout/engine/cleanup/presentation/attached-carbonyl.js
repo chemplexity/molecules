@@ -84,12 +84,7 @@ export function collectAttachedCarbonylPresentationDescriptors(layoutGraph, coor
       if (!supportsAttachedCarbonylPresentationPreference(layoutGraph, descriptor)) {
         continue;
       }
-      if (
-        focusSet
-        && !focusSet.has(anchorAtomId)
-        && !focusSet.has(rootAtomId)
-        && !subtreeAtomIds.some(atomId => focusSet.has(atomId))
-      ) {
+      if (focusSet && !focusSet.has(anchorAtomId) && !focusSet.has(rootAtomId) && !subtreeAtomIds.some(atomId => focusSet.has(atomId))) {
         continue;
       }
       const key = `${anchorAtomId}->${rootAtomId}`;

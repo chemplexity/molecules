@@ -1,12 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  bondOverlayPlacementHitsBlockers,
-  buildBondOverlayBlockerSegments,
-  pickHydrogenBondOverlayPlacement,
-  pickBondOverlayLabelPlacement
-} from '../../../src/app/render/bond-overlay-placement.js';
+import { bondOverlayPlacementHitsBlockers, buildBondOverlayBlockerSegments, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from '../../../src/app/render/bond-overlay-placement.js';
 
 describe('app/render/bond-overlay-placement', () => {
   it('pushes bond-length labels clear of triple-bond parallel strokes', () => {

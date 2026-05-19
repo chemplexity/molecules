@@ -168,9 +168,7 @@ test('generateAndRefine2dCoords keeps detached HCl fragments beside the oriented
   generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6, finalLandscapeOrientation: true });
 
   const chloride = mol.atoms.get('Cl1');
-  const principalAtoms = [...mol.atoms.values()].filter(
-    atom => atom.id !== 'Cl1' && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y)
-  );
+  const principalAtoms = [...mol.atoms.values()].filter(atom => atom.id !== 'Cl1' && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
   const principalBounds = atomBounds(principalAtoms);
 
   assert.ok(chloride && Number.isFinite(chloride.x) && Number.isFinite(chloride.y), 'expected detached chloride coordinates');

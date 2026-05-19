@@ -8,7 +8,8 @@ import { makeDisconnectedEthanes, makeEthane } from './support/molecules.js';
 import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
 import { createLayoutGraph } from '../../../src/layout/engine/model/layout-graph.js';
 
-const SULFATED_GLYCOSIDE_SMILES = 'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
+const SULFATED_GLYCOSIDE_SMILES =
+  'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
 
 function minNonBondedDistance(molecule, coords) {
   const bondedPairs = new Set([...molecule.bonds.values()].flatMap(bond => [`${bond.atoms[0]}:${bond.atoms[1]}`, `${bond.atoms[1]}:${bond.atoms[0]}`]));
@@ -30,9 +31,7 @@ function minNonBondedDistance(molecule, coords) {
 }
 
 function sortedAngleSeparations(centerPosition, neighborPositions) {
-  const angles = neighborPositions
-    .map(position => Math.atan2(position.y - centerPosition.y, position.x - centerPosition.x))
-    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const angles = neighborPositions.map(position => Math.atan2(position.y - centerPosition.y, position.x - centerPosition.x)).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
   const separations = [];
   for (let index = 0; index < angles.length; index++) {
     const currentAngle = angles[index];
@@ -165,9 +164,7 @@ describe('layout/engine/api', () => {
 
   it('refineCoords re-idealizes a fully specified acyclic component when no touched hints are provided', () => {
     const seed = generateCoords(parseSMILES('CC(C)C'), { suppressH: true });
-    const existingCoords = new Map(
-      [...seed.coords.entries()].map(([atomId, position]) => [atomId, atomId === 'C3' ? { x: position.x + 0.18, y: position.y + 0.09 } : { ...position }])
-    );
+    const existingCoords = new Map([...seed.coords.entries()].map(([atomId, position]) => [atomId, atomId === 'C3' ? { x: position.x + 0.18, y: position.y + 0.09 } : { ...position }]));
     const result = refineCoords(parseSMILES('CC(C)C'), {
       existingCoords,
       suppressH: true

@@ -18,28 +18,7 @@ const COMPACT_BRIDGED_NONBONDED_COLLAPSE_FACTOR = 0.8;
 const STRAINED_COMPACT_BRIDGED_KK_THRESHOLD = 0.1;
 const STRAINED_COMPACT_BRIDGED_MAX_DEVIATION = 0.35;
 const BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR = 0.5;
-const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([
-  1,
-  0.95,
-  0.9,
-  0.85,
-  0.8,
-  0.75,
-  0.7,
-  0.65,
-  0.6,
-  0.55,
-  0.5,
-  0.45,
-  0.4,
-  0.35,
-  0.3,
-  0.25,
-  0.2,
-  0.15,
-  0.1,
-  0.05
-]);
+const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]);
 const FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
 const FUSED_CYCLOHEXANE_BRANCH_SLOT_BLOCKER_FACTOR = 0.65;
 const FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR = 0.55;
@@ -96,10 +75,7 @@ const PERIPHERAL_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0
 const SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 8;
 const SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.9, 0.8, 0.7, 0.6]);
 const SPIRO_JUNCTION_RING_SPREAD_MIN_CROSS_ANGLE = Math.PI / 3;
-const SPIRO_JUNCTION_RING_SPREAD_OFFSETS = Object.freeze(
-  Array.from({ length: 72 }, (_, index) => ((index + 1) * 5 * Math.PI) / 180)
-    .flatMap(angle => [angle, -angle])
-);
+const SPIRO_JUNCTION_RING_SPREAD_OFFSETS = Object.freeze(Array.from({ length: 72 }, (_, index) => ((index + 1) * 5 * Math.PI) / 180).flatMap(angle => [angle, -angle]));
 const SPIRO_JUNCTION_RING_SPREAD_EPSILON = 1e-6;
 
 /**
@@ -249,12 +225,7 @@ function shouldShortCircuitLargeProjection(atomIds, pinnedAtomIds) {
 }
 
 function acceptsLargeProjectionAudit(audit) {
-  return Boolean(
-    audit
-    && (audit.severeOverlapCount ?? 0) <= 5
-    && (audit.bondLengthFailureCount ?? 0) <= 25
-    && (audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) < 1.0
-  );
+  return Boolean(audit && (audit.severeOverlapCount ?? 0) <= 5 && (audit.bondLengthFailureCount ?? 0) <= 25 && (audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) < 1.0);
 }
 
 function containsMetalAtom(layoutGraph, atomIds) {
@@ -336,11 +307,7 @@ function auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength
  * @returns {boolean} True when the projected bridge paths are catastrophically collapsed.
  */
 function hasCatastrophicBridgeProjectionCollapse(audit, bondLength) {
-  return (
-    audit
-    && audit.minSevereOverlapDistance != null
-    && audit.minSevereOverlapDistance < bondLength * 0.1
-  );
+  return audit && audit.minSevereOverlapDistance != null && audit.minSevereOverlapDistance < bondLength * 0.1;
 }
 
 /**
@@ -358,19 +325,15 @@ function hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, 
     return false;
   }
   return (
-    baselineAudit.severeOverlapCount <= projectedAudit.severeOverlapCount
-    && (baselineAudit.visibleHeavyBondCrossingCount ?? 0) <= (projectedAudit.visibleHeavyBondCrossingCount ?? 0)
-    && projectedAudit.bondLengthFailureCount > baselineAudit.bondLengthFailureCount
-    && projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR
+    baselineAudit.severeOverlapCount <= projectedAudit.severeOverlapCount &&
+    (baselineAudit.visibleHeavyBondCrossingCount ?? 0) <= (projectedAudit.visibleHeavyBondCrossingCount ?? 0) &&
+    projectedAudit.bondLengthFailureCount > baselineAudit.bondLengthFailureCount &&
+    projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR
   );
 }
 
 function shouldRefineStrainedCompactBridgedSeed(layoutGraph, atomIds, audit) {
-  return (
-    atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
-    && !containsMetalAtom(layoutGraph, atomIds)
-    && (audit?.maxBondLengthDeviation ?? 0) > STRAINED_COMPACT_BRIDGED_MAX_DEVIATION
-  );
+  return atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit && !containsMetalAtom(layoutGraph, atomIds) && (audit?.maxBondLengthDeviation ?? 0) > STRAINED_COMPACT_BRIDGED_MAX_DEVIATION;
 }
 
 function fitRegularRingTargets(ring, coords, bondLength) {
@@ -437,12 +400,7 @@ function aromaticRingShapeScore(rings, coords, bondLength) {
       const previousPosition = coords.get(previousAtomId);
       const nextPosition = coords.get(nextAtomId);
       const bondDeviation = Math.abs(Math.hypot(nextPosition.x - atomPosition.x, nextPosition.y - atomPosition.y) - bondLength);
-      const angleDeviation = Math.abs(
-        angularDifference(
-          angleOf(sub(previousPosition, atomPosition)),
-          angleOf(sub(nextPosition, atomPosition))
-        ) - targetAngle
-      );
+      const angleDeviation = Math.abs(angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition))) - targetAngle);
       maxBondDeviation = Math.max(maxBondDeviation, bondDeviation);
       maxAngleDeviation = Math.max(maxAngleDeviation, angleDeviation);
       totalBondDeviation += bondDeviation;
@@ -516,10 +474,7 @@ function fitRegularRingTargetsFromSharedEdge(layoutGraph, ring, coords) {
   for (let index = 0; index < ring.atomIds.length; index++) {
     const firstAtomId = ring.atomIds[index];
     const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
-    if (
-      (layoutGraph.ringCountByAtomId.get(firstAtomId) ?? 0) <= 1
-      || (layoutGraph.ringCountByAtomId.get(secondAtomId) ?? 0) <= 1
-    ) {
+    if ((layoutGraph.ringCountByAtomId.get(firstAtomId) ?? 0) <= 1 || (layoutGraph.ringCountByAtomId.get(secondAtomId) ?? 0) <= 1) {
       continue;
     }
 
@@ -629,12 +584,7 @@ function fitRegularRingTargetsFromAnchoredEdge(ring, coords, edgeAtomIds) {
   for (let index = 0; index < ring.atomIds.length; index++) {
     const firstAtomId = ring.atomIds[index];
     const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
-    if (
-      !(
-        (firstAtomId === edgeAtomIds[0] && secondAtomId === edgeAtomIds[1])
-        || (firstAtomId === edgeAtomIds[1] && secondAtomId === edgeAtomIds[0])
-      )
-    ) {
+    if (!((firstAtomId === edgeAtomIds[0] && secondAtomId === edgeAtomIds[1]) || (firstAtomId === edgeAtomIds[1] && secondAtomId === edgeAtomIds[0]))) {
       continue;
     }
 
@@ -742,10 +692,7 @@ function atomIdsAreAdjacentInRing(ring, firstAtomId, secondAtomId) {
   if (firstIndex < 0) {
     return false;
   }
-  return (
-    ring.atomIds[(firstIndex + 1) % ring.atomIds.length] === secondAtomId
-    || ring.atomIds[(firstIndex - 1 + ring.atomIds.length) % ring.atomIds.length] === secondAtomId
-  );
+  return ring.atomIds[(firstIndex + 1) % ring.atomIds.length] === secondAtomId || ring.atomIds[(firstIndex - 1 + ring.atomIds.length) % ring.atomIds.length] === secondAtomId;
 }
 
 /**
@@ -802,10 +749,7 @@ function heavyAnchorNeighborsInComponent(layoutGraph, anchorAtomId, componentAto
   return (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
     .filter(bond => bond?.kind === 'covalent')
     .map(bond => (bond.a === anchorAtomId ? bond.b : bond.a))
-    .filter(neighborAtomId =>
-      componentAtomIdSet.has(neighborAtomId)
-      && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H'
-    );
+    .filter(neighborAtomId => componentAtomIdSet.has(neighborAtomId) && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
 }
 
 /**
@@ -934,13 +878,7 @@ function spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, inputCoords,
   for (const anchorAtomId of atomIds) {
     const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
     const anchorRings = rings.filter(ring => ring.atomIds.includes(anchorAtomId));
-    if (
-      !anchorAtom
-      || anchorAtom.element === 'H'
-      || anchorAtom.heavyDegree < 4
-      || anchorRings.length < 2
-      || layoutGraph.fixedCoords.has(anchorAtomId)
-    ) {
+    if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.heavyDegree < 4 || anchorRings.length < 2 || layoutGraph.fixedCoords.has(anchorAtomId)) {
       continue;
     }
 
@@ -971,12 +909,7 @@ function spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, inputCoords,
         continue;
       }
       for (const rotationAngle of SPIRO_JUNCTION_RING_SPREAD_OFFSETS) {
-        const candidateCoords = rotateSpiroJunctionGroup(
-          coords,
-          anchorAtomId,
-          groups[groupIndex].atomIds,
-          rotationAngle
-        );
+        const candidateCoords = rotateSpiroJunctionGroup(coords, anchorAtomId, groups[groupIndex].atomIds, rotationAngle);
         if (!candidateCoords) {
           continue;
         }
@@ -985,10 +918,7 @@ function spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, inputCoords,
           continue;
         }
         const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
-        if (
-          candidateAudit.bondLengthFailureCount > baseAudit.bondLengthFailureCount
-          || candidateAudit.maxBondLengthDeviation > baseAudit.maxBondLengthDeviation + SPIRO_JUNCTION_RING_SPREAD_EPSILON
-        ) {
+        if (candidateAudit.bondLengthFailureCount > baseAudit.bondLengthFailureCount || candidateAudit.maxBondLengthDeviation > baseAudit.maxBondLengthDeviation + SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
           continue;
         }
         const candidate = {
@@ -1012,10 +942,7 @@ function spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, inputCoords,
 }
 
 function pointSideOfEdge(point, firstPosition, secondPosition) {
-  return (
-    (secondPosition.x - firstPosition.x) * (point.y - firstPosition.y)
-    - (secondPosition.y - firstPosition.y) * (point.x - firstPosition.x)
-  );
+  return (secondPosition.x - firstPosition.x) * (point.y - firstPosition.y) - (secondPosition.y - firstPosition.y) * (point.x - firstPosition.x);
 }
 
 function regularRingTargetCandidatesForFixedEdge(ring, coords, firstAtomId, secondAtomId, firstPosition, secondPosition) {
@@ -1118,26 +1045,14 @@ function regularRingTargetCandidatesForFixedAnchor(ring, coords, anchorAtomId, b
     candidates.push(translatedCandidate);
   }
 
-  for (const neighborAtomId of [
-    ring.atomIds[(anchorIndex - 1 + ring.atomIds.length) % ring.atomIds.length],
-    ring.atomIds[(anchorIndex + 1) % ring.atomIds.length]
-  ]) {
+  for (const neighborAtomId of [ring.atomIds[(anchorIndex - 1 + ring.atomIds.length) % ring.atomIds.length], ring.atomIds[(anchorIndex + 1) % ring.atomIds.length]]) {
     const neighborPosition = coords.get(neighborAtomId);
     if (!neighborPosition) {
       continue;
     }
     const neighborAngle = angleOf(sub(neighborPosition, anchorPosition));
     const exactNeighborPosition = add(anchorPosition, fromAngle(neighborAngle, bondLength));
-    candidates.push(
-      ...regularRingTargetCandidatesForFixedEdge(
-        ring,
-        coords,
-        anchorAtomId,
-        neighborAtomId,
-        anchorPosition,
-        exactNeighborPosition
-      )
-    );
+    candidates.push(...regularRingTargetCandidatesForFixedEdge(ring, coords, anchorAtomId, neighborAtomId, anchorPosition, exactNeighborPosition));
   }
 
   return candidates.sort((firstCandidate, secondCandidate) => firstCandidate.error - secondCandidate.error);
@@ -1157,10 +1072,7 @@ function fusedAromaticCyclohexanePairs(rings) {
       if (sharedAtomIds.length !== 2) {
         continue;
       }
-      if (
-        !atomIdsAreAdjacentInRing(aromaticRing, sharedAtomIds[0], sharedAtomIds[1])
-        || !atomIdsAreAdjacentInRing(cyclohexaneRing, sharedAtomIds[0], sharedAtomIds[1])
-      ) {
+      if (!atomIdsAreAdjacentInRing(aromaticRing, sharedAtomIds[0], sharedAtomIds[1]) || !atomIdsAreAdjacentInRing(cyclohexaneRing, sharedAtomIds[0], sharedAtomIds[1])) {
         continue;
       }
       pairs.push({ aromaticRing, cyclohexaneRing, sharedAtomIds });
@@ -1190,29 +1102,15 @@ function exactFusedAromaticCyclohexanePairTargetCandidates(pair, coords, bondLen
     y: (firstPosition.y + secondPosition.y) / 2
   };
   const exactFirstPosition = {
-    x: midpoint.x - unitEdge.x * bondLength / 2,
-    y: midpoint.y - unitEdge.y * bondLength / 2
+    x: midpoint.x - (unitEdge.x * bondLength) / 2,
+    y: midpoint.y - (unitEdge.y * bondLength) / 2
   };
   const exactSecondPosition = {
-    x: midpoint.x + unitEdge.x * bondLength / 2,
-    y: midpoint.y + unitEdge.y * bondLength / 2
+    x: midpoint.x + (unitEdge.x * bondLength) / 2,
+    y: midpoint.y + (unitEdge.y * bondLength) / 2
   };
-  const aromaticCandidates = regularRingTargetCandidatesForFixedEdge(
-    pair.aromaticRing,
-    coords,
-    firstAtomId,
-    secondAtomId,
-    exactFirstPosition,
-    exactSecondPosition
-  );
-  const cyclohexaneCandidates = regularRingTargetCandidatesForFixedEdge(
-    pair.cyclohexaneRing,
-    coords,
-    firstAtomId,
-    secondAtomId,
-    exactFirstPosition,
-    exactSecondPosition
-  );
+  const aromaticCandidates = regularRingTargetCandidatesForFixedEdge(pair.aromaticRing, coords, firstAtomId, secondAtomId, exactFirstPosition, exactSecondPosition);
+  const cyclohexaneCandidates = regularRingTargetCandidatesForFixedEdge(pair.cyclohexaneRing, coords, firstAtomId, secondAtomId, exactFirstPosition, exactSecondPosition);
   if (aromaticCandidates.length === 0 || cyclohexaneCandidates.length === 0) {
     return [];
   }
@@ -1319,21 +1217,13 @@ function translateSingleAnchorSideComponentsWithFusedCore(layoutGraph, pair, coo
         continue;
       }
       const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
-      if (
-        protectedAtomIds.has(neighborAtomId)
-        || movedSideAtomIds.has(neighborAtomId)
-        || layoutGraph.atoms.get(neighborAtomId)?.element === 'H'
-      ) {
+      if (protectedAtomIds.has(neighborAtomId) || movedSideAtomIds.has(neighborAtomId) || layoutGraph.atoms.get(neighborAtomId)?.element === 'H') {
         continue;
       }
 
       const componentAtomIds = collectSideComponentExcludingProtectedAtoms(layoutGraph, neighborAtomId, protectedAtomIds);
       const protectedNeighborAtomIds = protectedNeighborsForSideComponent(layoutGraph, componentAtomIds, protectedAtomIds);
-      if (
-        protectedNeighborAtomIds.size !== 1
-        || !protectedNeighborAtomIds.has(anchorAtomId)
-        || [...componentAtomIds].some(atomId => layoutGraph.fixedCoords.has(atomId))
-      ) {
+      if (protectedNeighborAtomIds.size !== 1 || !protectedNeighborAtomIds.has(anchorAtomId) || [...componentAtomIds].some(atomId => layoutGraph.fixedCoords.has(atomId))) {
         continue;
       }
 
@@ -1380,9 +1270,7 @@ function cyclicExternalRuns(ring, anchorAtomIds) {
 
 function bridgeRunAvoidancePoint(coreRing, bridgeRing, run, coords) {
   const coreAtomIds = new Set(coreRing.atomIds);
-  const internalSharedAtomIds = bridgeRing.atomIds.filter(
-    atomId => coreAtomIds.has(atomId) && atomId !== run.startAtomId && atomId !== run.endAtomId
-  );
+  const internalSharedAtomIds = bridgeRing.atomIds.filter(atomId => coreAtomIds.has(atomId) && atomId !== run.startAtomId && atomId !== run.endAtomId);
   const points = internalSharedAtomIds.map(atomId => coords.get(atomId)).filter(Boolean);
   return points.length > 0 ? centroid(points) : centroid(coreRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
 }
@@ -1408,9 +1296,7 @@ function sineBridgePathTargets(coords, run, avoidancePoint, bondLength, heightFa
     x: -unitChord.y,
     y: unitChord.x
   };
-  const avoidanceSide = avoidancePoint
-    ? Math.sign(pointSideOfEdge(avoidancePoint, startPosition, endPosition))
-    : 0;
+  const avoidanceSide = avoidancePoint ? Math.sign(pointSideOfEdge(avoidancePoint, startPosition, endPosition)) : 0;
   const baseSide = avoidanceSide === 0 ? 1 : -avoidanceSide;
   const side = heightFactor < 0 ? -baseSide : baseSide;
   const chordRatio = chordLength / bondLength;
@@ -1450,9 +1336,7 @@ function sineBridgePathTargets(coords, run, avoidancePoint, bondLength, heightFa
     const forwardPoint = add(center, fromAngle(startAngle + step * pathIndex, radius));
     const reversePoint = add(center, fromAngle(startAngle - step * pathIndex, radius));
     const forwardEnd = add(center, fromAngle(startAngle + theta, radius));
-    return Math.hypot(forwardEnd.x - endPosition.x, forwardEnd.y - endPosition.y) <= 1e-6
-      ? forwardPoint
-      : reversePoint;
+    return Math.hypot(forwardEnd.x - endPosition.x, forwardEnd.y - endPosition.y) <= 1e-6 ? forwardPoint : reversePoint;
   }
 
   const targets = new Map();
@@ -1556,9 +1440,7 @@ function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bond
   }
 
   const ringAtomIds = new Set(atomIds);
-  const component = layoutGraph.components.find(candidateComponent =>
-    atomIds.some(atomId => candidateComponent.atomIds.includes(atomId))
-  );
+  const component = layoutGraph.components.find(candidateComponent => atomIds.some(atomId => candidateComponent.atomIds.includes(atomId)));
   if (!component) {
     return 0;
   }
@@ -1569,18 +1451,7 @@ function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bond
   }
 
   const previewCoords = cloneCoords(coords);
-  placeRemainingBranches(
-    componentAdjacency(layoutGraph, component.atomIds),
-    layoutGraph.canonicalAtomRank,
-    previewCoords,
-    new Set(participantAtomIds),
-    atomIds,
-    bondLength,
-    layoutGraph,
-    null,
-    0,
-    {}
-  );
+  placeRemainingBranches(componentAdjacency(layoutGraph, component.atomIds), layoutGraph.canonicalAtomRank, previewCoords, new Set(participantAtomIds), atomIds, bondLength, layoutGraph, null, 0, {});
 
   const threshold = bondLength * FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR;
   let overlapCount = 0;
@@ -1629,27 +1500,17 @@ function fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLeng
       if (!atomPosition || !previousPosition || !nextPosition) {
         return null;
       }
-      maxBondDeviation = Math.max(
-        maxBondDeviation,
-        Math.abs(Math.hypot(nextPosition.x - atomPosition.x, nextPosition.y - atomPosition.y) - bondLength)
-      );
+      maxBondDeviation = Math.max(maxBondDeviation, Math.abs(Math.hypot(nextPosition.x - atomPosition.x, nextPosition.y - atomPosition.y) - bondLength));
       maxAngleDeviation = Math.max(
         maxAngleDeviation,
-        Math.abs(
-          angularDifference(
-            angleOf(sub(previousPosition, atomPosition)),
-            angleOf(sub(nextPosition, atomPosition))
-              ) - (Math.PI - (2 * Math.PI) / ring.atomIds.length)
-        )
+        Math.abs(angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition))) - (Math.PI - (2 * Math.PI) / ring.atomIds.length))
       );
       sampleCount++;
     }
   }
   const branchSlotBlockers = measureFusedCyclohexaneBranchSlotBlockers(pair, coords, bondLength);
   const branchPreviewPenalty = fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength);
-  return sampleCount === 0
-    ? null
-    : maxBondDeviation * 100000 + maxAngleDeviation * 1000 + branchSlotBlockers * 10 + branchPreviewPenalty * 0.01;
+  return sampleCount === 0 ? null : maxBondDeviation * 100000 + maxAngleDeviation * 1000 + branchSlotBlockers * 10 + branchPreviewPenalty * 0.01;
 }
 
 /**
@@ -1681,12 +1542,7 @@ function regularRingShapeScore(ring, coords, bondLength) {
     }
 
     const bondDeviation = Math.abs(Math.hypot(nextPosition.x - atomPosition.x, nextPosition.y - atomPosition.y) - bondLength);
-    const angleDeviation = Math.abs(
-      angularDifference(
-        angleOf(sub(previousPosition, atomPosition)),
-        angleOf(sub(nextPosition, atomPosition))
-      ) - targetAngle
-    );
+    const angleDeviation = Math.abs(angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition))) - targetAngle);
     maxBondDeviation = Math.max(maxBondDeviation, bondDeviation);
     maxAngleDeviation = Math.max(maxAngleDeviation, angleDeviation);
     totalBondDeviation += bondDeviation;
@@ -1788,14 +1644,14 @@ function saturatedBridgedRingBalanceAtomIds(layoutGraph, rings) {
  */
 function shouldBalanceSaturatedBridgedRingJunctions(layoutGraph, rings, atomIds, shapeScore) {
   return Boolean(
-    shapeScore
-    && rings.length > 1
-    && atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
-    && shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION
-    && !containsMetalAtom(layoutGraph, atomIds)
-    && !rings.some(ring => ring.aromatic)
-    && saturatedBridgedCyclohexaneCoreRings(rings).length === 0
-    && saturatedBridgedRingJunctionAtomIds(layoutGraph, rings).length > 0
+    shapeScore &&
+    rings.length > 1 &&
+    atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+    shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION &&
+    !containsMetalAtom(layoutGraph, atomIds) &&
+    !rings.some(ring => ring.aromatic) &&
+    saturatedBridgedCyclohexaneCoreRings(rings).length === 0 &&
+    saturatedBridgedRingJunctionAtomIds(layoutGraph, rings).length > 0
   );
 }
 
@@ -1913,17 +1769,15 @@ function balanceSaturatedBridgedRingJunctionAngles(layoutGraph, rings, atomIds, 
  */
 function shouldBalanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, shapeScore, bondLength) {
   return Boolean(
-    shapeScore
-    && rings.length > 1
-    && atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
-    && !containsMetalAtom(layoutGraph, atomIds)
-    && !rings.some(ring => ring.aromatic)
-    && saturatedBridgedCyclohexaneCoreRings(rings).length === 0
-    && saturatedBridgedRingBalanceAtomIds(layoutGraph, rings).length > 0
-    && (
-      shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION
-      || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR
-    )
+    shapeScore &&
+    rings.length > 1 &&
+    atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+    !containsMetalAtom(layoutGraph, atomIds) &&
+    !rings.some(ring => ring.aromatic) &&
+    saturatedBridgedCyclohexaneCoreRings(rings).length === 0 &&
+    saturatedBridgedRingBalanceAtomIds(layoutGraph, rings).length > 0 &&
+    (shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION ||
+      shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR)
   );
 }
 
@@ -2012,16 +1866,10 @@ function balanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, coords, b
     balanceAtomIds,
     coords,
     bondLength,
-    (candidateScore, incumbentScore) => (
-      candidateScore.maxAngleDeviation <= initialScore.maxAngleDeviation + 1e-9
-      && (
-        candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9
-        || (
-          Math.abs(candidateScore.maxBondDeviation - incumbentScore.maxBondDeviation) <= 1e-9
-          && candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9
-        )
-      )
-    )
+    (candidateScore, incumbentScore) =>
+      candidateScore.maxAngleDeviation <= initialScore.maxAngleDeviation + 1e-9 &&
+      (candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9 ||
+        (Math.abs(candidateScore.maxBondDeviation - incumbentScore.maxBondDeviation) <= 1e-9 && candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9))
   );
   if (!bondBalanced) {
     return coords;
@@ -2034,22 +1882,16 @@ function balanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, coords, b
     balanceAtomIds,
     bondBalanced.coords,
     bondLength,
-    (candidateScore, incumbentScore) => (
-      candidateScore.maxBondDeviation <= maxAllowedBondDeviation
-      && (
-        candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9
-        || (
-          Math.abs(candidateScore.maxAngleDeviation - incumbentScore.maxAngleDeviation) <= 1e-9
-          && candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9
-        )
-      )
-    )
+    (candidateScore, incumbentScore) =>
+      candidateScore.maxBondDeviation <= maxAllowedBondDeviation &&
+      (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9 ||
+        (Math.abs(candidateScore.maxAngleDeviation - incumbentScore.maxAngleDeviation) <= 1e-9 && candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9))
   );
   if (
-    !angleBalanced
-    || angleBalanced.score.maxBondDeviation > maxAllowedBondDeviation
-    || angleBalanced.score.maxAngleDeviation >= initialScore.maxAngleDeviation - 1e-9
-    || angleBalanced.score.totalAngleDeviation >= initialScore.totalAngleDeviation - 1e-9
+    !angleBalanced ||
+    angleBalanced.score.maxBondDeviation > maxAllowedBondDeviation ||
+    angleBalanced.score.maxAngleDeviation >= initialScore.maxAngleDeviation - 1e-9 ||
+    angleBalanced.score.totalAngleDeviation >= initialScore.totalAngleDeviation - 1e-9
   ) {
     return coords;
   }
@@ -2078,8 +1920,8 @@ function shouldRegularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, shap
     return false;
   }
   return (
-    shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
-    || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR
+    shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION ||
+    shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR
   );
 }
 
@@ -2220,14 +2062,11 @@ export function scoreBridgedSmallRingGeometry(rings, coords, bondLength) {
 
 function shouldRegularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, shapeScore, bondLength) {
   return Boolean(
-    shapeScore
-    && rings.length > 0
-    && atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
-    && !containsMetalAtom(layoutGraph, atomIds)
-    && (
-      shapeScore.maxAngleDeviation > STRICT_BRIDGED_SMALL_RING_MIN_ANGLE_DEVIATION
-      || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR
-    )
+    shapeScore &&
+    rings.length > 0 &&
+    atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+    !containsMetalAtom(layoutGraph, atomIds) &&
+    (shapeScore.maxAngleDeviation > STRICT_BRIDGED_SMALL_RING_MIN_ANGLE_DEVIATION || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR)
   );
 }
 
@@ -2320,10 +2159,7 @@ function shouldAcceptStrictSmallBridgedRingRegularizedCoords(candidateAudit, inc
   if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
     return false;
   }
-  if (candidateAudit.maxBondLengthDeviation > Math.max(
-    incumbentAudit.maxBondLengthDeviation + bondLength * 0.02,
-    bondLength * STRICT_BRIDGED_SMALL_RING_MAX_BOND_DEVIATION_FACTOR
-  )) {
+  if (candidateAudit.maxBondLengthDeviation > Math.max(incumbentAudit.maxBondLengthDeviation + bondLength * 0.02, bondLength * STRICT_BRIDGED_SMALL_RING_MAX_BOND_DEVIATION_FACTOR)) {
     return false;
   }
   return strictSmallBridgedRingScoreImproves(candidateScore, incumbentScore);
@@ -2384,10 +2220,10 @@ function regularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, coords, 
  */
 function isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds) {
   return Boolean(
-    rings.length >= MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_RING_COUNT
-    && atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
-    && atomIds.length <= MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ATOM_COUNT
-    && !containsMetalAtom(layoutGraph, atomIds)
+    rings.length >= MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_RING_COUNT &&
+    atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit &&
+    atomIds.length <= MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ATOM_COUNT &&
+    !containsMetalAtom(layoutGraph, atomIds)
   );
 }
 
@@ -2404,11 +2240,7 @@ function isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds) {
  * @returns {boolean} True when medium bridged-ring angle relaxation should run.
  */
 function shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, shapeScore) {
-  return Boolean(
-    shapeScore
-    && isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)
-    && shapeScore.maxAngleDeviation > MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_ANGLE_DEVIATION
-  );
+  return Boolean(shapeScore && isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds) && shapeScore.maxAngleDeviation > MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_ANGLE_DEVIATION);
 }
 
 function mediumBridgedRingAngleScoreImproves(candidateScore, incumbentScore) {
@@ -2418,10 +2250,7 @@ function mediumBridgedRingAngleScoreImproves(candidateScore, incumbentScore) {
   if (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9) {
     return true;
   }
-  return (
-    candidateScore.maxAngleDeviation <= incumbentScore.maxAngleDeviation + 1e-9
-    && candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9
-  );
+  return candidateScore.maxAngleDeviation <= incumbentScore.maxAngleDeviation + 1e-9 && candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9;
 }
 
 function shouldAcceptMediumBridgedRingAngleRelaxation(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
@@ -2508,10 +2337,7 @@ function aromaticRingsNeedingMediumBridgedPolish(rings, coords, bondLength) {
       return false;
     }
     const score = regularRingShapeScore(ring, coords, bondLength);
-    return (
-      score
-      && score.maxBondDeviation > bondLength * MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MIN_BOND_DEVIATION_FACTOR
-    );
+    return score && score.maxBondDeviation > bondLength * MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MIN_BOND_DEVIATION_FACTOR;
   });
 }
 
@@ -2529,17 +2355,11 @@ function mediumBridgedRingPolishMoveGroups(layoutGraph, polishAtomIds, ringSyste
       if (ringSystemAtomIdSet.has(neighborAtomId)) {
         continue;
       }
-      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, atomId)]
-        .filter(candidateAtomId => coords.has(candidateAtomId));
-      if (
-        subtreeAtomIds.length === 0
-        || subtreeAtomIds.some(candidateAtomId => ringSystemAtomIdSet.has(candidateAtomId) || layoutGraph.fixedCoords.has(candidateAtomId))
-      ) {
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, atomId)].filter(candidateAtomId => coords.has(candidateAtomId));
+      if (subtreeAtomIds.length === 0 || subtreeAtomIds.some(candidateAtomId => ringSystemAtomIdSet.has(candidateAtomId) || layoutGraph.fixedCoords.has(candidateAtomId))) {
         continue;
       }
-      const heavyAtomCount = subtreeAtomIds
-        .filter(candidateAtomId => layoutGraph.atoms.get(candidateAtomId)?.element !== 'H')
-        .length;
+      const heavyAtomCount = subtreeAtomIds.filter(candidateAtomId => layoutGraph.atoms.get(candidateAtomId)?.element !== 'H').length;
       if (heavyAtomCount > MEDIUM_BRIDGED_RING_POLISH_MAX_PENDANT_HEAVY_ATOMS) {
         continue;
       }
@@ -2620,17 +2440,11 @@ function shouldAcceptMediumBridgedAromaticRingPolish(candidateAudit, incumbentAu
   if (candidateAudit.maxBondLengthDeviation > bondLength * MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_BOND_DEVIATION_FACTOR) {
     return false;
   }
-  const allowedMaxAngleDeviation = Math.max(
-    incumbentAllScore.maxAngleDeviation,
-    MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION
-  );
+  const allowedMaxAngleDeviation = Math.max(incumbentAllScore.maxAngleDeviation, MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION);
   if (candidateAllScore.maxAngleDeviation > allowedMaxAngleDeviation + MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ANGLE_WORSENING_LIMIT) {
     return false;
   }
-  const allowedAromaticMaxAngleDeviation = Math.max(
-    incumbentAromaticScore.maxAngleDeviation,
-    MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION
-  );
+  const allowedAromaticMaxAngleDeviation = Math.max(incumbentAromaticScore.maxAngleDeviation, MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION);
   if (candidateAromaticScore.maxAngleDeviation > allowedAromaticMaxAngleDeviation + MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ANGLE_WORSENING_LIMIT) {
     return false;
   }
@@ -2669,10 +2483,7 @@ function shouldAcceptMediumBridgedAromaticRingPolish(candidateAudit, incumbentAu
  */
 function polishMediumBridgedAromaticRings(layoutGraph, rings, atomIds, coords, bondLength) {
   const aromaticRings = aromaticRingsNeedingMediumBridgedPolish(rings, coords, bondLength);
-  if (
-    aromaticRings.length === 0
-    || !isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)
-  ) {
+  if (aromaticRings.length === 0 || !isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)) {
     return coords;
   }
 
@@ -2685,8 +2496,7 @@ function polishMediumBridgedAromaticRings(layoutGraph, rings, atomIds, coords, b
     return coords;
   }
 
-  const polishAtomIds = [...new Set(aromaticRings.flatMap(ring => ring.atomIds))]
-    .filter(atomId => !layoutGraph.fixedCoords.has(atomId));
+  const polishAtomIds = [...new Set(aromaticRings.flatMap(ring => ring.atomIds))].filter(atomId => !layoutGraph.fixedCoords.has(atomId));
   const moveGroups = mediumBridgedRingPolishMoveGroups(layoutGraph, polishAtomIds, atomIds, coords);
   for (let pass = 0; pass < MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_PASSES; pass++) {
     let acceptedInPass = false;
@@ -2700,26 +2510,11 @@ function polishMediumBridgedAromaticRings(layoutGraph, rings, atomIds, coords, b
         const step = bondLength * stepFactor;
         for (let directionIndex = 0; directionIndex < MEDIUM_BRIDGED_AROMATIC_RING_POLISH_DIRECTION_COUNT; directionIndex++) {
           const angle = (2 * Math.PI * directionIndex) / MEDIUM_BRIDGED_AROMATIC_RING_POLISH_DIRECTION_COUNT;
-          const candidateCoords = translateMediumBridgedRingPolishGroup(
-            bestCoords,
-            moveGroupAtomIds,
-            Math.cos(angle) * step,
-            Math.sin(angle) * step
-          );
+          const candidateCoords = translateMediumBridgedRingPolishGroup(bestCoords, moveGroupAtomIds, Math.cos(angle) * step, Math.sin(angle) * step);
           const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
           const candidateAromaticScore = saturatedBridgedRingShapeScore(aromaticRings, candidateCoords, bondLength);
           const candidateAllScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
-          if (
-            shouldAcceptMediumBridgedAromaticRingPolish(
-              candidateAudit,
-              bestAudit,
-              candidateAromaticScore,
-              bestAromaticScore,
-              candidateAllScore,
-              bestAllScore,
-              bondLength
-            )
-          ) {
+          if (shouldAcceptMediumBridgedAromaticRingPolish(candidateAudit, bestAudit, candidateAromaticScore, bestAromaticScore, candidateAllScore, bestAllScore, bondLength)) {
             bestCoords = candidateCoords;
             bestAudit = candidateAudit;
             bestAromaticScore = candidateAromaticScore;
@@ -2740,10 +2535,7 @@ function polishMediumBridgedAromaticRings(layoutGraph, rings, atomIds, coords, b
 function ringsNeedingMediumBridgedBondPolish(rings, coords, bondLength) {
   return rings.filter(ring => {
     const score = regularRingShapeScore(ring, coords, bondLength);
-    return (
-      score
-      && score.maxBondDeviation > bondLength * MEDIUM_BRIDGED_RING_BOND_POLISH_MIN_BOND_DEVIATION_FACTOR
-    );
+    return score && score.maxBondDeviation > bondLength * MEDIUM_BRIDGED_RING_BOND_POLISH_MIN_BOND_DEVIATION_FACTOR;
   });
 }
 
@@ -2763,9 +2555,7 @@ function mediumBridgedRingEdgePolishPairs(rings, coords, bondLength) {
       if (deviation <= bondLength * MEDIUM_BRIDGED_RING_EDGE_POLISH_MIN_BOND_DEVIATION_FACTOR) {
         continue;
       }
-      const key = firstAtomId < secondAtomId
-        ? `${firstAtomId}:${secondAtomId}`
-        : `${secondAtomId}:${firstAtomId}`;
+      const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
       const existingPair = pairsByKey.get(key);
       if (!existingPair || deviation > existingPair.deviation) {
         pairsByKey.set(key, {
@@ -2776,8 +2566,7 @@ function mediumBridgedRingEdgePolishPairs(rings, coords, bondLength) {
       }
     }
   }
-  return [...pairsByKey.values()]
-    .sort((firstPair, secondPair) => secondPair.deviation - firstPair.deviation);
+  return [...pairsByKey.values()].sort((firstPair, secondPair) => secondPair.deviation - firstPair.deviation);
 }
 
 function mediumBridgedRingBondPolishScoreImproves(candidateScore, incumbentScore) {
@@ -2853,10 +2642,7 @@ function shouldAcceptMediumBridgedRingBondPolish(candidateAudit, incumbentAudit,
  */
 function polishMediumBridgedRingBonds(layoutGraph, rings, atomIds, coords, bondLength) {
   const bondPolishRings = ringsNeedingMediumBridgedBondPolish(rings, coords, bondLength);
-  if (
-    bondPolishRings.length === 0
-    || !isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)
-  ) {
+  if (bondPolishRings.length === 0 || !isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)) {
     return coords;
   }
 
@@ -2868,8 +2654,7 @@ function polishMediumBridgedRingBonds(layoutGraph, rings, atomIds, coords, bondL
     return coords;
   }
 
-  const polishAtomIds = [...new Set(bondPolishRings.flatMap(ring => ring.atomIds))]
-    .filter(atomId => !layoutGraph.fixedCoords.has(atomId));
+  const polishAtomIds = [...new Set(bondPolishRings.flatMap(ring => ring.atomIds))].filter(atomId => !layoutGraph.fixedCoords.has(atomId));
   const moveGroups = mediumBridgedRingPolishMoveGroups(layoutGraph, polishAtomIds, atomIds, coords);
   for (let pass = 0; pass < MEDIUM_BRIDGED_RING_BOND_POLISH_MAX_PASSES; pass++) {
     let acceptedInPass = false;
@@ -2883,12 +2668,7 @@ function polishMediumBridgedRingBonds(layoutGraph, rings, atomIds, coords, bondL
         const step = bondLength * stepFactor;
         for (let directionIndex = 0; directionIndex < MEDIUM_BRIDGED_RING_BOND_POLISH_DIRECTION_COUNT; directionIndex++) {
           const angle = (2 * Math.PI * directionIndex) / MEDIUM_BRIDGED_RING_BOND_POLISH_DIRECTION_COUNT;
-          const candidateCoords = translateMediumBridgedRingPolishGroup(
-            bestCoords,
-            moveGroupAtomIds,
-            Math.cos(angle) * step,
-            Math.sin(angle) * step
-          );
+          const candidateCoords = translateMediumBridgedRingPolishGroup(bestCoords, moveGroupAtomIds, Math.cos(angle) * step, Math.sin(angle) * step);
           const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
           const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
           if (shouldAcceptMediumBridgedRingBondPolish(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
@@ -2978,12 +2758,7 @@ function polishMediumBridgedRingAngles(layoutGraph, rings, atomIds, coords, bond
   let bestCoords = coords;
   let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength, bondValidationClasses);
   let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
-  if (
-    !bestAudit
-    || !bestScore
-    || !shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, bestScore)
-    || bestScore.maxAngleDeviation <= MEDIUM_BRIDGED_RING_ANGLE_POLISH_MIN_ANGLE_DEVIATION
-  ) {
+  if (!bestAudit || !bestScore || !shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, bestScore) || bestScore.maxAngleDeviation <= MEDIUM_BRIDGED_RING_ANGLE_POLISH_MIN_ANGLE_DEVIATION) {
     return coords;
   }
 
@@ -3071,9 +2846,7 @@ function mediumBridgedRingAngleRelaxationSystems(layoutGraph) {
     .map(ringSystem => ({
       ringSystem,
       atomIds: ringSystem.atomIds ?? [],
-      rings: (ringSystem.ringIds ?? [])
-        .map(ringId => layoutGraph.rings.find(ring => ring.id === ringId))
-        .filter(Boolean)
+      rings: (ringSystem.ringIds ?? []).map(ringId => layoutGraph.rings.find(ring => ring.id === ringId)).filter(Boolean)
     }))
     .filter(entry => entry.atomIds.length > 0 && entry.rings.length > 0);
 }
@@ -3189,8 +2962,8 @@ function shouldAcceptPeripheralBridgedRingFlip(candidateAudit, incumbentAudit, c
     return true;
   }
   return (
-    (candidateAudit.visibleHeavyBondCrossingCount ?? 0) === (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)
-    && candidateRingScore.totalAngleDeviation < incumbentRingScore.totalAngleDeviation - 1e-9
+    (candidateAudit.visibleHeavyBondCrossingCount ?? 0) === (incumbentAudit.visibleHeavyBondCrossingCount ?? 0) &&
+    candidateRingScore.totalAngleDeviation < incumbentRingScore.totalAngleDeviation - 1e-9
   );
 }
 
@@ -3253,16 +3026,17 @@ function singleAnchorBridgedRingRegularizationCandidates(layoutGraph, rings, coo
       anchorAtomId: singleAnchorSharedAtomId(ring, membershipCounts),
       score: regularRingShapeScore(ring, coords, bondLength)
     }))
-    .filter(candidate => (
-      candidate.anchorAtomId
-      && !candidate.ring.atomIds.some(atomId => atomId !== candidate.anchorAtomId && layoutGraph.fixedCoords.has(atomId))
-      && candidate.score
-      && candidate.score.maxAngleDeviation > SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
-    ))
-    .sort((firstCandidate, secondCandidate) => (
-      secondCandidate.score.maxAngleDeviation - firstCandidate.score.maxAngleDeviation
-      || secondCandidate.score.maxBondDeviation - firstCandidate.score.maxBondDeviation
-    ));
+    .filter(
+      candidate =>
+        candidate.anchorAtomId &&
+        !candidate.ring.atomIds.some(atomId => atomId !== candidate.anchorAtomId && layoutGraph.fixedCoords.has(atomId)) &&
+        candidate.score &&
+        candidate.score.maxAngleDeviation > SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
+    )
+    .sort(
+      (firstCandidate, secondCandidate) =>
+        secondCandidate.score.maxAngleDeviation - firstCandidate.score.maxAngleDeviation || secondCandidate.score.maxBondDeviation - firstCandidate.score.maxBondDeviation
+    );
 }
 
 function buildSingleAnchorBridgedRingRegularizedCoords(coords, candidate, targetCandidate, blendFactor) {
@@ -3361,25 +3135,17 @@ export function regularizeSingleAnchorBridgedRings(layoutGraph, rings, atomIds, 
 function peripheralBridgedRingRegularizationCandidates(rings, coords, bondLength) {
   const membershipCounts = sharedRingMembershipCounts(rings);
   return rings
-    .filter(ring => (
-      !ring.aromatic
-      && (ring.atomIds.length === 5 || ring.atomIds.length === 6)
-      && peripheralSharedEdgeAtomIds(ring, membershipCounts)
-    ))
+    .filter(ring => !ring.aromatic && (ring.atomIds.length === 5 || ring.atomIds.length === 6) && peripheralSharedEdgeAtomIds(ring, membershipCounts))
     .map(ring => ({
       ring,
       edgeAtomIds: peripheralSharedEdgeAtomIds(ring, membershipCounts),
       score: regularRingShapeScore(ring, coords, bondLength)
     }))
-    .filter(candidate => (
-      candidate.edgeAtomIds
-      && candidate.score
-      && candidate.score.maxAngleDeviation > PERIPHERAL_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
-    ))
-    .sort((firstCandidate, secondCandidate) => (
-      secondCandidate.score.maxAngleDeviation - firstCandidate.score.maxAngleDeviation
-      || secondCandidate.score.maxBondDeviation - firstCandidate.score.maxBondDeviation
-    ));
+    .filter(candidate => candidate.edgeAtomIds && candidate.score && candidate.score.maxAngleDeviation > PERIPHERAL_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION)
+    .sort(
+      (firstCandidate, secondCandidate) =>
+        secondCandidate.score.maxAngleDeviation - firstCandidate.score.maxAngleDeviation || secondCandidate.score.maxBondDeviation - firstCandidate.score.maxBondDeviation
+    );
 }
 
 function buildPeripheralBridgedRingRegularizedCoords(coords, candidate, blendFactor) {
@@ -3515,11 +3281,7 @@ function saturatedBridgedCyclohexaneCoreRings(rings) {
     if (ring.aromatic || ring.atomIds.length !== 6) {
       return false;
     }
-    return rings.some(bridgeRing => (
-      bridgeRing !== ring
-      && !bridgeRing.aromatic
-      && sharedRingAtomIds(ring, bridgeRing).length >= SATURATED_BRIDGED_CYCLOHEXANE_MIN_SHARED_ATOMS
-    ));
+    return rings.some(bridgeRing => bridgeRing !== ring && !bridgeRing.aromatic && sharedRingAtomIds(ring, bridgeRing).length >= SATURATED_BRIDGED_CYCLOHEXANE_MIN_SHARED_ATOMS);
   });
 }
 
@@ -3584,9 +3346,9 @@ function saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords
     return null;
   }
   return (
-    ringScore.totalScore
-    + measureFusedCyclohexaneBranchSlotBlockers({ cyclohexaneRing: coreRing }, coords, bondLength) * 10
-    + fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength) * 0.01
+    ringScore.totalScore +
+    measureFusedCyclohexaneBranchSlotBlockers({ cyclohexaneRing: coreRing }, coords, bondLength) * 10 +
+    fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength) * 0.01
   );
 }
 
@@ -3639,11 +3401,7 @@ export function regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, a
 
   let bestCoords = coords;
   let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
-  let bestScore = Math.min(
-    ...coreRings
-      .map(coreRing => saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength))
-      .filter(score => score != null)
-  );
+  let bestScore = Math.min(...coreRings.map(coreRing => saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength)).filter(score => score != null));
   if (!bestAudit || !Number.isFinite(bestScore)) {
     return coords;
   }
@@ -3693,11 +3451,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
 
   let bestCoords = coords;
   let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
-  let bestScore = Math.min(
-    ...pairs
-      .map(pair => fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLength))
-      .filter(score => score != null)
-  );
+  let bestScore = Math.min(...pairs.map(pair => fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLength)).filter(score => score != null));
   if (!bestAudit || !Number.isFinite(bestScore)) {
     return coords;
   }
@@ -3835,9 +3589,7 @@ function selectBridgedProjectionCoords(layoutGraph, atomIds, kkCoords, projected
     return projectedCoords;
   }
 
-  const baselineCoords = projected.bridgeheadAtomIds
-    ? orientBridgedSeed(kkCoords, projected.bridgeheadAtomIds).coords
-    : new Map(kkCoords);
+  const baselineCoords = projected.bridgeheadAtomIds ? orientBridgedSeed(kkCoords, projected.bridgeheadAtomIds).coords : new Map(kkCoords);
   const baselineAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, baselineCoords, bondLength);
   if (baselineAudit?.ok === true) {
     return baselineCoords;
@@ -3845,12 +3597,7 @@ function selectBridgedProjectionCoords(layoutGraph, atomIds, kkCoords, projected
   if (hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, bondLength)) {
     return baselineCoords;
   }
-  return (
-    hasCatastrophicBridgeProjectionCollapse(projectedAudit, bondLength)
-    && compareBridgedProjectionAudits(baselineAudit, projectedAudit) < 0
-  )
-    ? baselineCoords
-    : projectedCoords;
+  return hasCatastrophicBridgeProjectionCollapse(projectedAudit, bondLength) && compareBridgedProjectionAudits(baselineAudit, projectedAudit) < 0 ? baselineCoords : projectedCoords;
 }
 
 /**
@@ -3892,12 +3639,7 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
  * @returns {string[]|null} Seed atom order for compact 5-5-4 cages, or `null`.
  */
 function compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
-  if (
-    rings.length !== 3
-    || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
-    || rings.some(ring => ring.aromatic)
-    || containsMetalAtom(layoutGraph, fallbackAtomIds)
-  ) {
+  if (rings.length !== 3 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
     return null;
   }
 
@@ -3906,13 +3648,7 @@ function compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds
     return null;
   }
 
-  const atomIds = [
-    ...new Set(
-      [...rings]
-        .sort((firstRing, secondRing) => firstRing.atomIds.length - secondRing.atomIds.length || firstRing.id - secondRing.id)
-        .flatMap(ring => ring.atomIds)
-    )
-  ];
+  const atomIds = [...new Set([...rings].sort((firstRing, secondRing) => firstRing.atomIds.length - secondRing.atomIds.length || firstRing.id - secondRing.id).flatMap(ring => ring.atomIds))];
   return atomIds.length === fallbackAtomIds.length ? atomIds : null;
 }
 
@@ -3928,11 +3664,7 @@ function compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds
  * @returns {string[]|null} Seed atom order for aromatic-capped bridged systems, or `null`.
  */
 function aromaticCapFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
-  if (
-    rings.length !== 3
-    || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
-    || containsMetalAtom(layoutGraph, fallbackAtomIds)
-  ) {
+  if (rings.length !== 3 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
     return null;
   }
 
@@ -3943,9 +3675,7 @@ function aromaticCapFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
 
   const ringIdSet = new Set(rings.map(ring => ring.id));
   const connectionKinds = new Set(
-    (layoutGraph.ringConnections ?? [])
-      .filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId))
-      .map(connection => connection.kind)
+    (layoutGraph.ringConnections ?? []).filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId)).map(connection => connection.kind)
   );
   if (!connectionKinds.has('bridged') || !connectionKinds.has('fused')) {
     return null;
@@ -3977,10 +3707,10 @@ function aromaticCapFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
  */
 function compactSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
   if (
-    rings.length !== 2
-    || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
-    || rings.some(ring => ring.aromatic || ring.atomIds.length !== 5)
-    || containsMetalAtom(layoutGraph, fallbackAtomIds)
+    rings.length !== 2 ||
+    fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit ||
+    rings.some(ring => ring.aromatic || ring.atomIds.length !== 5) ||
+    containsMetalAtom(layoutGraph, fallbackAtomIds)
   ) {
     return null;
   }
@@ -3989,13 +3719,7 @@ function compactSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
     return null;
   }
 
-  const atomIds = [
-    ...new Set(
-      [...rings]
-        .sort((firstRing, secondRing) => secondRing.id - firstRing.id)
-        .flatMap(ring => ring.atomIds)
-    )
-  ];
+  const atomIds = [...new Set([...rings].sort((firstRing, secondRing) => secondRing.id - firstRing.id).flatMap(ring => ring.atomIds))];
   return atomIds.length === fallbackAtomIds.length ? atomIds : null;
 }
 
@@ -4049,10 +3773,7 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
   }
 
   const fallbackAtomIdSet = new Set(fallbackAtomIds);
-  if (
-    owningRingSystem.atomIds.length !== fallbackAtomIds.length
-    || !owningRingSystem.atomIds.every(atomId => fallbackAtomIdSet.has(atomId))
-  ) {
+  if (owningRingSystem.atomIds.length !== fallbackAtomIds.length || !owningRingSystem.atomIds.every(atomId => fallbackAtomIdSet.has(atomId))) {
     return fallbackAtomIds;
   }
   return [...owningRingSystem.atomIds];
@@ -4086,12 +3807,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
 
   const kkSeeds = bridgedKamadaKawaiSeeds(options.layoutGraph, atomIds);
   if (shouldShortCircuitLargeProjection(atomIds, kkSeeds.pinnedAtomIds)) {
-    const selectedCoords = projectBridgePaths(
-      options.layoutGraph,
-      atomIds,
-      buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength),
-      bondLength
-    ).coords;
+    const selectedCoords = projectBridgePaths(options.layoutGraph, atomIds, buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength), bondLength).coords;
     const projectedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, selectedCoords, bondLength);
     if (acceptsLargeProjectionAudit(projectedAudit) || atomIds.length > BRIDGED_KK_LIMITS.mediumAtomLimit + 20) {
       const ringCenters = new Map();
@@ -4106,20 +3822,13 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
     }
   }
   if (shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)) {
-    kkSeeds.coords = projectBridgePaths(
-      options.layoutGraph,
-      atomIds,
-      buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength),
-      bondLength
-    ).coords;
+    kkSeeds.coords = projectBridgePaths(options.layoutGraph, atomIds, buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength), bondLength).coords;
   }
   let kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
     bondLength,
     coords: kkSeeds.coords,
     pinnedAtomIds: kkSeeds.pinnedAtomIds,
-    ...(shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)
-      ? bridgedProjectionSeededKamadaKawaiOptions(atomIds)
-      : bridgedKamadaKawaiOptions(atomIds))
+    ...(shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds) ? bridgedProjectionSeededKamadaKawaiOptions(atomIds) : bridgedKamadaKawaiOptions(atomIds))
   });
   if (hasCompactBridgedNonbondedCollapse(options.layoutGraph, atomIds, kkResult.coords, bondLength)) {
     kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
@@ -4144,15 +3853,9 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
       ...strainedCompactBridgedKamadaKawaiOptions(atomIds)
     });
     const refinedProjected = projectBridgePaths(options.layoutGraph, atomIds, refinedKkResult.coords, bondLength);
-    const refinedSelectedCoords = selectBridgedProjectionCoords(
-      options.layoutGraph,
-      atomIds,
-      refinedKkResult.coords,
-      refinedProjected,
-      bondLength
-    );
+    const refinedSelectedCoords = selectBridgedProjectionCoords(options.layoutGraph, atomIds, refinedKkResult.coords, refinedProjected, bondLength);
     const refinedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, refinedSelectedCoords, bondLength);
-  if (compareBridgedProjectionAudits(refinedAudit, selectedAudit) < 0) {
+    if (compareBridgedProjectionAudits(refinedAudit, selectedAudit) < 0) {
       selectedCoords = refinedSelectedCoords;
     }
   }

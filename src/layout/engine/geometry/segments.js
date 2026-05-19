@@ -1,10 +1,12 @@
 /** @module geometry/segments */
 
 function pointOnSegment(point, firstPoint, secondPoint) {
-  return point.x >= Math.min(firstPoint.x, secondPoint.x) - 1e-9
-    && point.x <= Math.max(firstPoint.x, secondPoint.x) + 1e-9
-    && point.y >= Math.min(firstPoint.y, secondPoint.y) - 1e-9
-    && point.y <= Math.max(firstPoint.y, secondPoint.y) + 1e-9;
+  return (
+    point.x >= Math.min(firstPoint.x, secondPoint.x) - 1e-9 &&
+    point.x <= Math.max(firstPoint.x, secondPoint.x) + 1e-9 &&
+    point.y >= Math.min(firstPoint.y, secondPoint.y) - 1e-9 &&
+    point.y <= Math.max(firstPoint.y, secondPoint.y) + 1e-9
+  );
 }
 
 /**
@@ -15,9 +17,7 @@ function pointOnSegment(point, firstPoint, secondPoint) {
  * @returns {number} `1` for counter-clockwise, `-1` for clockwise, `0` for collinear.
  */
 export function orientation(firstPoint, secondPoint, thirdPoint) {
-  const determinant =
-    (secondPoint.x - firstPoint.x) * (thirdPoint.y - firstPoint.y)
-    - (secondPoint.y - firstPoint.y) * (thirdPoint.x - firstPoint.x);
+  const determinant = (secondPoint.x - firstPoint.x) * (thirdPoint.y - firstPoint.y) - (secondPoint.y - firstPoint.y) * (thirdPoint.x - firstPoint.x);
   if (Math.abs(determinant) <= 1e-12) {
     return 0;
   }
@@ -70,8 +70,7 @@ export function segmentsProperlyIntersect(firstStart, firstEnd, secondStart, sec
   const secondAgainstFirstStart = orientation(secondStart, secondEnd, firstStart);
   const secondAgainstFirstEnd = orientation(secondStart, secondEnd, firstEnd);
   const epsilon = 1e-9;
-  return firstAgainstSecondStart * firstAgainstSecondEnd < -epsilon
-    && secondAgainstFirstStart * secondAgainstFirstEnd < -epsilon;
+  return firstAgainstSecondStart * firstAgainstSecondEnd < -epsilon && secondAgainstFirstStart * secondAgainstFirstEnd < -epsilon;
 }
 
 /**

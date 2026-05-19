@@ -72,7 +72,7 @@ export function highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, ce
   if (!molecule) {
     return null;
   }
-  const cache = layoutGraph._ezPrioritySubstituentCache ??= new Map();
+  const cache = (layoutGraph._ezPrioritySubstituentCache ??= new Map());
   const cacheKey = prioritySubstituentCacheKey(centerAtomId, excludedAtomId);
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
@@ -137,9 +137,7 @@ export function hasCompleteCyclicEZContext(layoutGraph, coords, bond) {
 
   const firstRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.a);
   const secondRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.b);
-  const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId
-    ? layoutGraph.ringSystemById?.get(firstRingSystemId)
-    : null;
+  const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId ? layoutGraph.ringSystemById?.get(firstRingSystemId) : null;
   if (ringSystem) {
     return ringSystem.atomIds.every(atomId => coords.has(atomId));
   }
@@ -168,9 +166,7 @@ export function hasEnforceableCyclicEZContext(layoutGraph, coords, bond) {
 
   const firstRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.a);
   const secondRingSystemId = layoutGraph.atomToRingSystemId?.get(bond.b);
-  const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId
-    ? layoutGraph.ringSystemById?.get(firstRingSystemId)
-    : null;
+  const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId ? layoutGraph.ringSystemById?.get(firstRingSystemId) : null;
   if ((ringSystem?.ringIds?.length ?? 1) > 1) {
     return false;
   }
@@ -312,7 +308,7 @@ export function inspectEZStereo(layoutGraph, coords) {
       bondId: bond.id,
       target,
       actual,
-      ok: (!supported) || (actual != null && actual === target),
+      ok: !supported || (actual != null && actual === target),
       supported
     });
   }

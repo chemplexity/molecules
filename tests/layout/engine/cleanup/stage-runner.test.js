@@ -5,52 +5,52 @@ import { runStageGraph } from '../../../../src/layout/engine/cleanup/stage-runne
 
 describe('layout/engine/cleanup/stage-runner', () => {
   it('falls back to the next available parent stage when an optional upstream stage returns null', () => {
-    const baselineCoords = new Map([
-      ['A1', { x: 0, y: 0 }]
-    ]);
+    const baselineCoords = new Map([['A1', { x: 0, y: 0 }]]);
     const baselineStage = {
       name: 'placement',
       coords: baselineCoords,
       audit: { ok: true }
     };
 
-    const result = runStageGraph([
-      {
-        name: 'selectedGeometryCheckpoint',
-        parentStage: 'best',
-        transformFn(parentCoords) {
-          return { coords: parentCoords };
+    const result = runStageGraph(
+      [
+        {
+          name: 'selectedGeometryCheckpoint',
+          parentStage: 'best',
+          transformFn(parentCoords) {
+            return { coords: parentCoords };
+          },
+          comparatorFn() {
+            return true;
+          }
         },
-        comparatorFn() {
-          return true;
-        }
-      },
-      {
-        name: 'stereoRescueCleanup',
-        parentStage: 'selectedGeometryCheckpoint',
-        transformFn() {
-          return null;
-        }
-      },
-      {
-        name: 'stereoRescueFallbackCleanup',
-        parentStage: ['stereoRescueCleanup', 'selectedGeometryCheckpoint'],
-        guard(stageResults) {
-          return stageResults.has('selectedGeometryCheckpoint');
+        {
+          name: 'stereoRescueCleanup',
+          parentStage: 'selectedGeometryCheckpoint',
+          transformFn() {
+            return null;
+          }
         },
-        transformFn(parentCoords) {
-          const currentPosition = parentCoords.get('A1');
-          return {
-            coords: new Map([
-              ['A1', { x: currentPosition.x + 1, y: currentPosition.y }]
-            ])
-          };
-        },
-        comparatorFn() {
-          return true;
+        {
+          name: 'stereoRescueFallbackCleanup',
+          parentStage: ['stereoRescueCleanup', 'selectedGeometryCheckpoint'],
+          guard(stageResults) {
+            return stageResults.has('selectedGeometryCheckpoint');
+          },
+          transformFn(parentCoords) {
+            const currentPosition = parentCoords.get('A1');
+            return {
+              coords: new Map([['A1', { x: currentPosition.x + 1, y: currentPosition.y }]])
+            };
+          },
+          comparatorFn() {
+            return true;
+          }
         }
-      }
-    ], baselineStage, {});
+      ],
+      baselineStage,
+      {}
+    );
 
     assert.equal(result.allStageResults.has('stereoRescueCleanup'), false);
     assert.equal(result.allStageResults.has('stereoRescueFallbackCleanup'), true);
@@ -60,36 +60,38 @@ describe('layout/engine/cleanup/stage-runner', () => {
   it('skips a follow-up stereo stage when its immediate touchup parent never materialized', () => {
     const baselineStage = {
       name: 'placement',
-      coords: new Map([
-        ['A1', { x: 0, y: 0 }]
-      ]),
+      coords: new Map([['A1', { x: 0, y: 0 }]]),
       audit: { ok: true }
     };
     let followupCalls = 0;
 
-    const result = runStageGraph([
-      {
-        name: 'selectedGeometryCheckpoint',
-        parentStage: 'best',
-        transformFn(parentCoords) {
-          return { coords: parentCoords };
+    const result = runStageGraph(
+      [
+        {
+          name: 'selectedGeometryCheckpoint',
+          parentStage: 'best',
+          transformFn(parentCoords) {
+            return { coords: parentCoords };
+          },
+          comparatorFn() {
+            return true;
+          }
         },
-        comparatorFn() {
-          return true;
+        {
+          name: 'stereoRescueFollowup',
+          parentStage: 'stereoRescueFallbackCleanup',
+          guard(stageResults) {
+            return stageResults.has('stereoRescueFallbackCleanup');
+          },
+          transformFn(parentCoords) {
+            followupCalls++;
+            return { coords: parentCoords };
+          }
         }
-      },
-      {
-        name: 'stereoRescueFollowup',
-        parentStage: 'stereoRescueFallbackCleanup',
-        guard(stageResults) {
-          return stageResults.has('stereoRescueFallbackCleanup');
-        },
-        transformFn(parentCoords) {
-          followupCalls++;
-          return { coords: parentCoords };
-        }
-      }
-    ], baselineStage, {});
+      ],
+      baselineStage,
+      {}
+    );
 
     assert.equal(result.allStageResults.has('stereoRescueFollowup'), false);
     assert.equal(followupCalls, 0);
@@ -97,60 +99,60 @@ describe('layout/engine/cleanup/stage-runner', () => {
 
   it('records per-stage execution telemetry for ran, null-return, and winning outcomes', () => {
     const timeSamples = [1, 5, 10, 16, 20, 29];
-    const result = runStageGraph([
-      {
-        name: 'coreGeometryCleanup',
-        parentStage: null,
-        transformFn(parentCoords) {
-          return { coords: parentCoords };
+    const result = runStageGraph(
+      [
+        {
+          name: 'coreGeometryCleanup',
+          parentStage: null,
+          transformFn(parentCoords) {
+            return { coords: parentCoords };
+          },
+          comparatorFn() {
+            return false;
+          }
         },
-        comparatorFn() {
-          return false;
+        {
+          name: 'presentationCleanup',
+          parentStage: 'coreGeometryCleanup',
+          guard() {
+            return false;
+          },
+          transformFn(parentCoords) {
+            return { coords: parentCoords };
+          }
+        },
+        {
+          name: 'stereoRescueCleanup',
+          parentStage: 'best',
+          transformFn() {
+            return null;
+          }
+        },
+        {
+          name: 'presentationFallbackCleanup',
+          parentStage: 'best',
+          transformFn() {
+            return {
+              coords: new Map([['A1', { x: 2, y: 0 }]]),
+              audit: { ok: true }
+            };
+          },
+          comparatorFn() {
+            return true;
+          }
         }
+      ],
+      {
+        name: 'placement',
+        coords: new Map([['A1', { x: 0, y: 0 }]]),
+        audit: { ok: true }
       },
       {
-        name: 'presentationCleanup',
-        parentStage: 'coreGeometryCleanup',
-        guard() {
-          return false;
-        },
-        transformFn(parentCoords) {
-          return { coords: parentCoords };
-        }
-      },
-      {
-        name: 'stereoRescueCleanup',
-        parentStage: 'best',
-        transformFn() {
-          return null;
-        }
-      },
-      {
-        name: 'presentationFallbackCleanup',
-        parentStage: 'best',
-        transformFn() {
-          return {
-            coords: new Map([
-              ['A1', { x: 2, y: 0 }]
-            ]),
-            audit: { ok: true }
-          };
-        },
-        comparatorFn() {
-          return true;
+        nowMs() {
+          return timeSamples.shift();
         }
       }
-    ], {
-      name: 'placement',
-      coords: new Map([
-        ['A1', { x: 0, y: 0 }]
-      ]),
-      audit: { ok: true }
-    }, {
-      nowMs() {
-        return timeSamples.shift();
-      }
-    });
+    );
 
     assert.equal(result.stageExecutions.get('placement')?.ran, true);
     assert.equal(result.stageExecutions.get('placement')?.won, false);
@@ -178,9 +180,7 @@ describe('layout/engine/cleanup/stage-runner', () => {
   it('skips optional cleanup-budget stages before running their transform', () => {
     const baselineStage = {
       name: 'placement',
-      coords: new Map([
-        ['A1', { x: 0, y: 0 }]
-      ]),
+      coords: new Map([['A1', { x: 0, y: 0 }]]),
       audit: { ok: true }
     };
     const cleanupStageBudget = {
@@ -195,25 +195,29 @@ describe('layout/engine/cleanup/stage-runner', () => {
     };
     let transformCalls = 0;
 
-    const result = runStageGraph([
+    const result = runStageGraph(
+      [
+        {
+          name: 'optionalRetouch',
+          parentStage: 'best',
+          cleanupBudgetOptional: true,
+          cleanupBudgetGuard() {
+            return true;
+          },
+          transformFn(parentCoords) {
+            transformCalls++;
+            return { coords: parentCoords };
+          }
+        }
+      ],
+      baselineStage,
       {
-        name: 'optionalRetouch',
-        parentStage: 'best',
-        cleanupBudgetOptional: true,
-        cleanupBudgetGuard() {
-          return true;
-        },
-        transformFn(parentCoords) {
-          transformCalls++;
-          return { coords: parentCoords };
+        cleanupStageBudget,
+        nowMs() {
+          return 15;
         }
       }
-    ], baselineStage, {
-      cleanupStageBudget,
-      nowMs() {
-        return 15;
-      }
-    });
+    );
 
     const execution = result.stageExecutions.get('optionalRetouch');
     assert.equal(transformCalls, 0);
@@ -228,51 +232,54 @@ describe('layout/engine/cleanup/stage-runner', () => {
   it('can continue from a seeded runner state across multiple stage groups', () => {
     const baselineStage = {
       name: 'placement',
-      coords: new Map([
-        ['A1', { x: 0, y: 0 }]
-      ]),
+      coords: new Map([['A1', { x: 0, y: 0 }]]),
       audit: { ok: true }
     };
-    const firstPass = runStageGraph([
-      {
-        name: 'coreGeometryCleanup',
-        parentStage: null,
-        isGeometryPhase: true,
-        transformFn() {
-          return {
-            coords: new Map([
-              ['A1', { x: 1, y: 0 }]
-            ]),
-            audit: { ok: true }
-          };
-        },
-        comparatorFn() {
-          return true;
+    const firstPass = runStageGraph(
+      [
+        {
+          name: 'coreGeometryCleanup',
+          parentStage: null,
+          isGeometryPhase: true,
+          transformFn() {
+            return {
+              coords: new Map([['A1', { x: 1, y: 0 }]]),
+              audit: { ok: true }
+            };
+          },
+          comparatorFn() {
+            return true;
+          }
         }
-      }
-    ], baselineStage, {});
-    const secondPass = runStageGraph([
-      {
-        name: 'presentationFallbackCleanup',
-        parentStage: 'best',
-        transformFn(parentCoords) {
-          const currentPosition = parentCoords.get('A1');
-          return {
-            coords: new Map([
-              ['A1', { x: currentPosition.x + 1, y: currentPosition.y }]
-            ]),
-            audit: { ok: true }
-          };
-        },
-        comparatorFn() {
-          return true;
+      ],
+      baselineStage,
+      {}
+    );
+    const secondPass = runStageGraph(
+      [
+        {
+          name: 'presentationFallbackCleanup',
+          parentStage: 'best',
+          transformFn(parentCoords) {
+            const currentPosition = parentCoords.get('A1');
+            return {
+              coords: new Map([['A1', { x: currentPosition.x + 1, y: currentPosition.y }]]),
+              audit: { ok: true }
+            };
+          },
+          comparatorFn() {
+            return true;
+          }
         }
-      }
-    ], {
-      name: 'selectedGeometryCheckpoint',
-      coords: firstPass.bestStage.coords,
-      audit: { ok: true }
-    }, {}, firstPass);
+      ],
+      {
+        name: 'selectedGeometryCheckpoint',
+        coords: firstPass.bestStage.coords,
+        audit: { ok: true }
+      },
+      {},
+      firstPass
+    );
 
     assert.equal(secondPass.allStageResults.has('coreGeometryCleanup'), true);
     assert.equal(secondPass.allStageResults.has('presentationFallbackCleanup'), true);

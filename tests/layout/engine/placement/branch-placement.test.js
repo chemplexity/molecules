@@ -83,24 +83,21 @@ describe('layout/engine/placement/branch-placement', () => {
 
     const anchorPosition = coords.get('a2');
     const neighborAngles = ['a1', 'a3', 'f0', 'f1']
-      .map(neighborAtomId => Math.atan2(
-        coords.get(neighborAtomId).y - anchorPosition.y,
-        coords.get(neighborAtomId).x - anchorPosition.x
-      ))
+      .map(neighborAtomId => Math.atan2(coords.get(neighborAtomId).y - anchorPosition.y, coords.get(neighborAtomId).x - anchorPosition.x))
       .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
     const separations = neighborAngles.map((currentAngle, index) => {
       const nextAngle = neighborAngles[(index + 1) % neighborAngles.length];
       const rawGap = nextAngle - currentAngle;
-      return rawGap > 0 ? rawGap : rawGap + (2 * Math.PI);
+      return rawGap > 0 ? rawGap : rawGap + 2 * Math.PI;
     });
     const incomingAngle = Math.atan2(coords.get('a1').y - anchorPosition.y, coords.get('a1').x - anchorPosition.x);
     const continuationAngle = Math.atan2(coords.get('a3').y - anchorPosition.y, coords.get('a3').x - anchorPosition.x);
 
     assert.ok(
-      separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 1e-6),
+      separations.every(separation => Math.abs(separation - Math.PI / 2) < 1e-6),
       `expected projected-tetrahedral quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
-    assert.ok(Math.abs(angularDifference(incomingAngle, continuationAngle) - (Math.PI / 2)) < 1e-6);
+    assert.ok(Math.abs(angularDifference(incomingAngle, continuationAngle) - Math.PI / 2) < 1e-6);
   });
 
   it('uses the seeded placement CoM to steer continuation away from fixed refinement anchors', () => {
@@ -332,16 +329,7 @@ describe('layout/engine/placement/branch-placement', () => {
       angularBudgets: computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, new Set(graph.components[0].atomIds))
     };
 
-    placeRemainingBranches(
-      adjacency,
-      graph.canonicalAtomRank,
-      coords,
-      new Set(graph.components[0].atomIds),
-      graph.rings[0].atomIds,
-      graph.options.bondLength,
-      graph,
-      branchConstraints
-    );
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(graph.components[0].atomIds), graph.rings[0].atomIds, graph.options.bondLength, graph, branchConstraints);
     const budget = branchConstraints.angularBudgets.get('a0');
     const placedAngle = angleOf({
       x: coords.get('a12').x - coords.get('a0').x,
@@ -375,16 +363,7 @@ describe('layout/engine/placement/branch-placement', () => {
       angularBudgets: computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, new Set(graph.components[0].atomIds))
     };
 
-    placeRemainingBranches(
-      adjacency,
-      graph.canonicalAtomRank,
-      coords,
-      new Set(graph.components[0].atomIds),
-      graph.rings[0].atomIds,
-      graph.options.bondLength,
-      graph,
-      branchConstraints
-    );
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(graph.components[0].atomIds), graph.rings[0].atomIds, graph.options.bondLength, graph, branchConstraints);
 
     const firstBudget = branchConstraints.angularBudgets.get('a0');
     const secondBudget = branchConstraints.angularBudgets.get('a1');

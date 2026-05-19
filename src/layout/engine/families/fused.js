@@ -36,9 +36,9 @@ export function shouldTryBridgedRescueForFusedSystem(atomCount, ringCount, templ
     return false;
   }
   return (
-    (atomCount <= FUSED_RESCUE_LIMITS.compactCageMaxAtomCount && ringCount >= FUSED_RESCUE_LIMITS.compactCageMinRingCount)
-    || ringCount >= FUSED_RESCUE_LIMITS.largeCageMinRingCount
-    || ringCount >= Math.ceil(atomCount / 2)
+    (atomCount <= FUSED_RESCUE_LIMITS.compactCageMaxAtomCount && ringCount >= FUSED_RESCUE_LIMITS.compactCageMinRingCount) ||
+    ringCount >= FUSED_RESCUE_LIMITS.largeCageMinRingCount ||
+    ringCount >= Math.ceil(atomCount / 2)
   );
 }
 
@@ -54,11 +54,7 @@ export function shouldShortCircuitToFusedCageKk(atomCount, ringCount, templateId
   if (templateId) {
     return false;
   }
-  return (
-    atomCount >= FUSED_RESCUE_LIMITS.giantCageMinAtomCount
-    && ringCount >= FUSED_RESCUE_LIMITS.giantCageMinRingCount
-    && ringCount >= Math.ceil(atomCount / 2)
-  );
+  return atomCount >= FUSED_RESCUE_LIMITS.giantCageMinAtomCount && ringCount >= FUSED_RESCUE_LIMITS.giantCageMinRingCount && ringCount >= Math.ceil(atomCount / 2);
 }
 
 /**
@@ -73,10 +69,7 @@ export function isBetterBridgedRescueForFusedSystem(candidateAudit, incumbentAud
   if (!candidateAudit || !incumbentAudit) {
     return false;
   }
-  if (
-    candidateAudit.severeOverlapCount
-    > incumbentAudit.severeOverlapCount + FUSED_RESCUE_LIMITS.maxRescueOverlapPenalty
-  ) {
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount + FUSED_RESCUE_LIMITS.maxRescueOverlapPenalty) {
     return false;
   }
   if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
@@ -143,10 +136,7 @@ function isBetterFusedCageCandidate(candidateAudit, incumbentAudit) {
   }
   const bondImprovement = incumbentAudit.bondLengthFailureCount - candidateAudit.bondLengthFailureCount;
   if (bondImprovement > 0) {
-    const allowedOverlapIncrease =
-      bondImprovement >= 24 ? 16
-        : bondImprovement >= 12 ? 10
-          : 4;
+    const allowedOverlapIncrease = bondImprovement >= 24 ? 16 : bondImprovement >= 12 ? 10 : 4;
     if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount + allowedOverlapIncrease) {
       return false;
     }
@@ -191,10 +181,7 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
     return null;
   }
 
-  let bestCoords = orientCoordsHorizontally(
-    kkResult.coords,
-    computeFusedAxis(rebuildRingCenters(rings, kkResult.coords))
-  );
+  let bestCoords = orientCoordsHorizontally(kkResult.coords, computeFusedAxis(rebuildRingCenters(rings, kkResult.coords)));
   let bestAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, bestCoords, bondLength);
 
   const relaxedCoords = relaxConstructedFusedCoords(options.layoutGraph, atomIds, kkResult.coords, bondLength, {
@@ -207,10 +194,7 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
   });
   for (const scaleFactor of [1, 1.05, 1.1]) {
     const scaledCoords = scaleCoordsAboutCentroid(regularizedCoords, scaleFactor);
-    const orientedCoords = orientCoordsHorizontally(
-      scaledCoords,
-      computeFusedAxis(rebuildRingCenters(rings, scaledCoords))
-    );
+    const orientedCoords = orientCoordsHorizontally(scaledCoords, computeFusedAxis(rebuildRingCenters(rings, scaledCoords)));
     const candidateAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, orientedCoords, bondLength);
     if (isBetterFusedCageCandidate(candidateAudit, bestAudit)) {
       bestCoords = orientedCoords;
@@ -228,7 +212,6 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
     placementMode: 'kamada-kawai-cage'
   };
 }
-
 
 /**
  * Returns whether the fused ring-adjacency graph contains a cycle.
@@ -572,16 +555,15 @@ function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLen
     damping: 0.45
   });
   const ringAtomIds = [...new Set(rings.flatMap(ring => ring.atomIds))];
-  const regularizedAudit = options.layoutGraph
-    ? auditLayout(options.layoutGraph, regularizedCoords, { bondLength })
-    : null;
+  const regularizedAudit = options.layoutGraph ? auditLayout(options.layoutGraph, regularizedCoords, { bondLength }) : null;
   // Retension only bond-dirty cyclic fused systems; clean small fused systems keep their exact presentation.
-  const retensionedCoords = (options.layoutGraph && (regularizedAudit?.bondLengthFailureCount ?? 0) > 0)
-    ? relaxConstructedFusedCoords(options.layoutGraph, ringAtomIds, regularizedCoords, bondLength, {
-      iterations: 8,
-      damping: 0.2
-    })
-    : regularizedCoords;
+  const retensionedCoords =
+    options.layoutGraph && (regularizedAudit?.bondLengthFailureCount ?? 0) > 0
+      ? relaxConstructedFusedCoords(options.layoutGraph, ringAtomIds, regularizedCoords, bondLength, {
+          iterations: 8,
+          damping: 0.2
+        })
+      : regularizedCoords;
   const orientedCoords = orientCoordsHorizontally(retensionedCoords, computeFusedAxis(rebuildRingCenters(rings, retensionedCoords)));
 
   return {

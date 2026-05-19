@@ -113,7 +113,7 @@ describe('layout/engine/placement/substituents', () => {
     const coords = regularHexagonCoords(graph.rings[0].atomIds);
     const oxygenAtomId = [...graph.atoms.values()].find(atom => atom.element === 'O' && (graph.atomToRings.get(atom.id)?.length ?? 0) === 0)?.id;
     assert.ok(oxygenAtomId);
-    const oxygenNeighbors = (adjacency.get(oxygenAtomId) ?? []);
+    const oxygenNeighbors = adjacency.get(oxygenAtomId) ?? [];
     const anchorAtomId = oxygenNeighbors.find(atomId => (graph.atomToRings.get(atomId)?.length ?? 0) > 0);
     assert.ok(anchorAtomId);
     const angle = chooseAttachmentAngle(adjacency, coords, anchorAtomId, new Set(adjacency.keys()), null, graph, oxygenAtomId);
@@ -129,11 +129,12 @@ describe('layout/engine/placement/substituents', () => {
     const graph = createLayoutGraph(parseSMILES('N#Cc1ccccc1'), { suppressH: true });
     const adjacency = buildAdjacency(graph);
     const coords = regularHexagonCoords(graph.rings[0].atomIds);
-    const nitrileCarbonAtomId = [...graph.atoms.values()].find(atom =>
-      atom.element === 'C'
-      && (graph.atomToRings.get(atom.id)?.length ?? 0) === 0
-      && atom.heavyDegree === 2
-      && (adjacency.get(atom.id) ?? []).some(neighborAtomId => graph.atoms.get(neighborAtomId)?.element === 'N')
+    const nitrileCarbonAtomId = [...graph.atoms.values()].find(
+      atom =>
+        atom.element === 'C' &&
+        (graph.atomToRings.get(atom.id)?.length ?? 0) === 0 &&
+        atom.heavyDegree === 2 &&
+        (adjacency.get(atom.id) ?? []).some(neighborAtomId => graph.atoms.get(neighborAtomId)?.element === 'N')
     )?.id;
     assert.ok(nitrileCarbonAtomId);
     const anchorAtomId = (adjacency.get(nitrileCarbonAtomId) ?? []).find(atomId => (graph.atomToRings.get(atomId)?.length ?? 0) > 0);

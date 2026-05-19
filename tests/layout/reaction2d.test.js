@@ -628,10 +628,7 @@ test('reaction preview keeps amide hydrolysis carbonate-like centers locally tri
   assert.ok(center && oxygens.every(Boolean), 'expected carbonate-like amide-hydrolysis product center');
 
   for (const oxygen of oxygens) {
-    assert.ok(
-      distance(center, oxygen) > 1.2 && distance(center, oxygen) < 1.7,
-      `expected amide hydrolysis C5-O bond to stay compact, got ${distance(center, oxygen).toFixed(3)} Å`
-    );
+    assert.ok(distance(center, oxygen) > 1.2 && distance(center, oxygen) < 1.7, `expected amide hydrolysis C5-O bond to stay compact, got ${distance(center, oxygen).toFixed(3)} Å`);
   }
   for (let firstIndex = 0; firstIndex < oxygens.length; firstIndex++) {
     for (let secondIndex = firstIndex + 1; secondIndex < oxygens.length; secondIndex++) {
@@ -725,19 +722,13 @@ test('reaction preview preserves product wedge or dash display for an untouched 
 });
 
 test('reaction preview keeps amine-protonation fused aza product valence-clean', () => {
-  const preview = preparePreview(
-    'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',
-    reactionTemplates.amineProtonation.smirks
-  );
+  const preview = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.amineProtonation.smirks);
 
   assert.deepEqual(validateValence(preview.mol), []);
 });
 
 test('reaction preview keeps imine-hydrolysis then phenolate-protonation fused aza product valence-clean', () => {
-  const afterImineHydrolysis = preparePreview(
-    'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',
-    reactionTemplates.imineHydrolysis.smirks
-  );
+  const afterImineHydrolysis = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.imineHydrolysis.smirks);
   assert.deepEqual(validateValence(afterImineHydrolysis.mol), []);
 
   const productSmiles = toSMILES(afterImineHydrolysis.mol.getSubgraph([...afterImineHydrolysis.productAtomIds]));
@@ -776,19 +767,14 @@ test('reaction preview keeps retained scaffold compact for benzylic oxidation an
 });
 
 test('reaction preview keeps imine-hydrolysis edited carbonyl centers trigonal', () => {
-  const preview = preparePreview(
-    'CC(C)C12CC1(C)C(C)(CC2C=O)C(N)=N',
-    reactionTemplates.imineHydrolysis.smirks
-  );
+  const preview = preparePreview('CC(C)C12CC1(C)C(C)(CC2C=O)C(N)=N', reactionTemplates.imineHydrolysis.smirks);
   const componentAtomIds = preview.productComponentAtomIdSets.find(atomIds => atomIds.has('__rxn_product__0:C14'));
   assert.ok(componentAtomIds, 'expected the retained product component to contain C14');
 
   const center = preview.mol.atoms.get('__rxn_product__0:C14');
   const scaffoldAnchor = preview.mol.atoms.get('__rxn_product__0:C8');
   const terminalNitrogen = preview.mol.atoms.get('__rxn_product__0:N15');
-  const carbonylOxygen = center
-    .getNeighbors(preview.mol)
-    .find(atom => atom.name === 'O' && (preview.mol.getBond(center.id, atom.id)?.properties.order ?? 1) >= 2);
+  const carbonylOxygen = center.getNeighbors(preview.mol).find(atom => atom.name === 'O' && (preview.mol.getBond(center.id, atom.id)?.properties.order ?? 1) >= 2);
 
   assert.ok(center && scaffoldAnchor && terminalNitrogen && carbonylOxygen);
   for (const [first, second] of [
@@ -808,19 +794,13 @@ test('reaction preview keeps imine-hydrolysis edited carbonyl centers trigonal',
 });
 
 test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {
-  const preview = preparePreview(
-    'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',
-    reactionTemplates.aromaticAzaProtonation.smirks
-  );
+  const preview = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.aromaticAzaProtonation.smirks);
 
   assert.deepEqual(validateValence(preview.mol), []);
 });
 
 test('reaction preview reanchors product hidden stereohydrogens after alcohol oxidation', () => {
-  const preview = preparePreview(
-    'CCCN(CCC)C(=O)c1cc(C)cc(c1)C(=O)N[C@@H](Cc2cc(F)cc(F)c2)[C@H](O)[C@@H]3NCCN(Cc4ccccc4)C3=O',
-    reactionTemplates.alcoholOxidation.smirks
-  );
+  const preview = preparePreview('CCCN(CCC)C(=O)c1cc(C)cc(c1)C(=O)N[C@@H](Cc2cc(F)cc(F)c2)[C@H](O)[C@@H]3NCCN(Cc4ccccc4)C3=O', reactionTemplates.alcoholOxidation.smirks);
 
   for (const atomId of ['__rxn_product__0:H21', '__rxn_product__0:H35']) {
     const hydrogen = preview.mol.atoms.get(atomId);
@@ -859,10 +839,7 @@ test('reaction preview preserves the retained sugar scaffold for ether cleavage'
     const internalDrift = maxPairDistanceDeltaFromSnapshot(preview.mol, component, isolatedSnapshot);
     assert.ok(stats.maxBond < 1.95, `expected ether-cleavage sugar preview to avoid stretched heavy bonds, got ${stats.maxBond.toFixed(3)} Å`);
     assert.ok(stats.minNonbonded > 0.8, `expected ether-cleavage sugar preview to avoid heavy-atom overlap, got ${stats.minNonbonded.toFixed(3)} Å`);
-    assert.ok(
-      internalDrift < 1e-6,
-      `expected ether-cleavage sugar product geometry to survive reaction alignment unchanged, got max pair-distance drift ${internalDrift.toExponential(3)} Å`
-    );
+    assert.ok(internalDrift < 1e-6, `expected ether-cleavage sugar product geometry to survive reaction alignment unchanged, got max pair-distance drift ${internalDrift.toExponential(3)} Å`);
   }
 });
 
@@ -886,10 +863,7 @@ test('reaction preview keeps ether-cleavage ring-opening product leveled (landsc
         continue;
       }
       const bounds = atomIdBounds(preview, atomIds);
-      assert.ok(
-        bounds.width > bounds.height,
-        `expected open-chain ether-cleavage product to be landscape after alignment, got width=${bounds.width.toFixed(2)} height=${bounds.height.toFixed(2)}`
-      );
+      assert.ok(bounds.width > bounds.height, `expected open-chain ether-cleavage product to be landscape after alignment, got width=${bounds.width.toFixed(2)} height=${bounds.height.toFixed(2)}`);
       const carbonBackbone = atoms.filter(atom => atom.name === 'C');
       const rowSpread = alternatingRowSpread(carbonBackbone);
       assert.ok(
@@ -1029,9 +1003,7 @@ test('reaction preview keeps acid-chloride hydrolysis locally carboxyl-like', ()
 
 test('reaction preview keeps acid-chloride dehalogenation locally aldehyde-like', () => {
   const preview = preparePreview('ClC(CCC)=O', reactionTemplates.dehalogenation.smirks);
-  const aldehydeCenter = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.getNeighbors(preview.mol).some(nb => nb.name === 'O')
-  );
+  const aldehydeCenter = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.getNeighbors(preview.mol).some(nb => nb.name === 'O'));
   assert.ok(aldehydeCenter, 'expected aldehyde carbonyl center after acid-chloride dehalogenation');
   const oxygen = aldehydeCenter.getNeighbors(preview.mol).find(nb => nb.name === 'O');
   const carbonNeighbor = aldehydeCenter.getNeighbors(preview.mol).find(nb => nb.name === 'C');
@@ -1106,10 +1078,7 @@ test('reaction preview preserves long polyunsaturated-chain scaffold shape for a
       );
 
       const geometry = heavyGeometryStats(preview, largestProductComponent(preview));
-      assert.ok(
-        geometry.minNonbonded >= 1.2,
-        `expected no tight self-overlap for mapping ${index} of ${smiles}, got nearest non-bonded distance ${geometry.minNonbonded.toFixed(3)} Å`
-      );
+      assert.ok(geometry.minNonbonded >= 1.2, `expected no tight self-overlap for mapping ${index} of ${smiles}, got nearest non-bonded distance ${geometry.minNonbonded.toFixed(3)} Å`);
       assert.ok(geometry.maxBond <= 1.85, `expected no stretched product bonds for mapping ${index} of ${smiles}, got ${geometry.maxBond.toFixed(3)} Å`);
     }
   }

@@ -75,10 +75,7 @@ function _preStereoStageFor(smiles) {
 }
 
 function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
-  return angularDifference(
-    angleOf(sub(coords.get(firstNeighborAtomId), coords.get(centerAtomId))),
-    angleOf(sub(coords.get(secondNeighborAtomId), coords.get(centerAtomId)))
-  ) * (180 / Math.PI);
+  return angularDifference(angleOf(sub(coords.get(firstNeighborAtomId), coords.get(centerAtomId))), angleOf(sub(coords.get(secondNeighborAtomId), coords.get(centerAtomId)))) * (180 / Math.PI);
 }
 
 describe('layout/engine/stereo/enforcement', () => {
@@ -141,10 +138,7 @@ describe('layout/engine/stereo/enforcement', () => {
     assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
     assert.equal(pipelineResult.metadata.stereo.ezViolationCount, 0);
     assert.ok(
-      Math.hypot(
-        enforced.coords.get('C14').x - enforced.coords.get('C28').x,
-        enforced.coords.get('C14').y - enforced.coords.get('C28').y
-      ) > bondLength,
+      Math.hypot(enforced.coords.get('C14').x - enforced.coords.get('C28').x, enforced.coords.get('C14').y - enforced.coords.get('C28').y) > bondLength,
       'expected the styryl phenyl ring to avoid stacking C14 onto the fused core C28'
     );
   });

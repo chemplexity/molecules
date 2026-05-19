@@ -36,8 +36,9 @@ function _annotationLabelMetrics(label, fontSize) {
 }
 
 function _annotationBoxOverlapsPlaced(candidate, placed) {
-  return Math.abs(candidate.cx - placed.cx) < candidate.hw + placed.hw + DEFAULT_ANNOTATION_BOX_PADDING
-    && Math.abs(candidate.cy - placed.cy) < candidate.hh + placed.hh + DEFAULT_ANNOTATION_BOX_PADDING;
+  return (
+    Math.abs(candidate.cx - placed.cx) < candidate.hw + placed.hw + DEFAULT_ANNOTATION_BOX_PADDING && Math.abs(candidate.cy - placed.cy) < candidate.hh + placed.hh + DEFAULT_ANNOTATION_BOX_PADDING
+  );
 }
 
 function _countAnnotationBoxOverlaps(candidate, placedBoxes) {
@@ -95,14 +96,7 @@ export function pickAtomAnnotationAngle(blockedSectors = [], fallbackAngle = DEF
  * @param {Array<{cx: number, cy: number, hw: number, hh: number}>} [options.placedBoxes] - Existing placed label boxes to avoid.
  * @returns {{angle: number, cx: number, cy: number, hw: number, hh: number}} Chosen label placement.
  */
-export function pickAtomAnnotationPlacement({
-  center,
-  label,
-  fontSize,
-  blockedSectors = [],
-  fallbackAngle = DEFAULT_NUMBERING_FALLBACK_ANGLE,
-  placedBoxes = []
-}) {
+export function pickAtomAnnotationPlacement({ center, label, fontSize, blockedSectors = [], fallbackAngle = DEFAULT_NUMBERING_FALLBACK_ANGLE, placedBoxes = [] }) {
   const normalizedBlockedSectors = Array.isArray(blockedSectors) ? blockedSectors : [];
   const normalizedPlacedBoxes = Array.isArray(placedBoxes) ? placedBoxes : [];
   const labelDistance = atomNumberingLabelDistance(fontSize, label);
@@ -140,17 +134,9 @@ export function pickAtomAnnotationPlacement({
     };
     const overlapCount = _countAnnotationBoxOverlaps(candidate, normalizedPlacedBoxes);
     if (
-      overlapCount < bestPlacement.overlapCount
-      || (
-        overlapCount === bestPlacement.overlapCount
-        && (
-          clearance > bestPlacement.clearance + 1e-6
-          || (
-            Math.abs(clearance - bestPlacement.clearance) <= 1e-6
-            && fallbackDistance < bestPlacement.fallbackDistance
-          )
-        )
-      )
+      overlapCount < bestPlacement.overlapCount ||
+      (overlapCount === bestPlacement.overlapCount &&
+        (clearance > bestPlacement.clearance + 1e-6 || (Math.abs(clearance - bestPlacement.clearance) <= 1e-6 && fallbackDistance < bestPlacement.fallbackDistance)))
     ) {
       bestPlacement = {
         ...candidate,
@@ -427,4 +413,3 @@ export function updateAtomNumberingPanel(mol) {
     })
   );
 }
-

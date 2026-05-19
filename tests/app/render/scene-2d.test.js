@@ -590,10 +590,7 @@ describe('create2DSceneRenderer', () => {
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const projectedSector = minimumSectorAngle(parent, projectedHydrogen, knownPositions);
 
-    assert.ok(
-      projectedSector >= Math.PI / 3 - 1e-6,
-      `expected H1 to stay in the widest bridgehead sector, got ${((projectedSector * 180) / Math.PI).toFixed(1)} degrees`
-    );
+    assert.ok(projectedSector >= Math.PI / 3 - 1e-6, `expected H1 to stay in the widest bridgehead sector, got ${((projectedSector * 180) / Math.PI).toFixed(1)} degrees`);
   });
 
   it('pins visible stereo hydrogens to their rendered position before neighboring drags', () => {
