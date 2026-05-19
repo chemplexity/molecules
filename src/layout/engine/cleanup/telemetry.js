@@ -63,6 +63,7 @@ export function createEmptyCleanupTelemetry() {
     counts: {
       stagesTracked: 0,
       stagesRan: 0,
+      stagesSkipped: 0,
       stagesMaterialized: 0,
       stagesReturnedNull: 0,
       stagesWon: 0,
@@ -78,7 +79,8 @@ export function createEmptyCleanupTelemetry() {
       count: 0,
       stages: [],
       won: false
-    }
+    },
+    cleanupStageBudget: null
   };
 }
 
@@ -117,16 +119,25 @@ export function createEmptyStageTelemetry() {
 
 /**
  * Builds the permanent cleanup telemetry payload from runner execution data.
- * @param {Map<string, {name: string, parentStage: string|string[]|null, ran: boolean, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}>} stageExecutions - Stage execution data from the runner.
+ * @param {Map<string, {name: string, parentStage: string|string[]|null, ran: boolean, skipped?: boolean, skipReason?: string|null, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}>} stageExecutions - Stage execution data from the runner.
  * @param {Map<string, object>} stageResults - Materialized stage results by name.
  * @param {string|null|undefined} selectedGeometryStage - Winning geometry checkpoint stage name.
  * @param {string|null|undefined} selectedStage - Winning final stage name.
  * @param {{requested: boolean, reasons: string[], stages: string[], maxPasses: number}|null} [accumulatedStabilizationRequest] - Accepted stabilization requests merged across stages.
+ * @param {object|null} [cleanupStageBudget] - Optional cleanup-stage budget telemetry.
  * @returns {object} Cleanup telemetry payload.
  */
-export function buildCleanupTelemetry(stageExecutions, stageResults, selectedGeometryStage, selectedStage, accumulatedStabilizationRequest = null) {
+export function buildCleanupTelemetry(
+  stageExecutions,
+  stageResults,
+  selectedGeometryStage,
+  selectedStage,
+  accumulatedStabilizationRequest = null,
+  cleanupStageBudget = null
+) {
   const stages = {};
   let stagesRan = 0;
+  let stagesSkipped = 0;
   let stagesMaterialized = 0;
   let stagesReturnedNull = 0;
   let stagesWon = 0;
@@ -140,6 +151,8 @@ export function buildCleanupTelemetry(stageExecutions, stageResults, selectedGeo
       category: alias.category,
       parentStage: execution.parentStage,
       ran: execution.ran === true,
+      skipped: execution.skipped === true,
+      skipReason: execution.skipReason ?? null,
       returnedNull: execution.returnedNull === true,
       materialized: execution.materialized === true || stageResult != null,
       accepted: execution.accepted === true,
@@ -149,6 +162,7 @@ export function buildCleanupTelemetry(stageExecutions, stageResults, selectedGeo
     };
     stages[stageName] = stageTelemetry;
     stagesRan += stageTelemetry.ran ? 1 : 0;
+    stagesSkipped += stageTelemetry.skipped ? 1 : 0;
     stagesMaterialized += stageTelemetry.materialized ? 1 : 0;
     stagesReturnedNull += stageTelemetry.returnedNull ? 1 : 0;
     stagesWon += stageTelemetry.won ? 1 : 0;
@@ -178,6 +192,7 @@ export function buildCleanupTelemetry(stageExecutions, stageResults, selectedGeo
     counts: {
       stagesTracked: Object.keys(stages).length,
       stagesRan,
+      stagesSkipped,
       stagesMaterialized,
       stagesReturnedNull,
       stagesWon,
@@ -193,6 +208,7 @@ export function buildCleanupTelemetry(stageExecutions, stageResults, selectedGeo
       count: presentationFallbackStages.size,
       stages: [...presentationFallbackStages],
       won: presentationFallbackStages.has(selectedStage ?? '')
-    }
+    },
+    cleanupStageBudget
   };
 }

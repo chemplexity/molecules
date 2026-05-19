@@ -175,6 +175,56 @@ describe('layout/engine/cleanup/stage-runner', () => {
     assert.equal(result.stageExecutions.get('presentationFallbackCleanup')?.elapsedMs, 9);
   });
 
+  it('skips optional cleanup-budget stages before running their transform', () => {
+    const baselineStage = {
+      name: 'placement',
+      coords: new Map([
+        ['A1', { x: 0, y: 0 }]
+      ]),
+      audit: { ok: true }
+    };
+    const cleanupStageBudget = {
+      enabled: true,
+      startMs: 0,
+      limitMs: 10,
+      checkCount: 0,
+      skippedStageCount: 0,
+      skippedStages: [],
+      skipReasons: {},
+      maxElapsedMs: 0
+    };
+    let transformCalls = 0;
+
+    const result = runStageGraph([
+      {
+        name: 'optionalRetouch',
+        parentStage: 'best',
+        cleanupBudgetOptional: true,
+        cleanupBudgetGuard() {
+          return true;
+        },
+        transformFn(parentCoords) {
+          transformCalls++;
+          return { coords: parentCoords };
+        }
+      }
+    ], baselineStage, {
+      cleanupStageBudget,
+      nowMs() {
+        return 15;
+      }
+    });
+
+    const execution = result.stageExecutions.get('optionalRetouch');
+    assert.equal(transformCalls, 0);
+    assert.equal(execution?.ran, false);
+    assert.equal(execution?.skipped, true);
+    assert.equal(execution?.skipReason, 'cleanup-stage-budget');
+    assert.equal(cleanupStageBudget.checkCount, 1);
+    assert.equal(cleanupStageBudget.skippedStageCount, 1);
+    assert.deepEqual(cleanupStageBudget.skippedStages, ['optionalRetouch']);
+  });
+
   it('can continue from a seeded runner state across multiple stage groups', () => {
     const baselineStage = {
       name: 'placement',

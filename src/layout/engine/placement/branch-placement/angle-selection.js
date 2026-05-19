@@ -1008,7 +1008,10 @@ export function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
       singleNeighborIds.push(neighborAtomId);
       continue;
     }
-    if (isTerminalMultipleBondHetero(layoutGraph, atomId, bond)) {
+    if (
+      isTerminalMultipleBondHetero(layoutGraph, atomId, bond)
+      || isPhosphazeneMultipleBondHetero(layoutGraph, atomId, bond)
+    ) {
       multipleNeighborIds.push(neighborAtomId);
       continue;
     }
@@ -1051,6 +1054,22 @@ function isTerminalAnionicOxygenLigand(layoutGraph, centerAtomId, neighborAtomId
     && (neighborAtom.charge ?? 0) < 0
     && (neighborAtom.heavyDegree ?? 0) === 1
     && findLayoutBond(layoutGraph, centerAtomId, neighborAtomId) === bond
+  );
+}
+
+function isPhosphazeneMultipleBondHetero(layoutGraph, centerAtomId, bond) {
+  if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    return false;
+  }
+  const centerAtom = layoutGraph.atoms.get(centerAtomId);
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  return Boolean(
+    centerAtom
+    && centerAtom.element === 'P'
+    && neighborAtom
+    && neighborAtom.element === 'N'
+    && describePhosphazeneTrigonalCenter(layoutGraph, neighborAtomId)?.multiplePhosphorusNeighborIds.includes(centerAtomId)
   );
 }
 
@@ -1130,6 +1149,58 @@ export function describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, atomId)
   return {
     ligandNeighborIds: [...heavySingleNeighborIds, ...descriptor.multipleNeighborIds],
     hydrogenNeighborId: hydrogenNeighborIds[0]
+  };
+}
+
+/**
+ * Describes a planar phosphazene-like nitrogen fan. Central imide nitrogens
+ * such as `P-N(=P)(=P)` need their phosphorus ligands kept in exact 120-degree
+ * slots; otherwise equivalent bulky P branches can be assigned to the same
+ * open direction during mixed placement.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate nitrogen atom ID.
+ * @returns {{ligandNeighborIds: string[], multiplePhosphorusNeighborIds: string[]}|null} Trigonal phosphazene descriptor or `null`.
+ */
+export function describePhosphazeneTrigonalCenter(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return null;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'N'
+    || atom.aromatic
+    || (atom.heavyDegree ?? 0) !== 3
+  ) {
+    return null;
+  }
+
+  const ligandNeighborIds = [];
+  const multiplePhosphorusNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return null;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (neighborAtom.element !== 'P' || neighborAtom.aromatic) {
+      return null;
+    }
+    ligandNeighborIds.push(neighborAtomId);
+    if ((bond.order ?? 1) >= 2 && (neighborAtom.heavyDegree ?? 0) >= 3) {
+      multiplePhosphorusNeighborIds.push(neighborAtomId);
+    }
+  }
+
+  if (ligandNeighborIds.length !== 3 || multiplePhosphorusNeighborIds.length < 2) {
+    return null;
+  }
+  return {
+    ligandNeighborIds,
+    multiplePhosphorusNeighborIds
   };
 }
 
@@ -2320,6 +2391,7 @@ function terminalHeteroTripodAngleSets(layoutGraph, coords, anchorAtomId, parent
 }
 
 const PROJECTED_TETRAHEDRAL_SLOT_OFFSETS = [0, DEG90, Math.PI, Math.PI + DEG90];
+const PROJECTED_TETRAHEDRAL_GROUP14_ELEMENTS = new Set(['Si', 'Ge', 'Sn', 'Pb']);
 
 /**
  * Returns bounded orientation candidates for a projected-tetrahedral center
@@ -2339,8 +2411,8 @@ function rootProjectedTetrahedralAngleSets() {
 /**
  * Returns whether an acyclic four-coordinate heteroatom should reserve the
  * same projected slots as crowded tetrahedral carbon centers. Quaternary
- * ammonium and tetravalent silane centers have no hidden hydrogens to absorb
- * bad 2D fan choices, so their four visible ligands need explicit slot
+ * ammonium and tetravalent group-14 centers have no hidden hydrogens to
+ * absorb bad 2D fan choices, so their four visible ligands need explicit slot
  * separation even when several ligands continue into longer chains.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom ID.
@@ -2356,7 +2428,7 @@ function isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, atomId) {
     && atom.heavyDegree === 4
     && atom.degree === 4
     && (
-      atom.element === 'Si'
+      PROJECTED_TETRAHEDRAL_GROUP14_ELEMENTS.has(atom.element)
       || (atom.element === 'N' && (atom.charge ?? 0) > 0)
     )
   );
@@ -2391,9 +2463,9 @@ export function hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) {
  * placement rules. Besides terminal leaves, linear branches, and crowded
  * multi-ring roots, centers bearing a cross-like hypervalent branch use the
  * same slots so late sulfur/phosphorus orthogonalization does not collide with
- * neighboring branches. Fully substituted acyclic ammonium and silane centers
- * also opt in because their four visible ligands otherwise collapse into
- * sequential zig-zag branch slots.
+ * neighboring branches. Fully substituted acyclic ammonium and group-14
+ * centers also opt in because their four visible ligands otherwise collapse
+ * into sequential zig-zag branch slots.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom ID.
  * @returns {boolean} True when the center qualifies for projected-tetrahedral placement.
@@ -2538,14 +2610,10 @@ function inferPlacedNeighborBondLength(coords, anchorPosition, placedNeighborIds
 }
 
 /**
- * Returns whether a projected terminal-leaf rescue is operating inside a
- * fully substituted perhalo-like backbone segment. Short fluorinated chains
- * with one partially substituted endpoint can keep exact projected slots; the
- * rescue is for repeated square-grid collisions between adjacent projected
- * four-heavy carbon centers.
+ * Counts terminal halogen leaves attached by single bonds to a center atom.
  * @param {object|null} layoutGraph - Layout graph shell.
- * @param {string[]} placedNeighborIds - Already placed neighbor IDs.
- * @returns {boolean} True when the local placed neighbors identify a crowded projected segment.
+ * @param {string} atomId - Center atom ID.
+ * @returns {number} Terminal halogen leaf count.
  */
 function terminalHalogenLeafCount(layoutGraph, atomId) {
   if (!layoutGraph) {
@@ -3235,6 +3303,46 @@ function hiddenHydrogenMonoOxoTrigonalAngleSets(coords, anchorAtomId, currentPla
   );
 }
 
+/**
+ * Returns exact 120-degree child angle sets for planar phosphazene nitrogen
+ * centers.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Nitrogen atom ID.
+ * @param {string[]} currentPlacedNeighborIds - Already placed neighbor atom IDs.
+ * @param {string[]} unplacedNeighborIds - Pending child atom IDs.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {number[][]} Candidate trigonal angle sets.
+ */
+function phosphazeneTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
+  const descriptor = describePhosphazeneTrigonalCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !coords.has(anchorAtomId)) {
+    return [];
+  }
+  if (!unplacedNeighborIds.every(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId))) {
+    return [];
+  }
+
+  const placedLigandNeighborIds = currentPlacedNeighborIds
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId));
+  const placedAndPendingLigandCount = placedLigandNeighborIds.length + unplacedNeighborIds.length;
+  if (placedAndPendingLigandCount !== descriptor.ligandNeighborIds.length) {
+    return [];
+  }
+
+  const openAngles = openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
+  if (openAngles.length === unplacedNeighborIds.length) {
+    const angleSets = [openAngles];
+    if (openAngles.length === 2) {
+      angleSets.push([openAngles[1], openAngles[0]]);
+    }
+    return angleSets;
+  }
+  if (unplacedNeighborIds.length === 1 && openAngles.length > 0) {
+    return openAngles.map(angle => [angle]);
+  }
+  return [];
+}
+
 function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
   const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
   if (!descriptor || !coords.has(anchorAtomId)) {
@@ -3278,6 +3386,11 @@ function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentP
   if (unplacedNeighborIds.length === 2 && unplacedSingleNeighborIds.length === 2 && placedMultipleNeighborIds.length === 2) {
     const multipleAxisAngle = angleOf(sub(coords.get(placedMultipleNeighborIds[0]), anchorPosition));
     angleSets.push([multipleAxisAngle + DEG90, multipleAxisAngle - DEG90]);
+  }
+
+  if (unplacedNeighborIds.length === 3 && unplacedSingleNeighborIds.length === 3 && placedMultipleNeighborIds.length === 1) {
+    const multipleAxisAngle = angleOf(sub(coords.get(placedMultipleNeighborIds[0]), anchorPosition));
+    angleSets.push([multipleAxisAngle + Math.PI, multipleAxisAngle + DEG90, multipleAxisAngle - DEG90]);
   }
 
   return angleSets;
@@ -3367,6 +3480,26 @@ function preferredChargedSulfoxideTrigonalChildAngles(layoutGraph, coords, ancho
  */
 function preferredHiddenHydrogenMonoOxoTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
   const descriptor = describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !childAtomId || !descriptor.ligandNeighborIds.includes(childAtomId)) {
+    return [];
+  }
+  const placedLigandNeighborIds = placedNeighborIdsList
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId) && neighborAtomId !== childAtomId);
+  return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
+}
+
+/**
+ * Returns exact 120-degree continuation angles for one phosphazene nitrogen
+ * child.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Nitrogen atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {string[]} placedNeighborIdsList - Already placed neighbor atom IDs.
+ * @returns {number[]} Candidate trigonal child angles.
+ */
+function preferredPhosphazeneTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
+  const descriptor = describePhosphazeneTrigonalCenter(layoutGraph, anchorAtomId);
   if (!descriptor || !childAtomId || !descriptor.ligandNeighborIds.includes(childAtomId)) {
     return [];
   }
@@ -3829,6 +3962,7 @@ export function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentA
   const budgetedAngleSetCandidates = [
     ...chargedSulfoxideTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...hiddenHydrogenMonoOxoTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
+    ...phosphazeneTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...exactExteriorAngleSets,
     ...pendingSmallRingExteriorAngleSetCandidates,
@@ -3879,6 +4013,10 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   const hiddenHydrogenMonoOxoTrigonalAngles = preferredHiddenHydrogenMonoOxoTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
   if (hiddenHydrogenMonoOxoTrigonalAngles.length > 0) {
     return hiddenHydrogenMonoOxoTrigonalAngles;
+  }
+  const phosphazeneTrigonalAngles = preferredPhosphazeneTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
+  if (phosphazeneTrigonalAngles.length > 0) {
+    return phosphazeneTrigonalAngles;
   }
   const smallRingExteriorAngles = preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (smallRingExteriorAngles.length > 0) {

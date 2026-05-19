@@ -16,14 +16,16 @@ function nowMs(context) {
  * Returns a blank execution telemetry record for one stage.
  * @param {string} stageName - Stage name.
  * @param {string|string[]|null} parentStage - Requested parent stage descriptor.
- * @param {{ran?: boolean, returnedNull?: boolean, materialized?: boolean, accepted?: boolean, won?: boolean, elapsedMs?: number, audit?: object|null}} [overrides] - Optional field overrides.
- * @returns {{name: string, parentStage: string|string[]|null, ran: boolean, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}} Stage execution telemetry.
+ * @param {{ran?: boolean, skipped?: boolean, skipReason?: string|null, returnedNull?: boolean, materialized?: boolean, accepted?: boolean, won?: boolean, elapsedMs?: number, audit?: object|null}} [overrides] - Optional field overrides.
+ * @returns {{name: string, parentStage: string|string[]|null, ran: boolean, skipped: boolean, skipReason: string|null, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}} Stage execution telemetry.
  */
 export function createStageExecutionEntry(stageName, parentStage, overrides = {}) {
   return {
     name: stageName,
     parentStage: Array.isArray(parentStage) ? [...parentStage] : parentStage ?? null,
     ran: overrides.ran === true,
+    skipped: overrides.skipped === true,
+    skipReason: typeof overrides.skipReason === 'string' ? overrides.skipReason : null,
     returnedNull: overrides.returnedNull === true,
     materialized: overrides.materialized === true,
     accepted: overrides.accepted === true,
@@ -31,6 +33,47 @@ export function createStageExecutionEntry(stageName, parentStage, overrides = {}
     elapsedMs: Number.isFinite(overrides.elapsedMs) ? overrides.elapsedMs : 0,
     audit: overrides.audit ?? null
   };
+}
+
+function cleanupBudgetElapsedMs(context) {
+  const budget = context?.cleanupStageBudget ?? null;
+  if (!budget || Number.isFinite(budget.startMs) !== true) {
+    return 0;
+  }
+  return Math.max(0, nowMs(context) - budget.startMs);
+}
+
+function recordCleanupBudgetSkip(context, stage, stageExecution, reason, elapsedMs) {
+  const budget = context?.cleanupStageBudget ?? null;
+  if (budget) {
+    budget.skippedStageCount = (budget.skippedStageCount ?? 0) + 1;
+    budget.skippedStages = [...(budget.skippedStages ?? []), stage.name];
+    budget.skipReasons = {
+      ...(budget.skipReasons ?? {}),
+      [stage.name]: reason
+    };
+    budget.maxElapsedMs = Math.max(budget.maxElapsedMs ?? 0, elapsedMs);
+  }
+  stageExecution.skipped = true;
+  stageExecution.skipReason = reason;
+}
+
+function shouldSkipStageForCleanupBudget(stage, context, stageResults, bestStage, stageExecution, reason) {
+  const budget = context?.cleanupStageBudget ?? null;
+  if (!budget?.enabled || stage.cleanupBudgetOptional !== true) {
+    return false;
+  }
+  if (typeof stage.cleanupBudgetGuard === 'function' && stage.cleanupBudgetGuard(stageResults, bestStage, context) === false) {
+    return false;
+  }
+  const elapsedMs = cleanupBudgetElapsedMs(context);
+  budget.checkCount = (budget.checkCount ?? 0) + 1;
+  budget.maxElapsedMs = Math.max(budget.maxElapsedMs ?? 0, elapsedMs);
+  if (elapsedMs <= budget.limitMs) {
+    return false;
+  }
+  recordCleanupBudgetSkip(context, stage, stageExecution, reason, elapsedMs);
+  return true;
 }
 
 function mergeStabilizationRequest(accumulatedRequest, stageName, stageRequest) {
@@ -97,8 +140,8 @@ function resolveParentStageResult(stageResults, baselineStage, parentStage, best
  * @param {object[]} stages - Ordered stage descriptors.
  * @param {{name: string, coords: Map<string, {x: number, y: number}>, audit?: object}} baselineStage - Named baseline stage.
  * @param {object} context - Shared runner context.
- * @param {{allStageResults?: Map<string, object>, accumulatedSidecars?: object, accumulatedStabilizationRequest?: {requested: boolean, reasons: string[], stages: string[], maxPasses: number}|null, stageEntries?: Array<{name: string, audit: object}>, stageExecutions?: Map<string, {name: string, parentStage: string|string[]|null, ran: boolean, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}>, bestStage?: object, geometryCheckpointStage?: object}|null} [seedState] - Optional prior runner state to continue from.
- * @returns {{bestStage: object, geometryCheckpointStage: object, allStageResults: Map<string, object>, accumulatedSidecars: object, accumulatedStabilizationRequest: {requested: boolean, reasons: string[], stages: string[], maxPasses: number}|null, stageEntries: Array<{name: string, audit: object}>, stageExecutions: Map<string, {name: string, parentStage: string|string[]|null, ran: boolean, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}>}} Runner result.
+ * @param {{allStageResults?: Map<string, object>, accumulatedSidecars?: object, accumulatedStabilizationRequest?: {requested: boolean, reasons: string[], stages: string[], maxPasses: number}|null, stageEntries?: Array<{name: string, audit: object}>, stageExecutions?: Map<string, {name: string, parentStage: string|string[]|null, ran: boolean, skipped: boolean, skipReason: string|null, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}>, bestStage?: object, geometryCheckpointStage?: object}|null} [seedState] - Optional prior runner state to continue from.
+ * @returns {{bestStage: object, geometryCheckpointStage: object, allStageResults: Map<string, object>, accumulatedSidecars: object, accumulatedStabilizationRequest: {requested: boolean, reasons: string[], stages: string[], maxPasses: number}|null, stageEntries: Array<{name: string, audit: object}>, stageExecutions: Map<string, {name: string, parentStage: string|string[]|null, ran: boolean, skipped: boolean, skipReason: string|null, returnedNull: boolean, materialized: boolean, accepted: boolean, won: boolean, elapsedMs: number, audit: object|null}>}} Runner result.
  */
 export function runStageGraph(stages, baselineStage, context, seedState = null) {
   const stageResults = new Map(seedState?.allStageResults ?? [[baselineStage.name, baselineStage]]);
@@ -115,6 +158,9 @@ export function runStageGraph(stages, baselineStage, context, seedState = null) 
     stageExecutions.set(stage.name, stageExecution);
 
     if (typeof stage.guard === 'function' && stage.guard(stageResults, bestStage, context) === false) {
+      continue;
+    }
+    if (shouldSkipStageForCleanupBudget(stage, context, stageResults, bestStage, stageExecution, 'cleanup-stage-budget')) {
       continue;
     }
 

@@ -56,10 +56,19 @@ function quadraticPoint(firstPoint, controlPoint, secondPoint, t) {
  */
 function bridgeProjectionMinimumSpan(paths, bondLength) {
   const defaultSpan = bondLength * 1.6;
+  const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
+  if (
+    segmentCounts.length === 3
+    && segmentCounts[0] === 2
+    && segmentCounts[1] >= 4
+    && segmentCounts[2] - segmentCounts[1] <= 1
+  ) {
+    return Math.max(defaultSpan, bondLength * segmentCounts[0]);
+  }
   if (paths.length < 3) {
     return defaultSpan;
   }
-  const shortestSegmentCount = Math.min(...paths.map(path => path.length - 1).filter(segmentCount => segmentCount > 0));
+  const shortestSegmentCount = segmentCounts.length === 0 ? Number.POSITIVE_INFINITY : segmentCounts[0];
   if (!Number.isFinite(shortestSegmentCount) || shortestSegmentCount < 3) {
     return defaultSpan;
   }
@@ -74,7 +83,18 @@ function bridgeProjectionMinimumSpan(paths, bondLength) {
  * @returns {boolean} True when balanced center/outer lane projection applies.
  */
 function shouldUseBalancedThetaProjection(sortedPaths) {
-  return sortedPaths.length === 3 && sortedPaths[0].length - 1 >= 3;
+  const segmentCounts = bridgePathSegmentCounts(sortedPaths).sort((firstCount, secondCount) => firstCount - secondCount);
+  return (
+    segmentCounts.length === 3
+    && (
+      segmentCounts[0] >= 3
+      || (
+        segmentCounts[0] === 2
+        && segmentCounts[1] >= 4
+        && segmentCounts[2] - segmentCounts[1] <= 1
+      )
+    )
+  );
 }
 
 /**
@@ -349,7 +369,6 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     }
     return firstPath.join('>').localeCompare(secondPath.join('>'), 'en', { numeric: true });
   });
-
   for (let pathIndex = 0; pathIndex < sortedPaths.length; pathIndex++) {
     const path = sortedPaths[pathIndex];
     const internalAtomIds = path.slice(1, -1);

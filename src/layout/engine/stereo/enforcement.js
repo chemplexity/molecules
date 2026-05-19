@@ -9,7 +9,7 @@ import {
 import {
   actualAlkeneStereo,
   hasEnforceableCyclicEZContext,
-  highestPriorityAlkeneSubstituentId,
+  highestPriorityAlkeneSubstituentIdForLayoutGraph,
   isSupportedAnnotatedDoubleBond,
   smallestQualifyingStereoRing
 } from './ez.js';
@@ -476,8 +476,8 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
     return null;
   }
 
-  const prioritySubstituentId = highestPriorityAlkeneSubstituentId(layoutGraph.sourceMolecule, centerAtomId, otherAtomId);
-  const otherPrioritySubstituentId = highestPriorityAlkeneSubstituentId(layoutGraph.sourceMolecule, otherAtomId, centerAtomId);
+  const prioritySubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, centerAtomId, otherAtomId);
+  const otherPrioritySubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, otherAtomId, centerAtomId);
   if (!prioritySubstituentId || !otherPrioritySubstituentId) {
     return null;
   }
@@ -603,7 +603,7 @@ function buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, ster
   if (!centerPoint || !otherPoint) {
     return [];
   }
-  const prioritySubstituentId = highestPriorityAlkeneSubstituentId(layoutGraph.sourceMolecule, centerAtomId, otherAtomId);
+  const prioritySubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, centerAtomId, otherAtomId);
   if (!prioritySubstituentId || !coords.has(prioritySubstituentId)) {
     return [];
   }
@@ -676,22 +676,31 @@ function countMatchedStereo(layoutGraph, coords, stereoBonds) {
  */
 export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  let coords = cloneCoords(inputCoords);
-  const ringAtomIdSet = buildRingAtomIdSet(layoutGraph);
   const stereoBonds = [...layoutGraph.bonds.values()].filter(
     bond =>
       bond.kind === 'covalent' &&
       !bond.aromatic &&
       (bond.order ?? 1) === 2 &&
       isSupportedAnnotatedDoubleBond(layoutGraph, bond) &&
-      hasEnforceableCyclicEZContext(layoutGraph, coords, bond) &&
+      hasEnforceableCyclicEZContext(layoutGraph, inputCoords, bond) &&
       (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
   );
 
   if (stereoBonds.length === 0) {
-    return { coords, reflections: 0 };
+    return { coords: inputCoords, reflections: 0 };
   }
 
+  const hasMismatch = stereoBonds.some(bond => {
+    const targetStereo = layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null;
+    const actualStereo = actualAlkeneStereo(layoutGraph, inputCoords, bond);
+    return targetStereo && actualStereo != null && actualStereo !== targetStereo;
+  });
+  if (!hasMismatch) {
+    return { coords: inputCoords, reflections: 0 };
+  }
+
+  let coords = cloneCoords(inputCoords);
+  const ringAtomIdSet = buildRingAtomIdSet(layoutGraph);
   let reflections = 0;
 
   for (let pass = 0; pass < stereoBonds.length; pass++) {

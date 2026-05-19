@@ -55,6 +55,33 @@ export function highestPriorityAlkeneSubstituentId(molecule, centerAtomId, exclu
   return bestCount === 1 ? bestAtomId : null;
 }
 
+function prioritySubstituentCacheKey(centerAtomId, excludedAtomId) {
+  return `${centerAtomId}\0${excludedAtomId}`;
+}
+
+/**
+ * Returns the highest-priority alkene substituent, caching the CIP result on
+ * the layout graph for repeated E/Z audit and enforcement passes.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Alkene endpoint atom ID.
+ * @param {string} excludedAtomId - Other alkene endpoint atom ID.
+ * @returns {string|null} Highest-priority substituent atom ID.
+ */
+export function highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, centerAtomId, excludedAtomId) {
+  const molecule = layoutGraph?.sourceMolecule ?? null;
+  if (!molecule) {
+    return null;
+  }
+  const cache = layoutGraph._ezPrioritySubstituentCache ??= new Map();
+  const cacheKey = prioritySubstituentCacheKey(centerAtomId, excludedAtomId);
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+  const substituentId = highestPriorityAlkeneSubstituentId(molecule, centerAtomId, excludedAtomId);
+  cache.set(cacheKey, substituentId);
+  return substituentId;
+}
+
 /**
  * Returns the smallest qualifying ring that contains both annotated double-bond
  * atoms. Bonds inside smaller rings are treated as unsupported for `E/Z`
@@ -202,8 +229,8 @@ export function collectProtectedEZAtomIds(layoutGraph) {
     atomIds.add(bond.a);
     atomIds.add(bond.b);
 
-    const firstSubstituentId = highestPriorityAlkeneSubstituentId(molecule, bond.a, bond.b);
-    const secondSubstituentId = highestPriorityAlkeneSubstituentId(molecule, bond.b, bond.a);
+    const firstSubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, bond.a, bond.b);
+    const secondSubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, bond.b, bond.a);
     if (firstSubstituentId) {
       atomIds.add(firstSubstituentId);
     }
@@ -223,7 +250,6 @@ export function collectProtectedEZAtomIds(layoutGraph) {
  * @returns {'E'|'Z'|null} Actual coordinate-implied stereodescriptor.
  */
 export function actualAlkeneStereo(layoutGraph, coords, bond) {
-  const molecule = layoutGraph.sourceMolecule;
   const firstAtomId = bond.a;
   const secondAtomId = bond.b;
   const firstPosition = coords.get(firstAtomId);
@@ -232,8 +258,8 @@ export function actualAlkeneStereo(layoutGraph, coords, bond) {
     return null;
   }
 
-  const firstSubstituentId = highestPriorityAlkeneSubstituentId(molecule, firstAtomId, secondAtomId);
-  const secondSubstituentId = highestPriorityAlkeneSubstituentId(molecule, secondAtomId, firstAtomId);
+  const firstSubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, firstAtomId, secondAtomId);
+  const secondSubstituentId = highestPriorityAlkeneSubstituentIdForLayoutGraph(layoutGraph, secondAtomId, firstAtomId);
   if (!firstSubstituentId || !secondSubstituentId) {
     return null;
   }

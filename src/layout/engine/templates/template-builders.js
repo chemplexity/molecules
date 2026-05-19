@@ -1140,6 +1140,18 @@ function createSulfonylAzaCyclohepteneCyclopropaneCoreTemplate() {
 }
 
 /**
+ * Creates the compact sulfonyl-bridged heteroaryl scaffold graph found in
+ * fused oxathiaza systems like `CCC12OCC(N)(CNS1(=O)=O)C1=NSN=C21`.
+ * @returns {Molecule} Sulfonyl aromatic bridged heterocycle scaffold template molecule.
+ */
+function createSulfonylAromaticBridgedHeterocycleCoreTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'sulfonyl-aromatic-bridged-heterocycle-core',
+    'CCC12OCC(N)(CNS1(=O)=O)C1=NSN=C21'
+  );
+}
+
+/**
  * Creates the ammonium benzocyclobutane scaffold graph found in compact
  * aromatic cyclobutane-fused cages like `CC1=CC=CC2=C1C1([NH3+])CC2(C)C1`.
  * @returns {Molecule} Ammonium benzocyclobutane scaffold template molecule.
@@ -3199,6 +3211,30 @@ function createSulfonylAzaCyclohepteneCyclopropaneCoreGeometry() {
 }
 
 /**
+ * Creates a separated-lane projection for sulfonyl-bridged fused heteroaryl
+ * cages. The aromatic edge occupies the lower lane, the ether six-ring stays
+ * shallow above it, and the sulfonyl bridge runs outside both so terminal oxos
+ * do not land back into the ring face.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createSulfonylAromaticBridgedHeterocycleCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C6', { x: -1.0, y: 0.0 }],
+    ['C3', { x: 1.0, y: 0.0 }],
+    ['C13', { x: -0.3, y: -0.8 }],
+    ['C17', { x: 0.7, y: -0.8 }],
+    ['N14', { x: -0.5, y: -1.75 }],
+    ['S15', { x: 0.2, y: -2.5 }],
+    ['N16', { x: 0.95, y: -1.75 }],
+    ['C5', { x: -0.702918, y: 0.692243 }],
+    ['O4', { x: 0.380259, y: 0.494901 }],
+    ['C8', { x: -0.553074, y: 1.269948 }],
+    ['N9', { x: 0.113623, y: 1.686552 }],
+    ['S10', { x: 1.099791, y: 0.989845 }]
+  ]);
+}
+
+/**
  * Creates a benzene-fused cage projection for ammonium benzocyclobutanes. The
  * aromatic ring stays regular while the saturated five-ring and fused
  * cyclobutane sit below the shared aryl edge, avoiding the long bridge bond
@@ -4780,6 +4816,22 @@ export function buildTemplateLibrary() {
             { templateAtomId: 'C3', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
             { templateAtomId: 'S12', element: 'O', bondOrder: 2, minCount: 2, maxCount: 2 },
             { templateAtomId: 'C15', element: 'O', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'sulfonyl-aromatic-bridged-heterocycle-core',
+      'bridged',
+      53.8550875,
+      createSulfonylAromaticBridgedHeterocycleCoreTemplate(),
+      geometrySpec('normalized-xy', createSulfonylAromaticBridgedHeterocycleCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C3', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C6', element: 'N', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'S10', element: 'O', bondOrder: 2, minCount: 2, maxCount: 2 }
           ]
         }
       }

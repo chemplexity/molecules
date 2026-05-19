@@ -154,6 +154,57 @@ function isOrthogonalOrganosiliconLigandSet(atoms, atomToRings, atomIds) {
   );
 }
 
+function describePhosphazeneTrigonalNitrogen(atoms, bondsByAtomId, atomId) {
+  const atom = atoms.get(atomId);
+  if (!atom || atom.element !== 'N' || atom.aromatic || indexedHeavyDegree(atoms, bondsByAtomId, atomId) !== 3) {
+    return null;
+  }
+
+  const ligandNeighborIds = [];
+  const multiplePhosphorusNeighborIds = [];
+  for (const bond of bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return null;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (neighborAtom.element !== 'P' || neighborAtom.aromatic) {
+      return null;
+    }
+    ligandNeighborIds.push(neighborAtomId);
+    if ((bond.order ?? 1) >= 2 && indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) >= 3) {
+      multiplePhosphorusNeighborIds.push(neighborAtomId);
+    }
+  }
+
+  if (ligandNeighborIds.length !== 3 || multiplePhosphorusNeighborIds.length < 2) {
+    return null;
+  }
+  return {
+    ligandNeighborIds,
+    multiplePhosphorusNeighborIds
+  };
+}
+
+function isPhosphazeneMultipleBondHetero(atoms, bondsByAtomId, centerAtomId, bond) {
+  if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    return false;
+  }
+  const centerAtom = atoms.get(centerAtomId);
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const neighborAtom = atoms.get(neighborAtomId);
+  return Boolean(
+    centerAtom
+    && centerAtom.element === 'P'
+    && neighborAtom
+    && neighborAtom.element === 'N'
+    && describePhosphazeneTrigonalNitrogen(atoms, bondsByAtomId, neighborAtomId)?.multiplePhosphorusNeighborIds.includes(centerAtomId)
+  );
+}
+
 function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) {
   for (const atom of atoms.values()) {
     if (
@@ -185,7 +236,13 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) 
         valid = false;
         break;
       }
-      if (neighborAtom.element !== 'C' && indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) === 1) {
+      if (
+        neighborAtom.element !== 'C'
+        && (
+          indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) === 1
+          || isPhosphazeneMultipleBondHetero(atoms, bondsByAtomId, atom.id, bond)
+        )
+      ) {
         terminalMultipleNeighborCount++;
         continue;
       }

@@ -3877,6 +3877,7 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
   selectedCoords = regularizeAromaticBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   return selectedCoords;
 }
 
@@ -3916,11 +3917,95 @@ function compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds
 }
 
 /**
+ * Returns an aromatic-cap-first atom order for compact bridged systems where a
+ * fused aromatic cap is attached to a saturated bridged core. Seeding KK from
+ * the aromatic cap keeps the cap rigid while the saturated lanes spread around
+ * it, instead of letting the default SSSR order fold the bridge underneath the
+ * aromatic face.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Rings being placed as one bridged component.
+ * @param {string[]} fallbackAtomIds - Ring-list atom order used by default.
+ * @returns {string[]|null} Seed atom order for aromatic-capped bridged systems, or `null`.
+ */
+function aromaticCapFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (
+    rings.length !== 3
+    || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
+    || containsMetalAtom(layoutGraph, fallbackAtomIds)
+  ) {
+    return null;
+  }
+
+  const aromaticRings = rings.filter(ring => ring.aromatic);
+  if (aromaticRings.length !== 1) {
+    return null;
+  }
+
+  const ringIdSet = new Set(rings.map(ring => ring.id));
+  const connectionKinds = new Set(
+    (layoutGraph.ringConnections ?? [])
+      .filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId))
+      .map(connection => connection.kind)
+  );
+  if (!connectionKinds.has('bridged') || !connectionKinds.has('fused')) {
+    return null;
+  }
+
+  const atomIds = [
+    ...new Set(
+      [...rings]
+        .sort((firstRing, secondRing) => {
+          if (firstRing.aromatic !== secondRing.aromatic) {
+            return firstRing.aromatic ? -1 : 1;
+          }
+          return secondRing.id - firstRing.id;
+        })
+        .flatMap(ring => ring.atomIds)
+    )
+  ];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+/**
+ * Returns a stable alternate seed for compact 5-5 cages that share a three-atom
+ * path. Starting from the later SSSR lane keeps the longer acetal/lactone arc
+ * outside the shared bridge instead of folding it through the branch side.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Rings being placed as one bridged component.
+ * @param {string[]} fallbackAtomIds - Ring-list atom order used by default.
+ * @returns {string[]|null} Seed atom order for compact shared-path five-rings, or `null`.
+ */
+function compactSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (
+    rings.length !== 2
+    || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
+    || rings.some(ring => ring.aromatic || ring.atomIds.length !== 5)
+    || containsMetalAtom(layoutGraph, fallbackAtomIds)
+  ) {
+    return null;
+  }
+
+  if (sharedRingAtomIds(rings[0], rings[1]).length !== 3) {
+    return null;
+  }
+
+  const atomIds = [
+    ...new Set(
+      [...rings]
+        .sort((firstRing, secondRing) => secondRing.id - firstRing.id)
+        .flatMap(ring => ring.atomIds)
+    )
+  ];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+/**
  * Returns a stable atom order for bridged KK seeding. The order produced by
  * flattening SSSR ring atom lists can start dense tetracyclic cages in a
  * crossed state; the ring-system ordering is generated once from the whole
  * fused component and gives KK a less biased initial circle, while compact
- * 5-5-4 cages use their small ring as the initial seed.
+ * 5-5-4 cages use their small ring as the initial seed and aromatic-capped
+ * bridged cores seed from the fused cap.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object[]} rings - Rings being placed as one bridged component.
  * @param {string|null} [templateId] - Matched template ID, when placement is templated.
@@ -3935,6 +4020,16 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
   const compactSmallRingFirstAtomIds = compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds);
   if (compactSmallRingFirstAtomIds) {
     return compactSmallRingFirstAtomIds;
+  }
+
+  const aromaticCapFirstAtomIds = aromaticCapFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (aromaticCapFirstAtomIds) {
+    return aromaticCapFirstAtomIds;
+  }
+
+  const compactSharedPathFiveRingAtomIdsResult = compactSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (compactSharedPathFiveRingAtomIdsResult) {
+    return compactSharedPathFiveRingAtomIdsResult;
   }
 
   if (rings.length !== 4) {

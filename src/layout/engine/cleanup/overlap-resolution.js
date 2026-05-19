@@ -1896,7 +1896,7 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
  */
 export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const maxPasses = options.maxPasses ?? 5;
+  const maxPasses = options.maxPasses ?? 8;
   const threshold = bondLength * Math.max(options.thresholdFactor ?? 0.55, 0.55);
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);

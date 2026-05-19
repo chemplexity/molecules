@@ -677,6 +677,57 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
   return neighborAtom.heavyDegree === 1;
 }
 
+function describePhosphazeneTrigonalNitrogen(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!atom || atom.element !== 'N' || atom.aromatic || (atom.heavyDegree ?? 0) !== 3) {
+    return null;
+  }
+
+  const ligandNeighborIds = [];
+  const multiplePhosphorusNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return null;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (neighborAtom.element !== 'P' || neighborAtom.aromatic) {
+      return null;
+    }
+    ligandNeighborIds.push(neighborAtomId);
+    if ((bond.order ?? 1) >= 2 && (neighborAtom.heavyDegree ?? 0) >= 3) {
+      multiplePhosphorusNeighborIds.push(neighborAtomId);
+    }
+  }
+
+  if (ligandNeighborIds.length !== 3 || multiplePhosphorusNeighborIds.length < 2) {
+    return null;
+  }
+  return {
+    ligandNeighborIds,
+    multiplePhosphorusNeighborIds
+  };
+}
+
+function isPhosphazeneMultipleBondHetero(layoutGraph, centerAtomId, bond) {
+  if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    return false;
+  }
+  const centerAtom = layoutGraph.atoms.get(centerAtomId);
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  return Boolean(
+    centerAtom
+    && centerAtom.element === 'P'
+    && neighborAtom
+    && neighborAtom.element === 'N'
+    && describePhosphazeneTrigonalNitrogen(layoutGraph, neighborAtomId)?.multiplePhosphorusNeighborIds.includes(centerAtomId)
+  );
+}
+
 /**
  * Returns whether a direct ligand bond should behave like a fixed single
  * ligand for orthogonal hypervalent cleanup. Aromatic ring bonds can surround
@@ -792,7 +843,10 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
       singleNeighborIds.push(neighborAtomId);
       continue;
     }
-    if (isTerminalMultipleBondHetero(layoutGraph, atomId, bond)) {
+    if (
+      isTerminalMultipleBondHetero(layoutGraph, atomId, bond)
+      || isPhosphazeneMultipleBondHetero(layoutGraph, atomId, bond)
+    ) {
       multipleNeighborIds.push(neighborAtomId);
       continue;
     }

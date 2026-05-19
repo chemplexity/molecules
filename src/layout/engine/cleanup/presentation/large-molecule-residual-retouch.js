@@ -19,7 +19,10 @@ import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 
 const MAX_RETOUCH_PASSES = 14;
 const MAX_ANGLE_RETOUCH_PASSES = 40;
-const MAX_FINAL_ANGLE_POLISH_PASSES = 20;
+const MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MIN = 80;
+const MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MAX = 120;
+const MEDIUM_ACYCLIC_ANGLE_RETOUCH_RING_SYSTEM_MAX = 2;
+const MAX_FINAL_ANGLE_POLISH_PASSES = 6;
 const ANGLE_CENTER_SCAN_LIMIT = 10;
 const FINAL_ANGLE_POLISH_CENTER_SCAN_LIMIT = 32;
 const MAX_SMALL_SUBTREE_ATOMS = 96;
@@ -190,14 +193,65 @@ function isTerminalMultipleLeaf(layoutGraph, bond, rootAtomId, subtreeAtomIds) {
   return rootHeavyDegree === 1 && visibleHeavyAtomCount(layoutGraph, subtreeAtomIds) === 1;
 }
 
-function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId, currentScore, frozenAtomIds, options = {}) {
+function rotationDescriptorCacheKey(rootAtomId, anchorAtomId) {
+  return `${rootAtomId}:${anchorAtomId}`;
+}
+
+function getRotationDescriptorBase(layoutGraph, rootAtomId, anchorAtomId, descriptorCache = null) {
+  const cacheKey = rotationDescriptorCacheKey(rootAtomId, anchorAtomId);
+  if (descriptorCache?.has(cacheKey)) {
+    return descriptorCache.get(cacheKey);
+  }
   const rootAtom = layoutGraph.atoms.get(rootAtomId);
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   if (
     !rootAtom
     || !anchorAtom
     || rootAtom.element === 'H'
-    || !coords.has(rootAtomId)
+  ) {
+    descriptorCache?.set(cacheKey, null);
+    return null;
+  }
+
+  const bond = findBond(layoutGraph, rootAtomId, anchorAtomId);
+  if (!bond || bond.kind !== 'covalent') {
+    descriptorCache?.set(cacheKey, null);
+    return null;
+  }
+
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)];
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(anchorAtomId)) {
+    descriptorCache?.set(cacheKey, null);
+    return null;
+  }
+
+  const isSingleBond = !bond.aromatic && (bond.order ?? 1) === 1;
+  const terminalMultipleLeaf = isTerminalMultipleLeaf(layoutGraph, bond, rootAtomId, subtreeAtomIds);
+  if (!isSingleBond && !terminalMultipleLeaf) {
+    descriptorCache?.set(cacheKey, null);
+    return null;
+  }
+
+  const heavyAtomCount = visibleHeavyAtomCount(layoutGraph, subtreeAtomIds);
+  if (heavyAtomCount === 0) {
+    descriptorCache?.set(cacheKey, null);
+    return null;
+  }
+  const descriptorBase = {
+    rootAtomId,
+    anchorAtomId,
+    subtreeAtomIds,
+    heavyAtomCount,
+    isSingleBond,
+    terminalMultipleLeaf
+  };
+  descriptorCache?.set(cacheKey, descriptorBase);
+  return descriptorBase;
+}
+
+function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId, currentScore, frozenAtomIds, options = {}) {
+  if (
+    !coords.has(rootAtomId)
     || !coords.has(anchorAtomId)
     || frozenAtomIds?.has(rootAtomId)
     || frozenAtomIds?.has(anchorAtomId)
@@ -205,12 +259,12 @@ function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId
     return null;
   }
 
-  const bond = findBond(layoutGraph, rootAtomId, anchorAtomId);
-  if (!bond || bond.kind !== 'covalent') {
+  const descriptorBase = getRotationDescriptorBase(layoutGraph, rootAtomId, anchorAtomId, options.descriptorCache ?? null);
+  if (!descriptorBase) {
     return null;
   }
 
-  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+  const subtreeAtomIds = descriptorBase.subtreeAtomIds.filter(atomId => coords.has(atomId));
   if (
     subtreeAtomIds.length === 0
     || subtreeAtomIds.includes(anchorAtomId)
@@ -218,22 +272,14 @@ function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId
   ) {
     return null;
   }
-
-  const isSingleBond = !bond.aromatic && (bond.order ?? 1) === 1;
-  const terminalMultipleLeaf = isTerminalMultipleLeaf(layoutGraph, bond, rootAtomId, subtreeAtomIds);
-  if (!isSingleBond && !terminalMultipleLeaf) {
-    return null;
-  }
-
-  const heavyAtomCount = visibleHeavyAtomCount(layoutGraph, subtreeAtomIds);
-  if (heavyAtomCount === 0) {
-    return null;
-  }
+  const heavyAtomCount = subtreeAtomIds.length === descriptorBase.subtreeAtomIds.length
+    ? descriptorBase.heavyAtomCount
+    : visibleHeavyAtomCount(layoutGraph, subtreeAtomIds);
   const smallSubtree =
     subtreeAtomIds.length <= MAX_SMALL_SUBTREE_ATOMS
     && heavyAtomCount <= MAX_SMALL_SUBTREE_HEAVY_ATOMS;
   const largeSwingSubtree =
-    isSingleBond
+    descriptorBase.isSingleBond
     && currentScore.severeOverlapCount <= (options.largeSwingOverlapLimit ?? LARGE_SWING_OVERLAP_LIMIT)
     && subtreeAtomIds.length <= MAX_SWING_SUBTREE_ATOMS
     && heavyAtomCount <= MAX_SWING_SUBTREE_HEAVY_ATOMS;
@@ -248,7 +294,7 @@ function collectRotationDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId
     subtreeAtomIdSet: new Set(subtreeAtomIds),
     heavyAtomCount,
     largeSwing: !smallSubtree,
-    terminalMultipleLeaf
+    terminalMultipleLeaf: descriptorBase.terminalMultipleLeaf
   };
 }
 
@@ -1304,7 +1350,7 @@ function descriptorMovesProtectedAtom(descriptor, protectedMovedAtomIds) {
   return descriptor.subtreeAtomIds.some(atomId => protectedMovedAtomIds.has(atomId));
 }
 
-function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds) {
+function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, descriptorOptions = {}) {
   const descriptors = [];
   const seenDescriptors = new Set();
   const centers = [];
@@ -1321,7 +1367,17 @@ function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, fro
     for (const { neighborAtomId } of center.covalentBonds) {
       const neighborInRing = layoutGraph.ringAtomIdSet.has(neighborAtomId);
       if (!neighborInRing || !centerInRing) {
-        addDescriptor(layoutGraph, coords, descriptors, seenDescriptors, neighborAtomId, center.atomId, currentScore, frozenAtomIds);
+        addDescriptor(
+          layoutGraph,
+          coords,
+          descriptors,
+          seenDescriptors,
+          neighborAtomId,
+          center.atomId,
+          currentScore,
+          frozenAtomIds,
+          descriptorOptions
+        );
       }
     }
   }
@@ -1329,7 +1385,7 @@ function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, fro
   return descriptors;
 }
 
-function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, frozenAtomIds) {
+function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, frozenAtomIds, descriptorOptions = {}) {
   const entries = [];
   const seenEntries = new Set();
   const centers = [];
@@ -1363,7 +1419,8 @@ function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, froze
         neighborAtomId,
         center.atomId,
         currentScore,
-        frozenAtomIds
+        frozenAtomIds,
+        descriptorOptions
       );
       if (descriptor) {
         entries.push({
@@ -1404,7 +1461,8 @@ function repairCandidateResiduals(
   ) {
     const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, {
       includeNearbyContainingEndpointDescriptors: options.includeNearbyContainingEndpointDescriptors === true,
-      largeSwingOverlapLimit: options.largeSwingOverlapLimit
+      largeSwingOverlapLimit: options.largeSwingOverlapLimit,
+      descriptorCache: options.descriptorCache ?? null
     }).filter(descriptor => !descriptorMovesProtectedAtom(descriptor, options.protectedMovedAtomIds));
     let bestCandidate = null;
 
@@ -2452,7 +2510,8 @@ function runFinalAnglePolish(
   bondLength,
   frozenAtomIds,
   trackedAngularContexts,
-  visibleAtomIds
+  visibleAtomIds,
+  descriptorCache = null
 ) {
   let coords = inputCoords;
   let currentScore = inputScore;
@@ -2465,7 +2524,7 @@ function runFinalAnglePolish(
     && currentScore.visibleHeavyBondCrossingCount === 0
   ) {
     const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds });
-    const entries = collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, frozenAtomIds);
+    const entries = collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, frozenAtomIds, { descriptorCache });
     const allowCenterPriorityRepair =
       visibleHeavyAtomCount(layoutGraph, visibleAtomIds) <= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS;
     let bestCandidate = null;
@@ -2689,7 +2748,8 @@ function selectBestResidualRotationCandidate(
           {
             includeNearbyContainingEndpointDescriptors: true,
             largeSwingOverlapLimit: descriptorOptions.largeSwingOverlapLimit,
-            maxPasses: LARGE_SWING_REPAIR_PASSES
+            maxPasses: LARGE_SWING_REPAIR_PASSES,
+            descriptorCache: descriptorOptions.descriptorCache ?? null
           }
         );
         if (scoreIsBetter(repairedCandidate.score, currentScore)) {
@@ -2729,10 +2789,16 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
   let coords = cloneCoords(inputCoords);
   const visibleAtomIds = collectVisibleAtomIds(layoutGraph, coords);
   const trackedAngularContexts = buildTrackedAngularContexts(layoutGraph, coords);
+  const descriptorCache = options.descriptorCache instanceof Map ? options.descriptorCache : new Map();
   let currentScore = scoreCoords(layoutGraph, coords, bondLength, trackedAngularContexts, visibleAtomIds);
   const initialScore = currentScore;
   const visibleHeavyCount = visibleHeavyAtomCount(layoutGraph, visibleAtomIds);
   const allowUltraLargeResidualRepair = visibleHeavyCount > FINAL_ANGLE_POLISH_ULTRA_LARGE_HEAVY_ATOM_LIMIT;
+  const mostlyAcyclicMediumLargeMolecule =
+    visibleHeavyCount >= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MIN
+    && visibleHeavyCount <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MAX
+    && (layoutGraph.ringSystems?.length ?? 0) <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_RING_SYSTEM_MAX;
+  const maxAngleRetouchPasses = mostlyAcyclicMediumLargeMolecule ? 0 : MAX_ANGLE_RETOUCH_PASSES;
   const exactThreeHeavyProtectionCenterAtomIds = options._skipExactThreeHeavyProtectionRetry === true
     ? []
     : collectExactThreeHeavyProtectionCenters(layoutGraph, coords, trackedAngularContexts, initialScore);
@@ -2771,7 +2837,8 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
       bondLength,
       trackedAngularContexts,
       visibleAtomIds,
-      frozenAtomIds
+      frozenAtomIds,
+      { descriptorCache }
     );
     if (!bestCandidate && currentScore.severeOverlapCount > 0) {
       bestCandidate = selectBestResidualRotationCandidate(
@@ -2785,7 +2852,8 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
         {
           includeNearbyContainingEndpointDescriptors: true,
           largeSwingOverlapLimit: allowUltraLargeResidualRepair ? LARGE_SWING_CLUSTER_OVERLAP_LIMIT : undefined,
-          allowCandidateRepair: allowUltraLargeResidualRepair
+          allowCandidateRepair: allowUltraLargeResidualRepair,
+          descriptorCache
         }
       );
     }
@@ -2802,9 +2870,9 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     passes++;
   }
 
-  while (angleReliefPasses < MAX_ANGLE_RETOUCH_PASSES && shouldRunAngleRelief(currentScore)) {
+  while (angleReliefPasses < maxAngleRetouchPasses && shouldRunAngleRelief(currentScore)) {
     const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds });
-    const descriptors = collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds);
+    const descriptors = collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, { descriptorCache });
     let bestCandidate = null;
 
     for (const descriptor of descriptors) {
@@ -2926,7 +2994,8 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
             trackedAngularContexts,
             visibleAtomIds,
             {
-              includeNearbyContainingEndpointDescriptors: descriptor.terminalMultipleLeaf === true
+              includeNearbyContainingEndpointDescriptors: descriptor.terminalMultipleLeaf === true,
+              descriptorCache
             }
           );
           if (!angleCandidateIsBetter(repairedCandidate.score, currentScore)) {
@@ -2970,7 +3039,8 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
       bondLength,
       frozenAtomIds,
       trackedAngularContexts,
-      visibleAtomIds
+      visibleAtomIds,
+      descriptorCache
     );
     if (finalAnglePolish.passes > 0) {
       coords = finalAnglePolish.coords;
@@ -2999,6 +3069,7 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     const retry = runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, {
       ...options,
       frozenAtomIds: retryFrozenAtomIds,
+      descriptorCache,
       _skipExactThreeHeavyProtectionRetry: true
     });
     const retryScore = scoreCoords(layoutGraph, retry.coords, bondLength, trackedAngularContexts, visibleAtomIds);

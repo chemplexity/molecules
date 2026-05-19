@@ -19,6 +19,7 @@ const TRIGONAL_TARGET_ANGLE = (2 * Math.PI) / 3;
 const PROJECTED_TETRAHEDRAL_BACKBONE_TURN = Math.PI / 2;
 const CONJUGATED_BACKBONE_HETERO_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const TERMINAL_HALOGEN_BACKBONE_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
+const PROJECTED_TETRAHEDRAL_GROUP14_ELEMENTS = new Set(['Si', 'Ge', 'Sn', 'Pb']);
 
 /**
  * Returns the bond order between two atoms in the layout graph.
@@ -565,7 +566,7 @@ function isLinearAdjacentCompactTerminalSlotCentre(layoutGraph, atomId) {
  * carbon leaves into uneven 80-degree side gaps.
  * Nitrile-adjacent centers with compact halomethyl branches also use the
  * projection so those branches occupy separate quadrants.
- * Fully substituted acyclic silanes and ammonium centers need the same
+ * Fully substituted acyclic group-14 and ammonium centers need the same
  * projection so visible off-backbone ligands do not collapse into the
  * remaining branch fan.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -599,7 +600,7 @@ function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomI
     atom?.heavyDegree === 4
     && atom.degree === 4
     && (
-      atom.element === 'Si'
+      PROJECTED_TETRAHEDRAL_GROUP14_ELEMENTS.has(atom.element)
       || (atom.element === 'N' && (atom.charge ?? 0) > 0)
     )
   );

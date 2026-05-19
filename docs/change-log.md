@@ -1,7 +1,24 @@
 # Change Log
 
+## 2026-05-18
+
+- Add a cleanup-stage budget with skip telemetry so audit-clean layouts can avoid late optional retouch cascades after cleanup time has already crossed the per-molecule budget.
+- Cap mixed attached-block full-score candidate evaluation for small and mid-sized mixed layouts, with scoring-budget telemetry for prescores, full scores, and budget bailouts.
+- Cache mixed attached-block full-score snapshots by base/transform/meta signature so repeated direct-ring rescue and refinement passes reuse branch-placement scoring instead of rebuilding identical candidate layouts.
+- Cache large-molecule residual retouch rotation descriptors and skip expensive angle-relief sweeps for medium mostly acyclic layouts once safety contacts are clear, while keeping the full angle-polish path for ring-rich and ultra-large peptide layouts.
+- Short-circuit huge bond-clean, overlap-dirty large-molecule generic-fallback layouts before cleanup and final retouch cascades, cutting the representative 540-heavy-atom audit row from roughly two minutes to a few seconds in focused runs.
+- Cache E/Z priority-substituent lookups on the layout graph and skip acyclic E/Z enforcement work when all supported stereo bonds already match.
+- Expose final-retouch timing buckets and mixed/cleanup optimization counters in timing metadata so profile runs can separate placement, cleanup, retouch, and scoring overhead.
+- Add guarded connector-subtree label clearance so crowded phosphate linkers can clear residual label contacts without worsening layout audits.
+
 ## 2026-05-17
 
+- Treat four-coordinate group-14 acyclic centers as projected tetrahedral slots so organotin ligands do not collapse into overlapping labels.
+- Keep phosphazene N=P branch fans on distinct 120-degree slots and recognize non-terminal phosphazene imide ligands as hypervalent P centers for label-overlap cleanup.
+- Reuse the acyl-branch contact retouch for final acyclic layouts so crowded carboxylate, sulfonate, and tri-ester branches clear residual contacts after label clearance.
+- Add a sulfonyl aromatic bridged heterocycle template so fused oxathiaza cages route their ether, aromatic, and sulfonyl lanes without crossings or oxo label contacts.
+- Balance short-shared-path theta projections and add bridgehead branch contact escapes so compact bridged ether, lactone, and amino cages clear label-overlap audits.
+- Seed aromatic-capped bridged roots from the fused cap and reject bridged regularization that collapses heavy exocyclic branch slots, clearing compact cage label-overlap cases.
 - Seed unmatched compact 5-5-4 bridged cages from their smallest ring so ether lanes avoid projected label-overlap collapse.
 - Prefer ring-system atom ordering for unmatched bridged KK seeds so compact tetracyclic cages avoid label-overlap fallback from ring-list ordering bias.
 - Give large-molecule residual retouch a bounded extra pass budget and contact-directed rotation targets so stubborn peptide label-overlap audit cases keep improving without moving ring atoms directly.

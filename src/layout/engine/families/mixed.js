@@ -56,18 +56,10 @@ import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from './macro
 import { layoutSpiroFamily } from './spiro.js';
 import { classifyRingSystemFamily } from '../model/scaffold-plan.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
-import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SUBSTITUENT_READABILITY_LIMITS, RING_SYSTEM_RESCUE_LIMITS, atomPairKey } from '../constants.js';
+import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SUBSTITUENT_READABILITY_LIMITS, RING_SYSTEM_RESCUE_LIMITS, SEVERE_OVERLAP_FACTOR, atomPairKey } from '../constants.js';
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
-const AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS = new Set([
-  'amino-cyano-thiazole-oxatricyclo-core',
-  'hydroxy-aminopropyl-cyclobutane-decalin-core',
-  'hydroxy-keto-oxadiazole-bridged-core',
-  'indoline-aza-bridged-heptacycle-core',
-  'scopolamine-epoxide-core',
-  'oxime-lactam-cyclopentenyl-core'
-]);
 const MAX_RING_LINKER_ATOMS = 3;
 const LINKED_RING_ROTATION_OFFSETS = [Math.PI / 12, -(Math.PI / 12), Math.PI / 6, -(Math.PI / 6), Math.PI / 3, -Math.PI / 3, (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI];
 const LINKED_RING_PLACED_BLOCK_ROTATION_OFFSETS = [Math.PI / 18, -(Math.PI / 18), Math.PI / 12, -(Math.PI / 12), Math.PI / 9, -(Math.PI / 9)];
@@ -3471,6 +3463,104 @@ function ringSystemConnectionKinds(layoutGraph, ringSystem) {
   return kinds;
 }
 
+/**
+ * Measures the best available immediate outward slot for each heavy exocyclic
+ * substituent on a ring system. Bridged regularization is ring-only, so this is
+ * a cheap preview of whether branch placement would be forced through a ring
+ * atom after the root coordinates move.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Ring-system descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate ring coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{count: number, minimum: number}} Number of previewed substituents and the worst best-slot clearance.
+ */
+function minimumRingSystemExocyclicOutwardSlotClearance(layoutGraph, ringSystem, coords, bondLength) {
+  if (!layoutGraph || !ringSystem || !coords || !Number.isFinite(bondLength) || bondLength <= 0) {
+    return { count: 0, minimum: Number.POSITIVE_INFINITY };
+  }
+
+  const ringAtomIds = new Set(ringSystem.atomIds ?? []);
+  let count = 0;
+  let minimum = Number.POSITIVE_INFINITY;
+
+  for (const anchorAtomId of ringAtomIds) {
+    const anchorPosition = coords.get(anchorAtomId);
+    if (!anchorPosition) {
+      continue;
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+
+      const leafAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (ringAtomIds.has(leafAtomId)) {
+        continue;
+      }
+      const leafAtom = layoutGraph.atoms.get(leafAtomId);
+      if (!leafAtom || leafAtom.element === 'H') {
+        continue;
+      }
+
+      const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+      if (outwardAngles.length === 0) {
+        continue;
+      }
+
+      let bestSlotClearance = 0;
+      for (const targetAngle of outwardAngles) {
+        const targetPosition = add(anchorPosition, fromAngle(targetAngle, bondLength));
+        let slotClearance = Number.POSITIVE_INFINITY;
+        for (const ringAtomId of ringAtomIds) {
+          if (ringAtomId === anchorAtomId) {
+            continue;
+          }
+          const ringPosition = coords.get(ringAtomId);
+          if (!ringPosition) {
+            continue;
+          }
+          slotClearance = Math.min(slotClearance, distance(targetPosition, ringPosition));
+        }
+        if (Number.isFinite(slotClearance)) {
+          bestSlotClearance = Math.max(bestSlotClearance, slotClearance);
+        }
+      }
+
+      if (bestSlotClearance > 0) {
+        count++;
+        minimum = Math.min(minimum, bestSlotClearance);
+      }
+    }
+  }
+
+  return { count, minimum };
+}
+
+function hasBridgedExocyclicSlotRegression(layoutGraph, ringSystem, incumbentCoords, candidateCoords, bondLength) {
+  const incumbentClearance = minimumRingSystemExocyclicOutwardSlotClearance(
+    layoutGraph,
+    ringSystem,
+    incumbentCoords,
+    bondLength
+  );
+  const candidateClearance = minimumRingSystemExocyclicOutwardSlotClearance(
+    layoutGraph,
+    ringSystem,
+    candidateCoords,
+    bondLength
+  );
+
+  return (
+    incumbentClearance.count > 0
+    && candidateClearance.count > 0
+    && Number.isFinite(incumbentClearance.minimum)
+    && Number.isFinite(candidateClearance.minimum)
+    && candidateClearance.minimum < bondLength * SEVERE_OVERLAP_FACTOR
+    && candidateClearance.minimum < incumbentClearance.minimum - bondLength * 0.1
+  );
+}
+
 function buildFusedRingBlocks(rings, ringAdj, ringConnectionByPair) {
   const ringById = new Map(rings.map(ring => [ring.id, ring]));
   const visitedRingIds = new Set();
@@ -5413,9 +5503,9 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
     let bestPlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
     let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
     if (
-      AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS.has(templateId)
-      && bestPlacement?.placementMode === 'template'
+      bestPlacement?.placementMode === 'template'
       && bestAudit?.ok === true
+      && templateId !== 'n-methyl-amino-diaza-tricyclo-core'
     ) {
       return bestPlacement;
     }
@@ -5470,15 +5560,27 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
             : 'bridged-regularized'
         };
         const regularizedAudit = auditRingSystemPlacement(layoutGraph, ringSystem, regularizedPlacement, bondLength);
-        if (
-          isBetterRingSystemPlacement(regularizedPlacement, bestPlacement, regularizedAudit, bestAudit, true)
-          || isBetterBridgedSmallRingGeometryRegularization(
-            rings,
-            regularizedPlacement,
-            bestPlacement,
-            regularizedAudit,
-            bestAudit,
+        const exocyclicSlotRegression = templateId == null
+          && connectionKinds.has('fused')
+          && hasBridgedExocyclicSlotRegression(
+            layoutGraph,
+            ringSystem,
+            bestPlacement.coords,
+            regularizedCoords,
             bondLength
+          );
+        if (
+          !exocyclicSlotRegression
+          && (
+            isBetterRingSystemPlacement(regularizedPlacement, bestPlacement, regularizedAudit, bestAudit, true)
+            || isBetterBridgedSmallRingGeometryRegularization(
+              rings,
+              regularizedPlacement,
+              bestPlacement,
+              regularizedAudit,
+              bestAudit,
+              bondLength
+            )
           )
         ) {
           bestPlacement = regularizedPlacement;
@@ -5521,6 +5623,9 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
       templateId
     );
     let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
+    if (bestPlacement?.placementMode === 'template' && bestAudit?.ok === true) {
+      return bestPlacement;
+    }
     if (shouldTryBridgedRescueForFusedSystem(ringSystem.atomIds.length, ringSystem.ringIds.length, templateId, bestAudit)) {
       const bridgedRescuePlacement = wrapRingSystemPlacementResult(
         layoutGraph,
@@ -12576,6 +12681,83 @@ function dedupeAttachedBlockCandidatesByMeta(candidates) {
   return uniqueCandidates;
 }
 
+const ATTACHED_BLOCK_FULL_SCORE_BUDGETS = Object.freeze({
+  small: 512
+});
+const ATTACHED_BLOCK_SCORE_CACHE_MAX_ENTRIES = 4096;
+
+function mixedAttachedBlockScoringTelemetry(layoutGraph) {
+  return layoutGraph._mixedAttachedBlockScoringTelemetry ??= {
+    prescoreCount: 0,
+    fullScoreCount: 0,
+    fullScoreCacheHitCount: 0,
+    fullScoreCacheMissCount: 0,
+    maxFullScoreCacheSize: 0,
+    budgetedAttachmentCount: 0,
+    budgetBailoutCount: 0,
+    maxBudgetLimit: 0,
+    maxBudgetUsed: 0,
+    bailoutReasons: {}
+  };
+}
+
+function recordAttachedBlockPrescore(layoutGraph) {
+  mixedAttachedBlockScoringTelemetry(layoutGraph).prescoreCount++;
+}
+
+function createAttachedBlockScoringBudget(layoutGraph, options = {}) {
+  const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? layoutGraph.atoms.size;
+  if (options.disabled === true || heavyAtomCount >= 60) {
+    return null;
+  }
+  const limit = options.limit ?? ATTACHED_BLOCK_FULL_SCORE_BUDGETS.small;
+  const telemetry = mixedAttachedBlockScoringTelemetry(layoutGraph);
+  telemetry.budgetedAttachmentCount++;
+  telemetry.maxBudgetLimit = Math.max(telemetry.maxBudgetLimit, limit);
+  return {
+    limit,
+    used: 0,
+    bailoutLogged: false
+  };
+}
+
+function recordAttachedBlockFullScore(layoutGraph, budget = null) {
+  const telemetry = mixedAttachedBlockScoringTelemetry(layoutGraph);
+  telemetry.fullScoreCount++;
+  if (budget) {
+    budget.used++;
+    telemetry.maxBudgetUsed = Math.max(telemetry.maxBudgetUsed, budget.used);
+  }
+}
+
+function recordAttachedBlockFullScoreCacheHit(layoutGraph) {
+  mixedAttachedBlockScoringTelemetry(layoutGraph).fullScoreCacheHitCount++;
+}
+
+function recordAttachedBlockFullScoreCacheMiss(layoutGraph, cache) {
+  const telemetry = mixedAttachedBlockScoringTelemetry(layoutGraph);
+  telemetry.fullScoreCacheMissCount++;
+  telemetry.maxFullScoreCacheSize = Math.max(telemetry.maxFullScoreCacheSize, cache?.size ?? 0);
+}
+
+function recordAttachedBlockBudgetBailout(layoutGraph, budget, reason) {
+  if (!budget || budget.bailoutLogged) {
+    return;
+  }
+  budget.bailoutLogged = true;
+  const telemetry = mixedAttachedBlockScoringTelemetry(layoutGraph);
+  telemetry.budgetBailoutCount++;
+  telemetry.bailoutReasons[reason] = (telemetry.bailoutReasons[reason] ?? 0) + 1;
+}
+
+function canSpendAttachedBlockFullScore(layoutGraph, budget, reason) {
+  if (!budget || budget.used < budget.limit) {
+    return true;
+  }
+  recordAttachedBlockBudgetBailout(layoutGraph, budget, reason);
+  return false;
+}
+
 /**
  * Adds a candidate coordinate map once per rounded coordinate signature.
  * @param {Map<string, {x: number, y: number}>[]} candidates - Candidate list to update.
@@ -14758,7 +14940,7 @@ function isCompactCarbonylRingSubstituentRoot(layoutGraph, anchorAtomId, childAt
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
     !childAtom
-    || childAtom.element !== 'C'
+    || childAtom.element === 'H'
     || childAtom.aromatic
     || childAtom.heavyDegree !== 3
     || layoutGraph.ringAtomIdSet.has(childAtomId)
@@ -15181,6 +15363,184 @@ function bridgeheadChainEscapeAngles(layoutGraph, coords, anchorAtomId, childAto
   return candidateAngles.sort((firstAngle, secondAngle) =>
     angularDifference(firstAngle, preferredAngle) - angularDifference(secondAngle, preferredAngle)
   );
+}
+
+function bridgeheadBranchContactAnchor(layoutGraph, coords, childAtomId) {
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!childAtom || childAtom.element === 'H' || layoutGraph.ringAtomIdSet.has(childAtomId) || !coords.has(childAtomId)) {
+    return null;
+  }
+
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const anchorAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (
+      anchorAtom
+      && anchorAtom.element !== 'H'
+      && !anchorAtom.aromatic
+      && (layoutGraph.ringCountByAtomId.get(anchorAtomId) ?? 0) >= 2
+      && coords.has(anchorAtomId)
+    ) {
+      return anchorAtomId;
+    }
+  }
+  return null;
+}
+
+function bridgeheadBranchContactDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  const seen = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    const pairs = [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ];
+    for (const [childAtomId, blockerAtomId] of pairs) {
+      const anchorAtomId = bridgeheadBranchContactAnchor(layoutGraph, coords, childAtomId);
+      if (!anchorAtomId) {
+        continue;
+      }
+      const childSubtreeAtomIds = new Set(collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId));
+      if (childSubtreeAtomIds.has(blockerAtomId)) {
+        continue;
+      }
+      const key = `${anchorAtomId}:${childAtomId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      descriptors.push({ anchorAtomId, childAtomId });
+    }
+  }
+  return descriptors.sort((firstDescriptor, secondDescriptor) =>
+    compareCanonicalIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId, layoutGraph.canonicalAtomRank)
+    || compareCanonicalIds(firstDescriptor.childAtomId, secondDescriptor.childAtomId, layoutGraph.canonicalAtomRank)
+  );
+}
+
+function bridgeheadBranchContactAngles(layoutGraph, coords, anchorAtomId, bondLength) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+
+  const preferredAngle = bridgeheadRingSystemOutwardAngle(layoutGraph, coords, anchorAtomId);
+  const rawAngles = [
+    ...(preferredAngle == null ? [] : [preferredAngle]),
+    ...computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null),
+    ...Array.from({ length: 72 }, (_value, index) => index * BRIDGEHEAD_CHAIN_ESCAPE_STEP)
+  ];
+  const angles = [];
+  for (const angle of rawAngles) {
+    const targetPosition = add(anchorPosition, fromAngle(angle, bondLength));
+    if (incidentRingPointInsideCount(layoutGraph, coords, anchorAtomId, targetPosition) > 0) {
+      continue;
+    }
+    if (!angles.some(existingAngle => angularDifference(existingAngle, angle) <= 1e-9)) {
+      angles.push(wrapAngle(angle));
+    }
+  }
+  if (preferredAngle == null) {
+    return angles;
+  }
+  return angles.sort((firstAngle, secondAngle) =>
+    angularDifference(firstAngle, preferredAngle) - angularDifference(secondAngle, preferredAngle)
+  );
+}
+
+function bridgeheadBranchContactScore(layoutGraph, coords, bondValidationClasses, bondLength, focusAtomIds) {
+  return {
+    audit: auditMixedPlacement(layoutGraph, { coords, bondValidationClasses }, bondLength),
+    layoutCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds)
+  };
+}
+
+function compareBridgeheadBranchContactScores(candidate, incumbent) {
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok ? -1 : 1;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'labelOverlapCount',
+    'bondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'visibleHeavyBondCrossingCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (Math.abs(candidate.layoutCost - incumbent.layoutCost) > IMPROVEMENT_EPSILON) {
+    return candidate.layoutCost - incumbent.layoutCost;
+  }
+  return 0;
+}
+
+function resolveBridgeheadBranchContacts(layoutGraph, coords, bondValidationClasses, bondLength) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+    return { changed: false };
+  }
+
+  let changed = false;
+  let baseScore = bridgeheadBranchContactScore(layoutGraph, coords, bondValidationClasses, bondLength, []);
+  const descriptors = bridgeheadBranchContactDescriptors(layoutGraph, coords, bondLength);
+  for (const descriptor of descriptors) {
+    const focusAtomIds = [
+      descriptor.anchorAtomId,
+      ...collectCovalentSubtreeAtomIds(layoutGraph, descriptor.childAtomId, descriptor.anchorAtomId)
+    ].filter(atomId => coords.has(atomId));
+    const angles = bridgeheadBranchContactAngles(layoutGraph, coords, descriptor.anchorAtomId, bondLength);
+    if (angles.length === 0) {
+      continue;
+    }
+
+    let bestCoords = coords;
+    let bestScore = baseScore;
+    for (const angle of angles) {
+      const candidateCoords = translateLeafSubtreeToRingTarget(
+        layoutGraph,
+        coords,
+        descriptor.anchorAtomId,
+        descriptor.childAtomId,
+        angle,
+        bondLength
+      );
+      if (!candidateCoords) {
+        continue;
+      }
+      const candidateScore = bridgeheadBranchContactScore(
+        layoutGraph,
+        candidateCoords,
+        bondValidationClasses,
+        bondLength,
+        focusAtomIds
+      );
+      if (
+        candidateScore.audit.bondLengthFailureCount > baseScore.audit.bondLengthFailureCount
+        || candidateScore.audit.severeOverlapCount > baseScore.audit.severeOverlapCount
+      ) {
+        continue;
+      }
+      if (compareBridgeheadBranchContactScores(candidateScore, bestScore) < 0) {
+        bestCoords = candidateCoords;
+        bestScore = candidateScore;
+      }
+    }
+
+    if (bestCoords !== coords && compareBridgeheadBranchContactScores(bestScore, baseScore) < 0) {
+      overwriteCoordMap(coords, bestCoords);
+      baseScore = bestScore;
+      changed = true;
+    }
+  }
+
+  return { changed };
 }
 
 function translateSubtreeAtoms(coords, nextCoords, atomIds, delta) {
@@ -17591,6 +17951,13 @@ function canSkipRemainingAttachedBlockFinalists(bestScore, finalists, nextIndex)
   return true;
 }
 
+function canAcceptSinglePerfectAttachedBlockPrescore(bestScore, runnerUpScore) {
+  if (!attachedBlockPrimaryScoreIsPerfect(bestScore)) {
+    return false;
+  }
+  return !runnerUpScore || !attachedBlockPrimaryScoreIsPerfect(runnerUpScore);
+}
+
 function attachedBlockFullScoringBeamLimit(coords, primaryNonRingAtomIds, candidateCount, forceFullScoring = false) {
   const workload = mixedAttachedBlockWorkload(coords, primaryNonRingAtomIds);
   if (forceFullScoring) {
@@ -17608,6 +17975,65 @@ function attachedBlockFullScoringBeamLimit(coords, primaryNonRingAtomIds, candid
   return candidateCount;
 }
 
+function atomIdIterableSignature(atomIds) {
+  return [...atomIds]
+    .map(atomId => String(atomId))
+    .sort((firstAtomId, secondAtomId) => firstAtomId.localeCompare(secondAtomId, 'en', { numeric: true }))
+    .join(',');
+}
+
+function cloneAttachedBlockScore(score) {
+  if (!score) {
+    return score;
+  }
+  return {
+    ...score,
+    changedAtomIds: Array.isArray(score.changedAtomIds) ? [...score.changedAtomIds] : score.changedAtomIds,
+    readability: score.readability ? { ...score.readability } : score.readability,
+    _attachedBlockPresentationContext: score._attachedBlockPresentationContext
+      ? { ...score._attachedBlockPresentationContext }
+      : score._attachedBlockPresentationContext
+  };
+}
+
+function attachedBlockFullScoreCacheKey(
+  coords,
+  primaryNonRingAtomIds,
+  placedAtomIds,
+  transformedCoords,
+  candidateMeta,
+  branchConstraints,
+  options = {}
+) {
+  return [
+    candidateCoordSignature(coords),
+    candidateCoordSignature(transformedCoords),
+    atomIdIterableSignature(primaryNonRingAtomIds),
+    atomIdIterableSignature(placedAtomIds),
+    candidateMetaValueSignature(candidateMeta ?? null),
+    candidateMetaValueSignature(branchConstraints ?? null),
+    shouldSkipAttachedBlockBranchScoring(coords, primaryNonRingAtomIds) ? 'skip-branches' : 'score-branches',
+    options.includeCandidateCoords === true ? 'include-coords' : 'score-only'
+  ].join('\u0001');
+}
+
+function getCachedAttachedBlockFullScore(layoutGraph, cache, cacheKey) {
+  if (!cache?.has(cacheKey)) {
+    return null;
+  }
+  recordAttachedBlockFullScoreCacheHit(layoutGraph);
+  return cloneAttachedBlockScore(cache.get(cacheKey));
+}
+
+function setCachedAttachedBlockFullScore(layoutGraph, cache, cacheKey, score) {
+  if (!cache || cache.size >= ATTACHED_BLOCK_SCORE_CACHE_MAX_ENTRIES) {
+    return;
+  }
+  cache.set(cacheKey, cloneAttachedBlockScore(score));
+  mixedAttachedBlockScoringTelemetry(layoutGraph).maxFullScoreCacheSize =
+    Math.max(mixedAttachedBlockScoringTelemetry(layoutGraph).maxFullScoreCacheSize, cache.size);
+}
+
 /**
  * Scores an attached-block orientation by placing the block plus the remaining
  * heavy non-ring branches into a temporary mixed-layout snapshot.
@@ -17621,7 +18047,7 @@ function attachedBlockFullScoringBeamLimit(coords, primaryNonRingAtomIds, candid
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate metadata for local junction tie-breaks.
- * @param {{prescore?: {coords: Map<string, {x: number, y: number}>}, placementContext?: object|null, includeCandidateCoords?: boolean}} [options] - Optional scoring reuse state.
+ * @param {{prescore?: {coords: Map<string, {x: number, y: number}>}, placementContext?: object|null, includeCandidateCoords?: boolean, scoreCache?: Map<string, object>}} [options] - Optional scoring reuse state.
  * @returns {{layoutCost: number|null, totalCost: number|null, overlapCount: number, heavyBondCrossingCount: number, heavyBondCrossingPriorityCount: number, presentationPenalty: number, idealLeafPresentationPenalty: number, fusedJunctionContinuationPenalty: number, parentOutwardPenalty: number, exactContinuationPenalty: number, exactTerminalMultipleSlotPenalty: number, terminalLabelClearancePenalty: number, trigonalBisectorPenalty: number, ringExitMaxPenalty: number, omittedHydrogenTrigonalPenalty: number, omittedHydrogenDirectAttachmentCompromisePenalty: number, attachmentExteriorPenalty: number, junctionCrowdingPenalty: number, smallRingExteriorPenalty: number, changedAtomIds: string[], readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}} Candidate layout score.
  */
 function scoreAttachedBlockOrientation(
@@ -17637,6 +18063,26 @@ function scoreAttachedBlockOrientation(
   candidateMeta = null,
   options = {}
 ) {
+  const scoreCache = options.includeCandidateCoords === true ? null : options.scoreCache ?? null;
+  const scoreCacheKey = scoreCache
+    ? attachedBlockFullScoreCacheKey(
+        coords,
+        primaryNonRingAtomIds,
+        placedAtomIds,
+        transformedCoords,
+        candidateMeta,
+        branchConstraints,
+        options
+      )
+    : null;
+  const cachedScore = scoreCacheKey ? getCachedAttachedBlockFullScore(layoutGraph, scoreCache, scoreCacheKey) : null;
+  if (cachedScore) {
+    return cachedScore;
+  }
+  if (scoreCacheKey) {
+    recordAttachedBlockFullScoreCacheMiss(layoutGraph, scoreCache);
+  }
+  recordAttachedBlockFullScore(layoutGraph, options.scoringBudget ?? null);
   const candidateCoords = options.prescore?.coords ? new Map(options.prescore.coords) : new Map(coords);
   const candidateSeedAtomIds = new Set(placedAtomIds);
 
@@ -17670,6 +18116,9 @@ function scoreAttachedBlockOrientation(
   };
   if (options.includeCandidateCoords === true) {
     score.candidateCoords = candidateCoords;
+  }
+  if (scoreCacheKey) {
+    setCachedAttachedBlockFullScore(layoutGraph, scoreCache, scoreCacheKey, score);
   }
   return score;
 }
@@ -17893,6 +18342,13 @@ function pickBestOmittedHydrogenParentSpreadRescueCandidate(
   let bestScore = null;
 
   for (const candidate of candidates) {
+    if (!canSpendAttachedBlockFullScore(
+      layoutGraph,
+      options.scoringBudget ?? null,
+      'omitted-hydrogen-parent-spread-rescue'
+    )) {
+      break;
+    }
     const candidateScore = scoreAttachedBlockOrientation(
       adjacency,
       canonicalAtomRank,
@@ -17906,7 +18362,9 @@ function pickBestOmittedHydrogenParentSpreadRescueCandidate(
       candidate.meta ?? null,
       {
         placementContext: options.placementContext ?? null,
-        includeCandidateCoords: true
+        includeCandidateCoords: true,
+        scoringBudget: options.scoringBudget ?? null,
+        scoreCache: options.scoreCache ?? null
       }
     );
     const candidateAudit = auditLayout(layoutGraph, candidateScore.candidateCoords, { bondLength });
@@ -18077,10 +18535,11 @@ function pickBestAttachedBlockOrientation(
       { coreScoreContext: getCoreScoreContext() }
     )
   }));
+  const placedAtomIdSet = placedAtomIds instanceof Set ? placedAtomIds : new Set(placedAtomIds);
   const requiresFullExactVisibleTrigonalScoring =
     options.forceFullScoring === true
     || scoredCandidates.some(candidate =>
-      directAttachmentCandidateNeedsBranchScoring(candidate, primaryNonRingAtomIds, new Set(placedAtomIds))
+      directAttachmentCandidateNeedsBranchScoring(candidate, primaryNonRingAtomIds, placedAtomIdSet)
     )
     || hasPendingExactVisibleTrigonalContinuation(layoutGraph, coords, primaryNonRingAtomIds)
     || scoredCandidates.some(candidate => (candidate._prescore?.exactTerminalMultipleSlotPenalty ?? 0) > IMPROVEMENT_EPSILON)
@@ -18106,6 +18565,20 @@ function pickBestAttachedBlockOrientation(
       );
     })();
   if (canAcceptExactChildRootPrescore) {
+    return {
+      transformedCoords: bestPrescoredCandidate.transformedCoords,
+      score: bestPrescoredCandidate._prescore,
+      meta: bestPrescoredCandidate.meta ?? null
+    };
+  }
+  if (
+    !requiresFullExactVisibleTrigonalScoring &&
+    options.disablePrescoreAcceptance !== true &&
+    canAcceptSinglePerfectAttachedBlockPrescore(
+      bestPrescoredCandidate?._prescore ?? null,
+      secondPrescoredCandidate?._prescore ?? null
+    )
+  ) {
     return {
       transformedCoords: bestPrescoredCandidate.transformedCoords,
       score: bestPrescoredCandidate._prescore,
@@ -18148,6 +18621,13 @@ function pickBestAttachedBlockOrientation(
 
   for (let candidateIndex = 0; candidateIndex < finalists.length; candidateIndex++) {
     const candidate = finalists[candidateIndex];
+    if (!canSpendAttachedBlockFullScore(
+      layoutGraph,
+      options.scoringBudget ?? null,
+      'attached-block-finalist'
+    )) {
+      break;
+    }
     const candidateScore = scoreAttachedBlockOrientation(
       adjacency,
       canonicalAtomRank,
@@ -18162,7 +18642,9 @@ function pickBestAttachedBlockOrientation(
       {
         prescore: candidate._prescore ?? null,
         placementContext: options.placementContext ?? null,
-        coreScoreContext: getCoreScoreContext()
+        coreScoreContext: getCoreScoreContext(),
+        scoringBudget: options.scoringBudget ?? null,
+        scoreCache: options.scoreCache ?? null
       }
     );
     const cmp = bestScore == null ? -1 : compareAttachedBlockScores(candidateScore, bestScore);
@@ -18222,6 +18704,7 @@ function pickBestAttachedBlockOrientation(
  * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, heavyBondCrossingCount: number, heavyBondCrossingPriorityCount: number, failingSubstituentCount: number, fusedJunctionContinuationPenalty: number, parentExteriorPenalty: number, exactContinuationPenalty: number, exactTerminalMultipleSlotPenalty: number, terminalLabelClearancePenalty: number, trigonalBisectorPenalty: number, ringExitMaxPenalty: number, omittedHydrogenTrigonalPenalty: number, omittedHydrogenDirectAttachmentCompromisePenalty: number, presentationPenalty: number, cost: number}} Prescored candidate snapshot.
  */
 function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength, layoutGraph, candidateMeta = null, options = {}) {
+  recordAttachedBlockPrescore(layoutGraph);
   const candidateCoords = new Map(coords);
   for (const [atomId, position] of transformedCoords) {
     candidateCoords.set(atomId, position);
@@ -18614,6 +19097,7 @@ function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan,
       pendingRingSystems,
       pendingRingAttachmentResnapAtomIds: new Set(),
       branchPlacementContext: {},
+      attachedBlockScoreCache: new Map(),
       mixedOptions: options ?? null
     }
   };
@@ -18681,7 +19165,8 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
     macrocycleBranchConstraints,
     primaryNonRingAtomIds,
     pendingRingLayoutCache,
-    pendingRingAttachmentResnapAtomIds
+    pendingRingAttachmentResnapAtomIds,
+    attachedBlockScoreCache
   } = state;
   const remaining = [];
   let progressed = false;
@@ -18790,6 +19275,9 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
         )
       );
     }
+    const linkerScoringBudget = createAttachedBlockScoringBudget(layoutGraph, {
+      disabled: state.mixedOptions?.conservativeAttachmentScoring === true
+    });
     const bestCandidate = pickBestAttachedBlockOrientation(
       selectAttachedBlockCandidates(rawCandidates, coords, bondLength, layoutGraph),
       adjacency,
@@ -18803,7 +19291,9 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
       {
         placementContext: state.branchPlacementContext,
         disablePrescoreAcceptance: state.mixedOptions?.conservativeAttachmentScoring === true,
-        disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true
+        disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true,
+        scoringBudget: linkerScoringBudget,
+        scoreCache: attachedBlockScoreCache
       }
     );
     bestCandidateCoords = bestCandidate?.transformedCoords ?? null;
@@ -18837,7 +19327,8 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
     macrocycleBranchConstraints,
     primaryNonRingAtomIds,
     pendingRingLayoutCache,
-    pendingRingAttachmentResnapAtomIds
+    pendingRingAttachmentResnapAtomIds,
+    attachedBlockScoreCache
   } = state;
   const remaining = [];
   let progressed = false;
@@ -19040,6 +19531,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         )
       )
     );
+    const directAttachmentScoringBudget = createAttachedBlockScoringBudget(layoutGraph, {
+      disabled: state.mixedOptions?.conservativeAttachmentScoring === true
+    });
     let directAttachmentTrigonalRescueSources = selectAttachedBlockCandidates(rawAttachedBlockCandidates, coords, bondLength, layoutGraph).slice(0, 2);
     let bestAttachedBlockCandidate = pickBestAttachedBlockOrientation(
       directAttachmentTrigonalRescueSources,
@@ -19054,7 +19548,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
       {
         placementContext: state.branchPlacementContext,
         disablePrescoreAcceptance: state.mixedOptions?.conservativeAttachmentScoring === true,
-        disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true
+        disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true,
+        scoringBudget: directAttachmentScoringBudget,
+        scoreCache: attachedBlockScoreCache
       }
     );
     const smallRingExteriorDirectAttachmentDescriptor = describeDirectAttachmentExteriorContinuationAnchor(layoutGraph, attachment.parentAtomId);
@@ -19256,7 +19752,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           forceFullScoring: shouldScoreAllExpandedDirectAttachmentCandidates,
           placementContext: state.branchPlacementContext,
           disablePrescoreAcceptance: state.mixedOptions?.conservativeAttachmentScoring === true,
-          disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true
+          disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true,
+          scoringBudget: directAttachmentScoringBudget,
+          scoreCache: attachedBlockScoreCache
         }
       );
     }
@@ -19281,6 +19779,13 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         let refinedBestCandidate = bestAttachedBlockCandidate;
         let refinedBestScore = bestAttachedBlockCandidate.score;
         for (const candidate of localRefinementCandidates) {
+          if (!canSpendAttachedBlockFullScore(
+            layoutGraph,
+            directAttachmentScoringBudget,
+            'omitted-hydrogen-local-refinement'
+          )) {
+            break;
+          }
           const candidateMeta = {
             attachmentAtomId: attachment.attachmentAtomId,
             parentAtomId: attachment.parentAtomId,
@@ -19300,7 +19805,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
             macrocycleBranchConstraints,
             candidateMeta,
             {
-              placementContext: state.branchPlacementContext
+              placementContext: state.branchPlacementContext,
+              scoringBudget: directAttachmentScoringBudget,
+              scoreCache: attachedBlockScoreCache
             }
           );
           const comparison = compareOmittedHydrogenDirectAttachmentRefinementScores(candidateScore, refinedBestScore);
@@ -19389,6 +19896,13 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         let rescueBestCandidate = bestAttachedBlockCandidate;
         let rescueBestScore = bestAttachedBlockCandidate.score;
         for (const candidate of exactTrigonalBisectorRescueCandidates) {
+          if (!canSpendAttachedBlockFullScore(
+            layoutGraph,
+            directAttachmentScoringBudget,
+            'exact-trigonal-bisector-rescue'
+          )) {
+            break;
+          }
           const candidateScore = scoreAttachedBlockOrientation(
             adjacency,
             layoutGraph.canonicalAtomRank,
@@ -19401,7 +19915,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
             macrocycleBranchConstraints,
             candidate.meta ?? null,
             {
-              placementContext: state.branchPlacementContext
+              placementContext: state.branchPlacementContext,
+              scoringBudget: directAttachmentScoringBudget,
+              scoreCache: attachedBlockScoreCache
             }
           );
           const comparison = compareExactTrigonalBisectorRescueScores(candidateScore, rescueBestScore);
@@ -19491,7 +20007,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           layoutGraph,
           macrocycleBranchConstraints,
           {
-            placementContext: state.branchPlacementContext
+            placementContext: state.branchPlacementContext,
+            scoringBudget: directAttachmentScoringBudget,
+            scoreCache: attachedBlockScoreCache
           }
         );
         if (rescueBestCandidate) {
@@ -19559,7 +20077,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           {
             forceFullScoring: true,
             disableBeamReduction: true,
-            placementContext: state.branchPlacementContext
+            placementContext: state.branchPlacementContext,
+            scoringBudget: directAttachmentScoringBudget,
+            scoreCache: attachedBlockScoreCache
           }
         );
         if (rescueBestCandidate) {
@@ -19617,7 +20137,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           {
             forceFullScoring: true,
             disableBeamReduction: true,
-            placementContext: state.branchPlacementContext
+            placementContext: state.branchPlacementContext,
+            scoringBudget: directAttachmentScoringBudget,
+            scoreCache: attachedBlockScoreCache
           }
         );
         if (rescueBestCandidate) {
@@ -19649,6 +20171,13 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         let refinedBestCandidate = bestAttachedBlockCandidate;
         let refinedBestScore = bestAttachedBlockCandidate.score;
         for (const candidate of localRootRotationRefinementCandidates) {
+          if (!canSpendAttachedBlockFullScore(
+            layoutGraph,
+            directAttachmentScoringBudget,
+            'local-root-rotation-refinement'
+          )) {
+            break;
+          }
           const candidateScore = scoreAttachedBlockOrientation(
             adjacency,
             layoutGraph.canonicalAtomRank,
@@ -19661,7 +20190,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
             macrocycleBranchConstraints,
             candidate.meta ?? null,
             {
-              placementContext: state.branchPlacementContext
+              placementContext: state.branchPlacementContext,
+              scoringBudget: directAttachmentScoringBudget,
+              scoreCache: attachedBlockScoreCache
             }
           );
           const comparison = compareExactTrigonalBisectorRescueScores(candidateScore, refinedBestScore);
@@ -19718,6 +20249,13 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
             ringRotationOffset: candidate.ringRotationOffset,
             exactTrigonalBisectorLocalRefinement: true
           };
+          if (!canSpendAttachedBlockFullScore(
+            layoutGraph,
+            directAttachmentScoringBudget,
+            'strict-local-refinement'
+          )) {
+            break;
+          }
           const candidateScore = scoreAttachedBlockOrientation(
             adjacency,
             layoutGraph.canonicalAtomRank,
@@ -19730,7 +20268,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
             macrocycleBranchConstraints,
             candidateMeta,
             {
-              placementContext: state.branchPlacementContext
+              placementContext: state.branchPlacementContext,
+              scoringBudget: directAttachmentScoringBudget,
+              scoreCache: attachedBlockScoreCache
             }
           );
           const comparison = compareExactTrigonalBisectorRescueScores(candidateScore, refinedBestScore);
@@ -19802,7 +20342,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           {
             forceFullScoring: true,
             disableBeamReduction: true,
-            placementContext: state.branchPlacementContext
+            placementContext: state.branchPlacementContext,
+            scoringBudget: directAttachmentScoringBudget,
+            scoreCache: attachedBlockScoreCache
           }
         );
         if (rescueBestCandidate) {
@@ -24004,6 +24546,15 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   const bridgeheadChainLeafFanRescue = rescueBridgeheadChainExitsWithTerminalLeafFans(layoutGraph, coords, bondLength);
   if (bridgeheadChainLeafFanRescue.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const bridgeheadBranchContactRescue = resolveBridgeheadBranchContacts(
+    layoutGraph,
+    coords,
+    bondValidationClasses,
+    bondLength
+  );
+  if (bridgeheadBranchContactRescue.changed) {
     markMixedBranchPlacementContextDirty(state);
   }
   const terminalHeteroRingLeafClearance = resolveExactTerminalRingLeafNearContacts(layoutGraph, coords, bondLength);

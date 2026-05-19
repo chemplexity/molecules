@@ -661,6 +661,23 @@ export function buildCleanupStageGraph(context) {
       && (stageResult?.audit?.severeOverlapCount ?? 0) > 0
     )
   );
+  const canSkipCleanOptionalCleanupStage = (_stageResults, incumbent) => {
+    if (incumbent?.audit?.ok !== true) {
+      return false;
+    }
+    if ((incumbent.audit.maxBondLengthDeviation ?? 0) > bondLength * 0.16) {
+      return false;
+    }
+    const metrics = presentationMetricsFor(incumbent.coords);
+    return !(
+      (metrics?.terminalHeteroOutwardMaxPenalty ?? 0) > DISTANCE_EPSILON
+      || (metrics?.terminalMultipleBondLeafFanMaxPenalty ?? 0) > DISTANCE_EPSILON
+      || (metrics?.divalentContinuationMaxPenalty ?? 0) > DISTANCE_EPSILON
+      || (metrics?.smallRingExteriorFanExactMaxPenalty ?? 0) > DISTANCE_EPSILON
+      || (metrics?.attachedRingRootOutwardPenalty ?? 0) > DISTANCE_EPSILON
+      || (metrics?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0) > DISTANCE_EPSILON
+    );
+  };
 
   const geometryStages = [
     {
@@ -760,6 +777,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'presentationCleanup',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
         const includeRingSubstituent = shouldIncludeRingSubstituentCleanup(incumbent);
         return hasPresentationCleanupNeed(layoutGraph, incumbent, {
@@ -907,6 +926,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'specialistCleanup',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
         return hasSpecialistCleanupNeed(layoutGraph, incumbent.coords, policy, {
           bondLength
@@ -939,6 +960,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'stabilizeAfterCleanup',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent, inputContext) {
         const request = inputContext.stabilizationRequest ?? null;
         if (request?.requested !== true) {
@@ -984,6 +1007,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'ringTerminalHeteroFinalRetouch',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
         const includeRingSubstituent = shouldIncludeRingSubstituentCleanup(incumbent);
         return (
@@ -1013,6 +1038,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'terminalMultipleBondLeafFinalRetouch',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
         return (presentationMetricsFor(incumbent?.coords)?.terminalMultipleBondLeafFanMaxPenalty ?? 0) > DISTANCE_EPSILON;
       },
@@ -1070,6 +1097,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'terminalAlkeneContinuationFinalRetouch',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard() {
         return true;
       },
@@ -1095,6 +1124,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'divalentContinuationFinalRetouch',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
         return (presentationMetricsFor(incumbent?.coords)?.divalentContinuationMaxPenalty ?? 0) > DISTANCE_EPSILON;
       },
@@ -1136,6 +1167,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'ringTerminalRootExactFinalRetouch',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard() {
         return true;
       },
@@ -1182,6 +1215,8 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'omittedHydrogenCollateralRootFinalRetouch',
       parentStage: 'best',
+      cleanupBudgetOptional: true,
+      cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard() {
         return true;
       },

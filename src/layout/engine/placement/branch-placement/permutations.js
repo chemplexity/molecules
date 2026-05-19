@@ -21,6 +21,7 @@ import {
   describeChargedSulfoxideTrigonalCenter,
   describeCrossLikeHypervalentCenter,
   describeHiddenHydrogenMonoOxoTrigonalCenter,
+  describePhosphazeneTrigonalCenter,
   findLayoutBond,
   isExactSimpleAcyclicContinuationEligible,
   isLinearCenter,
@@ -172,6 +173,15 @@ function isOmittedHydrogenVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeig
   );
 }
 
+function isPhosphazeneVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds) {
+  const descriptor = describePhosphazeneTrigonalCenter(layoutGraph, anchorAtomId);
+  return (
+    primaryNeighborIds.length >= 2
+    && !!descriptor
+    && primaryNeighborIds.every(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId))
+  );
+}
+
 /**
  * Returns whether a branch center should skip exhaustive sibling backtracking.
  * Large mixed/acyclic slices can explode combinatorially when every backbone
@@ -195,6 +205,9 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
     return false;
   }
   if (isOmittedHydrogenVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds)) {
+    return false;
+  }
+  if (isPhosphazeneVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds)) {
     return false;
   }
   const participantCount = atomIdsToPlace?.size ?? 0;
@@ -494,7 +507,11 @@ function trigonalCenterPenalty(layoutGraph, coords, atomId) {
     return 0;
   }
   const multipleBondCount = visibleCovalentNeighbors.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
-  if (multipleBondCount !== 1 && !describeChargedSulfoxideTrigonalCenter(layoutGraph, atomId)) {
+  if (
+    multipleBondCount !== 1
+    && !describeChargedSulfoxideTrigonalCenter(layoutGraph, atomId)
+    && !describePhosphazeneTrigonalCenter(layoutGraph, atomId)
+  ) {
     return 0;
   }
 
