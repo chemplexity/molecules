@@ -10,6 +10,8 @@
 - Cache final terminal multiple-bond leaf endpoint discovery, reuse static paired-terminal compression factors, and skip clone/audit setup in terminal alkene, paired terminal hetero, and omitted-H collateral retouches until candidate descriptors exist.
 - Add a cached terminal multiple-bond fan center index and use it across presentation scoring, terminal leaf tidy, paired hetero tidy, support-fan cleanup, and duplicate presentation passes so no-op terminal-leaf scans skip non-candidate atoms.
 - Cache terminal ring-hetero structural pairs, reuse per-anchor outward-angle calculations, defer atom-grid/coordinate clone setup until candidate descriptors exist, and use the atom grid for exact-outward blocker relief scans.
+- Skip angle-only large-molecule residual polish for very large low-ring layouts after overlap/crossing repair, cutting sampled clean timeout rows such as stress index 14024 from roughly 25s+ to under 8s while preserving audit quality.
+- Skip expensive final three-heavy presentation retouch on very large layouts that still have severe overlaps or visible heavy-bond crossings, avoiding multi-second angle-only work on rows that remain dirty.
 - Restore guanidine mobile-hydrogen tautomer cleanup so terminal imine preference can move one hydrogen from terminal `NH2` to the internal guanidino nitrogen.
 - Let terminal carbonyl fan cleanup rotate a small center-side branch around a ring support before snapping the oxo leaf, preserving exact omitted-H hub fans while avoiding neighboring ring overlaps.
 - Keep final mixed acyl branch cleanup eligible when a layout still has visible heavy-bond crossings, even if the rest of the final audit is clean.

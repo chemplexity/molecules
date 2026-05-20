@@ -47,18 +47,18 @@ const COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_HEAVY_ATOMS = 8;
 const COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_ATOMS = 12;
 const COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR = 0.4;
 const TERMINAL_CARBONYL_LEAF_COMPRESSION_FACTORS = Object.freeze(Array.from({ length: 111 }, (_value, index) => 0.95 - index * 0.005));
-const EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS = Object.freeze([Math.PI / 3, -(Math.PI / 3), Math.PI / 4, -(Math.PI / 4), Math.PI / 6, -(Math.PI / 6), Math.PI / 12, -(Math.PI / 12)]);
+const EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS = Object.freeze([Math.PI / 12, -(Math.PI / 12), Math.PI / 6, -(Math.PI / 6), Math.PI / 4, -(Math.PI / 4), Math.PI / 3, -(Math.PI / 3)]);
 const COMPACT_FOUR_COORDINATE_RELATIVE_ROTATION_OFFSETS = Object.freeze([
-  Math.PI / 6,
-  -(Math.PI / 6),
-  Math.PI / 9,
-  -(Math.PI / 9),
-  Math.PI / 12,
-  -(Math.PI / 12),
+  Math.PI / 36,
+  -(Math.PI / 36),
   Math.PI / 18,
   -(Math.PI / 18),
-  Math.PI / 36,
-  -(Math.PI / 36)
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  Math.PI / 6,
+  -(Math.PI / 6)
 ]);
 const OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS = Object.freeze([(2 * Math.PI) / 3, -(2 * Math.PI) / 3]);
 
