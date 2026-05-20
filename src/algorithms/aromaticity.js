@@ -183,12 +183,12 @@ function _piElectrons(atom, ringAtomSet, mol) {
     return null;
   }
 
-  if (el === 'O' || el === 'S') {
-    // Furan/thiophene-like (no ring double bond): lone pair donated → 2 π electrons.
+  if (el === 'O' || el === 'S' || el === 'Se' || el === 'Te') {
+    // Furan/thiophene/selenophene/tellurophene-like (no ring double bond): lone pair donated → 2 π electrons.
     // Pyrylium/thiopyrylium-like (explicit Kekulé double bond in the ring, e.g. C=[O+]):
-    //   O/S acts as a pyridine-N equivalent → 1 π electron from the π bond.
+    //   O/S/Se/Te acts as a pyridine-N equivalent → 1 π electron from the π bond.
     // Lowercase SMILES-aromatic input stores those ring bonds at order 1.5, so
-    // positively charged O/S must also treat aromatic ring pi-bonds as a
+    // positively charged O/S/Se/Te must also treat aromatic ring pi-bonds as a
     // one-electron contribution.
     if (charge > 0) {
       return hasRingPiBond || hasFusedExocyclicRingPiBond ? 1 : null;
@@ -547,6 +547,125 @@ function _isSourceAromaticBond(bond) {
 }
 
 /**
+ * Returns 2 for a Kekulé bridgehead nitrogen that donates its lone pair to the
+ * fused pi system, or null when the heuristic does not apply.
+ *
+ * Applies only when `_piElectrons` returns null for a neutral N because all of
+ * its ring bonds are single (no Kekulé pi bond within the ring).  The N is
+ * treated as a two-electron donor (pyrrole-like) when it has an exocyclic
+ * substituent (replacing the pyrrolic H) and at least one ring neighbour
+ * carries a ring pi bond to another system atom.
+ * @param {import('../core/Atom.js').Atom|undefined} atom - Candidate atom.
+ * @param {Set<string>} ringAtomSet - Atom ids in the fused ring system.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number|null} 2 when the lone-pair heuristic applies, null otherwise.
+ */
+function _piElectronsKekuleN(atom, ringAtomSet, mol) {
+  if (!atom || atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0) { return null; }
+  const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId)).filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
+  if (ringBonds.some(_hasPiOrder)) { return null; }
+  const hasH = atom.bonds.some(bId => {
+    const b = mol.bonds.get(bId);
+    return b && mol.atoms.get(b.getOtherAtom(atom.id))?.name === 'H';
+  });
+  if (hasH) { return null; }
+  const hasExocyclic = atom.bonds.some(bId => {
+    const b = mol.bonds.get(bId);
+    if (!b) { return false; }
+    const other = mol.atoms.get(b.getOtherAtom(atom.id));
+    return other && other.name !== 'H' && !ringAtomSet.has(other.id);
+  });
+  if (!hasExocyclic) { return null; }
+  const hasRingNeighborPi = ringBonds.some(rb => {
+    const neighbor = mol.atoms.get(rb.getOtherAtom(atom.id));
+    if (!neighbor) { return false; }
+    return neighbor.bonds.some(nbId => {
+      const nb = mol.bonds.get(nbId);
+      return nb && nb.id !== rb.id && _hasPiOrder(nb) && ringAtomSet.has(nb.getOtherAtom(neighbor.id));
+    });
+  });
+  return hasRingNeighborPi ? 2 : null;
+}
+
+/**
+ * Promotes fused Kekulé ring systems that individually fail Hückel (because no
+ * single ring reaches 4n+2 on its own) but satisfy Hückel as a full fused
+ * component.  Handles bicyclics like benzofuran, indolizine, and purine-type
+ * systems written in Kekulé SMILES or produced by parseINCHI.
+ *
+ * Unlike `_promoteFusedSmilesAromaticSystems` this function does NOT require
+ * source-aromatic (1.5-order) bonds, so it works for pure Kekulé input.
+ * It also handles the mixed case where some rings in the component were already
+ * detected by per-ring Hückel (their bonds are in `aromaticBondIds`) while the
+ * remaining rings still have Kekulé bonds.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string[][]} rings - SSSR rings considered by aromaticity perception.
+ * @param {Set<string>} aromaticBondIds - Bond ids already accepted as aromatic.
+ * @returns {void}
+ */
+function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
+  for (const component of _fusedRingComponents(rings)) {
+    if (component.length <= 1) { continue; }
+
+    const atomIds = new Set();
+    const ringBondIds = new Set();
+    for (const ringIndex of component) {
+      for (const atomId of rings[ringIndex]) { atomIds.add(atomId); }
+      for (const bondId of _ringBondIds(mol, rings[ringIndex])) { ringBondIds.add(bondId); }
+    }
+
+    const ringBonds = [...ringBondIds].map(bondId => mol.bonds.get(bondId)).filter(Boolean);
+
+    // Nothing left to do if every bond is already confirmed aromatic.
+    if (ringBonds.every(bond => aromaticBondIds.has(bond.id))) { continue; }
+
+    // If any source-aromatic bond in the component has not yet been confirmed,
+    // leave it to _promoteFusedSmilesAromaticSystems (already ran) — skip.
+    if (ringBonds.some(bond => _isSourceAromaticBond(bond) && !aromaticBondIds.has(bond.id))) { continue; }
+
+    // There must be at least one Kekulé bond not yet in aromaticBondIds.
+    if (!ringBonds.some(bond => !aromaticBondIds.has(bond.id) && !_isSourceAromaticBond(bond))) { continue; }
+
+    // Exocyclic multiple bonds disqualify the component (same as SMILES variant).
+    if (_hasExocyclicMultipleBond(mol, atomIds, ringBondIds)) { continue; }
+
+    // Count how many SSSR rings each atom participates in within this component.
+    // _piElectronsKekuleN is a bridgehead-only heuristic — only apply it to atoms
+    // that appear in ≥2 rings (true bridgehead atoms, e.g. the N in indolizine).
+    const atomRingCount = new Map();
+    for (const ringIndex of component) {
+      for (const atomId of rings[ringIndex]) {
+        atomRingCount.set(atomId, (atomRingCount.get(atomId) ?? 0) + 1);
+      }
+    }
+
+    let piTotal = 0;
+    let valid = true;
+    for (const atomId of atomIds) {
+      const atom = mol.atoms.get(atomId);
+      let pi = atom ? _piElectrons(atom, atomIds, mol) : null;
+      // Bridgehead N with all-single Kekulé ring bonds — use lone-pair heuristic.
+      if (pi === null && (atomRingCount.get(atomId) ?? 0) >= 2) { pi = _piElectronsKekuleN(atom, atomIds, mol); }
+      if (pi === null) {
+        valid = false;
+        break;
+      }
+      piTotal += pi;
+    }
+
+    if (!valid || !_isHuckel(piTotal)) { continue; }
+
+    for (const atomId of atomIds) { mol.atoms.get(atomId).properties.aromatic = true; }
+    for (const bond of ringBonds) {
+      if (!aromaticBondIds.has(bond.id)) {
+        bond.setAromatic(true);
+        aromaticBondIds.add(bond.id);
+      }
+    }
+  }
+}
+
+/**
  * Promotes fused lowercase-SMILES aromatic systems that satisfy Hückel only as
  * a fused component rather than as independent SSSR rings. This keeps purine-
  * like all-aromatic aza systems from being stale-kekulized into a valence-hole
@@ -847,6 +966,7 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
   }
 
   _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds);
+  _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds);
 
   // Kekulize stale bonds (aromatic-flagged bonds whose ring failed Hückel):
   // run maximum-matching to assign localizedOrder 1 or 2 before clearing the

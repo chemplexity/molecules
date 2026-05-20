@@ -1,7 +1,28 @@
 # Change Log
 
+## 2026-05-20
+
+- Cache mixed ring-system layouts across primary and alternate-root retries, returning cloned coordinate maps so repeated pending bridged/fused layouts are not recomputed during linker attachment scoring.
+- Make omitted-H attached-ring fan cleanup cheaper by rejecting non-improving seeds before full audit, and only running expensive refinement cleanup after a seed has produced an acceptable fan-improving candidate.
+- Let attached-block severe-overlap override scoring reuse the base atom grid and cache the base severe-overlap context by coordinate signature.
+- Skip angle-only large-molecule residual polish for medium peptide-like and 140+ heavy low-ring layouts once overlap/crossing repair is clear, avoiding multi-second final-retouch timeout tails.
+- Bound the latest large peptide timeout rows by skipping angle-only large-molecule residual polish for 200+ heavy-atom low/mid-ring layouts after the real overlap and crossing repair has run.
+- Skip optional clean mixed-macrocycle ring-fan polish on large layouts whose pre-polish audit has only soft residuals, reducing the latest glycopeptide near-timeout while preserving dirty macrocycle fan repair.
+- Let compact hypervalent bridged multi-ring mixed layouts skip speculative remaining-branch placement during attached-block full scoring.
+- Loosen the clean large-molecule final-retouch fast path so very large audit-clean layouts can compute stereo on demand instead of requiring cached cleanup stereo.
+- Isolate speculative branch-permutation atom grids so rejected branch candidates no longer pollute the live spatial index used by later angle and focused-cost scoring.
+- Broaden the compact isolated multi-ring attached-block scoring fast path to cover the latest tetraaryl borate timeout row, cutting that row from roughly 21 seconds to about 10 seconds while preserving its audit result.
+- Align attached-block prescore forcing with the branch-scoring skip path so compact mixed layouts do not force full scoring solely for branch placement that the full scorer will intentionally skip.
+
 ## 2026-05-19
 
+- Route very large macrocycle-containing components directly through large-molecule block stitching instead of first attempting full mixed/macrocycle slice placement.
+- Start dense partitioning up front for ring-rich large molecules and force compact fused polycyclic stitch blocks through the fused placer.
+- Lower the low-ring large-molecule angle-polish skip threshold and reuse spatial grids/centroids in future attached-ring branch preview scoring, cutting large peptide final-retouch and branch-preview timeouts without removing overlap/crossing repair.
+- Add greedy branch-placement cutoffs for dense isolated multi-ring systems and compact bridged multi-system attached blocks.
+- Reduce latest layout timeout rows by bounding optional macrocycle ring-fan polish on large hard-dirty macrocycles, while preserving the full strict-ring polish for clean macrocycle layouts.
+- Speed focused placement-cost scoring by sweeping focused bond crossings with min-X bounds, using spatial grids on medium candidate layouts, and skipping compact aryl leaf crossing probes when the focus atoms cannot contribute.
+- Cache static macrocycle ring-fan polish centers and visible atom lists across candidate scoring/contact scans, avoiding repeated topology walks during final retouch.
 - Reduce timeout-prone mixed layouts by skipping attached-ring fallback during alternate-root presentation previews while keeping the full fallback in final cleanup.
 - Skip expensive hypervalent-deviation tie-break scoring inside speculative attached-ring fallback cleanup probes so repeated one-pass candidates avoid redundant sulfone/phosphate geometry fitting.
 - Bound recursive single-branch lookahead angle menus for bridged ring anchors, cutting one compact bridged mixed timeout case from the 30-second cap to a bounded audit-clean layout.

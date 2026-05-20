@@ -1605,10 +1605,8 @@ function candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coo
   return Number.isFinite(minDistance) ? minDistance : 0;
 }
 
-function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds, atomGrid = null) {
-  const clearanceFloor = bondLength * BRANCH_CLEARANCE_FLOOR_FACTOR;
+function isCandidatePositionSafe(candidatePosition, clearanceFloor, coords, excludedAtomIds, atomGrid = null) {
   const clearanceFloorSq = clearanceFloor * clearanceFloor;
-  const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
   if (atomGrid) {
     for (const atomId of atomGrid.queryRadius(candidatePosition, clearanceFloor)) {
       if (excludedAtomIds.has(atomId)) {
@@ -1637,6 +1635,12 @@ function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, exc
     }
   }
   return true;
+}
+
+function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds, atomGrid = null) {
+  const clearanceFloor = bondLength * BRANCH_CLEARANCE_FLOOR_FACTOR;
+  const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
+  return isCandidatePositionSafe(candidatePosition, clearanceFloor, coords, excludedAtomIds, atomGrid);
 }
 
 const OMITTED_HYDROGEN_EXACT_CLEARANCE_FACTOR = 0.5;
@@ -1907,6 +1911,7 @@ export function chooseNearPreferredRescueAngle(anchorPosition, bondLength, coord
  * @returns {Array<{angle: number, angleScore: number, clearanceScore: number|null, centerDistanceScore: number, insideRingCount: number, minSeparation: number, isSafe: boolean}>} Scored candidates.
  */
 export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null) {
+  const clearanceFloor = bondLength * BRANCH_CLEARANCE_FLOOR_FACTOR;
   return candidateAngles.map(candidateAngle => {
     const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
     return {
@@ -1925,7 +1930,7 @@ export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferr
       clearanceScore: null,
       centerDistanceScore: centerDistanceScore(placementState, candidatePosition),
       insideRingCount: countPointInPolygons(ringPolygons, candidatePosition),
-      isSafe: isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds, atomGrid)
+      isSafe: isCandidatePositionSafe(candidatePosition, clearanceFloor, coords, excludedAtomIds, atomGrid)
     };
   });
 }

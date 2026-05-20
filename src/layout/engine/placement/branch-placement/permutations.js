@@ -53,6 +53,7 @@ const TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT = 0.25;
 const FUTURE_ATTACHED_RING_PREVIEW_WEIGHT = 20;
 const FUTURE_ATTACHED_RING_PREVIEW_CLEARANCE_FACTOR = 0.85;
 const PROJECTED_HETERO_SLOT_BATCH_MAX_TOTAL_SUBTREE_SIZE = 12;
+const BRANCH_PERMUTATION_ATOM_GRID_MIN_COORDS = 16;
 const ORTHOGONAL_SLOT_PERMUTATIONS = [
   [0, 1, 2, 3],
   [0, 1, 3, 2],
@@ -211,6 +212,26 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
   const totalSubtreeSize = childDescriptors.reduce((sum, descriptor) => sum + descriptor.subtreeSize, 0);
   const maxSubtreeSize = childDescriptors.reduce((max, descriptor) => Math.max(max, descriptor.subtreeSize), 0);
   const largeSubtreeCount = childDescriptors.filter(descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor).length;
+  const ringSystemCount = layoutGraph?.ringSystems?.length ?? 0;
+  const bridgedRingConnectionCount = layoutGraph?.traits?.bridgedRingConnectionCount ?? 0;
+  const fusedRingConnectionCount = layoutGraph?.traits?.fusedRingConnectionCount ?? 0;
+  const spiroRingConnectionCount = layoutGraph?.traits?.spiroRingConnectionCount ?? 0;
+  const denseBridgedMultiSystem =
+    participantCount >= 36 &&
+    ringSystemCount >= 3 &&
+    bridgedRingConnectionCount >= 6;
+  if (denseBridgedMultiSystem && (maxSubtreeSize >= 6 || totalSubtreeSize >= 12 || primaryNeighborIds.length >= 3)) {
+    return true;
+  }
+  const denseIsolatedMultiRingSystem =
+    participantCount >= 36 &&
+    ringSystemCount >= 3 &&
+    bridgedRingConnectionCount === 0 &&
+    fusedRingConnectionCount === 0 &&
+    spiroRingConnectionCount === 0;
+  if (denseIsolatedMultiRingSystem && primaryNeighborIds.length >= 3 && (maxSubtreeSize >= 8 || totalSubtreeSize >= 18)) {
+    return true;
+  }
   if (participantCount > greedyBudget) {
     return true;
   }
@@ -387,6 +408,24 @@ function buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, candidateC
     candidateAtomGrid.insert(atomId, position);
   }
   return candidateAtomGrid;
+}
+
+function insertNewlyPlacedAtomsIntoPlacementContext(layoutGraph, placementContext, coords, newlyPlacedAtomIds) {
+  const atomGrid = placementContext?.atomGrid;
+  if (!layoutGraph || !atomGrid || newlyPlacedAtomIds.length === 0) {
+    return;
+  }
+
+  for (const atomId of newlyPlacedAtomIds) {
+    if (!shouldTrackFocusedPlacementAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    atomGrid.insert(atomId, position);
+  }
 }
 
 function shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds = []) {
@@ -936,7 +975,7 @@ function futureRingRootExteriorBranchPreviewPoints(layoutGraph, ringRootPosition
  * @param {{x: number, y: number}} anchorPosition - Anchor atom position.
  * @returns {number|null} Preferred outward angle in radians, or null when unavailable.
  */
-function futureRingPreviewPreferredAngle(layoutGraph, coords, anchorPosition) {
+function futureRingPreviewCentroid(layoutGraph, coords) {
   let sumX = 0;
   let sumY = 0;
   let count = 0;
@@ -951,7 +990,14 @@ function futureRingPreviewPreferredAngle(layoutGraph, coords, anchorPosition) {
   if (count === 0) {
     return null;
   }
-  return angleOf(sub(anchorPosition, { x: sumX / count, y: sumY / count }));
+  return { x: sumX / count, y: sumY / count };
+}
+
+function futureRingPreviewPreferredAngle(anchorPosition, centroid) {
+  if (!centroid) {
+    return null;
+  }
+  return angleOf(sub(anchorPosition, centroid));
 }
 
 /**
@@ -964,9 +1010,10 @@ function futureRingPreviewPreferredAngle(layoutGraph, coords, anchorPosition) {
  * @param {number} threshold - Soft clash distance.
  * @returns {number} Squared soft clash penalty.
  */
-function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold) {
+function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold, atomGrid = null) {
   let penalty = 0;
-  for (const atomId of crowdingAtomIds) {
+  const candidateAtomIds = atomGrid ? atomGrid.queryRadius(point, threshold) : crowdingAtomIds;
+  for (const atomId of candidateAtomIds) {
     if (excludedAtomIds.has(atomId) || !isVisibleHeavyArrangementAtom(layoutGraph, atomId)) {
       continue;
     }
@@ -998,7 +1045,7 @@ function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAt
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
  * @returns {number} Future-ring clash penalty; lower is better.
  */
-function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds = [], adjacency = null, atomIdsToPlace = null, branchConstraints = null) {
+function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds = [], adjacency = null, atomIdsToPlace = null, branchConstraints = null, atomGrid = null) {
   if (!layoutGraph || !(bondLength > 0) || focusAtomIds.length === 0) {
     return 0;
   }
@@ -1010,6 +1057,7 @@ function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focus
     return 0;
   }
   const previewAnchorAtomIds = new Set([...focusAtomIdSet, ...coords.keys()]);
+  const previewCentroid = futureRingPreviewCentroid(layoutGraph, coords);
   let totalPenalty = 0;
 
   for (const anchorAtomId of previewAnchorAtomIds) {
@@ -1051,7 +1099,7 @@ function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focus
 
     const parentAngle = angleOf(sub(parentPosition, anchorPosition));
     const childAngles = [parentAngle + DEG120, parentAngle - DEG120];
-    const preferredAngle = futureRingPreviewPreferredAngle(layoutGraph, coords, anchorPosition);
+    const preferredAngle = futureRingPreviewPreferredAngle(anchorPosition, previewCentroid);
     const excludedAtomIds = new Set([anchorAtomId, ...pendingRingNeighborIds]);
 
     for (let pendingRingIndex = 0; pendingRingIndex < pendingRingNeighborIds.length; pendingRingIndex++) {
@@ -1083,7 +1131,7 @@ function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focus
         },
         ...futureRingRootExteriorBranchPreviewPoints(layoutGraph, ringRootPosition, rootParentAngle, firstRingNeighborAngle, secondRingNeighborAngle, bondLength, pendingRingNeighborId, anchorAtomId)
       ];
-      totalPenalty += previewPoints.reduce((sum, point) => sum + futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold), 0);
+      totalPenalty += previewPoints.reduce((sum, point) => sum + futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold, atomGrid), 0);
     }
   }
 
@@ -1120,7 +1168,7 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAto
     arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds, atomGrid) * TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT +
-    futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds, adjacency, atomIdsToPlace, branchConstraints) * FUTURE_ATTACHED_RING_PREVIEW_WEIGHT
+    futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds, adjacency, atomIdsToPlace, branchConstraints, atomGrid) * FUTURE_ATTACHED_RING_PREVIEW_WEIGHT
   );
 }
 
@@ -1145,6 +1193,7 @@ function evaluateAnglePermutations(
   const childPermutations =
     hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDescriptors) ??
     permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors, branchConstraints));
+  const baseAtomGrid = placementContext?.atomGrid ?? (layoutGraph && coords.size >= BRANCH_PERMUTATION_ATOM_GRID_MIN_COORDS ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   let bestPlacement = null;
 
   for (const angleSet of angleSets) {
@@ -1170,6 +1219,18 @@ function evaluateAnglePermutations(
         );
       }
 
+      const directlyPlacedAtomIds = assignedPlacements.map(placement => placement.childAtomId).filter(atomId => !coords.has(atomId));
+      const candidateAtomGrid = buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, tempCoords, directlyPlacedAtomIds);
+      const candidatePlacementContext = placementContext || candidateAtomGrid
+        ? {
+            ...(placementContext ?? {}),
+            coords: tempCoords,
+            placementState: tempPlacementState,
+            atomGrid: candidateAtomGrid,
+            ringPolygonsByAnchor: new Map(),
+            needsResync: false
+          }
+        : null;
       const recursionOrder = [...assignedPlacements].sort((firstPlacement, secondPlacement) => {
         if (secondPlacement.subtreeSize !== firstPlacement.subtreeSize) {
           return secondPlacement.subtreeSize - firstPlacement.subtreeSize;
@@ -1189,17 +1250,18 @@ function evaluateAnglePermutations(
           layoutGraph,
           branchConstraints,
           depth + 1,
-          placementContext
+          candidatePlacementContext
         );
       }
 
       const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
-      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, null, adjacency, atomIdsToPlace, branchConstraints);
+      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidatePlacementContext?.atomGrid ?? candidateAtomGrid, adjacency, atomIdsToPlace, branchConstraints);
       if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
         bestPlacement = {
           cost,
           coords: tempCoords,
-          placementState: tempPlacementState
+          placementState: tempPlacementState,
+          newlyPlacedAtomIds
         };
       }
     }
@@ -1394,7 +1456,7 @@ export function chooseBatchAngleAssignments(
   }
 
   const angleSets = buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph, branchConstraints);
-  const baseAtomGrid = placementContext?.atomGrid ?? (layoutGraph && coords.size >= 160 ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
+  const baseAtomGrid = placementContext?.atomGrid ?? (layoutGraph && coords.size >= BRANCH_PERMUTATION_ATOM_GRID_MIN_COORDS ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   const resolvedChildDescriptors =
     childDescriptors ??
     unplacedNeighborIds.map(childAtomId => ({
@@ -1427,12 +1489,14 @@ export function chooseBatchAngleAssignments(
     return [];
   }
 
+  const newlyPlacedAtomIds = bestPlacement.newlyPlacedAtomIds ?? collectNewlyPlacedAtomIds(coords, bestPlacement.coords);
   for (const atomId of atomIdsToPlace) {
     if (bestPlacement.coords.has(atomId)) {
       coords.set(atomId, bestPlacement.coords.get(atomId));
     }
   }
   copyPlacementState(placementState, bestPlacement.placementState);
+  insertNewlyPlacedAtomsIntoPlacementContext(layoutGraph, placementContext, coords, newlyPlacedAtomIds);
   if (useLocalHypervalentBatch) {
     const recursionOrder = [...bestPlacement.assignedPlacements].sort((firstPlacement, secondPlacement) => {
       const firstDescriptor = resolvedChildDescriptors.find(descriptor => descriptor.childAtomId === firstPlacement.childAtomId);

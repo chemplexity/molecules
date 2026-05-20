@@ -241,6 +241,44 @@ function rankRootBlocks(blocks) {
   });
 }
 
+function blockRingSystem(layoutGraph, block) {
+  if (!block || block.ringSystemCount !== 1) {
+    return null;
+  }
+  const blockAtomIds = new Set(block.atomIds);
+  return layoutGraph.ringSystems.find(ringSystem => ringSystem.atomIds.every(atomId => blockAtomIds.has(atomId))) ?? null;
+}
+
+function shouldForceFusedBlockSlice(layoutGraph, block) {
+  if (!block || block.heavyAtomCount > 36) {
+    return false;
+  }
+  const ringSystem = blockRingSystem(layoutGraph, block);
+  if (!ringSystem || (ringSystem.ringIds?.length ?? 0) < 3) {
+    return false;
+  }
+  const ringIdSet = new Set(ringSystem.ringIds);
+  return (layoutGraph.ringConnections ?? []).some(connection => connection.kind === 'fused' && ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId));
+}
+
+function layoutLargeMoleculeBlockSlice(layoutGraph, block, bondLength) {
+  const baseOptions = {
+    mixedOptions: {
+      conservativeAttachmentScoring: true
+    }
+  };
+  if (shouldForceFusedBlockSlice(layoutGraph, block)) {
+    const fusedPlacement = layoutAtomSlice(layoutGraph, block, bondLength, {
+      ...baseOptions,
+      forceFamily: 'fused'
+    });
+    if (fusedPlacement?.supported && (fusedPlacement.coords?.size ?? 0) > 0) {
+      return fusedPlacement;
+    }
+  }
+  return layoutAtomSlice(layoutGraph, block, bondLength, baseOptions);
+}
+
 function buildBlockAdjacency(blocks, cutBonds) {
   const adjacency = new Map(blocks.map(block => [block.id, []]));
   const blockIdByAtomId = new Map();
@@ -804,6 +842,18 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
   };
 }
 
+function initialDensePartitionThreshold(layoutGraph, component, threshold, options) {
+  if (options.partitionThreshold || options.rootBlock || options.disableDensePartitionRetry) {
+    return null;
+  }
+  const componentHeavyAtomCount = countHeavyAtoms(layoutGraph, component.atomIds);
+  const ringSystemCount = countRingSystems(layoutGraph, component.atomIds);
+  if (componentHeavyAtomCount < 160 || ringSystemCount <= threshold.ringSystemCount) {
+    return null;
+  }
+  return densePartitionRetryThreshold(layoutGraph, component, threshold);
+}
+
 /**
  * Returns whether the coarse large-molecule partition should get one denser
  * split retry before late cleanup is asked to fix severe atom overlaps.
@@ -1015,7 +1065,8 @@ function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, chil
  * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, rotationMoveCount: number, rootBlockId: string, rootRetryAttemptCount: number, rootRetryUsed: boolean, densePartitionRetryAttemptCount: number, densePartitionRetryUsed: boolean, bondValidationClasses: Map<string, 'planar'|'bridged'>, cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>}|null} Placement result.
  */
 export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, options = {}) {
-  const threshold = options.partitionThreshold ?? layoutGraph.options.largeMoleculeThreshold;
+  const baseThreshold = options.partitionThreshold ?? layoutGraph.options.largeMoleculeThreshold;
+  const threshold = initialDensePartitionThreshold(layoutGraph, component, baseThreshold, options) ?? baseThreshold;
   const { blocks, cutBonds } = partitionBlocks(layoutGraph, component, threshold);
   if (blocks.length <= 1) {
     return null;
@@ -1024,11 +1075,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   const sliceLayouter =
     options.sliceLayouter ??
     ((innerLayoutGraph, block, innerBondLength) => {
-      return layoutAtomSlice(innerLayoutGraph, block, innerBondLength, {
-        mixedOptions: {
-          conservativeAttachmentScoring: true
-        }
-      });
+      return layoutLargeMoleculeBlockSlice(innerLayoutGraph, block, innerBondLength);
     });
   const blockById = new Map(blocks.map(block => [block.id, block]));
   const blockAdjacency = buildBlockAdjacency(blocks, cutBonds);

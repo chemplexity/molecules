@@ -1959,18 +1959,6 @@ function isBalancedOmittedHydrogenFanCandidate(candidate) {
  * @returns {object|null} Candidate score, or null when rejected.
  */
 function scoreOmittedHydrogenFanCandidate(layoutGraph, coords, descriptor, targetNeighborAtomIds, focusAtomIds, baseState, nudges) {
-  const audit = auditLayout(layoutGraph, coords, { bondLength: baseState.bondLength });
-  if (baseState.audit.ok === true && audit.ok !== true) {
-    return null;
-  }
-  if (
-    audit.severeOverlapCount > baseState.audit.severeOverlapCount ||
-    audit.bondLengthFailureCount > baseState.audit.bondLengthFailureCount ||
-    audit.labelOverlapCount > baseState.audit.labelOverlapCount
-  ) {
-    return null;
-  }
-
   const hiddenHydrogenPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation;
   if (hiddenHydrogenPenalty >= baseState.hiddenHydrogenPenalty - OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT) {
     return null;
@@ -1989,6 +1977,18 @@ function scoreOmittedHydrogenFanCandidate(layoutGraph, coords, descriptor, targe
   }
   const smallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords);
   if (smallRingExteriorPenalty > baseState.smallRingExteriorPenalty + 1e-6) {
+    return null;
+  }
+
+  const audit = auditLayout(layoutGraph, coords, { bondLength: baseState.bondLength });
+  if (baseState.audit.ok === true && audit.ok !== true) {
+    return null;
+  }
+  if (
+    audit.severeOverlapCount > baseState.audit.severeOverlapCount ||
+    audit.bondLengthFailureCount > baseState.audit.bondLengthFailureCount ||
+    audit.labelOverlapCount > baseState.audit.labelOverlapCount
+  ) {
     return null;
   }
 
@@ -2143,6 +2143,7 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
   const visitSeedCoords = (seedCoords, descriptor, targetNeighborAtomIds, focusAtomIds, nudges, visitOptions = {}) => {
     let shouldStop = false;
     const seedScore = scoreOmittedHydrogenFanCandidate(layoutGraph, seedCoords, descriptor, targetNeighborAtomIds, focusAtomIds, baseState, nudges);
+    let seedAcceptedForRefinement = seedScore != null;
     if (seedScore && (!bestCandidate || isBetterAttachedRingCandidate(seedScore, bestCandidate))) {
       bestCandidate = seedScore;
       shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate);
@@ -2159,6 +2160,9 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
     const snappedLeafCoords = snapTerminalCarbonRingLeavesToOutward(layoutGraph, seedCoords);
     if (snappedLeafCoords) {
       const snappedLeafScore = scoreOmittedHydrogenFanCandidate(layoutGraph, snappedLeafCoords, descriptor, targetNeighborAtomIds, focusAtomIds, baseState, nudges + 1);
+      if (snappedLeafScore) {
+        seedAcceptedForRefinement = true;
+      }
       if (snappedLeafScore && (!bestCandidate || isBetterAttachedRingCandidate(snappedLeafScore, bestCandidate))) {
         bestCandidate = snappedLeafScore;
         shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate);
@@ -2174,6 +2178,9 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
 
     for (const compressedLeafCoords of collectOmittedHydrogenFanTerminalLeafCompressionVariants(layoutGraph, seedCoords, descriptor, bondLength, frozenAtomIds)) {
       const compressedLeafScore = scoreOmittedHydrogenFanCandidate(layoutGraph, compressedLeafCoords, descriptor, targetNeighborAtomIds, focusAtomIds, baseState, nudges + 1);
+      if (compressedLeafScore) {
+        seedAcceptedForRefinement = true;
+      }
       if (compressedLeafScore && (!bestCandidate || isBetterAttachedRingCandidate(compressedLeafScore, bestCandidate))) {
         bestCandidate = compressedLeafScore;
         shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate);
@@ -2187,6 +2194,9 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
     }
 
     if (visitOptions.allowRefinement === false) {
+      return false;
+    }
+    if (!seedAcceptedForRefinement) {
       return false;
     }
 

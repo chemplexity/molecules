@@ -30,6 +30,7 @@ import {
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeRemainingBranches, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
 import {
+  buildAtomGrid,
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   collectReadableRingSubstituentChildren,
@@ -4772,7 +4773,7 @@ function shouldTryBridgedRingSystemRescue(ringSystem, templateId, audit) {
  * @param {string|null} [templateId] - Matched template ID.
  * @returns {{family: string, validationClass: 'planar'|'bridged', coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}|null} Ring-system layout result.
  */
-function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null) {
+function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId = null) {
   const family = classifyRingSystemFamily(layoutGraph, ringSystem);
   const { rings, connections, ringAdj, ringConnectionByPair } = ringSystemAdjacency(layoutGraph, ringSystem);
   if (family === 'isolated-ring') {
@@ -4913,6 +4914,33 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
     return wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }), templateId);
   }
   return null;
+}
+
+function cloneRingSystemLayoutResult(result) {
+  if (!result) {
+    return null;
+  }
+  return {
+    ...result,
+    coords: result.coords instanceof Map ? new Map(result.coords) : result.coords,
+    ringCenters: result.ringCenters instanceof Map ? new Map(result.ringCenters) : result.ringCenters
+  };
+}
+
+function layoutRingSystemCacheKey(ringSystem, bondLength, templateId = null) {
+  return `${ringSystem.id}\u0001${bondLength}\u0001${templateId ?? ''}`;
+}
+
+function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null) {
+  const cacheKey = layoutRingSystemCacheKey(ringSystem, bondLength, templateId);
+  const cache = layoutGraph._mixedRingSystemLayoutCache ?? (layoutGraph._mixedRingSystemLayoutCache = new Map());
+  const cachedResult = cache.get(cacheKey);
+  if (cachedResult !== undefined) {
+    return cloneRingSystemLayoutResult(cachedResult);
+  }
+  const result = computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId);
+  cache.set(cacheKey, cloneRingSystemLayoutResult(result));
+  return cloneRingSystemLayoutResult(result);
 }
 
 /**
@@ -11075,6 +11103,7 @@ const ATTACHED_BLOCK_FULL_SCORE_BUDGETS = Object.freeze({
   small: 512
 });
 const ATTACHED_BLOCK_SCORE_CACHE_MAX_ENTRIES = 4096;
+const ATTACHED_BLOCK_CORE_SCORE_CONTEXT_CACHE_MAX_ENTRIES = 256;
 
 function mixedAttachedBlockScoringTelemetry(layoutGraph) {
   return (layoutGraph._mixedAttachedBlockScoringTelemetry ??= {
@@ -15243,13 +15272,28 @@ function ensureAttachedBlockPresentationState(score) {
 }
 
 function createAttachedBlockCoreScoreContext(layoutGraph, baseCoords, bondLength) {
-  return {
+  const baseSignature = candidateCoordSignature(baseCoords);
+  const cacheKey = `${bondLength}\u0001${baseSignature}`;
+  const cache = layoutGraph._mixedAttachedBlockCoreScoreContextCache ?? (layoutGraph._mixedAttachedBlockCoreScoreContextCache = new Map());
+  const cachedContext = cache.get(cacheKey);
+  if (cachedContext) {
+    return cachedContext;
+  }
+  const baseAtomGrid = buildAtomGrid(layoutGraph, baseCoords, bondLength);
+  const context = {
     layoutGraph,
     baseCoords,
+    baseSignature,
     bondLength,
-    baseSevereOverlaps: findSevereOverlaps(layoutGraph, baseCoords, bondLength),
+    baseAtomGrid,
+    baseSevereOverlaps: findSevereOverlaps(layoutGraph, baseCoords, bondLength, { atomGrid: baseAtomGrid }),
     severeOverlapCountByMovedSignature: new Map()
   };
+  if (cache.size >= ATTACHED_BLOCK_CORE_SCORE_CONTEXT_CACHE_MAX_ENTRIES) {
+    cache.delete(cache.keys().next().value);
+  }
+  cache.set(cacheKey, context);
+  return context;
 }
 
 function attachedBlockCoreScoreContextMatches(context, layoutGraph, baseCoords, bondLength) {
@@ -15282,7 +15326,9 @@ function measureAttachedBlockSevereOverlapCount(layoutGraph, baseCoords, candida
 
   const changedAtomIdSet = new Set(changedAtomIds);
   const baseMovedOverlapCount = countBaseSevereOverlapsTouchingAtoms(coreScoreContext.baseSevereOverlaps, changedAtomIdSet);
-  const candidateMovedOverlapCount = countSevereOverlapsWithOverrides(layoutGraph, baseCoords, changedAtomPositions, bondLength).count;
+  const candidateMovedOverlapCount = countSevereOverlapsWithOverrides(layoutGraph, baseCoords, changedAtomPositions, bondLength, {
+    atomGrid: coreScoreContext.baseAtomGrid ?? null
+  }).count;
   const overlapCount = Math.max(0, coreScoreContext.baseSevereOverlaps.length - baseMovedOverlapCount + candidateMovedOverlapCount);
   coreScoreContext.severeOverlapCountByMovedSignature.set(movedSignature, overlapCount);
   return overlapCount;
@@ -15414,8 +15460,36 @@ function shouldPrioritizePhosphorusAdjacentAttachedBlockCrossings(layoutGraph, c
   return false;
 }
 
-function shouldSkipAttachedBlockBranchScoring(coords, primaryNonRingAtomIds) {
-  return primaryNonRingAtomIds.size > 30 || mixedAttachedBlockWorkload(coords, primaryNonRingAtomIds) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT + 20;
+function shouldSkipAttachedBlockBranchScoring(layoutGraph, coords, primaryNonRingAtomIds) {
+  const heavyAtomCount = layoutGraph?.traits?.heavyAtomCount ?? layoutGraph?.atoms?.size ?? 0;
+  const ringSystemCount = layoutGraph?.ringSystems?.length ?? 0;
+  const bridgedRingConnectionCount = layoutGraph?.traits?.bridgedRingConnectionCount ?? 0;
+  const fusedRingConnectionCount = layoutGraph?.traits?.fusedRingConnectionCount ?? 0;
+  const spiroRingConnectionCount = layoutGraph?.traits?.spiroRingConnectionCount ?? 0;
+  const compactBridgedMultiSystem =
+    heavyAtomCount >= 40 &&
+    ringSystemCount >= 3 &&
+    bridgedRingConnectionCount >= 6;
+  const compactIsolatedMultiRingSystem =
+    heavyAtomCount >= 38 &&
+    primaryNonRingAtomIds.size >= 14 &&
+    ringSystemCount >= 3 &&
+    bridgedRingConnectionCount === 0 &&
+    fusedRingConnectionCount === 0 &&
+    spiroRingConnectionCount === 0;
+  const compactHypervalentBridgedMultiSystem =
+    heavyAtomCount >= 45 &&
+    primaryNonRingAtomIds.size >= 8 &&
+    ringSystemCount >= 4 &&
+    bridgedRingConnectionCount >= 1 &&
+    layoutGraph?.traits?.containsOrthogonalHypervalentCenter === true;
+  return (
+    primaryNonRingAtomIds.size > 30 ||
+    mixedAttachedBlockWorkload(coords, primaryNonRingAtomIds) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT + 20 ||
+    compactBridgedMultiSystem ||
+    compactIsolatedMultiRingSystem ||
+    compactHypervalentBridgedMultiSystem
+  );
 }
 
 /**
@@ -15606,7 +15680,7 @@ function cloneAttachedBlockScore(score) {
   };
 }
 
-function attachedBlockFullScoreCacheKey(coords, primaryNonRingAtomIds, placedAtomIds, transformedCoords, candidateMeta, branchConstraints, options = {}) {
+function attachedBlockFullScoreCacheKey(layoutGraph, coords, primaryNonRingAtomIds, placedAtomIds, transformedCoords, candidateMeta, branchConstraints, options = {}) {
   return [
     candidateCoordSignature(coords),
     candidateCoordSignature(transformedCoords),
@@ -15614,7 +15688,7 @@ function attachedBlockFullScoreCacheKey(coords, primaryNonRingAtomIds, placedAto
     atomIdIterableSignature(placedAtomIds),
     candidateMetaValueSignature(candidateMeta ?? null),
     candidateMetaValueSignature(branchConstraints ?? null),
-    shouldSkipAttachedBlockBranchScoring(coords, primaryNonRingAtomIds) ? 'skip-branches' : 'score-branches',
+    shouldSkipAttachedBlockBranchScoring(layoutGraph, coords, primaryNonRingAtomIds) ? 'skip-branches' : 'score-branches',
     options.includeCandidateCoords === true ? 'include-coords' : 'score-only'
   ].join('\u0001');
 }
@@ -15665,7 +15739,7 @@ function scoreAttachedBlockOrientation(
   options = {}
 ) {
   const scoreCache = options.includeCandidateCoords === true ? null : (options.scoreCache ?? null);
-  const scoreCacheKey = scoreCache ? attachedBlockFullScoreCacheKey(coords, primaryNonRingAtomIds, placedAtomIds, transformedCoords, candidateMeta, branchConstraints, options) : null;
+  const scoreCacheKey = scoreCache ? attachedBlockFullScoreCacheKey(layoutGraph, coords, primaryNonRingAtomIds, placedAtomIds, transformedCoords, candidateMeta, branchConstraints, options) : null;
   const cachedScore = scoreCacheKey ? getCachedAttachedBlockFullScore(layoutGraph, scoreCache, scoreCacheKey) : null;
   if (cachedScore) {
     return cachedScore;
@@ -15684,7 +15758,7 @@ function scoreAttachedBlockOrientation(
     candidateSeedAtomIds.add(atomId);
   }
 
-  if (!shouldSkipAttachedBlockBranchScoring(coords, primaryNonRingAtomIds)) {
+  if (!shouldSkipAttachedBlockBranchScoring(layoutGraph, coords, primaryNonRingAtomIds)) {
     placeRemainingBranches(
       adjacency,
       canonicalAtomRank,
@@ -16126,9 +16200,10 @@ function pickBestAttachedBlockOrientation(candidates, adjacency, canonicalAtomRa
       candidate._prescore ?? preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null, { coreScoreContext: getCoreScoreContext() })
   }));
   const placedAtomIdSet = placedAtomIds instanceof Set ? placedAtomIds : new Set(placedAtomIds);
+  const skipAttachedBlockBranchScoring = shouldSkipAttachedBlockBranchScoring(layoutGraph, coords, primaryNonRingAtomIds);
   const requiresFullExactVisibleTrigonalScoring =
     options.forceFullScoring === true ||
-    scoredCandidates.some(candidate => directAttachmentCandidateNeedsBranchScoring(candidate, primaryNonRingAtomIds, placedAtomIdSet)) ||
+    (!skipAttachedBlockBranchScoring && scoredCandidates.some(candidate => directAttachmentCandidateNeedsBranchScoring(candidate, primaryNonRingAtomIds, placedAtomIdSet))) ||
     hasPendingExactVisibleTrigonalContinuation(layoutGraph, coords, primaryNonRingAtomIds) ||
     scoredCandidates.some(candidate => (candidate._prescore?.exactTerminalMultipleSlotPenalty ?? 0) > IMPROVEMENT_EPSILON) ||
     scoredCandidates.some(candidate => (candidate._prescore?.projectedTetrahedralParentPenalty ?? 0) > IMPROVEMENT_EPSILON) ||
@@ -16146,6 +16221,17 @@ function pickBestAttachedBlockOrientation(candidates, adjacency, canonicalAtomRa
       return bestPrescoredCandidate._prescore.readability.failingSubstituentCount === 0 && bestPrescoredCandidate._prescore.presentationPenalty <= IMPROVEMENT_EPSILON;
     })();
   if (canAcceptExactChildRootPrescore) {
+    return {
+      transformedCoords: bestPrescoredCandidate.transformedCoords,
+      score: bestPrescoredCandidate._prescore,
+      meta: bestPrescoredCandidate.meta ?? null
+    };
+  }
+  if (
+    skipAttachedBlockBranchScoring &&
+    options.disablePrescoreAcceptance !== true &&
+    attachedBlockPrimaryScoreIsPerfect(bestPrescoredCandidate?._prescore ?? null)
+  ) {
     return {
       transformedCoords: bestPrescoredCandidate.transformedCoords,
       score: bestPrescoredCandidate._prescore,
@@ -16176,9 +16262,10 @@ function pickBestAttachedBlockOrientation(candidates, adjacency, canonicalAtomRa
   }
 
   const hasMultiplePerfectPrescoredCandidates = scoredCandidates.filter(candidate => attachedBlockPrimaryScoreIsPerfect(candidate._prescore ?? null)).length > 1;
+  const shouldScoreAllPerfectPrescoredCandidates = hasMultiplePerfectPrescoredCandidates && !skipAttachedBlockBranchScoring;
   const finalists = scoredCandidates.slice(
     0,
-    options.disableBeamReduction === true || hasMultiplePerfectPrescoredCandidates || requiresFullExactVisibleTrigonalScoring
+    options.disableBeamReduction === true || shouldScoreAllPerfectPrescoredCandidates || requiresFullExactVisibleTrigonalScoring
       ? scoredCandidates.length
       : attachedBlockFullScoringBeamLimit(coords, primaryNonRingAtomIds, scoredCandidates.length, requiresFullExactVisibleTrigonalScoring)
   );

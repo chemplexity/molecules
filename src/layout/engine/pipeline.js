@@ -82,8 +82,10 @@ const CLEANUP_STAGE_BUDGET_LIMITS = Object.freeze({
 });
 const LARGE_DIRTY_FALLBACK_FAST_PATH_MIN_HEAVY_ATOMS = 500;
 const LARGE_DIRTY_FALLBACK_FAST_PATH_MIN_RING_SYSTEMS = 20;
-const LARGE_CLEAN_FINAL_RETOUCH_FAST_PATH_MIN_HEAVY_ATOMS = 650;
+const LARGE_CLEAN_FINAL_RETOUCH_FAST_PATH_MIN_HEAVY_ATOMS = 500;
 const LARGE_DIRTY_THREE_HEAVY_RETOUCH_SKIP_MIN_HEAVY_ATOMS = 280;
+const CLEAN_LARGE_MACROCYCLE_RING_FAN_SKIP_MIN_HEAVY_ATOMS = 170;
+const CLEAN_LARGE_MACROCYCLE_RING_FAN_SKIP_MIN_RINGS = 8;
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -2496,7 +2498,6 @@ function shouldAttemptCleanLargeMoleculeFinalRetouchFastPath(layoutGraph, cleanu
     familySummary.primaryFamily === 'large-molecule' &&
     heavyAtomCount >= LARGE_CLEAN_FINAL_RETOUCH_FAST_PATH_MIN_HEAVY_ATOMS &&
     cleanup?.finalStageName === 'selectedGeometryCheckpoint' &&
-    cleanup?.finalStageStereo != null &&
     hasCleanPlacementFastPathAudit(audit) &&
     audit?.fallback?.mode == null
   );
@@ -2505,6 +2506,24 @@ function shouldAttemptCleanLargeMoleculeFinalRetouchFastPath(layoutGraph, cleanu
 function shouldConsiderSkippingDirtyLargeMoleculeThreeHeavyRetouch(layoutGraph, familySummary) {
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
   return familySummary.primaryFamily === 'large-molecule' && heavyAtomCount >= LARGE_DIRTY_THREE_HEAVY_RETOUCH_SKIP_MIN_HEAVY_ATOMS;
+}
+
+function shouldSkipCleanLargeMacrocycleRingFanPolish(layoutGraph, familySummary, audit) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  const ringCount = layoutGraph.traits?.ringCount ?? layoutGraph.rings?.length ?? 0;
+  return (
+    familySummary.primaryFamily === 'macrocycle' &&
+    familySummary.mixedMode === true &&
+    heavyAtomCount >= CLEAN_LARGE_MACROCYCLE_RING_FAN_SKIP_MIN_HEAVY_ATOMS &&
+    ringCount >= CLEAN_LARGE_MACROCYCLE_RING_FAN_SKIP_MIN_RINGS &&
+    audit != null &&
+    (audit.severeOverlapCount ?? 0) === 0 &&
+    (audit.labelOverlapCount ?? 0) === 0 &&
+    (audit.bondLengthFailureCount ?? 0) === 0 &&
+    (audit.collapsedMacrocycleCount ?? 0) === 0 &&
+    (audit.stereoContradiction ?? false) === false &&
+    (audit.visibleHeavyBondCrossingCount ?? 0) <= 1
+  );
 }
 
 /**
@@ -3130,9 +3149,17 @@ export function runPipeline(molecule, options = {}) {
           bondValidationClasses: placement.bondValidationClasses
         })
       : null;
+  const macrocycleRingFanHasHardResiduals =
+    (macrocycleRingFanAudit?.severeOverlapCount ?? 0) > 0 && (macrocycleRingFanAudit?.visibleHeavyBondCrossingCount ?? 0) > 0;
+  const shouldSkipHardDirtyLargeMacrocycleRingFanPolish =
+    macrocycleRingFanHasHardResiduals && (layoutGraph.traits.heavyAtomCount ?? 0) >= 150 && (layoutGraph.traits.ringCount ?? 0) >= 8;
+  const shouldSkipCleanLargeMacrocycleRingFanPolishForTimeout =
+    shouldSkipCleanLargeMacrocycleRingFanPolish(layoutGraph, familySummary, macrocycleRingFanAudit);
   const shouldRunMacrocycleRingFanAngleRetouch =
     familySummary.primaryFamily === 'macrocycle' &&
     familySummary.mixedMode &&
+    !shouldSkipHardDirtyLargeMacrocycleRingFanPolish &&
+    !shouldSkipCleanLargeMacrocycleRingFanPolishForTimeout &&
     (layoutGraph.traits.ringCount ?? 0) >= 6 &&
     (((layoutGraph.traits.heavyAtomCount ?? 0) >= 100 && (layoutGraph.traits.ringCount ?? 0) >= 8) || (macrocycleRingFanAudit?.severeOverlapCount ?? 0) > 0);
   if (shouldRunMacrocycleRingFanAngleRetouch) {

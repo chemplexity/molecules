@@ -2190,10 +2190,12 @@ function _serializeComponent(mol, sortFn = null) {
   // identical geometry.  Without normalisation, toCanonicalSMILES produces
   // different strings for them, breaking sameMolecule() comparisons.
   //
-  // Fix: for every C=C double bond that has stereo bonds set on both sides,
-  // rewrite the heavy-subgraph bond stereo so that the A-side bond is always
-  // written as '/' in the canonical DFS direction, and the B-side direction
-  // preserves the same/different relationship (which encodes E vs Z).
+  // Strategy (three phases):
+  //   1. Read expected E/Z parity from mol (original bond stereo intact).
+  //   2. Clear ALL bond stereo from heavy — this removes redundant directions
+  //      on ring-closure chain bonds (e.g. c2\O3 → c2O3) and secondary
+  //      substituents that the old per-sp2-atom sweep missed.
+  //   3. Set stereo on exactly one primary substituent bond per sp2 atom.
   //
   // This modifies only the heavy-subgraph bond copies, not the original mol.
   {
@@ -2223,71 +2225,68 @@ function _serializeComponent(mol, sortFn = null) {
       return null;
     };
 
+    // Find the canonical substituent bond on a given sp2 atom.
+    // Bonds are already sorted by canonical rank (see sort above), so the first
+    // non-double-bond is always the canonical choice regardless of whether it
+    // already carries a stereo property (stereo is synthesised from getEZStereo).
+    const findSubstituentBond = (sp2Id, dblBondId) => {
+      for (const bId of heavy.atoms.get(sp2Id)?.bonds ?? []) {
+        if (bId === dblBondId) {
+          continue;
+        }
+        const b = heavy.bonds.get(bId);
+        if (b) {
+          return { bId, b };
+        }
+      }
+      return null;
+    };
+
+    // Phase 1: collect expected parity from mol before any modification.
+    const ezEntries = [];
     for (const dblBond of heavy.bonds.values()) {
       if ((dblBond.properties.order ?? 1) !== 2) {
         continue;
       }
-      const [idA, idB] = dblBond.atoms;
-
-      const findStereoInHeavy = sp2Id => {
-        for (const bId of heavy.atoms.get(sp2Id)?.bonds ?? []) {
-          if (bId === dblBond.id) {
-            continue;
-          }
-          const b = heavy.bonds.get(bId);
-          if (b?.properties.stereo) {
-            return { bId, b };
-          }
-        }
-        return null;
-      };
-
-      const sAInfo = findStereoInHeavy(idA);
-      const sBInfo = findStereoInHeavy(idB);
-      if (!sAInfo || !sBInfo) {
-        continue;
-      }
-
-      const { bId: sAId, b: sA } = sAInfo;
-      const { bId: sBId, b: sB } = sBInfo;
-      const fromA = getFromAtomId(sAId);
-      const fromB = getFromAtomId(sBId);
-      if (fromA === null || fromB === null) {
-        continue;
-      }
-
-      // Get expected parity from the original molecule BEFORE any modifications.
-      // mol.getEZStereo uses original stereo (unmodified); heavy still matches
-      // mol here since we haven't touched the bonds yet.
       const expectedParity = mol.getEZStereo(dblBond.id);
       if (!expectedParity) {
         continue;
       }
+      const [idA, idB] = dblBond.atoms;
+      // Use Morgan ranks to pick a canonical A-side regardless of bond atom
+      // insertion order (which differs between SMILES-parsed and InChI-parsed).
+      const rankA = sortFn ? (sortFn(idA) ?? 0) : 0;
+      const rankB = sortFn ? (sortFn(idB) ?? 0) : 0;
+      const [idCanoA, idCanoB] = rankA <= rankB ? [idA, idB] : [idB, idA];
 
-      // Clear stereo on secondary bonds (all stereo bonds at each sp2 atom
-      // except the primary one).  This ensures a single stereo bond per side,
-      // which gives consistent CIP correction in getEZStereo for both parsed
-      // and InChI-reconstructed molecules.
-      for (const [sp2Id, primaryId] of [
-        [idA, sAId],
-        [idB, sBId]
-      ]) {
-        for (const bId of heavy.atoms.get(sp2Id)?.bonds ?? []) {
-          if (bId !== dblBond.id && bId !== primaryId) {
-            const b = heavy.bonds.get(bId);
-            if (b?.properties.stereo) {
-              b.properties.stereo = null;
-            }
-          }
-        }
+      const sAInfo = findSubstituentBond(idCanoA, dblBond.id);
+      const sBInfo = findSubstituentBond(idCanoB, dblBond.id);
+      if (!sAInfo || !sBInfo) {
+        continue;
       }
+      const fromA = getFromAtomId(sAInfo.bId);
+      const fromB = getFromAtomId(sBInfo.bId);
+      if (fromA === null || fromB === null) {
+        continue;
+      }
+      ezEntries.push({ dblBond, sA: sAInfo.b, sB: sBInfo.b, expectedParity, fromA, fromB });
+    }
 
+    // Phase 2: clear ALL bond stereo from heavy so no redundant directions remain
+    // (including bonds in ring-closure chains adjacent to sp2 atoms).
+    for (const bond of heavy.bonds.values()) {
+      if (bond.properties.stereo) {
+        bond.properties.stereo = null;
+      }
+    }
+
+    // Phase 3: set exactly one primary stereo bond per sp2 atom.
+    for (const { dblBond, sA, sB, expectedParity, fromA, fromB } of ezEntries) {
       // Canonical form: A-side always written as '/'.
       sA.properties.stereo = sA.atoms[0] === fromA ? '/' : '\\';
 
       // Determine B-side by trial: try '/' first; if heavy.getEZStereo (after
-      // the secondary-bond clearing and A-side normalisation) does not match
-      // the expected parity, use '\' instead.
+      // A-side is set) does not match the expected parity, use '\' instead.
       sB.properties.stereo = sB.atoms[0] === fromB ? '/' : '\\';
       if (heavy.getEZStereo(dblBond.id) !== expectedParity) {
         sB.properties.stereo = sB.atoms[0] === fromB ? '\\' : '/';
@@ -2443,6 +2442,66 @@ export function toSMILES(molecule) {
 }
 
 /**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {void}
+ */
+function _normalizeNitroGroup(mol) {
+  // Normalize hypervalent N(=O)=O (neutral nitro) to [N+]([O-])=O.
+  // InChI always uses the charged form; normalizing here makes toCanonicalSMILES
+  // produce the same string for both SMILES-parsed and InChI-parsed molecules.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0) { continue; }
+    const dblOs = [];
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond || (bond.properties.order ?? 1) !== 2) { continue; }
+      const o = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!o || o.name !== 'O' || (o.properties.charge ?? 0) !== 0) { continue; }
+      const oHeavyDegree = o.bonds.filter(bid => {
+        const b = mol.bonds.get(bid);
+        return b && mol.atoms.get(b.getOtherAtom(o.id))?.name !== 'H';
+      }).length;
+      if (oHeavyDegree === 1) { dblOs.push({ bond, o }); }
+    }
+    if (dblOs.length < 2) { continue; }
+    atom.setCharge(1);
+    dblOs[dblOs.length - 1].bond.properties.order = 1;
+    dblOs[dblOs.length - 1].o.setCharge(-1);
+  }
+}
+
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {void}
+ */
+function _normalizeAmidiniumResonance(mol) {
+  // Normalize [NH+]=C-NH2 amidinium to [NH2+]=C-NH.
+  // Both are valid resonance forms; InChI always produces the [NH2+] form.
+  // Normalizing here ensures toCanonicalSMILES returns the same string
+  // regardless of which resonance form was stored.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'C') { continue; }
+    let iminiumBond = null;
+    let amineBond = null;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) { continue; }
+      const n = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!n || n.name !== 'N') { continue; }
+      const order = bond.properties.order ?? 1;
+      const h = n.getHydrogenNeighbors(mol).length;
+      const charge = n.properties.charge ?? 0;
+      if (order === 2 && h === 1 && charge === 1) { iminiumBond = { bond, n }; } else if (order === 1 && h === 2 && charge === 0) { amineBond = { bond, n }; }
+    }
+    if (!iminiumBond || !amineBond) { continue; }
+    iminiumBond.bond.properties.order = 1;
+    iminiumBond.n.setCharge(0);
+    amineBond.bond.properties.order = 2;
+    amineBond.n.setCharge(1);
+  }
+}
+
+/**
  * Serializes a {@link Molecule} to a **canonical** SMILES string.
  *
  * Atom traversal order is determined by the Morgan extended-connectivity
@@ -2464,6 +2523,15 @@ export function toCanonicalSMILES(molecule) {
     return '';
   }
   const parts = molecule.getComponents().map(comp => {
+    _normalizeNitroGroup(comp);
+    _normalizeAmidiniumResonance(comp);
+    // Always call perceiveAromaticity so that both pure-Kekulé molecules (from
+    // parseINCHI) and mixed Kekulé/aromatic molecules (from parseSMILES) end up
+    // with the same aromatic bond set.  Consistent aromaticity ensures that
+    // morganRanks produces the same canonical ordering for both representations
+    // of the same molecule, which is required for correct E/Z stereo assignment
+    // and canonical SMILES string equality.
+    perceiveAromaticity(comp);
     const ranks = morganRanks(comp);
     return _serializeComponent(comp, id => ranks.get(id) ?? 0);
   });

@@ -24,6 +24,10 @@ function componentContainsMacrocycle(macrocycleRings, component) {
   return macrocycleRings.some(ring => ring.atomIds.every(atomId => componentAtomIds.has(atomId)));
 }
 
+function shouldSkipLargeMacrocycleSlicePlacement(component, containsMacrocycle, containsMetal) {
+  return containsMacrocycle && !containsMetal && (component.heavyAtomCount ?? component.atomIds?.length ?? 0) >= 220;
+}
+
 /**
  * Returns whether a component contains a transition-metal atom.
  * @param {object} layoutGraph - Layout graph shell.
@@ -504,12 +508,17 @@ function rescueLargeComponentSlicePlacement(layoutGraph, component, familyPlacem
   if (!familyPlacement?.supported || familyPlacement.family !== 'large-molecule') {
     return familyPlacement;
   }
-  if (!(componentContainsMacrocycle(macrocycleRings, component) || componentContainsMetal(layoutGraph, component))) {
+  const containsMacrocycle = componentContainsMacrocycle(macrocycleRings, component);
+  const containsMetal = componentContainsMetal(layoutGraph, component);
+  if (!(containsMacrocycle || containsMetal)) {
+    return familyPlacement;
+  }
+  if (shouldSkipLargeMacrocycleSlicePlacement(component, containsMacrocycle, containsMetal)) {
     return familyPlacement;
   }
 
   let slicePlacement = withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings);
-  if (componentContainsMetal(layoutGraph, component)) {
+  if (containsMetal) {
     slicePlacement = rescueMixedMetalRingPlacement(layoutGraph, component, slicePlacement, macrocycleRings);
   }
 
@@ -527,8 +536,11 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
   if (isLargeComponent(layoutGraph, component)) {
     const containsMacrocycle = componentContainsMacrocycle(macrocycleRings, component);
     const containsMetal = componentContainsMetal(layoutGraph, component);
+    const skipSlicePlacement = shouldSkipLargeMacrocycleSlicePlacement(component, containsMacrocycle, containsMetal);
     let slicePlacement =
-      containsMacrocycle || containsMetal ? withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings) : null;
+      (containsMacrocycle || containsMetal) && !skipSlicePlacement
+        ? withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings)
+        : null;
     if (slicePlacement && containsMetal) {
       slicePlacement = rescueMixedMetalRingPlacement(layoutGraph, component, slicePlacement, macrocycleRings);
     }

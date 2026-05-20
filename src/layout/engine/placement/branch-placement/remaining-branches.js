@@ -57,6 +57,7 @@ const RING_BRANCH_BOND_CROSSING_RESCUE_LIMIT = Math.PI / 2;
 const RING_BRANCH_BOND_CROSSING_RESCUE_CLEARANCE_FACTOR = 0.68;
 const RING_BRANCH_BOND_CROSSING_RESCUE_MAX_SUBTREE = 12;
 const BRIDGED_RING_ANCHOR_LOOKAHEAD_MAX_ANGLES = 4;
+const BRANCH_PLACEMENT_ATOM_GRID_MIN_COORDS = 16;
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
@@ -456,7 +457,7 @@ function shouldBatchSmallRingExteriorDeferredLeaves(layoutGraph, anchorAtomId, d
 }
 
 function buildBranchPlacementAtomGrid(layoutGraph, coords, bondLength) {
-  if (!(bondLength > 0) || coords.size < 160) {
+  if (!(bondLength > 0) || coords.size < BRANCH_PLACEMENT_ATOM_GRID_MIN_COORDS) {
     return null;
   }
   const atomGrid = new AtomGrid(bondLength);
@@ -485,7 +486,7 @@ function ensureBranchPlacementContext(layoutGraph, coords, bondLength, placement
     resolvedContext.bondLength !== bondLength ||
     !resolvedContext.placementState ||
     resolvedContext.needsResync === true ||
-    !!resolvedContext.atomGrid !== (bondLength > 0 && coords.size >= 160)
+    !!resolvedContext.atomGrid !== (bondLength > 0 && coords.size >= BRANCH_PLACEMENT_ATOM_GRID_MIN_COORDS)
   ) {
     return resetBranchPlacementContext(resolvedContext, layoutGraph, coords, bondLength);
   }

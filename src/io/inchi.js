@@ -2139,6 +2139,15 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
 
+      // Only swap when the internal N is over-saturated (its double bond exceeds
+      // its neutral valence of 3), meaning the greedy loop placed the double bond
+      // on the wrong N.  When the internal N has exactly valence 3 (0 H, double
+      // bond, one other bond), the placement is already correct and swapping would
+      // produce the wrong tautomeric form.
+      if (internalNitrogen.getValence(mol) <= 3) {
+        continue;
+      }
+
       const terminalHydrogen = terminalNitrogen.getHydrogenNeighbors(mol)[0];
       if (!terminalHydrogen) {
         continue;
@@ -2166,6 +2175,12 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       if (!atom || atom.name !== 'C' || atom.properties.aromatic) {
         continue;
       }
+      const cBO = atom.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
+      if (cBO >= 4) {
+        continue;
+      }
+      // Collect all eligible C-N bonds for this carbon.
+      const eligible = [];
       for (const bondId of atom.bonds) {
         const bond = mol.bonds.get(bondId);
         if (!bond || bond.properties.order !== 1 || bond.properties.aromatic) {
@@ -2179,17 +2194,79 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         if (n.getHydrogenNeighbors(mol).length === 0) {
           continue;
         }
-        // Promoting C-N to a double bond must not over-saturate either atom.
-        const cBO = atom.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
         const nBO = n.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
-        if (cBO >= 4 || nBO >= 4) {
+        if (nBO >= 4) {
           continue;
         }
-        bond.properties.order = 2;
-        n.setCharge(1);
-        return;
+        eligible.push({ bond, nId, n });
+      }
+      if (eligible.length === 0) {
+        continue;
+      }
+      // When multiple N bonds are eligible (amidinium/guanidinium pattern), prefer
+      // the N with the highest InChI formula index (numeric suffix of its atom ID,
+      // e.g. "N2" > "N1").  This corresponds to the N that appears later in the
+      // /c chain, which is the one InChI assigns the higher canonical number and
+      // where it places the charge in the tautomeric encoding.
+      const nIdRank = id => parseInt(id.replace(/\D+/g, ''), 10) || 0;
+      let chosen = eligible[0];
+      for (let i = 1; i < eligible.length; i++) {
+        const h_i = eligible[i].n.getHydrogenNeighbors(mol).length;
+        const h_chosen = chosen.n.getHydrogenNeighbors(mol).length;
+        if (h_i > h_chosen || (h_i === h_chosen && nIdRank(eligible[i].nId) > nIdRank(chosen.nId))) {
+          chosen = eligible[i];
+        }
+      }
+      chosen.bond.properties.order = 2;
+      chosen.n.setCharge(1);
+      return;
+    }
+  }
+
+  // When inferBondOrders places C=N on a terminal 1H nitrogen (remaining=1) and
+  // a terminal 2H nitrogen (remaining=0) is left uncharged, but the /q layer
+  // requires net +1, the 2H nitrogen should be [NH2+].  This occurs in
+  // guanidinium groups in peptides where the /h layer locks the 2H N before
+  // inferBondOrders runs.  Among all matching guanidinium Cs, choose the one
+  // whose terminal 2H N has the highest InChI formula index — InChI canonical
+  // numbering consistently places the charged tautomer position at a higher index.
+  function fixGuanidiniumCharge(mol) {
+    const targetCharge = componentChargeTargets.reduce((s, c) => s + c, 0);
+    if (targetCharge === 0) return;
+    const currentCharge = [...mol.atoms.values()].reduce((s, a) => s + (a.properties.charge ?? 0), 0);
+    if (currentCharge === targetCharge) return;
+    const nIdRank = id => parseInt(id.replace(/\D+/g, ''), 10) || 0;
+    let bestN = null;
+    let bestRank = -1;
+    for (const atomId of heavyAtomIds) {
+      const atom = mol.atoms.get(atomId);
+      if (!atom || atom.name !== 'C' || atom.properties.aromatic) continue;
+      const cBO = atom.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
+      if (cBO !== 4) continue;
+      const nBonds = atom.bonds
+        .map(bid => mol.bonds.get(bid))
+        .filter(Boolean)
+        .filter(bond => mol.atoms.get(bond.getOtherAtom(atom.id))?.name === 'N');
+      if (nBonds.length < 3) continue;
+      const hasDoubleBondTerminalN = nBonds.some(bond => {
+        if ((bond.properties.order ?? 1) !== 2) return false;
+        const n = mol.atoms.get(bond.getOtherAtom(atom.id));
+        return n && n.getHeavyNeighbors(mol).length === 1 && (n.properties.charge ?? 0) === 0;
+      });
+      if (!hasDoubleBondTerminalN) continue;
+      for (const bond of nBonds) {
+        if ((bond.properties.order ?? 1) !== 1) continue;
+        const n = mol.atoms.get(bond.getOtherAtom(atom.id));
+        if (!n || n.getHeavyNeighbors(mol).length !== 1 || (n.properties.charge ?? 0) !== 0) continue;
+        if (n.getHydrogenNeighbors(mol).length < 2) continue;
+        const rank = nIdRank(n.id);
+        if (rank > bestRank) {
+          bestRank = rank;
+          bestN = n;
+        }
       }
     }
+    if (bestN) bestN.setCharge(1);
   }
 
   // When a carbon bearing -1 formal charge is adjacent (directly or via one C)
@@ -2296,6 +2373,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       assignComponentFormalCharges(mol);
       fixIminiumCharge(mol);
       assignComponentFormalCharges(mol);
+      fixGuanidiniumCharge(mol);
       fixEnolateCharge(mol);
       fixDelocalisedChargedRings(mol);
     } else {
