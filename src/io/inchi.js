@@ -707,12 +707,15 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
           pi += 1; // sp2 atom — contributes 1 π electron
         } else if (rem === 0 && a && a.name !== 'C') {
           // Heteroatom with remaining=0 in an aromatic ring:
-          //   period-2 (N, O) in a 6-membered ring → pyridinium-type → 1π
+          //   period-2 (N, O) in a 6-membered ring with no H → pyridinium-type → 1π
           //     (sp2 lone pair in σ plane; pz contributes 1 electron)
-          //   everything else (period-3+ like S/Se, or any ring size 5) → lone-pair donor → 2π
-          //     (pz lone pair donated to π system: furan O, pyrrole N, thiophene S, …)
+          //   N-H in a 6-ring (rem=0 from H) or period-3+ (S/Se) or 5-ring → lone-pair donor → 2π
           const aEl = elements[a.name];
-          pi += (aEl && aEl.period === 2 && ring.length === 6) ? 1 : 2;
+          const hasHBond = a.bonds.some(bId => {
+            const b = mol.bonds.get(bId);
+            return b && !heavySet.has(b.getOtherAtom(id));
+          });
+          pi += (aEl && aEl.period === 2 && ring.length === 6 && !hasHBond) ? 1 : 2;
         } else {
           validRing = false;
           break; // sp3 C or hypervalent atom — not conjugated
@@ -865,11 +868,15 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
         } else if (rem === 0) {
           const a = mol.atoms.get(atomId);
           if (a && a.name !== 'C') {
-            // Period-2 heteroatom (N, O) not in any 5-membered ring of this fused system
-            // → pyridinium-type → 1π. Period-3+ (S, Se) or any atom in a 5-ring → 2π.
+            // Period-2 (N, O) in a 6-ring with no H → pyridinium-type → 1π.
+            // Period-3+, any 5-ring atom, or N/O with H (pyrrole-type) → 2π.
             const aEl = elements[a.name];
             const inFiveMembered = indices.some(ri => ringList[ri].length === 5 && ringList[ri].includes(atomId));
-            pi += (aEl && aEl.period === 2 && !inFiveMembered) ? 1 : 2;
+            const hasHBond = a.bonds.some(bId => {
+              const b = mol.bonds.get(bId);
+              return b && !heavySet.has(b.getOtherAtom(atomId));
+            });
+            pi += (aEl && aEl.period === 2 && !inFiveMembered && !hasHBond) ? 1 : 2;
           } else {
             ok = false;
             break; // sp3 carbon or unexpected valence
@@ -907,9 +914,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
   {
     const isHuckel = n => n >= 2 && (n - 2) % 4 === 0;
     for (const ring of uniqueRings.values()) {
-      // Only 6-membered rings can benefit from phenolate rescue (benzene/pyridine).
-      // 5-membered lactone rings with a C=O blocker should NOT be rescued — they are
-      // not genuinely aromatic despite satisfying the 6π count after C=O demotion.
+      // Only 6-membered rings benefit from phenolate rescue (benzene/pyridine).
       if (ring.length !== 6) {
         continue;
       }
@@ -1068,15 +1073,42 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
     const el = elements[atom.name];
     // Only period-2 C/N (groups 14–15): avoids wrong-neutral-valence atoms (e.g. B).
     if (!el || el.period !== 2 || el.group < 14 || el.group > 15) continue;
-    if (remaining(atomId) <= 0) continue;
-    // Ensure no non-aromatic promotion option exists.
+    if (remaining(atomId) !== 1) continue; // rem=1 only: sp2 unsaturation, not CH2 (rem=2) or CH3 (rem=3)
+    // Scan non-aromatic heavy neighbours, collecting topology info needed for guards.
+    let nonAroHeavyCount = 0;
+    let allNonAroHaveHBond = true;  // false if any non-aro neighbor lacks an H bond
+    let allNonAroExpanded = true;   // false if any non-aro neighbor is NOT a period-3+ expanded-valence atom
     const hasNonAroOption = atom.bonds.some(bId => {
       const b = mol.bonds.get(bId);
       if (!b || aromaticBondIds.has(bId)) return false;
       const otherId = b.getOtherAtom(atomId);
-      return heavySet.has(otherId) && !isAromaticRingAtom(otherId, aromaticBondIds) && remaining(otherId) > 0;
+      if (!heavySet.has(otherId) || isAromaticRingAtom(otherId, aromaticBondIds)) return false;
+      nonAroHeavyCount++;
+      const remOther = remaining(otherId);
+      const otherAtomObj = mol.atoms.get(otherId);
+      const otherEl = otherAtomObj ? elements[otherAtomObj.name] : null;
+      // "Expanded valence": period-3+ atom (S, P, …) whose bond count exceeds its
+      // base valence (e.g. sulfone S has 4 bonds but base=2 → expanded).
+      const otherBase = (otherEl && otherEl.group >= 13 && otherEl.group <= 17) ? 18 - otherEl.group : 0;
+      const isExpanded = otherEl && otherEl.period > 2 && (otherAtomObj?.getValence(mol) ?? 0) > otherBase;
+      if (!isExpanded) allNonAroExpanded = false;
+      const neighborHasH = otherAtomObj?.bonds.some(bId2 => {
+        const b2 = mol.bonds.get(bId2);
+        return b2 && !heavySet.has(b2.getOtherAtom(otherId));
+      });
+      if (!neighborHasH) allNonAroHaveHBond = false;
+      return remOther > 0;
     });
     if (hasNonAroOption) continue;
+    // Guard A (amidinium/guanidinium): atom has 2+ non-aromatic heavy bonds AND every
+    // non-aromatic neighbor carries at least one H bond (amino/imino N with rem=0 from H).
+    // The correct double bond is C=N+, not atom→ring, so skip the ring promotion.
+    if (nonAroHeavyCount >= 2 && allNonAroHaveHBond) continue;
+    // Guard B (sulfonamide-anion N): atom is a period-2 N whose only non-aromatic
+    // heavy neighbours are period-3+ atoms in expanded valence (e.g. sulfone S with
+    // 4 bonds > base-2). The atom will become [N-] via charge assignment; promoting
+    // it to the ring creates a spurious double bond.
+    if (el.group === 15 && nonAroHeavyCount >= 1 && allNonAroExpanded) continue;
     // Find exactly one aromatic neighbour with remaining>0 and promote.
     for (const bId of atom.bonds) {
       const b = mol.bonds.get(bId);

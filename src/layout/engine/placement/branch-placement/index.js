@@ -4,6 +4,7 @@ export {
   chooseAttachmentAngle,
   describeCrossLikeHypervalentCenter,
   measureSmallRingExteriorGapSpreadPenalty,
+  smallRingExteriorTargetAngleSets,
   smallRingExteriorTargetAngles,
   supportsExteriorBranchSpreadRingSize
 } from './angle-selection.js';

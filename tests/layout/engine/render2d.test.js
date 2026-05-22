@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords } from '../../../src/layout/engine/api.js';
-import { renderMolSVG, renderMolSVGFromSMILES } from '../../../src/layout/engine/render2d.js';
+import { BOND_OFF, renderMolSVG, renderMolSVGFromSMILES } from '../../../src/layout/engine/render2d.js';
 
 describe('layout/engine/render2d', () => {
   it('omits lone-pair circles by default', () => {
@@ -55,6 +55,49 @@ describe('layout/engine/render2d', () => {
 
     assert.ok(rendered, 'expected SVG render output');
     assert.match(rendered.svgContent, /<rect /);
+  });
+
+  it('centers terminal carbonyl double-bond strokes around the atom axis', () => {
+    const molecule = parseSMILES('CC(=O)C');
+    const carbonylBond = [...molecule.bonds.values()].find(bond => {
+      if ((bond.properties.order ?? 1) !== 2) {
+        return false;
+      }
+      const [firstAtom, secondAtom] = bond.getAtomObjects(molecule);
+      return firstAtom.name === 'O' || secondAtom.name === 'O';
+    });
+    assert.ok(carbonylBond, 'expected acetone carbonyl bond');
+
+    const [firstAtom, secondAtom] = carbonylBond.getAtomObjects(molecule);
+    const carbonylCarbon = firstAtom.name === 'C' ? firstAtom : secondAtom;
+    const carbonylOxygen = firstAtom.name === 'O' ? firstAtom : secondAtom;
+    const sideCarbons = carbonylCarbon.getNeighbors(molecule).filter(atom => atom.name === 'C');
+    assert.equal(sideCarbons.length, 2);
+
+    const coords = new Map([
+      [carbonylCarbon.id, { x: 0, y: 0 }],
+      [carbonylOxygen.id, { x: 0, y: 1.5 }],
+      [sideCarbons[0].id, { x: -1.299038106, y: -0.75 }],
+      [sideCarbons[1].id, { x: 1.299038106, y: -0.75 }]
+    ]);
+    const rendered = renderMolSVG(molecule, { coords });
+    assert.ok(rendered, 'expected SVG render output');
+
+    const verticalLines = [...rendered.svgContent.matchAll(/<line x1="([0-9.-]+)" y1="([0-9.-]+)" x2="([0-9.-]+)" y2="([0-9.-]+)"/g)]
+      .map(([, x1, y1, x2, y2]) => ({
+        x1: Number.parseFloat(x1),
+        y1: Number.parseFloat(y1),
+        x2: Number.parseFloat(x2),
+        y2: Number.parseFloat(y2)
+      }))
+      .filter(line => Math.abs(line.x1 - line.x2) < 0.05 && Math.abs(line.y2 - line.y1) > 20);
+
+    assert.equal(verticalLines.length, 2, 'expected the terminal carbonyl to render as two vertical strokes');
+    const lineXs = verticalLines.map(line => (line.x1 + line.x2) / 2).sort((a, b) => a - b);
+    const strokeMidpoint = (lineXs[0] + lineXs[1]) / 2;
+    const carbonylAxisX = rendered.cellW / 2;
+    assert.ok(Math.abs(strokeMidpoint - carbonylAxisX) < 0.1, `expected carbonyl stroke pair centered on axis ${carbonylAxisX}, got ${strokeMidpoint}`);
+    assert.ok(Math.abs(lineXs[1] - lineXs[0] - BOND_OFF) < 0.1, `expected centered stroke spacing ${BOND_OFF}, got ${lineXs[1] - lineXs[0]}`);
   });
 
   it('renders rough bridged fallback layouts instead of dropping the molecule entirely', () => {

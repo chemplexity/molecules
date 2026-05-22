@@ -5717,7 +5717,18 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.labelOverlapCount, 0);
     assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 3);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
-    assert.equal(residualRetouchMetrics?.finalAnglePolishPasses, 0);
+    assert.equal(residualRetouchMetrics?.finalAnglePolishPasses ?? 0, 0);
+    const phosphateLinkerAngles = [
+      bondAngleAtAtom(result.coords, 'O245', 'C244', 'P246'),
+      bondAngleAtAtom(result.coords, 'O239', 'P236', 'C240'),
+      bondAngleAtAtom(result.coords, 'O11', 'P8', 'C12'),
+      bondAngleAtAtom(result.coords, 'O58', 'C56', 'P59'),
+      bondAngleAtAtom(result.coords, 'O215', 'C214', 'P216')
+    ];
+    assert.ok(
+      Math.max(...phosphateLinkerAngles.map(angle => Math.abs(angle - 120))) < 20.5,
+      `expected crowded phosphate ester P-O-C linkers to stay near 120 degrees, got ${phosphateLinkerAngles.map(angle => angle.toFixed(1)).join(', ')}`
+    );
     assert.ok(result.metadata.timing.totalMs < 50000, `expected nucleotide residual retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 

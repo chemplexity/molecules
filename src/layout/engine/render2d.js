@@ -42,6 +42,10 @@ function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
   return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
 }
 
+function heavyDegree(atom, molecule) {
+  return atom.getNeighbors(molecule).filter(neighbor => neighbor?.name !== 'H').length;
+}
+
 function escapeXml(value) {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -266,13 +270,39 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, hCo
     const trimmed = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
     output.push(lineElement(trimmed.x1, trimmed.y1, trimmed.x2, trimmed.y2, false));
   } else if (order === 2) {
-    const direction = secondaryDir(firstAtom, secondAtom, molecule, toSVG);
-    const primary = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
-    output.push(lineElement(primary.x1, primary.y1, primary.x2, primary.y2, false));
-    const ox = nx * BOND_OFF * direction;
-    const oy = ny * BOND_OFF * direction;
-    const shifted = shortenBondLineWithLabelClearance(firstAtom, secondAtom, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, molecule, toSVG, hCounts, 4);
-    output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, false));
+    const hasTerminalAtom = heavyDegree(firstAtom, molecule) === 1 || heavyDegree(secondAtom, molecule) === 1;
+    if (hasTerminalAtom) {
+      const halfOx = (nx * BOND_OFF) / 2;
+      const halfOy = (ny * BOND_OFF) / 2;
+      const positive = shortenBondLineWithLabelClearance(
+        firstAtom,
+        secondAtom,
+        { x: start.x + halfOx, y: start.y + halfOy },
+        { x: end.x + halfOx, y: end.y + halfOy },
+        molecule,
+        toSVG,
+        hCounts
+      );
+      output.push(lineElement(positive.x1, positive.y1, positive.x2, positive.y2, false));
+      const negative = shortenBondLineWithLabelClearance(
+        firstAtom,
+        secondAtom,
+        { x: start.x - halfOx, y: start.y - halfOy },
+        { x: end.x - halfOx, y: end.y - halfOy },
+        molecule,
+        toSVG,
+        hCounts
+      );
+      output.push(lineElement(negative.x1, negative.y1, negative.x2, negative.y2, false));
+    } else {
+      const direction = secondaryDir(firstAtom, secondAtom, molecule, toSVG);
+      const primary = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
+      output.push(lineElement(primary.x1, primary.y1, primary.x2, primary.y2, false));
+      const ox = nx * BOND_OFF * direction;
+      const oy = ny * BOND_OFF * direction;
+      const shifted = shortenBondLineWithLabelClearance(firstAtom, secondAtom, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, molecule, toSVG, hCounts, 4);
+      output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, false));
+    }
   } else if (order === 3) {
     for (const distance of [-BOND_OFF, 0, BOND_OFF]) {
       const ox = nx * distance;

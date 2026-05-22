@@ -13,7 +13,12 @@ import { applyLabelClearance } from './cleanup/label-clearance.js';
 import { visibleHeavyCovalentBonds } from './cleanup/bond-utils.js';
 import { collectCutSubtree } from './cleanup/subtree-utils.js';
 import { resolveMixedAcylBranchSevereContacts, resolveRingSubstituentBoundedReadability, resolveRingSubstituentBranchCrossings } from './families/mixed.js';
-import { measureRingAdjacentTerminalDivalentContinuationDistortion, runDivalentContinuationTidy } from './cleanup/presentation/divalent-continuation.js';
+import {
+  measureRingAdjacentTerminalDivalentContinuationDistortion,
+  runDivalentContinuationTidy,
+  runLargeAcyclicEtherLinkerContinuationTidy,
+  runLargePhosphateLinkerContinuationTidy
+} from './cleanup/presentation/divalent-continuation.js';
 import { runTerminalAcyclicChainRetouch } from './cleanup/presentation/terminal-chain-retouch.js';
 import { runOrganometallicAromaticRingRetouch } from './cleanup/presentation/organometallic-aromatic-ring-retouch.js';
 import { runRingChainLinearRetouch } from './cleanup/presentation/ring-chain-linear-retouch.js';
@@ -3311,6 +3316,46 @@ export function runPipeline(molecule, options = {}) {
     if (finalHypervalentRetouch.changed) {
       finalCoords = finalHypervalentRetouch.coords;
       finalCoordsModified = true;
+    }
+    if (familySummary.primaryFamily === 'large-molecule') {
+      const largePhosphateLinkerContinuationRetouch = timeFinalRetouch('largePhosphateLinkerContinuationRetouch', () =>
+        runLargePhosphateLinkerContinuationTidy(layoutGraph, finalCoords, {
+          bondLength: normalizedOptions.bondLength,
+          bondValidationClasses: placement.bondValidationClasses,
+          frozenAtomIds: placement.frozenAtomIds
+        })
+      );
+      if (largePhosphateLinkerContinuationRetouch.changed) {
+        finalCoords = largePhosphateLinkerContinuationRetouch.coords;
+        finalCoordsModified = true;
+        onStep?.('Large Phosphate Linker Continuation Retouch', 'Phosphate ester P-O-C linkers softly rotated toward exact continuation while preserving clean final audit counts.', cloneCoords(finalCoords), {
+          nudges: largePhosphateLinkerContinuationRetouch.nudges,
+          movedAtomCount: largePhosphateLinkerContinuationRetouch.movedAtomIds.length,
+          totalDeviationBefore: largePhosphateLinkerContinuationRetouch.totalDeviationBefore,
+          totalDeviationAfter: largePhosphateLinkerContinuationRetouch.totalDeviationAfter,
+          maxDeviationBefore: largePhosphateLinkerContinuationRetouch.maxDeviationBefore,
+          maxDeviationAfter: largePhosphateLinkerContinuationRetouch.maxDeviationAfter
+        });
+      }
+      const largeAcyclicEtherLinkerContinuationRetouch = timeFinalRetouch('largeAcyclicEtherLinkerContinuationRetouch', () =>
+        runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, finalCoords, {
+          bondLength: normalizedOptions.bondLength,
+          bondValidationClasses: placement.bondValidationClasses,
+          frozenAtomIds: placement.frozenAtomIds
+        })
+      );
+      if (largeAcyclicEtherLinkerContinuationRetouch.changed) {
+        finalCoords = largeAcyclicEtherLinkerContinuationRetouch.coords;
+        finalCoordsModified = true;
+        onStep?.('Large Acyclic Ether Linker Continuation Retouch', 'Large non-aromatic ether exits softly rotated toward exact continuation while preserving clean final audit counts.', cloneCoords(finalCoords), {
+          nudges: largeAcyclicEtherLinkerContinuationRetouch.nudges,
+          movedAtomCount: largeAcyclicEtherLinkerContinuationRetouch.movedAtomIds.length,
+          totalDeviationBefore: largeAcyclicEtherLinkerContinuationRetouch.totalDeviationBefore,
+          totalDeviationAfter: largeAcyclicEtherLinkerContinuationRetouch.totalDeviationAfter,
+          maxDeviationBefore: largeAcyclicEtherLinkerContinuationRetouch.maxDeviationBefore,
+          maxDeviationAfter: largeAcyclicEtherLinkerContinuationRetouch.maxDeviationAfter
+        });
+      }
     }
   }
   const stretchedTerminalMultipleBondSnap = timeFinalRetouch('stretchedTerminalMultipleBondSnap', () =>

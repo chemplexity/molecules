@@ -12,7 +12,18 @@ import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 const MAX_MOVABLE_DIVALENT_CONTINUATION_HEAVY_ATOMS = 4;
 const MAX_MOVABLE_CARBONYL_RING_CONTINUATION_HEAVY_ATOMS = 18;
 const MAX_MOVABLE_TERMINAL_RING_CONTINUATION_HEAVY_ATOMS = 12;
+const MAX_MOVABLE_LARGE_PHOSPHATE_LINKER_HEAVY_ATOMS = 120;
+const MAX_MOVABLE_LARGE_ACYCLIC_ETHER_LINKER_HEAVY_ATOMS = 120;
+const MAX_LARGE_PHOSPHATE_LINKER_PASSES = 8;
+const MAX_LARGE_ACYCLIC_ETHER_LINKER_PASSES = 6;
+const LARGE_PHOSPHATE_LINKER_MIN_DEVIATION = Math.PI / 18;
+const LARGE_ACYCLIC_ETHER_LINKER_MIN_DEVIATION = Math.PI / 9;
+const LARGE_PHOSPHATE_LINKER_MAX_ROTATION = Math.PI / 6;
+const LARGE_ACYCLIC_ETHER_LINKER_MAX_ROTATION = Math.PI / 4;
 const IDEAL_DIVALENT_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
+const LARGE_PHOSPHATE_LINKER_ROTATION_FACTORS = Object.freeze([1]);
+const LARGE_PHOSPHATE_LINKER_ROTATION_STEPS = Object.freeze([5, 10, 15, 20, 25, 30].map(degrees => (degrees * Math.PI) / 180));
+const LARGE_ACYCLIC_ETHER_LINKER_ROTATION_STEPS = Object.freeze([10, 15, 20, 25, 30, 35, 40, 45].map(degrees => (degrees * Math.PI) / 180));
 const HYPERVALENT_CONTACT_RELIEF_ROTATIONS = Object.freeze([-Math.PI / 36, Math.PI / 36, -Math.PI / 18, Math.PI / 18, -Math.PI / 12, Math.PI / 12]);
 const HYPERVALENT_CONTACT_CENTER_ELEMENTS = new Set(['P', 'S', 'Se', 'Si']);
 const TERMINAL_ALKENE_PARENT_ROTATIONS = Object.freeze([
@@ -183,6 +194,188 @@ function rotateSubtreeAroundCenter(coords, descriptor, rotation) {
     nextCoords.set(atomId, rotateAround(position, centerPosition, rotation));
   }
   return nextCoords;
+}
+
+function normalizeRotation(rotation) {
+  return Math.atan2(Math.sin(rotation), Math.cos(rotation));
+}
+
+function visibleHeavySingleBondNeighbors(layoutGraph, coords, atomId) {
+  return visibleHeavyCovalentBonds(layoutGraph, coords, atomId)
+    .filter(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1)
+    .map(({ neighborAtomId }) => neighborAtomId);
+}
+
+function phosphateLinkerAngle(coords, centerAtomId, neighborAtomIds) {
+  const centerPosition = coords.get(centerAtomId);
+  const firstPosition = coords.get(neighborAtomIds[0]);
+  const secondPosition = coords.get(neighborAtomIds[1]);
+  if (!centerPosition || !firstPosition || !secondPosition) {
+    return 0;
+  }
+  return angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition)));
+}
+
+function largePhosphateLinkerDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (!atom || atom.element !== 'O' || atom.aromatic || layoutGraph.ringAtomIdSet.has(atomId) || !coords.has(atomId)) {
+      continue;
+    }
+    const neighborAtomIds = visibleHeavySingleBondNeighbors(layoutGraph, coords, atomId);
+    if (neighborAtomIds.length !== 2) {
+      continue;
+    }
+    if (!neighborAtomIds.some(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element === 'P')) {
+      continue;
+    }
+    const angle = phosphateLinkerAngle(coords, atomId, neighborAtomIds);
+    const deviation = Math.abs(angle - IDEAL_DIVALENT_CONTINUATION_ANGLE);
+    if (deviation <= LARGE_PHOSPHATE_LINKER_MIN_DEVIATION) {
+      continue;
+    }
+    descriptors.push({
+      centerAtomId: atomId,
+      neighborAtomIds,
+      angle,
+      deviation
+    });
+  }
+  descriptors.sort((firstDescriptor, secondDescriptor) => secondDescriptor.deviation - firstDescriptor.deviation);
+  return descriptors;
+}
+
+function largeAcyclicEtherLinkerDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (!atom || atom.element !== 'O' || atom.aromatic || layoutGraph.ringAtomIdSet.has(atomId) || !coords.has(atomId)) {
+      continue;
+    }
+    const neighborAtomIds = visibleHeavySingleBondNeighbors(layoutGraph, coords, atomId);
+    if (neighborAtomIds.length !== 2) {
+      continue;
+    }
+    const neighborAtoms = neighborAtomIds.map(neighborAtomId => layoutGraph.atoms.get(neighborAtomId));
+    if (!neighborAtoms.every(neighborAtom => neighborAtom?.element === 'C' && !neighborAtom.aromatic)) {
+      continue;
+    }
+    if (!neighborAtomIds.some(neighborAtomId => layoutGraph.ringAtomIdSet.has(neighborAtomId))) {
+      continue;
+    }
+    const angle = phosphateLinkerAngle(coords, atomId, neighborAtomIds);
+    const deviation = Math.abs(angle - IDEAL_DIVALENT_CONTINUATION_ANGLE);
+    if (deviation <= LARGE_ACYCLIC_ETHER_LINKER_MIN_DEVIATION) {
+      continue;
+    }
+    descriptors.push({
+      centerAtomId: atomId,
+      neighborAtomIds,
+      angle,
+      deviation
+    });
+  }
+  descriptors.sort((firstDescriptor, secondDescriptor) => secondDescriptor.deviation - firstDescriptor.deviation);
+  return descriptors;
+}
+
+function largeLinkerMovableSide(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds, maxHeavyAtomCount) {
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerAtomId)) {
+    return null;
+  }
+  let heavyAtomCount = 0;
+  for (const atomId of subtreeAtomIds) {
+    if (frozenAtomIds?.has(atomId)) {
+      return null;
+    }
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom) {
+      return null;
+    }
+    if (atom.element !== 'H') {
+      heavyAtomCount++;
+    }
+  }
+  return heavyAtomCount > 0 && heavyAtomCount <= maxHeavyAtomCount
+    ? {
+        atomIds: subtreeAtomIds,
+        heavyAtomCount
+      }
+    : null;
+}
+
+function largePhosphateMovableSide(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds) {
+  return largeLinkerMovableSide(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds, MAX_MOVABLE_LARGE_PHOSPHATE_LINKER_HEAVY_ATOMS);
+}
+
+function largeAcyclicEtherMovableSide(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds) {
+  return largeLinkerMovableSide(layoutGraph, coords, centerAtomId, rootAtomId, frozenAtomIds, MAX_MOVABLE_LARGE_ACYCLIC_ETHER_LINKER_HEAVY_ATOMS);
+}
+
+function rotateAtomIdsAroundCenter(coords, centerAtomId, atomIds, rotation) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return null;
+  }
+  const nextCoords = new Map(coords);
+  for (const atomId of atomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    nextCoords.set(atomId, rotateAround(position, centerPosition, rotation));
+  }
+  return nextCoords;
+}
+
+function largePhosphateLinkerRotations(desiredRotation) {
+  return largeLinkerRotations(desiredRotation, LARGE_PHOSPHATE_LINKER_MAX_ROTATION, LARGE_PHOSPHATE_LINKER_ROTATION_STEPS);
+}
+
+function largeAcyclicEtherLinkerRotations(desiredRotation) {
+  return largeLinkerRotations(desiredRotation, LARGE_ACYCLIC_ETHER_LINKER_MAX_ROTATION, LARGE_ACYCLIC_ETHER_LINKER_ROTATION_STEPS);
+}
+
+function largeLinkerRotations(desiredRotation, maxRotation, rotationSteps) {
+  const rotations = new Set();
+  const direction = Math.sign(desiredRotation);
+  if (direction === 0) {
+    return [];
+  }
+  for (const factor of LARGE_PHOSPHATE_LINKER_ROTATION_FACTORS) {
+    rotations.add(Math.max(-maxRotation, Math.min(maxRotation, desiredRotation * factor)));
+  }
+  for (const step of rotationSteps) {
+    if (step <= Math.abs(desiredRotation) + DISTANCE_EPSILON) {
+      rotations.add(direction * step);
+    }
+  }
+  return [...rotations].filter(rotation => Math.abs(rotation) > DISTANCE_EPSILON);
+}
+
+function largePhosphateLinkerCandidateIsBetter(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.metric.maxDeviation < incumbent.metric.maxDeviation - CLEANUP_EPSILON) {
+    return true;
+  }
+  if (candidate.metric.maxDeviation > incumbent.metric.maxDeviation + CLEANUP_EPSILON) {
+    return false;
+  }
+  if (candidate.metric.totalDeviation < incumbent.metric.totalDeviation - CLEANUP_EPSILON) {
+    return true;
+  }
+  if (candidate.metric.totalDeviation > incumbent.metric.totalDeviation + CLEANUP_EPSILON) {
+    return false;
+  }
+  if (candidate.targetDeviation < incumbent.targetDeviation - CLEANUP_EPSILON) {
+    return true;
+  }
+  if (candidate.targetDeviation > incumbent.targetDeviation + CLEANUP_EPSILON) {
+    return false;
+  }
+  return candidate.movedHeavyAtomCount < incumbent.movedHeavyAtomCount;
 }
 
 function terminalMultipleBondHypervalentContact(layoutGraph, atomId) {
@@ -517,6 +710,223 @@ function auditCountsDoNotWorsen(candidateAudit, baseAudit) {
     }
   }
   return !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false));
+}
+
+/**
+ * Softly straightens distorted phosphate ester P-O-C continuations in very
+ * large layouts by rotating only a bounded side of the linker oxygen. This
+ * preserves the rigid phosphorus-centered cross while accepting only candidates
+ * that keep externally visible audit counts no worse than the incumbent.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null, bondValidationClasses?: Map<string, string>|null, maxPasses?: number}} [options] - Retouch options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean, nudges: number, movedAtomIds: string[], maxDeviationBefore: number, maxDeviationAfter: number, totalDeviationBefore: number, totalDeviationAfter: number}} Retouch result.
+ */
+export function runLargePhosphateLinkerContinuationTidy(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds ?? null;
+  const bondValidationClasses = options.bondValidationClasses ?? null;
+  const maxPasses = options.maxPasses ?? MAX_LARGE_PHOSPHATE_LINKER_PASSES;
+  const baseMetric = measureDivalentContinuationDistortion(layoutGraph, inputCoords);
+  let coords = inputCoords;
+  let audit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
+  let metric = baseMetric;
+  let nudges = 0;
+  const movedAtomIds = new Set();
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let bestCandidate = null;
+    for (const descriptor of largePhosphateLinkerDescriptors(layoutGraph, coords).slice(0, 8)) {
+      const [firstNeighborAtomId, secondNeighborAtomId] = descriptor.neighborAtomIds;
+      for (const [rootAtomId, parentAtomId] of [
+        [firstNeighborAtomId, secondNeighborAtomId],
+        [secondNeighborAtomId, firstNeighborAtomId]
+      ]) {
+        const movableSide = largePhosphateMovableSide(layoutGraph, coords, descriptor.centerAtomId, rootAtomId, frozenAtomIds);
+        if (!movableSide) {
+          continue;
+        }
+        const centerPosition = coords.get(descriptor.centerAtomId);
+        const rootPosition = coords.get(rootAtomId);
+        const parentPosition = coords.get(parentAtomId);
+        if (!centerPosition || !rootPosition || !parentPosition) {
+          continue;
+        }
+        const rootAngle = angleOf(sub(rootPosition, centerPosition));
+        const parentAngle = angleOf(sub(parentPosition, centerPosition));
+        for (const sign of [1, -1]) {
+          const desiredRotation = normalizeRotation(parentAngle + sign * IDEAL_DIVALENT_CONTINUATION_ANGLE - rootAngle);
+          for (const rotation of largePhosphateLinkerRotations(desiredRotation)) {
+            const candidateCoords = rotateAtomIdsAroundCenter(coords, descriptor.centerAtomId, movableSide.atomIds, rotation);
+            if (!candidateCoords) {
+              continue;
+            }
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses });
+            if (!auditCountsDoNotWorsen(candidateAudit, audit)) {
+              continue;
+            }
+            const candidateMetric = measureDivalentContinuationDistortion(layoutGraph, candidateCoords);
+            if (candidateMetric.totalDeviation >= metric.totalDeviation - CLEANUP_EPSILON) {
+              continue;
+            }
+            const candidateDescriptor = largePhosphateLinkerDescriptors(layoutGraph, candidateCoords).find(({ centerAtomId }) => centerAtomId === descriptor.centerAtomId);
+            const candidate = {
+              coords: candidateCoords,
+              audit: candidateAudit,
+              metric: candidateMetric,
+              movedAtomIds: movableSide.atomIds,
+              movedHeavyAtomCount: movableSide.heavyAtomCount,
+              targetDeviation: candidateDescriptor?.deviation ?? 0
+            };
+            if (largePhosphateLinkerCandidateIsBetter(candidate, bestCandidate)) {
+              bestCandidate = candidate;
+            }
+          }
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    coords = bestCandidate.coords;
+    audit = bestCandidate.audit;
+    metric = bestCandidate.metric;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    nudges++;
+  }
+
+  return nudges === 0
+    ? {
+        coords: inputCoords,
+        changed: false,
+        nudges: 0,
+        movedAtomIds: [],
+        maxDeviationBefore: baseMetric.maxDeviation,
+        maxDeviationAfter: baseMetric.maxDeviation,
+        totalDeviationBefore: baseMetric.totalDeviation,
+        totalDeviationAfter: baseMetric.totalDeviation
+      }
+    : {
+        coords,
+        changed: true,
+        nudges,
+        movedAtomIds: [...movedAtomIds],
+        maxDeviationBefore: baseMetric.maxDeviation,
+        maxDeviationAfter: metric.maxDeviation,
+        totalDeviationBefore: baseMetric.totalDeviation,
+        totalDeviationAfter: metric.totalDeviation
+      };
+}
+
+/**
+ * Softly bends large non-aromatic ether exits such as nucleotide sugar-base
+ * O-C continuations back toward the publication-style 120-degree slot. This
+ * mirrors the large phosphate linker guardrails but allows a slightly larger
+ * single-side rotation because distorted acyclic C-O-C exits often arrive near
+ * linear after large-molecule compaction.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null, bondValidationClasses?: Map<string, string>|null, maxPasses?: number}} [options] - Retouch options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean, nudges: number, movedAtomIds: string[], maxDeviationBefore: number, maxDeviationAfter: number, totalDeviationBefore: number, totalDeviationAfter: number}} Retouch result.
+ */
+export function runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds ?? null;
+  const bondValidationClasses = options.bondValidationClasses ?? null;
+  const maxPasses = options.maxPasses ?? MAX_LARGE_ACYCLIC_ETHER_LINKER_PASSES;
+  const baseMetric = measureDivalentContinuationDistortion(layoutGraph, inputCoords);
+  let coords = inputCoords;
+  let audit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
+  let metric = baseMetric;
+  let nudges = 0;
+  const movedAtomIds = new Set();
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let bestCandidate = null;
+    for (const descriptor of largeAcyclicEtherLinkerDescriptors(layoutGraph, coords).slice(0, 12)) {
+      const [firstNeighborAtomId, secondNeighborAtomId] = descriptor.neighborAtomIds;
+      for (const [rootAtomId, parentAtomId] of [
+        [firstNeighborAtomId, secondNeighborAtomId],
+        [secondNeighborAtomId, firstNeighborAtomId]
+      ]) {
+        const movableSide = largeAcyclicEtherMovableSide(layoutGraph, coords, descriptor.centerAtomId, rootAtomId, frozenAtomIds);
+        if (!movableSide) {
+          continue;
+        }
+        const centerPosition = coords.get(descriptor.centerAtomId);
+        const rootPosition = coords.get(rootAtomId);
+        const parentPosition = coords.get(parentAtomId);
+        if (!centerPosition || !rootPosition || !parentPosition) {
+          continue;
+        }
+        const rootAngle = angleOf(sub(rootPosition, centerPosition));
+        const parentAngle = angleOf(sub(parentPosition, centerPosition));
+        for (const sign of [1, -1]) {
+          const desiredRotation = normalizeRotation(parentAngle + sign * IDEAL_DIVALENT_CONTINUATION_ANGLE - rootAngle);
+          for (const rotation of largeAcyclicEtherLinkerRotations(desiredRotation)) {
+            const candidateCoords = rotateAtomIdsAroundCenter(coords, descriptor.centerAtomId, movableSide.atomIds, rotation);
+            if (!candidateCoords) {
+              continue;
+            }
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses });
+            if (!auditCountsDoNotWorsen(candidateAudit, audit)) {
+              continue;
+            }
+            const candidateMetric = measureDivalentContinuationDistortion(layoutGraph, candidateCoords);
+            if (candidateMetric.totalDeviation >= metric.totalDeviation - CLEANUP_EPSILON) {
+              continue;
+            }
+            const candidateDescriptor = largeAcyclicEtherLinkerDescriptors(layoutGraph, candidateCoords).find(({ centerAtomId }) => centerAtomId === descriptor.centerAtomId);
+            const candidate = {
+              coords: candidateCoords,
+              audit: candidateAudit,
+              metric: candidateMetric,
+              movedAtomIds: movableSide.atomIds,
+              movedHeavyAtomCount: movableSide.heavyAtomCount,
+              targetDeviation: candidateDescriptor?.deviation ?? 0
+            };
+            if (largePhosphateLinkerCandidateIsBetter(candidate, bestCandidate)) {
+              bestCandidate = candidate;
+            }
+          }
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    coords = bestCandidate.coords;
+    audit = bestCandidate.audit;
+    metric = bestCandidate.metric;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    nudges++;
+  }
+
+  return nudges === 0
+    ? {
+        coords: inputCoords,
+        changed: false,
+        nudges: 0,
+        movedAtomIds: [],
+        maxDeviationBefore: baseMetric.maxDeviation,
+        maxDeviationAfter: baseMetric.maxDeviation,
+        totalDeviationBefore: baseMetric.totalDeviation,
+        totalDeviationAfter: baseMetric.totalDeviation
+      }
+    : {
+        coords,
+        changed: true,
+        nudges,
+        movedAtomIds: [...movedAtomIds],
+        maxDeviationBefore: baseMetric.maxDeviation,
+        maxDeviationAfter: metric.maxDeviation,
+        totalDeviationBefore: baseMetric.totalDeviation,
+        totalDeviationAfter: metric.totalDeviation
+      };
 }
 
 function isBetterDivalentContinuationCandidate(candidate, incumbent) {

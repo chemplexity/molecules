@@ -2,6 +2,12 @@
 
 ## 2026-05-21
 
+- Add a guarded large-molecule ether-linker retouch so badly linearized non-aromatic sugar/base O-C continuations such as O265 bend back to 120 degrees without worsening final audits.
+- Let terminal carbonyl fan cleanup accept exact no-regression leaf moves on already-dirty large WebKit layouts, keeping nucleotide carbonyl centers such as C85 and C507 trigonal.
+- Center terminal double-bond strokes in the engine SVG renderers so carbonyl/imine bonds are drawn symmetrically around the true atom-axis instead of visually leaning to one side.
+- Let terminal carbonyl fan cleanup rotate audit-safe support sides into exact 120-degree slots before snapping the oxo leaf.
+- Add a bounded large-molecule phosphate-linker retouch that rotates audit-safe P-O-C ester sides toward 120 degrees while preserving strict phosphorus cross geometry.
+- Prioritize carbonyl/alkene-like roots at geminal saturated-ring exits so the directional branch gets the exact outward slot and simple siblings take side slots.
 - Keep phosphate/sulfate-like hypervalent fans intact during large-molecule block partitioning so stitched phosphate chains preserve strict P-centered angles.
 - Use denser stitched blocks for very large hypervalent ring chains and let hard-clean large layouts finish small attached-ring readability nudges.
 - Keep saturated sugar-ring amide exits on the exact outward axis by flipping the planar amide side when the direct snap overlaps.

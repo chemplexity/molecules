@@ -31,6 +31,9 @@ const TERMINAL_MULTIPLE_BOND_SUPPORT_MAX_SEPARATION = (7 * Math.PI) / 9;
 const TERMINAL_MULTIPLE_BOND_SUPPORT_MIN_SEPARATION = (22 * Math.PI) / 45;
 const TERMINAL_MULTIPLE_BOND_SUPPORT_MAX_ROTATION = Math.PI / 9;
 const TERMINAL_MULTIPLE_BOND_SUPPORT_SUBTREE_HEAVY_LIMIT = 18;
+const TERMINAL_MULTIPLE_BOND_ACYCLIC_SUPPORT_HEAVY_LIMIT = 18;
+const TERMINAL_MULTIPLE_BOND_LARGE_SUPPORT_HEAVY_LIMIT = 40;
+const TERMINAL_MULTIPLE_BOND_LARGE_SUPPORT_MIN_COORDS = 80;
 const TERMINAL_MULTIPLE_BOND_PROTECTED_SUPPORT_REFLECTION_HEAVY_LIMIT = 24;
 const TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_FACTORS = Object.freeze(Array.from({ length: 111 }, (_value, index) => 0.95 - index * 0.005));
 const TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_TRIGGER_FACTOR = 1.05;
@@ -505,6 +508,53 @@ function terminalMultipleBondLeafMinimumClearance(layoutGraph, coords, descripto
   return minimumClearance;
 }
 
+function movableTerminalMultipleBondAcyclicSupportAtomIds(layoutGraph, coords, centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds = null) {
+  const supportAtom = layoutGraph.atoms.get(supportAtomId);
+  if (!supportAtom || supportAtom.element === 'H' || layoutGraph.ringAtomIdSet.has(supportAtomId)) {
+    return null;
+  }
+  const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, supportAtomId, centerAtomId).filter(atomId => coords.has(atomId));
+  if (
+    movedAtomIds.length === 0 ||
+    movedAtomIds.some(atomId => (atomId !== supportAtomId && protectedAtomIds.has(atomId)) || layoutGraph.ringAtomIdSet.has(atomId) || frozenAtomIds?.has(atomId)) ||
+    heavyAtomCountInIds(layoutGraph, movedAtomIds) > TERMINAL_MULTIPLE_BOND_ACYCLIC_SUPPORT_HEAVY_LIMIT
+  ) {
+    return null;
+  }
+  return movedAtomIds;
+}
+
+function movableTerminalMultipleBondLargeSupportAtomIds(layoutGraph, coords, centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds = null) {
+  if (coords.size < TERMINAL_MULTIPLE_BOND_LARGE_SUPPORT_MIN_COORDS) {
+    return null;
+  }
+  const supportAtom = layoutGraph.atoms.get(supportAtomId);
+  if (!supportAtom || supportAtom.element === 'H') {
+    return null;
+  }
+  const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, supportAtomId, centerAtomId).filter(atomId => coords.has(atomId));
+  if (
+    movedAtomIds.length === 0 ||
+    movedAtomIds.some(atomId => (atomId !== supportAtomId && protectedAtomIds.has(atomId)) || frozenAtomIds?.has(atomId)) ||
+    heavyAtomCountInIds(layoutGraph, movedAtomIds) > TERMINAL_MULTIPLE_BOND_LARGE_SUPPORT_HEAVY_LIMIT
+  ) {
+    return null;
+  }
+  return movedAtomIds;
+}
+
+function hasMovableTerminalMultipleBondSupport(layoutGraph, coords, centerAtomId, leafAtomId, fixedNeighborIds, frozenAtomIds = null) {
+  if (fixedNeighborIds.length !== 2) {
+    return false;
+  }
+  const protectedAtomIds = new Set([centerAtomId, leafAtomId, ...fixedNeighborIds]);
+  return fixedNeighborIds.some(
+    supportAtomId =>
+      movableTerminalMultipleBondAcyclicSupportAtomIds(layoutGraph, coords, centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds) != null ||
+      movableTerminalMultipleBondLargeSupportAtomIds(layoutGraph, coords, centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds) != null
+  );
+}
+
 /**
  * Returns whether rotating a terminal multiple-bond support would disturb an
  * exact trigonal branch owned by the support atom.
@@ -762,6 +812,35 @@ function hiddenHydrogenTerminalMultipleBondAuditDoesNotRegress(candidateAudit, i
   );
 }
 
+function terminalMultipleBondLeafFanAuditDoesNotRegress(candidateAudit, incumbentAudit, bondLength) {
+  if (candidateAudit?.ok === true) {
+    return true;
+  }
+  if (!candidateAudit || !incumbentAudit || incumbentAudit.ok === true) {
+    return false;
+  }
+  if ((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount',
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  return (candidateAudit.maxBondLengthDeviation ?? 0) <= (incumbentAudit.maxBondLengthDeviation ?? 0) + bondLength * 1e-3;
+}
+
 function runHiddenHydrogenTerminalMultipleBondFanTidy(layoutGraph, coords, bondLength, atomGrid, frozenAtomIds, candidateCenterIds = null) {
   let nudges = 0;
   const threshold = bondLength * 0.55;
@@ -949,6 +1028,134 @@ function terminalMultipleBondBalancedSupportReliefCoords(layoutGraph, coords, de
 }
 
 /**
+ * Rotates a movable support side of a terminal multiple-bond fan into an exact
+ * 120-degree slot, then places the terminal leaf in the complementary slot.
+ * Small acyclic supports must be audit-clean directly; bounded large supports
+ * may use a short cleanup relief if the exact fan move creates local contacts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {object} descriptor - Terminal multiple-bond fan descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that must not move.
+ * @param {Map<string, string>|null} bondValidationClasses - Per-bond validation classes for audit-safe candidates.
+ * @returns {Map<string, {x: number, y: number}>|null} Retouched coordinates, or null when no audit-safe exact fan is available.
+ */
+function terminalMultipleBondExactSupportReliefCoords(layoutGraph, coords, descriptor, bondLength, frozenAtomIds, bondValidationClasses = null) {
+  if (descriptor.leafTargets.length !== 1) {
+    return null;
+  }
+
+  const leafAtomId = descriptor.leafTargets[0].leafAtomId;
+  const fixedNeighborIds = descriptor.neighborAtomIds.filter(neighborAtomId => neighborAtomId !== leafAtomId);
+  if (fixedNeighborIds.length !== 2) {
+    return null;
+  }
+
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  if (!centerPosition || !leafPosition || frozenAtomIds?.has(leafAtomId)) {
+    return null;
+  }
+
+  const leafRadius = distance(centerPosition, leafPosition) || bondLength;
+  const currentLeafAngle = angleOf(sub(leafPosition, centerPosition));
+  const protectedAtomIds = new Set([descriptor.centerAtomId, leafAtomId, ...fixedNeighborIds]);
+  let bestCandidate = null;
+
+  for (const supportAtomId of fixedNeighborIds) {
+    const otherFixedAtomId = fixedNeighborIds.find(neighborAtomId => neighborAtomId !== supportAtomId);
+    const supportPosition = coords.get(supportAtomId);
+    const otherFixedPosition = coords.get(otherFixedAtomId);
+    if (!supportPosition || !otherFixedPosition) {
+      continue;
+    }
+
+    const acyclicSupportAtomIds = movableTerminalMultipleBondAcyclicSupportAtomIds(layoutGraph, coords, descriptor.centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds);
+    const supportAtomIds =
+      acyclicSupportAtomIds ?? movableTerminalMultipleBondLargeSupportAtomIds(layoutGraph, coords, descriptor.centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds);
+    if (!supportAtomIds) {
+      continue;
+    }
+    const allowCleanupRelief = acyclicSupportAtomIds == null;
+
+    const fixedAngle = angleOf(sub(otherFixedPosition, centerPosition));
+    const supportAngle = angleOf(sub(supportPosition, centerPosition));
+    const assignments = [
+      { supportTargetAngle: fixedAngle + (2 * Math.PI) / 3, leafTargetAngle: fixedAngle - (2 * Math.PI) / 3 },
+      { supportTargetAngle: fixedAngle - (2 * Math.PI) / 3, leafTargetAngle: fixedAngle + (2 * Math.PI) / 3 }
+    ];
+    assignments.sort((first, second) => angularDifference(first.leafTargetAngle, currentLeafAngle) - angularDifference(second.leafTargetAngle, currentLeafAngle));
+
+    for (const { supportTargetAngle, leafTargetAngle } of assignments) {
+      const supportRotation = wrapAngle(supportTargetAngle - supportAngle);
+      if (Math.abs(supportRotation) <= TIDY_IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      const candidateCoords = rotateAtomIdsAroundPivot(coords, supportAtomIds, descriptor.centerAtomId, supportRotation);
+      if (!candidateCoords) {
+        continue;
+      }
+      candidateCoords.set(leafAtomId, add(centerPosition, fromAngle(leafTargetAngle, leafRadius)));
+
+      let scoredCoords = candidateCoords;
+      let candidateAudit = auditLayout(layoutGraph, scoredCoords, {
+        bondLength,
+        bondValidationClasses
+      });
+      if (candidateAudit.ok !== true && allowCleanupRelief) {
+        const cleanup = runUnifiedCleanup(layoutGraph, scoredCoords, {
+          maxPasses: 2,
+          epsilon: bondLength * 0.001,
+          bondLength,
+          protectBondIntegrity: false,
+          frozenAtomIds
+        });
+        if (cleanup.passes > 0) {
+          const cleanupAudit = auditLayout(layoutGraph, cleanup.coords, {
+            bondLength,
+            bondValidationClasses
+          });
+          if (cleanupAudit.ok === true) {
+            scoredCoords = cleanup.coords;
+            candidateAudit = cleanupAudit;
+          }
+        }
+      }
+      if (candidateAudit.ok !== true) {
+        continue;
+      }
+
+      const fanPenalty = terminalMultipleBondLeafFanPenalty(scoredCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
+      if (fanPenalty >= descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+        continue;
+      }
+
+      const clearance = terminalMultipleBondLeafMinimumClearance(layoutGraph, scoredCoords, descriptor);
+      const candidate = {
+        coords: scoredCoords,
+        fanPenalty,
+        clearance,
+        movedHeavyAtomCount: heavyAtomCountInIds(layoutGraph, supportAtomIds),
+        rotationMagnitude: Math.abs(supportRotation)
+      };
+      if (
+        !bestCandidate ||
+        candidate.fanPenalty < bestCandidate.fanPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON ||
+        (Math.abs(candidate.fanPenalty - bestCandidate.fanPenalty) <= TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON &&
+          (candidate.clearance > bestCandidate.clearance + TIDY_IMPROVEMENT_EPSILON ||
+            (Math.abs(candidate.clearance - bestCandidate.clearance) <= TIDY_IMPROVEMENT_EPSILON &&
+              (candidate.movedHeavyAtomCount < bestCandidate.movedHeavyAtomCount ||
+                (candidate.movedHeavyAtomCount === bestCandidate.movedHeavyAtomCount && candidate.rotationMagnitude < bestCandidate.rotationMagnitude - TIDY_IMPROVEMENT_EPSILON)))))
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  return bestCandidate?.coords ?? null;
+}
+
+/**
  * Returns the best assignment from terminal multiple-bond leaves to target
  * angles with the least angular travel from the current depiction.
  * @param {string[]} leafAtomIds - Movable terminal multiple-bond leaf IDs.
@@ -1021,9 +1228,10 @@ function bestCrowdedLinearSupportLeafAngle(layoutGraph, coords, centerAtomId, le
  * @param {string} centerAtomId - Three-coordinate fan center atom id.
  * @param {Array<{bond: object, neighborAtomId: string}>} heavyBonds - Visible heavy bonds at the center.
  * @param {Array<{bond: object, neighborAtomId: string}>} terminalMultipleBondLeaves - Movable terminal multiple-bond leaves.
+ * @param {Set<string>|null} [frozenAtomIds] - Frozen atoms that must not move.
  * @returns {object|null} Fan descriptor, or null when no improvement is available.
  */
-function singleTerminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId, heavyBonds, terminalMultipleBondLeaves) {
+function singleTerminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId, heavyBonds, terminalMultipleBondLeaves, frozenAtomIds = null) {
   const centerPosition = coords.get(centerAtomId);
   const leafAtomId = terminalMultipleBondLeaves[0].neighborAtomId;
   const fixedNeighborIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId).filter(neighborAtomId => neighborAtomId !== leafAtomId);
@@ -1046,7 +1254,8 @@ function singleTerminalMultipleBondLeafFanDescriptor(layoutGraph, coords, center
   const currentLeafClearance = localNonbondedClearanceWithOverrides(layoutGraph, coords, leafAtomId, leafPosition, new Map([[leafAtomId, leafPosition]]));
   const hasCrowdedLeaf = currentLeafClearance < layoutGraph.options.bondLength * TERMINAL_MULTIPLE_BOND_LEAF_CROWDING_FACTOR;
   const fixedNeighborsAreLinear = Math.abs(angularDifference(fixedNeighborAngles[0], fixedNeighborAngles[1]) - Math.PI) <= TERMINAL_MULTIPLE_BOND_LINEAR_NEIGHBOR_TOLERANCE;
-  if (fixedNeighborsAreLinear && !hasCrowdedLeaf) {
+  const hasMovableSupport = hasMovableTerminalMultipleBondSupport(layoutGraph, coords, centerAtomId, leafAtomId, fixedNeighborIds, frozenAtomIds);
+  if (fixedNeighborsAreLinear && !hasCrowdedLeaf && !hasMovableSupport) {
     return null;
   }
   if (!hasCrowdedLeaf && terminalMultipleBondLeafFanMaxDeviation(coords, centerAtomId, neighborAtomIds) <= TERMINAL_MULTIPLE_BOND_BALANCED_FAN_TOLERANCE + TIDY_IMPROVEMENT_EPSILON) {
@@ -1057,7 +1266,7 @@ function singleTerminalMultipleBondLeafFanDescriptor(layoutGraph, coords, center
     : angleOf(sub(centerPosition, centroid(fixedNeighborPositions)));
   const targetAngles = [fixedNeighborAngles[0], fixedNeighborAngles[1], targetAngle];
   const targetPenalty = terminalMultipleBondLeafFanPenaltyFromAngles(targetAngles);
-  if (targetPenalty > currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+  if (targetPenalty > currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON && !hasMovableSupport) {
     return null;
   }
 
@@ -1237,7 +1446,7 @@ function terminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId
     if (pairedTerminalHeteroDescriptor) {
       return pairedTerminalHeteroDescriptor;
     }
-    return singleTerminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId, heavyBonds, terminalMultipleBondLeaves);
+    return singleTerminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId, heavyBonds, terminalMultipleBondLeaves, frozenAtomIds);
   }
   if (terminalMultipleBondLeaves.length !== 2) {
     return null;
@@ -1303,7 +1512,10 @@ export function collectTerminalMultipleBondLeafFanRetouchCenters(layoutGraph, co
           let measureFan = true;
           if (terminalMultipleBondLeaves.length === 1) {
             const fixedNeighborAngles = fixedNeighborPositions.map(position => angleOf(sub(position, centerPosition)));
-            measureFan = Math.abs(angularDifference(fixedNeighborAngles[0], fixedNeighborAngles[1]) - Math.PI) > TERMINAL_MULTIPLE_BOND_LINEAR_NEIGHBOR_TOLERANCE;
+            const fixedNeighborIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId).filter(neighborAtomId => !leafAtomIds.has(neighborAtomId));
+            measureFan =
+              Math.abs(angularDifference(fixedNeighborAngles[0], fixedNeighborAngles[1]) - Math.PI) > TERMINAL_MULTIPLE_BOND_LINEAR_NEIGHBOR_TOLERANCE ||
+              hasMovableTerminalMultipleBondSupport(layoutGraph, coords, centerAtomId, terminalMultipleBondLeaves[0].neighborAtomId, fixedNeighborIds, frozenAtomIds);
           }
           if (measureFan) {
             const neighborAtomIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId);
@@ -2152,6 +2364,11 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
 
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
+  let currentAudit = null;
+  const getCurrentAudit = () => {
+    currentAudit ??= auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
+    return currentAudit;
+  };
   let nudges = 0;
 
   for (const centerAtomId of candidateCenterIds) {
@@ -2162,6 +2379,28 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
 
     const centerPosition = coords.get(descriptor.centerAtomId);
     if (!centerPosition) {
+      continue;
+    }
+
+    const exactSupportReliefCoords =
+      descriptor.movesTerminalSingleHeteroLeaf === true
+        ? null
+        : terminalMultipleBondExactSupportReliefCoords(layoutGraph, coords, descriptor, bondLength, frozenAtomIds, bondValidationClasses);
+    if (exactSupportReliefCoords) {
+      for (const [atomId, nextPosition] of exactSupportReliefCoords) {
+        const previousPosition = coords.get(atomId);
+        if (!previousPosition || (Math.abs(previousPosition.x - nextPosition.x) <= TIDY_IMPROVEMENT_EPSILON && Math.abs(previousPosition.y - nextPosition.y) <= TIDY_IMPROVEMENT_EPSILON)) {
+          continue;
+        }
+        atomGrid.remove(atomId, previousPosition);
+        atomGrid.insert(atomId, nextPosition);
+      }
+      coords.clear();
+      for (const [atomId, position] of exactSupportReliefCoords) {
+        coords.set(atomId, { ...position });
+      }
+      currentAudit = null;
+      nudges++;
       continue;
     }
 
@@ -2180,6 +2419,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       for (const [atomId, position] of balancedSupportReliefCoords) {
         coords.set(atomId, { ...position });
       }
+      currentAudit = null;
       nudges++;
       continue;
     }
@@ -2210,12 +2450,12 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       exactCandidateCoords.set(leafAtomId, targetPosition);
     }
     let usedCompressedTargetPositions = false;
-    const exactCandidateAuditOk =
-      auditLayout(layoutGraph, exactCandidateCoords, {
-        bondLength,
-        bondValidationClasses
-      }).ok === true;
-    if (!exactCandidateAuditOk) {
+    const exactCandidateAudit = auditLayout(layoutGraph, exactCandidateCoords, {
+      bondLength,
+      bondValidationClasses
+    });
+    const exactCandidateAuditAccepted = terminalMultipleBondLeafFanAuditDoesNotRegress(exactCandidateAudit, getCurrentAudit(), bondLength);
+    if (!exactCandidateAuditAccepted) {
       const compressedTargetPositions = compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, descriptor, targetPositions, bondLength, { force: true, bondValidationClasses });
       if (compressedTargetPositions) {
         targetPositions = compressedTargetPositions;
@@ -2234,7 +2474,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
           targetPositions = blockerReliefTargetPositions;
         }
       }
-    } else {
+    } else if (exactCandidateAudit.ok === true) {
       const compressedTargetPositions = compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, descriptor, targetPositions, bondLength, { force: false, bondValidationClasses });
       if (compressedTargetPositions) {
         targetPositions = compressedTargetPositions;
@@ -2263,7 +2503,8 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
     for (const [leafAtomId, targetPosition] of targetPositions) {
       candidateCoords.set(leafAtomId, targetPosition);
     }
-    if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
+    const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses });
+    if (!terminalMultipleBondLeafFanAuditDoesNotRegress(candidateAudit, getCurrentAudit(), bondLength)) {
       continue;
     }
     const candidatePenalty = terminalMultipleBondLeafFanPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
@@ -2299,6 +2540,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       leafPosition.y = targetPosition.y;
       atomGrid.insert(leafAtomId, leafPosition);
     }
+    currentAudit = candidateAudit;
     nudges++;
   }
 
@@ -2736,7 +2978,11 @@ export function measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords) {
     }
     if (terminalMultipleBondLeaves.length === 1) {
       const fixedNeighborAngles = fixedNeighborPositions.map(position => angleOf(sub(position, centerPosition)));
-      if (Math.abs(angularDifference(fixedNeighborAngles[0], fixedNeighborAngles[1]) - Math.PI) <= TERMINAL_MULTIPLE_BOND_LINEAR_NEIGHBOR_TOLERANCE) {
+      const fixedNeighborIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId).filter(neighborAtomId => !leafAtomIds.has(neighborAtomId));
+      if (
+        Math.abs(angularDifference(fixedNeighborAngles[0], fixedNeighborAngles[1]) - Math.PI) <= TERMINAL_MULTIPLE_BOND_LINEAR_NEIGHBOR_TOLERANCE &&
+        !hasMovableTerminalMultipleBondSupport(layoutGraph, coords, centerAtomId, terminalMultipleBondLeaves[0].neighborAtomId, fixedNeighborIds)
+      ) {
         continue;
       }
     }

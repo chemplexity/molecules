@@ -134,6 +134,10 @@ function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
   return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
 }
 
+function heavyDegree(atom, mol) {
+  return atom.getNeighbors(mol).filter(neighbor => neighbor?.name !== 'H').length;
+}
+
 // ---------------------------------------------------------------------------
 // XML helper
 // ---------------------------------------------------------------------------
@@ -245,13 +249,23 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
     const line = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
     out.push(lineEl(line.x1, line.y1, line.x2, line.y2, false));
   } else if (order === 2) {
-    const dir = secondaryDir(a1, a2, mol, toSVG);
-    const primary = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
-    out.push(lineEl(primary.x1, primary.y1, primary.x2, primary.y2, false));
-    const ox = nx * BOND_OFF * dir,
-      oy = ny * BOND_OFF * dir;
-    const l2 = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x + ox, y: s1.y + oy }, { x: s2.x + ox, y: s2.y + oy }, mol, toSVG, hCounts, 4);
-    out.push(lineEl(l2.x1, l2.y1, l2.x2, l2.y2, false));
+    const hasTerminalAtom = heavyDegree(a1, mol) === 1 || heavyDegree(a2, mol) === 1;
+    if (hasTerminalAtom) {
+      const halfOx = (nx * BOND_OFF) / 2;
+      const halfOy = (ny * BOND_OFF) / 2;
+      const positive = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x + halfOx, y: s1.y + halfOy }, { x: s2.x + halfOx, y: s2.y + halfOy }, mol, toSVG, hCounts);
+      out.push(lineEl(positive.x1, positive.y1, positive.x2, positive.y2, false));
+      const negative = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x - halfOx, y: s1.y - halfOy }, { x: s2.x - halfOx, y: s2.y - halfOy }, mol, toSVG, hCounts);
+      out.push(lineEl(negative.x1, negative.y1, negative.x2, negative.y2, false));
+    } else {
+      const dir = secondaryDir(a1, a2, mol, toSVG);
+      const primary = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
+      out.push(lineEl(primary.x1, primary.y1, primary.x2, primary.y2, false));
+      const ox = nx * BOND_OFF * dir,
+        oy = ny * BOND_OFF * dir;
+      const l2 = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x + ox, y: s1.y + oy }, { x: s2.x + ox, y: s2.y + oy }, mol, toSVG, hCounts, 4);
+      out.push(lineEl(l2.x1, l2.y1, l2.x2, l2.y2, false));
+    }
   } else if (order === 3) {
     for (const d of [-BOND_OFF, 0, BOND_OFF]) {
       const ox = nx * d,

@@ -19,7 +19,7 @@ import { measureTerminalCationRingProximityPenalty, runTerminalCationRingClearan
 import { runDiarylOmittedHydrogenFanTidy } from './diaryl-omitted-h-fan.js';
 import { measureRingSubstituentPresentationPenalty, measureTerminalRingCarbonylLeafContactPenalty, runDirectAttachedRingSystemOutwardRetidy, runRingSubstituentTidy } from './ring-substituent.js';
 import { measureRingTerminalHeteroOutwardPenalty, measureTerminalMultipleBondLeafFanPenalty, runRingTerminalHeteroTidy, runTerminalMultipleBondLeafFanTidy } from './ring-terminal-hetero.js';
-import { smallRingExteriorTargetAngles } from '../../placement/branch-placement.js';
+import { smallRingExteriorTargetAngleSets } from '../../placement/branch-placement.js';
 
 const PRESENTATION_NEED_EPSILON = 1e-6;
 const CLEAN_ATTACHED_RING_FALLBACK_PRESENTATION_MIN = 0.25;
@@ -572,8 +572,8 @@ function collectSmallRingExteriorFanDescriptors(layoutGraph, coords) {
       }
       const anchorPosition = coords.get(anchorAtomId);
       const ringNeighborAngles = ringNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
-      const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringAtomIds.size);
-      if (targetAngles.length !== 2) {
+      const targetAngleSets = smallRingExteriorTargetAngleSets(layoutGraph, anchorAtomId, ringNeighborAngles, exocyclicNeighborIds, ringAtomIds.size);
+      if (targetAngleSets.length === 0) {
         continue;
       }
 
@@ -583,16 +583,12 @@ function collectSmallRingExteriorFanDescriptors(layoutGraph, coords) {
       }
       seenKeys.add(descriptorKey);
 
-      const assignments = [
-        [
-          { rootAtomId: exocyclicNeighborIds[0], targetAngle: targetAngles[0] },
-          { rootAtomId: exocyclicNeighborIds[1], targetAngle: targetAngles[1] }
-        ],
-        [
-          { rootAtomId: exocyclicNeighborIds[0], targetAngle: targetAngles[1] },
-          { rootAtomId: exocyclicNeighborIds[1], targetAngle: targetAngles[0] }
-        ]
-      ];
+      const assignments = targetAngleSets.map(targetAngles =>
+        exocyclicNeighborIds.map((rootAtomId, index) => ({
+          rootAtomId,
+          targetAngle: targetAngles[index]
+        }))
+      );
       const score = assignments
         .map(assignment => scoreSmallRingExteriorFanAssignment(coords, anchorAtomId, assignment))
         .filter(Boolean)

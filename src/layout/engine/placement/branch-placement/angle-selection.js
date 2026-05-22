@@ -3302,6 +3302,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
     return null;
   }
   return {
+    anchorAtomId,
     ringNeighborIds,
     exocyclicNeighborIds,
     ringSize
@@ -3321,6 +3322,75 @@ function largerAngularGap(ringNeighborAngles) {
     return { startAngle: firstAngle, size: forwardGap };
   }
   return { startAngle: secondAngle, size: wrapGap };
+}
+
+/**
+ * Returns whether an exocyclic saturated-ring branch should win the center of
+ * the exterior fan over a simple sibling leaf. Carbonyl and alkene-like roots
+ * read as directional substituents, so placing them on the exact outward axis
+ * is more important than keeping a generic geminal split.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} neighborAtomId - Exocyclic neighbor atom ID.
+ * @returns {boolean} True when the neighbor is a priority exterior branch.
+ */
+function isPriorityExteriorRingSubstituent(layoutGraph, anchorAtomId, neighborAtomId) {
+  if (!layoutGraph || layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+    return false;
+  }
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || anchorAtom.element !== 'C') {
+    return false;
+  }
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.aromatic || neighborAtom.heavyDegree < 2) {
+    return false;
+  }
+
+  const anchorBond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
+  if (!anchorBond || anchorBond.kind !== 'covalent' || anchorBond.inRing || anchorBond.aromatic || (anchorBond.order ?? 1) !== 1) {
+    return false;
+  }
+
+  for (const bond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
+    if (!bond || bond === anchorBond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+      continue;
+    }
+    const downstreamAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
+    const downstreamAtom = layoutGraph.atoms.get(downstreamAtomId);
+    if (downstreamAtom && downstreamAtom.element !== 'H' && !layoutGraph.ringAtomIdSet.has(downstreamAtomId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighborAngles, exocyclicNeighborIds) {
+  if (!descriptor || ringNeighborAngles.length !== 2 || exocyclicNeighborIds.length !== 2) {
+    return [];
+  }
+  if ((descriptor.ringSize ?? 0) < 5) {
+    return [];
+  }
+  const priorityNeighborIds = descriptor.exocyclicNeighborIds.filter(neighborAtomId =>
+    isPriorityExteriorRingSubstituent(layoutGraph, descriptor.anchorAtomId, neighborAtomId)
+  );
+  if (priorityNeighborIds.length !== 1 || !exocyclicNeighborIds.includes(priorityNeighborIds[0])) {
+    return [];
+  }
+
+  const exteriorGap = largerAngularGap(ringNeighborAngles);
+  if (!exteriorGap) {
+    return [];
+  }
+
+  const priorityAtomId = priorityNeighborIds[0];
+  const centerAngle = normalizeSignedAngle(exteriorGap.startAngle + exteriorGap.size / 2);
+  const sideOffset = Math.min(DEG60, exteriorGap.size / 4);
+  const sideAngles = [normalizeSignedAngle(centerAngle - sideOffset), normalizeSignedAngle(centerAngle + sideOffset)];
+  return sideAngles.map(sideAngle =>
+    exocyclicNeighborIds.map(neighborAtomId => (neighborAtomId === priorityAtomId ? centerAngle : sideAngle))
+  );
 }
 
 /**
@@ -3350,6 +3420,42 @@ export function smallRingExteriorTargetAngles(ringNeighborAngles, ringSize) {
   return ringNeighborAngles.map(ringNeighborAngle => normalizeSignedAngle(ringNeighborAngle + Math.PI));
 }
 
+/**
+ * Returns target angle sets for paired exterior branches on a saturated ring
+ * atom, including the priority carbonyl/alkene-root variant when one exterior
+ * branch is geometry-critical and the sibling is a simple leaf.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {number[]} ringNeighborAngles - Already placed ring-bond angles.
+ * @param {string[]} exocyclicNeighborIds - Exocyclic neighbor IDs in assignment order.
+ * @param {number} ringSize - Incident ring size.
+ * @returns {number[][]} Candidate target angle sets in exocyclic-neighbor order.
+ */
+export function smallRingExteriorTargetAngleSets(layoutGraph, anchorAtomId, ringNeighborAngles, exocyclicNeighborIds, ringSize) {
+  const prioritizedTargetAngleSets = prioritizedExteriorTargetAngleSets(
+    layoutGraph,
+    {
+      anchorAtomId,
+      exocyclicNeighborIds,
+      ringSize
+    },
+    ringNeighborAngles,
+    exocyclicNeighborIds
+  );
+  if (prioritizedTargetAngleSets.length > 0) {
+    return prioritizedTargetAngleSets;
+  }
+
+  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringSize);
+  if (targetAngles.length !== exocyclicNeighborIds.length) {
+    return [];
+  }
+  if (targetAngles.length === 2) {
+    return [targetAngles, [targetAngles[1], targetAngles[0]]];
+  }
+  return [targetAngles];
+}
+
 function exactSmallRingExteriorAngleSets(layoutGraph, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds) {
   if (!layoutGraph || !coords.has(anchorAtomId) || unplacedNeighborIds.length !== 2) {
     return [];
@@ -3370,8 +3476,7 @@ function exactSmallRingExteriorAngleSets(layoutGraph, coords, anchorAtomId, curr
 
   const anchorPosition = coords.get(anchorAtomId);
   const ringNeighborAngles = placedRingNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
-  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, descriptor.ringSize);
-  return targetAngles.length === unplacedNeighborIds.length ? [targetAngles] : [];
+  return smallRingExteriorTargetAngleSets(layoutGraph, anchorAtomId, ringNeighborAngles, unplacedNeighborIds, descriptor.ringSize);
 }
 
 /**
@@ -3478,14 +3583,36 @@ function preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, 
   }
 
   const ringNeighborAngles = placedRingNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), atomPosition)));
+  const placedExocyclicNeighborIds = descriptor.exocyclicNeighborIds.filter(
+    neighborAtomId => neighborAtomId !== childAtomId && placedNeighborIdsList.includes(neighborAtomId) && coords.has(neighborAtomId)
+  );
+  const targetAngleSets = smallRingExteriorTargetAngleSets(layoutGraph, anchorAtomId, ringNeighborAngles, descriptor.exocyclicNeighborIds, descriptor.ringSize);
+  if (targetAngleSets.length > 0) {
+    const candidateAngles = [];
+    for (const targetAngleSet of targetAngleSets) {
+      const targetIndex = descriptor.exocyclicNeighborIds.indexOf(childAtomId);
+      const targetAngle = targetIndex >= 0 ? targetAngleSet[targetIndex] : null;
+      if (targetAngle == null) {
+        continue;
+      }
+      const placedTargetsAreCompatible = placedExocyclicNeighborIds.every(placedNeighborAtomId => {
+        const placedTargetIndex = descriptor.exocyclicNeighborIds.indexOf(placedNeighborAtomId);
+        const placedTargetAngle = placedTargetIndex >= 0 ? targetAngleSet[placedTargetIndex] : null;
+        return placedTargetAngle != null && angularDifference(angleOf(sub(coords.get(placedNeighborAtomId), atomPosition)), placedTargetAngle) <= DEG30;
+      });
+      if (placedTargetsAreCompatible && !candidateAngles.some(angle => angularDifference(angle, targetAngle) <= 1e-9)) {
+        candidateAngles.push(targetAngle);
+      }
+    }
+    if (candidateAngles.length > 0) {
+      return candidateAngles;
+    }
+  }
   const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, descriptor.ringSize);
   if (targetAngles.length !== descriptor.exocyclicNeighborIds.length) {
     return [];
   }
 
-  const placedExocyclicNeighborIds = descriptor.exocyclicNeighborIds.filter(
-    neighborAtomId => neighborAtomId !== childAtomId && placedNeighborIdsList.includes(neighborAtomId) && coords.has(neighborAtomId)
-  );
   if (placedExocyclicNeighborIds.length === 0) {
     return targetAngles;
   }
@@ -3537,6 +3664,7 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
 
   const ringNeighborAngles = [];
   const exocyclicAngles = [];
+  const exocyclicNeighborIds = [];
   let exocyclicHeavyCount = 0;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
@@ -3558,20 +3686,22 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
     exocyclicHeavyCount++;
     const neighborPosition = coords.get(neighborAtomId);
     if (neighborPosition) {
+      exocyclicNeighborIds.push(neighborAtomId);
       exocyclicAngles.push(angleOf(sub(neighborPosition, atomPosition)));
     }
   }
 
-  if (ringNeighborAngles.length !== 2 || exocyclicHeavyCount !== 2) {
+  if (ringNeighborAngles.length !== 2 || exocyclicHeavyCount !== 2 || exocyclicAngles.length !== 2) {
     return 0;
+  }
+
+  const targetAngleSets = smallRingExteriorTargetAngleSets(layoutGraph, atomId, ringNeighborAngles, exocyclicNeighborIds, smallRing.atomIds.length);
+  if (targetAngleSets.length > 0) {
+    return Math.min(...targetAngleSets.map(targetAngles => exocyclicAngles.reduce((sum, exocyclicAngle, index) => sum + angularDifference(exocyclicAngle, targetAngles[index]) ** 2, 0)));
   }
 
   const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, smallRing.atomIds.length);
   if (targetAngles.length !== 2) {
-    return 0;
-  }
-
-  if (exocyclicAngles.length !== 2) {
     return 0;
   }
 

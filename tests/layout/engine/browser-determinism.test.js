@@ -31,6 +31,8 @@ const BROWSER_BRIDGED_ALKALOID_STRICT_RING_SMILES =
   '[H][C@@]12N(C)C3=C(C=C(C(OC)=C3)[C@]3(C[C@@H]4CN(C[C@](O)(CC)C4)CCC4=C3NC3=CC=CC=C43)C(=O)OC)[C@@]11CCN3CC=C[C@@](CC)([C@@H](<OC(C)=O>)[C@]2(O)C(=O)OC)[C@@]13[H]';
 const BROWSER_LARGE_PEPTIDE_HIDDEN_HYDROGEN_SMILES =
   'CC[C@H](C)[C@H](<NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](CO)NC(=O)[C@H](Cc1c[nH]cn1)NC(=O)[C@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](C)NC(=O)[C@H](CCCCN)NC(=O)[C@@H](NC(=O)[C@H](CCSC)NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](Cc2c[nH]cn2)NC(=O)[C@H](Cc3ccccc3)NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CO)NC(=O)[C@@H](NC(=O)[C@@H]4CCCN4C(=O)[C@@H]5CCCN5C(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@@H](N)CO)[C@@H](C)CC)[C@@H](C)O)C(C)C)[C@@H](C)O>)C(=O)N[C@@H](C)C(=O)N';
+const BROWSER_LARGE_NUCLEOTIDE_CARBONYL_SMILES =
+  'CO[C@@H]1[C@H](<OP(=O)(O)OC[C@H]2O[C@H]([C@H](OC)[C@@H]2OP(=O)(O)OC[C@H]3O[C@H]([C@H](OC)[C@@H]3OP(=O)(O)OC[C@H]4O[C@H]([C@H](OC)[C@@H]4OP(=O)(O)OC[C@H]5O[C@H]([C@H](OC)[C@@H]5OP(=O)(O)O)N6C=CC(=NC6=O)N)n7cnc8C(=O)NC(=Nc78)N)n9cnc%10C(=O)NC(=Nc9%10)N)N%11C=CC(=NC%11=O)N>)[C@@H](<COP(=O)(O)O[C@@H]%12[C@@H](COP(=O)(O)O[C@@H]%13[C@@H](COP(=O)(O)O[C@@H]%14[C@@H](COP(=O)(O)O[C@@H]%15[C@@H](COP(=O)(O)O[C@@H]%16[C@@H](COP(=O)(O)O[C@@H]%17[C@@H](COP(=O)(O)O[C@@H]%18[C@@H](COP(=O)(O)OP(=O)(O)O[C@@H]%19[C@@H](COP(=O)(O)O[C@@H]%20[C@@H](COP(=O)(O)O[C@@H]%21[C@@H](COP(=O)(O)O[C@@H]%22[C@@H](COP(=O)(O)O[C@@H]%23[C@@H](COP(=O)(O)O[C@H]%24C[C@@H](O[C@@H]%24CN%25NNC(=C%25)CO[C@H]%26CC[C@]%27(C)[C@H]%28CC[C@]%29(C)[C@H](CC[C@H]%29[C@@H]%28CC=C%27C%26)[C@H](C)CCCC(C)C)N%30C=C(C)C(=O)NC%30=O)O[C@H]([C@@H]%23OC)n%31cnc%32c(N)ncnc%31%32)O[C@H]([C@@H]%22OC)N%33C=CC(=NC%33=O)N)O[C@H]([C@@H]%21OC)N%34C=CC(=NC%34=O)N)O[C@H]([C@@H]%20OC)N%35C=CC(=NC%35=O)N)O[C@H]([C@@H]%19OC)n%36cnc%37c(N)ncnc%36%37)O[C@H]([C@@H]%18OC)n%38cnc%39c(N)ncnc%38%39)O[C@H]([C@@H]%17OC)N%40C=CC(=NC%40=O)N)O[C@H]([C@@H]%16OC)n%41cnc%42c(N)ncnc%41%42)O[C@H]([C@@H]%15OC)N%43C=CC(=NC%43=O)N)O[C@H]([C@@H]%14OC)N%44C=CC(=O)NC%44=O)O[C@H]([C@@H]%13OC)n%45cnc%46c(N)ncnc%45%46)O[C@H]([C@@H]%12OC)N%47C=CC(=NC%47=O)N>)O[C@H]1N%48C=CC(=O)NC%48=O';
 const RUN_BROWSER_LAYOUT_TESTS = process.env.RUN_BROWSER_LAYOUT_TESTS === '1' || process.env.RUN_LAYOUT_STRESS === '1';
 
 const MIME_TYPES = new Map([
@@ -267,6 +269,9 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
         const bridgedAlkaloidO38Angle = isBridgedAlkaloidStrictRingCase ? bondAngleAtAtom('O38', 'C36', 'C39') : null;
         const bridgedAlkaloidC49C54Distance = isBridgedAlkaloidStrictRingCase ? atomDistance('C49', 'C54') : null;
         const bridgedAlkaloidC27O37Distance = isBridgedAlkaloidStrictRingCase ? atomDistance('C27', 'O37') : null;
+        const largeNucleotideC85Angles = [bondAngleAtAtom('C85', 'N80', 'O86'), bondAngleAtAtom('C85', 'N80', 'N84'), bondAngleAtAtom('C85', 'O86', 'N84')];
+        const largeNucleotideC507Angles = [bondAngleAtAtom('C507', 'N501', 'O508'), bondAngleAtAtom('C507', 'N501', 'N506'), bondAngleAtAtom('C507', 'O508', 'N506')];
+        const largeNucleotideO265Angle = bondAngleAtAtom('O265', 'C264', 'C266');
         const omittedHubRootOutwardDeviation = (rootAtomId, parentAtomId) => {
           const rootPosition = pipeline.coords.get(rootAtomId);
           const parentPosition = pipeline.coords.get(parentAtomId);
@@ -351,6 +356,11 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
           bridgedAlkaloidO38Angle: typeof bridgedAlkaloidO38Angle === 'number' && Number.isFinite(bridgedAlkaloidO38Angle) ? bridgedAlkaloidO38Angle : null,
           bridgedAlkaloidC49C54Distance: typeof bridgedAlkaloidC49C54Distance === 'number' && Number.isFinite(bridgedAlkaloidC49C54Distance) ? bridgedAlkaloidC49C54Distance : null,
           bridgedAlkaloidC27O37Distance: typeof bridgedAlkaloidC27O37Distance === 'number' && Number.isFinite(bridgedAlkaloidC27O37Distance) ? bridgedAlkaloidC27O37Distance : null,
+          largeNucleotideC85Angles:
+            largeNucleotideC85Angles.every(value => typeof value === 'number' && Number.isFinite(value)) ? largeNucleotideC85Angles : null,
+          largeNucleotideC507Angles:
+            largeNucleotideC507Angles.every(value => typeof value === 'number' && Number.isFinite(value)) ? largeNucleotideC507Angles : null,
+          largeNucleotideO265Angle: typeof largeNucleotideO265Angle === 'number' && Number.isFinite(largeNucleotideO265Angle) ? largeNucleotideO265Angle : null,
           audit: {
             ok: pipeline.metadata?.audit?.ok ?? null,
             severeOverlapCount: pipeline.metadata?.audit?.severeOverlapCount ?? null,
@@ -551,6 +561,32 @@ if (!RUN_BROWSER_LAYOUT_TESTS) {
       assert.ok(signature.bridgedAlkaloidC27O37Distance > 1.5 * 2, `expected ${browserName} upper carbonyl to clear C27, got ${signature.bridgedAlkaloidC27O37Distance?.toFixed(3)}`);
     }
     assert.ok(webkitSignature.bridgedAlkaloidC49C54Distance > 1.5 * 0.6, `expected webkit terminal methyl contact to clear, got ${webkitSignature.bridgedAlkaloidC49C54Distance?.toFixed(3)}`);
+  });
+
+  test('browser layout keeps large nucleotide carbonyl fans and ether exits exact in webkit', { timeout: 180_000 }, async t => {
+    const { server, origin } = await startStaticServer();
+    t.after(async () => {
+      await new Promise(resolve => server.close(resolve));
+    });
+
+    const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_LARGE_NUCLEOTIDE_CARBONYL_SMILES, {
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    for (const [label, angles] of [
+      ['C85', webkitSignature.largeNucleotideC85Angles],
+      ['C507', webkitSignature.largeNucleotideC507Angles]
+    ]) {
+      assert.ok(Array.isArray(angles), `expected webkit to report ${label} carbonyl fan angles`);
+      for (const angle of angles) {
+        assert.ok(Math.abs(angle - 120) < 1e-6, `expected webkit ${label} carbonyl fan near 120 degrees, got ${angle.toFixed(2)}`);
+      }
+    }
+    assert.ok(
+      Math.abs(webkitSignature.largeNucleotideO265Angle - 120) < 1e-6,
+      `expected webkit O265 ether continuation near 120 degrees, got ${webkitSignature.largeNucleotideO265Angle?.toFixed(2)}`
+    );
   });
 
   test('browser layout keeps crowded omitted-h thiophene and piperazine hubs bounded and overlap-free in webkit', { timeout: 120_000 }, async t => {

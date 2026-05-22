@@ -1504,6 +1504,35 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('centers geminal carbonyl roots on saturated ring exterior exits', () => {
+    const smiles = 'CC1(C(=O)OC)CCCCC1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, adjacency, plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true });
+
+    const assertCarbonylExterior = (layoutGraph, coords, label) => {
+      const anchorAtomId = 'C2';
+      const carbonylRootAtomId = 'C3';
+      const methylAtomId = 'C1';
+      const anchorPosition = coords.get(anchorAtomId);
+      const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+      const carbonylDeviation = Math.min(...outwardAngles.map(outwardAngle => angularDifference(angleOf(sub(coords.get(carbonylRootAtomId), anchorPosition)), outwardAngle)));
+      const methylDeviation = Math.min(...outwardAngles.map(outwardAngle => angularDifference(angleOf(sub(coords.get(methylAtomId), anchorPosition)), outwardAngle)));
+
+      assert.ok(carbonylDeviation < 1e-6, `expected ${label} carbonyl root to sit on the exact exterior axis, got ${((carbonylDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(Math.abs(methylDeviation - Math.PI / 3) < 1e-6, `expected ${label} sibling methyl to take the side exterior slot, got ${((methylDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) < 1e-9, `expected ${label} exterior fan penalty to be clean`);
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertCarbonylExterior(graph, mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCarbonylExterior(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+  });
+
   stressIt('preserves crowded fluorinated cyclohexyl exterior fans through cleanup', () => {
     const smiles = 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
     const result = runPipeline(parseSMILES(smiles), {
