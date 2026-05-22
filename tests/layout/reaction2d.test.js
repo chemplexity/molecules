@@ -529,6 +529,34 @@ test('reaction preview preserves sugar-ring geometry for alcohol dehydration acr
   }
 });
 
+test('reaction preview centers exocyclic termini after small-ring alcohol dehydration', () => {
+  const sourceMol = parseSMILES('CC1(O)CC1C1=NC=C([O-])O1');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
+  assert.equal(mappings.length, 3, 'expected exocyclic and internal-ring dehydration mappings');
+
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+    assert.ok(preview, `expected dehydration preview ${index} to be buildable`);
+    generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+    centerReaction2dPairCoords(preview.mol, preview, 1.5);
+
+    const center = preview.mol.atoms.get('__rxn_product__0:C2');
+    const terminal = preview.mol.atoms.get('__rxn_product__0:C1');
+    const ringLeft = preview.mol.atoms.get('__rxn_product__0:C4');
+    const ringRight = preview.mol.atoms.get('__rxn_product__0:C5');
+    assert.ok(center && terminal && ringLeft && ringRight, `expected small-ring dehydration product atoms for mapping ${index}`);
+
+    const leftAngle = angleDeg(ringLeft, center, terminal);
+    const rightAngle = angleDeg(ringRight, center, terminal);
+    assert.ok(Math.abs(leftAngle - rightAngle) < 8, `expected exocyclic terminus to sit on the ring-anchor bisector for mapping ${index}, got ${leftAngle.toFixed(1)}°/${rightAngle.toFixed(1)}°`);
+    assert.ok(Math.min(leftAngle, rightAngle) > 140, `expected exocyclic terminus angles to stay open for mapping ${index}, got ${leftAngle.toFixed(1)}°/${rightAngle.toFixed(1)}°`);
+    assert.ok(distance(center, terminal) < 1.65, `expected exocyclic terminus bond to stay compact for mapping ${index}, got ${distance(center, terminal).toFixed(3)} Å`);
+  }
+});
+
 test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigonal', () => {
   const preview = preparePreview('N#CC(C#N)=C(C#N)C#N', reactionTemplates.nitrileHydrolysisToAmide.smirks);
   const amideCarbonyl = [...preview.mol.atoms.values()].find(atom => {
@@ -724,6 +752,35 @@ test('reaction preview preserves product wedge or dash display for an untouched 
 test('reaction preview keeps amine-protonation fused aza product valence-clean', () => {
   const preview = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.amineProtonation.smirks);
 
+  assert.deepEqual(validateValence(preview.mol), []);
+});
+
+test('reaction preview keeps charge-only amine protonation on the reactant geometry without preview relayout', () => {
+  const sourceMol = parseSMILES('CCNC=NC12CCC(COC1=O)C2C(N)=N');
+  const mapping = [...findSMARTSRaw(sourceMol, reactionTemplates.amineProtonation.smirks.split('>>')[0])][0];
+  assert.ok(mapping, 'expected amine-protonation mapping');
+  const preview = buildReaction2dMol(sourceMol, reactionTemplates.amineProtonation.smirks, mapping);
+  assert.ok(preview, 'expected amine-protonation preview');
+
+  alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+
+  const component = largestProductComponent(preview);
+  const componentHeavyCount = [...component].filter(id => preview.mol.atoms.get(id)?.name !== 'H').length;
+  const mappedHeavyPairs = preview.mappedAtomPairs.filter(([reactantId, productId]) => preview.mol.atoms.get(reactantId)?.name !== 'H' && preview.mol.atoms.get(productId)?.name !== 'H');
+  assert.equal(mappedHeavyPairs.length, componentHeavyCount, 'expected every product heavy atom to be retained from the reactant');
+
+  let maxError = 0;
+  for (let i = 0; i < mappedHeavyPairs.length; i++) {
+    for (let j = i + 1; j < mappedHeavyPairs.length; j++) {
+      const [reactantA, productA] = mappedHeavyPairs[i];
+      const [reactantB, productB] = mappedHeavyPairs[j];
+      maxError = Math.max(
+        maxError,
+        Math.abs(distance(preview.mol.atoms.get(reactantA), preview.mol.atoms.get(reactantB)) - distance(preview.mol.atoms.get(productA), preview.mol.atoms.get(productB)))
+      );
+    }
+  }
+  assert.ok(maxError < 1e-9, `expected charge-only product geometry to match reactant geometry, got max error ${maxError.toExponential(3)} Å`);
   assert.deepEqual(validateValence(preview.mol), []);
 });
 

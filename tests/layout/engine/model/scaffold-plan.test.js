@@ -163,6 +163,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the methoxy ammonium oxazabicyclic lactam template for compact bridged cages', () => {
+    const graph = createLayoutGraph(parseSMILES('COC12CCC(CC(C)[NH+](C)C1)NC(=O)O2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'methoxy-ammonium-oxazabicyclic-lactam-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the hydroxy oxazabicyclic lactam template for compact alcohol cages', () => {
     const graph = createLayoutGraph(parseSMILES('OC1C2CNC(=O)C1O2'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);

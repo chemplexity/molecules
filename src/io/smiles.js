@@ -1948,6 +1948,28 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
 
   perceiveAromaticity(mol, { preserveKekule: preserveAromaticBondOrders });
 
+  // Normalize aromatic N-oxide: aromatic N with exocyclic double bond to a
+  // terminal O → convert to [n+][O-] (single bond with formal charges).
+  // This matches the InChI canonical form so round-trip comparison works.
+  for (const [atomId, atom] of mol.atoms) {
+    if (!atom.isAromatic() || atom.name !== 'N') continue;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond || bond.properties.aromatic || bond.properties.order !== 2) continue;
+      const otherId = bond.getOtherAtom(atomId);
+      const other = mol.atoms.get(otherId);
+      if (!other || other.name !== 'O') continue;
+      const otherHeavyDeg = other.bonds.filter(bId => {
+        const b = mol.bonds.get(bId);
+        return b && mol.atoms.get(b.getOtherAtom(otherId))?.name !== 'H';
+      }).length;
+      if (otherHeavyDeg !== 1) continue;
+      bond.properties.order = 1;
+      atom.setCharge((atom.properties.charge ?? 0) + 1);
+      other.setCharge((other.properties.charge ?? 0) - 1);
+    }
+  }
+
   mol._recomputeProperties();
 
   return mol;
@@ -2380,7 +2402,13 @@ function _serializeComponent(mol, sortFn = null) {
     // Ring-closure annotations appended right after the atom symbol.
     // Bond character is placed at the opener only.
     for (const { num, bond, isOpener } of atomRings.get(id) ?? []) {
-      s += (isOpener ? _bondToken(bond, id) : '') + _ringToken(num);
+      if (isOpener) {
+        const otherId = bond.getOtherAtom(id);
+        const bothAromatic = atom.isAromatic() && (heavy.atoms.get(otherId)?.isAromatic() ?? false);
+        s += (bothAromatic ? '' : _bondToken(bond, id)) + _ringToken(num);
+      } else {
+        s += _ringToken(num);
+      }
     }
 
     // Spanning-tree children (non-ring bonds to unvisited atoms).
@@ -2399,7 +2427,9 @@ function _serializeComponent(mol, sortFn = null) {
     // All children except the last are written as branches in parentheses.
     for (let i = 0; i < children.length; i++) {
       const { nextId, bond } = children[i];
-      const bs = _bondToken(bond, id);
+      const nextAtom = heavy.atoms.get(nextId);
+      const bothAromatic = atom.isAromatic() && (nextAtom?.isAromatic() ?? false);
+      const bs = bothAromatic ? '' : _bondToken(bond, id);
       s += i < children.length - 1 ? `(${bs}${emit(nextId)})` : `${bs}${emit(nextId)}`;
     }
 

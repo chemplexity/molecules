@@ -18,6 +18,7 @@ import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
 import { computeIncidentRingOutwardAngles } from '../../../src/layout/engine/geometry/ring-direction.js';
 import { BRIDGED_VALIDATION } from '../../../src/layout/engine/constants.js';
 import { createLayoutGraphFromNormalized } from '../../../src/layout/engine/model/layout-graph.js';
+import { buildScaffoldPlan } from '../../../src/layout/engine/model/scaffold-plan.js';
 import { normalizeOptions } from '../../../src/layout/engine/options.js';
 import { describePathLikeIsolatedRingChain } from '../../../src/layout/engine/topology/isolated-ring-chain.js';
 import { measureSmallRingExteriorGapSpreadPenalty, smallRingExteriorTargetAngles } from '../../../src/layout/engine/placement/branch-placement.js';
@@ -39,6 +40,8 @@ import {
 
 const GLYCOPEPTIDE_MACROCYCLE_SMILES =
   'C[NH2+][C@@H](CC(C)C)C(=O)N[C@@H]1[C@H](O)C2=CC=C(OC3=CC4=CC(OC5=CC=C(C=C5Cl)[C@@H](O[C@H]5C[C@@](C)([NH3+])[C@H](O)[C@@H](C)O5)[C@H]5NC(=O)[C@H](NC(=O)[C@H]4NC(=O)[C@@H](CC(N)=O)NC1=O)C1=CC=C(O)C(=C1)C1=C(O)C=C(O)C=C1[C@@H](NC5=O)C(O)=O)=C3O[C@H]1O[C@@H](CO)[C@H](O)[C@@H](O)[C@@H]1O[C@@H]1C[C@](C)([NH3+])[C@@H](O)[C@H](C)O1)C(Cl)=C2';
+const LARGE_PHOSPHATE_RING_CHAIN_SMILES =
+  'CO[C@@H]1[C@H](<OP(=O)(O)OC[C@H]2O[C@H]([C@H](OC)[C@@H]2OP(=O)(O)OC[C@H]3O[C@H]([C@H](OC)[C@@H]3OP(=O)(O)OC[C@H]4O[C@H]([C@H](OC)[C@@H]4OP(=O)(O)OC[C@H]5O[C@H]([C@H](OC)[C@@H]5OP(=O)(O)O)N6C=CC(=NC6=O)N)n7cnc8C(=O)NC(=Nc78)N)n9cnc%10C(=O)NC(=Nc9%10)N)N%11C=CC(=NC%11=O)N>)[C@@H](<COP(=O)(O)O[C@@H]%12[C@@H](COP(=O)(O)O[C@@H]%13[C@@H](COP(=O)(O)O[C@@H]%14[C@@H](COP(=O)(O)O[C@@H]%15[C@@H](COP(=O)(O)O[C@@H]%16[C@@H](COP(=O)(O)O[C@@H]%17[C@@H](COP(=O)(O)O[C@@H]%18[C@@H](COP(=O)(O)OP(=O)(O)O[C@@H]%19[C@@H](COP(=O)(O)O[C@@H]%20[C@@H](COP(=O)(O)O[C@@H]%21[C@@H](COP(=O)(O)O[C@@H]%22[C@@H](COP(=O)(O)O[C@@H]%23[C@@H](COP(=O)(O)O[C@H]%24C[C@@H](O[C@@H]%24CN%25NNC(=C%25)CO[C@H]%26CC[C@]%27(C)[C@H]%28CC[C@]%29(C)[C@H](CC[C@H]%29[C@@H]%28CC=C%27C%26)[C@H](C)CCCC(C)C)N%30C=C(C)C(=O)NC%30=O)O[C@H]([C@@H]%23OC)n%31cnc%32c(N)ncnc%31%32)O[C@H]([C@@H]%22OC)N%33C=CC(=NC%33=O)N)O[C@H]([C@@H]%21OC)N%34C=CC(=NC%34=O)N)O[C@H]([C@@H]%20OC)N%35C=CC(=NC%35=O)N)O[C@H]([C@@H]%19OC)n%36cnc%37c(N)ncnc%36%37)O[C@H]([C@@H]%18OC)n%38cnc%39c(N)ncnc%38%39)O[C@H]([C@@H]%17OC)N%40C=CC(=NC%40=O)N)O[C@H]([C@@H]%16OC)n%41cnc%42c(N)ncnc%41%42)O[C@H]([C@@H]%15OC)N%43C=CC(=NC%43=O)N)O[C@H]([C@@H]%14OC)N%44C=CC(=O)NC%44=O)O[C@H]([C@@H]%13OC)n%45cnc%46c(N)ncnc%45%46)O[C@H]([C@@H]%12OC)N%47C=CC(=NC%47=O)N>)O[C@H]1N%48C=CC(=O)NC%48=O';
 
 /**
  * Returns the interior angles for an ordered ring path.
@@ -3252,6 +3255,31 @@ describe('layout/engine/pipeline', () => {
     assert.ok(checkedAnchors.length >= 3, `expected multiple saturated ring oxygen roots to be checked, got ${checkedAnchors.length}`);
   });
 
+  it('keeps sugar ring acetamide nitrogens on exact outward axes without carbonyl overlap', () => {
+    const result = runPipeline(parseSMILES('[H][C@]1(O[C@](O)(C[C@H](O)[C@H]1NC(C)=O)C(O)=O)[C@H](O)[C@H](O)CO'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+
+    const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, 'C10');
+    assert.notEqual(preferredAngle, null);
+    const nitrogenAngle = angleOf(sub(result.coords.get('N12'), result.coords.get('C10')));
+    assert.ok(angularDifference(nitrogenAngle, preferredAngle) < 1e-6, 'expected the acetamide nitrogen to stay on the exact sugar ring outward axis');
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C10', 'C2', 'N12') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C10', 'C7', 'N12') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N12', 'C10', 'C13') - 120) < 1e-6);
+  });
+
   it('retries long glycoside ring-chain roots so saturated sugar exits stay linear and overlap-free', () => {
     const result = runPipeline(
       parseSMILES(
@@ -3313,6 +3341,24 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'S98', 'O97', 'O101') - 180) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'S35', 'O36', 'O38') - 90) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'S98', 'O99', 'O101') - 90) < 1e-6);
+  });
+
+  it('keeps very large phosphate ring chains overlap-free after dense block stitching', { timeout: 30000 }, () => {
+    const result = runPipeline(parseSMILES(LARGE_PHOSPHATE_RING_CHAIN_SMILES), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.placementMode, 'block-stitched');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords) < 1e-9);
   });
 
   it('keeps the inter-ring ether between fused sugar rings on a proper ether bond angle', () => {
@@ -3724,6 +3770,18 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('keeps blocked bridged-ring terminal imine fans on exact trigonal angles', () => {
+    const result = runPipeline(parseSMILES('CC1OCOC2=NC(C#N)C(C)(OC2=N)C1=O'), { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true });
+    const imineFanAngles = [bondAngleAtAtom(result.coords, 'C14', 'C6', 'N15'), bondAngleAtAtom(result.coords, 'C14', 'N15', 'O13'), bondAngleAtAtom(result.coords, 'C14', 'C6', 'O13')];
+
+    for (const angle of imineFanAngles) {
+      assert.ok(Math.abs(angle - 120) < 0.01, `expected the blocked terminal imine fan to stay exact, got ${imineFanAngles.map(value => value.toFixed(2)).join(', ')}`);
+    }
+    assert.ok(distance(result.coords.get('N15'), result.coords.get('C4')) > result.layoutGraph.options.bondLength * 3, 'expected the OCO bridge to stay clear of the exact terminal imine slot');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('keeps imine carbon direct-attached ring roots on exact 120-degree parent slots during placement', () => {
     const { placement, placementAudit, result } = inspectPlacementAndFinalAudit('CC=C(OCCO)N=CC1=C(C)C[NH2+]C1', { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true });
     const placementImineCarbonAngle = bondAngleAtAtom(placement.coords, 'C9', 'N8', 'C10');
@@ -4034,6 +4092,23 @@ describe('layout/engine/pipeline', () => {
     for (const separation of separations) {
       assert.ok(Math.abs(separation - (2 * Math.PI) / 3) < 1e-6, `expected C10 trigonal separations near 120 degrees, got ${((separation * 180) / Math.PI).toFixed(2)}`);
     }
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps terminal amino leaves on non-aromatic ring trigonal exits exact while rotating blocking attached rings', () => {
+    const result = runPipeline(parseSMILES('Cc1ccc(cc1)C2=CC(C3=C(NC(=S)N=C3N)O2)c4c([nH]c5ccc(Cl)cc45)c6ccccc6'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const firstAngle = bondAngleAtAtom(result.coords, 'C17', 'C11', 'N18');
+    const secondAngle = bondAngleAtAtom(result.coords, 'C17', 'N16', 'N18');
+
+    assert.ok(Math.abs(firstAngle - 120) < 1e-6, `expected C11-C17-N18 to stay exact, got ${firstAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondAngle - 120) < 1e-6, `expected N16-C17-N18 to stay exact, got ${secondAngle.toFixed(2)}`);
+    assert.ok(distance(result.coords.get('N18'), result.coords.get('C29')) > result.layoutGraph.options.bondLength * 0.8, 'expected the attached fused aryl ring to clear the exact amino slot');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -4949,6 +5024,26 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'bridged');
     assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
     assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
+  });
+
+  it('keeps compact methoxy ammonium oxazabicyclic lactam bridges open', () => {
+    const smiles = 'COC12CCC(CC(C)[NH+](C)C1)NC(=O)O2';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const bridgeAngles = [bondAngleAtAtom(result.coords, 'C4', 'C3', 'C5'), bondAngleAtAtom(result.coords, 'C5', 'C4', 'C6')];
+    const plan = buildScaffoldPlan(result.layoutGraph, result.layoutGraph.components[0]);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(plan.rootScaffold.templateId, 'methoxy-ammonium-oxazabicyclic-lactam-core');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(Math.max(...bridgeAngles) < 145, `expected middle bridge to stay open, got ${bridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
   it('clears crowded mixed bridged acyl branches without stretching bridged rings', () => {

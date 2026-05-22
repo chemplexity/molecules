@@ -21,6 +21,10 @@ function ringAngles(coords, atomIds) {
   );
 }
 
+function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  return angularDifference(angleOf(sub(coords.get(firstNeighborAtomId), coords.get(centerAtomId))), angleOf(sub(coords.get(secondNeighborAtomId), coords.get(centerAtomId)))) * (180 / Math.PI);
+}
+
 describe('layout/engine/templates/placement', () => {
   it('places an isolated aromatic ring from a matched scaffold template', () => {
     const graph = createLayoutGraph(makeBenzene());
@@ -500,6 +504,28 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C2').y < coords.get('C10').y);
     assert.ok(Math.min(...etherRingAngles) > 90);
     assert.ok(Math.min(...lactamRingAngles) > 110);
+  });
+
+  it('places methoxy ammonium oxazabicyclic lactams with an open middle bridge', () => {
+    const graph = createLayoutGraph(parseSMILES('COC12CCC(CC(C)[NH+](C)C1)NC(=O)O2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'methoxy-ammonium-oxazabicyclic-lactam-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const ammoniumRingAngles = ringAngles(coords, ['C13', 'N10', 'C8', 'C7', 'C6', 'C5', 'C4', 'C3']);
+    const ammoniumNonBridgeheadAngles = ammoniumRingAngles.filter((_, index) => index !== 4 && index !== 7);
+    const lactamRingAngles = ringAngles(coords, ['O17', 'C15', 'N14', 'C6', 'C5', 'C4', 'C3']);
+    const centralBridgeAngles = [bondAngleAtAtom(coords, 'C4', 'C3', 'C5'), bondAngleAtAtom(coords, 'C5', 'C4', 'C6')];
+
+    assert.equal(coords.size, 11);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(Math.min(...ammoniumNonBridgeheadAngles) > 120);
+    assert.ok(Math.min(...lactamRingAngles) > 110);
+    assert.ok(Math.max(...centralBridgeAngles) < 145);
   });
 
   it('places the hydroxy oxazabicyclic lactam cage with the alcohol bridge outside the lactam lane', () => {

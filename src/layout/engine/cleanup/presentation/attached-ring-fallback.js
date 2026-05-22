@@ -2,6 +2,7 @@
 
 import {
   buildAtomGrid,
+  countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   findSevereOverlaps,
   measureDirectAttachedRingJunctionContinuationDistortion,
@@ -147,6 +148,7 @@ const TERMINAL_RING_LEAF_MIN_PARENT_FAN_ANGLE = (7 * Math.PI) / 18;
 const TERMINAL_RING_LEAF_MAX_PARENT_FAN_WORSENING = Math.PI / 18;
 const OMITTED_H_FAN_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6]);
 const CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON = Math.PI / 180;
+const ATTACHED_RING_SPARSE_OVERLAP_MAX_OVERRIDE_ATOMS = 32;
 
 function largestAngularGapBisector(occupiedAngles) {
   const sortedAngles = [...occupiedAngles]
@@ -3787,7 +3789,8 @@ export function runExactAttachedRingRootOutwardRetidy(layoutGraph, inputCoords, 
  *   frozenAtomIds?: Set<string>|null,
  *   cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>,
  *   protectLargeMoleculeBackbone?: boolean,
- *   maxHeavyAtomCount?: number
+ *   maxHeavyAtomCount?: number,
+ *   includeOmittedHydrogenFan?: boolean
  * }} [options] - Touchup options.
  * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Best accepted touchup result.
  */
@@ -3811,15 +3814,19 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     }
 
     const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, currentCoords);
-    const baseOverlapCount = findSevereOverlaps(layoutGraph, currentCoords, bondLength, { atomGrid: baseAtomGrid }).length;
+    const baseSevereOverlaps = findSevereOverlaps(layoutGraph, currentCoords, bondLength, { atomGrid: baseAtomGrid });
+    const baseOverlapCount = baseSevereOverlaps.length;
     const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, currentCoords);
     let bestCandidate =
       findBestProjectedTetrahedralAttachedRingCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds) ??
       findBestCrowdedAttachedRingCenterCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds);
-    const omittedHydrogenFanCandidate = findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds, {
-      cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
-      protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
-    });
+    const omittedHydrogenFanCandidate =
+      options.includeOmittedHydrogenFan === false
+        ? null
+        : findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds, {
+            cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
+            protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+          });
     if (isBalancedOmittedHydrogenFanCandidate(omittedHydrogenFanCandidate)) {
       currentCoords = omittedHydrogenFanCandidate.coords;
       totalNudges += omittedHydrogenFanCandidate.nudges;
@@ -3858,8 +3865,24 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       const basePeripheralFocusClearance = measureAttachedRingPeripheralFocusClearance(layoutGraph, currentCoords, descriptor, focusAtomIds);
       const needsPeripheralFocusClearanceRescue = basePeripheralFocusClearance > 0 && basePeripheralFocusClearance < bondLength * ATTACHED_RING_PERIPHERAL_FOCUS_CLEARANCE_FACTOR - 1e-6;
       const needsTerminalMultipleBondRootReflection = hasDistortedTerminalMultipleBondRootInAttachedRing(layoutGraph, currentCoords, descriptor);
-      const buildCandidateScore = (candidateCoords, nudges) => {
-        const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+      const countCandidateSevereOverlaps = (candidateCoords, overridePositions = null) => {
+        if (!(overridePositions instanceof Map) || overridePositions.size === 0 || overridePositions.size > ATTACHED_RING_SPARSE_OVERLAP_MAX_OVERRIDE_ATOMS) {
+          return findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+        }
+        const overrideAtomIds = new Set(overridePositions.keys());
+        let baseMovedOverlapCount = 0;
+        for (const overlap of baseSevereOverlaps) {
+          if (overrideAtomIds.has(overlap.firstAtomId) || overrideAtomIds.has(overlap.secondAtomId)) {
+            baseMovedOverlapCount++;
+          }
+        }
+        const candidateMovedOverlapCount = countSevereOverlapsWithOverrides(layoutGraph, currentCoords, overridePositions, bondLength, {
+          atomGrid: baseAtomGrid
+        }).count;
+        return Math.max(0, baseOverlapCount - baseMovedOverlapCount + candidateMovedOverlapCount);
+      };
+      const buildCandidateScore = (candidateCoords, nudges, overridePositions = null) => {
+        const overlapCount = countCandidateSevereOverlaps(candidateCoords, overridePositions);
         if (overlapCount > baseOverlapCount) {
           buildCandidateScore.lastRejectReason = 'overlap-count';
           return null;
@@ -4080,7 +4103,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         };
       };
       const scoreCandidate = (seedCandidateCoords, overridePositions) => {
-        let bestScore = buildCandidateScore(seedCandidateCoords, 1);
+        let bestScore = buildCandidateScore(seedCandidateCoords, 1, overridePositions);
         if (bestScore && isExactCleanAttachedRingCandidate(bestScore)) {
           return bestScore;
         }

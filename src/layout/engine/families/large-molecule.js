@@ -23,6 +23,10 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   fineDensePartitionRetryHeavyAtomCap: 24,
   fineDensePartitionRetryComponentHeavyAtomCap: 160,
   linearRingChainDensePartitionHeavyAtomCap: 18,
+  hypervalentRingChainDensePartitionHeavyAtomCap: 20,
+  hypervalentRingChainDensePartitionHeavyAtomFloor: 280,
+  hypervalentRingChainDensePartitionRingSystemFloor: 20,
+  hypervalentRingChainDensePartitionSimpleRingRatio: 0.7,
   extremeFallbackFastPathHeavyAtomFloor: 500,
   extremeFallbackFastPathRingSystemFloor: 20,
   extremeFallbackFastPathBlockFloor: 8
@@ -30,6 +34,7 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
 
 const PACKING_ROTATION_ANGLES = Object.freeze([-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2]);
 const OVERLAP_RESOLUTION_ROTATION_ANGLES = Object.freeze([...PACKING_ROTATION_ANGLES, Math.PI]);
+const HYPERVALENT_FAN_ELEMENTS = new Set(['P', 'S', 'Se', 'As']);
 
 function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
@@ -57,11 +62,95 @@ function countRingSystems(layoutGraph, atomIds) {
   return layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId))).length;
 }
 
+/**
+ * Returns whether a ring system participates in fused, bridged, or spiro links.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Ring-system descriptor.
+ * @returns {boolean} True when any ring connection touches the system.
+ */
+function ringSystemHasConnections(layoutGraph, ringSystem) {
+  const ringIds = new Set(ringSystem.ringIds ?? []);
+  return (layoutGraph.ringConnections ?? []).some(connection => ringIds.has(connection.firstRingId) || ringIds.has(connection.secondRingId));
+}
+
+/**
+ * Counts simple isolated ring systems fully contained by the atom set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Component atom IDs.
+ * @returns {number} Number of single-ring, unconnected ring systems.
+ */
+function countSimpleIsolatedRingSystems(layoutGraph, atomIds) {
+  const atomIdSet = new Set(atomIds);
+  return layoutGraph.ringSystems.filter(
+    ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId)) && (ringSystem.ringIds?.length ?? 0) === 1 && !ringSystemHasConnections(layoutGraph, ringSystem)
+  ).length;
+}
+
+/**
+ * Counts phosphate/sulfate-like connector centers in a component.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Component atom IDs.
+ * @returns {number} Hypervalent connector center count.
+ */
+function countHypervalentConnectorAtoms(layoutGraph, atomIds) {
+  let count = 0;
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom || atom.element === 'H') {
+      continue;
+    }
+    if ((atom.element === 'P' || atom.element === 'S') && atom.heavyDegree >= 3) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Returns whether a large-molecule cut would split a phosphate/sulfate-like
+ * center away from one of its direct ligands.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom ID.
+ * @returns {boolean} True when the atom should stay with its direct ligand fan.
+ */
+function isHypervalentFanCenter(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || !HYPERVALENT_FAN_ELEMENTS.has(atom.element) || atom.heavyDegree < 3) {
+    return false;
+  }
+
+  let singleBondCount = 0;
+  let multipleBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return false;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if ((bond.order ?? 1) === 1) {
+      singleBondCount++;
+      continue;
+    }
+    multipleBondCount++;
+  }
+  return singleBondCount >= 2 && multipleBondCount >= 1;
+}
+
+function isHypervalentFanBond(layoutGraph, bond) {
+  return isHypervalentFanCenter(layoutGraph, bond.a) || isHypervalentFanCenter(layoutGraph, bond.b);
+}
+
 function isCuttableBond(layoutGraph, bond, atomIdSet) {
   if (!atomIdSet.has(bond.a) || !atomIdSet.has(bond.b)) {
     return false;
   }
   if (bond.kind !== 'covalent' || bond.order !== 1 || bond.aromatic || bond.inRing) {
+    return false;
+  }
+  if (isHypervalentFanBond(layoutGraph, bond)) {
     return false;
   }
   const firstAtom = layoutGraph.sourceMolecule.atoms.get(bond.a);
@@ -832,8 +921,17 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
   }
   const pathLikeIsolatedRingChain = describePathLikeIsolatedRingChain(layoutGraph, component);
   const componentHeavyAtomCount = countHeavyAtoms(layoutGraph, component.atomIds);
+  const simpleIsolatedRingSystemCount = countSimpleIsolatedRingSystems(layoutGraph, component.atomIds);
+  const hypervalentConnectorCount = countHypervalentConnectorAtoms(layoutGraph, component.atomIds);
+  const hypervalentRingChain =
+    componentHeavyAtomCount >= LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomFloor &&
+    ringSystemCount >= LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionRingSystemFloor &&
+    simpleIsolatedRingSystemCount >= ringSystemCount * LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionSimpleRingRatio &&
+    hypervalentConnectorCount >= Math.max(4, Math.floor(ringSystemCount * 0.25));
   const denseHeavyAtomCap =
-    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap
+    hypervalentRingChain
+      ? LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomCap
+      : componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap
       ? LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryHeavyAtomCap
       : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {

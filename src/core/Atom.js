@@ -265,6 +265,12 @@ export class Atom {
       return 0; // transition metals
     }
     // p-block
+    // Group 13 (B, Al, Ga, In) has 3 valence electrons and no lone pairs in the
+    // neutral state, so FC = valence_e − totalBO = 3 − totalBO.
+    // Groups 14–17 satisfy the octet; FC = totalBO − (18−group).
+    if (group === 13) {
+      return 3 - totalBondOrder;
+    }
     const base = 18 - group;
     const period = this.properties.period;
     if (period && period > 2 && group <= 17) {

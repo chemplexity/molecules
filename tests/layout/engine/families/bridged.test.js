@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
+import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
 import { layoutBridgedFamily } from '../../../../src/layout/engine/families/bridged.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
@@ -668,6 +669,49 @@ describe('layout/engine/families/bridged', () => {
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
     assertOpenFiveFourCage(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses an alkyl oxabicyclobutane template so compact five-four ether cages stay structured', () => {
+    const smiles = 'CCC12CC(C)(CO1)C2CCS(=O)(=O)N(C)C';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const scaffoldPlan = buildScaffoldPlan(graph, graph.components[0]);
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: scaffoldPlan.rootScaffold.templateId
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertOpenFiveFourEtherCage = (coords, label) => {
+      for (const ring of rings) {
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        const limits = ring.atomIds.length === 4 ? { min: 80, max: 105 } : { min: 90, max: 125 };
+        assert.ok(Math.min(...angles) > limits.min, `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < limits.max, `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        for (let index = 0; index < ring.atomIds.length; index++) {
+          const atomId = ring.atomIds[index];
+          const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+          assert.ok(
+            Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength) < graph.options.bondLength * 0.22,
+            `expected ${label} ${atomId}-${nextAtomId} to avoid visible ring stretch`
+          );
+        }
+      }
+    };
+
+    assert.equal(scaffoldPlan.rootScaffold.templateId, 'alkyl-oxabicyclobutane-core');
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertOpenFiveFourEtherCage(result.coords, 'template layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertOpenFiveFourEtherCage(pipelineResult.coords, 'pipeline layout');
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 

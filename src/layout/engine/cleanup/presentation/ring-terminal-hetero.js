@@ -45,7 +45,7 @@ const TERMINAL_MULTIPLE_BOND_CENTER_BRANCH_RELIEF_ROTATIONS = Object.freeze([
   ...Array.from({ length: 45 }, (_value, index) => index + 1).flatMap(degrees => [-(degrees * Math.PI) / 180, (degrees * Math.PI) / 180])
 ]);
 const TERMINAL_MULTIPLE_BOND_CENTER_BRANCH_MAX_ANCHOR_DEVIATION = Math.PI / 6;
-const TERMINAL_MULTIPLE_BOND_LEAF_PARTIAL_FAN_FRACTIONS = Object.freeze([1 / 3, 0.5, 2 / 3, 0.75, 0.85]);
+const TERMINAL_MULTIPLE_BOND_LEAF_PARTIAL_FAN_FRACTIONS = Object.freeze([0.1, 0.15, 0.2, 0.225, 0.24, 0.245, 1 / 3, 0.5, 2 / 3, 0.75, 0.85]);
 const HIDDEN_H_MULTIPLE_BOND_VISIBLE_ANGLE = (2 * Math.PI) / 3;
 const TERMINAL_MULTIPLE_BOND_BALANCED_FAN_TOLERANCE = Math.PI / 15;
 
@@ -1251,6 +1251,107 @@ function terminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId
 }
 
 /**
+ * Collects final terminal multiple-bond fan retouch candidates while measuring
+ * the same aggregate fan deviation used by the final pipeline gate.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{frozenAtomIds?: Set<string>|null}} [options] - Candidate options.
+ * @returns {{candidateCenterIds: string[], hiddenHydrogenCandidateCenterIds: string[], pairedTerminalHeteroCandidateCenterIds: string[], totalDeviation: number, maxDeviation: number}} Retouch plan and aggregate fan penalty.
+ */
+export function collectTerminalMultipleBondLeafFanRetouchCenters(layoutGraph, coords, options = {}) {
+  const frozenAtomIds = options.frozenAtomIds ?? null;
+  const candidateCenterIds = [];
+  const hiddenHydrogenCandidateCenterIds = [];
+  const pairedTerminalHeteroCandidateCenterIds = [];
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+  if (!(coords instanceof Map)) {
+    return {
+      candidateCenterIds,
+      hiddenHydrogenCandidateCenterIds,
+      pairedTerminalHeteroCandidateCenterIds,
+      totalDeviation,
+      maxDeviation
+    };
+  }
+
+  const structuralCenterIds = terminalMultipleBondFanStructuralCenterIds(layoutGraph);
+  for (const centerAtomId of structuralCenterIds) {
+    if (!coords.has(centerAtomId)) {
+      continue;
+    }
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    const centerPosition = coords.get(centerAtomId);
+    if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic || !centerPosition) {
+      continue;
+    }
+
+    const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
+    if (heavyBonds.length === 3) {
+      const terminalMultipleBondLeaves = heavyBonds.filter(({ bond, neighborAtomId }) => {
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        return !bond.aromatic && (bond.order ?? 1) >= 2 && neighborAtom && neighborAtom.element !== 'C' && neighborAtom.heavyDegree === 1;
+      });
+      if (terminalMultipleBondLeaves.length === 1 || terminalMultipleBondLeaves.length === 2) {
+        const leafAtomIds = new Set(terminalMultipleBondLeaves.map(({ neighborAtomId }) => neighborAtomId));
+        const fixedNeighborPositions = heavyBonds
+          .map(({ neighborAtomId }) => neighborAtomId)
+          .filter(neighborAtomId => !leafAtomIds.has(neighborAtomId))
+          .map(neighborAtomId => coords.get(neighborAtomId))
+          .filter(Boolean);
+        if (fixedNeighborPositions.length === 3 - terminalMultipleBondLeaves.length) {
+          let measureFan = true;
+          if (terminalMultipleBondLeaves.length === 1) {
+            const fixedNeighborAngles = fixedNeighborPositions.map(position => angleOf(sub(position, centerPosition)));
+            measureFan = Math.abs(angularDifference(fixedNeighborAngles[0], fixedNeighborAngles[1]) - Math.PI) > TERMINAL_MULTIPLE_BOND_LINEAR_NEIGHBOR_TOLERANCE;
+          }
+          if (measureFan) {
+            const neighborAtomIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId);
+            const penalty = terminalMultipleBondLeafFanPenalty(coords, centerAtomId, neighborAtomIds);
+            if (Number.isFinite(penalty)) {
+              totalDeviation += penalty;
+              maxDeviation = Math.max(maxDeviation, penalty);
+            }
+          }
+        }
+      }
+    }
+
+    const descriptor = terminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId, frozenAtomIds);
+    if (!descriptor) {
+      continue;
+    }
+    candidateCenterIds.push(centerAtomId);
+    if (descriptor.movesTerminalSingleHeteroLeaf === true) {
+      pairedTerminalHeteroCandidateCenterIds.push(centerAtomId);
+    }
+  }
+
+  for (const centerAtomId of structuralCenterIds) {
+    if (!coords.has(centerAtomId)) {
+      continue;
+    }
+    const descriptor = hiddenHydrogenTerminalMultipleBondFanDescriptor(layoutGraph, coords, centerAtomId);
+    if (descriptor) {
+      totalDeviation += descriptor.currentPenalty;
+      maxDeviation = Math.max(maxDeviation, descriptor.currentPenalty);
+    }
+    const candidateDescriptor = hiddenHydrogenTerminalMultipleBondFanDescriptor(layoutGraph, coords, centerAtomId, frozenAtomIds);
+    if (candidateDescriptor) {
+      hiddenHydrogenCandidateCenterIds.push(centerAtomId);
+    }
+  }
+
+  return {
+    candidateCenterIds,
+    hiddenHydrogenCandidateCenterIds,
+    pairedTerminalHeteroCandidateCenterIds,
+    totalDeviation,
+    maxDeviation
+  };
+}
+
+/**
  * Counts severe local overlaps for one candidate atom position while applying
  * sparse positions for any other leaves that move in the same fan retouch.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1881,6 +1982,18 @@ function terminalMultipleBondLeafFanBlockerReliefTargetPositions(layoutGraph, co
   return bestTargetPositions;
 }
 
+/**
+ * Finds a bounded partial move toward the exact terminal leaf fan target when
+ * the exact trigonal slot is blocked. Candidates are audit-gated and must
+ * reduce the local fan penalty, so shallow probes can improve bridged-ring
+ * imine readability without accepting new overlaps or bond failures.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} descriptor - Terminal multiple-bond fan descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, string>|null} [bondValidationClasses] - Per-bond validation classes for layout audit.
+ * @returns {Map<string, {x: number, y: number}>|null} Sparse leaf target positions, or null when no partial move is audit-clean.
+ */
 function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coords, descriptor, bondLength, bondValidationClasses = null) {
   if (descriptor.leafTargets.length !== 1) {
     return null;
@@ -2008,18 +2121,29 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
   const frozenAtomIds = options.frozenAtomIds ?? null;
   const bondValidationClasses = options.bondValidationClasses ?? null;
   const threshold = bondLength * 0.55;
-  const candidateCenterIds = [];
-  const hiddenHydrogenCandidateCenterIds = [];
-  for (const centerAtomId of terminalMultipleBondFanStructuralCenterIds(layoutGraph)) {
-    if (!inputCoords.has(centerAtomId)) {
-      continue;
-    }
-    if (terminalMultipleBondLeafFanDescriptor(layoutGraph, inputCoords, centerAtomId, frozenAtomIds)) {
-      candidateCenterIds.push(centerAtomId);
-      continue;
-    }
-    if (hiddenHydrogenTerminalMultipleBondFanDescriptor(layoutGraph, inputCoords, centerAtomId, frozenAtomIds)) {
-      hiddenHydrogenCandidateCenterIds.push(centerAtomId);
+  const hasExplicitCandidateCenterIds = Array.isArray(options.candidateCenterIds);
+  const hasExplicitHiddenHydrogenCandidateCenterIds = Array.isArray(options.hiddenHydrogenCandidateCenterIds);
+  const candidateCenterIds = hasExplicitCandidateCenterIds
+    ? [...new Set(options.candidateCenterIds)].filter(centerAtomId => inputCoords.has(centerAtomId))
+    : [];
+  const hiddenHydrogenCandidateCenterIds = hasExplicitHiddenHydrogenCandidateCenterIds
+    ? [...new Set(options.hiddenHydrogenCandidateCenterIds)].filter(centerAtomId => inputCoords.has(centerAtomId))
+    : [];
+  const visibleCandidateCenterIdSet = new Set(candidateCenterIds);
+  if (!hasExplicitCandidateCenterIds || !hasExplicitHiddenHydrogenCandidateCenterIds) {
+    for (const centerAtomId of terminalMultipleBondFanStructuralCenterIds(layoutGraph)) {
+      if (!inputCoords.has(centerAtomId)) {
+        continue;
+      }
+      let hasVisibleCandidate = visibleCandidateCenterIdSet.has(centerAtomId);
+      if (!hasExplicitCandidateCenterIds && terminalMultipleBondLeafFanDescriptor(layoutGraph, inputCoords, centerAtomId, frozenAtomIds)) {
+        candidateCenterIds.push(centerAtomId);
+        visibleCandidateCenterIdSet.add(centerAtomId);
+        hasVisibleCandidate = true;
+      }
+      if (!hasExplicitHiddenHydrogenCandidateCenterIds && !hasVisibleCandidate && hiddenHydrogenTerminalMultipleBondFanDescriptor(layoutGraph, inputCoords, centerAtomId, frozenAtomIds)) {
+        hiddenHydrogenCandidateCenterIds.push(centerAtomId);
+      }
     }
   }
   if (candidateCenterIds.length === 0 && hiddenHydrogenCandidateCenterIds.length === 0) {
@@ -2290,7 +2414,10 @@ export function runPairedTerminalHeteroLeafFanTidy(layoutGraph, inputCoords, opt
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const bondValidationClasses = options.bondValidationClasses ?? null;
   const candidateCenterIds = [];
-  for (const centerAtomId of terminalMultipleBondFanStructuralCenterIds(layoutGraph)) {
+  const structuralCenterIds = Array.isArray(options.candidateCenterIds)
+    ? [...new Set(options.candidateCenterIds)]
+    : terminalMultipleBondFanStructuralCenterIds(layoutGraph);
+  for (const centerAtomId of structuralCenterIds) {
     if (!inputCoords.has(centerAtomId)) {
       continue;
     }

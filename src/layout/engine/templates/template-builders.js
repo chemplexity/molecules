@@ -755,6 +755,15 @@ function createOxabicyclicLactoneAmmoniumCoreTemplate() {
 }
 
 /**
+ * Creates the methoxy ammonium oxazabicyclic lactam scaffold graph found in
+ * compact bridged cages like `COC12CCC(CC(C)[NH+](C)C1)NC(=O)O2`.
+ * @returns {Molecule} Methoxy ammonium oxazabicyclic lactam scaffold template molecule.
+ */
+function createMethoxyAmmoniumOxazabicyclicLactamCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('methoxy-ammonium-oxazabicyclic-lactam-core', 'COC12CCC(CC(C)[NH+](C)C1)NC(=O)O2');
+}
+
+/**
  * Creates the compact oxazabicyclic lactam scaffold graph found in
  * gem-substituted bridged lactams like `CC1(CC#N)CC2COC1C(=O)N2`.
  * @returns {Molecule} Oxazabicyclic lactam scaffold template molecule.
@@ -824,6 +833,15 @@ function createCyanoFormylAcetalBridgedCoreTemplate() {
  */
 function createAminonitrileOxabicyclobutaneCoreTemplate() {
   return createRingSystemTemplateFromSmiles('aminonitrile-oxabicyclobutane-core', 'CCC12CC(C1)(OC2C[NH3+])C(N)C#N');
+}
+
+/**
+ * Creates the compact alkyl oxabicyclobutane scaffold graph found in
+ * gem-alkyl ether cages with an exocyclic bridge chain.
+ * @returns {Molecule} Alkyl oxabicyclobutane scaffold template molecule.
+ */
+function createAlkylOxabicyclobutaneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('alkyl-oxabicyclobutane-core', 'CCC12CC(C)(CO1)C2CC');
 }
 
 /**
@@ -997,6 +1015,15 @@ function createArylPhosphiteSpiroCoreTemplate() {
  */
 function createIminoOxazocineLactamCoreTemplate() {
   return createRingSystemTemplateFromSmiles('imino-oxazocine-lactam-core', 'CC1CN=C(NC=O)C2CCC1NC(=O)CO2');
+}
+
+/**
+ * Creates the compact imino dioxazocine ketone scaffold graph found in bridged
+ * acetal imines like `CC1OCOC2=NC(C#N)C(C)(OC2=N)C1=O`.
+ * @returns {Molecule} Imino dioxazocine ketone scaffold template molecule.
+ */
+function createIminoDioxazocineKetoneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('imino-dioxazocine-ketone-core', 'CC1OCOC2=NC(C#N)C(C)(OC2=N)C1=O');
 }
 
 /**
@@ -2469,6 +2496,23 @@ function createAminonitrileOxabicyclobutaneCoreGeometry() {
 }
 
 /**
+ * Creates a compact projection for alkyl oxabicyclobutane cages. This reuses
+ * the separated five-four ether lanes from the aminonitrile scaffold while
+ * allowing the bridge-chain substituent to leave from the shared carbon edge.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAlkylOxabicyclobutaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C5', { x: -0.742169, y: 0.032046 }],
+    ['C9', { x: -0.071177, y: 0.806388 }],
+    ['C3', { x: 0.802418, y: 0.262412 }],
+    ['C4', { x: 0.140749, y: -0.588441 }],
+    ['C7', { x: -0.258599, y: -1.056866 }],
+    ['O8', { x: 0.65977, y: -0.919843 }]
+  ]);
+}
+
+/**
  * Creates a compact tricyclic oxetane projection for ammonium cyanomethyl
  * cages. The C8-C10 oxetane lane stays open while the two five-member bridge
  * paths remain separated for the ammonium and cyanomethyl exits.
@@ -2870,6 +2914,28 @@ function createIminoOxazocineLactamCoreGeometry() {
     ['C16', { x: -0.68, y: 1.3 }],
     ['C14', { x: 0.68, y: 1.3 }],
     ['N13', { x: 1.87, y: 0.6 }]
+  ]);
+}
+
+/**
+ * Creates a split-lane projection for compact imino dioxazocine ketones. The
+ * imine-bearing junction keeps an open trigonal lane while the acetal bridge
+ * and heteroaryl imine path route to the opposite side of the shared anchor.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createIminoDioxazocineKetoneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C14', { x: 0.0, y: 0.0 }],
+    ['C6', { x: -0.5, y: 0.866 }],
+    ['N7', { x: -1.502, y: 0.866 }],
+    ['C8', { x: -2.0, y: -0.001 }],
+    ['C11', { x: -1.499, y: -0.865 }],
+    ['O13', { x: -0.5, y: -0.866 }],
+    ['O5', { x: -1.23, y: 1.55 }],
+    ['C4', { x: -2.221, y: 1.41 }],
+    ['O3', { x: -3.074, y: 0.888 }],
+    ['C2', { x: -3.137, y: -0.111 }],
+    ['C16', { x: -2.499, y: -0.881 }]
   ]);
 }
 
@@ -3554,6 +3620,28 @@ function createOxabicyclicLactoneAmmoniumCoreGeometry() {
 }
 
 /**
+ * Creates a three-lane projection for methoxy ammonium oxazabicyclic lactam
+ * cages. The central two-carbon bridge stays bowed open between the ammonium
+ * and lactam lanes instead of collapsing into a straight line.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createMethoxyAmmoniumOxazabicyclicLactamCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: -1.37, y: 0.0 }],
+    ['C4', { x: -0.5, y: 0.75 }],
+    ['C5', { x: 0.5, y: 0.75 }],
+    ['C6', { x: 1.37, y: 0.0 }],
+    ['C7', { x: 1.37, y: 1.05 }],
+    ['C8', { x: 0.55, y: 1.85 }],
+    ['N10', { x: -0.55, y: 1.85 }],
+    ['C13', { x: -1.37, y: 1.05 }],
+    ['O17', { x: -1.1, y: -0.9 }],
+    ['C15', { x: 0.0, y: -1.45 }],
+    ['N14', { x: 1.1, y: -0.9 }]
+  ]);
+}
+
+/**
  * Creates a planar compact spiro-bridged oxetane projection. The oxetane
  * bridge sits inside the wider carbon bridge, while the cyclobutane spiro ring
  * opens to the left so nitrile-like substituents leave the cage exterior.
@@ -4167,6 +4255,24 @@ export function buildTemplateLibrary() {
         }
       }
     ),
+    createTemplate(
+      'methoxy-ammonium-oxazabicyclic-lactam-core',
+      'bridged',
+      53.885,
+      createMethoxyAmmoniumOxazabicyclicLactamCoreTemplate(),
+      geometrySpec('normalized-xy', createMethoxyAmmoniumOxazabicyclicLactamCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C3', element: 'O', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C8', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'N10', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C15', element: 'O', bondOrder: 2, neighborDegree: 1, minCount: 1, maxCount: 1 }
+          ],
+          mappedAtoms: [{ templateAtomId: 'N10', element: 'N', charge: 1 }]
+        }
+      }
+    ),
     createTemplate('oxazabicyclic-lactam-core', 'bridged', 53.88, createOxazabicyclicLactamCoreTemplate(), geometrySpec('normalized-xy', createOxazabicyclicLactamCoreGeometry(), BRIDGED_VALIDATION), {
       matchContext: {
         exocyclicNeighbors: [
@@ -4270,6 +4376,22 @@ export function buildTemplateLibrary() {
           exocyclicNeighbors: [
             { templateAtomId: 'C5', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'alkyl-oxabicyclobutane-core',
+      'bridged',
+      53.87069,
+      createAlkylOxabicyclobutaneCoreTemplate(),
+      geometrySpec('normalized-xy', createAlkylOxabicyclobutaneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C3', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C5', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C9', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }
@@ -4527,6 +4649,22 @@ export function buildTemplateLibrary() {
             { templateAtomId: 'C14', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C5', element: 'N', bondOrder: 1, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'imino-dioxazocine-ketone-core',
+      'bridged',
+      53.870512,
+      createIminoDioxazocineKetoneCoreTemplate(),
+      geometrySpec('normalized-xy', createIminoDioxazocineKetoneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C14', element: 'N', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C16', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }

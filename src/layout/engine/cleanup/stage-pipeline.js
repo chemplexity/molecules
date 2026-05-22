@@ -536,6 +536,46 @@ export function buildCleanupStageGraph(context) {
   const hasConfiguredRingSubstituentHook = hasPostCleanupHook(policy, 'ring-substituent-tidy');
   const hasRingTerminalHeteroHook = hasPostCleanupHook(policy, 'ring-terminal-hetero-tidy');
   const shouldIncludeRingSubstituentCleanup = stageResult => hasConfiguredRingSubstituentHook || (familySummary.primaryFamily === 'macrocycle' && (stageResult?.audit?.severeOverlapCount ?? 0) > 0);
+  const hasOnlyRingSubstituentCleanupHook = (policy.postCleanupHooks ?? []).every(hookName => hookName === 'ring-substituent-tidy');
+  const hasCleanAuditWithoutReadabilityFailures = audit =>
+    audit?.ok === true &&
+    (audit.severeOverlapCount ?? 0) === 0 &&
+    (audit.visibleHeavyBondCrossingCount ?? 0) === 0 &&
+    (audit.labelOverlapCount ?? 0) === 0 &&
+    (audit.bondLengthFailureCount ?? 0) === 0 &&
+    (audit.collapsedMacrocycleCount ?? 0) === 0 &&
+    (audit.stereoContradiction ?? false) === false &&
+    (audit.bridgedReadabilityFailure ?? false) === false &&
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) === 0 &&
+    (audit.inwardRingSubstituentCount ?? 0) === 0 &&
+    (audit.outwardAxisRingSubstituentFailureCount ?? 0) === 0;
+  const shouldSkipCleanSpiroPresentationCleanup = stageResult =>
+    familySummary.primaryFamily === 'spiro' &&
+    familySummary.mixedMode === true &&
+    hasOnlyRingSubstituentCleanupHook &&
+    hasCleanAuditWithoutReadabilityFailures(stageResult?.audit);
+  const shouldSkipCleanSmallAttachedRingFallback = stageResult => {
+    const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+    return (
+      heavyAtomCount <= 24 &&
+      hasCleanAuditWithoutReadabilityFailures(stageResult?.audit) &&
+      !hasAromaticMovableAttachedRing(stageResult?.coords)
+    );
+  };
+  const isDirtyUltraLargeHardResidualStage = stageResult => {
+    const audit = stageResult?.audit ?? null;
+    const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+    return (
+      familySummary.primaryFamily === 'large-molecule' &&
+      heavyAtomCount >= 400 &&
+      audit?.fallback?.mode === 'generic-scaffold' &&
+      (audit.severeOverlapCount ?? 0) >= 35 &&
+      (audit.visibleHeavyBondCrossingCount ?? 0) >= 8 &&
+      (audit.bondLengthFailureCount ?? 0) === 0 &&
+      (audit.collapsedMacrocycleCount ?? 0) === 0 &&
+      (audit.stereoContradiction ?? false) === false
+    );
+  };
   const canSkipCleanOptionalCleanupStage = (_stageResults, incumbent) => {
     if (incumbent?.audit?.ok !== true) {
       return false;
@@ -649,13 +689,17 @@ export function buildCleanupStageGraph(context) {
       cleanupBudgetOptional: true,
       cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
+        if (isDirtyUltraLargeHardResidualStage(incumbent) || shouldSkipCleanSpiroPresentationCleanup(incumbent)) {
+          return false;
+        }
         const includeRingSubstituent = shouldIncludeRingSubstituentCleanup(incumbent);
+        const includeAttachedRingFallback = includeRingSubstituent && !shouldSkipCleanSmallAttachedRingFallback(incumbent);
         return hasPresentationCleanupNeed(layoutGraph, incumbent, {
           bondLength,
           includeRingSubstituent,
           includeTerminalMultipleBondLeaf: true,
           includeTerminalHetero: hasRingTerminalHeteroHook,
-          includeAttachedRingFallback: includeRingSubstituent,
+          includeAttachedRingFallback,
           frozenAtomIds: placement.frozenAtomIds,
           includeSymmetry: familySummary.primaryFamily === 'fused' && familySummary.mixedMode !== true,
           symmetryEpsilon: bondLength * 0.01,
@@ -666,6 +710,7 @@ export function buildCleanupStageGraph(context) {
       },
       transformFn(parentCoords, inputContext, _stageResults, incumbent) {
         const includeRingSubstituent = shouldIncludeRingSubstituentCleanup(incumbent);
+        const includeAttachedRingFallback = includeRingSubstituent && !shouldSkipCleanSmallAttachedRingFallback(incumbent);
         const labelClearanceStart = inputContext.timingState ? inputContext.nowMs() : 0;
         const labelClearance = applyLabelClearance(layoutGraph, parentCoords, {
           bondLength,
@@ -692,7 +737,7 @@ export function buildCleanupStageGraph(context) {
           protectLargeMoleculeBackbone,
           includeRingSubstituent,
           includeTerminalHetero: hasRingTerminalHeteroHook,
-          includeAttachedRingFallback: includeRingSubstituent,
+          includeAttachedRingFallback,
           scoreCoordsFn: auditFinalStereoWithPresentationMetrics,
           comparatorFn: presentationCleanupComparator
         });
@@ -720,12 +765,21 @@ export function buildCleanupStageGraph(context) {
         }
         const stereoInputCoords = presentationProjectedBranchClearance.nudges > 0 ? presentationProjectedBranchClearance.coords : presentationResult.coords;
 
-        const stereoCleanup = enforceAcyclicEZStereo(layoutGraph, stereoInputCoords, {
-          bondLength
-        });
-        const stereoInputScore = auditFinalStereoWithPresentationMetrics(stereoInputCoords);
-        const stereoCleanupScore = stereoCleanup.reflections > 0 ? auditFinalStereoWithPresentationMetrics(stereoCleanup.coords) : stereoInputScore;
-        const acceptedStereoCleanup = stereoCleanup.reflections > 0 && presentationCleanupComparator(stereoCleanupScore, stereoInputScore);
+        const presentationChanged =
+          labelClearance.nudges > 0 ||
+          symmetryTidy.snappedCount > 0 ||
+          symmetryTidy.junctionSnapCount > 0 ||
+          (presentationResult.nudges ?? 0) > 0 ||
+          presentationProjectedBranchClearance.nudges > 0;
+        const shouldRunStereoCleanup = presentationChanged || incumbent?.audit?.stereoContradiction === true;
+        const stereoCleanup = shouldRunStereoCleanup
+          ? enforceAcyclicEZStereo(layoutGraph, stereoInputCoords, {
+              bondLength
+            })
+          : { coords: stereoInputCoords, reflections: 0 };
+        const stereoInputScore = shouldRunStereoCleanup ? auditFinalStereoWithPresentationMetrics(stereoInputCoords) : null;
+        const stereoCleanupScore = shouldRunStereoCleanup && stereoCleanup.reflections > 0 ? auditFinalStereoWithPresentationMetrics(stereoCleanup.coords) : stereoInputScore;
+        const acceptedStereoCleanup = shouldRunStereoCleanup && stereoCleanup.reflections > 0 && presentationCleanupComparator(stereoCleanupScore, stereoInputScore);
         const selectedStereoCoords = acceptedStereoCleanup ? stereoCleanup.coords : stereoInputCoords;
         const selectedStereoReflections = acceptedStereoCleanup ? stereoCleanup.reflections : 0;
         inputContext.onStep?.('EZ Stereo Enforcement', 'Acyclic double bond geometry adjusted to maintain E/Z stereochemistry.', inputContext.copyCoords(selectedStereoCoords), {
@@ -882,6 +936,9 @@ export function buildCleanupStageGraph(context) {
       cleanupBudgetOptional: true,
       cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
+        if (isDirtyUltraLargeHardResidualStage(incumbent)) {
+          return false;
+        }
         return (presentationMetricsFor(incumbent?.coords)?.terminalMultipleBondLeafFanMaxPenalty ?? 0) > DISTANCE_EPSILON;
       },
       transformFn(parentCoords, inputContext) {

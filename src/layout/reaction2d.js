@@ -142,7 +142,7 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   const productAffectedAtomIds = new Set();
   const layoutReferenceMol = prepareReaction2dLayoutReferenceMol(sourceMol.clone());
   const reactantReferenceCoords = snapshotReaction2dCoords(layoutReferenceMol, new Set(layoutReferenceMol.atoms.keys()));
-  const sourceStereoReferenceMol = prepareReaction2dStereoReferenceMol(reactantMol.clone());
+  const sourceStereoReferenceMol = prepareReaction2dStereoReferenceMol(layoutReferenceMol.clone());
   const sourceStereoBondTypes = new Map(pickStereoWedges(sourceStereoReferenceMol));
   const sourceStereoByCenter = new Map();
   for (const [bondId, type] of sourceStereoBondTypes) {
@@ -461,6 +461,84 @@ export function mappedAtomReaction2dLocallyAnchored(reactant, product, mol, comp
     })
     .sort();
   return reactantMappedNeighbors.join('|') === productMappedNeighbors.join('|');
+}
+
+/**
+ * Builds a stable mapped-heavy-neighbor signature for topology comparisons.
+ * @param {import('../core/Atom.js').Atom} atom - Atom to inspect.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} atomIds - Atom IDs that define the side being compared.
+ * @param {(id: string) => string} [idMapper] - Optional atom ID normalizer.
+ * @returns {string} Neighbor signature including mapped IDs and bond style.
+ */
+function reaction2dMappedHeavyNeighborSignature(atom, mol, atomIds, idMapper = id => id) {
+  return atom
+    .getNeighbors(mol)
+    .filter(nb => atomIds.has(nb.id) && nb.name !== 'H')
+    .map(nb => {
+      const bond = mol.getBond(atom.id, nb.id);
+      return `${idMapper(nb.id)}:${bond?.properties.order ?? 1}:${bond?.properties.aromatic === true}`;
+    })
+    .sort()
+    .join('|');
+}
+
+/**
+ * Seeds a product component directly from reactant coordinates when every
+ * product heavy atom maps to an unchanged heavy-atom topology. Charge-only and
+ * protonation/deprotonation previews can then avoid a full isolated layout.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @returns {boolean} True if the component was seeded from reactant geometry.
+ */
+function seedReaction2dTopologyPreservedComponentCoords(mol, componentAtomIds) {
+  const preview = mol?.__reactionPreview;
+  if (!preview?.reactantAtomIds?.size || !componentAtomIds?.size) {
+    return false;
+  }
+
+  const productHeavyAtoms = [...componentAtomIds].map(atomId => mol.atoms.get(atomId)).filter(atom => atom && atom.name !== 'H');
+  if (productHeavyAtoms.length === 0) {
+    return false;
+  }
+
+  const seenSourceIds = new Set();
+  for (const productAtom of productHeavyAtoms) {
+    const sourceId = sourceAtomId(productAtom.id);
+    const reactantAtom = mol.atoms.get(sourceId);
+    if (
+      !sourceId ||
+      seenSourceIds.has(sourceId) ||
+      !preview.reactantAtomIds.has(sourceId) ||
+      !reactantAtom ||
+      reactantAtom.name !== productAtom.name ||
+      !Number.isFinite(reactantAtom.x) ||
+      !Number.isFinite(reactantAtom.y)
+    ) {
+      return false;
+    }
+    seenSourceIds.add(sourceId);
+    if ((reactantAtom.isAromatic?.() ?? false) !== (productAtom.isAromatic?.() ?? false)) {
+      return false;
+    }
+
+    const reactantSignature = reaction2dMappedHeavyNeighborSignature(reactantAtom, mol, preview.reactantAtomIds);
+    const productSignature = reaction2dMappedHeavyNeighborSignature(productAtom, mol, componentAtomIds, sourceAtomId);
+    if (reactantSignature !== productSignature) {
+      return false;
+    }
+  }
+
+  for (const atomId of componentAtomIds) {
+    const productAtom = mol.atoms.get(atomId);
+    const reactantAtom = mol.atoms.get(sourceAtomId(atomId));
+    if (!productAtom || !reactantAtom || !Number.isFinite(reactantAtom.x) || !Number.isFinite(reactantAtom.y)) {
+      continue;
+    }
+    productAtom.x = reactantAtom.x;
+    productAtom.y = reactantAtom.y;
+  }
+  return true;
 }
 
 /**
@@ -808,6 +886,7 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
   idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength);
   preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLength);
   idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bondLength);
+  idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bondLength);
   idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength);
   repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength);
   finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
@@ -1437,6 +1516,107 @@ function idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bond
     if (candidateScore <= currentScore) {
       center.x = candidate.x;
       center.y = candidate.y;
+    }
+  }
+}
+
+/**
+ * Centers terminal exocyclic substituents on edited ring atoms against the
+ * retained ring fan. This covers dehydration products where a small-ring
+ * alcohol center becomes either an exocyclic alkene or an internal ring alkene
+ * with a terminal exocyclic substituent.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
+function idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+
+  const ringAtomIds = new Set(mol.getRings().flat());
+  for (const centerId of componentAtomIds) {
+    if (!mol.__reactionPreview.editedProductAtomIds.has(centerId) || !ringAtomIds.has(centerId)) {
+      continue;
+    }
+    const center = mol.atoms.get(centerId);
+    if (!center || center.name === 'H' || center.x == null || center.y == null) {
+      continue;
+    }
+
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    if (heavyNeighbors.length !== 3) {
+      continue;
+    }
+
+    const hasInternalRingMultipleBond = heavyNeighbors.some(atom => {
+      if (!ringAtomIds.has(atom.id) || !mol.__reactionPreview.editedProductAtomIds.has(atom.id)) {
+        return false;
+      }
+      return (mol.getBond(center.id, atom.id)?.properties.order ?? 1) >= 2;
+    });
+    const terminalExocyclicInfos = heavyNeighbors
+      .map(atom => ({
+        atom,
+        order: mol.getBond(center.id, atom.id)?.properties.order ?? 1
+      }))
+      .filter(info => {
+        if (ringAtomIds.has(info.atom.id)) {
+          return false;
+        }
+        const terminalHeavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
+        if (terminalHeavyNeighbors.length !== 1) {
+          return false;
+        }
+        const hasTerminalMultipleBond = info.order >= 2 && mol.__reactionPreview.editedProductAtomIds.has(info.atom.id);
+        return hasTerminalMultipleBond || hasInternalRingMultipleBond;
+      });
+    if (terminalExocyclicInfos.length !== 1) {
+      continue;
+    }
+
+    const terminalInfo = terminalExocyclicInfos[0];
+    const anchorInfos = heavyNeighbors
+      .filter(atom => atom.id !== terminalInfo.atom.id)
+      .filter(atom => ringAtomIds.has(atom.id))
+      .map(atom => ({ atom }));
+    if (anchorInfos.length < 2) {
+      continue;
+    }
+
+    let vx = 0;
+    let vy = 0;
+    for (const info of anchorInfos) {
+      const dx = info.atom.x - center.x;
+      const dy = info.atom.y - center.y;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) {
+        continue;
+      }
+      vx -= dx / len;
+      vy -= dy / len;
+    }
+    const vlen = Math.hypot(vx, vy);
+    if (vlen < 1e-6) {
+      continue;
+    }
+
+    const targetLength = scaledReaction2dBondLength(terminalInfo.order, bondLength);
+    const candidate = {
+      x: center.x + (vx / vlen) * targetLength,
+      y: center.y + (vy / vlen) * targetLength
+    };
+    const trigonalInfos = heavyNeighbors.map(atom => ({ atom }));
+    const currentScore =
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: terminalInfo.atom, x: terminalInfo.atom.x, y: terminalInfo.atom.y }], bondLength) +
+      reaction2dTrigonalSpreadPenalty(center, trigonalInfos);
+    const candidateScore =
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: terminalInfo.atom, x: candidate.x, y: candidate.y }], bondLength) +
+      reaction2dTrigonalSpreadPenalty(center, trigonalInfos, [{ atom: terminalInfo.atom, x: candidate.x, y: candidate.y }]);
+    if (candidateScore <= currentScore) {
+      terminalInfo.atom.x = candidate.x;
+      terminalInfo.atom.y = candidate.y;
     }
   }
 }
@@ -2272,6 +2452,13 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
   restoreReaction2dCoords(mol, previewState.reactantReferenceCoords);
 
   for (const componentAtomIds of previewState.productComponentAtomIdSets ?? []) {
+    const topologyPreservedComponent = seedReaction2dTopologyPreservedComponentCoords(mol, componentAtomIds);
+    if (topologyPreservedComponent) {
+      preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
+      reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
+      continue;
+    }
+
     relayoutReaction2dComponentInIsolation(mol, componentAtomIds, bondLength);
     const isolatedSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
     const pairs = previewState.mappedAtomPairs
@@ -2451,6 +2638,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     }
     if (!mappedRingMembershipChanged) {
       restoreMappedReaction2dRetainedScaffoldCoords(mol, componentAtomIds);
+      idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bondLength);
     }
     finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
     finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);

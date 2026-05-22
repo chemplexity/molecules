@@ -847,6 +847,69 @@ function localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondL
   return overlaps;
 }
 
+function localSevereOverlapScoreForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid) {
+  const overlaps = localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid);
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  let penalty = 0;
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (const overlap of overlaps) {
+    const deficit = Math.max(0, threshold - overlap.distance);
+    penalty += deficit * deficit;
+    minDistance = Math.min(minDistance, overlap.distance);
+  }
+  return {
+    severeOverlapCount: overlaps.length,
+    severeOverlapPenalty: penalty,
+    minSevereOverlapDistance: overlaps.length > 0 ? minDistance : null
+  };
+}
+
+function localResidualScoreForDescriptor(layoutGraph, coords, descriptor, currentScore, bondLength, atomGrid, includeCrossings = false) {
+  const severeScore = localSevereOverlapScoreForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid);
+  return {
+    ...severeScore,
+    visibleHeavyBondCrossingCount: includeCrossings ? (currentScore.crossings ?? []).filter(crossing => crossingTouchesDescriptor(crossing, descriptor)).length : 0
+  };
+}
+
+function localResidualScoreCanImprove(candidateScore, currentScore) {
+  if (candidateScore.severeOverlapCount !== currentScore.severeOverlapCount) {
+    return candidateScore.severeOverlapCount < currentScore.severeOverlapCount;
+  }
+  if (candidateScore.visibleHeavyBondCrossingCount !== currentScore.visibleHeavyBondCrossingCount) {
+    return (
+      candidateScore.visibleHeavyBondCrossingCount < currentScore.visibleHeavyBondCrossingCount &&
+      candidateScore.severeOverlapPenalty <= currentScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON
+    );
+  }
+  if (candidateScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON < currentScore.severeOverlapPenalty) {
+    return true;
+  }
+  if (Math.abs(candidateScore.severeOverlapPenalty - currentScore.severeOverlapPenalty) <= RETOUCH_SCORE_EPSILON) {
+    const candidateDistance = candidateScore.minSevereOverlapDistance ?? Number.POSITIVE_INFINITY;
+    const currentDistance = currentScore.minSevereOverlapDistance ?? Number.POSITIVE_INFINITY;
+    return candidateDistance > currentDistance + RETOUCH_SCORE_EPSILON;
+  }
+  return false;
+}
+
+function localResidualCandidateCanImprove(layoutGraph, coords, descriptor, angle, currentLocalScore, bondLength, atomGrid, includeCrossings = false) {
+  return withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords => {
+    const severeScore = localSevereOverlapScoreForDescriptor(layoutGraph, candidateCoords, descriptor, bondLength, atomGrid);
+    if (severeScore.severeOverlapCount !== currentLocalScore.severeOverlapCount) {
+      return severeScore.severeOverlapCount < currentLocalScore.severeOverlapCount;
+    }
+    if (includeCrossings && severeScore.severeOverlapPenalty > currentLocalScore.severeOverlapPenalty + RETOUCH_SCORE_EPSILON) {
+      return false;
+    }
+    const candidateLocalScore = {
+      ...severeScore,
+      visibleHeavyBondCrossingCount: includeCrossings ? countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { focusAtomIds: descriptor.subtreeAtomIdSet }) : 0
+    };
+    return localResidualScoreCanImprove(candidateLocalScore, currentLocalScore);
+  });
+}
+
 function localCandidateHasNoResiduals(layoutGraph, coords, descriptor, currentScore, bondLength, atomGrid) {
   if (!descriptorCanResolveCurrentCrossings(currentScore, descriptor)) {
     return false;
@@ -1273,6 +1336,10 @@ function repairCandidateResiduals(layoutGraph, inputCoords, inputScore, bondLeng
   const maxRepairPasses = options.maxPasses ?? ANGLE_RELIEF_REPAIR_PASSES;
 
   while (passes < maxRepairPasses && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)) {
+    const shouldPrefilterResidualCandidates = options.prefilterResidualCandidates === true;
+    const includeCrossingsInPrefilter = shouldPrefilterResidualCandidates && currentScore.visibleHeavyBondCrossingCount > 0;
+    const atomGrid = shouldPrefilterResidualCandidates ? buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds }) : null;
+    const localScoreCache = shouldPrefilterResidualCandidates ? new Map() : null;
     const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, {
       includeNearbyContainingEndpointDescriptors: options.includeNearbyContainingEndpointDescriptors === true,
       largeSwingOverlapLimit: options.largeSwingOverlapLimit,
@@ -1281,7 +1348,25 @@ function repairCandidateResiduals(layoutGraph, inputCoords, inputScore, bondLeng
     let bestCandidate = null;
 
     for (const descriptor of descriptors) {
+      const currentLocalScore = shouldPrefilterResidualCandidates
+        ? (() => {
+            const cacheKey = `${descriptor.rootAtomId}:${descriptor.anchorAtomId}`;
+            if (!localScoreCache.has(cacheKey)) {
+              localScoreCache.set(
+                cacheKey,
+                localResidualScoreForDescriptor(layoutGraph, coords, descriptor, currentScore, bondLength, atomGrid, includeCrossingsInPrefilter)
+              );
+            }
+            return localScoreCache.get(cacheKey);
+          })()
+        : null;
       for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
+        if (
+          shouldPrefilterResidualCandidates &&
+          !localResidualCandidateCanImprove(layoutGraph, coords, descriptor, angle, currentLocalScore, bondLength, atomGrid, includeCrossingsInPrefilter)
+        ) {
+          continue;
+        }
         const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
           scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
         );
@@ -2422,9 +2507,28 @@ function runFinalAnglePolish(layoutGraph, inputCoords, inputScore, bondLength, f
 function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, descriptorOptions = {}) {
   const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, descriptorOptions);
   let bestCandidate = null;
+  const shouldPrefilterResidualCandidates = descriptorOptions.prefilterResidualCandidates === true;
+  const includeCrossingsInPrefilter = shouldPrefilterResidualCandidates && currentScore.visibleHeavyBondCrossingCount > 0;
+  const atomGrid = shouldPrefilterResidualCandidates ? buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds }) : null;
+  const localScoreCache = shouldPrefilterResidualCandidates ? new Map() : null;
 
   for (const descriptor of descriptors) {
+    const currentLocalScore = shouldPrefilterResidualCandidates
+      ? (() => {
+          const cacheKey = `${descriptor.rootAtomId}:${descriptor.anchorAtomId}`;
+          if (!localScoreCache.has(cacheKey)) {
+            localScoreCache.set(cacheKey, localResidualScoreForDescriptor(layoutGraph, coords, descriptor, currentScore, bondLength, atomGrid, includeCrossingsInPrefilter));
+          }
+          return localScoreCache.get(cacheKey);
+        })()
+      : null;
     for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
+      if (
+        shouldPrefilterResidualCandidates &&
+        !localResidualCandidateCanImprove(layoutGraph, coords, descriptor, angle, currentLocalScore, bondLength, atomGrid, includeCrossingsInPrefilter)
+      ) {
+        continue;
+      }
       const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
         scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
       );
@@ -2442,7 +2546,8 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
           includeNearbyContainingEndpointDescriptors: true,
           largeSwingOverlapLimit: descriptorOptions.largeSwingOverlapLimit,
           maxPasses: LARGE_SWING_REPAIR_PASSES,
-          descriptorCache: descriptorOptions.descriptorCache ?? null
+          descriptorCache: descriptorOptions.descriptorCache ?? null,
+          prefilterResidualCandidates: shouldPrefilterResidualCandidates
         });
         if (scoreIsBetter(repairedCandidate.score, currentScore)) {
           selectedCandidate = {
@@ -2526,13 +2631,17 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     options._skipExactThreeHeavyProtectionRetry === true ? [] : collectExactThreeHeavyProtectionCenters(layoutGraph, coords, trackedAngularContexts, initialScore);
 
   while (passes < MAX_RETOUCH_PASSES && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)) {
-    let bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, { descriptorCache });
+    let bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, {
+      descriptorCache,
+      prefilterResidualCandidates: allowUltraLargeResidualRepair
+    });
     if (!bestCandidate && currentScore.severeOverlapCount > 0) {
       bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, {
         includeNearbyContainingEndpointDescriptors: true,
         largeSwingOverlapLimit: allowUltraLargeResidualRepair ? LARGE_SWING_CLUSTER_OVERLAP_LIMIT : undefined,
         allowCandidateRepair: allowUltraLargeResidualRepair,
-        descriptorCache
+        descriptorCache,
+        prefilterResidualCandidates: allowUltraLargeResidualRepair
       });
     }
 

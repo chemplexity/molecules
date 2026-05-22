@@ -1,7 +1,37 @@
 # Change Log
 
+## 2026-05-21
+
+- Keep phosphate/sulfate-like hypervalent fans intact during large-molecule block partitioning so stitched phosphate chains preserve strict P-centered angles.
+- Use denser stitched blocks for very large hypervalent ring chains and let hard-clean large layouts finish small attached-ring readability nudges.
+- Keep saturated sugar-ring amide exits on the exact outward axis by flipping the planar amide side when the direct snap overlaps.
+- Add a methoxy ammonium oxazabicyclic lactam scaffold template so compact bridged lactam/ammonium cages keep the middle bridge open.
+- Keep terminal hetero leaves on non-aromatic ring trigonal exits exact by rotating blocking attached rings instead of bending the leaf.
+- Preserve strict terminal imine trigonal slots during bridged template regularization and add an imino dioxazocine ketone scaffold template.
+- Add shallow terminal imine fan backoff probes so blocked bridged-ring C=N leaves widen without introducing overlaps.
+- Center terminal exocyclic substituents from edited ring reaction centers so small-ring dehydration previews keep open alkene and methyl angles.
+- Reuse reaction-preview reactant layout references and seed topology-preserved product components from reactant coordinates so charge-only previews skip isolated relayout.
+- Add an alkyl oxabicyclobutane bridged scaffold template so compact ether cages stay structured.
+- Make ring-presentation cleanup invoke phosphate, terminal-cation, terminal-leaf, small-ring fan, terminal-hetero, and direct-attached-root tidiers only when the already-computed presentation metrics show that specific repair can help.
+- Skip attached-ring fallback evaluation for audit-clean small non-aromatic layouts, avoiding hundreds of milliseconds of rejected fallback probes while keeping dirty, larger, and aromatic attached-ring rescue paths active.
+- Precollect final terminal multiple-bond fan retouch centers and reuse those visible, hidden-H, and paired-hetero candidate lists through the final tidy/fallback chain instead of rediscovering them with repeated full-graph scans.
+- Short-circuit E/Z enforcement candidate collection on unannotated double bonds before cyclic support checks, and skip presentation-stage E/Z cleanup scoring when the presentation pass made no coordinate changes.
+- Skip the expensive attached-ring fallback search for audit-clean rows whose only remaining presentation need is a very small generic ring-substituent penalty, while preserving the aromatic evaluation path and all specific attached-root/terminal-fan repairs.
+
 ## 2026-05-20
 
+- Reuse caller-provided presentation tie-break metrics inside ring-presentation cleanup and skip descriptor summaries when attached-ring fallback is disabled, avoiding duplicate scoring work in specialist/presentation cleanup paths.
+- Skip presentation-only cleanup for audit-clean mixed spiro layouts whose only post-cleanup hook is ring-substituent tidy, cutting a clean spiro timeout row by avoiding a multi-second no-op presentation ladder.
+- Lazily count focused crossings in ultra-large residual-retouch prefilters only after a candidate survives local severe-overlap checks, cutting the hottest large-molecule timeout rows without changing their audit counts.
+- Add a target-pair label-box precheck to final connector-label clearance so failed connector rotations skip full label sweeps and final audits when they do not clear the overlap they are testing.
+- Let attached-ring fallback seed scoring reuse sparse moved-atom overlap counts against the base atom grid, avoiding full severe-overlap scans for small rigid-rotation probes.
+- Skip the omitted-H attached-ring fan search inside terminal-carbon exact-snap clearance probes, keeping the broader rescue available elsewhere while trimming this hot mixed-layout path.
+- Gate optional cleanup presentation stages for dirty 400+ heavy-atom generic-scaffold large molecules when placement already has dense hard residuals, keeping hard-contact repair while avoiding seconds of presentation-only cleanup.
+- Cap the attached-ring fallback invoked by terminal-carbon exact-snap probes to one pass, cutting clean spiro/mixed placement rows.
+- Add a local residual prefilter for ultra-large large-molecule retouch candidates so rotations that cannot improve their own moved-subtree overlaps or crossings skip the full-molecule audit scan.
+- Use a coarse terminal-leaf rotation menu on dirty 400+ heavy-atom layouts and skip presentation-only hypervalent/terminal-fan polish when the final audit is still a generic-scaffold hard-residual case.
+- Narrow hot mixed-family candidate dedupe signatures to the atoms a candidate moved in terminal-carbonyl/acyl contact searches, avoiding repeated full-coordinate serialization during mixed placement.
+- Lower the clean mixed-macrocycle ring-fan skip threshold to cover 160+ heavy, 8+ ring clean macrocycles and avoid multi-second polish on already-audit-clean stress rows.
 - Cache mixed ring-system layouts across primary and alternate-root retries, returning cloned coordinate maps so repeated pending bridged/fused layouts are not recomputed during linker attachment scoring.
 - Make omitted-H attached-ring fan cleanup cheaper by rejecting non-improving seeds before full audit, and only running expensive refinement cleanup after a seed has produced an acceptable fan-improving candidate.
 - Let attached-block severe-overlap override scoring reuse the base atom grid and cache the base severe-overlap context by coordinate signature.

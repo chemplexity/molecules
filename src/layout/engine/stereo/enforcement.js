@@ -608,15 +608,15 @@ function countMatchedStereo(layoutGraph, coords, stereoBonds) {
  */
 export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const stereoBonds = [...layoutGraph.bonds.values()].filter(
-    bond =>
-      bond.kind === 'covalent' &&
-      !bond.aromatic &&
-      (bond.order ?? 1) === 2 &&
-      isSupportedAnnotatedDoubleBond(layoutGraph, bond) &&
-      hasEnforceableCyclicEZContext(layoutGraph, inputCoords, bond) &&
-      (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
-  );
+  const stereoBonds = [...layoutGraph.bonds.values()].filter(bond => {
+    if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 2) {
+      return false;
+    }
+    if ((layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) == null) {
+      return false;
+    }
+    return isSupportedAnnotatedDoubleBond(layoutGraph, bond) && hasEnforceableCyclicEZContext(layoutGraph, inputCoords, bond);
+  });
 
   if (stereoBonds.length === 0) {
     return { coords: inputCoords, reflections: 0 };

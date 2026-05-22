@@ -158,16 +158,54 @@ export function morganRanks(mol) {
 
   // ---- 4. Tie-breaking -------------------------------------------------------
   // After convergence some atoms may still share a rank (they are chemically
-  // symmetric).  We break ties deterministically by giving the lex-min initial-
-  // invariant member of the smallest tied group a unique rank, then re-running
-  // Morgan until stability.  Repeat until all ranks are unique.
+  // symmetric).  We break ties deterministically by preferring chirality-based
+  // separation first (canonical across molecules), then falling back to atom
+  // insertion order (arbitrary but consistent within one molecule).
+  const chiralityOrd = ch => ch === 'R' ? 0 : ch === 'S' ? 1 : 2;
   while (unique < n) {
-    // Tally rank counts; find the smallest rank with a count > 1.
+    // Tally rank counts across all atoms.
     const counts = new Map();
     for (const r of rank) {
       counts.set(r, (counts.get(r) ?? 0) + 1);
     }
 
+    // First pass: look for any tied group that contains atoms with different
+    // chirality (R vs S vs none).  Break ALL such groups simultaneously by
+    // giving the minimum-chiralityOrd atoms a fractional rank boost.  This
+    // canonical step runs before any non-canonical a-b fallback, so that a
+    // graph-symmetric R/S pair always gets the same relative ordering regardless
+    // of how the molecule was constructed.
+    const fractional = rank.map(r => [r]);
+    let appliedChiralBreak = false;
+    for (const [tiedRank, count] of counts) {
+      if (count <= 1) continue;
+      const tiedIndices = rank.map((r, i) => (r === tiedRank ? i : -1)).filter(i => i >= 0);
+      const ords = tiedIndices.map(i => chiralityOrd(atoms[i].properties.chirality));
+      const minOrd = Math.min(...ords);
+      const maxOrd = Math.max(...ords);
+      if (minOrd < maxOrd) {
+        for (const i of tiedIndices) {
+          if (chiralityOrd(atoms[i].properties.chirality) === minOrd) {
+            fractional[i] = [rank[i] - 0.5];
+          }
+        }
+        appliedChiralBreak = true;
+      }
+    }
+
+    if (appliedChiralBreak) {
+      ({ rank, unique } = assignRanks(fractional));
+      for (;;) {
+        const next = extendRanks(rank);
+        if (next.unique <= unique) break;
+        rank = next.rank;
+        unique = next.unique;
+      }
+      continue;
+    }
+
+    // No chirality-differentiable group found.  Fall back to the smallest tied
+    // rank and break it with the lex-min initial-invariant atom, then a-b.
     let tiedRank = -1;
     for (let r = 0; r <= n; r++) {
       if ((counts.get(r) ?? 0) > 1) {
@@ -179,8 +217,6 @@ export function morganRanks(mol) {
       break;
     }
 
-    // Among tied atoms, choose the one with the lex-min initial invariant.
-    // Fall back to original index order for a fully deterministic tiebreak.
     const tied = rank.map((r, i) => (r === tiedRank ? i : -1)).filter(i => i >= 0);
     tied.sort((a, b) => {
       const d = lexCmp(initInvariants[a], initInvariants[b]);
@@ -189,15 +225,12 @@ export function morganRanks(mol) {
     const chosen = tied[0];
 
     // Give the chosen atom a half-step smaller rank, then renormalise.
-    const fractional = rank.map((r, i) => [i === chosen ? r - 0.5 : r]);
-    ({ rank, unique } = assignRanks(fractional));
+    const fractional2 = rank.map((r, i) => [i === chosen ? r - 0.5 : r]);
+    ({ rank, unique } = assignRanks(fractional2));
 
-    // Re-run Morgan with the new seeds.
     for (;;) {
       const next = extendRanks(rank);
-      if (next.unique <= unique) {
-        break;
-      }
+      if (next.unique <= unique) break;
       rank = next.rank;
       unique = next.unique;
     }
