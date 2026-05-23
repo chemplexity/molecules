@@ -1116,6 +1116,12 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
       const otherId = b.getOtherAtom(atomId);
       if (!heavySet.has(otherId) || !isAromaticRingAtom(otherId, aromaticBondIds)) continue;
       if (remaining(otherId) <= 0 || b.properties.order >= 3) continue;
+      // Hypervalence guard: promoting this bond by 1 combined with Phase C
+      // converting each aromatic bond on the neighbour from order 1 to 1.5
+      // must not push the neighbour past its normal valence.
+      const neighborAroBondCount = (mol.atoms.get(otherId)?.bonds ?? [])
+        .filter(bid => aromaticBondIds.has(bid)).length;
+      if (1 + neighborAroBondCount * 0.5 > remaining(otherId)) continue;
       b.properties.order += 1;
       break;
     }

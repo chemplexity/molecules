@@ -221,18 +221,21 @@ describe('parseINCHI — charged heteroaromatic ring', () => {
   });
 });
 
-describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () => {
+describe('parseINCHI — guanidine mobile hydrogens localize one imine', () => {
   const mol = parseINCHI('InChI=1S/C6H14N4O2/c7-4(5(11)12)2-1-3-10-6(8)9/h4H,1-3,7H2,(H,11,12)(H4,8,9,10)');
 
-  it('keeps the side-chain nitrogen single-bonded to the guanidino carbon', () => {
+  it('keeps the guanidino group neutral with one localized imine bond', () => {
     const nitrogens = [...mol.atoms.values()].filter(atom => atom.name === 'N');
     const internalNitrogen = nitrogens.find(atom => atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') && atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2);
     assert.ok(internalNitrogen);
-    const doubleBonds = internalNitrogen.bonds
+    const guanidinoCarbon = internalNitrogen.getHeavyNeighbors(mol).find(atom => atom.name === 'C' && atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'N').length === 3);
+    assert.ok(guanidinoCarbon);
+    const doubleBonds = guanidinoCarbon.bonds
       .map(bondId => mol.bonds.get(bondId))
       .filter(Boolean)
       .filter(bond => (bond.properties.order ?? 1) === 2);
-    assert.equal(doubleBonds.length, 0);
+    assert.equal(doubleBonds.length, 1);
+    assert.equal(nitrogens.some(atom => (atom.properties.charge ?? 0) !== 0), false);
   });
 });
 

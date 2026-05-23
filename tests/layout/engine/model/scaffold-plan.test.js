@@ -588,6 +588,30 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('preselects a terminal root for non-aromatic isolated-ring mixed chains', () => {
+    const graph = createLayoutGraph(
+      parseSMILES(
+        'C[C@@H]1O[C@H](O[C@@H]2[C@H](O)[C@@H](O)[C@H](N[C@@H]3[C@@H](C)O[C@@H](O[C@@H]4[C@H](CO)O[C@@H](O[C@@H]5[C@H](CO)O[C@@H](O)[C@H](O)[C@H]5O)[C@H](O)[C@H]4O)[C@H](O)[C@H]3O)C=C2CO)[C@@H](O)[C@H](O)[C@H]1O'
+      ),
+      { suppressH: true }
+    );
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootSelectionMode, 'terminal-ring-chain');
+    assert.equal(plan.rootScaffold.id, 'ring-system:3');
+    assert.equal(plan.placementSequence[0].candidateId, 'ring-system:3');
+  });
+
+  it('preselects a terminal branch-hub root for aromatic isolated-ring clusters', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CC(O)C(=O)N(CC1CN(CC1F)C(=O)OCC1=CC=CC=C1)C(C1=C(CC2=CC=CC=C2)OC(=N1)C1=CC(F)=CC=C1F)C(C)(C)C'),
+      { suppressH: true }
+    );
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootSelectionMode, 'terminal-ring-chain');
+    assert.equal(plan.rootScaffold.id, 'ring-system:2');
+    assert.equal(plan.placementSequence[0].candidateId, 'ring-system:2');
+  });
+
   it('falls back to an acyclic scaffold when the component is ring-free', () => {
     const graph = createLayoutGraph(makeChain(4));
     const plan = buildScaffoldPlan(graph, graph.components[0]);

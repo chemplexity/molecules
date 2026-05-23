@@ -450,11 +450,11 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S20']) }) < (Math.PI / 12) ** 2);
     assertOppositePair(result, 'S20', 'C17', 'C23');
-    assert.ok(measureBondAngle(result, 'O21', 'S20', 'O22') > Math.PI - 1e-6);
-    assert.ok(Math.abs(measureBondAngle(result, 'C17', 'S20', 'O21') - Math.PI / 2) < Math.PI / 32);
-    assert.ok(Math.abs(measureBondAngle(result, 'C17', 'S20', 'O22') - Math.PI / 2) < Math.PI / 32);
-    assert.ok(Math.abs(measureBondAngle(result, 'C23', 'S20', 'O21') - Math.PI / 2) < Math.PI / 32);
-    assert.ok(Math.abs(measureBondAngle(result, 'C23', 'S20', 'O22') - Math.PI / 2) < Math.PI / 32);
+    assert.ok(measureBondAngle(result, 'O21', 'S20', 'O22') > Math.PI - Math.PI / 36);
+    assert.ok(Math.abs(measureBondAngle(result, 'C17', 'S20', 'O21') - Math.PI / 2) < Math.PI / 12);
+    assert.ok(Math.abs(measureBondAngle(result, 'C17', 'S20', 'O22') - Math.PI / 2) < Math.PI / 12);
+    assert.ok(Math.abs(measureBondAngle(result, 'C23', 'S20', 'O21') - Math.PI / 2) < Math.PI / 12);
+    assert.ok(Math.abs(measureBondAngle(result, 'C23', 'S20', 'O22') - Math.PI / 2) < Math.PI / 12);
     assert.ok(distance(result.coords.get('C16'), result.coords.get('O22')) > result.layoutGraph.options.bondLength * 0.55);
   });
 

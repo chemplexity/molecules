@@ -891,7 +891,7 @@ export class Molecule {
     // BFS from u to v with that bond removed.  This is the Smallest Set of
     // Smallest Rings (SSSR) approach and finds the correct local rings even in
     // fused polycyclic systems where a DFS-basis would produce large macrocycles.
-    const allRings = [];
+    const allRings = []; // entries: { ring: atomId[], closingBond: bondId }
     const seen = new Set();
 
     for (const [bondId, bond] of this.bonds) {
@@ -940,13 +940,61 @@ export class Molecule {
       const key = [...ring].sort().join('\0');
       if (!seen.has(key)) {
         seen.add(key);
-        allRings.push(ring);
+        allRings.push({ ring, closingBond: bondId });
       }
     }
 
-    // Return up to ringCount rings, smallest first.
-    allRings.sort((a, b) => a.length - b.length);
-    this._ringsCache = allRings.slice(0, ringCount);
+    // Sort smallest first (primary SSSR criterion).
+    allRings.sort((a, b) => a.ring.length - b.ring.length);
+
+    // Build atom-pair → bondId lookup for ring → bond-incidence-vector conversion.
+    const bondByPair = new Map();
+    for (const [bId, bond] of this.bonds) {
+      const [a, b] = bond.atoms;
+      bondByPair.set(a + '\0' + b, bId);
+      bondByPair.set(b + '\0' + a, bId);
+    }
+    const bondIdsList = [...this.bonds.keys()];
+    const bondIndexMap = new Map(bondIdsList.map((id, i) => [id, i]));
+
+    const toBondSet = ({ ring, closingBond }) => {
+      const s = new Set();
+      const ci = bondIndexMap.get(closingBond);
+      if (ci !== undefined) s.add(ci);
+      for (let i = 0; i < ring.length - 1; i++) {
+        const bId = bondByPair.get(ring[i] + '\0' + ring[i + 1]);
+        if (bId !== undefined) s.add(bondIndexMap.get(bId));
+      }
+      return s;
+    };
+
+    // Select a linearly independent subset using GF(2) Gaussian elimination on
+    // bond-incidence vectors.  Without this check, bicyclo[x.y.z] ring systems
+    // produce three pairwise-distinct but linearly-dependent 6-membered rings
+    // that can crowd out valid aromatic rings when the ringCount budget is tight.
+    const pivotMap = new Map(); // pivot col → reduced bond-set (the basis row)
+    const result = [];
+
+    for (const entry of allRings) {
+      let bv = toBondSet(entry);
+      // Forward-eliminate using existing basis rows in ascending pivot order.
+      const sortedCols = [...pivotMap.keys()].sort((a, b) => a - b);
+      for (const col of sortedCols) {
+        if (bv.has(col)) {
+          for (const x of pivotMap.get(col)) {
+            if (bv.has(x)) bv.delete(x); else bv.add(x);
+          }
+        }
+      }
+      if (bv.size === 0) continue; // linearly dependent — skip
+      let pivot = Infinity;
+      for (const x of bv) if (x < pivot) pivot = x;
+      pivotMap.set(pivot, bv);
+      result.push(entry.ring);
+      if (result.length === ringCount) break;
+    }
+
+    this._ringsCache = result;
     return this._ringsCache;
   }
 

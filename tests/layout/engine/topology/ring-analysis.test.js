@@ -43,16 +43,14 @@ describe('layout/engine/topology/ring-analysis', () => {
     assert.equal(typeof analysis.rings[0].signature, 'string');
   });
 
-  it('supplements ring descriptors for ring bonds omitted by basis perception', () => {
+  it('does not synthesize the glycopeptide closure when basis perception omits it', () => {
     const molecule = parseSMILES(GLYCOPEPTIDE_MACROCYCLE_SMILES);
     const analysis = analyzeRings(molecule, computeCanonicalAtomRanks(molecule));
     const supplementalClosureRing = analysis.rings.find(ring => ring.supplemental === true && ring.size === 16 && ringIncludesAdjacentBond(ring, 'C36', 'C53'));
 
-    assert.ok(supplementalClosureRing, 'expected a supplemental macrocycle through C36-C53');
-    assert.ok(
-      analysis.ringSystems.some(ringSystem => ringSystem.ringIds.includes(supplementalClosureRing.id)),
-      'expected the supplemental closure to participate in ring-system analysis'
-    );
+    assert.equal(supplementalClosureRing, undefined);
+    assert.equal(analysis.rings.length, 11);
+    assert.equal(analysis.ringSystems.length, 4);
   });
 
   it('keeps raw ring access behind the adapter helper', () => {

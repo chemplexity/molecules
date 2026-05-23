@@ -49,6 +49,7 @@ import { collectLabelBoxes, findLabelOverlaps, labelBoxesOverlap } from './geome
 import { auditCleanupStage, measureCleanupStagePresentationPenalty } from './audit/stage-metrics.js';
 import { createQualityReport } from './model/quality-report.js';
 import { inspectEZStereo } from './stereo/ez.js';
+import { enforceAcyclicEZStereo } from './stereo/enforcement.js';
 import { pickWedgeAssignments } from './stereo/wedge-selection.js';
 import { inspectRingDependency } from './topology/ring-dependency.js';
 import { describePathLikeIsolatedRingChain } from './topology/isolated-ring-chain.js';
@@ -58,7 +59,7 @@ import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
 import { computeBounds } from './geometry/bounds.js';
-import { cloneCoords } from './geometry/transforms.js';
+import { cloneCoords, rotateAround } from './geometry/transforms.js';
 import { add, angleOf, centroid, rotate, sub } from './geometry/vec2.js';
 import { PRESENTATION_METRIC_EPSILON, atomPairKey } from './constants.js';
 
@@ -81,6 +82,12 @@ const FINAL_TERMINAL_CONTACT_LEAF_ELEMENTS = new Set(['C', 'F', 'Cl', 'Br', 'I']
 const FINAL_SMALL_RING_SNAP_MAX_ANGLE_DEVIATION = (4 * Math.PI) / 180;
 const FINAL_SMALL_RING_SNAP_MIN_ANGLE_IMPROVEMENT = (0.25 * Math.PI) / 180;
 const FINAL_CONNECTOR_LABEL_ROTATIONS = Object.freeze(Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const FINAL_CONNECTOR_LABEL_WIDE_ROTATIONS = Object.freeze(
+  [15, -15, 20, -20, 25, -25, 30, -30, 45, -45, 60, -60, 75, -75, 90, -90, 120, -120, 150, -150, 180].map(degrees => (degrees * Math.PI) / 180)
+);
+const FINAL_TERMINAL_LABEL_LEAF_ROTATIONS = Object.freeze(
+  [-180, -150, -120, -90, -75, -60, -45, -30, -20, -15, -10, -5, 5, 10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180].map(degrees => (degrees * Math.PI) / 180)
+);
 const FINAL_COMPRESSED_PAIRED_TERMINAL_HETERO_COMPRESSION_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
 const FINAL_CONNECTOR_LABEL_MAX_SUBTREE_ATOMS = 700;
 const CLEANUP_STAGE_BUDGET_LIMITS = Object.freeze({
@@ -355,6 +362,24 @@ function shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) {
   return policy?.orientationBias === 'horizontal';
 }
 
+function shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions, policy, cleanup) {
+  if (normalizedOptions.finalLandscapeOrientation || normalizedOptions.fixedCoords.size > 0 || normalizedOptions.existingCoords.size > 0) {
+    return false;
+  }
+  if (policy?.orientationBias !== 'horizontal') {
+    return false;
+  }
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  if (heavyAtomCount < 250) {
+    return false;
+  }
+  const finalStageAudit = cleanup?.finalStageAudit ?? null;
+  return (
+    (finalStageAudit?.labelOverlapCount ?? 0) > 0 &&
+    ((finalStageAudit?.severeOverlapCount ?? 0) > 0 || (finalStageAudit?.visibleHeavyBondCrossingCount ?? 0) > 0)
+  );
+}
+
 function shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, coords) {
   const heavyAtomIds = [...coords.keys()].filter(atomId => layoutGraph.atoms.has(atomId) && layoutGraph.atoms.get(atomId)?.element !== 'H');
   const bounds = computeBounds(coords, heavyAtomIds);
@@ -459,6 +484,39 @@ function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) {
   return !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false));
 }
 
+function finalDirtyLargeLabelClearanceTradeoffIsAcceptable(layoutGraph, candidateAudit, baseAudit) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  if (
+    heavyAtomCount < 250 ||
+    !candidateAudit ||
+    !baseAudit ||
+    (baseAudit.labelOverlapCount ?? 0) <= 0 ||
+    (candidateAudit.labelOverlapCount ?? 0) >= (baseAudit.labelOverlapCount ?? 0)
+  ) {
+    return false;
+  }
+  if ((baseAudit.severeOverlapCount ?? 0) <= 0 && (baseAudit.visibleHeavyBondCrossingCount ?? 0) <= 0) {
+    return false;
+  }
+  for (const key of ['bondLengthFailureCount', 'mildBondLengthFailureCount', 'severeBondLengthFailureCount', 'collapsedMacrocycleCount']) {
+    if ((candidateAudit[key] ?? 0) > (baseAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  if ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  if ((candidateAudit.severeOverlapCount ?? 0) >= (baseAudit.severeOverlapCount ?? 0)) {
+    return false;
+  }
+  return (
+    (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit.visibleHeavyBondCrossingCount ?? 0) + 2 &&
+    (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) + 1 &&
+    (candidateAudit.inwardRingSubstituentCount ?? 0) <= (baseAudit.inwardRingSubstituentCount ?? 0) + 1 &&
+    (candidateAudit.outwardAxisRingSubstituentFailureCount ?? 0) <= (baseAudit.outwardAxisRingSubstituentFailureCount ?? 0) + 1
+  );
+}
+
 function hasAuditCleanMixedFinalBranchState(audit) {
   return (
     audit?.ok === true &&
@@ -513,6 +571,67 @@ function auditFinalRetouchCoords(molecule, layoutGraph, coords, placement, bondL
     bondValidationClasses: placement.bondValidationClasses,
     stereo
   });
+}
+
+function maybeApplyFinalStereoRescue(molecule, layoutGraph, coords, placement, bondLength) {
+  if (layoutGraph._hasStereoTargets !== true) {
+    return { changed: false, coords, currentStereo: null, currentAudit: null, candidateStereo: null, candidateAudit: null, reflections: 0 };
+  }
+
+  const currentEZ = inspectEZStereo(layoutGraph, coords);
+  if ((currentEZ.violationCount ?? 0) === 0) {
+    return {
+      changed: false,
+      coords,
+      currentStereo: { ezViolationCount: currentEZ.violationCount },
+      currentAudit: null,
+      candidateStereo: null,
+      candidateAudit: null,
+      reflections: 0
+    };
+  }
+
+  const { stereo: currentStereo } = runStereoPhase(molecule, layoutGraph, coords);
+  if ((currentStereo.ezViolationCount ?? 0) === 0) {
+    return { changed: false, coords, currentStereo, currentAudit: null, candidateStereo: null, candidateAudit: null, reflections: 0 };
+  }
+  const currentAudit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses,
+    stereo: currentStereo
+  });
+  if (currentAudit.stereoContradiction !== true) {
+    return { changed: false, coords, currentStereo, currentAudit, candidateStereo: null, candidateAudit: null, reflections: 0 };
+  }
+
+  const rescued = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength });
+  if ((rescued.reflections ?? 0) <= 0) {
+    return { changed: false, coords, currentStereo, currentAudit, candidateStereo: null, candidateAudit: null, reflections: 0 };
+  }
+
+  const { stereo: candidateStereo } = runStereoPhase(molecule, layoutGraph, rescued.coords);
+  const candidateAudit = auditLayout(layoutGraph, rescued.coords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses,
+    stereo: candidateStereo
+  });
+  if (
+    candidateAudit.stereoContradiction === false &&
+    (candidateStereo.ezViolationCount ?? 0) < (currentStereo.ezViolationCount ?? 0) &&
+    finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)
+  ) {
+    return {
+      changed: true,
+      coords: rescued.coords,
+      currentStereo,
+      currentAudit,
+      candidateStereo,
+      candidateAudit,
+      reflections: rescued.reflections ?? 0
+    };
+  }
+
+  return { changed: false, coords, currentStereo, currentAudit, candidateStereo, candidateAudit, reflections: rescued.reflections ?? 0 };
 }
 
 function ringInternalAngle(coords, atomIds, index) {
@@ -904,7 +1023,9 @@ function maybeApplyGuardedFinalLabelClearance(molecule, layoutGraph, coords, pla
 
   const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, coords, placement, bondLength);
   const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, labelClearance.coords, placement, bondLength);
-  if ((candidateAudit.labelOverlapCount ?? 0) >= (currentAudit.labelOverlapCount ?? 0) || !finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+  const labelClearanceAccepted =
+    finalAuditCountsDoNotWorsen(candidateAudit, currentAudit) || finalDirtyLargeLabelClearanceTradeoffIsAcceptable(layoutGraph, candidateAudit, currentAudit);
+  if ((candidateAudit.labelOverlapCount ?? 0) >= (currentAudit.labelOverlapCount ?? 0) || !labelClearanceAccepted) {
     return {
       changed: false,
       coords,
@@ -1032,11 +1153,17 @@ function maybeApplyGuardedConnectorLabelClearance(molecule, layoutGraph, coords,
   const labelBoxes = collectLabelBoxes(layoutGraph, coords, bondLength, { labelMetrics });
   const labelBoxByAtomId = new Map(labelBoxes.map(labelBox => [labelBox.atomId, labelBox]));
   const overlaps = findLabelOverlaps(layoutGraph, coords, bondLength, { labelMetrics, labelBoxes });
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  const useWideRotations =
+    heavyAtomCount >= 250 && ((currentAudit.severeOverlapCount ?? 0) > 0 || (currentAudit.visibleHeavyBondCrossingCount ?? 0) > 0);
+  const connectorRotations = useWideRotations
+    ? [...FINAL_CONNECTOR_LABEL_ROTATIONS, ...FINAL_CONNECTOR_LABEL_WIDE_ROTATIONS]
+    : FINAL_CONNECTOR_LABEL_ROTATIONS;
   for (const overlap of overlaps) {
     for (const labelAtomId of [overlap.firstAtomId, overlap.secondAtomId]) {
       const descriptors = finalConnectorLabelRotationDescriptors(layoutGraph, coords, labelAtomId);
       for (const descriptor of descriptors) {
-        for (const rotation of FINAL_CONNECTOR_LABEL_ROTATIONS) {
+        for (const rotation of connectorRotations) {
           const candidateCoords = rotateFinalConnectorLabelSubtree(coords, descriptor.subtreeAtomIds, descriptor.pivot, rotation);
           const firstCandidateBox = finalConnectorCandidateLabelBox(labelBoxByAtomId.get(overlap.firstAtomId), candidateCoords);
           const secondCandidateBox = finalConnectorCandidateLabelBox(labelBoxByAtomId.get(overlap.secondAtomId), candidateCoords);
@@ -1048,7 +1175,9 @@ function maybeApplyGuardedConnectorLabelClearance(molecule, layoutGraph, coords,
             continue;
           }
           const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength);
-          if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+          const connectorClearanceAccepted =
+            finalAuditCountsDoNotWorsen(candidateAudit, currentAudit) || finalDirtyLargeLabelClearanceTradeoffIsAcceptable(layoutGraph, candidateAudit, currentAudit);
+          if (!connectorClearanceAccepted) {
             continue;
           }
           return {
@@ -1071,6 +1200,145 @@ function maybeApplyGuardedConnectorLabelClearance(molecule, layoutGraph, coords,
     movedAtomCount: 0,
     currentAudit,
     candidateAudit: null
+  };
+}
+
+function terminalLabelLeafDescriptor(layoutGraph, coords, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || (atom.heavyDegree ?? 0) !== 1 || layoutGraph.fixedCoords?.has(atomId)) {
+    return null;
+  }
+
+  let anchorAtomId = null;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    if (anchorAtomId != null) {
+      return null;
+    }
+    anchorAtomId = neighborAtomId;
+  }
+  if (anchorAtomId == null || layoutGraph.fixedCoords?.has(anchorAtomId)) {
+    return null;
+  }
+
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, anchorAtomId);
+  const subtreeHeavyAtomCount = [...subtreeAtomIds].filter(subtreeAtomId => layoutGraph.atoms.get(subtreeAtomId)?.element !== 'H').length;
+  if (subtreeHeavyAtomCount !== 1) {
+    return null;
+  }
+
+  return {
+    atomId,
+    anchorAtomId,
+    subtreeAtomIds,
+    pivot: coords.get(anchorAtomId)
+  };
+}
+
+function rotateTerminalLabelLeaf(coords, descriptor, rotation) {
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of descriptor.subtreeAtomIds) {
+    const position = candidateCoords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, rotateAround(position, descriptor.pivot, rotation));
+  }
+  return candidateCoords;
+}
+
+function terminalLabelLeafCandidateScore(audit) {
+  return (
+    (audit.labelOverlapCount ?? 0) * 1_000_000 +
+    (audit.severeOverlapCount ?? 0) * 10_000 +
+    (audit.visibleHeavyBondCrossingCount ?? 0) * 1_000 +
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) * 100 +
+    (audit.severeOverlapPenalty ?? 0)
+  );
+}
+
+function maybeApplyGuardedTerminalLabelLeafClearance(molecule, layoutGraph, coords, placement, bondLength, labelMetrics) {
+  let currentCoords = coords;
+  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
+  if ((currentAudit.labelOverlapCount ?? 0) === 0) {
+    return {
+      changed: false,
+      coords,
+      rotations: 0,
+      movedAtomCount: 0,
+      currentAudit,
+      candidateAudit: null
+    };
+  }
+
+  const movedAtomIds = new Set();
+  let changed = false;
+  let rotations = 0;
+  let startingAudit = currentAudit;
+
+  for (let pass = 0; pass < 4 && (currentAudit.labelOverlapCount ?? 0) > 0; pass++) {
+    const labelBoxes = collectLabelBoxes(layoutGraph, currentCoords, bondLength, { labelMetrics });
+    const overlaps = findLabelOverlaps(layoutGraph, currentCoords, bondLength, { labelMetrics, labelBoxes });
+    if (overlaps.length === 0) {
+      break;
+    }
+
+    let bestCandidate = null;
+    for (const overlap of overlaps) {
+      for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
+        const descriptor = terminalLabelLeafDescriptor(layoutGraph, currentCoords, atomId);
+        if (!descriptor) {
+          continue;
+        }
+        for (const rotation of FINAL_TERMINAL_LABEL_LEAF_ROTATIONS) {
+          const candidateCoords = rotateTerminalLabelLeaf(currentCoords, descriptor, rotation);
+          const candidateLabelOverlapCount = findLabelOverlaps(layoutGraph, candidateCoords, bondLength, { labelMetrics }).length;
+          if (candidateLabelOverlapCount >= (currentAudit.labelOverlapCount ?? 0)) {
+            continue;
+          }
+          const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength);
+          if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+            continue;
+          }
+          const score = terminalLabelLeafCandidateScore(candidateAudit);
+          if (!bestCandidate || score < bestCandidate.score - PRESENTATION_METRIC_EPSILON) {
+            bestCandidate = {
+              coords: candidateCoords,
+              audit: candidateAudit,
+              descriptor,
+              score
+            };
+          }
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    for (const atomId of bestCandidate.descriptor.subtreeAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    changed = true;
+    rotations++;
+  }
+
+  return {
+    changed,
+    coords: currentCoords,
+    rotations,
+    movedAtomCount: movedAtomIds.size,
+    currentAudit: startingAudit,
+    candidateAudit: changed ? currentAudit : null
   };
 }
 
@@ -3011,7 +3279,7 @@ export function runPipeline(molecule, options = {}) {
     finalCoordsModified = true;
     orientationApplied = true;
   }
-  if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)) {
+  if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) || shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions, policy, cleanup)) {
     const landscapeCoords = cloneCoords(finalCoords);
     landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
     if (landscapeApplied) {
@@ -3597,6 +3865,19 @@ export function runPipeline(molecule, options = {}) {
       labelOverlapCountAfter: finalConnectorLabelClearance.candidateAudit?.labelOverlapCount ?? null
     });
   }
+  const finalTerminalLabelLeafClearance = timeFinalRetouch('finalTerminalLabelLeafClearance', () =>
+    maybeApplyGuardedTerminalLabelLeafClearance(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength, normalizedOptions.labelMetrics)
+  );
+  if (finalTerminalLabelLeafClearance.changed) {
+    finalCoords = finalTerminalLabelLeafClearance.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Terminal Label Leaf Clearance', 'Residual terminal label leaves rotated around their heavy anchor while preserving audited layout quality.', cloneCoords(finalCoords), {
+      rotations: finalTerminalLabelLeafClearance.rotations,
+      movedAtomCount: finalTerminalLabelLeafClearance.movedAtomCount,
+      labelOverlapCountBefore: finalTerminalLabelLeafClearance.currentAudit.labelOverlapCount,
+      labelOverlapCountAfter: finalTerminalLabelLeafClearance.candidateAudit?.labelOverlapCount ?? null
+    });
+  }
   if (familySummary.primaryFamily === 'acyclic') {
     timeFinalRetouch('acyclicFinalAcylBranchRetouch', () => {
       const currentAudit = auditLayout(layoutGraph, finalCoords, {
@@ -3630,6 +3911,18 @@ export function runPipeline(molecule, options = {}) {
           }
         }
       }
+    });
+  }
+  const finalStereoRescue = timeFinalRetouch('finalStereoRescue', () =>
+    maybeApplyFinalStereoRescue(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+  );
+  if (finalStereoRescue.changed) {
+    finalCoords = finalStereoRescue.coords;
+    finalCoordsModified = true;
+    onStep?.('Final EZ Stereo Rescue', 'Late retouches rechecked against annotated E/Z geometry and corrected when audit counts stayed bounded.', cloneCoords(finalCoords), {
+      reflections: finalStereoRescue.reflections,
+      ezViolationCountBefore: finalStereoRescue.currentStereo?.ezViolationCount ?? null,
+      ezViolationCountAfter: finalStereoRescue.candidateStereo?.ezViolationCount ?? null
     });
   }
   snapTinyCoordinateNoise(finalCoords);

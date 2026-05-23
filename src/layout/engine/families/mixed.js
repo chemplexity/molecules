@@ -3567,6 +3567,9 @@ function shouldRetryMixedWithAlternateRoot(layoutGraph, scaffoldPlan, placementA
   if (!placementAudit || placementAudit.bondLengthFailureCount > 0) {
     return false;
   }
+  if (scaffoldPlan?.rootSelectionMode === 'terminal-ring-chain' && scaffoldPlan?.rootScaffold?.fastMixedRootSelection === 'terminal-ring-chain' && placementAudit.ok === true) {
+    return false;
+  }
   const metrics = placementMetrics ?? (placement && metricsCache?.has(placement) ? metricsCache.get(placement) : null) ?? mixedRootRetryTriggerMetrics(layoutGraph, placement);
   return hasMixedRootRetryDefect(layoutGraph, placementAudit, metrics);
 }
@@ -11136,7 +11139,9 @@ function dedupeAttachedBlockCandidatesByMeta(candidates) {
 }
 
 const ATTACHED_BLOCK_FULL_SCORE_BUDGETS = Object.freeze({
-  small: 512
+  small: 512,
+  mediumMultiRing: 192,
+  heavyMultiRing: 128
 });
 const ATTACHED_BLOCK_SCORE_CACHE_MAX_ENTRIES = 4096;
 const ATTACHED_BLOCK_CORE_SCORE_CONTEXT_CACHE_MAX_ENTRIES = 256;
@@ -11160,12 +11165,27 @@ function recordAttachedBlockPrescore(layoutGraph) {
   mixedAttachedBlockScoringTelemetry(layoutGraph).prescoreCount++;
 }
 
+function attachedBlockFullScoreBudgetLimit(layoutGraph, options = {}) {
+  if (options.limit != null) {
+    return options.limit;
+  }
+  const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? layoutGraph.atoms.size;
+  const ringSystemCount = layoutGraph.ringSystems?.length ?? 0;
+  if (heavyAtomCount >= 52 || (heavyAtomCount >= 48 && ringSystemCount >= 4)) {
+    return ATTACHED_BLOCK_FULL_SCORE_BUDGETS.heavyMultiRing;
+  }
+  if (heavyAtomCount >= 44 && ringSystemCount >= 3) {
+    return ATTACHED_BLOCK_FULL_SCORE_BUDGETS.mediumMultiRing;
+  }
+  return ATTACHED_BLOCK_FULL_SCORE_BUDGETS.small;
+}
+
 function createAttachedBlockScoringBudget(layoutGraph, options = {}) {
   const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? layoutGraph.atoms.size;
   if (options.disabled === true || heavyAtomCount >= 60) {
     return null;
   }
-  const limit = options.limit ?? ATTACHED_BLOCK_FULL_SCORE_BUDGETS.small;
+  const limit = attachedBlockFullScoreBudgetLimit(layoutGraph, options);
   const telemetry = mixedAttachedBlockScoringTelemetry(layoutGraph);
   telemetry.budgetedAttachmentCount++;
   telemetry.maxBudgetLimit = Math.max(telemetry.maxBudgetLimit, limit);

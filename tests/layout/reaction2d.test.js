@@ -24,6 +24,10 @@ function preparePreview(smiles, smirks) {
   const reactantSmarts = smirks.split('>>')[0];
   const mapping = [...findSMARTSRaw(sourceMol, reactantSmarts)][0];
   assert.ok(mapping, 'expected at least one mapped reactant site');
+  return preparePreviewWithMapping(sourceMol, smirks, mapping);
+}
+
+function preparePreviewWithMapping(sourceMol, smirks, mapping) {
   const preview = buildReaction2dMol(sourceMol, smirks, mapping);
   assert.ok(preview, 'expected reaction preview to be buildable');
   generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
@@ -1171,4 +1175,38 @@ test('reaction preview keeps alkyne partial reduction locally bent for 2-butyne'
   const angle2 = angleDeg(productCarbons[1], productCarbons[2], productCarbons[3]);
   assert.ok(angle1 > 100 && angle1 < 140, `expected first alkene angle to stay bent, got ${angle1.toFixed(1)}°`);
   assert.ok(angle2 > 100 && angle2 < 140, `expected second alkene angle to stay bent, got ${angle2.toFixed(1)}°`);
+});
+
+test('reaction preview preserves terminal alkyne linearity after bridged ether cleavage', () => {
+  const smiles = 'C#CCC12C3NCC1=C1C4COC(O4)C1C23';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.etherCleavage.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.equal(mappings.length, 4, 'expected four ether-cleavage mappings for the bridged cage');
+
+  const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.etherCleavage.smirks, mappings[0]);
+  const terminal = preview.mol.atoms.get('__rxn_product__0:C1');
+  const internal = preview.mol.atoms.get('__rxn_product__0:C2');
+  const scaffold = preview.mol.atoms.get('__rxn_product__0:C3');
+  assert.ok(terminal && internal && scaffold, 'expected terminal alkyne atoms');
+  const angle = angleDeg(terminal, internal, scaffold);
+  assert.ok(angle > 175, `expected ether-cleavage terminal alkyne to stay linear, got ${angle.toFixed(1)}°`);
+});
+
+test('reaction preview bends terminal alkyne reductions on bridged ether cages', () => {
+  const smiles = 'C#CCC12C3NCC1=C1C4COC(O4)C1C23';
+  for (const template of [reactionTemplates.alkynePartialReduction, reactionTemplates.alkyneFullReduction]) {
+    const sourceMol = parseSMILES(smiles);
+    const reactantSmarts = template.smirks.split('>>')[0];
+    const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+    assert.equal(mappings.length, 2, `expected two mappings for ${template.name}`);
+
+    const preview = preparePreviewWithMapping(sourceMol, template.smirks, mappings[0]);
+    const terminal = preview.mol.atoms.get('__rxn_product__0:C1');
+    const internal = preview.mol.atoms.get('__rxn_product__0:C2');
+    const scaffold = preview.mol.atoms.get('__rxn_product__0:C3');
+    assert.ok(terminal && internal && scaffold, `expected terminal reduction atoms for ${template.name}`);
+    const angle = angleDeg(terminal, internal, scaffold);
+    assert.ok(angle > 105 && angle < 135, `expected ${template.name} terminal chain bend, got ${angle.toFixed(1)}°`);
+  }
 });

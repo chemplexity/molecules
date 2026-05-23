@@ -1,7 +1,15 @@
 # Change Log
 
+## 2026-05-22
+
+- Final audited terminal-label leaf pass, wider guarded connector-label retries, and an automatic large dirty label-overlap landscape frame.
+- Add a final guarded E/Z stereo rescue after late presentation retouches so stress rows whose final cleanup re-flips an annotated alkene are corrected without worsening overlap, bond, label, or ring-substituent audit counts.
+
 ## 2026-05-21
 
+- Preselect terminal ring roots for non-aromatic sugar chains and aromatic isolated-ring clusters in mixed layouts, avoiding expensive alternate-root retries.
+- Tighten attached-block full-scoring budgets for heavier multi-ring mixed layouts so branch scoring spends less time on low-ranked candidates after prescore ordering.
+- Restore terminal alkyne reaction-preview geometry after ether cleavage and bend terminal alkyne-reduction chains into visible zig-zag slots.
 - Add a guarded large-molecule ether-linker retouch so badly linearized non-aromatic sugar/base O-C continuations such as O265 bend back to 120 degrees without worsening final audits.
 - Let terminal carbonyl fan cleanup accept exact no-regression leaf moves on already-dirty large WebKit layouts, keeping nucleotide carbonyl centers such as C85 and C507 trigonal.
 - Center terminal double-bond strokes in the engine SVG renderers so carbonyl/imine bonds are drawn symmetrically around the true atom-axis instead of visually leaning to one side.

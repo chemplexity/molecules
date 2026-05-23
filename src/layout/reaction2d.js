@@ -883,6 +883,7 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
   }
   idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength);
   idealizeReaction2dReducedAlkynePairs(mol, componentAtomIds, bondLength);
+  idealizeReaction2dTerminalReducedAlkynePairs(mol, componentAtomIds, bondLength);
   idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength);
   preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLength);
   idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bondLength);
@@ -891,6 +892,224 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
   repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength);
   finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
   finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
+  idealizeReaction2dTerminalAlkyneContinuations(mol, componentAtomIds, bondLength);
+}
+
+function reaction2dBondAngle(a, center, b) {
+  if (!a || !center || !b || a.x == null || a.y == null || center.x == null || center.y == null || b.x == null || b.y == null) {
+    return null;
+  }
+  const firstAngle = Math.atan2(a.y - center.y, a.x - center.x);
+  const secondAngle = Math.atan2(b.y - center.y, b.x - center.x);
+  let difference = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
+  if (difference > Math.PI) {
+    difference = Math.PI * 2 - difference;
+  }
+  return difference;
+}
+
+function terminalReducedAlkyneDescriptor(mol, componentAtomIds, bond) {
+  const [aId, bId] = bond.atoms;
+  if (!componentAtomIds.has(aId) || !componentAtomIds.has(bId)) {
+    return null;
+  }
+  const productBondOrder = bond.properties.order ?? 1;
+  if (productBondOrder !== 1 && productBondOrder !== 2) {
+    return null;
+  }
+  if (!mol.__reactionPreview.editedProductAtomIds.has(aId) || !mol.__reactionPreview.editedProductAtomIds.has(bId)) {
+    return null;
+  }
+  const reactantBond = mol.getBond(sourceAtomId(aId), sourceAtomId(bId));
+  if ((reactantBond?.properties.order ?? 1) < 3) {
+    return null;
+  }
+  const first = mol.atoms.get(aId);
+  const second = mol.atoms.get(bId);
+  if (!first || !second || first.name !== 'C' || second.name !== 'C') {
+    return null;
+  }
+  const firstHeavyNeighbors = first.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+  const secondHeavyNeighbors = second.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+  const oriented =
+    firstHeavyNeighbors.length === 1 && secondHeavyNeighbors.length === 2
+      ? { terminal: first, internal: second, internalNeighbors: secondHeavyNeighbors }
+      : secondHeavyNeighbors.length === 1 && firstHeavyNeighbors.length === 2
+        ? { terminal: second, internal: first, internalNeighbors: firstHeavyNeighbors }
+        : null;
+  if (!oriented) {
+    return null;
+  }
+  const outer = oriented.internalNeighbors.find(nb => nb.id !== oriented.terminal.id);
+  if (!outer || (mol.getBond(oriented.internal.id, outer.id)?.properties.order ?? 1) !== 1) {
+    return null;
+  }
+  return {
+    terminal: oriented.terminal,
+    internal: oriented.internal,
+    outer,
+    productBondOrder,
+    outerAnchor: outer.getNeighbors(mol).find(nb => componentAtomIds.has(nb.id) && nb.id !== oriented.internal.id && nb.name !== 'H' && nb.x != null && nb.y != null)
+  };
+}
+
+/**
+ * Bends terminal alkyne-reduction products away from the retained scaffold.
+ * Internal alkynes are handled by the symmetric four-atom reducer; terminal
+ * alkynes only have one heavy substituent, so the reduced terminal carbon must
+ * be placed into the visible 120-degree slot explicitly.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
+function idealizeReaction2dTerminalReducedAlkynePairs(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+
+  for (const bond of mol.bonds.values()) {
+    const descriptor = terminalReducedAlkyneDescriptor(mol, componentAtomIds, bond);
+    if (!descriptor || descriptor.internal.x == null || descriptor.outer.x == null) {
+      continue;
+    }
+    const currentAngle = reaction2dBondAngle(descriptor.terminal, descriptor.internal, descriptor.outer);
+    if (currentAngle == null) {
+      continue;
+    }
+    const idealAngle = (2 * Math.PI) / 3;
+    const targetLength = scaledReaction2dBondLength(descriptor.productBondOrder, bondLength);
+    const outerAngle = Math.atan2(descriptor.outer.y - descriptor.internal.y, descriptor.outer.x - descriptor.internal.x);
+    const currentOuterAngle = descriptor.outerAnchor ? reaction2dBondAngle(descriptor.internal, descriptor.outer, descriptor.outerAnchor) : null;
+    const currentPlacements = [
+      { atom: descriptor.terminal, x: descriptor.terminal.x, y: descriptor.terminal.y },
+      { atom: descriptor.internal, x: descriptor.internal.x, y: descriptor.internal.y }
+    ];
+    const currentScore =
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, currentPlacements, bondLength) +
+      80 * (currentAngle - idealAngle) ** 2 +
+      (currentOuterAngle == null ? 0 : 45 * (currentOuterAngle - idealAngle) ** 2);
+    let best = null;
+
+    if (descriptor.outerAnchor) {
+      const outerAnchorAngle = Math.atan2(descriptor.outerAnchor.y - descriptor.outer.y, descriptor.outerAnchor.x - descriptor.outer.x);
+      for (const internalSign of [1, -1]) {
+        const internalAngle = outerAnchorAngle + internalSign * idealAngle;
+        const internalCandidate = {
+          x: descriptor.outer.x + Math.cos(internalAngle) * bondLength,
+          y: descriptor.outer.y + Math.sin(internalAngle) * bondLength
+        };
+        const backToOuterAngle = Math.atan2(descriptor.outer.y - internalCandidate.y, descriptor.outer.x - internalCandidate.x);
+        for (const terminalSign of [1, -1]) {
+          const terminalAngle = backToOuterAngle + terminalSign * idealAngle;
+          const terminalCandidate = {
+            x: internalCandidate.x + Math.cos(terminalAngle) * targetLength,
+            y: internalCandidate.y + Math.sin(terminalAngle) * targetLength
+          };
+          const placements = [
+            { atom: descriptor.internal, x: internalCandidate.x, y: internalCandidate.y },
+            { atom: descriptor.terminal, x: terminalCandidate.x, y: terminalCandidate.y }
+          ];
+          const score =
+            reaction2dCandidateLayoutScore(mol, componentAtomIds, placements, bondLength) +
+            0.05 * ((terminalCandidate.x - descriptor.terminal.x) ** 2 + (terminalCandidate.y - descriptor.terminal.y) ** 2) +
+            0.12 * ((internalCandidate.x - descriptor.internal.x) ** 2 + (internalCandidate.y - descriptor.internal.y) ** 2);
+          if (!best || score < best.score) {
+            best = { score, placements };
+          }
+        }
+      }
+    }
+
+    if (!best) {
+      for (const sign of [1, -1]) {
+        const targetAngle = outerAngle + sign * idealAngle;
+        const terminalCandidate = {
+          x: descriptor.internal.x + Math.cos(targetAngle) * targetLength,
+          y: descriptor.internal.y + Math.sin(targetAngle) * targetLength
+        };
+        const placements = [{ atom: descriptor.terminal, x: terminalCandidate.x, y: terminalCandidate.y }];
+        const score =
+          reaction2dCandidateLayoutScore(mol, componentAtomIds, placements, bondLength) +
+          0.05 * ((terminalCandidate.x - descriptor.terminal.x) ** 2 + (terminalCandidate.y - descriptor.terminal.y) ** 2);
+        if (!best || score < best.score) {
+          best = { score, placements };
+        }
+      }
+    }
+    if (best && best.score < currentScore - 1e-9) {
+      for (const placement of best.placements) {
+        placement.atom.x = placement.x;
+        placement.atom.y = placement.y;
+      }
+    }
+  }
+}
+
+function terminalAlkyneContinuationDescriptor(mol, componentAtomIds, bond) {
+  const [aId, bId] = bond.atoms;
+  if (!componentAtomIds.has(aId) || !componentAtomIds.has(bId) || (bond.properties.order ?? 1) < 3) {
+    return null;
+  }
+  const first = mol.atoms.get(aId);
+  const second = mol.atoms.get(bId);
+  if (!first || !second || first.name !== 'C' || second.name !== 'C') {
+    return null;
+  }
+  const firstHeavyNeighbors = first.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+  const secondHeavyNeighbors = second.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+  const oriented =
+    firstHeavyNeighbors.length === 1 && secondHeavyNeighbors.length === 2
+      ? { terminal: first, internal: second, internalNeighbors: secondHeavyNeighbors }
+      : secondHeavyNeighbors.length === 1 && firstHeavyNeighbors.length === 2
+        ? { terminal: second, internal: first, internalNeighbors: firstHeavyNeighbors }
+        : null;
+  if (!oriented) {
+    return null;
+  }
+  const outer = oriented.internalNeighbors.find(nb => nb.id !== oriented.terminal.id);
+  return outer ? { terminal: oriented.terminal, internal: oriented.internal, outer } : null;
+}
+
+/**
+ * Restores terminal alkyne continuations after reaction-preview scaffold
+ * alignment and ring-opening retouches. Product-side retained scaffold snaps
+ * can bend an unchanged `C#C-C` end; the terminal atom can be moved back onto
+ * the straight continuation without disturbing the retained ring/cage anchor.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
+function idealizeReaction2dTerminalAlkyneContinuations(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+
+  for (const bond of mol.bonds.values()) {
+    const descriptor = terminalAlkyneContinuationDescriptor(mol, componentAtomIds, bond);
+    if (!descriptor || descriptor.internal.x == null || descriptor.outer.x == null) {
+      continue;
+    }
+    const currentAngle = reaction2dBondAngle(descriptor.terminal, descriptor.internal, descriptor.outer);
+    if (currentAngle == null || Math.abs(currentAngle - Math.PI) < 1e-6) {
+      continue;
+    }
+    const targetLength = scaledReaction2dBondLength(3, bondLength);
+    const outerAngle = Math.atan2(descriptor.outer.y - descriptor.internal.y, descriptor.outer.x - descriptor.internal.x);
+    const candidate = {
+      x: descriptor.internal.x + Math.cos(outerAngle + Math.PI) * targetLength,
+      y: descriptor.internal.y + Math.sin(outerAngle + Math.PI) * targetLength
+    };
+    const currentScore =
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: descriptor.terminal.x, y: descriptor.terminal.y }], bondLength) +
+      100 * (currentAngle - Math.PI) ** 2;
+    const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: candidate.x, y: candidate.y }], bondLength);
+    if (candidateScore <= currentScore) {
+      descriptor.terminal.x = candidate.x;
+      descriptor.terminal.y = candidate.y;
+    }
+  }
 }
 
 function idealizeReaction2dReducedAlkynePairs(mol, componentAtomIds, bondLength = 1.5) {
@@ -2699,6 +2918,8 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
         expandReaction2dCrowdedComponent(mol, componentAtomIds, bondLength);
       }
     }
+    idealizeReaction2dTerminalAlkyneContinuations(mol, componentAtomIds, bondLength);
+    idealizeReaction2dTerminalReducedAlkynePairs(mol, componentAtomIds, bondLength);
     reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
   }
 }

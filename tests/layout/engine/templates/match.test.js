@@ -736,10 +736,10 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'oxygen-bridged-bisindole-lactam-core');
   });
 
-  it('matches the indoline aza bridged heptacycle scaffold too', () => {
+  it('does not over-match the indoline aza bridged heptacycle scaffold when the core signature drifts', () => {
     const graph = createLayoutGraph(parseSMILES('CC[C@H]1[C@@H]2C[C@H]3[C@@H]4N(C)C5=CC=CC=C5[C@]44C[C@@H](C2[C@H]4O)N3[C@@H]1O'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
-    assert.equal(match.id, 'indoline-aza-bridged-heptacycle-core');
+    assert.equal(match, null);
   });
 
   it('matches the porphyrin core as a macrocycle template and can promote it over a bridged heuristic', () => {
