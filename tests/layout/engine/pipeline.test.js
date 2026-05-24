@@ -4776,7 +4776,7 @@ describe('layout/engine/pipeline', () => {
   });
 
   it('uses the trans-polyene macrolide template so fused macrolide rings keep E alkene geometry', () => {
-    const result = runPipeline(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`), {
+    const result = runPipeline(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(\C)\C=C\CNC(=O)\C=C\[C@H]1C`), {
       suppressH: true,
       auditTelemetry: true,
       finalLandscapeOrientation: true
@@ -4801,7 +4801,8 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'macrocycle');
     assert.equal(result.metadata.stage, 'partial-coordinates');
     assert.equal(result.metadata.stereo.ezViolationCount, 0);
-    assert.equal(result.metadata.stereo.ezUnsupportedBondCount, 2);
+    assert.equal(result.metadata.stereo.ezSupportedBondCount, 1);
+    assert.equal(result.metadata.stereo.ezUnsupportedBondCount, 1);
     assert.equal(result.metadata.audit.stereoContradiction, false);
   });
 
@@ -4851,18 +4852,19 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
-  it('does not report unsupported fused epoxy lactone E/Z rescue failures as contradictions', () => {
+  it('does not report fused epoxy lactone E/Z rescue failures as contradictions', () => {
     const result = runPipeline(parseSMILES(String.raw`CN(C)NC[C@H]1[C@@H]2CC\C(=C/CC[C@@]3(C)O[C@H]3[C@H]2OC1=O)\C`), { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true });
 
     assert.equal(result.metadata.primaryFamily, 'fused');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.stereo.ezViolationCount, 0);
-    assert.equal(result.metadata.stereo.ezUnsupportedBondCount, 1);
+    assert.equal(result.metadata.stereo.ezSupportedBondCount, 1);
+    assert.equal(result.metadata.stereo.ezUnsupportedBondCount, 0);
     assert.equal(result.metadata.audit.stereoContradiction, false);
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
-  it('does not report unsupported unsaturated lactone E/Z rescue failures as contradictions', () => {
+  it('does not report unsaturated lactone E/Z rescue failures as contradictions', () => {
     const result = runPipeline(parseSMILES(String.raw`C\C=C(\C)/C(=O)O[C@@H]1C[C@H](CO)CC\C=C(\CO)/C[C@H]2OC(=O)C(=C)[C@H]12`), {
       suppressH: true,
       auditTelemetry: true,
@@ -4872,8 +4874,8 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'fused');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.stereo.ezViolationCount, 0);
-    assert.equal(result.metadata.stereo.ezSupportedBondCount, 1);
-    assert.equal(result.metadata.stereo.ezUnsupportedBondCount, 1);
+    assert.equal(result.metadata.stereo.ezSupportedBondCount, 2);
+    assert.equal(result.metadata.stereo.ezUnsupportedBondCount, 0);
     assert.equal(result.metadata.audit.stereoContradiction, false);
     assert.equal(result.metadata.audit.fallback.mode, null);
   });

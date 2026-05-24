@@ -1596,6 +1596,21 @@ function shouldSkipDirtyUltraLargeFinalPresentationRetouches(layoutGraph, family
   );
 }
 
+function shouldSkipDirtyGenericFinalTerminalMultipleBondFanRetouch(familySummary, audit) {
+  return (
+    familySummary.mixedMode === true &&
+    audit?.fallback?.mode === 'generic-scaffold' &&
+    ((audit.severeOverlapCount ?? 0) > 0 ||
+      (audit.visibleHeavyBondCrossingCount ?? 0) > 0 ||
+      (audit.labelOverlapCount ?? 0) > 0 ||
+      (audit.ringSubstituentReadabilityFailureCount ?? 0) > 0 ||
+      (audit.inwardRingSubstituentCount ?? 0) > 0) &&
+    (audit.bondLengthFailureCount ?? 0) === 0 &&
+    (audit.collapsedMacrocycleCount ?? 0) === 0 &&
+    (audit.stereoContradiction ?? false) === false
+  );
+}
+
 function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoords, placement, bondLength) {
   let currentCoords = finalCoords;
   let baseAudit = auditLayout(layoutGraph, currentCoords, {
@@ -2373,7 +2388,9 @@ function maybeRetouchFinalDivalentContinuations(layoutGraph, finalCoords, placem
   });
   const candidateCoords = cleanup.passes > 0 ? cleanup.coords : retouch.coords;
   if (familySummary.mixedMode === true) {
-    resolveMixedAcylBranchSevereContacts(layoutGraph, candidateCoords, placement.bondValidationClasses, bondLength);
+    resolveMixedAcylBranchSevereContacts(layoutGraph, candidateCoords, placement.bondValidationClasses, bondLength, {
+      fastAcceptClean: true
+    });
   }
   const baseAudit = auditLayout(layoutGraph, finalCoords, {
     bondLength,
@@ -3640,7 +3657,23 @@ export function runPipeline(molecule, options = {}) {
     finalCoords = crossingTerminalMultipleBondRetouch.coords;
     finalCoordsModified = true;
   }
-  if (!skipDirtyUltraLargeFinalPresentationRetouches) {
+  let skipDirtyGenericFinalTerminalMultipleBondFanRetouch = false;
+  if (
+    !skipDirtyUltraLargeFinalPresentationRetouches &&
+    shouldSkipDirtyGenericFinalTerminalMultipleBondFanRetouch(familySummary, cleanup.finalStageAudit)
+  ) {
+    const currentAudit =
+      finalCoordsModified || crossingTerminalMultipleBondRetouch.changed
+        ? timeFinalRetouch('finalTerminalMultipleBondFanDirtyAudit', () =>
+            auditLayout(layoutGraph, finalCoords, {
+              bondLength: normalizedOptions.bondLength,
+              bondValidationClasses: placement.bondValidationClasses
+            })
+          )
+        : cleanup.finalStageAudit;
+    skipDirtyGenericFinalTerminalMultipleBondFanRetouch = shouldSkipDirtyGenericFinalTerminalMultipleBondFanRetouch(familySummary, currentAudit);
+  }
+  if (!skipDirtyUltraLargeFinalPresentationRetouches && !skipDirtyGenericFinalTerminalMultipleBondFanRetouch) {
     const finalTerminalMultipleBondFanRetouch = timeFinalRetouch('finalTerminalMultipleBondFanRetouch', () =>
       maybeRetouchFinalTerminalMultipleBondLeafFans(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
     );
@@ -3718,7 +3751,8 @@ export function runPipeline(molecule, options = {}) {
       if ((currentAudit.severeOverlapCount ?? 0) > 0 || (currentAudit.visibleHeavyBondCrossingCount ?? 0) > 0) {
         const candidateCoords = cloneCoords(finalCoords);
         const mixedAcylBranchContactRetouch = resolveMixedAcylBranchSevereContacts(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
-          allowRelaxedAcylFan: true
+          allowRelaxedAcylFan: true,
+          fastAcceptClean: true
         });
         if (mixedAcylBranchContactRetouch.changed) {
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
@@ -3748,7 +3782,9 @@ export function runPipeline(molecule, options = {}) {
       });
       if ((postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0) {
         const candidateCoords = cloneCoords(finalCoords);
-        const boundedRingSubstituentRetouch = resolveRingSubstituentBoundedReadability(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength);
+        const boundedRingSubstituentRetouch = resolveRingSubstituentBoundedReadability(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
+          fastAcceptClean: true
+        });
         if (boundedRingSubstituentRetouch.changed) {
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
             bondLength: normalizedOptions.bondLength,
@@ -3774,7 +3810,9 @@ export function runPipeline(molecule, options = {}) {
       }
       if ((postAcylAudit.visibleHeavyBondCrossingCount ?? 0) > 0 || (postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0 || (postAcylAudit.inwardRingSubstituentCount ?? 0) > 0) {
         const candidateCoords = cloneCoords(finalCoords);
-        const ringSubstituentBranchRetouch = resolveRingSubstituentBranchCrossings(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength);
+        const ringSubstituentBranchRetouch = resolveRingSubstituentBranchCrossings(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
+          fastAcceptClean: true
+        });
         if (ringSubstituentBranchRetouch.changed) {
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
             bondLength: normalizedOptions.bondLength,
@@ -3806,7 +3844,9 @@ export function runPipeline(molecule, options = {}) {
         (postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0
       ) {
         const candidateCoords = cloneCoords(finalCoords);
-        const boundedRingSubstituentRetouch = resolveRingSubstituentBoundedReadability(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength);
+        const boundedRingSubstituentRetouch = resolveRingSubstituentBoundedReadability(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
+          fastAcceptClean: true
+        });
         if (boundedRingSubstituentRetouch.changed) {
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
             bondLength: normalizedOptions.bondLength,
@@ -3887,7 +3927,8 @@ export function runPipeline(molecule, options = {}) {
       if ((currentAudit.severeOverlapCount ?? 0) > 0 || (currentAudit.visibleHeavyBondCrossingCount ?? 0) > 0) {
         const candidateCoords = cloneCoords(finalCoords);
         const acyclicAcylBranchContactRetouch = resolveMixedAcylBranchSevereContacts(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
-          allowRelaxedAcylFan: true
+          allowRelaxedAcylFan: true,
+          fastAcceptClean: true
         });
         if (acyclicAcylBranchContactRetouch.changed) {
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, {

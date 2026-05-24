@@ -11,17 +11,16 @@ function ringKey(atomIds) {
   return [...atomIds].sort(compareStrings).join('\0');
 }
 
-function ringContainsBond(ringAtomIds, firstAtomId, secondAtomId) {
-  const firstIndex = ringAtomIds.indexOf(firstAtomId);
-  if (firstIndex === -1) {
-    return false;
-  }
-  const ringSize = ringAtomIds.length;
-  return ringAtomIds[(firstIndex + 1) % ringSize] === secondAtomId || ringAtomIds[(firstIndex - 1 + ringSize) % ringSize] === secondAtomId;
+function ringBondKey(firstAtomId, secondAtomId) {
+  return compareStrings(firstAtomId, secondAtomId) <= 0 ? `${firstAtomId}\0${secondAtomId}` : `${secondAtomId}\0${firstAtomId}`;
 }
 
-function ringListContainsBond(rings, firstAtomId, secondAtomId) {
-  return rings.some(ring => ringContainsBond(ring.atomIds, firstAtomId, secondAtomId));
+function ringBondKeys(ringAtomIds) {
+  const keys = [];
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    keys.push(ringBondKey(ringAtomIds[index], ringAtomIds[(index + 1) % ringAtomIds.length]));
+  }
+  return keys;
 }
 
 /**
@@ -92,10 +91,24 @@ function createRingDescriptor(molecule, atomIds, canonicalAtomRank, rawIndex, su
 function withSupplementalBondCoveringRings(molecule, rings, canonicalAtomRank) {
   const seenRingKeys = new Set(rings.map(ring => ringKey(ring.atomIds)));
   const supplementedRings = [...rings];
+  const coveredRingBondKeys = new Set();
+  for (const ring of rings) {
+    for (const key of ringBondKeys(ring.atomIds)) {
+      coveredRingBondKeys.add(key);
+    }
+  }
 
   for (const bond of molecule.bonds.values()) {
     const [firstAtomId, secondAtomId] = bond.atoms ?? [];
-    if (!firstAtomId || !secondAtomId || ringListContainsBond(supplementedRings, firstAtomId, secondAtomId) || typeof bond.isInRing !== 'function' || !bond.isInRing(molecule)) {
+    if (!firstAtomId || !secondAtomId) {
+      continue;
+    }
+    const bondKey = ringBondKey(firstAtomId, secondAtomId);
+    if (
+      coveredRingBondKeys.has(bondKey) ||
+      typeof bond.isInRing !== 'function' ||
+      !bond.isInRing(molecule)
+    ) {
       continue;
     }
 
@@ -108,7 +121,11 @@ function withSupplementalBondCoveringRings(molecule, rings, canonicalAtomRank) {
       continue;
     }
     seenRingKeys.add(key);
-    supplementedRings.push(createRingDescriptor(molecule, cycleAtomIds, canonicalAtomRank, supplementedRings.length, true));
+    const supplementalRing = createRingDescriptor(molecule, cycleAtomIds, canonicalAtomRank, supplementedRings.length, true);
+    supplementedRings.push(supplementalRing);
+    for (const coveredKey of ringBondKeys(supplementalRing.atomIds)) {
+      coveredRingBondKeys.add(coveredKey);
+    }
   }
 
   return supplementedRings;

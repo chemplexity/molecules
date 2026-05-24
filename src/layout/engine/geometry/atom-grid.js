@@ -14,6 +14,7 @@ export class AtomGrid {
   constructor(cellSize) {
     this.cellSize = Number.isFinite(cellSize) && cellSize > 0 ? cellSize : 1;
     this.cells = new Map(); // Map<xIndex: number, Map<yIndex: number, Set<atomId: string>>>
+    this.visibleAtomIdsOnly = false;
   }
 
   /**
@@ -143,6 +144,7 @@ export class AtomGrid {
    */
   clone() {
     const clone = new AtomGrid(this.cellSize);
+    clone.visibleAtomIdsOnly = this.visibleAtomIdsOnly;
     for (const [xIndex, col] of this.cells) {
       const newCol = new Map();
       for (const [yIndex, cell] of col) {

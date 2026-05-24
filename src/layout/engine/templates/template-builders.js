@@ -412,11 +412,11 @@ function createCalixareneGuanidineCoreTemplate() {
 /**
  * Creates the trans-polyene macrolide scaffold found in fused oxazole and
  * pyrrolidone macrocycles like
- * `CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`.
+ * `CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(\C)\C=C\CNC(=O)\C=C\[C@H]1C`.
  * @returns {Molecule} Trans-polyene macrolide scaffold template molecule.
  */
 function createTransPolyeneMacrolideTemplate() {
-  return createRingSystemTemplateFromSmiles('trans-polyene-macrolide', String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`);
+  return createRingSystemTemplateFromSmiles('trans-polyene-macrolide', String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(\C)\C=C\CNC(=O)\C=C\[C@H]1C`);
 }
 
 /**

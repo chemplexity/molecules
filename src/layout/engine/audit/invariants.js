@@ -133,7 +133,6 @@ function findFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet)
   }
   const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
   const focusedBonds = visibleBonds.filter(segment => segment.touchesFocus);
-  const seenBondPairs = new Set();
   const crossings = [];
 
   for (const focused of focusedBonds) {
@@ -147,13 +146,11 @@ function findFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet)
       if (other.maxX < focused.minX) {
         continue;
       }
-      const first = focused.index < other.index ? focused : other;
-      const second = focused.index < other.index ? other : focused;
-      const bondPairKey = `${first.bond.id}\u0000${second.bond.id}`;
-      if (seenBondPairs.has(bondPairKey)) {
+      if (other.touchesFocus && other.index < focused.index) {
         continue;
       }
-      seenBondPairs.add(bondPairKey);
+      const first = focused.index < other.index ? focused : other;
+      const second = focused.index < other.index ? other : focused;
       if (!visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet)) {
         continue;
       }
@@ -180,7 +177,6 @@ function countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet
   }
   const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
   const focusedBonds = visibleBonds.filter(segment => segment.touchesFocus);
-  const seenBondPairs = new Set();
   let crossingCount = 0;
 
   for (const focused of focusedBonds) {
@@ -194,13 +190,11 @@ function countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet
       if (other.maxX < focused.minX) {
         continue;
       }
-      const first = focused.index < other.index ? focused : other;
-      const second = focused.index < other.index ? other : focused;
-      const bondPairKey = `${first.bond.id}\u0000${second.bond.id}`;
-      if (seenBondPairs.has(bondPairKey)) {
+      if (other.touchesFocus && other.index < focused.index) {
         continue;
       }
-      seenBondPairs.add(bondPairKey);
+      const first = focused.index < other.index ? focused : other;
+      const second = focused.index < other.index ? other : focused;
       if (visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) && segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
         crossingCount++;
       }
@@ -704,6 +698,7 @@ function isVisibleHeavyLayoutAtom(layoutGraph, atomId) {
 function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null, queryRadius = 0, options = {}) {
   const visibleAtomIds = options.visibleAtomIds ?? null;
   if (atomGrid) {
+    const atomGridHasVisibleAtoms = atomGrid.visibleAtomIdsOnly === true;
     const seenPairs = new Set();
     const pairs = [];
 
@@ -716,7 +711,7 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
       }
       const nearbyAtomIds = atomGrid.queryRadius(firstPosition, queryRadius);
       for (const secondAtomId of nearbyAtomIds) {
-        if (secondAtomId === firstAtomId || (!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId))) {
+        if (secondAtomId === firstAtomId || (!visibleAtomIds && !atomGridHasVisibleAtoms && !isVisibleLayoutAtom(layoutGraph, secondAtomId))) {
           continue;
         }
         const key = atomPairKey(firstAtomId, secondAtomId);
@@ -774,6 +769,7 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
  */
 export function buildAtomGrid(layoutGraph, coords, bondLength, options = {}) {
   const atomGrid = new AtomGrid(bondLength);
+  atomGrid.visibleAtomIdsOnly = true;
   if (options.visibleAtomIds) {
     for (const atomId of options.visibleAtomIds) {
       const position = coords.get(atomId);
@@ -2398,12 +2394,13 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
   }
 
   const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
+  const atomGridHasVisibleAtoms = atomGrid.visibleAtomIdsOnly === true;
 
   if (includeAtomOverlaps) {
     const bboxCandidateIds = atomGrid.queryBoundingBox(minX - threshold, minY - threshold, maxX + threshold, maxY + threshold);
     let hasExternalCandidates = false;
     for (const candidateId of bboxCandidateIds) {
-      if (!subtreeSet.has(candidateId) && isVisibleLayoutAtom(layoutGraph, candidateId)) {
+      if (!subtreeSet.has(candidateId) && (atomGridHasVisibleAtoms || isVisibleLayoutAtom(layoutGraph, candidateId))) {
         hasExternalCandidates = true;
         break;
       }
@@ -2417,7 +2414,7 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
         }
         const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
         for (const atomId of nearbyAtomIds) {
-          if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
+          if (subtreeSet.has(atomId) || (!atomGridHasVisibleAtoms && !isVisibleLayoutAtom(layoutGraph, atomId))) {
             continue;
           }
           if (layoutGraph.bondedPairSet.has(atomPairKey(subtreeAtomId, atomId))) {

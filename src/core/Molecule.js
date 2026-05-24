@@ -64,6 +64,10 @@ export class Molecule {
     /** @private*/
     this._ringsCache = null;
     /** @private*/
+    this._bondRingMembershipCache = null;
+    /** @private*/
+    this._topologyVersion = 0;
+    /** @private*/
     this._nextAtomId = 0;
     /** @private*/
     this._nextBondId = 0;
@@ -77,6 +81,16 @@ export class Molecule {
   /** @returns {number} Number of bonds in the molecule. */
   get bondCount() {
     return this.bonds.size;
+  }
+
+  /**
+   * Invalidates cached topology-derived data after atom/bond graph edits.
+   * @private
+   */
+  _invalidateTopologyCaches() {
+    this._ringsCache = null;
+    this._bondRingMembershipCache = null;
+    this._topologyVersion++;
   }
 
   /**
@@ -117,7 +131,7 @@ export class Molecule {
       throw new Error(`Atom '${atom.id}' already exists.`);
     }
     this.atoms.set(atom.id, atom);
-    this._ringsCache = null;
+    this._invalidateTopologyCaches();
     if (this.properties.resonance) {
       this.clearResonanceStates();
     }
@@ -162,7 +176,7 @@ export class Molecule {
     // element's default valence family. This prevents edits like C -> S from
     // inheriting carbon's old CH3 hydrogen count and becoming SH3.
     this._adjustImplicitHydrogens(atomId);
-    this._ringsCache = null;
+    this._invalidateTopologyCaches();
     this._recomputeProperties();
     return atom;
   }
@@ -190,7 +204,7 @@ export class Molecule {
       }
     }
     this.atoms.delete(id);
-    this._ringsCache = null;
+    this._invalidateTopologyCaches();
     if (this.properties.resonance) {
       this.clearResonanceStates();
     }
@@ -227,9 +241,9 @@ export class Molecule {
     }
     this.bonds.set(bond.id, bond);
     this._bondIndex.set(pairKey, bond.id);
-    this._ringsCache = null;
     this.atoms.get(atomA).bonds.push(bond.id);
     this.atoms.get(atomB).bonds.push(bond.id);
+    this._invalidateTopologyCaches();
     if (this.properties.resonance) {
       this.clearResonanceStates();
     }
@@ -553,7 +567,7 @@ export class Molecule {
     }
     const [a, b] = bond.atoms;
     this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
-    this._ringsCache = null;
+    this._invalidateTopologyCaches();
     this.bonds.delete(id);
     if (this.properties.resonance) {
       this.clearResonanceStates();
@@ -1268,8 +1282,24 @@ export class Molecule {
       if (!sp2) {
         return null;
       }
+      // In conjugated systems a sp2 atom may carry stereo marks on two of its
+      // bonds: one written for the double bond being evaluated, and one written
+      // for an adjacent double bond that shares this sp2 atom (the bridge bond
+      // between two consecutive double bonds, e.g. bond C-D in A=B-C=D).
+      //
+      // We prefer the bond whose other endpoint is NOT itself part of another
+      // double bond (a true substituent, e.g. C-R), because that bond was
+      // written exclusively for this double bond.  The bridge bond (e.g. B-C)
+      // serves both double bonds and is treated as the fallback.
+      //
+      // Crucially, the secondary stereo bond's other-end atom is added to
+      // otherIds so that correctDir can use it for the CIP priority comparison.
+      // Without this, correctDir has only one substituent and cannot determine
+      // which direction the higher-priority group points.
       let dir = null,
         markedId = null;
+      let fallbackDir = null,
+        fallbackMarkedId = null;
       const otherIds = [];
       for (const bId of sp2.bonds) {
         if (bId === bondId) {
@@ -1281,11 +1311,43 @@ export class Molecule {
         }
         const otherId = b.getOtherAtom(sp2Id);
         if (b.properties.stereo) {
-          dir = b.atoms[0] === sp2Id ? b.properties.stereo : flip(b.properties.stereo);
-          markedId = otherId;
+          const d = b.atoms[0] === sp2Id ? b.properties.stereo : flip(b.properties.stereo);
+          // Check whether the other atom is sp2 in a different double bond.
+          const otherIsDoubleBondSp2 = (this.atoms.get(otherId)?.bonds ?? []).some(bId2 => {
+            if (bId2 === bondId || bId2 === bId) {
+              return false;
+            }
+            return (this.bonds.get(bId2)?.properties.order ?? 1) === 2;
+          });
+          if (!otherIsDoubleBondSp2 && dir === null) {
+            // Preferred: substituent bond (not bridging two sp2 centres).
+            dir = d;
+            markedId = otherId;
+          } else if (dir === null) {
+            // Fallback: bridge bond between two sp2 centres.
+            fallbackDir = d;
+            fallbackMarkedId = otherId;
+          } else {
+            // Secondary stereo bond while a primary is already chosen.
+            // Its other-end atom must still be available for CIP comparison.
+            otherIds.push(otherId);
+          }
         } else {
           otherIds.push(otherId);
         }
+      }
+      if (dir === null) {
+        // No preferred bond found — use fallback.  Any secondary bonds already
+        // pushed a placeholder into otherIds; the fallback's counterpart (if any)
+        // was the preferred candidate that lost, so it was never added — that's
+        // fine because correctDir only needs one other neighbour for CIP.
+        dir = fallbackDir;
+        markedId = fallbackMarkedId;
+      } else if (fallbackDir !== null) {
+        // A preferred primary was chosen and the fallback (bridge) bond exists.
+        // Add its other end to otherIds so correctDir can rank the two
+        // substituents and pick the higher-priority direction.
+        otherIds.push(fallbackMarkedId);
       }
       return dir !== null ? { dir, markedId, otherIds } : null;
     };

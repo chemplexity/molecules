@@ -248,6 +248,18 @@ function orderedNeighborIds(molecule, atomId, ranks) {
     .sort((firstAtomId, secondAtomId) => compareAtomIds(molecule, ranks, firstAtomId, secondAtomId));
 }
 
+function orderedHeavyAdjacency(molecule, heavyAtomIds, ranks) {
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const adjacency = new Map();
+  for (const atomId of heavyAtomIds) {
+    adjacency.set(
+      atomId,
+      orderedNeighborIds(molecule, atomId, ranks).filter(neighborAtomId => heavyAtomIdSet.has(neighborAtomId))
+    );
+  }
+  return adjacency;
+}
+
 /**
  * Finds the longest heavy-atom backbone path, preferring paths that stay out of rings.
  * @param {import('../core/Molecule.js').Molecule} molecule - Molecule graph.
@@ -261,19 +273,24 @@ export function findPreferredBackbonePath(molecule) {
 
   const ringAtomIds = new Set(molecule.getRings().flat());
   const ranks = morganRanks(molecule);
+  const adjacency = orderedHeavyAdjacency(molecule, heavyAtomIds, ranks);
   let bestPath = null;
 
   for (const startAtomId of heavyAtomIds) {
     const previousAtomIds = new Map([[startAtomId, null]]);
+    const depthByAtomId = new Map([[startAtomId, 0]]);
+    const ringCountByAtomId = new Map([[startAtomId, ringAtomIds.has(startAtomId) ? 1 : 0]]);
     const queue = [startAtomId];
     let queueIndex = 0;
     while (queueIndex < queue.length) {
       const currentAtomId = queue[queueIndex++];
-      for (const neighborAtomId of orderedNeighborIds(molecule, currentAtomId, ranks)) {
-        if (molecule.atoms.get(neighborAtomId)?.name === 'H' || previousAtomIds.has(neighborAtomId)) {
+      for (const neighborAtomId of adjacency.get(currentAtomId) ?? []) {
+        if (previousAtomIds.has(neighborAtomId)) {
           continue;
         }
         previousAtomIds.set(neighborAtomId, currentAtomId);
+        depthByAtomId.set(neighborAtomId, (depthByAtomId.get(currentAtomId) ?? 0) + 1);
+        ringCountByAtomId.set(neighborAtomId, (ringCountByAtomId.get(currentAtomId) ?? 0) + (ringAtomIds.has(neighborAtomId) ? 1 : 0));
         queue.push(neighborAtomId);
       }
     }
@@ -282,19 +299,20 @@ export function findPreferredBackbonePath(molecule) {
       if (endAtomId === startAtomId || !previousAtomIds.has(endAtomId)) {
         continue;
       }
-      const path = [];
-      for (let currentAtomId = endAtomId; currentAtomId != null; currentAtomId = previousAtomIds.get(currentAtomId)) {
-        path.push(currentAtomId);
-      }
-      path.reverse();
-      const ringCount = path.filter(atomId => ringAtomIds.has(atomId)).length;
-      const score = path.length - ringCount * 0.6;
+      const pathLength = (depthByAtomId.get(endAtomId) ?? 0) + 1;
+      const ringCount = ringCountByAtomId.get(endAtomId) ?? 0;
+      const score = pathLength - ringCount * 0.6;
       if (
         !bestPath ||
         score > bestPath.score ||
         (score === bestPath.score && ringCount < bestPath.ringCount) ||
-        (score === bestPath.score && ringCount === bestPath.ringCount && path.length > bestPath.path.length)
+        (score === bestPath.score && ringCount === bestPath.ringCount && pathLength > bestPath.path.length)
       ) {
+        const path = [];
+        for (let currentAtomId = endAtomId; currentAtomId != null; currentAtomId = previousAtomIds.get(currentAtomId)) {
+          path.push(currentAtomId);
+        }
+        path.reverse();
         bestPath = { path, ringCount, score };
       }
     }

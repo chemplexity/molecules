@@ -161,19 +161,43 @@ function isCuttableBond(layoutGraph, bond, atomIdSet) {
   return true;
 }
 
-function splitBlockAtomIds(layoutGraph, atomIds, blockedBondId) {
-  const adjacency = buildSliceAdjacency(layoutGraph, atomIds, {
-    includeBond(bond) {
-      return bond.id !== blockedBondId;
+function buildBlockSplitAdjacency(layoutGraph, atomIds, atomIdSet) {
+  const adjacency = new Map(atomIds.map(atomId => [atomId, []]));
+  const visitedBondIds = new Set();
+  for (const atomId of atomIds) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (visitedBondIds.has(bond.id)) {
+        continue;
+      }
+      visitedBondIds.add(bond.id);
+      if (!atomIdSet.has(bond.a) || !atomIdSet.has(bond.b)) {
+        continue;
+      }
+      adjacency.get(bond.a)?.push({ atomId: bond.b, bondId: bond.id });
+      adjacency.get(bond.b)?.push({ atomId: bond.a, bondId: bond.id });
     }
-  });
+  }
+  for (const neighbors of adjacency.values()) {
+    neighbors.sort((first, second) => {
+      const firstRank = layoutGraph.canonicalAtomRank.get(first.atomId) ?? Number.MAX_SAFE_INTEGER;
+      const secondRank = layoutGraph.canonicalAtomRank.get(second.atomId) ?? Number.MAX_SAFE_INTEGER;
+      return firstRank - secondRank || String(first.atomId).localeCompare(String(second.atomId), 'en', { numeric: true });
+    });
+  }
+  return adjacency;
+}
+
+function splitBlockAtomIds(atomIds, adjacency, blockedBondId) {
   const startAtomId = atomIds[0];
   const visited = new Set([startAtomId]);
   const queue = [startAtomId];
   let queueHead = 0;
   while (queueHead < queue.length) {
     const atomId = queue[queueHead++];
-    for (const neighborAtomId of adjacency.get(atomId) ?? []) {
+    for (const { atomId: neighborAtomId, bondId } of adjacency.get(atomId) ?? []) {
+      if (bondId === blockedBondId) {
+        continue;
+      }
       if (visited.has(neighborAtomId)) {
         continue;
       }
@@ -186,7 +210,27 @@ function splitBlockAtomIds(layoutGraph, atomIds, blockedBondId) {
   }
   const leftAtomIds = atomIds.filter(atomId => visited.has(atomId));
   const rightAtomIds = atomIds.filter(atomId => !visited.has(atomId));
-  return [leftAtomIds, rightAtomIds];
+  return { leftAtomIds, rightAtomIds, leftAtomIdSet: visited, rightAtomIdSet: new Set(rightAtomIds) };
+}
+
+function countAtomIdsInSet(atomIds, atomIdSet) {
+  let count = 0;
+  for (const atomId of atomIds) {
+    if (atomIdSet.has(atomId)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function countContainedRingSystems(ringSystems, atomIdSet) {
+  let count = 0;
+  for (const ringSystem of ringSystems) {
+    if (ringSystem.atomIds.every(atomId => atomIdSet.has(atomId))) {
+      count++;
+    }
+  }
+  return count;
 }
 
 /**
@@ -199,7 +243,18 @@ function splitBlockAtomIds(layoutGraph, atomIds, blockedBondId) {
  */
 function selectBestCut(layoutGraph, atomIds, threshold) {
   const atomIdSet = new Set(atomIds);
-  const candidates = [];
+  const splitAdjacency = buildBlockSplitAdjacency(layoutGraph, atomIds, atomIdSet);
+  const heavyAtomIdSet = new Set(atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H'));
+  const participantAtomIdSet = new Set(
+    atomIds.filter(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
+    })
+  );
+  const blockRingSystems = layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId)));
+  const blockHeavyCount = heavyAtomIdSet.size;
+  const blockParticipantCount = participantAtomIdSet.size;
+  let bestCandidate = null;
   const visitedBondIds = new Set();
 
   for (const atomId of atomIds) {
@@ -211,20 +266,20 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
       if (!isCuttableBond(layoutGraph, bond, atomIdSet)) {
         continue;
       }
-      const split = splitBlockAtomIds(layoutGraph, atomIds, bond.id);
+      const split = splitBlockAtomIds(atomIds, splitAdjacency, bond.id);
       if (!split) {
         continue;
       }
-      const [leftAtomIds, rightAtomIds] = split;
-      const leftHeavyCount = countHeavyAtoms(layoutGraph, leftAtomIds);
-      const rightHeavyCount = countHeavyAtoms(layoutGraph, rightAtomIds);
+      const { leftAtomIds, rightAtomIds, leftAtomIdSet, rightAtomIdSet } = split;
+      const leftHeavyCount = countAtomIdsInSet(leftAtomIds, heavyAtomIdSet);
+      const rightHeavyCount = blockHeavyCount - leftHeavyCount;
       if (leftHeavyCount < 3 || rightHeavyCount < 3) {
         continue;
       }
-      const leftParticipantCount = countParticipantAtoms(layoutGraph, leftAtomIds);
-      const rightParticipantCount = countParticipantAtoms(layoutGraph, rightAtomIds);
-      const leftRingSystems = countRingSystems(layoutGraph, leftAtomIds);
-      const rightRingSystems = countRingSystems(layoutGraph, rightAtomIds);
+      const leftParticipantCount = countAtomIdsInSet(leftAtomIds, participantAtomIdSet);
+      const rightParticipantCount = blockParticipantCount - leftParticipantCount;
+      const leftRingSystems = countContainedRingSystems(blockRingSystems, leftAtomIdSet);
+      const rightRingSystems = countContainedRingSystems(blockRingSystems, rightAtomIdSet);
       const participantThreshold = participantThresholdFor(threshold);
       const oversizePenalty =
         Math.max(0, leftHeavyCount - threshold.heavyAtomCount) +
@@ -234,23 +289,23 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
       const balancePenalty = Math.abs(leftParticipantCount - rightParticipantCount);
       const ringBonus = leftRingSystems > 0 && rightRingSystems > 0 ? 100 : 0;
       const score = ringBonus - oversizePenalty * 10 - balancePenalty;
-      candidates.push({
+      const candidate = {
         bond,
         leftAtomIds,
         rightAtomIds,
         score
-      });
+      };
+      if (
+        !bestCandidate ||
+        candidate.score > bestCandidate.score ||
+        (candidate.score === bestCandidate.score && String(candidate.bond.id).localeCompare(String(bestCandidate.bond.id), 'en', { numeric: true }) < 0)
+      ) {
+        bestCandidate = candidate;
+      }
     }
   }
 
-  candidates.sort((firstCandidate, secondCandidate) => {
-    if (secondCandidate.score !== firstCandidate.score) {
-      return secondCandidate.score - firstCandidate.score;
-    }
-    return String(firstCandidate.bond.id).localeCompare(String(secondCandidate.bond.id), 'en', { numeric: true });
-  });
-
-  return candidates[0] ?? null;
+  return bestCandidate;
 }
 
 /**
@@ -543,11 +598,18 @@ function totalBlockOverlapPenalty(blockIds, boundsByBlockId) {
 
 function trackedBlockOverlapPenalty(blockIds, boundsByBlockId, trackedBlockIdSet, overrideBoundsByBlockId = null) {
   let penalty = 0;
-  for (let firstIndex = 0; firstIndex < blockIds.length; firstIndex++) {
-    for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
-      const firstBlockId = blockIds[firstIndex];
+  const blockIndexById = new Map(blockIds.map((blockId, index) => [blockId, index]));
+  for (const firstBlockId of trackedBlockIdSet) {
+    const firstIndex = blockIndexById.get(firstBlockId);
+    if (firstIndex == null) {
+      continue;
+    }
+    for (let secondIndex = 0; secondIndex < blockIds.length; secondIndex++) {
+      if (secondIndex === firstIndex) {
+        continue;
+      }
       const secondBlockId = blockIds[secondIndex];
-      if (!trackedBlockIdSet.has(firstBlockId) && !trackedBlockIdSet.has(secondBlockId)) {
+      if (trackedBlockIdSet.has(secondBlockId) && secondIndex < firstIndex) {
         continue;
       }
       penalty += blockOverlapPenalty(

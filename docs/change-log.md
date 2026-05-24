@@ -1,7 +1,26 @@
 # Change Log
 
+## 2026-05-23
+
+- Fix `getEZStereo` in conjugated double-bond systems: when a sp2 atom has two stereo bonds (one for the double bond being evaluated and one bridge bond belonging to an adjacent double bond), prefer the non-bridge substituent bond as the reference and add the bridge bond's other end to the CIP comparison list so `correctDir` can correctly orient the higher-priority substituent.
+- Fix canonical SMILES E/Z encoding for conjugated polyene chains: apply a "once only" rule in Phase 3 so that a substituent bond shared between two adjacent double bonds (e.g. the C–C single bond in a 1,3-diene) is written exactly once rather than overwritten by each double bond's iteration — preventing one of the two double bonds from encoding the wrong parity.
+- Cache terminal carbonyl foreign-ring contact atom/ring lists and focus carbonyl crossing scans on the active C=O bond, reducing repeated whole-layout crossing/contact work in mixed placement finalization.
+- Prune terminal carbonyl crossing-reposition candidates before generating downstream rotations when they already fail anchor-deviation, small-ring, intrusion, or contact checks.
+- Use crossing count helpers for candidate rejection paths that only need totals, avoiding full crossing-array allocation in exact ring-substituent and acyl-branch contact checks.
+- Fast-accept audit-clean final ring-substituent branch candidates once all hard overlap, crossing, label, and geometry counters are cleared.
+- Precompute ordered heavy-atom adjacency and path metrics during backbone orientation so large mixed/large-molecule layouts avoid repeated neighbor sorting and path reconstruction.
+- Track already covered ring bonds during supplemental ring analysis so known ring edges skip redundant cycle searches while preserving cyclic E/Z support classification.
+- Tag reusable atom grids as visible-only so severe-overlap pair collection can skip repeated visibility checks for nearby atoms without changing pair iteration order.
+- Update cyclic E/Z expectation checks for cases now resolved as supported instead of unsupported while still requiring zero violations and no stereo contradiction.
+- Cache exact `Bond.isInRing()` BFS results per molecule topology version and invalidate them on atom/bond edits, cutting repeated cyclic E/Z and layout-graph ring-membership walks without changing ring semantics.
+- Reduce focused-crossing scans by processing each focused bond pair once through bond index ordering instead of allocating per-candidate `seen` keys.
+- Make subtree-overlap scoring trust visible-only atom grids and update large-molecule block-overlap deltas against tracked blocks instead of rescanning every block pair.
+- Reuse per-block split adjacency and precomputed block membership counters during large-molecule partition scoring, avoiding repeated slice-adjacency rebuilds and candidate sorting on peptide-scale fallback rows.
+
 ## 2026-05-22
 
+- Skip terminal multiple-bond fan presentation work on dirty generic-scaffold layouts when divalent continuation is the cheaper rescue path, cutting the cobalt corrin timeout benchmark path from ~2.38s to ~1.09s without exceeding its audit ceiling.
+- Let final acyl-branch contact retouch accept the first audit-safe candidate that clears all hard overlaps and crossings, avoiding unnecessary full candidate sweeps in late mixed cleanup.
 - Final audited terminal-label leaf pass, wider guarded connector-label retries, and an automatic large dirty label-overlap landscape frame.
 - Add a final guarded E/Z stereo rescue after late presentation retouches so stress rows whose final cleanup re-flips an annotated alkene are corrected without worsening overlap, bond, label, or ring-substituent audit counts.
 

@@ -1828,6 +1828,23 @@ describe('Bond – isInRing', () => {
     assert.equal(mol.bonds.get('pendant').isInRing(mol), false);
     assert.equal(mol.bonds.get('ring1').isInRing(mol), true);
   });
+
+  it('invalidates cached ring membership after graph topology changes', () => {
+    const mol = new Molecule();
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addBond('ab', 'A', 'B', {}, false);
+    mol.addBond('bc', 'B', 'C', {}, false);
+
+    assert.equal(mol.bonds.get('ab').isInRing(mol), false);
+
+    mol.addBond('ca', 'C', 'A', {}, false);
+    assert.equal(mol.bonds.get('ab').isInRing(mol), true);
+
+    mol.removeBond('ca', { pruneIsolated: false });
+    assert.equal(mol.bonds.get('ab').isInRing(mol), false);
+  });
 });
 
 describe('Bond – getAtomObjects', () => {

@@ -2172,8 +2172,11 @@ function _serializeComponent(mol, sortFn = null) {
   const ringBondId = new Map(); // bondId → ring-closure number
   const atomRings = new Map(); // atomId → [{num, bond, isOpener}]
   let ringSeq = 1;
+  const dfsOrder = new Map(); // atomId → DFS visit sequence number
+  let dfsCounter = 0;
 
   const dfs1 = id => {
+    dfsOrder.set(id, dfsCounter++);
     visited1.add(id);
     inStack1.add(id);
     for (const bId of heavy.atoms.get(id).bonds) {
@@ -2291,7 +2294,31 @@ function _serializeComponent(mol, sortFn = null) {
       if (fromA === null || fromB === null) {
         continue;
       }
-      ezEntries.push({ dblBond, sA: sAInfo.b, sB: sBInfo.b, expectedParity, fromA, fromB });
+      ezEntries.push({ dblBond, sA: sAInfo.b, sB: sBInfo.b, expectedParity, fromA, fromB, sABId: sAInfo.bId });
+    }
+
+    // Sort ezEntries by DFS emission order of their sA substituent bond.
+    // Bond insertion order differs between SMILES-parsed and InChI-parsed
+    // molecules, so without sorting, the "once only" cascade can start from
+    // opposite ends of a conjugated chain, producing all-flipped stereo.
+    {
+      const saEmitOrder = bId => {
+        if (ringBondSet.has(bId)) {
+          for (const [atomId, rings] of atomRings) {
+            if (rings.some(r => r.bond.id === bId && r.isOpener)) {
+              return dfsOrder.get(atomId) ?? Infinity;
+            }
+          }
+          return Infinity;
+        }
+        const b = heavy.bonds.get(bId);
+        if (!b) { return Infinity; }
+        const [a0, a1] = b.atoms;
+        if (entryBond.get(a0) === bId) { return dfsOrder.get(a0) ?? Infinity; }
+        if (entryBond.get(a1) === bId) { return dfsOrder.get(a1) ?? Infinity; }
+        return Infinity;
+      };
+      ezEntries.sort((a, b) => saEmitOrder(a.sABId) - saEmitOrder(b.sABId));
     }
 
     // Phase 2: clear ALL bond stereo from heavy so no redundant directions remain
@@ -2303,15 +2330,63 @@ function _serializeComponent(mol, sortFn = null) {
     }
 
     // Phase 3: set exactly one primary stereo bond per sp2 atom.
+    //
+    // Two kinds of conjugated-system conflicts require care:
+    //
+    // (a) SHARED substituent bond: in a 1,3-diene A=B-C=D, the single bond B-C
+    //     is the substituent bond for BOTH the A=B double bond (B-side) and the
+    //     C=D double bond (C-side).  A naïve per-double-bond loop would overwrite
+    //     B-C twice, leaving it correct for only the last writer.  Fix: "once only"
+    //     rule — if a substituent bond already carries stereo from a prior iteration,
+    //     keep it and flip only the other substituent bond in the trial.
+    //
+    // (b) DIFFERENT substituent bonds on the same sp2 atom: in a 1,3-diene
+    //     A=B-C(R)=D, atom C has substituent B-C (for A=B's B-side) AND substituent
+    //     C-R (for C=D's C-side).  After Phase 3, C carries stereo on two bonds.
+    //     The isolation below temporarily hides the one that belongs to a different
+    //     double bond so getEZStereo sees only the intended pair.
     for (const { dblBond, sA, sB, expectedParity, fromA, fromB } of ezEntries) {
-      // Canonical form: A-side always written as '/'.
-      sA.properties.stereo = sA.atoms[0] === fromA ? '/' : '\\';
+      const [idA, idB] = dblBond.atoms;
 
-      // Determine B-side by trial: try '/' first; if heavy.getEZStereo (after
-      // A-side is set) does not match the expected parity, use '\' instead.
-      sB.properties.stereo = sB.atoms[0] === fromB ? '/' : '\\';
+      // Temporarily null out stereo on bonds adjacent to either sp2 atom that
+      // are not sA or sB — so the getEZStereo trial sees only the two bonds we
+      // intend.
+      const saved = [];
+      for (const sp2Id of [idA, idB]) {
+        for (const bId of heavy.atoms.get(sp2Id)?.bonds ?? []) {
+          const b = heavy.bonds.get(bId);
+          if (b && b !== sA && b !== sB && b.properties.stereo) {
+            saved.push({ b, stereo: b.properties.stereo });
+            b.properties.stereo = null;
+          }
+        }
+      }
+
+      // "Once only" rule: if sA or sB already carry stereo from a prior iteration
+      // (they are the shared bond in a conjugated system), keep them untouched and
+      // only adjust the "free" bond in the trial-and-flip step below.
+      const sAWasSet = !!sA.properties.stereo;
+      const sBWasSet = !!sB.properties.stereo;
+
+      if (!sAWasSet) {
+        sA.properties.stereo = sA.atoms[0] === fromA ? '/' : '\\';
+      }
+      if (!sBWasSet) {
+        // Determine B-side by trial: try '/' first; flip if parity is wrong.
+        sB.properties.stereo = sB.atoms[0] === fromB ? '/' : '\\';
+      }
+
       if (heavy.getEZStereo(dblBond.id) !== expectedParity) {
-        sB.properties.stereo = sB.atoms[0] === fromB ? '\\' : '/';
+        if (!sBWasSet) {
+          sB.properties.stereo = sB.atoms[0] === fromB ? '\\' : '/';
+        } else if (!sAWasSet) {
+          sA.properties.stereo = sA.atoms[0] === fromA ? '\\' : '/';
+        }
+      }
+
+      // Restore the stereo that was temporarily cleared.
+      for (const { b, stereo } of saved) {
+        b.properties.stereo = stereo;
       }
     }
   }

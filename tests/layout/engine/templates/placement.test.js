@@ -268,7 +268,7 @@ describe('layout/engine/templates/placement', () => {
   });
 
   it('places the trans-polyene macrolide template with regular fused rings and satisfied E alkenes', () => {
-    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
+    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(\C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'trans-polyene-macrolide', graph.ringSystems[0].atomIds, graph.options.bondLength);
     const stereo = inspectEZStereo(graph, coords);
     const audit = auditLayout(graph, coords, {

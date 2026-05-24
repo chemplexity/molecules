@@ -155,6 +155,15 @@ export class Bond {
    * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isInRing(molecule) {
+    if (molecule && typeof molecule === 'object') {
+      if (!molecule._bondRingMembershipCache || molecule._bondRingMembershipCacheVersion !== molecule._topologyVersion) {
+        molecule._bondRingMembershipCache = new Map();
+        molecule._bondRingMembershipCacheVersion = molecule._topologyVersion;
+      } else if (molecule._bondRingMembershipCache.has(this.id)) {
+        return molecule._bondRingMembershipCache.get(this.id);
+      }
+    }
+
     const [idA, idB] = this.atoms;
     // BFS from idA to idB through paths that do NOT use this bond.
     const visited = new Set([idA]);
@@ -172,6 +181,7 @@ export class Bond {
         }
         const next = b.getOtherAtom(current);
         if (next === idB) {
+          molecule?._bondRingMembershipCache?.set(this.id, true);
           return true;
         }
         if (!visited.has(next)) {
@@ -180,6 +190,7 @@ export class Bond {
         }
       }
     }
+    molecule?._bondRingMembershipCache?.set(this.id, false);
     return false;
   }
 

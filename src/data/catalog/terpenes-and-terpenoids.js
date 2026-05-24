@@ -42,7 +42,7 @@ const terpenesAndTerpenoidsCatalog = {
       id: 'geraniol',
       name: 'Geraniol',
       smiles: 'CC(=CCC/C(=C/CO)/C)C',
-      inchi: 'InChI=1S/C10H18O/c1-9(2)5-4-6-10(3)7-8-11/h5,7,11H,4,6,8H2,1-3H3/b7-10-/m0/s1',
+      inchi: 'InChI=1S/C10H18O/c1-9(2)5-4-6-10(3)7-8-11/h5,7,11H,4,6,8H2,1-3H3/b7-10+/m0/s1',
       tags: ['terpenoid', 'monoterpenoid', 'alcohol'],
       aliases: ['geraniol', 'trans-3,7-dimethyl-2,6-octadien-1-ol']
     },

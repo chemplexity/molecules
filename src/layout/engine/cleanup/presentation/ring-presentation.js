@@ -1116,7 +1116,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
   let terminalMultipleBondLeafFirstCoords = null;
   let terminalMultipleBondLeafFirstChanged = false;
   const includeRingSubstituent = options.includeRingSubstituent !== false;
-  const includeTerminalMultipleBondLeaf = includeRingSubstituent || options.includeTerminalMultipleBondLeaf === true;
+  const includeTerminalMultipleBondLeaf = options.includeTerminalMultipleBondLeaf !== false && (includeRingSubstituent || options.includeTerminalMultipleBondLeaf === true);
 
   const hasTerminalHeteroOutwardNeed = state => (state.terminalHeteroOutwardMaxPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
   const hasPhosphateArylTailNeed = state => (state.phosphateArylTailPenalty ?? 0) > PRESENTATION_NEED_EPSILON;

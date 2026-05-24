@@ -576,6 +576,21 @@ export function buildCleanupStageGraph(context) {
       (audit.stereoContradiction ?? false) === false
     );
   };
+  const shouldSkipDirtyGenericTerminalMultipleBondLeafRetouch = stageResult => {
+    const audit = stageResult?.audit ?? null;
+    if (
+      audit?.fallback?.mode !== 'generic-scaffold' ||
+      (audit.severeOverlapCount ?? 0) < 4 ||
+      (audit.visibleHeavyBondCrossingCount ?? 0) < 2 ||
+      (audit.bondLengthFailureCount ?? 0) > 0 ||
+      (audit.collapsedMacrocycleCount ?? 0) > 0 ||
+      (audit.stereoContradiction ?? false)
+    ) {
+      return false;
+    }
+    const metrics = presentationMetricsFor(stageResult?.coords);
+    return (metrics?.divalentContinuationMaxPenalty ?? 0) > DISTANCE_EPSILON;
+  };
   const canSkipCleanOptionalCleanupStage = (_stageResults, incumbent) => {
     if (incumbent?.audit?.ok !== true) {
       return false;
@@ -692,12 +707,13 @@ export function buildCleanupStageGraph(context) {
         if (isDirtyUltraLargeHardResidualStage(incumbent) || shouldSkipCleanSpiroPresentationCleanup(incumbent)) {
           return false;
         }
+        const skipDirtyGenericTerminalMultipleBondLeaf = shouldSkipDirtyGenericTerminalMultipleBondLeafRetouch(incumbent);
         const includeRingSubstituent = shouldIncludeRingSubstituentCleanup(incumbent);
         const includeAttachedRingFallback = includeRingSubstituent && !shouldSkipCleanSmallAttachedRingFallback(incumbent);
         return hasPresentationCleanupNeed(layoutGraph, incumbent, {
           bondLength,
           includeRingSubstituent,
-          includeTerminalMultipleBondLeaf: true,
+          includeTerminalMultipleBondLeaf: !skipDirtyGenericTerminalMultipleBondLeaf,
           includeTerminalHetero: hasRingTerminalHeteroHook,
           includeAttachedRingFallback,
           frozenAtomIds: placement.frozenAtomIds,
@@ -709,6 +725,7 @@ export function buildCleanupStageGraph(context) {
         });
       },
       transformFn(parentCoords, inputContext, _stageResults, incumbent) {
+        const skipDirtyGenericTerminalMultipleBondLeaf = shouldSkipDirtyGenericTerminalMultipleBondLeafRetouch(incumbent);
         const includeRingSubstituent = shouldIncludeRingSubstituentCleanup(incumbent);
         const includeAttachedRingFallback = includeRingSubstituent && !shouldSkipCleanSmallAttachedRingFallback(incumbent);
         const labelClearanceStart = inputContext.timingState ? inputContext.nowMs() : 0;
@@ -736,6 +753,7 @@ export function buildCleanupStageGraph(context) {
           cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
           protectLargeMoleculeBackbone,
           includeRingSubstituent,
+          includeTerminalMultipleBondLeaf: !skipDirtyGenericTerminalMultipleBondLeaf,
           includeTerminalHetero: hasRingTerminalHeteroHook,
           includeAttachedRingFallback,
           scoreCoordsFn: auditFinalStereoWithPresentationMetrics,
@@ -936,7 +954,7 @@ export function buildCleanupStageGraph(context) {
       cleanupBudgetOptional: true,
       cleanupBudgetGuard: canSkipCleanOptionalCleanupStage,
       guard(_stageResults, incumbent) {
-        if (isDirtyUltraLargeHardResidualStage(incumbent)) {
+        if (isDirtyUltraLargeHardResidualStage(incumbent) || shouldSkipDirtyGenericTerminalMultipleBondLeafRetouch(incumbent)) {
           return false;
         }
         return (presentationMetricsFor(incumbent?.coords)?.terminalMultipleBondLeafFanMaxPenalty ?? 0) > DISTANCE_EPSILON;
