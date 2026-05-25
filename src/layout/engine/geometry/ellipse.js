@@ -29,7 +29,10 @@ function sampleEllipsePerimeter(size, semiMajor, semiMinor, startAngle) {
   const cumulativeLengths = [0];
   for (let index = 0; index <= sampleCount; index++) {
     const angle = startAngle + (index / sampleCount) * Math.PI * 2;
-    sampledPoints.push(ellipsePoint({ x: 0, y: 0 }, semiMajor, semiMinor, angle));
+    sampledPoints.push({
+      x: Math.cos(angle) * semiMajor,
+      y: Math.sin(angle) * semiMinor
+    });
     if (index === 0) {
       continue;
     }
@@ -91,24 +94,8 @@ export function averageEllipseChordLength(size, semiMajor, semiMinor, startAngle
  * @returns {number} Base scale value.
  */
 export function solveEllipseScale(size, bondLength, aspectRatio, startAngle) {
-  let low = bondLength * 0.25;
-  let high = bondLength * size;
-  while (averageEllipseChordLength(size, high * aspectRatio, high / aspectRatio, startAngle) < bondLength) {
-    high *= 1.5;
-    if (high > bondLength * size * 8) {
-      break;
-    }
-  }
-  for (let iteration = 0; iteration < 32; iteration++) {
-    const mid = (low + high) * 0.5;
-    const average = averageEllipseChordLength(size, mid * aspectRatio, mid / aspectRatio, startAngle);
-    if (average < bondLength) {
-      low = mid;
-    } else {
-      high = mid;
-    }
-  }
-  return high;
+  const unitAverage = averageEllipseChordLength(size, aspectRatio, 1 / aspectRatio, startAngle);
+  return unitAverage > 0 ? bondLength / unitAverage : bondLength;
 }
 
 /**

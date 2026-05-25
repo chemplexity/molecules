@@ -1,7 +1,7 @@
 /** @module cleanup/presentation/phosphate-aryl-tail */
 
 import { auditLayout } from '../../audit/audit.js';
-import { countVisibleHeavyBondCrossings, findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
+import { findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
 import { add, angleOf, angularDifference, fromAngle, sub } from '../../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -244,14 +244,15 @@ function phosphateLinkerAnglePenalty(coords, descriptor) {
   return (linkerAngle - IDEAL_PHOSPHATE_LINKER_ANGLE) ** 2;
 }
 
-function tailCrossingAtomIds(layoutGraph, coords) {
+function describeTailCrossings(layoutGraph, coords) {
   const atomIds = new Set();
-  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords)) {
+  const crossings = findVisibleHeavyBondCrossings(layoutGraph, coords);
+  for (const crossing of crossings) {
     for (const atomId of [...crossing.firstAtomIds, ...crossing.secondAtomIds]) {
       atomIds.add(atomId);
     }
   }
-  return atomIds;
+  return { atomIds, count: crossings.length };
 }
 
 function descriptorCandidatePoses(layoutGraph, coords, descriptor, bondLength) {
@@ -369,7 +370,7 @@ function scorePhosphatePresentationGeometry(layoutGraph, coords, tailDescriptors
 
 function scorePhosphateTailCoords(layoutGraph, coords, bondLength, tailDescriptors, linkerDescriptors) {
   const audit = auditLayout(layoutGraph, coords, { bondLength });
-  const crossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
+  const crossingCount = audit.visibleHeavyBondCrossingCount ?? 0;
   const geometry = scorePhosphatePresentationGeometry(layoutGraph, coords, tailDescriptors, linkerDescriptors);
   const minimumClearance = minimumActiveTailClearance(layoutGraph, coords, tailDescriptors);
   return {
@@ -403,18 +404,18 @@ export function measurePhosphateArylTailPresentationPenalty(layoutGraph, coords)
   if (tailDescriptors.length === 0 && linkerDescriptors.length === 0) {
     return 0;
   }
-  const crossingAtomIds = tailCrossingAtomIds(layoutGraph, coords);
+  const crossingSummary = describeTailCrossings(layoutGraph, coords);
   const tailPenalty = tailDescriptors.reduce((sum, descriptor) => {
-    const crossingPenalty = descriptor.atomIds.some(atomId => crossingAtomIds.has(atomId)) ? 1 : 0;
+    const crossingPenalty = descriptor.atomIds.some(atomId => crossingSummary.atomIds.has(atomId)) ? 1 : 0;
     return sum + tailRootBendPenalty(coords, descriptor) + tailAnchorExitPenalty(layoutGraph, coords, descriptor) + crossingPenalty;
   }, 0);
   const linkerPenalty = linkerDescriptors.reduce((sum, descriptor) => sum + phosphateLinkerAnglePenalty(coords, descriptor), 0);
-  const visibleCrossingPenalty = countVisibleHeavyBondCrossings(layoutGraph, coords) * 100;
+  const visibleCrossingPenalty = crossingSummary.count * 100;
   return tailPenalty + linkerPenalty + visibleCrossingPenalty;
 }
 
 function selectActiveTailDescriptors(layoutGraph, coords, descriptors) {
-  const crossingAtomIds = tailCrossingAtomIds(layoutGraph, coords);
+  const crossingAtomIds = describeTailCrossings(layoutGraph, coords).atomIds;
   return descriptors
     .map(descriptor => {
       const bendPenalty = tailRootBendPenalty(coords, descriptor);

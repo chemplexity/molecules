@@ -1608,21 +1608,18 @@ function candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coo
 function isCandidatePositionSafe(candidatePosition, clearanceFloor, coords, excludedAtomIds, atomGrid = null) {
   const clearanceFloorSq = clearanceFloor * clearanceFloor;
   if (atomGrid) {
-    for (const atomId of atomGrid.queryRadius(candidatePosition, clearanceFloor)) {
+    return !atomGrid.someRadius(candidatePosition, clearanceFloor, atomId => {
       if (excludedAtomIds.has(atomId)) {
-        continue;
+        return false;
       }
       const position = coords.get(atomId);
       if (!position) {
-        continue;
+        return false;
       }
       const dx = candidatePosition.x - position.x;
       const dy = candidatePosition.y - position.y;
-      if (dx * dx + dy * dy < clearanceFloorSq) {
-        return false;
-      }
-    }
-    return true;
+      return dx * dx + dy * dy < clearanceFloorSq;
+    });
   }
   for (const [atomId, position] of coords) {
     if (excludedAtomIds.has(atomId)) {

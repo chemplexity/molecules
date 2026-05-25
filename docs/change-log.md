@@ -1,5 +1,18 @@
 # Change Log
 
+## 2026-05-24
+
+- Cache molecule-wide bond ring membership with a bridge-based topology pass, route `Bond.isInRing()` through that cache, solve macrocycle ellipse scale from a single unit sample instead of binary-search resampling, skip the unused audit on extreme large-molecule fallback returns, and reuse phosphate-tail audit crossing counts during presentation scoring.
+- Update the row-3299 audit-corpus expectation to reflect its current generic-scaffold fallback metadata while keeping the stricter improved overlap and bond-length ceilings.
+- Speed layout audit scoring by replacing hot nonbonded/focused pair string-dedupe with atom-order dedupe plus cached bonded-neighbor sets, filtering compact aryl branch crossing scans to only leaf/ring bond classes, and memoizing compact aryl leaf topology checks.
+- Cache visible atom order on reusable atom grids, reuse large-molecule block indices and severe-overlap baselines during rotation packing, inline fixed-angle block subtree rotations, and cache orientation ring-atom sets per molecule topology version.
+- Build layout-bond ring membership from the already-computed ring analysis and cache topology-only orientation backbone paths so repeated large-molecule orientation passes avoid redundant ring/BFS work.
+- Precompute large-molecule rotation step trigonometry/orderings, share immutable atom-grid ordering across grid clones, cache preferred landscape orientation paths, and reduce tracked-block overlap delta scans to indexed affected pairs.
+- Cache topology-only raw/supplemental ring coverage, prefilter uncovered supplemental cycle searches with cached bond ring membership, reuse layout-graph ring systems during orientation, stream atom-grid radius hits in hot overlap scorers, prefilter block-repulsion rotations by pair overlap before cloning coordinates, and defer large-block split materialization until a cut candidate wins.
+- Add streaming/early-exit atom-grid radius scans and use them in label-clearance, branch-placement, terminal-hetero, and large residual-retouch local scoring so common candidate rejection paths avoid temporary hit arrays.
+- Use array-indexed BFS for preferred backbone orientation paths and scan focused visible-bond crossings without rebuilding a sorted all-bond segment list for each candidate.
+- Reuse audit-provided visible-crossing counts in mixed scoring, let ok-only cleanup audits skip visible-crossing scans, reuse precomputed overlap lists for terminal-leaf base audits, and cache branch-placement topology/preview lookups plus current-slice newly placed atom detection to reduce placement-heavy audit corpus time.
+
 ## 2026-05-23
 
 - Fix `getEZStereo` in conjugated double-bond systems: when a sp2 atom has two stereo bonds (one for the double bond being evaluated and one bridge bond belonging to an adjacent double bond), prefer the non-bridge substituent bond as the reference and add the bridge bond's other end to the CIP comparison list so `correctDir` can correctly orient the higher-priority substituent.
@@ -16,6 +29,7 @@
 - Reduce focused-crossing scans by processing each focused bond pair once through bond index ordering instead of allocating per-candidate `seen` keys.
 - Make subtree-overlap scoring trust visible-only atom grids and update large-molecule block-overlap deltas against tracked blocks instead of rescanning every block pair.
 - Reuse per-block split adjacency and precomputed block membership counters during large-molecule partition scoring, avoiding repeated slice-adjacency rebuilds and candidate sorting on peptide-scale fallback rows.
+- Trim focused placement scoring by removing redundant focused-pair tracking, counting compact aryl leaf/ring crossings without materializing sorted crossing records, and reusing a stable mixed-candidate signature order for audit-cache lookups.
 
 ## 2026-05-22
 

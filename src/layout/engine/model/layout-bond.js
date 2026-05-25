@@ -11,9 +11,10 @@ function cloneDisplayHint(display) {
  * Creates a layout-oriented bond descriptor from a molecule bond.
  * @param {object} bond - Source bond.
  * @param {object} molecule - Molecule-like graph.
+ * @param {Set<string>|null} [ringBondIds] - Optional precomputed ring bond IDs.
  * @returns {object} Layout bond descriptor.
  */
-export function createLayoutBond(bond, molecule) {
+export function createLayoutBond(bond, molecule, ringBondIds = null) {
   return {
     id: bond.id,
     a: bond.atoms[0],
@@ -23,7 +24,7 @@ export function createLayoutBond(bond, molecule) {
     stereo: typeof bond.getStereo === 'function' ? bond.getStereo() : (bond.properties.stereo ?? null),
     kind: typeof bond.getKind === 'function' ? bond.getKind() : (bond.properties.kind ?? 'covalent'),
     localizedOrder: bond.properties.localizedOrder ?? null,
-    inRing: typeof bond.isInRing === 'function' ? bond.isInRing(molecule) : false,
+    inRing: ringBondIds ? ringBondIds.has(bond.id) : typeof bond.isInRing === 'function' ? bond.isInRing(molecule) : false,
     displayHint: cloneDisplayHint(bond.properties.display)
   };
 }

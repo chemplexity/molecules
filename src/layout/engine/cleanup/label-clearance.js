@@ -141,29 +141,25 @@ function labelPenaltyAgainstOthers(labels, labelIndex, labelBox, padding) {
  * @returns {boolean} True when the candidate would introduce a severe overlap.
  */
 function introducesSevereOverlap(layoutGraph, coords, atomGrid, atomId, candidatePosition, overlapDistanceThreshold) {
-  const localOverlaps = atomGrid.queryRadius(candidatePosition, overlapDistanceThreshold);
-  for (const otherAtomId of localOverlaps) {
+  return atomGrid.someRadius(candidatePosition, overlapDistanceThreshold, otherAtomId => {
     if (otherAtomId === atomId) {
-      continue;
+      return false;
     }
     const otherAtom = layoutGraph.atoms.get(otherAtomId);
     if (!otherAtom || (layoutGraph.options.suppressH && otherAtom.element === 'H')) {
-      continue;
+      return false;
     }
     const pairId = atomId < otherAtomId ? `${atomId}:${otherAtomId}` : `${otherAtomId}:${atomId}`;
     if (layoutGraph.bondedPairSet.has(pairId)) {
-      continue;
+      return false;
     }
     const otherPosition = coords.get(otherAtomId);
     if (!otherPosition) {
-      continue;
+      return false;
     }
     const dist = Math.hypot(otherPosition.x - candidatePosition.x, otherPosition.y - candidatePosition.y);
-    if (dist < overlapDistanceThreshold) {
-      return true;
-    }
-  }
-  return false;
+    return dist < overlapDistanceThreshold;
+  });
 }
 
 /**

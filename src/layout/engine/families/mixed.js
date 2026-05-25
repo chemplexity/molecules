@@ -877,7 +877,7 @@ function translateLeafSubtreeToRingTarget(layoutGraph, coords, anchorAtomId, lea
   const delta = sub(targetPosition, leafPosition);
   const nextCoords = new Map(coords);
   for (const atomId of collectCovalentSubtreeAtomIds(layoutGraph, leafAtomId, anchorAtomId)) {
-    const position = coords.get(atomId);
+    const position = nextCoords.get(atomId);
     if (!position) {
       continue;
     }
@@ -1773,7 +1773,7 @@ function terminalCarbonChainLeafContactScore(layoutGraph, coords, audit, descrip
   return {
     coords,
     audit,
-    visibleCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }),
+    visibleCrossingCount: audit.visibleHeavyBondCrossingCount ?? 0,
     localCrossingCount: terminalCarbonChainLeafVisibleCrossingCount(layoutGraph, coords, descriptor, bondLength),
     leafClearance: terminalCarbonChainLeafClearance(layoutGraph, coords, descriptor),
     layoutCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, [descriptor.ringRootAtomId, descriptor.anchorAtomId, descriptor.leafAtomId]),
@@ -1967,7 +1967,7 @@ function ringSubstituentBranchCandidateScore(layoutGraph, coords, audit, descrip
   return {
     coords,
     audit,
-    globalCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }),
+    globalCrossingCount: audit.visibleHeavyBondCrossingCount ?? 0,
     localCrossingCount: ringSubstituentBranchLocalCrossingCount(layoutGraph, coords, descriptor, bondLength),
     failingSubstituentCount: readability.failingSubstituentCount,
     inwardSubstituentCount: readability.inwardSubstituentCount,
@@ -2521,7 +2521,7 @@ export function resolveRingSubstituentBranchCrossings(layoutGraph, coords, bondV
     const incumbent = {
       coords,
       audit: baseAudit,
-      globalCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }),
+      globalCrossingCount: baseAudit.visibleHeavyBondCrossingCount ?? 0,
       failingSubstituentCount: baseAudit.ringSubstituentReadabilityFailureCount ?? 0,
       inwardSubstituentCount: baseAudit.inwardRingSubstituentCount ?? 0,
       layoutCost: measureFocusedPlacementCost(
@@ -2570,7 +2570,7 @@ export function resolveRingSubstituentBranchCrossings(layoutGraph, coords, bondV
             const candidate = {
               coords: secondRecord.coords,
               audit: candidateAudit,
-              globalCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, secondRecord.coords, { bondLength }),
+              globalCrossingCount: candidateAudit.visibleHeavyBondCrossingCount ?? 0,
               failingSubstituentCount: candidateAudit.ringSubstituentReadabilityFailureCount ?? 0,
               inwardSubstituentCount: candidateAudit.inwardRingSubstituentCount ?? 0,
               layoutCost: measureFocusedPlacementCost(layoutGraph, secondRecord.coords, bondLength, [
@@ -11063,14 +11063,20 @@ function nonRingSuppressedHydrogenFanRingRotationOffsets() {
  * @param {string[]|null} [atomIds] - Optional scoped atom ids to include in the signature.
  * @returns {string} Rounded coordinate signature.
  */
-function candidateCoordSignature(coords, atomIds = null) {
+function candidateCoordSignature(coords, atomIds = null, orderedAtomIds = null) {
   const scopedAtomIds = atomIds ? [...new Set(atomIds)].filter(atomId => coords.has(atomId)).sort(compareAtomIdStrings) : null;
   const entries = scopedAtomIds?.length
     ? scopedAtomIds.map(atomId => [atomId, coords.get(atomId)])
+    : orderedAtomIds?.length
+    ? orderedAtomIds.filter(atomId => coords.has(atomId)).map(atomId => [atomId, coords.get(atomId)])
     : [...coords.entries()].sort(([firstAtomId], [secondAtomId]) => compareAtomIdStrings(firstAtomId, secondAtomId));
   return entries
     .map(([atomId, position]) => `${atomId}:${Math.round(position.x * 1e6)}:${Math.round(position.y * 1e6)}`)
     .join('|');
+}
+
+function mixedSignatureAtomIds(layoutGraph) {
+  return (layoutGraph._mixedCandidateAuditSignatureAtomIds ??= [...layoutGraph.atoms.keys()].sort((firstAtomId, secondAtomId) => compareAtomIdStrings(firstAtomId, secondAtomId)));
 }
 
 function markUniqueCandidateCoordSignature(seenSignatures, coords, atomIds = null) {
@@ -11086,7 +11092,8 @@ function cachedMixedCandidateAudit(layoutGraph, coords, bondLength, auditCache) 
   if (!auditCache) {
     return auditLayout(layoutGraph, coords, { bondLength });
   }
-  const signature = candidateCoordSignature(coords);
+  const signatureAtomIds = mixedSignatureAtomIds(layoutGraph);
+  const signature = candidateCoordSignature(coords, null, signatureAtomIds);
   let audit = auditCache.get(signature);
   if (!audit) {
     audit = auditLayout(layoutGraph, coords, { bondLength });
@@ -15506,7 +15513,8 @@ function ensureAttachedBlockPresentationState(score) {
 }
 
 function createAttachedBlockCoreScoreContext(layoutGraph, baseCoords, bondLength) {
-  const baseSignature = candidateCoordSignature(baseCoords);
+  const signatureAtomIds = mixedSignatureAtomIds(layoutGraph);
+  const baseSignature = candidateCoordSignature(baseCoords, null, signatureAtomIds);
   const cacheKey = `${bondLength}\u0001${baseSignature}`;
   const cache = layoutGraph._mixedAttachedBlockCoreScoreContextCache ?? (layoutGraph._mixedAttachedBlockCoreScoreContextCache = new Map());
   const cachedContext = cache.get(cacheKey);
@@ -15915,9 +15923,10 @@ function cloneAttachedBlockScore(score) {
 }
 
 function attachedBlockFullScoreCacheKey(layoutGraph, coords, primaryNonRingAtomIds, placedAtomIds, transformedCoords, candidateMeta, branchConstraints, options = {}) {
+  const signatureAtomIds = mixedSignatureAtomIds(layoutGraph);
   return [
-    candidateCoordSignature(coords),
-    candidateCoordSignature(transformedCoords),
+    candidateCoordSignature(coords, null, signatureAtomIds),
+    candidateCoordSignature(transformedCoords, null, signatureAtomIds),
     atomIdIterableSignature(primaryNonRingAtomIds),
     atomIdIterableSignature(placedAtomIds),
     candidateMetaValueSignature(candidateMeta ?? null),
@@ -19147,7 +19156,7 @@ function refineTerminalCarbonylRingContactCenterFan(layoutGraph, coords, contact
     rotationMagnitude: 0
   };
   const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
-  const baseHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
+  const baseHeavyBondCrossingCount = baseAudit.visibleHeavyBondCrossingCount ?? 0;
   const baseSmallRingExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, contact.descriptor.ringAnchorAtomId);
   const refinementClearanceThreshold = Math.min(clearanceThreshold, bondLength * TERMINAL_CARBONYL_RING_CONTACT_CENTER_REFINEMENT_MIN_CLEARANCE_FACTOR);
   let bestCandidate = terminalCarbonylRingContactCandidateScore(layoutGraph, coords, contact, baseRecord, bondLength);
@@ -19875,7 +19884,7 @@ function terminalMultipleBondCrossingCandidateScore(layoutGraph, baseCoords, can
   return {
     coords: candidateCoords,
     audit: candidateAudit,
-    visibleHeavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }),
+    visibleHeavyBondCrossingCount: candidateAudit.visibleHeavyBondCrossingCount ?? 0,
     crossingClearance: terminalMultipleBondCrossingClearance(layoutGraph, candidateCoords, firstDescriptor, secondDescriptor),
     layoutCost: measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, focusAtomIds),
     rotationMagnitude,
@@ -19953,7 +19962,7 @@ function terminalMultipleBondLeafOverlapCandidateScore(layoutGraph, baseCoords, 
   return {
     coords: candidateCoords,
     audit: candidateAudit,
-    visibleHeavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }),
+    visibleHeavyBondCrossingCount: candidateAudit.visibleHeavyBondCrossingCount ?? 0,
     overlapDistance: terminalMultipleBondLeafOverlapDistance(candidateCoords, descriptor, opposingAtomId),
     layoutCost: measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, [descriptor.centerAtomId, descriptor.leafAtomId, opposingAtomId]),
     rotationMagnitude,
@@ -20011,9 +20020,9 @@ function resolveTerminalMultipleBondLeafSevereOverlaps(layoutGraph, coords, bond
   let changed = false;
 
   for (let passIndex = 0; passIndex < 2; passIndex++) {
-    const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
-    const baseCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
     const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+    const baseAudit = auditLayout(layoutGraph, coords, { bondLength, overlaps });
+    const baseCrossingCount = baseAudit.visibleHeavyBondCrossingCount ?? 0;
     let bestCandidate = null;
 
     for (const overlap of overlaps) {
@@ -20796,7 +20805,7 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
     }
 
     const baseAudit = cachedMixedCandidateAudit(layoutGraph, coords, bondLength, auditCache);
-    const baseHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
+    const baseHeavyBondCrossingCount = baseAudit.visibleHeavyBondCrossingCount ?? 0;
     const baseSmallRingExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, contact.descriptor.ringAnchorAtomId);
     const contactRingSystemId = layoutGraph.atomToRingSystemId.get(contact.opposingAtomId);
     const movableDescriptors = collectMovableAttachedRingDescriptors(layoutGraph, coords)

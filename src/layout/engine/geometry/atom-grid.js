@@ -15,6 +15,7 @@ export class AtomGrid {
     this.cellSize = Number.isFinite(cellSize) && cellSize > 0 ? cellSize : 1;
     this.cells = new Map(); // Map<xIndex: number, Map<yIndex: number, Set<atomId: string>>>
     this.visibleAtomIdsOnly = false;
+    this.atomOrderById = null;
   }
 
   /**
@@ -84,10 +85,25 @@ export class AtomGrid {
    * @returns {string[]} Candidate atom IDs near the position.
    */
   queryRadius(position, radius) {
+    const atomIds = [];
+    this.forEachRadius(position, radius, atomId => {
+      atomIds.push(atomId);
+    });
+    return atomIds;
+  }
+
+  /**
+   * Visits atom IDs within the queried radius neighborhood without allocating
+   * an intermediate array.
+   * @param {{x: number, y: number}} position - Query position.
+   * @param {number} radius - Query radius.
+   * @param {(atomId: string) => void} visit - Visitor called for each candidate atom ID.
+   * @returns {void}
+   */
+  forEachRadius(position, radius, visit) {
     const xIndex = Math.floor(position.x / this.cellSize);
     const yIndex = Math.floor(position.y / this.cellSize);
     const cellRadius = Math.max(0, Math.ceil(radius / this.cellSize));
-    const atomIds = [];
     for (let dx = -cellRadius; dx <= cellRadius; dx++) {
       const col = this.cells.get(xIndex + dx);
       if (!col) {
@@ -99,11 +115,42 @@ export class AtomGrid {
           continue;
         }
         for (const atomId of cell) {
-          atomIds.push(atomId);
+          visit(atomId);
         }
       }
     }
-    return atomIds;
+  }
+
+  /**
+   * Visits atom IDs within the queried radius neighborhood until the visitor
+   * returns true.
+   * @param {{x: number, y: number}} position - Query position.
+   * @param {number} radius - Query radius.
+   * @param {(atomId: string) => boolean} visit - Visitor called for each candidate atom ID.
+   * @returns {boolean} True when the visitor accepted a candidate.
+   */
+  someRadius(position, radius, visit) {
+    const xIndex = Math.floor(position.x / this.cellSize);
+    const yIndex = Math.floor(position.y / this.cellSize);
+    const cellRadius = Math.max(0, Math.ceil(radius / this.cellSize));
+    for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+      const col = this.cells.get(xIndex + dx);
+      if (!col) {
+        continue;
+      }
+      for (let dy = -cellRadius; dy <= cellRadius; dy++) {
+        const cell = col.get(yIndex + dy);
+        if (!cell) {
+          continue;
+        }
+        for (const atomId of cell) {
+          if (visit(atomId)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -145,6 +192,7 @@ export class AtomGrid {
   clone() {
     const clone = new AtomGrid(this.cellSize);
     clone.visibleAtomIdsOnly = this.visibleAtomIdsOnly;
+    clone.atomOrderById = this.atomOrderById;
     for (const [xIndex, col] of this.cells) {
       const newCol = new Map();
       for (const [yIndex, cell] of col) {

@@ -36,4 +36,21 @@ describe('layout/engine/geometry/atom-grid', () => {
     assert.ok(atomGrid.queryRadius({ x: -1.49, y: 0 }, 0.2).includes('a1'));
     assert.ok(atomGrid.queryRadius({ x: 1.5, y: 0 }, 0.2).includes('a0'));
   });
+
+  it('can stop radius scans as soon as a candidate is accepted', () => {
+    const atomGrid = new AtomGrid(1.5);
+    atomGrid.insert('a0', { x: 0, y: 0 });
+    atomGrid.insert('a1', { x: 0.2, y: 0 });
+    atomGrid.insert('a2', { x: 0.4, y: 0 });
+    const visitedAtomIds = [];
+
+    const found = atomGrid.someRadius({ x: 0, y: 0 }, 1, atomId => {
+      visitedAtomIds.push(atomId);
+      return atomId === 'a1';
+    });
+
+    assert.equal(found, true);
+    assert.deepEqual(visitedAtomIds, ['a0', 'a1']);
+    assert.equal(atomGrid.someRadius({ x: 5, y: 5 }, 0.5, () => true), false);
+  });
 });

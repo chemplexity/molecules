@@ -83,6 +83,20 @@ function buildRingCountByAtomId(rings) {
   return ringCountByAtomId;
 }
 
+function buildRingBondIds(molecule, rings) {
+  const ringBondIds = new Set();
+  for (const ring of rings) {
+    const atomIds = ring.atomIds ?? [];
+    for (let index = 0; index < atomIds.length; index++) {
+      const bond = molecule.getBond(atomIds[index], atomIds[(index + 1) % atomIds.length]);
+      if (bond) {
+        ringBondIds.add(bond.id);
+      }
+    }
+  }
+  return ringBondIds;
+}
+
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const ORTHOGONAL_ORGANOSILICON_ELEMENTS = new Set(['Si']);
 const ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS = 2;
@@ -289,9 +303,14 @@ function buildLayoutGraph(molecule, normalizedOptions) {
   const rawComponents = getConnectedComponents(molecule, canonicalAtomRank);
   const components = assignComponentRoles(rawComponents);
   const ringAnalysis = analyzeRings(molecule, canonicalAtomRank);
+  if (molecule && typeof molecule === 'object') {
+    molecule._layoutGraphRingSystems = ringAnalysis.ringSystems;
+    molecule._layoutGraphRingSystemsVersion = molecule._topologyVersion;
+  }
   const ringConnections = buildRingConnections(molecule, ringAnalysis.rings);
   const atoms = new Map([...molecule.atoms.values()].map(atom => [atom.id, createLayoutAtom(atom, molecule)]));
-  const bonds = new Map([...molecule.bonds.values()].map(bond => [bond.id, createLayoutBond(bond, molecule)]));
+  const ringBondIds = buildRingBondIds(molecule, ringAnalysis.rings);
+  const bonds = new Map([...molecule.bonds.values()].map(bond => [bond.id, createLayoutBond(bond, molecule, ringBondIds)]));
   const { bondedPairSet, bondByAtomPair } = buildBondIndex(bonds);
   const bondsByAtomId = buildAtomBondsIndex(atoms, bonds);
   const atomToRings = buildAtomToRingsIndex(ringAnalysis.rings);

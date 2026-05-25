@@ -101,8 +101,12 @@ function normalizedFocusAtomSet(focusAtomIds) {
 
 function collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, options = {}) {
   const visibleBonds = [];
+  const includeBond = options.includeBond ?? null;
 
   for (const bond of visibleHeavyAuditBonds(layoutGraph)) {
+    if (includeBond && !includeBond(bond)) {
+      continue;
+    }
     const firstPosition = coords.get(bond.a);
     const secondPosition = coords.get(bond.b);
     if (!firstPosition || !secondPosition) {
@@ -127,41 +131,76 @@ function collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, opti
   return visibleBonds;
 }
 
+function collectFocusedVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet) {
+  const focusedBonds = [];
+  let index = 0;
+  for (const bond of visibleHeavyAuditBonds(layoutGraph)) {
+    const firstPosition = coords.get(bond.a);
+    const secondPosition = coords.get(bond.b);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    if (focusAtomSet.has(bond.a) || focusAtomSet.has(bond.b)) {
+      focusedBonds.push({
+        index,
+        bond,
+        firstPosition,
+        secondPosition,
+        minX: Math.min(firstPosition.x, secondPosition.x),
+        maxX: Math.max(firstPosition.x, secondPosition.x),
+        minY: Math.min(firstPosition.y, secondPosition.y),
+        maxY: Math.max(firstPosition.y, secondPosition.y)
+      });
+    }
+    index++;
+  }
+  return focusedBonds;
+}
+
 function findFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet) {
   if (!focusAtomSet || focusAtomSet.size === 0) {
     return [];
   }
-  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
-  const focusedBonds = visibleBonds.filter(segment => segment.touchesFocus);
+  const focusedBonds = collectFocusedVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet);
   const crossings = [];
 
   for (const focused of focusedBonds) {
-    for (const other of visibleBonds) {
-      if (focused === other) {
+    let otherIndex = 0;
+    for (const otherBond of visibleHeavyAuditBonds(layoutGraph)) {
+      const otherFirstPosition = coords.get(otherBond.a);
+      const otherSecondPosition = coords.get(otherBond.b);
+      if (!otherFirstPosition || !otherSecondPosition) {
         continue;
       }
-      if (other.minX > focused.maxX) {
-        break;
-      }
-      if (other.maxX < focused.minX) {
+      const otherTouchesFocus = focusAtomSet.has(otherBond.a) || focusAtomSet.has(otherBond.b);
+      if (otherIndex === focused.index || (otherTouchesFocus && otherIndex < focused.index)) {
+        otherIndex++;
         continue;
       }
-      if (other.touchesFocus && other.index < focused.index) {
+      if (focused.bond.a === otherBond.a || focused.bond.a === otherBond.b || focused.bond.b === otherBond.a || focused.bond.b === otherBond.b) {
+        otherIndex++;
         continue;
       }
-      const first = focused.index < other.index ? focused : other;
-      const second = focused.index < other.index ? other : focused;
-      if (!visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet)) {
+      const otherMinX = Math.min(otherFirstPosition.x, otherSecondPosition.x);
+      const otherMaxX = Math.max(otherFirstPosition.x, otherSecondPosition.x);
+      const otherMinY = Math.min(otherFirstPosition.y, otherSecondPosition.y);
+      const otherMaxY = Math.max(otherFirstPosition.y, otherSecondPosition.y);
+      if (focused.maxX < otherMinX || focused.minX > otherMaxX || focused.maxY < otherMinY || focused.minY > otherMaxY) {
+        otherIndex++;
         continue;
       }
-      if (segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
+      if (segmentsProperlyIntersect(focused.firstPosition, focused.secondPosition, otherFirstPosition, otherSecondPosition)) {
+        const focusedFirst = focused.index < otherIndex;
+        const firstBond = focusedFirst ? focused.bond : otherBond;
+        const secondBond = focusedFirst ? otherBond : focused.bond;
         crossings.push({
-          firstBondId: first.bond.id,
-          secondBondId: second.bond.id,
-          firstAtomIds: [first.bond.a, first.bond.b],
-          secondAtomIds: [second.bond.a, second.bond.b]
+          firstBondId: firstBond.id,
+          secondBondId: secondBond.id,
+          firstAtomIds: [firstBond.a, firstBond.b],
+          secondAtomIds: [secondBond.a, secondBond.b]
         });
       }
+      otherIndex++;
     }
   }
 
@@ -175,29 +214,38 @@ function countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet
   if (!focusAtomSet || focusAtomSet.size === 0) {
     return 0;
   }
-  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
-  const focusedBonds = visibleBonds.filter(segment => segment.touchesFocus);
+  const focusedBonds = collectFocusedVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet);
   let crossingCount = 0;
 
   for (const focused of focusedBonds) {
-    for (const other of visibleBonds) {
-      if (focused === other) {
+    let otherIndex = 0;
+    for (const otherBond of visibleHeavyAuditBonds(layoutGraph)) {
+      const otherFirstPosition = coords.get(otherBond.a);
+      const otherSecondPosition = coords.get(otherBond.b);
+      if (!otherFirstPosition || !otherSecondPosition) {
         continue;
       }
-      if (other.minX > focused.maxX) {
-        break;
-      }
-      if (other.maxX < focused.minX) {
+      const otherTouchesFocus = focusAtomSet.has(otherBond.a) || focusAtomSet.has(otherBond.b);
+      if (otherIndex === focused.index || (otherTouchesFocus && otherIndex < focused.index)) {
+        otherIndex++;
         continue;
       }
-      if (other.touchesFocus && other.index < focused.index) {
+      if (focused.bond.a === otherBond.a || focused.bond.a === otherBond.b || focused.bond.b === otherBond.a || focused.bond.b === otherBond.b) {
+        otherIndex++;
         continue;
       }
-      const first = focused.index < other.index ? focused : other;
-      const second = focused.index < other.index ? other : focused;
-      if (visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) && segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
+      const otherMinX = Math.min(otherFirstPosition.x, otherSecondPosition.x);
+      const otherMaxX = Math.max(otherFirstPosition.x, otherSecondPosition.x);
+      const otherMinY = Math.min(otherFirstPosition.y, otherSecondPosition.y);
+      const otherMaxY = Math.max(otherFirstPosition.y, otherSecondPosition.y);
+      if (focused.maxX < otherMinX || focused.minX > otherMaxX || focused.maxY < otherMinY || focused.minY > otherMaxY) {
+        otherIndex++;
+        continue;
+      }
+      if (segmentsProperlyIntersect(focused.firstPosition, focused.secondPosition, otherFirstPosition, otherSecondPosition)) {
         crossingCount++;
       }
+      otherIndex++;
     }
   }
 
@@ -695,46 +743,83 @@ function isVisibleHeavyLayoutAtom(layoutGraph, atomId) {
   return isVisibleLayoutAtom(layoutGraph, atomId) && layoutGraph.atoms.get(atomId)?.element !== 'H';
 }
 
+function bondedAtomIdSet(layoutGraph, atomId) {
+  if (!(layoutGraph._bondedAtomIdSetByAtomId instanceof Map)) {
+    layoutGraph._bondedAtomIdSetByAtomId = new Map();
+  }
+  let bondedAtomIds = layoutGraph._bondedAtomIdSetByAtomId.get(atomId);
+  if (bondedAtomIds) {
+    return bondedAtomIds;
+  }
+  bondedAtomIds = new Set();
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    bondedAtomIds.add(bond.a === atomId ? bond.b : bond.a);
+  }
+  layoutGraph._bondedAtomIdSetByAtomId.set(atomId, bondedAtomIds);
+  return bondedAtomIds;
+}
+
+function areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId) {
+  return bondedAtomIdSet(layoutGraph, firstAtomId).has(secondAtomId);
+}
+
+function visibleAtomOrderById(layoutGraph, coords, visibleAtomIds) {
+  const orderById = new Map();
+  let order = 0;
+  if (visibleAtomIds) {
+    for (const atomId of visibleAtomIds) {
+      if (coords.has(atomId) && !orderById.has(atomId)) {
+        orderById.set(atomId, order++);
+      }
+    }
+    return orderById;
+  }
+  for (const [atomId, position] of coords) {
+    if (position && isVisibleLayoutAtom(layoutGraph, atomId)) {
+      orderById.set(atomId, order++);
+    }
+  }
+  return orderById;
+}
+
 function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null, queryRadius = 0, options = {}) {
   const visibleAtomIds = options.visibleAtomIds ?? null;
   if (atomGrid) {
-    const atomGridHasVisibleAtoms = atomGrid.visibleAtomIdsOnly === true;
-    const seenPairs = new Set();
+    const visibleAtomIdList = visibleAtomIds ? [...visibleAtomIds] : null;
+    const atomOrderById = !visibleAtomIdList && atomGrid.atomOrderById instanceof Map ? atomGrid.atomOrderById : visibleAtomOrderById(layoutGraph, coords, visibleAtomIdList);
     const pairs = [];
 
-    const firstAtomEntries = visibleAtomIds ?? coords;
+    const firstAtomEntries = visibleAtomIdList ?? coords;
     for (const entry of firstAtomEntries) {
-      const firstAtomId = visibleAtomIds ? entry : entry[0];
-      const firstPosition = visibleAtomIds ? coords.get(firstAtomId) : entry[1];
-      if (!firstPosition || (!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, firstAtomId))) {
+      const firstAtomId = visibleAtomIdList ? entry : entry[0];
+      const firstPosition = visibleAtomIdList ? coords.get(firstAtomId) : entry[1];
+      const firstOrder = atomOrderById.get(firstAtomId);
+      if (!firstPosition || firstOrder == null) {
         continue;
       }
-      const nearbyAtomIds = atomGrid.queryRadius(firstPosition, queryRadius);
-      for (const secondAtomId of nearbyAtomIds) {
-        if (secondAtomId === firstAtomId || (!visibleAtomIds && !atomGridHasVisibleAtoms && !isVisibleLayoutAtom(layoutGraph, secondAtomId))) {
-          continue;
+      atomGrid.forEachRadius(firstPosition, queryRadius, secondAtomId => {
+        const secondOrder = atomOrderById.get(secondAtomId);
+        if (secondOrder == null || secondOrder <= firstOrder) {
+          return;
         }
-        const key = atomPairKey(firstAtomId, secondAtomId);
-        if (seenPairs.has(key) || layoutGraph.bondedPairSet.has(key)) {
-          continue;
+        if (areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId)) {
+          return;
         }
         const secondPosition = coords.get(secondAtomId);
         if (!secondPosition) {
-          continue;
+          return;
         }
         const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
         if (includePair(firstAtomId, secondAtomId, distance)) {
           pairs.push({ firstAtomId, secondAtomId, distance });
         }
-        seenPairs.add(key);
-      }
+      });
     }
 
     return pairs;
   }
 
   const atomIds = visibleAtomIds ? [...visibleAtomIds] : [...coords.keys()];
-  const bondedPairs = layoutGraph.bondedPairSet;
   const pairs = [];
 
   for (let firstIndex = 0; firstIndex < atomIds.length; firstIndex++) {
@@ -745,7 +830,7 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
     const firstPosition = coords.get(firstAtomId);
     for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
       const secondAtomId = atomIds[secondIndex];
-      if ((!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId)) || bondedPairs.has(atomPairKey(firstAtomId, secondAtomId))) {
+      if ((!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId)) || areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId)) {
         continue;
       }
       const secondPosition = coords.get(secondAtomId);
@@ -770,11 +855,14 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
 export function buildAtomGrid(layoutGraph, coords, bondLength, options = {}) {
   const atomGrid = new AtomGrid(bondLength);
   atomGrid.visibleAtomIdsOnly = true;
+  atomGrid.atomOrderById = new Map();
+  let order = 0;
   if (options.visibleAtomIds) {
     for (const atomId of options.visibleAtomIds) {
       const position = coords.get(atomId);
       if (position) {
         atomGrid.insert(atomId, position);
+        atomGrid.atomOrderById.set(atomId, order++);
       }
     }
     return atomGrid;
@@ -785,6 +873,7 @@ export function buildAtomGrid(layoutGraph, coords, bondLength, options = {}) {
       continue;
     }
     atomGrid.insert(atomId, position);
+    atomGrid.atomOrderById.set(atomId, order++);
   }
   return atomGrid;
 }
@@ -869,31 +958,41 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
 
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const atomGrid = options.atomGrid ?? (coords.size >= FOCUSED_PLACEMENT_COST_GRID_MIN_COORDS ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
-  const seenPairs = new Set();
+  const atomGridHasVisibleAtoms = atomGrid?.visibleAtomIdsOnly === true;
+  const focusOrderByAtomId = new Map(uniqueFocusAtomIds.map((atomId, index) => [atomId, index]));
   let overlapPenalty = 0;
 
   for (const firstAtomId of uniqueFocusAtomIds) {
     const firstPosition = coords.get(firstAtomId);
-    const candidateAtomIds = atomGrid ? atomGrid.queryRadius(firstPosition, threshold) : coords.keys();
-    for (const secondAtomId of candidateAtomIds) {
-      if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
-        continue;
+    const firstFocusOrder = focusOrderByAtomId.get(firstAtomId);
+    const scoreCandidate = secondAtomId => {
+      if (secondAtomId === firstAtomId || (!atomGridHasVisibleAtoms && !isVisibleLayoutAtom(layoutGraph, secondAtomId))) {
+        return;
       }
-      const key = atomPairKey(firstAtomId, secondAtomId);
-      if (seenPairs.has(key) || layoutGraph.bondedPairSet.has(key)) {
-        continue;
+      const secondFocusOrder = focusOrderByAtomId.get(secondAtomId);
+      if (secondFocusOrder != null && secondFocusOrder <= firstFocusOrder) {
+        return;
       }
-      seenPairs.add(key);
+      if (areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId)) {
+        return;
+      }
       const secondPosition = coords.get(secondAtomId);
       if (!secondPosition) {
-        continue;
+        return;
       }
       const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
       if (distance >= threshold) {
-        continue;
+        return;
       }
       const deficit = threshold - distance;
       overlapPenalty += deficit * deficit * 100;
+    };
+    if (atomGrid) {
+      atomGrid.forEachRadius(firstPosition, threshold, scoreCandidate);
+    } else {
+      for (const secondAtomId of coords.keys()) {
+        scoreCandidate(secondAtomId);
+      }
     }
   }
 
@@ -924,20 +1023,105 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
 }
 
 function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomIds) {
-  if (!focusCanAffectCompactArylBranchedLeafCrossing(layoutGraph, focusAtomIds)) {
+  const crossingBonds = compactArylBranchedLeafCrossingBonds(layoutGraph);
+  if (crossingBonds.leafBondCount === 0 || !focusCanAffectCompactArylBranchedLeafCrossing(layoutGraph, focusAtomIds)) {
     return 0;
   }
   const focusSet = new Set(focusAtomIds);
   let penalty = 0;
-  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords, { focusAtomIds: focusSet })) {
-    if (
-      compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.firstBondId, crossing.secondBondId) ||
-      compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.secondBondId, crossing.firstBondId)
-    ) {
-      penalty += 1000;
+  const visibleBonds = collectCompactArylCrossingBondSegments(crossingBonds.entries, coords, focusSet);
+  const focusedBonds = visibleBonds.filter(segment => segment.touchesFocus);
+
+  for (const focused of focusedBonds) {
+    for (const other of visibleBonds) {
+      if (focused === other) {
+        continue;
+      }
+      if (other.minX > focused.maxX) {
+        break;
+      }
+      if (other.maxX < focused.minX) {
+        continue;
+      }
+      if (other.touchesFocus && other.index < focused.index) {
+        continue;
+      }
+      const first = focused.index < other.index ? focused : other;
+      const second = focused.index < other.index ? other : focused;
+      if (!visibleHeavyBondSegmentsCanCross(first, second, focusSet)) {
+        continue;
+      }
+      if (!compactArylBranchedLeafRolesCanCross(first.role, second.role)) {
+        continue;
+      }
+      if (
+        segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)
+      ) {
+        penalty += 1000;
+      }
     }
   }
   return penalty;
+}
+
+function collectCompactArylCrossingBondSegments(entries, coords, focusAtomSet) {
+  const visibleBonds = [];
+  for (const entry of entries) {
+    const bond = entry.bond;
+    const firstPosition = coords.get(bond.a);
+    const secondPosition = coords.get(bond.b);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    visibleBonds.push({
+      index: visibleBonds.length,
+      bond,
+      role: entry.role,
+      firstPosition,
+      secondPosition,
+      minX: Math.min(firstPosition.x, secondPosition.x),
+      maxX: Math.max(firstPosition.x, secondPosition.x),
+      minY: Math.min(firstPosition.y, secondPosition.y),
+      maxY: Math.max(firstPosition.y, secondPosition.y),
+      touchesFocus: focusAtomSet.has(bond.a) || focusAtomSet.has(bond.b)
+    });
+  }
+  visibleBonds.sort((first, second) => first.minX - second.minX);
+  return visibleBonds;
+}
+
+function compactArylBranchedLeafCrossingBonds(layoutGraph) {
+  if (layoutGraph._compactArylBranchedLeafCrossingBonds) {
+    return layoutGraph._compactArylBranchedLeafCrossingBonds;
+  }
+  const entries = [];
+  let leafBondCount = 0;
+  for (const bond of visibleHeavyAuditBonds(layoutGraph)) {
+    const role = compactArylBranchedLeafCrossingRole(layoutGraph, bond);
+    if (!role) {
+      continue;
+    }
+    entries.push({ bond, role });
+    if (role === 'leaf') {
+      leafBondCount++;
+    }
+  }
+  layoutGraph._compactArylBranchedLeafCrossingBonds = { entries, leafBondCount };
+  return layoutGraph._compactArylBranchedLeafCrossingBonds;
+}
+
+function compactArylBranchedLeafCrossingRole(layoutGraph, bond) {
+  if (!bond || bond.kind !== 'covalent') {
+    return null;
+  }
+  if (bond.inRing === true || bond.aromatic === true) {
+    return 'ring';
+  }
+  return isCompactArylBranchedLeafBond(layoutGraph, bond) ? 'leaf' : null;
+}
+
+function compactArylBranchedLeafRolesCanCross(firstRole, secondRole) {
+  return (firstRole === 'leaf' && secondRole === 'ring') || (firstRole === 'ring' && secondRole === 'leaf');
 }
 
 function focusCanAffectCompactArylBranchedLeafCrossing(layoutGraph, focusAtomIds) {
@@ -954,13 +1138,26 @@ function focusCanAffectCompactArylBranchedLeafCrossing(layoutGraph, focusAtomIds
   return false;
 }
 
-function compactArylBranchedLeafBondCrossesRingBond(layoutGraph, leafBondId, crossingBondId) {
-  const leafBond = layoutGraph.bonds.get(leafBondId);
-  const crossingBond = layoutGraph.bonds.get(crossingBondId);
-  return isCompactArylBranchedLeafBond(layoutGraph, leafBond) && !!crossingBond && crossingBond.kind === 'covalent' && (crossingBond.inRing === true || crossingBond.aromatic === true);
+function isCompactArylBranchedLeafBond(layoutGraph, bond) {
+  if (!bond) {
+    return false;
+  }
+  if (bond.id == null) {
+    return isCompactArylBranchedLeafBondUncached(layoutGraph, bond);
+  }
+  if (!(layoutGraph._compactArylBranchedLeafBondCache instanceof Map)) {
+    layoutGraph._compactArylBranchedLeafBondCache = new Map();
+  }
+  const cached = layoutGraph._compactArylBranchedLeafBondCache.get(bond.id);
+  if (cached != null) {
+    return cached;
+  }
+  const result = isCompactArylBranchedLeafBondUncached(layoutGraph, bond);
+  layoutGraph._compactArylBranchedLeafBondCache.set(bond.id, result);
+  return result;
 }
 
-function isCompactArylBranchedLeafBond(layoutGraph, bond) {
+function isCompactArylBranchedLeafBondUncached(layoutGraph, bond) {
   if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
     return false;
   }
@@ -1767,7 +1964,6 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   let count = 0;
   let minDistance = Infinity;
-  const visitedPairKeys = new Set();
   const overrideAtomIds = new Set(overridePositions.keys());
   const allAtomIds = options.atomGrid ? null : new Set(coords.keys());
   let mergedCoords = null;
@@ -1781,14 +1977,9 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
     return mergedCoords;
   };
   const scorePair = (atomId, position, otherAtomId, otherPositionOverride = null) => {
-    if (atomId === otherAtomId || !isVisibleHeavyLayoutAtom(layoutGraph, otherAtomId) || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))) {
+    if (atomId === otherAtomId || !isVisibleHeavyLayoutAtom(layoutGraph, otherAtomId) || areLayoutAtomsBonded(layoutGraph, atomId, otherAtomId)) {
       return;
     }
-    const pairKey = atomPairKey(atomId, otherAtomId);
-    if (visitedPairKeys.has(pairKey)) {
-      return;
-    }
-    visitedPairKeys.add(pairKey);
     const otherPosition = otherPositionOverride ?? coords.get(otherAtomId);
     if (!otherPosition) {
       return;
@@ -1804,12 +1995,19 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
     if (!isVisibleHeavyLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
-    const candidateAtomIds = options.atomGrid ? options.atomGrid.queryRadius(position, threshold) : allAtomIds;
-    for (const otherAtomId of candidateAtomIds) {
-      if (overrideAtomIds.has(otherAtomId)) {
-        continue;
+    if (options.atomGrid) {
+      options.atomGrid.forEachRadius(position, threshold, otherAtomId => {
+        if (!overrideAtomIds.has(otherAtomId)) {
+          scorePair(atomId, position, otherAtomId);
+        }
+      });
+    } else {
+      for (const otherAtomId of allAtomIds) {
+        if (overrideAtomIds.has(otherAtomId)) {
+          continue;
+        }
+        scorePair(atomId, position, otherAtomId);
       }
-      scorePair(atomId, position, otherAtomId);
     }
   }
 
@@ -2412,24 +2610,23 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
         if (!pos) {
           continue;
         }
-        const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
-        for (const atomId of nearbyAtomIds) {
+        atomGrid.forEachRadius(pos, threshold, atomId => {
           if (subtreeSet.has(atomId) || (!atomGridHasVisibleAtoms && !isVisibleLayoutAtom(layoutGraph, atomId))) {
-            continue;
+            return;
           }
-          if (layoutGraph.bondedPairSet.has(atomPairKey(subtreeAtomId, atomId))) {
-            continue;
+          if (areLayoutAtomsBonded(layoutGraph, subtreeAtomId, atomId)) {
+            return;
           }
           const otherPos = coords.get(atomId);
           if (!otherPos) {
-            continue;
+            return;
           }
           const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
           if (d < threshold) {
             const deficit = threshold - d;
             cost += deficit * deficit * 100;
           }
-        }
+        });
       }
     }
   }

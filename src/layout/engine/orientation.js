@@ -42,13 +42,47 @@ function collectBondIdsAlongPath(molecule, atomIds) {
   return bondIds;
 }
 
+function ringAtomIdsForMolecule(molecule) {
+  if (
+    molecule._layoutOrientationRingAtomIds instanceof Set &&
+    molecule._layoutOrientationRingAtomIdsVersion === molecule._topologyVersion
+  ) {
+    return molecule._layoutOrientationRingAtomIds;
+  }
+  const ringAtomIds = new Set(molecule.getRings().flat());
+  molecule._layoutOrientationRingAtomIds = ringAtomIds;
+  molecule._layoutOrientationRingAtomIdsVersion = molecule._topologyVersion;
+  return ringAtomIds;
+}
+
+function ringSystemsForMolecule(molecule) {
+  if (
+    Array.isArray(molecule._layoutOrientationRingSystems) &&
+    molecule._layoutOrientationRingSystemsVersion === molecule._topologyVersion
+  ) {
+    return molecule._layoutOrientationRingSystems;
+  }
+  if (
+    Array.isArray(molecule._layoutGraphRingSystems) &&
+    molecule._layoutGraphRingSystemsVersion === molecule._topologyVersion
+  ) {
+    molecule._layoutOrientationRingSystems = molecule._layoutGraphRingSystems;
+    molecule._layoutOrientationRingSystemsVersion = molecule._topologyVersion;
+    return molecule._layoutOrientationRingSystems;
+  }
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  molecule._layoutOrientationRingSystems = ringSystems;
+  molecule._layoutOrientationRingSystemsVersion = molecule._topologyVersion;
+  return ringSystems;
+}
+
 function shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds) {
   const rings = molecule.getRings();
   if (rings.length < 3 || heavyAtomIds.length < 18) {
     return false;
   }
 
-  const ringAtomIds = new Set(rings.flat());
+  const ringAtomIds = ringAtomIdsForMolecule(molecule);
   const ringHeavyCount = heavyAtomIds.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 1 : 0), 0);
   return ringHeavyCount / heavyAtomIds.length >= 0.5;
 }
@@ -91,8 +125,7 @@ function largeMultiRingScaffoldAtomSets(coords, molecule, heavyAtomIds) {
   }
   const heavyAtomIdSet = new Set(heavyAtomIds);
   const minimumScaffoldSize = Math.max(8, Math.ceil(heavyAtomIds.length * EXISTING_LANDSCAPE_SCAFFOLD_MIN_SHARE));
-  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
-  return ringSystems
+  return ringSystemsForMolecule(molecule)
     .filter(ringSystem => ringSystem.ringIds.length >= 2)
     .map(ringSystem => ringSystem.atomIds.filter(atomId => heavyAtomIdSet.has(atomId) && coords.has(atomId)))
     .filter(atomIds => atomIds.length >= minimumScaffoldSize);
@@ -130,8 +163,7 @@ function shouldPreserveExistingLandscapeScaffold(coords, molecule, heavyAtomIds)
 
   const minimumScaffoldSize = Math.max(8, Math.ceil(heavyAtomIds.length * EXISTING_LANDSCAPE_SCAFFOLD_MIN_SHARE));
   const heavyAtomIdSet = new Set(heavyAtomIds);
-  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
-  return ringSystems.some(ringSystem => {
+  return ringSystemsForMolecule(molecule).some(ringSystem => {
     if (ringSystem.ringIds.length < 2) {
       return false;
     }
@@ -192,7 +224,7 @@ function preferredPathBondWeight(molecule, orientPath) {
     return 1;
   }
 
-  const ringAtomIds = new Set(molecule.getRings().flat());
+  const ringAtomIds = ringAtomIdsForMolecule(molecule);
   const nonRingAtomCount = orientPath.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 0 : 1), 0);
   if (nonRingAtomCount < 5) {
     return 1;
@@ -248,16 +280,21 @@ function orderedNeighborIds(molecule, atomId, ranks) {
     .sort((firstAtomId, secondAtomId) => compareAtomIds(molecule, ranks, firstAtomId, secondAtomId));
 }
 
-function orderedHeavyAdjacency(molecule, heavyAtomIds, ranks) {
-  const heavyAtomIdSet = new Set(heavyAtomIds);
-  const adjacency = new Map();
-  for (const atomId of heavyAtomIds) {
-    adjacency.set(
-      atomId,
-      orderedNeighborIds(molecule, atomId, ranks).filter(neighborAtomId => heavyAtomIdSet.has(neighborAtomId))
-    );
-  }
-  return adjacency;
+function orderedHeavyAdjacencyIndexes(molecule, heavyAtomIds, atomIndexById, ranks) {
+  return heavyAtomIds.map(atomId => {
+    const neighborIndexes = [];
+    for (const neighborAtomId of orderedNeighborIds(molecule, atomId, ranks)) {
+      const neighborIndex = atomIndexById.get(neighborAtomId);
+      if (neighborIndex !== undefined) {
+        neighborIndexes.push(neighborIndex);
+      }
+    }
+    return neighborIndexes;
+  });
+}
+
+function cloneBackbonePathResult(result) {
+  return result ? { path: [...result.path], ringCount: result.ringCount, score: result.score } : null;
 }
 
 /**
@@ -266,41 +303,59 @@ function orderedHeavyAdjacency(molecule, heavyAtomIds, ranks) {
  * @returns {{path: string[], ringCount: number, score: number}|null} Best path info.
  */
 export function findPreferredBackbonePath(molecule) {
+  if (molecule._layoutPreferredBackbonePathVersion === molecule._topologyVersion) {
+    return cloneBackbonePathResult(molecule._layoutPreferredBackbonePath ?? null);
+  }
   const heavyAtomIds = [...molecule.atoms.keys()].filter(atomId => molecule.atoms.get(atomId)?.name !== 'H');
   if (heavyAtomIds.length < 2) {
+    molecule._layoutPreferredBackbonePath = null;
+    molecule._layoutPreferredBackbonePathVersion = molecule._topologyVersion;
     return null;
   }
 
-  const ringAtomIds = new Set(molecule.getRings().flat());
+  const ringAtomIds = ringAtomIdsForMolecule(molecule);
   const ranks = morganRanks(molecule);
-  const adjacency = orderedHeavyAdjacency(molecule, heavyAtomIds, ranks);
+  const atomIndexById = new Map(heavyAtomIds.map((atomId, index) => [atomId, index]));
+  const adjacency = orderedHeavyAdjacencyIndexes(molecule, heavyAtomIds, atomIndexById, ranks);
+  const ringFlags = Uint8Array.from(heavyAtomIds, atomId => (ringAtomIds.has(atomId) ? 1 : 0));
+  const previousIndexes = new Int32Array(heavyAtomIds.length);
+  const depthByIndex = new Int32Array(heavyAtomIds.length);
+  const ringCountByIndex = new Int32Array(heavyAtomIds.length);
+  const seenStamps = new Int32Array(heavyAtomIds.length);
+  const queue = new Int32Array(heavyAtomIds.length);
+  let stamp = 0;
   let bestPath = null;
 
-  for (const startAtomId of heavyAtomIds) {
-    const previousAtomIds = new Map([[startAtomId, null]]);
-    const depthByAtomId = new Map([[startAtomId, 0]]);
-    const ringCountByAtomId = new Map([[startAtomId, ringAtomIds.has(startAtomId) ? 1 : 0]]);
-    const queue = [startAtomId];
-    let queueIndex = 0;
-    while (queueIndex < queue.length) {
-      const currentAtomId = queue[queueIndex++];
-      for (const neighborAtomId of adjacency.get(currentAtomId) ?? []) {
-        if (previousAtomIds.has(neighborAtomId)) {
+  for (let startIndex = 0; startIndex < heavyAtomIds.length; startIndex++) {
+    stamp++;
+    seenStamps[startIndex] = stamp;
+    previousIndexes[startIndex] = -1;
+    depthByIndex[startIndex] = 0;
+    ringCountByIndex[startIndex] = ringFlags[startIndex];
+    let queueHead = 0;
+    let queueTail = 0;
+    queue[queueTail++] = startIndex;
+
+    while (queueHead < queueTail) {
+      const currentIndex = queue[queueHead++];
+      for (const neighborIndex of adjacency[currentIndex] ?? []) {
+        if (seenStamps[neighborIndex] === stamp) {
           continue;
         }
-        previousAtomIds.set(neighborAtomId, currentAtomId);
-        depthByAtomId.set(neighborAtomId, (depthByAtomId.get(currentAtomId) ?? 0) + 1);
-        ringCountByAtomId.set(neighborAtomId, (ringCountByAtomId.get(currentAtomId) ?? 0) + (ringAtomIds.has(neighborAtomId) ? 1 : 0));
-        queue.push(neighborAtomId);
+        seenStamps[neighborIndex] = stamp;
+        previousIndexes[neighborIndex] = currentIndex;
+        depthByIndex[neighborIndex] = depthByIndex[currentIndex] + 1;
+        ringCountByIndex[neighborIndex] = ringCountByIndex[currentIndex] + ringFlags[neighborIndex];
+        queue[queueTail++] = neighborIndex;
       }
     }
 
-    for (const endAtomId of heavyAtomIds) {
-      if (endAtomId === startAtomId || !previousAtomIds.has(endAtomId)) {
+    for (let endIndex = 0; endIndex < heavyAtomIds.length; endIndex++) {
+      if (endIndex === startIndex || seenStamps[endIndex] !== stamp) {
         continue;
       }
-      const pathLength = (depthByAtomId.get(endAtomId) ?? 0) + 1;
-      const ringCount = ringCountByAtomId.get(endAtomId) ?? 0;
+      const pathLength = depthByIndex[endIndex] + 1;
+      const ringCount = ringCountByIndex[endIndex];
       const score = pathLength - ringCount * 0.6;
       if (
         !bestPath ||
@@ -309,8 +364,8 @@ export function findPreferredBackbonePath(molecule) {
         (score === bestPath.score && ringCount === bestPath.ringCount && pathLength > bestPath.path.length)
       ) {
         const path = [];
-        for (let currentAtomId = endAtomId; currentAtomId != null; currentAtomId = previousAtomIds.get(currentAtomId)) {
-          path.push(currentAtomId);
+        for (let currentIndex = endIndex; currentIndex >= 0; currentIndex = previousIndexes[currentIndex]) {
+          path.push(heavyAtomIds[currentIndex]);
         }
         path.reverse();
         bestPath = { path, ringCount, score };
@@ -318,7 +373,9 @@ export function findPreferredBackbonePath(molecule) {
     }
   }
 
-  return bestPath;
+  molecule._layoutPreferredBackbonePath = cloneBackbonePathResult(bestPath);
+  molecule._layoutPreferredBackbonePathVersion = molecule._topologyVersion;
+  return cloneBackbonePathResult(bestPath);
 }
 
 function trimTerminalPeripheralHeteroEndpoints(path, molecule) {
@@ -353,12 +410,17 @@ function isLandscapeChainBond(molecule, firstAtomId, secondAtomId) {
 }
 
 function longestNonRingLandscapePath(molecule) {
-  const ringAtomIds = new Set(molecule.getRings().flat());
+  if (molecule._layoutLongestNonRingLandscapePathVersion === molecule._topologyVersion) {
+    return molecule._layoutLongestNonRingLandscapePath ? [...molecule._layoutLongestNonRingLandscapePath] : null;
+  }
+  const ringAtomIds = ringAtomIdsForMolecule(molecule);
   const heavyAtomIds = [...molecule.atoms.keys()].filter(atomId => {
     const atom = molecule.atoms.get(atomId);
     return atom && atom.name !== 'H' && !ringAtomIds.has(atomId);
   });
   if (heavyAtomIds.length < 2) {
+    molecule._layoutLongestNonRingLandscapePath = null;
+    molecule._layoutLongestNonRingLandscapePathVersion = molecule._topologyVersion;
     return null;
   }
 
@@ -415,7 +477,9 @@ function longestNonRingLandscapePath(molecule) {
     }
   }
 
-  return bestPath;
+  molecule._layoutLongestNonRingLandscapePath = bestPath ? [...bestPath] : null;
+  molecule._layoutLongestNonRingLandscapePathVersion = molecule._topologyVersion;
+  return bestPath ? [...bestPath] : null;
 }
 
 function heavyAtomCount(molecule) {
@@ -433,7 +497,7 @@ function landscapePathMinLength(molecule, orientPath = null) {
     return 8;
   }
   if (Array.isArray(orientPath) && orientPath.length >= 3) {
-    const ringAtomIds = new Set(molecule.getRings().flat());
+    const ringAtomIds = ringAtomIdsForMolecule(molecule);
     const ringAtomCount = orientPath.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 1 : 0), 0);
     if (ringAtomCount === 0) {
       return Math.max(3, Math.min(6, Math.ceil(heavyAtomCount(molecule) / 5)));
@@ -447,7 +511,7 @@ function orientationPathScore(path, molecule) {
     return -Infinity;
   }
 
-  const ringAtomIds = new Set(molecule.getRings().flat());
+  const ringAtomIds = ringAtomIdsForMolecule(molecule);
   const endpoints = [path[0], path[path.length - 1]];
   const ringAnchoredEndpoints = endpoints.reduce((count, atomId) => {
     const atom = molecule.atoms.get(atomId);
@@ -469,8 +533,16 @@ function orientationPathScore(path, molecule) {
 }
 
 function preferredLandscapeOrientationPath(molecule) {
+  if (molecule._layoutPreferredLandscapeOrientationPathVersion === molecule._topologyVersion) {
+    return molecule._layoutPreferredLandscapeOrientationPath ? [...molecule._layoutPreferredLandscapeOrientationPath] : null;
+  }
   const preferredBackbone = findPreferredBackbonePath(molecule);
   const longestNonRingPath = trimTerminalPeripheralHeteroEndpoints(longestNonRingLandscapePath(molecule), molecule);
+  const cacheResult = path => {
+    molecule._layoutPreferredLandscapeOrientationPath = path?.length ? [...path] : null;
+    molecule._layoutPreferredLandscapeOrientationPathVersion = molecule._topologyVersion;
+    return path?.length ? [...path] : null;
+  };
   const preferLongerPath = candidatePath => {
     if (!candidatePath?.length) {
       return longestNonRingPath?.length >= 2 ? longestNonRingPath : null;
@@ -482,18 +554,18 @@ function preferredLandscapeOrientationPath(molecule) {
   };
 
   if (!preferredBackbone?.path?.length) {
-    return longestNonRingPath?.length >= 2 ? longestNonRingPath : null;
+    return cacheResult(longestNonRingPath?.length >= 2 ? longestNonRingPath : null);
   }
 
   const trimmedPath = trimTerminalPeripheralHeteroEndpoints(preferredBackbone.path, molecule);
   if (trimmedPath.length < 2) {
-    return longestNonRingPath?.length >= 2 ? longestNonRingPath : null;
+    return cacheResult(longestNonRingPath?.length >= 2 ? longestNonRingPath : null);
   }
   if (preferredBackbone.ringCount === 0) {
-    return preferLongerPath(trimmedPath);
+    return cacheResult(preferLongerPath(trimmedPath));
   }
 
-  const ringAtomIds = new Set(molecule.getRings().flat());
+  const ringAtomIds = ringAtomIdsForMolecule(molecule);
   let bestRun = null;
   let currentRun = [];
   const commitRun = () => {
@@ -511,7 +583,7 @@ function preferredLandscapeOrientationPath(molecule) {
     currentRun.push(atomId);
   }
   commitRun();
-  return preferLongerPath(bestRun);
+  return cacheResult(preferLongerPath(bestRun));
 }
 
 /**

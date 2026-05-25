@@ -23,6 +23,22 @@ function ringBondKeys(ringAtomIds) {
   return keys;
 }
 
+function moleculeTopologyVersion(molecule) {
+  return Number.isInteger(molecule?._topologyVersion) ? molecule._topologyVersion : null;
+}
+
+function cloneRingAtomIdsList(ringAtomIdsList) {
+  return ringAtomIdsList.map(ringAtomIds => [...ringAtomIds]);
+}
+
+function cloneSupplementalRingEntries(entries) {
+  return entries.map(entry => ({
+    rawIndex: entry.rawIndex,
+    supplemental: entry.supplemental === true,
+    atomIds: [...entry.atomIds]
+  }));
+}
+
 /**
  * Finds the shortest cycle containing a bond by removing the bond and finding
  * the shortest path between its endpoints.
@@ -86,49 +102,6 @@ function createRingDescriptor(molecule, atomIds, canonicalAtomRank, rawIndex, su
     supplemental,
     signature: buildCanonicalRingSignature(atomIds, canonicalAtomRank, molecule)
   };
-}
-
-function withSupplementalBondCoveringRings(molecule, rings, canonicalAtomRank) {
-  const seenRingKeys = new Set(rings.map(ring => ringKey(ring.atomIds)));
-  const supplementedRings = [...rings];
-  const coveredRingBondKeys = new Set();
-  for (const ring of rings) {
-    for (const key of ringBondKeys(ring.atomIds)) {
-      coveredRingBondKeys.add(key);
-    }
-  }
-
-  for (const bond of molecule.bonds.values()) {
-    const [firstAtomId, secondAtomId] = bond.atoms ?? [];
-    if (!firstAtomId || !secondAtomId) {
-      continue;
-    }
-    const bondKey = ringBondKey(firstAtomId, secondAtomId);
-    if (
-      coveredRingBondKeys.has(bondKey) ||
-      typeof bond.isInRing !== 'function' ||
-      !bond.isInRing(molecule)
-    ) {
-      continue;
-    }
-
-    const cycleAtomIds = shortestCycleThroughBond(molecule, bond);
-    if (!cycleAtomIds || cycleAtomIds.length < 3) {
-      continue;
-    }
-    const key = ringKey(cycleAtomIds);
-    if (seenRingKeys.has(key)) {
-      continue;
-    }
-    seenRingKeys.add(key);
-    const supplementalRing = createRingDescriptor(molecule, cycleAtomIds, canonicalAtomRank, supplementedRings.length, true);
-    supplementedRings.push(supplementalRing);
-    for (const coveredKey of ringBondKeys(supplementalRing.atomIds)) {
-      coveredRingBondKeys.add(coveredKey);
-    }
-  }
-
-  return supplementedRings;
 }
 
 /**
@@ -206,7 +179,83 @@ export function detectRingSystems(ringAtomIdsList) {
  * @returns {string[][]} Ring atom-id lists.
  */
 export function getRingAtomIds(molecule) {
-  return molecule.getRings().map(ringAtomIds => [...ringAtomIds]);
+  const topologyVersion = moleculeTopologyVersion(molecule);
+  if (
+    topologyVersion != null &&
+    Array.isArray(molecule._layoutRingAtomIdsCache) &&
+    molecule._layoutRingAtomIdsCacheVersion === topologyVersion
+  ) {
+    return cloneRingAtomIdsList(molecule._layoutRingAtomIdsCache);
+  }
+
+  const ringAtomIdsList = molecule.getRings().map(ringAtomIds => [...ringAtomIds]);
+  if (topologyVersion != null) {
+    molecule._layoutRingAtomIdsCache = cloneRingAtomIdsList(ringAtomIdsList);
+    molecule._layoutRingAtomIdsCacheVersion = topologyVersion;
+  }
+  return ringAtomIdsList;
+}
+
+function supplementalRingAtomEntries(molecule) {
+  const topologyVersion = moleculeTopologyVersion(molecule);
+  if (
+    topologyVersion != null &&
+    Array.isArray(molecule._layoutSupplementalRingEntriesCache) &&
+    molecule._layoutSupplementalRingEntriesCacheVersion === topologyVersion
+  ) {
+    return cloneSupplementalRingEntries(molecule._layoutSupplementalRingEntriesCache);
+  }
+
+  const entries = getRingAtomIds(molecule).map((atomIds, rawIndex) => ({
+    atomIds,
+    rawIndex,
+    supplemental: false
+  }));
+  const seenRingKeys = new Set(entries.map(entry => ringKey(entry.atomIds)));
+  const coveredRingBondKeys = new Set();
+  for (const entry of entries) {
+    for (const key of ringBondKeys(entry.atomIds)) {
+      coveredRingBondKeys.add(key);
+    }
+  }
+
+  for (const bond of molecule.bonds.values()) {
+    const [firstAtomId, secondAtomId] = bond.atoms ?? [];
+    if (!firstAtomId || !secondAtomId) {
+      continue;
+    }
+    const bondKey = ringBondKey(firstAtomId, secondAtomId);
+    if (coveredRingBondKeys.has(bondKey)) {
+      continue;
+    }
+    if (typeof bond.isInRing === 'function' && !bond.isInRing(molecule)) {
+      continue;
+    }
+
+    const cycleAtomIds = shortestCycleThroughBond(molecule, bond);
+    if (!cycleAtomIds || cycleAtomIds.length < 3) {
+      continue;
+    }
+    const key = ringKey(cycleAtomIds);
+    if (seenRingKeys.has(key)) {
+      continue;
+    }
+    seenRingKeys.add(key);
+    entries.push({
+      atomIds: cycleAtomIds,
+      rawIndex: entries.length,
+      supplemental: true
+    });
+    for (const coveredKey of ringBondKeys(cycleAtomIds)) {
+      coveredRingBondKeys.add(coveredKey);
+    }
+  }
+
+  if (topologyVersion != null) {
+    molecule._layoutSupplementalRingEntriesCache = cloneSupplementalRingEntries(entries);
+    molecule._layoutSupplementalRingEntriesCacheVersion = topologyVersion;
+  }
+  return entries;
 }
 
 /**
@@ -217,11 +266,8 @@ export function getRingAtomIds(molecule) {
  * @returns {{rings: object[], ringSystems: object[]}} Ring analysis results.
  */
 export function analyzeRings(molecule, canonicalAtomRank = new Map()) {
-  const adaptedRings = withSupplementalBondCoveringRings(
-    molecule,
-    getRingAtomIds(molecule).map((ringAtomIds, rawIndex) => createRingDescriptor(molecule, [...ringAtomIds], canonicalAtomRank, rawIndex)),
-    canonicalAtomRank
-  )
+  const adaptedRings = supplementalRingAtomEntries(molecule)
+    .map(entry => createRingDescriptor(molecule, [...entry.atomIds], canonicalAtomRank, entry.rawIndex, entry.supplemental))
     .sort((firstRing, secondRing) => {
       if (secondRing.size !== firstRing.size) {
         return secondRing.size - firstRing.size;

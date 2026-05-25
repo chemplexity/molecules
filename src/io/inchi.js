@@ -604,6 +604,27 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
   // that heteroaromatic rings (furan, thiophene …) are not pre-promoted before
   // their aromatic nature can be detected.
   function promoteTerminalUnsaturation(aromaticBondIds = new Set(), requireNeighborCapacity = false) {
+    // Returns true if a terminal chalcogen (O/S) at `sibId` bonded to `centerId`
+    // is neutral and eligible for promotion — used to defer charged chalcogens.
+    const hasNeutralTerminalChalcogenSibling = (centerId, excludeId) => {
+      const center = mol.atoms.get(centerId);
+      if (!center) { return false; }
+      return center.bonds.some(bId => {
+        const b = mol.bonds.get(bId);
+        if (!b) { return false; }
+        const sibId = b.getOtherAtom(centerId);
+        if (sibId === excludeId || !heavySet.has(sibId)) { return false; }
+        const sib = mol.atoms.get(sibId);
+        if (!sib || (sib.name !== 'O' && sib.name !== 'S')) { return false; }
+        if ((sib.getCharge?.() ?? 0) !== 0) { return false; }
+        const sibHeavyDeg = sib.bonds.filter(bId2 => {
+          const b2 = mol.bonds.get(bId2);
+          return b2 && heavySet.has(b2.getOtherAtom(sibId));
+        }).length;
+        return sibHeavyDeg === 1 && remaining(sibId) > 0;
+      });
+    };
+
     let terminalChanged = true;
     while (terminalChanged) {
       terminalChanged = false;
@@ -625,6 +646,14 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
         }
         const bond = eligibleBonds[0];
         const otherId = bond.getOtherAtom(atomId);
+        // Defer charged terminal chalcogens (e.g. [O-]) when a neutral sibling
+        // terminal chalcogen exists on the same hypervalent center. The InChI
+        // writer assigns P=O (double bond) to the neutral oxygen, not the [O-].
+        if ((atom.name === 'O' || atom.name === 'S') &&
+            (atom.getCharge?.() ?? 0) !== 0 &&
+            hasNeutralTerminalChalcogenSibling(otherId, atomId)) {
+          continue;
+        }
         while (bond.properties.order < 3 && remaining(atomId) > 0 && (remaining(otherId) > 0 || expandedTerminalOxygenCapacity(otherId, atomId) > 0)) {
           bond.properties.order += 1;
           terminalChanged = true;

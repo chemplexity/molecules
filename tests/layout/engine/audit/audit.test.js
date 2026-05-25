@@ -121,6 +121,26 @@ describe('layout/engine/audit/audit', () => {
     assert.equal(audit.labelOverlapCount, 1);
   });
 
+  it('can skip visible heavy-bond crossing counts for ok-only audit probes', () => {
+    const graph = createLayoutGraph(parseSMILES('CC.CC'), { suppressH: true, bondLength: 1.5 });
+    const [firstBond, secondBond] = [...graph.bonds.values()];
+    const coords = new Map([
+      [firstBond.a, { x: -0.75, y: 0 }],
+      [firstBond.b, { x: 0.75, y: 0 }],
+      [secondBond.a, { x: 0, y: -0.75 }],
+      [secondBond.b, { x: 0, y: 0.75 }]
+    ]);
+
+    const fullAudit = auditLayout(graph, coords);
+    const okOnlyAudit = auditLayout(graph, coords, {
+      includeVisibleHeavyBondCrossings: false
+    });
+
+    assert.ok(fullAudit.visibleHeavyBondCrossingCount > 0);
+    assert.equal(okOnlyAudit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(okOnlyAudit.ok, fullAudit.ok);
+  });
+
   it('does not flag a clean anisole substituent as a ring-substituent readability failure', () => {
     const smiles = 'COc1ccccc1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

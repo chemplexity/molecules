@@ -155,6 +155,9 @@ export class Bond {
    * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isInRing(molecule) {
+    if (molecule && typeof molecule._ensureBondRingMembershipCache === 'function') {
+      return molecule._ensureBondRingMembershipCache().get(this.id) === true;
+    }
     if (molecule && typeof molecule === 'object') {
       if (!molecule._bondRingMembershipCache || molecule._bondRingMembershipCacheVersion !== molecule._topologyVersion) {
         molecule._bondRingMembershipCache = new Map();

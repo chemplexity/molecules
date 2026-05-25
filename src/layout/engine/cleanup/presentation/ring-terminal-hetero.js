@@ -131,16 +131,16 @@ function smallRingExteriorTerminalHeteroAngles(layoutGraph, coords, anchorAtomId
 
 function localNonbondedClearance(layoutGraph, coords, atomGrid, atomId, position, searchRadius) {
   let minimumDistance = searchRadius;
-  for (const otherAtomId of atomGrid.queryRadius(position, searchRadius)) {
+  atomGrid.forEachRadius(position, searchRadius, otherAtomId => {
     if (otherAtomId === atomId || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))) {
-      continue;
+      return;
     }
     const otherPosition = coords.get(otherAtomId);
     if (!otherPosition) {
-      continue;
+      return;
     }
     minimumDistance = Math.min(minimumDistance, Math.hypot(position.x - otherPosition.x, position.y - otherPosition.y));
-  }
+  });
   return minimumDistance;
 }
 
@@ -157,18 +157,18 @@ function isVisiblePresentationAtom(layoutGraph, atomId) {
 
 function localSevereOverlapCount(layoutGraph, coords, atomGrid, atomId, position, threshold) {
   let overlapCount = 0;
-  for (const otherAtomId of atomGrid.queryRadius(position, threshold)) {
+  atomGrid.forEachRadius(position, threshold, otherAtomId => {
     if (otherAtomId === atomId || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))) {
-      continue;
+      return;
     }
     const otherPosition = coords.get(otherAtomId);
     if (!otherPosition) {
-      continue;
+      return;
     }
     if (Math.hypot(position.x - otherPosition.x, position.y - otherPosition.y) < threshold) {
       overlapCount++;
     }
-  }
+  });
   return overlapCount;
 }
 
@@ -487,7 +487,7 @@ function terminalMultipleBondLeafBackoffVariants(layoutGraph, coords, descriptor
     }
     for (const rotation of TERMINAL_MULTIPLE_BOND_LEAF_BACKOFF_ROTATIONS) {
       const candidateCoords = rotateAtomIdsAroundPivot(coords, leafAtomIds, descriptor.centerAtomId, rotation);
-      if (!candidateCoords || auditLayout(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
+      if (!candidateCoords || auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true) {
         continue;
       }
       variants.push(candidateCoords);
@@ -760,7 +760,7 @@ function terminalMultipleBondProtectedSupportReflectionCoords(layoutGraph, coord
           continue;
         }
 
-        const audit = auditLayout(layoutGraph, reflectedCoords, { bondLength });
+        const audit = auditLayout(layoutGraph, reflectedCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
         if (audit.ok !== true) {
           continue;
         }
@@ -981,7 +981,7 @@ function terminalMultipleBondBalancedSupportReliefCoords(layoutGraph, coords, de
           continue;
         }
         const variantCoords = [relievedCoords];
-        if (auditLayout(layoutGraph, relievedCoords, { bondLength }).ok !== true) {
+        if (auditLayout(layoutGraph, relievedCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true) {
           const cleanup = runUnifiedCleanup(layoutGraph, relievedCoords, {
             maxPasses: 2,
             epsilon: bondLength * 0.001,
@@ -996,7 +996,7 @@ function terminalMultipleBondBalancedSupportReliefCoords(layoutGraph, coords, de
         }
 
         for (const variantCoordMap of variantCoords) {
-          const audit = auditLayout(layoutGraph, variantCoordMap, { bondLength });
+          const audit = auditLayout(layoutGraph, variantCoordMap, { bondLength, includeVisibleHeavyBondCrossings: false });
           if (audit.ok !== true) {
             continue;
           }
@@ -1832,7 +1832,7 @@ function terminalMultipleBondLeafFanTerminalBlockerReliefTargetPositions(layoutG
           candidateCoords.set(atomId, position);
         }
 
-        const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        const audit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
         if (audit.ok !== true) {
           continue;
         }
@@ -1864,7 +1864,7 @@ function terminalMultipleBondLeafFanTerminalBlockerReliefTargetPositions(layoutG
         candidateCoords.set(atomId, position);
       }
 
-      const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      const audit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
       if (audit.ok !== true) {
         continue;
       }
@@ -1994,7 +1994,7 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(layoutGrap
     for (const [atomId, position] of candidateTargetPositions) {
       candidateCoords.set(atomId, position);
     }
-    let audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+    let audit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
     if (audit.ok !== true) {
       const relievedTargetPositions = terminalMultipleBondLeafFanTerminalBlockerReliefTargetPositions(layoutGraph, coords, descriptor, candidateTargetPositions, bondLength, threshold, frozenAtomIds);
       if (!relievedTargetPositions) {
@@ -2005,7 +2005,7 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(layoutGrap
       for (const [atomId, position] of candidateTargetPositions) {
         candidateCoords.set(atomId, position);
       }
-      audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      audit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
     }
     if (audit.ok !== true) {
       continue;
@@ -2111,7 +2111,7 @@ function terminalMultipleBondLeafFanSingleLeafCenterBranchReliefTargetPositions(
       for (const [atomId, position] of candidateTargetPositions) {
         candidateCoords.set(atomId, position);
       }
-      const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      const audit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
       if (audit.ok !== true) {
         continue;
       }
@@ -2231,7 +2231,7 @@ function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coor
     const candidatePosition = add(centerPosition, fromAngle(currentAngle + rotation * fraction, radius));
     const candidateCoords = new Map(coords);
     candidateCoords.set(leafAtomId, candidatePosition);
-    if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
+    if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses, includeVisibleHeavyBondCrossings: false }).ok !== true) {
       continue;
     }
     const penalty = terminalMultipleBondLeafFanPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
@@ -2580,7 +2580,7 @@ function pairedTerminalHeteroLeafCompressedTargetPositions(layoutGraph, coords, 
     exactCandidateCoords.set(leafAtomId, targetPosition);
   }
   if (
-    auditLayout(layoutGraph, exactCandidateCoords, { bondLength, bondValidationClasses }).ok === true &&
+    auditLayout(layoutGraph, exactCandidateCoords, { bondLength, bondValidationClasses, includeVisibleHeavyBondCrossings: false }).ok === true &&
     terminalMultipleBondLeafFanPenalty(exactCandidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds) < descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
   ) {
     return exactTargetPositions;
@@ -2611,7 +2611,7 @@ function pairedTerminalHeteroLeafCompressedTargetPositions(layoutGraph, coords, 
       for (const [leafAtomId, targetPosition] of targetPositions) {
         candidateCoords.set(leafAtomId, targetPosition);
       }
-      if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
+      if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses, includeVisibleHeavyBondCrossings: false }).ok !== true) {
         continue;
       }
 
@@ -2728,13 +2728,13 @@ function exactOutwardBlockerReliefCandidates(layoutGraph, coords, descriptor, at
     }
 
     const blockingAtomIds = [];
-    for (const atomId of atomGrid.queryRadius(outwardPosition, threshold)) {
+    atomGrid.forEachRadius(outwardPosition, threshold, atomId => {
       const atomPosition = coords.get(atomId);
       if (!atomPosition || atomId === descriptor.heteroAtomId || layoutGraph.bondedPairSet.has(atomPairKey(descriptor.heteroAtomId, atomId)) || distance(atomPosition, outwardPosition) >= threshold) {
-        continue;
+        return;
       }
       blockingAtomIds.push(atomId);
-    }
+    });
 
     for (const blockingAtomId of blockingAtomIds) {
       const blockerDescriptor = terminalMultipleBondBlockerDescriptor(layoutGraph, coords, blockingAtomId);

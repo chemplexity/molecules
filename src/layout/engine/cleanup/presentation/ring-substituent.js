@@ -723,7 +723,7 @@ function repairBlockingTerminalRingCarbonylLeaves(layoutGraph, coords, overrideP
       const candidateOverrides = new Map(repairedOverrides);
       candidateOverrides.set(descriptor.leafAtomId, targetPosition);
       const candidateCoords = coordsWithOverrides(coords, candidateOverrides);
-      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
       if (candidateAudit.ok === true) {
         bestOverrides = candidateOverrides;
         break;
@@ -736,7 +736,7 @@ function repairBlockingTerminalRingCarbonylLeaves(layoutGraph, coords, overrideP
     repairedCoords = coordsWithOverrides(coords, repairedOverrides);
   }
 
-  return auditLayout(layoutGraph, repairedCoords, { bondLength }).ok === true ? repairedOverrides : null;
+  return auditLayout(layoutGraph, repairedCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok === true ? repairedOverrides : null;
 }
 
 /**
@@ -2532,7 +2532,9 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
               candidateCoords.set(atomId, position);
             }
             overlapCount =
-              auditLayout(layoutGraph, candidateCoords, { bondLength }).ok === true ? baseOverlapCount : countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
+              auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok === true
+                ? baseOverlapCount
+                : countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
           }
         }
         if (overlapCount > baseOverlapCount) {

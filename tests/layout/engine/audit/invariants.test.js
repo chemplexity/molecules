@@ -108,9 +108,14 @@ describe('layout/engine/audit/invariants', () => {
     const atomGrid = buildAtomGrid(graph, coords, 1.5);
     let queryCount = 0;
     const originalQueryRadius = atomGrid.queryRadius.bind(atomGrid);
+    const originalForEachRadius = atomGrid.forEachRadius.bind(atomGrid);
     atomGrid.queryRadius = function trackedQueryRadius(position, radius) {
       queryCount++;
       return originalQueryRadius(position, radius);
+    };
+    atomGrid.forEachRadius = function trackedForEachRadius(position, radius, visit) {
+      queryCount++;
+      return originalForEachRadius(position, radius, visit);
     };
 
     const direct = computeSubtreeOverlapCost(graph, coords, ['a1', 'a2'], null, 1.5);

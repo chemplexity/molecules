@@ -368,10 +368,10 @@ function hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDes
   return null;
 }
 
-function collectNewlyPlacedAtomIds(baseCoords, candidateCoords) {
+function collectNewlyPlacedAtomIds(baseCoords, candidateCoords, candidateAtomIds = null) {
   const newlyPlacedAtomIds = [];
-  for (const atomId of candidateCoords.keys()) {
-    if (!baseCoords.has(atomId)) {
+  for (const atomId of candidateAtomIds ?? candidateCoords.keys()) {
+    if (!baseCoords.has(atomId) && candidateCoords.has(atomId)) {
       newlyPlacedAtomIds.push(atomId);
     }
   }
@@ -729,6 +729,11 @@ function covalentHeavySubtreeSize(layoutGraph, rootAtomId, blockedAtomId) {
   if (!layoutGraph) {
     return 0;
   }
+  const cacheKey = `${rootAtomId}\u0001${blockedAtomId}`;
+  const cache = (layoutGraph._branchCovalentHeavySubtreeSizeCache ??= new Map());
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
   const visited = new Set([blockedAtomId]);
   const queue = [rootAtomId];
   let heavyAtomCount = 0;
@@ -757,6 +762,7 @@ function covalentHeavySubtreeSize(layoutGraph, rootAtomId, blockedAtomId) {
     }
   }
 
+  cache.set(cacheKey, heavyAtomCount);
   return heavyAtomCount;
 }
 
@@ -775,23 +781,29 @@ function visibleScaffoldClearance(layoutGraph, coords, atomId, excludedAtomIds, 
     return 0;
   }
 
-  const candidateAtomIds = atomGrid ? atomGrid.queryRadius(position, atomGrid.cellSize * 5) : coords.keys();
   let minimumDistance = Number.POSITIVE_INFINITY;
-  for (const otherAtomId of candidateAtomIds) {
+  const visitCandidate = otherAtomId => {
     if (excludedAtomIds.has(otherAtomId)) {
-      continue;
+      return;
     }
     const otherAtom = layoutGraph.atoms.get(otherAtomId);
     if (!otherAtom || otherAtom.visible === false || otherAtom.element === 'H') {
-      continue;
+      return;
     }
     const otherPosition = coords.get(otherAtomId);
     if (!otherPosition) {
-      continue;
+      return;
     }
     const dx = position.x - otherPosition.x;
     const dy = position.y - otherPosition.y;
     minimumDistance = Math.min(minimumDistance, Math.hypot(dx, dy));
+  };
+  if (atomGrid) {
+    atomGrid.forEachRadius(position, atomGrid.cellSize * 5, visitCandidate);
+  } else {
+    for (const otherAtomId of coords.keys()) {
+      visitCandidate(otherAtomId);
+    }
   }
 
   return Number.isFinite(minimumDistance) ? minimumDistance : 0;
@@ -856,8 +868,13 @@ function trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAto
  * @returns {boolean} True for visible non-hydrogen atoms.
  */
 function isVisibleHeavyArrangementAtom(layoutGraph, atomId) {
-  const atom = layoutGraph?.atoms.get(atomId);
-  return !!atom && atom.element !== 'H' && atom.visible !== false;
+  if (!layoutGraph) {
+    return false;
+  }
+  const visibleHeavyAtomIds =
+    layoutGraph._branchVisibleHeavyArrangementAtomIds ??
+    (layoutGraph._branchVisibleHeavyArrangementAtomIds = new Set([...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H' && atom.visible !== false).map(atom => atom.id)));
+  return visibleHeavyAtomIds.has(atomId);
 }
 
 /**
@@ -868,13 +885,22 @@ function isVisibleHeavyArrangementAtom(layoutGraph, atomId) {
  * @returns {boolean} True when the root has two drawable ring neighbors.
  */
 function ringRootHasPreviewableRingNeighbors(layoutGraph, ringRootAtomId) {
-  const ringRootAtom = layoutGraph?.atoms.get(ringRootAtomId);
+  if (!layoutGraph) {
+    return false;
+  }
+  const cache = (layoutGraph._branchPreviewableRingRootCache ??= new Map());
+  if (cache.has(ringRootAtomId)) {
+    return cache.get(ringRootAtomId);
+  }
+  const ringRootAtom = layoutGraph.atoms.get(ringRootAtomId);
   if (!ringRootAtom || !layoutGraph.ringAtomIdSet.has(ringRootAtomId)) {
+    cache.set(ringRootAtomId, false);
     return false;
   }
   const ringSystemId = layoutGraph.atomToRingSystemId?.get(ringRootAtomId);
-  const ringSystem = ringSystemId == null ? null : layoutGraph.ringSystems?.find(candidate => candidate.id === ringSystemId);
+  const ringSystem = ringSystemId == null ? null : layoutGraph.ringSystemById?.get(ringSystemId);
   if ((ringSystem?.ringIds?.length ?? 0) !== 1) {
+    cache.set(ringRootAtomId, false);
     return false;
   }
 
@@ -890,7 +916,9 @@ function ringRootHasPreviewableRingNeighbors(layoutGraph, ringRootAtomId) {
     }
     ringNeighborCount++;
   }
-  return ringNeighborCount >= 2;
+  const previewable = ringNeighborCount >= 2;
+  cache.set(ringRootAtomId, previewable);
+  return previewable;
 }
 
 /**
@@ -1012,21 +1040,27 @@ function futureRingPreviewPreferredAngle(anchorPosition, centroid) {
  */
 function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold, atomGrid = null) {
   let penalty = 0;
-  const candidateAtomIds = atomGrid ? atomGrid.queryRadius(point, threshold) : crowdingAtomIds;
-  for (const atomId of candidateAtomIds) {
+  const visitCandidate = atomId => {
     if (excludedAtomIds.has(atomId) || !isVisibleHeavyArrangementAtom(layoutGraph, atomId)) {
-      continue;
+      return;
     }
     const position = coords.get(atomId);
     if (!position) {
-      continue;
+      return;
     }
     const distance = Math.hypot(position.x - point.x, position.y - point.y);
     if (distance >= threshold) {
-      continue;
+      return;
     }
     const deficit = threshold - distance;
     penalty += deficit * deficit * 100;
+  };
+  if (atomGrid) {
+    atomGrid.forEachRadius(point, threshold, visitCandidate);
+  } else {
+    for (const atomId of crowdingAtomIds) {
+      visitCandidate(atomId);
+    }
   }
   return penalty;
 }
@@ -1052,8 +1086,8 @@ function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focus
 
   const threshold = bondLength * FUTURE_ATTACHED_RING_PREVIEW_CLEARANCE_FACTOR;
   const focusAtomIdSet = new Set(focusAtomIds);
-  const crowdingAtomIds = [...coords.keys()].filter(atomId => coords.has(atomId) && isVisibleHeavyArrangementAtom(layoutGraph, atomId));
-  if (crowdingAtomIds.length === 0) {
+  const crowdingAtomIds = atomGrid ? null : [...coords.keys()].filter(atomId => coords.has(atomId) && isVisibleHeavyArrangementAtom(layoutGraph, atomId));
+  if (!atomGrid && crowdingAtomIds.length === 0) {
     return 0;
   }
   const previewAnchorAtomIds = new Set([...focusAtomIdSet, ...coords.keys()]);
@@ -1131,7 +1165,7 @@ function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focus
         },
         ...futureRingRootExteriorBranchPreviewPoints(layoutGraph, ringRootPosition, rootParentAngle, firstRingNeighborAngle, secondRingNeighborAngle, bondLength, pendingRingNeighborId, anchorAtomId)
       ];
-      totalPenalty += previewPoints.reduce((sum, point) => sum + futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold, atomGrid), 0);
+      totalPenalty += previewPoints.reduce((sum, point) => sum + futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds ?? [], excludedAtomIds, threshold, atomGrid), 0);
     }
   }
 
@@ -1254,7 +1288,7 @@ function evaluateAnglePermutations(
         );
       }
 
-      const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
+      const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords, atomIdsToPlace);
       const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidatePlacementContext?.atomGrid ?? candidateAtomGrid, adjacency, atomIdsToPlace, branchConstraints);
       if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
         bestPlacement = {

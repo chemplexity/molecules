@@ -823,25 +823,25 @@ function localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondL
     if (!atomPosition || atom?.element === 'H') {
       continue;
     }
-    for (const otherAtomId of atomGrid.queryRadius(atomPosition, threshold)) {
+    atomGrid.forEachRadius(atomPosition, threshold, otherAtomId => {
       if (descriptor.subtreeAtomIdSet.has(otherAtomId)) {
-        continue;
+        return;
       }
       const otherAtom = layoutGraph.atoms.get(otherAtomId);
       const otherPosition = coords.get(otherAtomId);
       if (!otherPosition || otherAtom?.element === 'H') {
-        continue;
+        return;
       }
       const pairKey = atomPairKey(atomId, otherAtomId);
       if (seenPairs.has(pairKey) || layoutGraph.bondedPairSet.has(pairKey)) {
-        continue;
+        return;
       }
       seenPairs.add(pairKey);
       const atomDistance = Math.hypot(otherPosition.x - atomPosition.x, otherPosition.y - atomPosition.y);
       if (atomDistance < threshold) {
         overlaps.push({ firstAtomId: atomId, secondAtomId: otherAtomId, distance: atomDistance });
       }
-    }
+    });
   }
 
   return overlaps;
@@ -2446,7 +2446,7 @@ function runFinalAnglePolish(layoutGraph, inputCoords, inputScore, bondLength, f
               !repairedCenterScore ||
               (!finalAnglePolishCandidateIsBetter(repairedCandidate.score, currentScore) &&
                 (!allowCenterPriorityRepair || !finalAnglePolishCenterPriorityCandidateIsAllowed(repairedCandidate.score, currentScore, repairedCenterImprovement))) ||
-              auditLayout(layoutGraph, repairedCandidate.coords, { bondLength }).ok !== true
+              auditLayout(layoutGraph, repairedCandidate.coords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true
             ) {
               return null;
             }
@@ -2469,7 +2469,7 @@ function runFinalAnglePolish(layoutGraph, inputCoords, inputScore, bondLength, f
       }
     }
 
-    if (!bestCandidate || auditLayout(layoutGraph, bestCandidate.coords, { bondLength }).ok !== true) {
+    if (!bestCandidate || auditLayout(layoutGraph, bestCandidate.coords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true) {
       break;
     }
 
@@ -2735,7 +2735,7 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     if (!bestCandidate) {
       break;
     }
-    if (auditLayout(layoutGraph, bestCandidate.coords, { bondLength }).ok !== true) {
+    if (auditLayout(layoutGraph, bestCandidate.coords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true) {
       break;
     }
 
@@ -2780,7 +2780,7 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
       retryScore.severeOverlapCount <= currentScore.severeOverlapCount &&
       retryScore.visibleHeavyBondCrossingCount <= currentScore.visibleHeavyBondCrossingCount &&
       retryProtectedDistortion + RETOUCH_SCORE_EPSILON < currentProtectedDistortion &&
-      auditLayout(layoutGraph, retry.coords, { bondLength }).ok === true
+      auditLayout(layoutGraph, retry.coords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok === true
     ) {
       return retry;
     }

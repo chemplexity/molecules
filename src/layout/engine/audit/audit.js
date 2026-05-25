@@ -14,13 +14,15 @@ function isHeavyAtomOverlap(layoutGraph, overlap) {
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {object} [options] - Audit options.
  * @param {number} [options.bondLength] - Target bond length.
+ * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlaps] - Optional precomputed severe-overlap list.
+ * @param {boolean} [options.includeVisibleHeavyBondCrossings] - Whether to compute visible heavy-bond crossings in the returned summary.
  * @param {Map<string, 'planar'|'bridged'|'haptic'>} [options.bondValidationClasses] - Per-bond validation classes.
  * @param {object} [options.stereo] - Stereo summary produced by the stereo phase.
  * @returns {{ok: boolean, severeOverlapCount: number, visibleHeavyBondCrossingCount: number, labelOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean, ringSubstituentReadabilityFailureCount: number}} Audit summary.
  */
 export function auditLayout(layoutGraph, coords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+  const overlaps = options.overlaps ?? findSevereOverlaps(layoutGraph, coords, bondLength);
   const severeOverlapThreshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const heavyAtomOverlapCount = overlaps.filter(overlap => isHeavyAtomOverlap(layoutGraph, overlap)).length;
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
@@ -29,7 +31,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
-  const visibleHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
+  const visibleHeavyBondCrossingCount = options.includeVisibleHeavyBondCrossings === false ? 0 : countVisibleHeavyBondCrossings(layoutGraph, coords);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;
