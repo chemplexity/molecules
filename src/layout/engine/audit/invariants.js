@@ -337,6 +337,29 @@ export function countVisibleHeavyBondCrossings(layoutGraph, coords, options = {}
 }
 
 /**
+ * Counts visible heavy-bond crossings after a candidate move by rescoring only
+ * pairs touching moved atoms. Crossings between untouched bonds are invariant
+ * between the two coordinate sets, so callers with a known moved atom set can
+ * avoid a full all-bond crossing scan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} baseCoords - Coordinates before the candidate move.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates.
+ * @param {Iterable<string>} focusAtomIds - Moved atom IDs.
+ * @param {number|null} [baseCrossingCount] - Optional full crossing count for baseCoords.
+ * @returns {number} Estimated full crossing count for candidateCoords.
+ */
+export function countVisibleHeavyBondCrossingsAfterFocusedMove(layoutGraph, baseCoords, candidateCoords, focusAtomIds, baseCrossingCount = null) {
+  const focusAtomSet = normalizedFocusAtomSet(focusAtomIds);
+  if (!focusAtomSet) {
+    return countVisibleHeavyBondCrossings(layoutGraph, candidateCoords);
+  }
+  const baseTotal = baseCrossingCount ?? countVisibleHeavyBondCrossings(layoutGraph, baseCoords);
+  const baseFocusedCount = countFocusedVisibleHeavyBondCrossings(layoutGraph, baseCoords, focusAtomSet);
+  const candidateFocusedCount = countFocusedVisibleHeavyBondCrossings(layoutGraph, candidateCoords, focusAtomSet);
+  return Math.max(0, baseTotal - baseFocusedCount + candidateFocusedCount);
+}
+
+/**
  * Resolves a ring anchor plus terminal non-carbon leaf for a compressible
  * publication-style leaf bond.
  * @param {object} layoutGraph - Layout graph shell.
@@ -729,18 +752,53 @@ function isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coords, fi
  * @returns {boolean} True when the atom should count in visible geometry checks.
  */
 function isVisibleLayoutAtom(layoutGraph, atomId) {
-  const atom = layoutGraph.atoms.get(atomId);
-  if (!atom) {
-    return false;
-  }
-  if (layoutGraph.options.suppressH && atom.element === 'H') {
-    return false;
-  }
-  return true;
+  return visibleLayoutAtomIdSet(layoutGraph).has(atomId);
 }
 
 function isVisibleHeavyLayoutAtom(layoutGraph, atomId) {
-  return isVisibleLayoutAtom(layoutGraph, atomId) && layoutGraph.atoms.get(atomId)?.element !== 'H';
+  return visibleHeavyLayoutAtomIdSet(layoutGraph).has(atomId);
+}
+
+function visibleLayoutAtomIdSet(layoutGraph) {
+  if (layoutGraph._visibleLayoutAtomIdSet instanceof Set) {
+    return layoutGraph._visibleLayoutAtomIdSet;
+  }
+  const atomIds = new Set();
+  for (const atom of layoutGraph.atoms.values()) {
+    if (layoutGraph.options.suppressH && atom.element === 'H') {
+      continue;
+    }
+    atomIds.add(atom.id);
+  }
+  layoutGraph._visibleLayoutAtomIdSet = atomIds;
+  return atomIds;
+}
+
+function visibleHeavyLayoutAtomIdSet(layoutGraph) {
+  if (layoutGraph._visibleHeavyLayoutAtomIdSet instanceof Set) {
+    return layoutGraph._visibleHeavyLayoutAtomIdSet;
+  }
+  const atomIds = new Set();
+  const visibleAtomIds = visibleLayoutAtomIdSet(layoutGraph);
+  for (const atom of layoutGraph.atoms.values()) {
+    if (atom.element !== 'H' && visibleAtomIds.has(atom.id)) {
+      atomIds.add(atom.id);
+    }
+  }
+  layoutGraph._visibleHeavyLayoutAtomIdSet = atomIds;
+  return atomIds;
+}
+
+function visibleHeavyAtomIdsInCoords(layoutGraph, coords, atomIds = null) {
+  const heavyAtomIds = visibleHeavyLayoutAtomIdSet(layoutGraph);
+  const scopedAtomIds = atomIds ?? coords.keys();
+  const visibleHeavyAtomIds = [];
+  for (const atomId of scopedAtomIds) {
+    if (heavyAtomIds.has(atomId) && coords.has(atomId)) {
+      visibleHeavyAtomIds.push(atomId);
+    }
+  }
+  return visibleHeavyAtomIds;
 }
 
 function bondedAtomIdSet(layoutGraph, atomId) {
@@ -785,8 +843,9 @@ function visibleAtomOrderById(layoutGraph, coords, visibleAtomIds) {
 function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null, queryRadius = 0, options = {}) {
   const visibleAtomIds = options.visibleAtomIds ?? null;
   if (atomGrid) {
-    const visibleAtomIdList = visibleAtomIds ? [...visibleAtomIds] : null;
-    const atomOrderById = !visibleAtomIdList && atomGrid.atomOrderById instanceof Map ? atomGrid.atomOrderById : visibleAtomOrderById(layoutGraph, coords, visibleAtomIdList);
+    const visibleAtomIdList = visibleAtomIds ? (Array.isArray(visibleAtomIds) ? visibleAtomIds : [...visibleAtomIds]) : null;
+    const canUseGridOrder = atomGrid.atomOrderById instanceof Map && (!visibleAtomIdList || options.visibleAtomIdsMatchGrid === true);
+    const atomOrderById = canUseGridOrder ? atomGrid.atomOrderById : visibleAtomOrderById(layoutGraph, coords, visibleAtomIdList);
     const pairs = [];
 
     const firstAtomEntries = visibleAtomIdList ?? coords;
@@ -868,8 +927,9 @@ export function buildAtomGrid(layoutGraph, coords, bondLength, options = {}) {
     return atomGrid;
   }
 
+  const visibleAtomIds = visibleLayoutAtomIdSet(layoutGraph);
   for (const [atomId, position] of coords) {
-    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+    if (!visibleAtomIds.has(atomId)) {
       continue;
     }
     atomGrid.insert(atomId, position);
@@ -889,21 +949,45 @@ export function buildAtomGrid(layoutGraph, coords, bondLength, options = {}) {
  * @returns {{subtreeSet: Set<string>, visibleSubtreeAtomIds: string[], subtreeBonds?: object[], externalBonds?: object[]}} Reusable subtree-overlap context.
  */
 export function buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, options = {}) {
-  const subtreeSet = new Set(subtreeAtomIds);
+  const includeBondCrowding = options.includeBondCrowding === true;
+  const canCache = subtreeAtomIds instanceof Set && layoutGraph;
+  if (canCache) {
+    let contextCache = layoutGraph._subtreeOverlapContextCache;
+    if (!(contextCache instanceof Map)) {
+      contextCache = new Map();
+      layoutGraph._subtreeOverlapContextCache = contextCache;
+    }
+    const cachedContext = contextCache.get(subtreeAtomIds);
+    if (cachedContext) {
+      if (includeBondCrowding && cachedContext.includeBondCrowding === true) {
+        return cachedContext;
+      }
+      if (!includeBondCrowding) {
+        return cachedContext;
+      }
+    }
+  }
+
+  const subtreeSet = subtreeAtomIds instanceof Set ? subtreeAtomIds : new Set(subtreeAtomIds);
   const seenVisibleAtomIds = new Set();
   const visibleSubtreeAtomIds = [];
+  const visibleAtomIds = visibleLayoutAtomIdSet(layoutGraph);
   for (const atomId of subtreeAtomIds) {
-    if (!seenVisibleAtomIds.has(atomId) && isVisibleLayoutAtom(layoutGraph, atomId)) {
+    if (!seenVisibleAtomIds.has(atomId) && visibleAtomIds.has(atomId)) {
       seenVisibleAtomIds.add(atomId);
       visibleSubtreeAtomIds.push(atomId);
     }
   }
 
-  if (options.includeBondCrowding !== true) {
-    return {
+  if (!includeBondCrowding) {
+    const context = {
       subtreeSet,
       visibleSubtreeAtomIds
     };
+    if (canCache) {
+      layoutGraph._subtreeOverlapContextCache.set(subtreeAtomIds, context);
+    }
+    return context;
   }
 
   const subtreeBonds = [];
@@ -921,12 +1005,17 @@ export function buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, options 
     subtreeBonds.push(bond);
   }
 
-  return {
+  const context = {
     subtreeSet,
     visibleSubtreeAtomIds,
     subtreeBonds,
-    externalBonds
+    externalBonds,
+    includeBondCrowding: true
   };
+  if (canCache) {
+    layoutGraph._subtreeOverlapContextCache.set(subtreeAtomIds, context);
+  }
+  return context;
 }
 
 /**
@@ -1861,8 +1950,9 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
   let maxObservedOutwardDeviation = 0;
   const seenPairs = new Set();
 
-  for (const anchorAtomId of coords.keys()) {
-    if (focusAtomIds && !focusAtomIds.has(anchorAtomId)) {
+  const anchorAtomIds = focusAtomIds ?? coords.keys();
+  for (const anchorAtomId of anchorAtomIds) {
+    if (!coords.has(anchorAtomId)) {
       continue;
     }
     if (!layoutGraph.ringAtomIdSet.has(anchorAtomId) || !isVisibleLayoutAtom(layoutGraph, anchorAtomId)) {
@@ -1965,7 +2055,7 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
   let count = 0;
   let minDistance = Infinity;
   const overrideAtomIds = new Set(overridePositions.keys());
-  const allAtomIds = options.atomGrid ? null : new Set(coords.keys());
+  const allAtomIds = options.atomGrid ? null : visibleHeavyAtomIdsInCoords(layoutGraph, coords);
   let mergedCoords = null;
   const coordsWithOverrides = () => {
     if (!mergedCoords) {
@@ -2039,14 +2129,21 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
  * @param {number} bondLength - Target bond length.
  * @param {object} [options] - Overlap-query options.
  * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid.
+ * @param {Iterable<string>} [options.visibleHeavyAtomIds] - Optional precomputed visible heavy atom ids.
  * @returns {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} Severe overlaps.
  */
 export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}) {
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  const visibleHeavyAtomIds = options.visibleHeavyAtomIds
+    ? Array.isArray(options.visibleHeavyAtomIds)
+      ? options.visibleHeavyAtomIds
+      : [...options.visibleHeavyAtomIds]
+    : visibleHeavyAtomIdsInCoords(layoutGraph, coords, options.visibleAtomIds ?? null);
+  const ownsAtomGrid = !options.atomGrid;
   const atomGrid =
     options.atomGrid ??
     buildAtomGrid(layoutGraph, coords, bondLength, {
-      visibleAtomIds: options.visibleAtomIds
+      visibleAtomIds: visibleHeavyAtomIds
     });
   return collectNonbondedPairs(
     layoutGraph,
@@ -2058,7 +2155,10 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}
       !isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength),
     atomGrid,
     threshold,
-    { visibleAtomIds: options.visibleAtomIds }
+    {
+      visibleAtomIds: visibleHeavyAtomIds,
+      visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid === true || ownsAtomGrid
+    }
   );
 }
 
@@ -2252,11 +2352,9 @@ export function measureTrigonalDistortion(layoutGraph, coords, options = {}) {
   let totalDeviation = 0;
   let maxDeviation = 0;
 
-  for (const atomId of coords.keys()) {
-    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
-      continue;
-    }
-    if (focusAtomIds && !focusAtomIds.has(atomId)) {
+  const atomIds = focusAtomIds ?? coords.keys();
+  for (const atomId of atomIds) {
+    if (!coords.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
     const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
@@ -2291,11 +2389,9 @@ export function measureDivalentContinuationDistortion(layoutGraph, coords, optio
   let maxDeviation = 0;
   const idealSeparation = (2 * Math.PI) / 3;
 
-  for (const atomId of coords.keys()) {
-    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
-      continue;
-    }
-    if (focusAtomIds && !focusAtomIds.has(atomId)) {
+  const atomIds = focusAtomIds ?? coords.keys();
+  for (const atomId of atomIds) {
+    if (!coords.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
     const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
@@ -2336,11 +2432,9 @@ export function measureThreeHeavyContinuationDistortion(layoutGraph, coords, opt
   let totalDeviation = 0;
   let maxDeviation = 0;
 
-  for (const atomId of coords.keys()) {
-    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
-      continue;
-    }
-    if (focusAtomIds && !focusAtomIds.has(atomId)) {
+  const atomIds = focusAtomIds ?? coords.keys();
+  for (const atomId of atomIds) {
+    if (!coords.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
     const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
@@ -2595,14 +2689,9 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
   const atomGridHasVisibleAtoms = atomGrid.visibleAtomIdsOnly === true;
 
   if (includeAtomOverlaps) {
-    const bboxCandidateIds = atomGrid.queryBoundingBox(minX - threshold, minY - threshold, maxX + threshold, maxY + threshold);
-    let hasExternalCandidates = false;
-    for (const candidateId of bboxCandidateIds) {
-      if (!subtreeSet.has(candidateId) && (atomGridHasVisibleAtoms || isVisibleLayoutAtom(layoutGraph, candidateId))) {
-        hasExternalCandidates = true;
-        break;
-      }
-    }
+    const hasExternalCandidates = atomGrid.someBoundingBox(minX - threshold, minY - threshold, maxX + threshold, maxY + threshold, candidateId =>
+      !subtreeSet.has(candidateId) && (atomGridHasVisibleAtoms || isVisibleLayoutAtom(layoutGraph, candidateId))
+    );
 
     if (hasExternalCandidates) {
       for (const subtreeAtomId of subtreeContext.visibleSubtreeAtomIds) {
@@ -2774,7 +2863,9 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
   const overlaps =
     options.overlaps ??
     findSevereOverlaps(layoutGraph, coords, bondLength, {
-      atomGrid: options.atomGrid
+      atomGrid: options.atomGrid,
+      visibleHeavyAtomIds: options.visibleHeavyAtomIds,
+      visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid
     });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
   const visibleHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
@@ -2826,7 +2917,9 @@ export function measureOverlapState(layoutGraph, coords, bondLength, options = {
   const overlaps =
     options.overlaps ??
     findSevereOverlaps(layoutGraph, coords, bondLength, {
-      atomGrid: options.atomGrid
+      atomGrid: options.atomGrid,
+      visibleHeavyAtomIds: options.visibleHeavyAtomIds,
+      visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid
     });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses

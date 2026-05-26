@@ -186,6 +186,40 @@ export class AtomGrid {
   }
 
   /**
+   * Visits atom IDs within the queried bounding box until the visitor accepts one.
+   * @param {number} minX - Minimum X coordinate.
+   * @param {number} minY - Minimum Y coordinate.
+   * @param {number} maxX - Maximum X coordinate.
+   * @param {number} maxY - Maximum Y coordinate.
+   * @param {(atomId: string) => boolean} visit - Visitor called for each candidate atom ID.
+   * @returns {boolean} True when the visitor accepted a candidate.
+   */
+  someBoundingBox(minX, minY, maxX, maxY, visit) {
+    const minXIndex = Math.floor(minX / this.cellSize);
+    const minYIndex = Math.floor(minY / this.cellSize);
+    const maxXIndex = Math.floor(maxX / this.cellSize);
+    const maxYIndex = Math.floor(maxY / this.cellSize);
+    for (let xIndex = minXIndex; xIndex <= maxXIndex; xIndex++) {
+      const col = this.cells.get(xIndex);
+      if (!col) {
+        continue;
+      }
+      for (let yIndex = minYIndex; yIndex <= maxYIndex; yIndex++) {
+        const cell = col.get(yIndex);
+        if (!cell) {
+          continue;
+        }
+        for (const atomId of cell) {
+          if (visit(atomId)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Returns a deep copy of the grid.
    * @returns {AtomGrid} Cloned grid.
    */

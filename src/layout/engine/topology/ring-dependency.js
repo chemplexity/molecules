@@ -53,7 +53,8 @@ function summarizeRingSystemDependency(molecule, ringSystem, rings, connections)
   const componentCount = countInducedComponents(molecule, ringSystem.atomIds);
   const cycleRank = edgeCount - ringSystem.atomIds.length + componentCount;
   const ringCount = ringSystem.ringIds.length;
-  const systemConnections = connections.filter(connection => ringSystem.ringIds.includes(connection.firstRingId) && ringSystem.ringIds.includes(connection.secondRingId));
+  const ringIdSet = new Set(ringSystem.ringIds);
+  const systemConnections = connections.filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId));
   const connectionKinds = [...new Set(systemConnections.map(connection => connection.kind))].sort();
   const reasons = [];
 

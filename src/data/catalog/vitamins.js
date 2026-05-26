@@ -9,7 +9,7 @@ const vitaminsCatalog = {
     {
       id: 'retinol',
       name: 'Retinol',
-      smiles: 'CC1=C(C(CCC1)(C)C)/C=C/C(\\C)=C/C=C/C(\\C)=C/CO',
+      smiles: 'CC1=C(C(CCC1)(C)C)/C=C/C(/C)=C/C=C/C(/C)=C/CO',
       inchi: 'InChI=1S/C20H30O/c1-16(8-6-9-17(2)13-15-21)11-12-19-18(3)10-7-14-20(19,4)5/h6,8-9,11-13,21H,7,10,14-15H2,1-5H3/b6-9+,8-16+,11-12+,13-17+/m0/s1',
       tags: ['vitamin', 'fat-soluble', 'vitamin-a', 'carotenoid'],
       aliases: ['Vitamin A', 'Vitamin A1', 'axerophthol']

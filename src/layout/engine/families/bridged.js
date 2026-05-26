@@ -1440,7 +1440,7 @@ function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bond
   }
 
   const ringAtomIds = new Set(atomIds);
-  const component = layoutGraph.components.find(candidateComponent => atomIds.some(atomId => candidateComponent.atomIds.includes(atomId)));
+  const component = atomIds.map(atomId => layoutGraph.componentByAtomId?.get(atomId)).find(Boolean) ?? layoutGraph.components.find(candidateComponent => atomIds.some(atomId => candidateComponent.atomIds.includes(atomId)));
   if (!component) {
     return 0;
   }
@@ -2842,11 +2842,12 @@ function relaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, coords, bondL
 }
 
 function mediumBridgedRingAngleRelaxationSystems(layoutGraph) {
+  const ringById = layoutGraph.ringById ?? new Map((layoutGraph.rings ?? []).map(ring => [ring.id, ring]));
   return (layoutGraph.ringSystems ?? [])
     .map(ringSystem => ({
       ringSystem,
       atomIds: ringSystem.atomIds ?? [],
-      rings: (ringSystem.ringIds ?? []).map(ringId => layoutGraph.rings.find(ring => ring.id === ringId)).filter(Boolean)
+      rings: (ringSystem.ringIds ?? []).map(ringId => ringById.get(ringId)).filter(Boolean)
     }))
     .filter(entry => entry.atomIds.length > 0 && entry.rings.length > 0);
 }

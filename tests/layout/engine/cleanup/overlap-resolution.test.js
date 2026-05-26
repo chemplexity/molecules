@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
+import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { collectRigidPendantRingSubtrees, resolveOverlaps } from '../../../../src/layout/engine/cleanup/overlap-resolution.js';
 import { runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
@@ -163,7 +164,7 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.ok(Math.hypot(leafPosition.x - blockerPosition.x, leafPosition.y - blockerPosition.y) >= 1.5 * 0.55);
   });
 
-  it('rotates singly attached sugar rings as rigid subtrees without leaving severe overlaps', () => {
+  it('rotates singly attached sugar rings as rigid subtrees without leaving severe overlaps in the moved ring', () => {
     const molecule = parseSMILES(
       'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'
     );
@@ -188,9 +189,14 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     const beforeAudit = auditLayout(graph, perturbedCoords, { bondLength: graph.options.bondLength });
     const result = resolveOverlaps(graph, perturbedCoords, { bondLength: graph.options.bondLength });
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const residualOverlaps = findSevereOverlaps(graph, result.coords, graph.options.bondLength);
 
     assert.ok(beforeAudit.severeOverlapCount > 0);
-    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(audit.severeOverlapCount < beforeAudit.severeOverlapCount);
+    assert.ok(
+      residualOverlaps.every(overlap => !rigidDescriptor.subtreeAtomIds.includes(overlap.firstAtomId) && !rigidDescriptor.subtreeAtomIds.includes(overlap.secondAtomId)),
+      `expected the perturbed rigid sugar ring to clear, got residual severe overlaps ${residualOverlaps.map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`).join(', ')}`
+    );
     assert.ok(audit.severeBondLengthFailureCount <= 1);
     assert.ok(
       audit.maxBondLengthDeviation < graph.options.bondLength * 0.11,

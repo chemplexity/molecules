@@ -1939,7 +1939,8 @@ function ringFanAnglePolishContactLeafCandidateAllowed(candidateScore, currentSc
   );
 }
 
-function runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, inputCoords, inputScore, inputAudit, bondLength, auditOptions, context = null) {
+function runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, inputCoords, inputScore, inputAudit, bondLength, auditOptions, context = null, options = {}) {
+  const maxPasses = Number.isInteger(options.maxPasses) && options.maxPasses >= 0 ? options.maxPasses : RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_PASSES;
   let coords = inputCoords;
   let currentScore = inputScore;
   let currentAudit = inputAudit;
@@ -1947,7 +1948,7 @@ function runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, inputCoords, in
   const movedAtomIds = new Set();
   let passes = 0;
 
-  while (passes < RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_PASSES && currentSoftContactScore.contactCount > 0) {
+  while (passes < maxPasses && currentSoftContactScore.contactCount > 0) {
     const descriptors = ringFanAnglePolishContactLeafDescriptors(layoutGraph, coords, bondLength, context);
     let bestCandidate = null;
 
@@ -2264,6 +2265,12 @@ function ringFanAnglePolishMovableAtomIds(layoutGraph, centers) {
 export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const bondValidationClasses = options.bondValidationClasses ?? null;
+  const maxPasses = Number.isInteger(options.maxPasses) && options.maxPasses >= 0 ? options.maxPasses : RING_FAN_ANGLE_POLISH_MAX_PASSES;
+  const centerScanLimit = Number.isInteger(options.centerScanLimit) && options.centerScanLimit > 0 ? options.centerScanLimit : RING_FAN_ANGLE_POLISH_CENTER_SCAN_LIMIT;
+  const directionCount = Number.isInteger(options.directionCount) && options.directionCount > 0 ? options.directionCount : RING_FAN_ANGLE_POLISH_DIRECTION_COUNT;
+  const stepFactors = Array.isArray(options.stepFactors) && options.stepFactors.length > 0 ? options.stepFactors : RING_FAN_ANGLE_POLISH_STEP_FACTORS;
+  const softContactLeafMaxPasses =
+    Number.isInteger(options.softContactLeafMaxPasses) && options.softContactLeafMaxPasses >= 0 ? options.softContactLeafMaxPasses : RING_FAN_ANGLE_POLISH_CONTACT_LEAF_MAX_PASSES;
   const auditOptions = ringFanAnglePolishAuditOptions(bondLength, bondValidationClasses);
   const context = createRingFanAnglePolishContext(layoutGraph, inputCoords);
   let coords = cloneCoords(inputCoords);
@@ -2273,8 +2280,8 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
   const movedAtomIds = new Set();
   let passes = 0;
 
-  while (passes < RING_FAN_ANGLE_POLISH_MAX_PASSES && currentScore.maxDeviationDegrees > RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES) {
-    const centers = currentScore.centers.slice(0, RING_FAN_ANGLE_POLISH_CENTER_SCAN_LIMIT);
+  while (passes < maxPasses && currentScore.maxDeviationDegrees > RING_FAN_ANGLE_POLISH_MIN_DEVIATION_DEGREES) {
+    const centers = currentScore.centers.slice(0, centerScanLimit);
     const movableAtomIds = ringFanAnglePolishMovableAtomIds(layoutGraph, centers);
     let bestCandidate = null;
 
@@ -2306,10 +2313,10 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
       if (!position) {
         continue;
       }
-      for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
+      for (const stepFactor of stepFactors) {
         const step = bondLength * stepFactor;
-        for (let directionIndex = 0; directionIndex < RING_FAN_ANGLE_POLISH_DIRECTION_COUNT; directionIndex++) {
-          const angle = (2 * Math.PI * directionIndex) / RING_FAN_ANGLE_POLISH_DIRECTION_COUNT;
+        for (let directionIndex = 0; directionIndex < directionCount; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / directionCount;
           const candidateCoords = translatedSingleAtomCoords(coords, atomId, Math.cos(angle) * step, Math.sin(angle) * step);
           evaluateCandidateCoords(candidateCoords, [atomId]);
         }
@@ -2318,7 +2325,7 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
 
     for (const center of centers) {
       for (const pair of ringFanAnglePolishPairEntries(coords, center).slice(0, 2)) {
-        for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
+        for (const stepFactor of stepFactors) {
           const step = bondLength * stepFactor;
           for (const candidateCoords of ringFanAnglePolishDirectedCandidateCoords(coords, center, pair, step)) {
             evaluateCandidateCoords(candidateCoords, [center.atomId, pair.firstAtomId, pair.secondAtomId]);
@@ -2327,7 +2334,7 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
       }
     }
 
-    for (const stepFactor of RING_FAN_ANGLE_POLISH_STEP_FACTORS) {
+    for (const stepFactor of stepFactors) {
       const candidate = ringFanAnglePolishAggregateCandidate(layoutGraph, coords, centers, bondLength * stepFactor);
       if (candidate) {
         evaluateCandidateCoords(candidate.coords, candidate.atomIds);
@@ -2346,7 +2353,9 @@ export function runMacrocycleRingFanAngleRetouch(layoutGraph, inputCoords, optio
     passes++;
   }
 
-  const softContactLeafRetouch = runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, coords, currentScore, currentAudit, bondLength, auditOptions, context);
+  const softContactLeafRetouch = runMacrocycleRingFanSoftContactLeafRetouch(layoutGraph, coords, currentScore, currentAudit, bondLength, auditOptions, context, {
+    maxPasses: softContactLeafMaxPasses
+  });
   if (softContactLeafRetouch.passes > 0) {
     coords = softContactLeafRetouch.coords;
     currentScore = softContactLeafRetouch.score;

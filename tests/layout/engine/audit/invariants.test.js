@@ -7,6 +7,7 @@ import {
   buildAtomGrid,
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
+  countVisibleHeavyBondCrossingsAfterFocusedMove,
   computeAtomDistortionCost,
   computeSubtreeOverlapCost,
   detectCollapsedMacrocycles,
@@ -334,6 +335,32 @@ describe('layout/engine/audit/invariants', () => {
     assert.deepEqual(
       findVisibleHeavyBondCrossings(graph, coords, { focusAtomIds: ['a0'] }).map(crossing => [crossing.firstBondId, crossing.secondBondId]),
       [['b0', 'b1']]
+    );
+  });
+
+  it('updates visible heavy-bond crossing counts from focused moved atoms', () => {
+    const molecule = new Molecule();
+    for (const atomId of ['a0', 'a1', 'a2', 'a3']) {
+      molecule.addAtom(atomId, 'C');
+    }
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    molecule.addBond('b1', 'a2', 'a3', {}, false);
+    const graph = createLayoutGraph(molecule);
+    const baseCoords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 2, y: 0 }],
+      ['a2', { x: 1, y: -1 }],
+      ['a3', { x: 1, y: 1 }]
+    ]);
+    const candidateCoords = new Map(baseCoords);
+    candidateCoords.set('a2', { x: 3, y: -1 });
+    candidateCoords.set('a3', { x: 3, y: 1 });
+    const baseCrossingCount = countVisibleHeavyBondCrossings(graph, baseCoords);
+
+    assert.equal(baseCrossingCount, 1);
+    assert.equal(
+      countVisibleHeavyBondCrossingsAfterFocusedMove(graph, baseCoords, candidateCoords, ['a2', 'a3'], baseCrossingCount),
+      countVisibleHeavyBondCrossings(graph, candidateCoords)
     );
   });
 

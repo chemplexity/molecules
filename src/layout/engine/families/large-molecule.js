@@ -74,8 +74,7 @@ function participantThresholdFor(threshold) {
 }
 
 function countRingSystems(layoutGraph, atomIds) {
-  const atomIdSet = new Set(atomIds);
-  return layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId))).length;
+  return containedRingSystems(layoutGraph, new Set(atomIds)).length;
 }
 
 /**
@@ -85,8 +84,29 @@ function countRingSystems(layoutGraph, atomIds) {
  * @returns {boolean} True when any ring connection touches the system.
  */
 function ringSystemHasConnections(layoutGraph, ringSystem) {
+  if (layoutGraph.ringConnectionsByRingSystemId?.has(ringSystem.id)) {
+    return layoutGraph.ringConnectionsByRingSystemId.get(ringSystem.id).length > 0;
+  }
   const ringIds = new Set(ringSystem.ringIds ?? []);
   return (layoutGraph.ringConnections ?? []).some(connection => ringIds.has(connection.firstRingId) || ringIds.has(connection.secondRingId));
+}
+
+function containedRingSystems(layoutGraph, atomIdSet) {
+  const ringSystemIds = new Set();
+  for (const atomId of atomIdSet) {
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(atomId);
+    if (ringSystemId != null) {
+      ringSystemIds.add(ringSystemId);
+    }
+  }
+  const ringSystems = [];
+  for (const ringSystemId of ringSystemIds) {
+    const ringSystem = layoutGraph.ringSystemById.get(ringSystemId);
+    if (ringSystem?.atomIds.every(atomId => atomIdSet.has(atomId))) {
+      ringSystems.push(ringSystem);
+    }
+  }
+  return ringSystems;
 }
 
 /**
@@ -97,9 +117,7 @@ function ringSystemHasConnections(layoutGraph, ringSystem) {
  */
 function countSimpleIsolatedRingSystems(layoutGraph, atomIds) {
   const atomIdSet = new Set(atomIds);
-  return layoutGraph.ringSystems.filter(
-    ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId)) && (ringSystem.ringIds?.length ?? 0) === 1 && !ringSystemHasConnections(layoutGraph, ringSystem)
-  ).length;
+  return containedRingSystems(layoutGraph, atomIdSet).filter(ringSystem => (ringSystem.ringIds?.length ?? 0) === 1 && !ringSystemHasConnections(layoutGraph, ringSystem)).length;
 }
 
 /**
@@ -287,7 +305,7 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
       const atom = layoutGraph.atoms.get(atomId);
       return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
     });
-  const blockRingSystems = layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId)));
+  const blockRingSystems = containedRingSystems(layoutGraph, atomIdSet);
   const blockHeavyCount = heavyAtomIds.length;
   const blockParticipantCount = participantAtomIds.length;
   let bestCandidate = null;
@@ -431,7 +449,19 @@ function blockRingSystem(layoutGraph, block) {
     return null;
   }
   const blockAtomIds = new Set(block.atomIds);
-  return layoutGraph.ringSystems.find(ringSystem => ringSystem.atomIds.every(atomId => blockAtomIds.has(atomId))) ?? null;
+  let ringSystemId = null;
+  for (const atomId of block.atomIds) {
+    const atomRingSystemId = layoutGraph.atomToRingSystemId.get(atomId);
+    if (atomRingSystemId == null) {
+      continue;
+    }
+    if (ringSystemId != null && atomRingSystemId !== ringSystemId) {
+      return null;
+    }
+    ringSystemId = atomRingSystemId;
+  }
+  const ringSystem = ringSystemId != null ? layoutGraph.ringSystemById.get(ringSystemId) : null;
+  return ringSystem?.atomIds.every(atomId => blockAtomIds.has(atomId)) ? ringSystem : null;
 }
 
 function shouldForceFusedBlockSlice(layoutGraph, block) {

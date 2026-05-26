@@ -1,6 +1,7 @@
 /** @module placement/atom-slice */
 
 import { auditLayout } from '../audit/audit.js';
+import { ringConnectionKey } from '../model/ring-connection.js';
 import { chooseScaffoldPlan } from '../scaffold/choose-scaffold.js';
 import { buildCanonicalComponentSignature } from '../topology/canonical-order.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from './bond-validation.js';
@@ -58,13 +59,20 @@ export function buildSliceAdjacency(layoutGraph, atomIds, options = {}) {
   const atomIdSet = new Set(atomIds);
   const includeBond = options.includeBond ?? (() => true);
   const adjacency = new Map([...atomIdSet].map(atomId => [atomId, []]));
+  const visitedBondIds = new Set();
 
-  for (const bond of layoutGraph.bonds.values()) {
-    if (!atomIdSet.has(bond.a) || !atomIdSet.has(bond.b) || !includeBond(bond)) {
-      continue;
+  for (const atomId of atomIdSet) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (visitedBondIds.has(bond.id)) {
+        continue;
+      }
+      visitedBondIds.add(bond.id);
+      if (!atomIdSet.has(bond.a) || !atomIdSet.has(bond.b) || !includeBond(bond)) {
+        continue;
+      }
+      adjacency.get(bond.a)?.push(bond.b);
+      adjacency.get(bond.b)?.push(bond.a);
     }
-    adjacency.get(bond.a)?.push(bond.b);
-    adjacency.get(bond.b)?.push(bond.a);
   }
 
   for (const neighbors of adjacency.values()) {
@@ -86,7 +94,15 @@ export function buildSliceAdjacency(layoutGraph, atomIds, options = {}) {
  */
 export function ringsForAtomSlice(layoutGraph, atomIds) {
   const atomIdSet = new Set(atomIds);
-  return layoutGraph.rings.filter(ring => ring.atomIds.every(atomId => atomIdSet.has(atomId)));
+  const ringById = new Map();
+  for (const atomId of atomIdSet) {
+    for (const ring of layoutGraph.atomToRings.get(atomId) ?? []) {
+      if (!ringById.has(ring.id) && ring.atomIds.every(ringAtomId => atomIdSet.has(ringAtomId))) {
+        ringById.set(ring.id, ring);
+      }
+    }
+  }
+  return [...ringById.values()].sort((firstRing, secondRing) => firstRing.id - secondRing.id);
 }
 
 /**
@@ -97,7 +113,22 @@ export function ringsForAtomSlice(layoutGraph, atomIds) {
  */
 export function ringConnectionsForSlice(layoutGraph, ringIds) {
   const ringIdSet = new Set(ringIds);
-  return layoutGraph.ringConnections.filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId));
+  if (!layoutGraph.ringAdj || !layoutGraph.ringConnectionByPair) {
+    return layoutGraph.ringConnections.filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId));
+  }
+  const connectionsById = new Map();
+  for (const firstRingId of ringIdSet) {
+    for (const secondRingId of layoutGraph.ringAdj.get(firstRingId) ?? []) {
+      if (!ringIdSet.has(secondRingId) || firstRingId > secondRingId) {
+        continue;
+      }
+      const connection = layoutGraph.ringConnectionByPair.get(ringConnectionKey(firstRingId, secondRingId));
+      if (connection) {
+        connectionsById.set(connection.id, connection);
+      }
+    }
+  }
+  return [...connectionsById.values()].sort((firstConnection, secondConnection) => firstConnection.id - secondConnection.id);
 }
 
 /**

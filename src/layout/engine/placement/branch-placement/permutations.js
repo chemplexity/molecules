@@ -938,6 +938,7 @@ function pendingSmallRingRootOtherExocyclicNeighbor(layoutGraph, ringRootAtomId,
     return null;
   }
 
+  const ringAtomIdSet = layoutGraph.ringAtomSetByRingId?.get(ring.id) ?? new Set(ring.atomIds);
   const ringNeighborIds = [];
   const exocyclicNeighborIds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(ringRootAtomId) ?? []) {
@@ -949,7 +950,7 @@ function pendingSmallRingRootOtherExocyclicNeighbor(layoutGraph, ringRootAtomId,
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    if (ring.atomIds.includes(neighborAtomId)) {
+    if (ringAtomIdSet.has(neighborAtomId)) {
       ringNeighborIds.push(neighborAtomId);
     } else {
       exocyclicNeighborIds.push(neighborAtomId);
@@ -1000,8 +1001,7 @@ function futureRingRootExteriorBranchPreviewPoints(layoutGraph, ringRootPosition
  * Returns the coarse outward direction for a future ring from placed geometry.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
- * @param {{x: number, y: number}} anchorPosition - Anchor atom position.
- * @returns {number|null} Preferred outward angle in radians, or null when unavailable.
+ * @returns {{x: number, y: number}|null} Visible-heavy atom centroid, or null when unavailable.
  */
 function futureRingPreviewCentroid(layoutGraph, coords) {
   let sumX = 0;
@@ -1036,6 +1036,7 @@ function futureRingPreviewPreferredAngle(anchorPosition, centroid) {
  * @param {string[]} crowdingAtomIds - Atom IDs to compare against.
  * @param {Set<string>} excludedAtomIds - Atoms ignored for this preview.
  * @param {number} threshold - Soft clash distance.
+ * @param {object|null} [atomGrid] - Optional spatial atom grid for radius queries.
  * @returns {number} Squared soft clash penalty.
  */
 function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold, atomGrid = null) {
@@ -1077,6 +1078,7 @@ function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAt
  * @param {Map<string, string[]>|null} [adjacency] - Component adjacency map, used to mirror later attachment-angle selection.
  * @param {Set<string>|null} [atomIdsToPlace] - Eligible atom IDs for the current placement slice.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
+ * @param {object|null} [atomGrid] - Optional spatial atom grid for radius queries.
  * @returns {number} Future-ring clash penalty; lower is better.
  */
 function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds = [], adjacency = null, atomIdsToPlace = null, branchConstraints = null, atomGrid = null) {

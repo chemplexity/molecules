@@ -653,7 +653,7 @@ function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
       piTotal += pi;
     }
 
-    if (!valid || !_isHuckel(piTotal)) { continue; }
+    if (!valid || (!_isHuckel(piTotal) && !_canSatisfyFusedHuckelWithAmbiguousN(atomIds, piTotal, mol))) { continue; }
 
     for (const atomId of atomIds) { mol.atoms.get(atomId).properties.aromatic = true; }
     for (const bond of ringBonds) {

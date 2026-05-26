@@ -1,14 +1,64 @@
 /** @module model/scaffold-plan */
 
 import { compareFallbackScaffolds } from '../scaffold/fallback-scaffold.js';
-import { findTemplateMatch, findTemplateMatchIgnoringFamily } from '../templates/match.js';
+import { findBestTemplateMatch } from '../templates/match.js';
 
 const TERMINAL_MIXED_ROOT_MIN_RING_SYSTEMS = 3;
 const TERMINAL_MIXED_ROOT_MAX_RING_SYSTEMS = 12;
 
 function ringSystemConnections(layoutGraph, ringSystem) {
+  if (layoutGraph.ringConnectionsByRingSystemId?.has(ringSystem.id)) {
+    return layoutGraph.ringConnectionsByRingSystemId.get(ringSystem.id);
+  }
   const ringIdSet = new Set(ringSystem.ringIds);
   return layoutGraph.ringConnections.filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId));
+}
+
+function buildScaffoldCandidateContext(layoutGraph) {
+  const ringById = layoutGraph.ringById ?? new Map(layoutGraph.rings.map(ring => [ring.id, ring]));
+  const ringSystemIdByRingId = new Map();
+  const connectionsByRingSystemId = new Map();
+  const internalBondCountByRingSystemId = new Map();
+
+  for (const ringSystem of layoutGraph.ringSystems) {
+    connectionsByRingSystemId.set(ringSystem.id, []);
+    internalBondCountByRingSystemId.set(ringSystem.id, 0);
+    for (const ringId of ringSystem.ringIds) {
+      ringSystemIdByRingId.set(ringId, ringSystem.id);
+    }
+  }
+
+  if (layoutGraph.ringConnectionsByRingSystemId) {
+    for (const ringSystem of layoutGraph.ringSystems) {
+      connectionsByRingSystemId.set(ringSystem.id, layoutGraph.ringConnectionsByRingSystemId.get(ringSystem.id) ?? []);
+    }
+  } else {
+    for (const connection of layoutGraph.ringConnections) {
+      const firstRingSystemId = ringSystemIdByRingId.get(connection.firstRingId);
+      const secondRingSystemId = ringSystemIdByRingId.get(connection.secondRingId);
+      if (firstRingSystemId != null && firstRingSystemId === secondRingSystemId) {
+        connectionsByRingSystemId.get(firstRingSystemId)?.push(connection);
+      }
+    }
+  }
+
+  for (const bond of layoutGraph.bonds.values()) {
+    const firstRingSystemId = layoutGraph.atomToRingSystemId.get(bond.a);
+    if (firstRingSystemId == null || firstRingSystemId !== layoutGraph.atomToRingSystemId.get(bond.b)) {
+      continue;
+    }
+    internalBondCountByRingSystemId.set(firstRingSystemId, (internalBondCountByRingSystemId.get(firstRingSystemId) ?? 0) + 1);
+  }
+
+  return {
+    ringById,
+    connectionsByRingSystemId,
+    internalBondCountByRingSystemId
+  };
+}
+
+function ringSystemConnectionsFromContext(layoutGraph, ringSystem, context) {
+  return context?.connectionsByRingSystemId?.get(ringSystem.id) ?? ringSystemConnections(layoutGraph, ringSystem);
 }
 
 function countInternalBonds(layoutGraph, atomIds) {
@@ -22,6 +72,10 @@ function countInternalBonds(layoutGraph, atomIds) {
   return count;
 }
 
+function ringSystemInternalBondCount(layoutGraph, ringSystem, context) {
+  return context?.internalBondCountByRingSystemId?.get(ringSystem.id) ?? countInternalBonds(layoutGraph, ringSystem.atomIds);
+}
+
 /**
  * Resolves the final family and template match for a ring-system candidate.
  * When the heuristic family label misses a known exact template, the template
@@ -31,21 +85,12 @@ function countInternalBonds(layoutGraph, atomIds) {
  * @returns {{family: string, templateMatch: object|null, templateId: string|null}} Resolved family data.
  */
 function resolveCandidateFamily(layoutGraph, candidate) {
-  const strictMatch = findTemplateMatch(layoutGraph, candidate);
-  if (strictMatch) {
+  const templateMatch = findBestTemplateMatch(layoutGraph, candidate);
+  if (templateMatch) {
     return {
-      family: candidate.family,
-      templateMatch: strictMatch,
-      templateId: strictMatch.id
-    };
-  }
-
-  const fallbackMatch = findTemplateMatchIgnoringFamily(layoutGraph, candidate);
-  if (fallbackMatch) {
-    return {
-      family: fallbackMatch.family,
-      templateMatch: fallbackMatch,
-      templateId: fallbackMatch.id
+      family: templateMatch.family,
+      templateMatch,
+      templateId: templateMatch.id
     };
   }
 
@@ -60,11 +105,17 @@ function resolveCandidateFamily(layoutGraph, candidate) {
  * Classifies a ring system into a scaffold family.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} ringSystem - Ring-system descriptor.
+ * @param {object|null} [context] - Optional precomputed scaffold-candidate context.
  * @returns {'bridged'|'macrocycle'|'fused'|'spiro'|'isolated-ring'} Ring-system family.
  */
-export function classifyRingSystemFamily(layoutGraph, ringSystem) {
-  const connections = ringSystemConnections(layoutGraph, ringSystem);
-  if (layoutGraph.rings.some(ring => ringSystem.ringIds.includes(ring.id) && ring.size >= 12)) {
+export function classifyRingSystemFamily(layoutGraph, ringSystem, context = null) {
+  const connections = ringSystemConnectionsFromContext(layoutGraph, ringSystem, context);
+  const ringById = context?.ringById ?? layoutGraph.ringById ?? null;
+  const ringIdSet = ringById ? null : new Set(ringSystem.ringIds);
+  const hasMacrocycleRing = ringById
+    ? ringSystem.ringIds.some(ringId => (ringById.get(ringId)?.size ?? 0) >= 12)
+    : layoutGraph.rings.some(ring => ringIdSet.has(ring.id) && ring.size >= 12);
+  if (hasMacrocycleRing) {
     return 'macrocycle';
   }
   const connectionKinds = new Set(connections.map(connection => connection.kind).filter(Boolean));
@@ -88,11 +139,12 @@ export function classifyRingSystemFamily(layoutGraph, ringSystem) {
 
 function buildRingSystemCandidates(layoutGraph, component) {
   const componentAtomIdSet = new Set(component.atomIds);
+  const context = buildScaffoldCandidateContext(layoutGraph);
   return layoutGraph.ringSystems
     .filter(ringSystem => ringSystem.atomIds.every(atomId => componentAtomIdSet.has(atomId)))
     .map(ringSystem => {
-      const classifiedFamily = classifyRingSystemFamily(layoutGraph, ringSystem);
-      const aromaticRingCount = ringSystem.ringIds.filter(ringId => layoutGraph.rings.find(ring => ring.id === ringId)?.aromatic).length;
+      const classifiedFamily = classifyRingSystemFamily(layoutGraph, ringSystem, context);
+      const aromaticRingCount = ringSystem.ringIds.filter(ringId => context.ringById.get(ringId)?.aromatic).length;
       const candidate = {
         id: `ring-system:${ringSystem.id}`,
         type: 'ring-system',
@@ -100,7 +152,7 @@ function buildRingSystemCandidates(layoutGraph, component) {
         atomIds: [...ringSystem.atomIds],
         ringIds: [...ringSystem.ringIds],
         atomCount: ringSystem.atomIds.length,
-        bondCount: countInternalBonds(layoutGraph, ringSystem.atomIds),
+        bondCount: ringSystemInternalBondCount(layoutGraph, ringSystem, context),
         ringCount: ringSystem.ringIds.length,
         aromaticRingCount,
         signature: ringSystem.signature
@@ -358,7 +410,7 @@ export function buildScaffoldPlan(layoutGraph, component) {
     if (!atom || atom.name === 'H') {
       return false;
     }
-    return !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId));
+    return !layoutGraph.atomToRingSystemId.has(atomId);
   });
   const placementSequence = [
     {

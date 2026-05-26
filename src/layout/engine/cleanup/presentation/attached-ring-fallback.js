@@ -761,10 +761,39 @@ function hasDistortedTerminalMultipleBondRootInAttachedRing(layoutGraph, coords,
   return false;
 }
 
+function canonicalIdFallbackOrder(layoutGraph) {
+  if (layoutGraph._attachedRingFallbackCanonicalIdOrder instanceof Map) {
+    return layoutGraph._attachedRingFallbackCanonicalIdOrder;
+  }
+  const orderById = new Map();
+  const orderedAtomIds = [...layoutGraph.atoms.keys()].map(atomId => String(atomId)).sort((firstAtomId, secondAtomId) => firstAtomId.localeCompare(secondAtomId, 'en', { numeric: true }));
+  for (let index = 0; index < orderedAtomIds.length; index++) {
+    orderById.set(orderedAtomIds[index], index);
+  }
+  layoutGraph._attachedRingFallbackCanonicalIdOrder = orderById;
+  return orderById;
+}
+
 function compareCanonicalIds(layoutGraph, firstAtomId, secondAtomId) {
   const firstRank = layoutGraph.canonicalAtomRank?.get(firstAtomId) ?? Number.MAX_SAFE_INTEGER;
   const secondRank = layoutGraph.canonicalAtomRank?.get(secondAtomId) ?? Number.MAX_SAFE_INTEGER;
-  return firstRank - secondRank || String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true });
+  if (firstRank !== secondRank) {
+    return firstRank - secondRank;
+  }
+  const fallbackOrder = canonicalIdFallbackOrder(layoutGraph);
+  const firstFallbackRank = fallbackOrder.get(String(firstAtomId)) ?? Number.MAX_SAFE_INTEGER;
+  const secondFallbackRank = fallbackOrder.get(String(secondAtomId)) ?? Number.MAX_SAFE_INTEGER;
+  return firstFallbackRank - secondFallbackRank || String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true });
+}
+
+function attachedRingLocalPoseAtomIds(layoutGraph, descriptor) {
+  if (Array.isArray(descriptor._attachedRingLocalPoseAtomIds)) {
+    return descriptor._attachedRingLocalPoseAtomIds;
+  }
+  const atomIds = [...new Set(descriptor.subtreeAtomIds)];
+  atomIds.sort((firstAtomId, secondAtomId) => compareCanonicalIds(layoutGraph, firstAtomId, secondAtomId));
+  descriptor._attachedRingLocalPoseAtomIds = atomIds;
+  return atomIds;
 }
 
 function attachedRingLocalPoseKey(layoutGraph, coords, descriptor) {
@@ -774,14 +803,16 @@ function attachedRingLocalPoseKey(layoutGraph, coords, descriptor) {
     return '';
   }
   const anchorAngle = angleOf(sub(anchorPosition, rootPosition));
-  const atomIds = [...new Set(descriptor.subtreeAtomIds)].filter(atomId => coords.has(atomId));
-  atomIds.sort((firstAtomId, secondAtomId) => compareCanonicalIds(layoutGraph, firstAtomId, secondAtomId));
-  return atomIds
-    .map(atomId => {
-      const alignedPosition = rotate(sub(coords.get(atomId), rootPosition), -anchorAngle);
-      return `${atomId}:${Math.round(alignedPosition.x * 1e6)}:${Math.round(alignedPosition.y * 1e6)}`;
-    })
-    .join('|');
+  const pieces = [];
+  for (const atomId of attachedRingLocalPoseAtomIds(layoutGraph, descriptor)) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const alignedPosition = rotate(sub(position, rootPosition), -anchorAngle);
+    pieces.push(`${atomId}:${Math.round(alignedPosition.x * 1e6)}:${Math.round(alignedPosition.y * 1e6)}`);
+  }
+  return pieces.join('|');
 }
 
 function isExactCleanAttachedRingCandidate(candidate) {
@@ -3799,7 +3830,8 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
   const maxPasses = Math.max(1, options.maxPasses ?? 2);
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
   const maxHeavyAtomCount = options.maxHeavyAtomCount ?? 60;
-  if ((layoutGraph.traits.heavyAtomCount ?? 0) > maxHeavyAtomCount) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  if (heavyAtomCount > maxHeavyAtomCount) {
     return { coords: inputCoords, nudges: 0 };
   }
 

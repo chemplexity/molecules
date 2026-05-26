@@ -1,6 +1,7 @@
 /** @module cleanup/unified-cleanup */
 
-import { buildAtomGrid, computeAtomDistortionCost, measureDivalentContinuationDistortion, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
+import { computeAtomDistortionCost, measureDivalentContinuationDistortion, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
+import { createLayoutEvaluationContext } from '../audit/layout-evaluation-context.js';
 import { CLEANUP_EPSILON, ORTHOGONAL_HYPERVALENT_ELEMENTS, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { computeRotatableSubtrees, runLocalCleanup, runSpiroSmallRingExteriorCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
@@ -161,42 +162,63 @@ function sortedAngularFanDistortion(angles) {
   return cost;
 }
 
-function exactRingRootFanDistortionCost(layoutGraph, coords, atomId) {
-  const atomPosition = coords.get(atomId);
-  if (!atomPosition || !layoutGraph.ringAtomIdSet.has(atomId)) {
+function exactRingRootFanDescriptors(layoutGraph) {
+  if (Array.isArray(layoutGraph._exactRingRootFanDescriptors)) {
+    return layoutGraph._exactRingRootFanDescriptors;
+  }
+  const descriptors = [];
+  for (const atomId of layoutGraph.ringAtomIdSet ?? []) {
+    const neighborAtomIds = [];
+    let ringBondCount = 0;
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H') {
+        continue;
+      }
+      if (bond.inRing) {
+        ringBondCount++;
+      }
+      neighborAtomIds.push(neighborAtomId);
+    }
+    if (neighborAtomIds.length === 3 && ringBondCount >= 2) {
+      descriptors.push({ atomId, neighborAtomIds });
+    }
+  }
+  layoutGraph._exactRingRootFanDescriptors = descriptors;
+  return descriptors;
+}
+
+function exactRingRootFanDistortionCostForDescriptor(coords, descriptor) {
+  const atomPosition = coords.get(descriptor.atomId);
+  if (!atomPosition) {
     return 0;
   }
   const neighborAngles = [];
-  let ringBondCount = 0;
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  for (const neighborAtomId of descriptor.neighborAtomIds) {
     const neighborPosition = coords.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+    if (!neighborPosition) {
       continue;
-    }
-    if (bond.inRing) {
-      ringBondCount++;
     }
     neighborAngles.push(Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x));
   }
-  return neighborAngles.length === 3 && ringBondCount >= 2 ? sortedAngularFanDistortion(neighborAngles) : 0;
+  return neighborAngles.length === 3 ? sortedAngularFanDistortion(neighborAngles) : 0;
 }
 
 function exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) {
   let maxWorsening = 0;
-  for (const atomId of baseCoords.keys()) {
-    if (!layoutGraph.ringAtomIdSet.has(atomId) || !candidateCoords.has(atomId)) {
+  for (const descriptor of exactRingRootFanDescriptors(layoutGraph)) {
+    if (!baseCoords.has(descriptor.atomId) || !candidateCoords.has(descriptor.atomId)) {
       continue;
     }
-    const baseCost = exactRingRootFanDistortionCost(layoutGraph, baseCoords, atomId);
+    const baseCost = exactRingRootFanDistortionCostForDescriptor(baseCoords, descriptor);
     if (baseCost > CLEANUP_EPSILON) {
       continue;
     }
-    const candidateCost = exactRingRootFanDistortionCost(layoutGraph, candidateCoords, atomId);
+    const candidateCost = exactRingRootFanDistortionCostForDescriptor(candidateCoords, descriptor);
     maxWorsening = Math.max(maxWorsening, candidateCost - baseCost);
   }
   return maxWorsening;
@@ -215,18 +237,21 @@ function exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) {
 function exactDivalentContinuationWorsening(layoutGraph, baseCoords, candidateCoords) {
   let maxWorsening = 0;
   let totalWorsening = 0;
+  const focusAtomIds = new Set();
   for (const atomId of baseCoords.keys()) {
     if (!candidateCoords.has(atomId)) {
       continue;
     }
+    focusAtomIds.clear();
+    focusAtomIds.add(atomId);
     const basePenalty = measureDivalentContinuationDistortion(layoutGraph, baseCoords, {
-      focusAtomIds: new Set([atomId])
+      focusAtomIds
     });
     if (basePenalty.centerCount <= 0 || basePenalty.maxDeviation > CLEANUP_EPSILON) {
       continue;
     }
     const candidatePenalty = measureDivalentContinuationDistortion(layoutGraph, candidateCoords, {
-      focusAtomIds: new Set([atomId])
+      focusAtomIds
     });
     const worsening = candidatePenalty.maxDeviation - basePenalty.maxDeviation;
     if (worsening <= CLEANUP_EPSILON) {
@@ -414,24 +439,15 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   const epsilon = options.epsilon ?? CLEANUP_EPSILON;
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
-  let visibleAtomCount = 0;
-  let visibleHeavyAtomCount = 0;
-  for (const atom of layoutGraph.atoms.values()) {
-    if (!atom.visible) {
-      continue;
-    }
-    visibleAtomCount++;
-    if (atom.element !== 'H') {
-      visibleHeavyAtomCount++;
-    }
-  }
   let pendantRigidSubtreesByAtomId = null;
   let coords = new Map();
   for (const [atomId, position] of inputCoords) {
     coords.set(atomId, { x: position.x, y: position.y });
   }
+  let evaluationContext = createLayoutEvaluationContext(layoutGraph, coords, { bondLength });
+  const { visibleAtomCount, visibleHeavyAtomCount } = evaluationContext.displayAtomCounts();
   const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, coords);
-  const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
+  const atomGrid = evaluationContext.atomGrid();
   let passes = 0;
   let totalImprovement = 0;
   let overlapMoves = 0;
@@ -440,9 +456,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   while (passes < maxPasses) {
     const baseOverlapState =
       baseLayoutState ??
-      measureOverlapState(layoutGraph, coords, bondLength, {
-        atomGrid
-      });
+      evaluationContext.measureOverlapState();
     const baseOverlapCount = baseOverlapState.overlapCount;
     let bestPrescoredCandidate = null;
 
@@ -529,7 +543,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
 
     const baseState =
       baseLayoutState ??
-      measureLayoutState(layoutGraph, coords, bondLength, {
+      evaluationContext.measureLayoutState({
         overlaps: baseOverlapState.overlaps
       });
     const bestCandidate = {
@@ -553,6 +567,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
     for (const [atomId, position] of bestCandidate.coords) {
       coords.set(atomId, { x: position.x, y: position.y });
     }
+    evaluationContext = evaluationContext.withCoords(coords, { atomGrid });
     passes++;
     overlapMoves += bestCandidate.overlapMoves;
     totalImprovement += Math.max(bestCandidate.improvement, 0);

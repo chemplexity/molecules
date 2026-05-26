@@ -100,7 +100,32 @@ function componentHasRingConnectionKind(layoutGraph, component, kind) {
 
 function componentRingCount(layoutGraph, component) {
   const componentAtomIds = new Set(component.atomIds);
-  return layoutGraph.rings.filter(ring => ring.atomIds.every(atomId => componentAtomIds.has(atomId))).length;
+  if (!layoutGraph.atomToRings) {
+    return layoutGraph.rings.filter(ring => ring.atomIds.every(atomId => componentAtomIds.has(atomId))).length;
+  }
+
+  const visitedRingIds = new Set();
+  let ringCount = 0;
+  for (const atomId of component.atomIds) {
+    for (const ring of layoutGraph.atomToRings.get(atomId) ?? []) {
+      if (visitedRingIds.has(ring.id)) {
+        continue;
+      }
+      visitedRingIds.add(ring.id);
+      const ringAtomIds = layoutGraph.ringAtomSetByRingId?.get(ring.id) ?? ring.atomIds;
+      let contained = true;
+      for (const ringAtomId of ringAtomIds) {
+        if (!componentAtomIds.has(ringAtomId)) {
+          contained = false;
+          break;
+        }
+      }
+      if (contained) {
+        ringCount++;
+      }
+    }
+  }
+  return ringCount;
 }
 
 function collectParticipantSubtree(layoutGraph, startAtomId, blockedAtomId, participantAtomIds) {

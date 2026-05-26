@@ -17,7 +17,7 @@ function collectJunctionTargets(layoutGraph) {
     return new Map();
   }
 
-  const ringById = new Map(layoutGraph.rings.map(ring => [ring.id, ring]));
+  const ringById = layoutGraph.ringById ?? new Map(layoutGraph.rings.map(ring => [ring.id, ring]));
   const componentByAtomId = new Map();
   for (const component of layoutGraph.components ?? []) {
     for (const atomId of component.atomIds) {

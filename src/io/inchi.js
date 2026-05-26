@@ -487,6 +487,7 @@ function smallestRingForBond(mol, bond, allowedAtoms) {
  * @param {Molecule} mol - The molecule graph.
  * @param {string[]} heavyAtomIds - IDs of heavy atoms in the molecule.
  * @param {number} [totalCharge] - Net formal charge of the molecule component; used to adjust valence targets when charge-bearing atoms are present.
+ * @param {Map<string, number>|null} [atomComponentChargeMap] - Net formal charge keyed by atom ID for disconnected charged components.
  */
 function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentChargeMap = null) {
   const heavySet = new Set(heavyAtomIds);
@@ -716,16 +717,16 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
             const ringSet2 = new Set(ring);
             const hasCarbonyl = a.bonds.some(bId => {
               const b = mol.bonds.get(bId);
-              if (!b) return false;
+              if (!b) {return false;}
               const otherId = b.getOtherAtom(id);
-              if (ringSet2.has(otherId) || !heavySet.has(otherId)) return false;
+              if (ringSet2.has(otherId) || !heavySet.has(otherId)) {return false;}
               const other = mol.atoms.get(otherId);
-              if (!other || (other.properties.charge ?? 0) !== 0) return false;
+              if (!other || (other.properties.charge ?? 0) !== 0) {return false;}
               const otherEl = elements[other.name];
-              if (!otherEl || otherEl.group !== 16) return false;
+              if (!otherEl || otherEl.group !== 16) {return false;}
               // Must have unsatisfied valence (remaining>0) — distinguishes
               // lactone/carbonyl O (no H, remaining=1) from phenol O (has H, remaining=0).
-              if (remaining(otherId) <= 0) return false;
+              if (remaining(otherId) <= 0) {return false;}
               return other.bonds.filter(b2 => {
                 const ob = mol.bonds.get(b2);
                 return ob && heavySet.has(ob.getOtherAtom(otherId));
@@ -878,14 +879,14 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
           if (a && a.name === 'C') {
             const hasCarbonyl = a.bonds.some(bId => {
               const b = mol.bonds.get(bId);
-              if (!b) return false;
+              if (!b) {return false;}
               const otherId = b.getOtherAtom(atomId);
-              if (sysAtoms.has(otherId) || !heavySet.has(otherId)) return false;
+              if (sysAtoms.has(otherId) || !heavySet.has(otherId)) {return false;}
               const other = mol.atoms.get(otherId);
-              if (!other || (other.properties.charge ?? 0) !== 0) return false;
+              if (!other || (other.properties.charge ?? 0) !== 0) {return false;}
               const otherEl = elements[other.name];
-              if (!otherEl || otherEl.group !== 16) return false;
-              if (remaining(otherId) <= 0) return false;
+              if (!otherEl || otherEl.group !== 16) {return false;}
+              if (remaining(otherId) <= 0) {return false;}
               return other.bonds.filter(b2 => {
                 const ob = mol.bonds.get(b2);
                 return ob && heavySet.has(ob.getOtherAtom(otherId));
@@ -1045,28 +1046,28 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
   // so the mid-N becomes N+ and the terminal N becomes N-.
   for (const atomId of heavyAtomIds) {
     const atom = mol.atoms.get(atomId);
-    if (!atom || atom.name !== 'N' || isAromaticRingAtom(atomId, aromaticBondIds)) continue;
-    if (remaining(atomId) !== 1) continue;
+    if (!atom || atom.name !== 'N' || isAromaticRingAtom(atomId, aromaticBondIds)) {continue;}
+    if (remaining(atomId) !== 1) {continue;}
 
     const heavyNonAroBonds = atom.bonds
       .map(bId => mol.bonds.get(bId))
       .filter(b => b && heavySet.has(b.getOtherAtom(atomId)) && !aromaticBondIds.has(b.id));
 
-    if (heavyNonAroBonds.length !== 1 || heavyNonAroBonds[0].properties.order !== 2) continue;
+    if (heavyNonAroBonds.length !== 1 || heavyNonAroBonds[0].properties.order !== 2) {continue;}
 
     const midBond = heavyNonAroBonds[0];
     const midId = midBond.getOtherAtom(atomId);
     const midAtom = mol.atoms.get(midId);
-    if (!midAtom || midAtom.name !== 'N' || remaining(midId) !== 0) continue;
+    if (!midAtom || midAtom.name !== 'N' || remaining(midId) !== 0) {continue;}
 
     const midOtherBonds = midAtom.bonds
       .map(bId => mol.bonds.get(bId))
       .filter(b => b && b.id !== midBond.id && heavySet.has(b.getOtherAtom(midId)) && !aromaticBondIds.has(b.id));
 
-    if (midOtherBonds.length !== 1) continue;
+    if (midOtherBonds.length !== 1) {continue;}
     const xBond = midOtherBonds[0];
     const xId = xBond.getOtherAtom(midId);
-    if (remaining(xId) <= 0 || xBond.properties.order >= 2) continue;
+    if (remaining(xId) <= 0 || xBond.properties.order >= 2) {continue;}
 
     xBond.properties.order = 2;
   }
@@ -1096,22 +1097,22 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
   // endpoints must have remaining>0 prevents promotion of fully-satisfied
   // aromatic atoms and avoids disturbing Kekulé assignment.
   for (const atomId of heavyAtomIds) {
-    if (isAromaticRingAtom(atomId, aromaticBondIds)) continue;
+    if (isAromaticRingAtom(atomId, aromaticBondIds)) {continue;}
     const atom = mol.atoms.get(atomId);
-    if (!atom) continue;
+    if (!atom) {continue;}
     const el = elements[atom.name];
     // Only period-2 C/N (groups 14–15): avoids wrong-neutral-valence atoms (e.g. B).
-    if (!el || el.period !== 2 || el.group < 14 || el.group > 15) continue;
-    if (remaining(atomId) !== 1) continue; // rem=1 only: sp2 unsaturation, not CH2 (rem=2) or CH3 (rem=3)
+    if (!el || el.period !== 2 || el.group < 14 || el.group > 15) {continue;}
+    if (remaining(atomId) !== 1) {continue;} // rem=1 only: sp2 unsaturation, not CH2 (rem=2) or CH3 (rem=3)
     // Scan non-aromatic heavy neighbours, collecting topology info needed for guards.
     let nonAroHeavyCount = 0;
     let allNonAroHaveHBond = true;  // false if any non-aro neighbor lacks an H bond
     let allNonAroExpanded = true;   // false if any non-aro neighbor is NOT a period-3+ expanded-valence atom
     const hasNonAroOption = atom.bonds.some(bId => {
       const b = mol.bonds.get(bId);
-      if (!b || aromaticBondIds.has(bId)) return false;
+      if (!b || aromaticBondIds.has(bId)) {return false;}
       const otherId = b.getOtherAtom(atomId);
-      if (!heavySet.has(otherId) || isAromaticRingAtom(otherId, aromaticBondIds)) return false;
+      if (!heavySet.has(otherId) || isAromaticRingAtom(otherId, aromaticBondIds)) {return false;}
       nonAroHeavyCount++;
       const remOther = remaining(otherId);
       const otherAtomObj = mol.atoms.get(otherId);
@@ -1120,37 +1121,37 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
       // base valence (e.g. sulfone S has 4 bonds but base=2 → expanded).
       const otherBase = (otherEl && otherEl.group >= 13 && otherEl.group <= 17) ? 18 - otherEl.group : 0;
       const isExpanded = otherEl && otherEl.period > 2 && (otherAtomObj?.getValence(mol) ?? 0) > otherBase;
-      if (!isExpanded) allNonAroExpanded = false;
+      if (!isExpanded) {allNonAroExpanded = false;}
       const neighborHasH = otherAtomObj?.bonds.some(bId2 => {
         const b2 = mol.bonds.get(bId2);
         return b2 && !heavySet.has(b2.getOtherAtom(otherId));
       });
-      if (!neighborHasH) allNonAroHaveHBond = false;
+      if (!neighborHasH) {allNonAroHaveHBond = false;}
       return remOther > 0;
     });
-    if (hasNonAroOption) continue;
+    if (hasNonAroOption) {continue;}
     // Guard A (amidinium/guanidinium): atom has 2+ non-aromatic heavy bonds AND every
     // non-aromatic neighbor carries at least one H bond (amino/imino N with rem=0 from H).
     // The correct double bond is C=N+, not atom→ring, so skip the ring promotion.
-    if (nonAroHeavyCount >= 2 && allNonAroHaveHBond) continue;
+    if (nonAroHeavyCount >= 2 && allNonAroHaveHBond) {continue;}
     // Guard B (sulfonamide-anion N): atom is a period-2 N whose only non-aromatic
     // heavy neighbours are period-3+ atoms in expanded valence (e.g. sulfone S with
     // 4 bonds > base-2). The atom will become [N-] via charge assignment; promoting
     // it to the ring creates a spurious double bond.
-    if (el.group === 15 && nonAroHeavyCount >= 1 && allNonAroExpanded) continue;
+    if (el.group === 15 && nonAroHeavyCount >= 1 && allNonAroExpanded) {continue;}
     // Find exactly one aromatic neighbour with remaining>0 and promote.
     for (const bId of atom.bonds) {
       const b = mol.bonds.get(bId);
-      if (!b || aromaticBondIds.has(bId)) continue;
+      if (!b || aromaticBondIds.has(bId)) {continue;}
       const otherId = b.getOtherAtom(atomId);
-      if (!heavySet.has(otherId) || !isAromaticRingAtom(otherId, aromaticBondIds)) continue;
-      if (remaining(otherId) <= 0 || b.properties.order >= 3) continue;
+      if (!heavySet.has(otherId) || !isAromaticRingAtom(otherId, aromaticBondIds)) {continue;}
+      if (remaining(otherId) <= 0 || b.properties.order >= 3) {continue;}
       // Hypervalence guard: promoting this bond by 1 combined with Phase C
       // converting each aromatic bond on the neighbour from order 1 to 1.5
       // must not push the neighbour past its normal valence.
       const neighborAroBondCount = (mol.atoms.get(otherId)?.bonds ?? [])
         .filter(bid => aromaticBondIds.has(bid)).length;
-      if (1 + neighborAroBondCount * 0.5 > remaining(otherId)) continue;
+      if (1 + neighborAroBondCount * 0.5 > remaining(otherId)) {continue;}
       b.properties.order += 1;
       break;
     }
@@ -1186,13 +1187,13 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
     if (compCharge < 0) {
       const terminalChalcogenCount = atom.bonds.filter(bId => {
         const b = mol.bonds.get(bId);
-        if (!b || aromaticBondIds.has(bId) || b.properties.order !== 1) return false;
+        if (!b || aromaticBondIds.has(bId) || b.properties.order !== 1) {return false;}
         const otherId = b.getOtherAtom(atomId);
-        if (!heavySet.has(otherId) || remaining(otherId) <= 0) return false;
+        if (!heavySet.has(otherId) || remaining(otherId) <= 0) {return false;}
         const other = mol.atoms.get(otherId);
-        if (!other) return false;
+        if (!other) {return false;}
         const otherEl = elements[other.name];
-        if (!otherEl || otherEl.group !== 16) return false;
+        if (!otherEl || otherEl.group !== 16) {return false;}
         return other.bonds.filter(b2 => {
           const ob = mol.bonds.get(b2);
           return ob && heavySet.has(ob.getOtherAtom(otherId));
@@ -1250,26 +1251,26 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
   // zwitterion.  Restricted to 6-membered rings to avoid false-positive on
   // 5-membered rings (e.g. tetrazolate where the O is a genuine O− anion).
   for (const [atomId] of localizedNeed) {
-    if ((localizedNeed.get(atomId) ?? 0) !== 0) continue;
+    if ((localizedNeed.get(atomId) ?? 0) !== 0) {continue;}
     const atom = mol.atoms.get(atomId);
     const el = atom && elements[atom.name];
-    if (!el || el.period !== 2 || el.group !== 15) continue;
+    if (!el || el.period !== 2 || el.group !== 15) {continue;}
     // Only 6-membered rings: check that the atom participates in a 6-membered aromatic ring.
     const inSixRing = [...uniqueRings.values()].some(r => r.length === 6 && r.includes(atomId));
-    if (!inSixRing) continue;
+    if (!inSixRing) {continue;}
     const isNOxide = atom.bonds.some(bId => {
       const b = mol.bonds.get(bId);
-      if (!b || aromaticBondIds.has(bId)) return false;
+      if (!b || aromaticBondIds.has(bId)) {return false;}
       const otherId = b.getOtherAtom(atomId);
-      if (!heavySet.has(otherId)) return false;
+      if (!heavySet.has(otherId)) {return false;}
       const otherEl = elements[mol.atoms.get(otherId)?.name];
-      if (!otherEl || otherEl.group !== 16) return false;
+      if (!otherEl || otherEl.group !== 16) {return false;}
       return mol.atoms.get(otherId)?.bonds.filter(b2 => {
         const ob = mol.bonds.get(b2);
         return ob && heavySet.has(ob.getOtherAtom(otherId));
       }).length === 1;
     });
-    if (isNOxide) localizedNeed.set(atomId, 1);
+    if (isNOxide) {localizedNeed.set(atomId, 1);}
   }
 
   // Pyridinium N+ correction: N+ (charge=+1) in a 6-membered aromatic ring has
@@ -1277,13 +1278,13 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
   // and needs one ring double bond in the Kekulé structure (gives totalBO=4 →
   // computeCharge=+1). Without this, the ring Kekulé fails (odd need count).
   for (const [atomId] of localizedNeed) {
-    if ((localizedNeed.get(atomId) ?? 0) !== 0) continue;
+    if ((localizedNeed.get(atomId) ?? 0) !== 0) {continue;}
     const atom = mol.atoms.get(atomId);
-    if (!atom || atom.getCharge() !== 1) continue;
+    if (!atom || atom.getCharge() !== 1) {continue;}
     const el = atom && elements[atom.name];
-    if (!el || el.period !== 2 || el.group !== 15) continue;
+    if (!el || el.period !== 2 || el.group !== 15) {continue;}
     const inSixRing = [...uniqueRings.values()].some(r => r.length === 6 && r.includes(atomId));
-    if (inSixRing) localizedNeed.set(atomId, 1);
+    if (inSixRing) {localizedNeed.set(atomId, 1);}
   }
 
   // For aromatic C atoms with external (non-aromatic) heavy bonds: if skipping
@@ -2058,7 +2059,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         fractionalCandidates.sort((a, b) => {
           const distA = Math.abs(a.charge - remaining);
           const distB = Math.abs(b.charge - remaining);
-          if (Math.abs(distA - distB) > 1e-9) return distA - distB;
+          if (Math.abs(distA - distB) > 1e-9) {return distA - distB;}
           // Tiebreak: prefer heteroatoms (N, O, S, …) over carbon
           const isHetA = ['C', 'H'].includes(a.atom.name) ? 1 : 0;
           const isHetB = ['C', 'H'].includes(b.atom.name) ? 1 : 0;
@@ -2090,7 +2091,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         }
         const nonAroBonds = atom.bonds.filter(bId => {
           const b = mol.bonds.get(bId);
-          if (!b || b.properties.aromatic) return false;
+          if (!b || b.properties.aromatic) {return false;}
           const other = mol.atoms.get(b.getOtherAtom(atom.id));
           return other && other.name !== 'H';
         }).length;
@@ -2254,6 +2255,10 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         });
     };
 
+    // Track successfully-assigned entries so later entries can verify they
+    // don't destroy already-correct stereo on shared (bridge) bonds.
+    const processedEntries = [];
+
     for (const entry of doubleBondStereoEntries) {
       if (entry.parity === '?') {
         continue;
@@ -2281,8 +2286,16 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
               encodeStereoDirection(bondA, idA, dirA);
               encodeStereoDirection(bondB, idB, dirB);
               if (mol.getEZStereo(dbl.id) === target) {
-                assigned = true;
-                break;
+                // Verify this combo doesn't break any previously-assigned entry.
+                // Conjugated chains share a bridge bond between adjacent double
+                // bonds; nulling and resetting it here can flip a prior entry.
+                const allPrevOk = processedEntries.every(
+                  pe => mol.getEZStereo(pe.dbl.id) === pe.target
+                );
+                if (allPrevOk) {
+                  assigned = true;
+                  break;
+                }
               }
             }
             if (assigned) {
@@ -2298,6 +2311,10 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         if (assigned) {
           break;
         }
+      }
+
+      if (assigned) {
+        processedEntries.push({ dbl, target });
       }
     }
 
@@ -2322,8 +2339,8 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
           continue;
         }
 
-        // Try flipping each stereo bond (A-side first for non-shared bonds,
-        // then B-side) until the parity matches.
+        // Try flipping each stereo bond (A-side first, then B-side) until the
+        // parity matches AND no other entry is broken by the flip.
         let corrected = false;
         for (const side of [pickCandidateBonds(idA, dbl.id), pickCandidateBonds(idB, dbl.id)]) {
           for (const bond of side) {
@@ -2333,9 +2350,23 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
             const orig = bond.properties.stereo;
             bond.properties.stereo = orig === '/' ? '\\' : '/';
             if (mol.getEZStereo(dbl.id) === target) {
-              corrected = true;
-              madeChange = true;
-              break;
+              const breaksOther = doubleBondStereoEntries.some(other => {
+                if (other === entry || other.parity === '?') {
+                  return false;
+                }
+                const oA = idByIndex.get(other.atomA);
+                const oB = idByIndex.get(other.atomB);
+                const od = oA && oB ? mol.getBond(oA, oB) : null;
+                if (!od || od.properties.order !== 2) {
+                  return false;
+                }
+                return mol.getEZStereo(od.id) !== (other.parity === '+' ? 'E' : 'Z');
+              });
+              if (!breaksOther) {
+                corrected = true;
+                madeChange = true;
+                break;
+              }
             }
             bond.properties.stereo = orig;
           }
@@ -2578,33 +2609,33 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   // numbering consistently places the charged tautomer position at a higher index.
   function fixGuanidiniumCharge(mol) {
     const targetCharge = componentChargeTargets.reduce((s, c) => s + c, 0);
-    if (targetCharge === 0) return;
+    if (targetCharge === 0) {return;}
     const currentCharge = [...mol.atoms.values()].reduce((s, a) => s + (a.properties.charge ?? 0), 0);
-    if (currentCharge === targetCharge) return;
+    if (currentCharge === targetCharge) {return;}
     const nIdRank = id => parseInt(id.replace(/\D+/g, ''), 10) || 0;
     let bestN = null;
     let bestRank = -1;
     for (const atomId of heavyAtomIds) {
       const atom = mol.atoms.get(atomId);
-      if (!atom || atom.name !== 'C' || atom.properties.aromatic) continue;
+      if (!atom || atom.name !== 'C' || atom.properties.aromatic) {continue;}
       const cBO = atom.bonds.reduce((s, b) => s + (mol.bonds.get(b)?.properties.order ?? 1), 0);
-      if (cBO !== 4) continue;
+      if (cBO !== 4) {continue;}
       const nBonds = atom.bonds
         .map(bid => mol.bonds.get(bid))
         .filter(Boolean)
         .filter(bond => mol.atoms.get(bond.getOtherAtom(atom.id))?.name === 'N');
-      if (nBonds.length < 3) continue;
+      if (nBonds.length < 3) {continue;}
       const hasDoubleBondTerminalN = nBonds.some(bond => {
-        if ((bond.properties.order ?? 1) !== 2) return false;
+        if ((bond.properties.order ?? 1) !== 2) {return false;}
         const n = mol.atoms.get(bond.getOtherAtom(atom.id));
         return n && n.getHeavyNeighbors(mol).length === 1 && (n.properties.charge ?? 0) === 0;
       });
-      if (!hasDoubleBondTerminalN) continue;
+      if (!hasDoubleBondTerminalN) {continue;}
       for (const bond of nBonds) {
-        if ((bond.properties.order ?? 1) !== 1) continue;
+        if ((bond.properties.order ?? 1) !== 1) {continue;}
         const n = mol.atoms.get(bond.getOtherAtom(atom.id));
-        if (!n || n.getHeavyNeighbors(mol).length !== 1 || (n.properties.charge ?? 0) !== 0) continue;
-        if (n.getHydrogenNeighbors(mol).length < 2) continue;
+        if (!n || n.getHeavyNeighbors(mol).length !== 1 || (n.properties.charge ?? 0) !== 0) {continue;}
+        if (n.getHydrogenNeighbors(mol).length < 2) {continue;}
         const rank = nIdRank(n.id);
         if (rank > bestRank) {
           bestRank = rank;
@@ -2612,7 +2643,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         }
       }
     }
-    if (bestN) bestN.setCharge(1);
+    if (bestN) {bestN.setCharge(1);}
   }
 
   // When a carbon bearing -1 formal charge is adjacent (directly or via one C)
@@ -2711,7 +2742,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       const atomCompChargeMap = new Map();
       for (let ci = 0; ci < componentHeavyAtomIds.length; ci++) {
         const cc = componentChargeTargets[ci] ?? 0;
-        for (const aid of componentHeavyAtomIds[ci]) atomCompChargeMap.set(aid, cc);
+        for (const aid of componentHeavyAtomIds[ci]) {atomCompChargeMap.set(aid, cc);}
       }
       inferBondOrders(
         mol,
@@ -2848,7 +2879,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       const atomCompChargeMap2 = new Map();
       for (let ci = 0; ci < componentHeavyAtomIds.length; ci++) {
         const cc = componentChargeTargets[ci] ?? 0;
-        for (const aid of componentHeavyAtomIds[ci]) atomCompChargeMap2.set(aid, cc);
+        for (const aid of componentHeavyAtomIds[ci]) {atomCompChargeMap2.set(aid, cc);}
       }
       inferBondOrders(
         heavyMol,

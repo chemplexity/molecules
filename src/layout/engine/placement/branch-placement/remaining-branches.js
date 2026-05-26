@@ -855,7 +855,7 @@ function ringRootHasPreviewableNeighbors(layoutGraph, ringRootAtomId) {
 function futureRingTerminalLeafSlotPoints(layoutGraph, ringRootPosition, rootParentAngle, bondLength, ringRootAtomId) {
   const ring = (layoutGraph?.atomToRings.get(ringRootAtomId) ?? [])[0];
   const ringAtomIds = ring?.atomIds ?? [];
-  const ringRootIndex = ringAtomIds.indexOf(ringRootAtomId);
+  const ringRootIndex = layoutGraph?.ringAtomIndexByRingId?.get(ring?.id)?.get(ringRootAtomId) ?? ringAtomIds.indexOf(ringRootAtomId);
   if (!ring || ringRootIndex < 0 || !supportsExteriorBranchSpreadRingSize(ringAtomIds.length)) {
     return [];
   }

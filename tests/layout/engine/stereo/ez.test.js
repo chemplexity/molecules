@@ -83,7 +83,7 @@ describe('layout/engine/stereo/ez', () => {
 
     assert.equal(summary.violationCount, 0);
     assert.equal(partiallyPlacedCheck.actual, 'Z');
-    assert.equal(partiallyPlacedCheck.supported, true);
+    assert.equal(partiallyPlacedCheck.supported, false);
     assert.equal(partiallyPlacedCheck.ok, true);
   });
 });

@@ -561,12 +561,13 @@ function isPlanarTertiaryRingNitrogenExocyclicBisectorEligible(layoutGraph, anch
 
   let ringNeighborCount = 0;
   let exocyclicChildCount = 0;
+  const anchorRingAtomSets = anchorRings.map(ring => layoutGraph.ringAtomSetByRingId?.get(ring.id) ?? new Set(ring.atomIds));
   for (const { neighborAtomId } of visibleHeavyCovalentBonds(layoutGraph, anchorAtomId)) {
     if (neighborAtomId === childAtomId) {
       exocyclicChildCount++;
       continue;
     }
-    if (anchorRings.some(ring => ring.atomIds.includes(neighborAtomId))) {
+    if (anchorRingAtomSets.some(ringAtomIdSet => ringAtomIdSet.has(neighborAtomId))) {
       ringNeighborCount++;
     }
   }
@@ -2308,9 +2309,14 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
   if (!layoutGraph) {
     return false;
   }
+  const cache = layoutGraph._projectedTetrahedralGeometrySupportCache ?? (layoutGraph._projectedTetrahedralGeometrySupportCache = new Map());
+  if (cache.has(atomId)) {
+    return cache.get(atomId);
+  }
 
   const atom = layoutGraph.atoms.get(atomId);
   if (!atom || atom.element === 'H' || atom.aromatic || layoutGraph.ringAtomIdSet.has(atomId)) {
+    cache.set(atomId, false);
     return false;
   }
 
@@ -2322,6 +2328,7 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
   let hasConjugatedTrigonalNeighbor = false;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      cache.set(atomId, false);
       return false;
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
@@ -2351,10 +2358,11 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
   }
 
   if (heavySingleBondCount !== 4) {
+    cache.set(atomId, false);
     return false;
   }
 
-  return (
+  const supported = (
     isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, atomId) ||
     presentationCriticalLeafCount >= 2 ||
     (attachedRingRootCount >= 2 && terminalHeavyLeafCount >= 1) ||
@@ -2363,6 +2371,8 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
     hasLinearNeighbor ||
     (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0)
   );
+  cache.set(atomId, supported);
+  return supported;
 }
 
 function orthogonalSlotAssignments(placedCount) {
@@ -2612,13 +2622,23 @@ function projectedTerminalLeafRescueAngleSets(layoutGraph, coords, anchorPositio
  * @returns {boolean} True when the neighbor can be treated as a terminal slot occupant.
  */
 export function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const cache = layoutGraph._compactProjectedTerminalSubstituentCache ?? (layoutGraph._compactProjectedTerminalSubstituentCache = new Map());
+  const cacheKey = `${centerAtomId}\u0000${atomId}`;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
   const atom = layoutGraph?.atoms?.get(atomId);
   if (!layoutGraph || !atom || atom.element === 'H' || atom.aromatic || layoutGraph.ringAtomIdSet.has(atomId)) {
+    cache.set(cacheKey, false);
     return false;
   }
 
   const centerBond = findLayoutBond(layoutGraph, centerAtomId, atomId);
   if (!centerBond || centerBond.kind !== 'covalent' || centerBond.aromatic || (centerBond.order ?? 1) !== 1) {
+    cache.set(cacheKey, false);
     return false;
   }
 
@@ -2626,6 +2646,7 @@ export function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId,
   let terminalHalogenLeafCount = 0;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      cache.set(cacheKey, false);
       return false;
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
@@ -2637,6 +2658,7 @@ export function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId,
       continue;
     }
     if (neighborAtom.heavyDegree !== 1 || layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+      cache.set(cacheKey, false);
       return false;
     }
     terminalHeavyLeafCount++;
@@ -2645,9 +2667,11 @@ export function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId,
     }
   }
 
-  return (
+  const compact = (
     terminalHeavyLeafCount >= 2 || (atom.element === 'C' && terminalHeavyLeafCount === 1 && terminalHalogenLeafCount === 1) || (['O', 'S', 'Se'].includes(atom.element) && terminalHeavyLeafCount === 1)
   );
+  cache.set(cacheKey, compact);
+  return compact;
 }
 
 function isProjectedTetrahedralLeafNeighbor(layoutGraph, centerAtomId, atomId) {
@@ -3277,6 +3301,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
     return null;
   }
 
+  const ringAtomIdSet = layoutGraph.ringAtomSetByRingId?.get(ring.id) ?? new Set(ring.atomIds);
   const ringNeighborIds = [];
   const exocyclicNeighborIds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
@@ -3288,7 +3313,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    if (ring.atomIds.includes(neighborAtomId)) {
+    if (ringAtomIdSet.has(neighborAtomId)) {
       ringNeighborIds.push(neighborAtomId);
       continue;
     }

@@ -56,6 +56,18 @@ function _buildIndex(mol) {
   return { neighborSet, neighborToBond, atoms: mol.atoms, bonds: mol.bonds, degreeMap, elementCount };
 }
 
+/**
+ * Builds a reusable VF2 adjacency index for a molecule graph.
+ * Callers that probe the same target or query against many partners can pass
+ * the result back through `findSubgraphMappings` options to avoid rebuilding
+ * the same O(V+E) index for each probe.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {MolIndex} The computed result.
+ */
+export function createSubgraphIndex(mol) {
+  return _buildIndex(mol);
+}
+
 // ---------------------------------------------------------------------------
 // Query atom ordering — BFS from highest-degree root
 // ---------------------------------------------------------------------------
@@ -104,6 +116,19 @@ function _queryOrder(idx) {
   }
 
   return ordered;
+}
+
+/**
+ * Builds a reusable query search plan for VF2 subgraph matching.
+ * @param {import('../core/Molecule.js').Molecule} query - The query graph.
+ * @returns {{queryIndex: MolIndex, queryOrder: string[]}} Reusable query index and traversal order.
+ */
+export function createSubgraphQueryPlan(query) {
+  const queryIndex = createSubgraphIndex(query);
+  return {
+    queryIndex,
+    queryOrder: _queryOrder(queryIndex)
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +326,9 @@ function* _vf2(state, depth) {
  * - `limit`              `number` — stop after this many mappings (default: `Infinity`)
  * - `skipElementFilter`  `boolean` — disable the O(n) element-frequency pre-filter
  *                        (required when using wildcard or SMARTS atom predicates)
+ * - `targetIndex`        reusable target index from `createSubgraphIndex`
+ * - `queryIndex`         reusable query index from `createSubgraphQueryPlan`
+ * - `queryOrder`         reusable query order from `createSubgraphQueryPlan`
  * @param {import('../core/Molecule.js').Molecule} target - The target structure.
  * @param {import('../core/Molecule.js').Molecule} query - The query structure.
  * @param {object} [options] - Configuration options.
@@ -308,10 +336,13 @@ function* _vf2(state, depth) {
  * @param {(qBond: import('../core/Bond.js').Bond, tBond: import('../core/Bond.js').Bond) => boolean} [options.bondMatch] - Configuration sub-option.
  * @param {number} [options.limit] - Maximum number of results.
  * @param {boolean} [options.skipElementFilter] - Configuration sub-option.
+ * @param {MolIndex} [options.targetIndex] - Optional precomputed target index.
+ * @param {MolIndex} [options.queryIndex] - Optional precomputed query index.
+ * @param {string[]} [options.queryOrder] - Optional precomputed query traversal order.
  * @yields {Map<string, string>}
  */
 export function* findSubgraphMappings(target, query, options = {}) {
-  const { atomMatch = defaultAtomMatch, bondMatch = defaultBondMatch, limit = Infinity, skipElementFilter = false } = options;
+  const { atomMatch = defaultAtomMatch, bondMatch = defaultBondMatch, limit = Infinity, skipElementFilter = false, targetIndex = null, queryIndex = null, queryOrder: cachedQueryOrder = null } = options;
 
   // Trivial case: empty query matches everything once.
   if (query.atoms.size === 0) {
@@ -327,15 +358,15 @@ export function* findSubgraphMappings(target, query, options = {}) {
     return;
   }
 
-  const queryIdx = _buildIndex(query);
-  const targetIdx = _buildIndex(target);
+  const queryIdx = queryIndex ?? _buildIndex(query);
+  const targetIdx = targetIndex ?? _buildIndex(target);
 
   // O(n) element-frequency rejection.
   if (!skipElementFilter && !_elementFrequencyOk(queryIdx, targetIdx)) {
     return;
   }
 
-  const queryOrder = _queryOrder(queryIdx);
+  const queryOrder = cachedQueryOrder ?? _queryOrder(queryIdx);
 
   const state = {
     queryToTarget: new Map(),

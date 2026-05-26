@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { parseSMILES } from '../../src/io/index.js';
-import { findSubgraphMappings, findFirstSubgraphMapping, matchesSubgraph } from '../../src/algorithms/vf2.js';
+import { createSubgraphIndex, createSubgraphQueryPlan, findSubgraphMappings, findFirstSubgraphMapping, matchesSubgraph } from '../../src/algorithms/vf2.js';
 import { wildcardAtomMatch, wildcardBondMatch, elementOnlyAtomMatch, makeAtomMatcher } from '../../src/algorithms/subgraph.js';
 
 // ---------------------------------------------------------------------------
@@ -317,6 +317,18 @@ describe('findSubgraphMappings — options.limit', () => {
   it('limit larger than match count returns all matches', () => {
     const results = collectAll(findSubgraphMappings(propane(), singleCarbon(), { limit: 999 }));
     assert.equal(results.length, 3);
+  });
+});
+
+describe('findSubgraphMappings — reusable indexes', () => {
+  it('reuses caller-provided target and query indexes without changing mappings', () => {
+    const target = propane();
+    const query = ethane();
+    const targetIndex = createSubgraphIndex(target);
+    const queryPlan = createSubgraphQueryPlan(query);
+    const baseline = collectAll(findSubgraphMappings(target, query)).map(mapping => [...mapping.entries()]);
+    const indexed = collectAll(findSubgraphMappings(target, query, { targetIndex, ...queryPlan })).map(mapping => [...mapping.entries()]);
+    assert.deepEqual(indexed, baseline);
   });
 });
 

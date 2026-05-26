@@ -21,7 +21,7 @@ function findBondBetween(molecule, firstAtomId, secondAtomId) {
 }
 
 function findComponentAtomIds(layoutGraph, atomId) {
-  return layoutGraph.components.find(component => component.atomIds.includes(atomId))?.atomIds ?? [atomId];
+  return layoutGraph.componentByAtomId?.get(atomId)?.atomIds ?? layoutGraph.components.find(component => component.atomIds.includes(atomId))?.atomIds ?? [atomId];
 }
 
 /**

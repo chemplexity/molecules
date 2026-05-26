@@ -1,7 +1,12 @@
 /** @module templates/match */
 
-import { findSubgraphMappings } from '../../../algorithms/vf2.js';
+import { createSubgraphIndex, createSubgraphQueryPlan, findSubgraphMappings } from '../../../algorithms/vf2.js';
+import { defaultAtomMatch } from '../../../algorithms/subgraph.js';
 import { listTemplates } from './library.js';
+
+const templateElementSignatureCache = new WeakMap();
+const frozenTemplateIndexCache = new WeakMap();
+const templateQueryPlanCache = new WeakMap();
 
 function compareStrings(firstValue, secondValue) {
   return String(firstValue).localeCompare(String(secondValue), 'en', { numeric: true });
@@ -53,21 +58,97 @@ function countTemplateElements(template) {
 }
 
 /**
- * Returns whether two element-count maps are identical.
- * @param {Map<string, number>} firstCounts - First element counts.
- * @param {Map<string, number>} secondCounts - Second element counts.
- * @returns {boolean} True when both maps contain the same element counts.
+ * Encodes element-count maps into a deterministic lookup key.
+ * @param {Map<string, number>} counts - Element counts.
+ * @returns {string} Stable element-count signature.
  */
-function elementCountsEqual(firstCounts, secondCounts) {
-  if (firstCounts.size !== secondCounts.size) {
-    return false;
+function elementCountsSignature(counts) {
+  return [...counts.entries()]
+    .sort(([firstElement], [secondElement]) => compareStrings(firstElement, secondElement))
+    .map(([element, count]) => `${element}:${count}`)
+    .join(',');
+}
+
+function candidateElementSignature(layoutGraph, atomIds) {
+  return elementCountsSignature(countCandidateElements(layoutGraph, atomIds));
+}
+
+function templateElementSignature(template) {
+  const cachedSignature = templateElementSignatureCache.get(template);
+  if (cachedSignature != null) {
+    return cachedSignature;
   }
-  for (const [element, count] of firstCounts) {
-    if (secondCounts.get(element) !== count) {
-      return false;
-    }
+  const signature = elementCountsSignature(countTemplateElements(template));
+  templateElementSignatureCache.set(template, signature);
+  return signature;
+}
+
+function templateIndexKey(template, includeFamily, elementSignature = templateElementSignature(template)) {
+  const familyPart = includeFamily ? `${template.family}|` : '';
+  return `${familyPart}${template.atomCount}|${template.bondCount}|${template.ringCount}|${elementSignature}`;
+}
+
+function candidateIndexKey(candidate, includeFamily, elementSignature) {
+  const familyPart = includeFamily ? `${candidate.family}|` : '';
+  return `${familyPart}${candidate.atomCount}|${candidate.bondCount}|${candidate.ringCount}|${elementSignature}`;
+}
+
+function addTemplateToIndex(index, key, template) {
+  const templates = index.get(key);
+  if (templates) {
+    templates.push(template);
+    return;
   }
-  return true;
+  index.set(key, [template]);
+}
+
+function buildTemplateIndex(templates) {
+  const byFamily = new Map();
+  const ignoringFamily = new Map();
+  for (const template of templates) {
+    const elementSignature = templateElementSignature(template);
+    addTemplateToIndex(byFamily, templateIndexKey(template, true, elementSignature), template);
+    addTemplateToIndex(ignoringFamily, templateIndexKey(template, false, elementSignature), template);
+  }
+  return { byFamily, ignoringFamily };
+}
+
+function getTemplateIndex(templates) {
+  if (!Object.isFrozen(templates)) {
+    return buildTemplateIndex(templates);
+  }
+  const cachedIndex = frozenTemplateIndexCache.get(templates);
+  if (cachedIndex) {
+    return cachedIndex;
+  }
+  const index = buildTemplateIndex(templates);
+  frozenTemplateIndexCache.set(templates, index);
+  return index;
+}
+
+function getEligibleTemplates(layoutGraph, candidate, templates, includeFamily) {
+  const elementSignature = candidateElementSignature(layoutGraph, candidate.atomIds);
+  return getEligibleTemplatesForSignature(candidate, templates, includeFamily, elementSignature);
+}
+
+function getEligibleTemplatesForSignature(candidate, templates, includeFamily, elementSignature) {
+  const index = getTemplateIndex(templates);
+  const key = candidateIndexKey(candidate, includeFamily, elementSignature);
+  return (includeFamily ? index.byFamily : index.ignoringFamily).get(key) ?? [];
+}
+
+function templateQueryPlan(template) {
+  const cachedPlan = templateQueryPlanCache.get(template);
+  if (cachedPlan) {
+    return cachedPlan;
+  }
+  const plan = createSubgraphQueryPlan(template.molecule);
+  templateQueryPlanCache.set(template, plan);
+  return plan;
+}
+
+function templateHasLateMatchContext(template) {
+  return (template.matchContext?.mappedBonds?.length ?? 0) > 0;
 }
 
 /**
@@ -172,6 +253,85 @@ function matchesMappedAtomConstraint(layoutGraph, mapping, constraint) {
   return true;
 }
 
+function targetAtomMatchesMappedAtomConstraint(targetAtom, constraint) {
+  if (!targetAtom) {
+    return false;
+  }
+
+  if (constraint.element != null && targetAtom.name !== constraint.element) {
+    return false;
+  }
+  if (constraint.charge != null && targetAtom.getCharge() !== constraint.charge) {
+    return false;
+  }
+  if (constraint.aromatic != null && targetAtom.isAromatic() !== constraint.aromatic) {
+    return false;
+  }
+  if (constraint.radical != null && targetAtom.getRadical() !== constraint.radical) {
+    return false;
+  }
+  if (constraint.neighborDegree != null && targetAtom.bonds.length !== constraint.neighborDegree) {
+    return false;
+  }
+
+  return true;
+}
+
+function constraintsByTemplateAtomId(constraints) {
+  const byTemplateAtomId = new Map();
+  for (let index = 0; index < constraints.length; index++) {
+    const constraint = constraints[index];
+    const templateAtomId = constraint.templateAtomId;
+    if (!templateAtomId) {
+      continue;
+    }
+    const entries = byTemplateAtomId.get(templateAtomId) ?? [];
+    entries.push({ constraint, index });
+    byTemplateAtomId.set(templateAtomId, entries);
+  }
+  return byTemplateAtomId;
+}
+
+function createTemplateContextAtomMatch(layoutGraph, template, candidateAtomIdSet) {
+  const mappedAtoms = template.matchContext?.mappedAtoms ?? [];
+  const exocyclicNeighbors = template.matchContext?.exocyclicNeighbors ?? [];
+  if (mappedAtoms.length === 0 && exocyclicNeighbors.length === 0) {
+    return null;
+  }
+
+  const mappedAtomsByTemplateAtomId = constraintsByTemplateAtomId(mappedAtoms);
+  const exocyclicNeighborsByTemplateAtomId = constraintsByTemplateAtomId(exocyclicNeighbors);
+  const exocyclicCountCache = new Map();
+
+  return (queryAtom, targetAtom) => {
+    if (!defaultAtomMatch(queryAtom, targetAtom)) {
+      return false;
+    }
+
+    for (const { constraint } of mappedAtomsByTemplateAtomId.get(queryAtom.id) ?? []) {
+      if (!targetAtomMatchesMappedAtomConstraint(targetAtom, constraint)) {
+        return false;
+      }
+    }
+
+    for (const { constraint, index } of exocyclicNeighborsByTemplateAtomId.get(queryAtom.id) ?? []) {
+      const cacheKey = `${index}\u0001${targetAtom.id}`;
+      let matchCount = exocyclicCountCache.get(cacheKey);
+      if (matchCount == null) {
+        matchCount = countMatchingExocyclicNeighbors(layoutGraph, candidateAtomIdSet, targetAtom.id, constraint);
+        exocyclicCountCache.set(cacheKey, matchCount);
+      }
+      const minCount = constraint.minCount ?? 1;
+      const maxCount = constraint.maxCount ?? minCount;
+      if (matchCount < minCount || matchCount > maxCount) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+}
+
 /**
  * Returns whether one mapped-bond constraint is satisfied.
  * @param {object} layoutGraph - Layout graph shell.
@@ -207,9 +367,10 @@ function matchesMappedBondConstraint(layoutGraph, mapping, constraint) {
  * @param {string[]} atomIds - Candidate atom IDs.
  * @param {object} template - Template descriptor.
  * @param {Map<string, string>} mapping - Template atom ID to target atom ID mapping.
+ * @param {Set<string>|null} [candidateAtomIdSet] - Optional candidate atom ID set for context checks.
  * @returns {boolean} True when the mapping is context-compatible.
  */
-function templateMatchesContext(layoutGraph, atomIds, template, mapping) {
+function templateMatchesContext(layoutGraph, atomIds, template, mapping, candidateAtomIdSet = null) {
   const exocyclicNeighbors = template.matchContext?.exocyclicNeighbors ?? [];
   const mappedAtoms = template.matchContext?.mappedAtoms ?? [];
   const mappedBonds = template.matchContext?.mappedBonds ?? [];
@@ -217,12 +378,26 @@ function templateMatchesContext(layoutGraph, atomIds, template, mapping) {
     return true;
   }
 
-  const candidateAtomIdSet = new Set(atomIds);
+  const contextAtomIdSet = candidateAtomIdSet ?? new Set(atomIds);
   return (
-    exocyclicNeighbors.every(constraint => matchesExocyclicNeighborConstraint(layoutGraph, candidateAtomIdSet, mapping, constraint)) &&
+    exocyclicNeighbors.every(constraint => matchesExocyclicNeighborConstraint(layoutGraph, contextAtomIdSet, mapping, constraint)) &&
     mappedAtoms.every(constraint => matchesMappedAtomConstraint(layoutGraph, mapping, constraint)) &&
     mappedBonds.every(constraint => matchesMappedBondConstraint(layoutGraph, mapping, constraint))
   );
+}
+
+function findTemplateMappingInTarget(layoutGraph, atomIds, template, target, candidateAtomIdSet = null, targetIndex = null) {
+  const queryPlan = templateQueryPlan(template);
+  const contextAtomIdSet = candidateAtomIdSet ?? new Set(atomIds);
+  const atomMatch = createTemplateContextAtomMatch(layoutGraph, template, contextAtomIdSet);
+  const limit = templateHasLateMatchContext(template) ? Infinity : 1;
+  const matchOptions = atomMatch ? { limit, targetIndex, atomMatch, ...queryPlan } : { limit, targetIndex, ...queryPlan };
+  for (const mapping of findSubgraphMappings(target, template.molecule, matchOptions)) {
+    if (templateMatchesContext(layoutGraph, atomIds, template, mapping, candidateAtomIdSet)) {
+      return mapping;
+    }
+  }
+  return null;
 }
 
 /**
@@ -234,12 +409,7 @@ function templateMatchesContext(layoutGraph, atomIds, template, mapping) {
  */
 export function findTemplateMapping(layoutGraph, atomIds, template) {
   const target = layoutGraph.sourceMolecule.getSubgraph(atomIds);
-  for (const mapping of findSubgraphMappings(target, template.molecule, { limit: Infinity })) {
-    if (templateMatchesContext(layoutGraph, atomIds, template, mapping)) {
-      return mapping;
-    }
-  }
-  return null;
+  return findTemplateMappingInTarget(layoutGraph, atomIds, template, target, null, createSubgraphIndex(target));
 }
 
 /**
@@ -247,15 +417,17 @@ export function findTemplateMapping(layoutGraph, atomIds, template) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} candidate - Scaffold candidate.
  * @param {ReadonlyArray<object>} templates - Candidate template list.
+ * @param {object|null} [target] - Optional candidate subgraph reused across template buckets.
+ * @param {Set<string>|null} [candidateAtomIdSet] - Optional candidate atom IDs reused across context checks.
+ * @param {object|null} [targetIndex] - Optional candidate subgraph VF2 index reused across template probes.
  * @returns {object|null} Template-match metadata or `null`.
  */
-function findTemplateMatchFromTemplates(layoutGraph, candidate, templates) {
-  const candidateElementCounts = countCandidateElements(layoutGraph, candidate.atomIds);
+function findTemplateMatchFromTemplates(layoutGraph, candidate, templates, target = null, candidateAtomIdSet = null, targetIndex = null) {
+  const targetGraph = target ?? layoutGraph.sourceMolecule.getSubgraph(candidate.atomIds);
+  const targetGraphIndex = targetIndex ?? createSubgraphIndex(targetGraph);
+  const contextAtomIdSet = candidateAtomIdSet ?? new Set(candidate.atomIds);
   for (const template of templates) {
-    if (!elementCountsEqual(candidateElementCounts, countTemplateElements(template))) {
-      continue;
-    }
-    const mapping = findTemplateMapping(layoutGraph, candidate.atomIds, template);
+    const mapping = findTemplateMappingInTarget(layoutGraph, candidate.atomIds, template, targetGraph, contextAtomIdSet, targetGraphIndex);
     if (mapping) {
       return {
         id: template.id,
@@ -272,6 +444,44 @@ function findTemplateMatchFromTemplates(layoutGraph, candidate, templates) {
 }
 
 /**
+ * Finds the best exact scaffold-template match, trying the heuristic family
+ * bucket first and then the family-agnostic fallback while reusing candidate
+ * indexing/search structures.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} candidate - Scaffold candidate.
+ * @param {ReadonlyArray<object>} [templates] - Optional template list.
+ * @returns {object|null} Template-match metadata or `null`.
+ */
+export function findBestTemplateMatch(layoutGraph, candidate, templates = listTemplates()) {
+  if (!candidate || candidate.type !== 'ring-system') {
+    return null;
+  }
+
+  const elementSignature = candidateElementSignature(layoutGraph, candidate.atomIds);
+  let target = null;
+  let targetIndex = null;
+  let candidateAtomIdSet = null;
+  const findFromEligibleTemplates = eligibleTemplates => {
+    if (eligibleTemplates.length === 0) {
+      return null;
+    }
+    target ??= layoutGraph.sourceMolecule.getSubgraph(candidate.atomIds);
+    targetIndex ??= createSubgraphIndex(target);
+    candidateAtomIdSet ??= new Set(candidate.atomIds);
+    return findTemplateMatchFromTemplates(layoutGraph, candidate, eligibleTemplates, target, candidateAtomIdSet, targetIndex);
+  };
+
+  const strictTemplates = getEligibleTemplatesForSignature(candidate, templates, true, elementSignature).filter(template => templateCompatible(template, candidate));
+  const strictMatch = findFromEligibleTemplates(strictTemplates);
+  if (strictMatch) {
+    return strictMatch;
+  }
+
+  const fallbackTemplates = getEligibleTemplatesForSignature(candidate, templates, false, elementSignature).filter(template => templateCompatibleIgnoringFamily(template, candidate));
+  return findFromEligibleTemplates(fallbackTemplates);
+}
+
+/**
  * Finds the best exact scaffold-template match for a ring-system candidate.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} candidate - Scaffold candidate.
@@ -283,7 +493,7 @@ export function findTemplateMatch(layoutGraph, candidate, templates = listTempla
     return null;
   }
 
-  const eligibleTemplates = templates.filter(template => templateCompatible(template, candidate));
+  const eligibleTemplates = getEligibleTemplates(layoutGraph, candidate, templates, true).filter(template => templateCompatible(template, candidate));
   if (eligibleTemplates.length === 0) {
     return null;
   }
@@ -304,7 +514,7 @@ export function findTemplateMatchIgnoringFamily(layoutGraph, candidate, template
     return null;
   }
 
-  const eligibleTemplates = templates.filter(template => templateCompatibleIgnoringFamily(template, candidate));
+  const eligibleTemplates = getEligibleTemplates(layoutGraph, candidate, templates, false).filter(template => templateCompatibleIgnoringFamily(template, candidate));
   if (eligibleTemplates.length === 0) {
     return null;
   }

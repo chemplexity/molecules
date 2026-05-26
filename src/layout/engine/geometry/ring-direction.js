@@ -1,20 +1,19 @@
 /** @module geometry/ring-direction */
 
-import { angleOf, angularDifference, centroid, sub, wrapAngle } from './vec2.js';
+import { angleOf, angularDifference, sub, wrapAngle } from './vec2.js';
 
 const RING_DIRECTION_EPSILON = 1e-9;
 
 function incidentRingNeighborAngles(layoutGraph, anchorAtomId, ring, getPosition, anchorPosition) {
   const neighborAngles = [];
+  const ringAtomIds = ring.atomIds ?? [];
+  const anchorIndex = layoutGraph.ringAtomIndexByRingId?.get(ring.id)?.get(anchorAtomId) ?? ringAtomIds.indexOf(anchorAtomId);
+  if (anchorIndex < 0) {
+    return neighborAngles;
+  }
+  const ringNeighborAtomIds = [ringAtomIds[(anchorIndex - 1 + ringAtomIds.length) % ringAtomIds.length], ringAtomIds[(anchorIndex + 1) % ringAtomIds.length]];
 
-  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent' || !bond.inRing) {
-      continue;
-    }
-    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
-    if (!ring.atomIds.includes(neighborAtomId)) {
-      continue;
-    }
+  for (const neighborAtomId of ringNeighborAtomIds) {
     const neighborPosition = getPosition(neighborAtomId);
     if (!neighborPosition) {
       continue;
@@ -26,6 +25,22 @@ function incidentRingNeighborAngles(layoutGraph, anchorAtomId, ring, getPosition
   }
 
   return neighborAngles;
+}
+
+function placedRingCentroid(ring, getPosition) {
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  for (const ringAtomId of ring.atomIds ?? []) {
+    const position = getPosition(ringAtomId);
+    if (!position) {
+      continue;
+    }
+    sumX += position.x;
+    sumY += position.y;
+    count++;
+  }
+  return count >= 3 ? { x: sumX / count, y: sumY / count } : null;
 }
 
 function chooseSingleRingOutwardAngle(neighborAngles, fallbackOutwardAngle) {
@@ -68,12 +83,12 @@ export function computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, getP
 
   const ringAngles = [];
   for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
-    const ringPositions = ring.atomIds.map(ringAtomId => getPosition(ringAtomId)).filter(Boolean);
-    if (ringPositions.length < 3) {
+    const ringCenter = placedRingCentroid(ring, getPosition);
+    if (!ringCenter) {
       continue;
     }
 
-    const fallbackOutwardAngle = angleOf(sub(anchorPosition, centroid(ringPositions)));
+    const fallbackOutwardAngle = angleOf(sub(anchorPosition, ringCenter));
     const outwardAngle = chooseSingleRingOutwardAngle(incidentRingNeighborAngles(layoutGraph, anchorAtomId, ring, getPosition, anchorPosition), fallbackOutwardAngle);
     if (!ringAngles.some(ringAngle => angularDifference(ringAngle, outwardAngle) <= RING_DIRECTION_EPSILON)) {
       ringAngles.push(outwardAngle);

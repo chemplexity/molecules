@@ -1026,8 +1026,8 @@ export class Molecule {
     const bondByPair = new Map();
     for (const [bId, bond] of this.bonds) {
       const [a, b] = bond.atoms;
-      bondByPair.set(a + '\0' + b, bId);
-      bondByPair.set(b + '\0' + a, bId);
+      bondByPair.set(`${a  }\0${  b}`, bId);
+      bondByPair.set(`${b  }\0${  a}`, bId);
     }
     const bondIdsList = [...this.bonds.keys()];
     const bondIndexMap = new Map(bondIdsList.map((id, i) => [id, i]));
@@ -1035,10 +1035,10 @@ export class Molecule {
     const toBondSet = ({ ring, closingBond }) => {
       const s = new Set();
       const ci = bondIndexMap.get(closingBond);
-      if (ci !== undefined) s.add(ci);
+      if (ci !== undefined) {s.add(ci);}
       for (let i = 0; i < ring.length - 1; i++) {
-        const bId = bondByPair.get(ring[i] + '\0' + ring[i + 1]);
-        if (bId !== undefined) s.add(bondIndexMap.get(bId));
+        const bId = bondByPair.get(`${ring[i]  }\0${  ring[i + 1]}`);
+        if (bId !== undefined) {s.add(bondIndexMap.get(bId));}
       }
       return s;
     };
@@ -1051,22 +1051,22 @@ export class Molecule {
     const result = [];
 
     for (const entry of allRings) {
-      let bv = toBondSet(entry);
+      const bv = toBondSet(entry);
       // Forward-eliminate using existing basis rows in ascending pivot order.
       const sortedCols = [...pivotMap.keys()].sort((a, b) => a - b);
       for (const col of sortedCols) {
         if (bv.has(col)) {
           for (const x of pivotMap.get(col)) {
-            if (bv.has(x)) bv.delete(x); else bv.add(x);
+            if (bv.has(x)) {bv.delete(x);} else {bv.add(x);}
           }
         }
       }
-      if (bv.size === 0) continue; // linearly dependent — skip
+      if (bv.size === 0) {continue;} // linearly dependent — skip
       let pivot = Infinity;
-      for (const x of bv) if (x < pivot) pivot = x;
+      for (const x of bv) {if (x < pivot) {pivot = x;}}
       pivotMap.set(pivot, bv);
       result.push(entry.ring);
-      if (result.length === ringCount) break;
+      if (result.length === ringCount) {break;}
     }
 
     this._ringsCache = result;
@@ -1343,8 +1343,18 @@ export class Molecule {
       if (!sp2) {
         return null;
       }
+      // In conjugated systems a sp2 atom may carry stereo marks on two of its
+      // bonds: one written for the double bond being evaluated, and one written
+      // for an adjacent double bond that shares this sp2 atom (the bridge bond
+      // between two consecutive double bonds, e.g. bond C-D in A=B-C=D).
+      //
+      // Prefer the bond whose other endpoint is not itself part of another
+      // double bond. That true substituent mark belongs only to this double
+      // bond, while the bridge mark is shared by adjacent double bonds.
       let dir = null,
         markedId = null;
+      let fallbackDir = null,
+        fallbackMarkedId = null;
       const otherIds = [];
       for (const bId of sp2.bonds) {
         if (bId === bondId) {
@@ -1356,11 +1366,31 @@ export class Molecule {
         }
         const otherId = b.getOtherAtom(sp2Id);
         if (b.properties.stereo) {
-          dir = b.atoms[0] === sp2Id ? b.properties.stereo : flip(b.properties.stereo);
-          markedId = otherId;
+          const d = b.atoms[0] === sp2Id ? b.properties.stereo : flip(b.properties.stereo);
+          const otherIsDoubleBondSp2 = (this.atoms.get(otherId)?.bonds ?? []).some(bId2 => {
+            if (bId2 === bondId || bId2 === bId) {
+              return false;
+            }
+            return (this.bonds.get(bId2)?.properties.order ?? 1) === 2;
+          });
+          if (!otherIsDoubleBondSp2 && dir === null) {
+            dir = d;
+            markedId = otherId;
+          } else if (dir === null) {
+            fallbackDir = d;
+            fallbackMarkedId = otherId;
+          } else {
+            otherIds.push(otherId);
+          }
         } else {
           otherIds.push(otherId);
         }
+      }
+      if (dir === null) {
+        dir = fallbackDir;
+        markedId = fallbackMarkedId;
+      } else if (fallbackDir !== null) {
+        otherIds.push(fallbackMarkedId);
       }
       return dir !== null ? { dir, markedId, otherIds } : null;
     };

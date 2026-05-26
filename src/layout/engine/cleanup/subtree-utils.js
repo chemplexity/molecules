@@ -1,5 +1,7 @@
 /** @module cleanup/subtree-utils */
 
+const CUT_SUBTREE_CACHE_MAX_ENTRIES = 4096;
+
 /**
  * Collects a covalently connected side of the graph while treating one bond as cut.
  * @param {object} layoutGraph - Layout graph shell.
@@ -8,6 +10,15 @@
  * @returns {Set<string>} Connected atoms reachable from the start atom without crossing the cut bond.
  */
 export function collectCutSubtree(layoutGraph, startAtomId, blockedAtomId) {
+  const cacheKey = `${startAtomId}\u0000${blockedAtomId}`;
+  const cache = layoutGraph ? (layoutGraph._cutSubtreeCache ?? (layoutGraph._cutSubtreeCache = new Map())) : null;
+  if (cache) {
+    const cachedAtomIds = cache.get(cacheKey);
+    if (cachedAtomIds) {
+      return cachedAtomIds;
+    }
+  }
+
   const subtreeAtomIds = new Set([startAtomId]);
   const stack = [startAtomId];
 
@@ -29,5 +40,11 @@ export function collectCutSubtree(layoutGraph, startAtomId, blockedAtomId) {
     }
   }
 
+  if (cache) {
+    if (cache.size >= CUT_SUBTREE_CACHE_MAX_ENTRIES) {
+      cache.delete(cache.keys().next().value);
+    }
+    cache.set(cacheKey, subtreeAtomIds);
+  }
   return subtreeAtomIds;
 }

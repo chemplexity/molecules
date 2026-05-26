@@ -759,7 +759,7 @@ describe('layout/engine/templates/match', () => {
   });
 
   it('matches trans-polyene macrolides only when the annotated macrocycle alkenes are E', () => {
-    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(\C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
+    const graph = createLayoutGraph(parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'macrocycle'));
     assert.equal(match.id, 'trans-polyene-macrolide');
 

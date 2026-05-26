@@ -1952,18 +1952,18 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
   // terminal O → convert to [n+][O-] (single bond with formal charges).
   // This matches the InChI canonical form so round-trip comparison works.
   for (const [atomId, atom] of mol.atoms) {
-    if (!atom.isAromatic() || atom.name !== 'N') continue;
+    if (!atom.isAromatic() || atom.name !== 'N') {continue;}
     for (const bondId of atom.bonds) {
       const bond = mol.bonds.get(bondId);
-      if (!bond || bond.properties.aromatic || bond.properties.order !== 2) continue;
+      if (!bond || bond.properties.aromatic || bond.properties.order !== 2) {continue;}
       const otherId = bond.getOtherAtom(atomId);
       const other = mol.atoms.get(otherId);
-      if (!other || other.name !== 'O') continue;
+      if (!other || other.name !== 'O') {continue;}
       const otherHeavyDeg = other.bonds.filter(bId => {
         const b = mol.bonds.get(bId);
         return b && mol.atoms.get(b.getOtherAtom(otherId))?.name !== 'H';
       }).length;
-      if (otherHeavyDeg !== 1) continue;
+      if (otherHeavyDeg !== 1) {continue;}
       bond.properties.order = 1;
       atom.setCharge((atom.properties.charge ?? 0) + 1);
       other.setCharge((other.properties.charge ?? 0) - 1);
@@ -2606,6 +2606,417 @@ function _normalizeAmidiniumResonance(mol) {
   }
 }
 
+function _normalizeImineTautomer(mol) {
+  // Convert [CH-]-NH to CH=[NH-] (imine anion). InChI normalizes alpha-carbanions
+  // bonded to NH groups by moving the carbanion charge to N, producing the imine anion.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'C' || (atom.properties.charge ?? 0) !== -1) {continue;}
+    if (atom.getHydrogenNeighbors(mol).length === 0) {continue;}
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond || (bond.properties.order ?? 1) !== 1) {continue;}
+      const n = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!n || n.name !== 'N' || (n.properties.charge ?? 0) !== 0) {continue;}
+      if (n.getHydrogenNeighbors(mol).length === 0) {continue;}
+      bond.properties.order = 2;
+      atom.setCharge(0);
+      n.setCharge(-1);
+      break;
+    }
+  }
+}
+
+function _normalizeCarbanionEnolate(mol) {
+  // Convert [C-]-C=O (carbanion alpha to carbonyl) to C=C-[O-] (enolate).
+  // InChI normalizes alpha-carbanions to their enolate tautomers, placing the
+  // negative charge on oxygen. After this shift, perceiveAromaticity can then
+  // correctly recognize the resulting ring as aromatic when applicable.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'C' || (atom.properties.charge ?? 0) !== -1) {continue;}
+    // Skip when [C-] is directly bonded to an NH nitrogen: InChI prefers the
+    // imine tautomer ([CH-]-NH-C=O → C=[NH-]) over the enolate in that case.
+    const hasNHNeighbor = atom.bonds.some(bId => {
+      const b = mol.bonds.get(bId);
+      if (!b) {return false;}
+      const other = mol.atoms.get(b.getOtherAtom(atom.id));
+      return other && other.name === 'N' && other.getHydrogenNeighbors(mol).length > 0;
+    });
+    if (hasNHNeighbor) {continue;}
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond || (bond.properties.order ?? 1) !== 1) {continue;}
+      const carbonyl = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!carbonyl || carbonyl.name !== 'C') {continue;}
+      let oBond = null, oAtom = null;
+      for (const bId of carbonyl.bonds) {
+        if (bId === bondId) {continue;}
+        const b = mol.bonds.get(bId);
+        if (!b || (b.properties.order ?? 1) !== 2) {continue;}
+        const other = mol.atoms.get(b.getOtherAtom(carbonyl.id));
+        if (!other || other.name !== 'O' || (other.properties.charge ?? 0) !== 0) {continue;}
+        oBond = b; oAtom = other; break;
+      }
+      if (!oBond) {continue;}
+      bond.properties.order = 2;
+      atom.setCharge(0);
+      oBond.properties.order = 1;
+      oAtom.setCharge(-1);
+      break;
+    }
+  }
+}
+
+function _normalizeThioate(mol) {
+  // Normalize C([O-])=S to C(=O)[S-]. InChI places thioate charge on sulfur;
+  // this ensures toCanonicalSMILES agrees regardless of which resonance form was stored.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'C') {continue;}
+    let oBond = null, oAtom = null, sBond = null, sAtom = null;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) {continue;}
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!other) {continue;}
+      const order = bond.properties.order ?? 1;
+      if (other.name === 'O' && (other.properties.charge ?? 0) === -1 && order === 1) {
+        oBond = bond; oAtom = other;
+      } else if (other.name === 'S' && (other.properties.charge ?? 0) === 0 && order === 2) {
+        sBond = bond; sAtom = other;
+      }
+    }
+    if (!oBond || !sBond) {continue;}
+    oBond.properties.order = 2;
+    oAtom.setCharge(0);
+    sBond.properties.order = 1;
+    sAtom.setCharge(-1);
+  }
+}
+
+function _normalizeAmidineAnion(mol) {
+  // Normalize [N-]-C=N (exo anion) to N=C-[N-] (ring anion) in amidine-like systems.
+  // InChI places the negative charge on the ring nitrogen when one N is cyclic.
+  // Mirrors the cation normalization in _normalizeAmidiniumResonance.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'C') {continue;}
+    let anionBond = null, anionN = null, imineBond = null, imineN = null;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) {continue;}
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!other || other.name !== 'N') {continue;}
+      const order = bond.properties.order ?? 1;
+      const charge = other.properties.charge ?? 0;
+      if (order === 1 && charge === -1) { anionBond = bond; anionN = other; }
+      else if (order === 2 && charge === 0) { imineBond = bond; imineN = other; }
+    }
+    if (!anionBond || !imineBond) {continue;}
+    // Check if imineN (the one with double bond) is in a ring with atom.
+    // If so, InChI prefers the charge on imineN → swap.
+    const seen = new Set([atom.id]);
+    const queue = [imineN.id];
+    seen.add(imineN.id);
+    let inRing = false;
+    while (queue.length > 0 && !inRing) {
+      const cur = queue.shift();
+      for (const bId of mol.atoms.get(cur).bonds) {
+        if (bId === imineBond.id) {continue;}
+        const b = mol.bonds.get(bId);
+        if (!b) {continue;}
+        const next = b.getOtherAtom(cur);
+        if (next === atom.id) { inRing = true; break; }
+        if (!seen.has(next)) { seen.add(next); queue.push(next); }
+      }
+    }
+    if (!inRing) {continue;}
+    anionBond.properties.order = 2;
+    anionN.setCharge(0);
+    imineBond.properties.order = 1;
+    imineN.setCharge(-1);
+  }
+}
+
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {void}
+ */
+function _normalizeExocyclicIminium(mol) {
+  // Convert ring-C=[NH2+] (non-aromatic form) to ring-[N+]-NH2 (aromatic form).
+  // InChI normalizes thiazolium C=[NH2+] to [n+]ccsc1N and pyridinium
+  // C=[NH2+] to [n+]ccccc1N. The ring N adjacent to the iminium C gets the
+  // positive charge; the exocyclic bond becomes single.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N') {continue;}
+    if ((atom.properties.charge ?? 0) !== 1) {continue;}
+    const hCount = atom.getHydrogenNeighbors(mol).length;
+    if (hCount < 2) {continue;} // must be [NH2+]
+
+    // Find double-bonded ring-C
+    let dblBond = null, dblC = null;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond || (bond.properties.order ?? 1) !== 2) {continue;}
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!other || other.name !== 'C') {continue;}
+      dblBond = bond; dblC = other; break;
+    }
+    if (!dblC) {continue;}
+
+    // Find a ring N adjacent to dblC that is in the same ring as dblC
+    // (i.e., removing the dblC-ringN bond still connects them via a ring path)
+    let ringN = null, ringNBondId = null;
+    for (const bondId of dblC.bonds) {
+      if (bondId === dblBond.id) {continue;}
+      const bond = mol.bonds.get(bondId);
+      if (!bond) {continue;}
+      const other = mol.atoms.get(bond.getOtherAtom(dblC.id));
+      if (!other || other.name !== 'N' || (other.properties.charge ?? 0) !== 0) {continue;}
+      // BFS to check if dblC and other are still connected without this bond
+      const seen = new Set([dblC.id]);
+      const q = [other.id];
+      seen.add(other.id);
+      let found = false;
+      while (q.length > 0 && !found) {
+        const cur = q.shift();
+        for (const bId of mol.atoms.get(cur).bonds) {
+          if (bId === bondId) {continue;} // skip the direct bond we're testing
+          const b = mol.bonds.get(bId);
+          if (!b) {continue;}
+          const next = b.getOtherAtom(cur);
+          if (next === dblC.id) { found = true; break; }
+          if (!seen.has(next)) { seen.add(next); q.push(next); }
+        }
+      }
+      if (found) { ringN = other; ringNBondId = bondId; break; }
+    }
+    if (!ringN) {continue;}
+
+    // Only normalize rings with existing pi character (saturated rings like
+    // pyrrolidine can't become aromatic). Extract the actual ring-atom set by
+    // BFS from ringN back to dblC (excluding the direct ringN-dblC bond and the
+    // exo dblBond), then check for any double bond between ring atoms.
+    const hasRingPi = (() => {
+      const parent = new Map([[ringN.id, null]]);
+      const q = [ringN.id];
+      let foundPath = false;
+      outer2: while (q.length > 0) {
+        const cur = q.shift();
+        for (const bId of mol.atoms.get(cur).bonds) {
+          if (bId === ringNBondId || bId === dblBond.id) {continue;}
+          const b = mol.bonds.get(bId);
+          if (!b) {continue;}
+          const next = b.getOtherAtom(cur);
+          if (next === dblC.id) { parent.set(next, cur); foundPath = true; break outer2; }
+          if (!parent.has(next)) { parent.set(next, cur); q.push(next); }
+        }
+      }
+      if (!foundPath) {return false;}
+      // Collect ring atoms from the path
+      const ringAtoms = new Set([dblC.id, ringN.id]);
+      let cur = dblC.id;
+      while (parent.get(cur) !== null) { cur = parent.get(cur); ringAtoms.add(cur); }
+      // Check for any double bond between two ring atoms
+      return [...ringAtoms].some(id =>
+        mol.atoms.get(id).bonds.some(bId => {
+          if (bId === dblBond.id || bId === ringNBondId) {return false;}
+          const b = mol.bonds.get(bId);
+          if (!b || (b.properties.order ?? 1) !== 2) {return false;}
+          return ringAtoms.has(b.getOtherAtom(id));
+        })
+      );
+    })();
+    if (!hasRingPi) {continue;}
+
+    // Transfer: C=[NH2+] → C-NH2, ring-N → [N+], ring-N=C bond → double
+    // (ring-N=dblC gives N+ a ring pi bond so perceiveAromaticity succeeds)
+    dblBond.properties.order = 1;
+    atom.setCharge(0);
+    ringN.setCharge(1);
+    mol.bonds.get(ringNBondId).properties.order = 2;
+    // Remove any existing ring double bond from C adjacent to new N=C to avoid
+    // over-bonding: the old C2=C3 (if adjacent to dblC) should become single.
+    for (const bondId of dblC.bonds) {
+      if (bondId === ringNBondId) {continue;}
+      const bond = mol.bonds.get(bondId);
+      if (!bond || (bond.properties.order ?? 1) !== 2) {continue;}
+      const otherId = bond.getOtherAtom(dblC.id);
+      if (!otherId) {continue;}
+      const other = mol.atoms.get(otherId);
+      if (!other || other.name === 'N' || other.name === 'S' || other.name === 'O') {continue;}
+      bond.properties.order = 1;
+      break;
+    }
+  }
+}
+
+function _normalizeFusedRingKekule(mol) {
+  // Find aromatic ring atoms bonded (via any non-aromatic bond) to non-aromatic
+  // ring atoms that form a 5- or 6-membered ring closing back to another aromatic
+  // neighbor. Set all bonds in that potential ring to order 1.5 (source-aromatic)
+  // so perceiveAromaticity's fused-system promoter can recognize the system.
+  // perceiveAromaticity will clean up stale bonds if the system doesn't qualify.
+  for (const [id, atom] of mol.atoms) {
+    if (!atom.properties.aromatic) {
+      continue;
+    }
+    for (const bId of atom.bonds) {
+      const bond = mol.bonds.get(bId);
+      if (!bond || bond.properties.aromatic) {
+        continue;
+      }
+      const otherId = bond.getOtherAtom(id);
+      const other = mol.atoms.get(otherId);
+      if (!other || other.properties.aromatic || !other.isInRing(mol)) {
+        continue;
+      }
+
+      // Collect aromatic neighbors of 'atom' via aromatic bonds
+      const aromaticNeighbors = new Set();
+      for (const b2Id of atom.bonds) {
+        const b2 = mol.bonds.get(b2Id);
+        if (b2?.properties.aromatic) {
+          aromaticNeighbors.add(b2.getOtherAtom(id));
+        }
+      }
+      if (aromaticNeighbors.size === 0) {
+        continue;
+      }
+
+      // BFS from 'other', limiting depth to handle 5- and 6-membered rings
+      const visited = new Set([id, otherId]);
+      const queue = [[otherId, [bId]]];
+      let ringBondIds = null;
+      outer: while (queue.length > 0) {
+        const [cur, path] = queue.shift();
+        if (path.length >= 5) {
+          continue;
+        }
+        for (const nextBId of mol.atoms.get(cur).bonds) {
+          const nb = mol.bonds.get(nextBId);
+          if (!nb) {
+            continue;
+          }
+          const next = nb.getOtherAtom(cur);
+          if (next === id) {
+            continue;
+          }
+          if (aromaticNeighbors.has(next)) {
+            ringBondIds = [...path, nextBId];
+            break outer;
+          }
+          if (!visited.has(next) && !mol.atoms.get(next)?.properties.aromatic) {
+            visited.add(next);
+            queue.push([next, [...path, nextBId]]);
+          }
+        }
+      }
+      if (!ringBondIds) {
+        continue;
+      }
+
+      // Collect ring atom IDs along the path (excluding the starting aromatic atom).
+      // Guard: only normalize if the ring has pi character (a double bond) or a
+      // heteroatom (N, O, S) in the non-aromatic portion — purely sp3 carbon rings
+      // (cyclohexane-like) cannot be aromatic and must not be normalized.
+      const pathAtomSet = new Set([id]);
+      let curAtom = id;
+      for (const ringBId of ringBondIds) {
+        const rb = mol.bonds.get(ringBId);
+        curAtom = rb ? rb.getOtherAtom(curAtom) : curAtom;
+        pathAtomSet.add(curAtom);
+      }
+      const hasRingPiOrHetero = [...pathAtomSet].some(vid => {
+        if (vid === id) {
+          return false;
+        }
+        const va = mol.atoms.get(vid);
+        if (!va) {
+          return false;
+        }
+        if (va.name === 'N' || va.name === 'O' || va.name === 'S') {
+          return true;
+        }
+        return va.bonds.some(vbId => {
+          const vb = mol.bonds.get(vbId);
+          return vb && (vb.properties.order ?? 1) >= 2 && pathAtomSet.has(vb.getOtherAtom(vid));
+        });
+      });
+      if (!hasRingPiOrHetero) {
+        continue;
+      }
+
+      // Skip if any non-aromatic ring atom has an exocyclic double bond: such an
+      // atom uses its p orbital for the exocyclic pi bond and cannot participate
+      // in ring aromaticity (e.g. C=[NH+] in ring → ring cannot be aromatic).
+      const hasExocyclicPi = [...pathAtomSet].some(vid => {
+        if (vid === id) {
+          return false;
+        }
+        const va = mol.atoms.get(vid);
+        if (!va || va.properties.aromatic) {
+          return false;
+        }
+        return va.bonds.some(vbId => {
+          const vb = mol.bonds.get(vbId);
+          if (!vb || (vb.properties.order ?? 1) < 2) {
+            return false;
+          }
+          return !pathAtomSet.has(vb.getOtherAtom(vid));
+        });
+      });
+      if (hasExocyclicPi) {
+        continue;
+      }
+
+      bond.properties.order = 1.5;
+      bond.properties.aromatic = true;
+      for (const ringBId of ringBondIds) {
+        const rb = mol.bonds.get(ringBId);
+        if (rb) { rb.properties.order = 1.5; rb.properties.aromatic = true; }
+      }
+    }
+  }
+}
+
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {void}
+ */
+function _normalizeAromaticRingCharges(mol) {
+  // Neutralize balanced [n+]/[n-] pairs within the same connected aromatic
+  // subgraph. InChI writes tetrazolium zwitterions ([N+]=NN=C[N-]) as neutral
+  // aromatic rings (nnnnn); normalizing here makes toCanonicalSMILES agree.
+  // Only applies when all charges in a connected aromatic component sum to 0.
+  const aromaticIds = new Set(
+    [...mol.atoms.keys()].filter(id => mol.atoms.get(id).properties.aromatic)
+  );
+  const visited = new Set();
+  for (const startId of aromaticIds) {
+    if (visited.has(startId)) {continue;}
+    const component = [];
+    const queue = [startId];
+    visited.add(startId);
+    while (queue.length > 0) {
+      const id = queue.shift();
+      component.push(id);
+      for (const bondId of mol.atoms.get(id).bonds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond) {continue;}
+        const otherId = bond.getOtherAtom(id);
+        if (visited.has(otherId) || !aromaticIds.has(otherId)) {continue;}
+        visited.add(otherId);
+        queue.push(otherId);
+      }
+    }
+    const totalCharge = component.reduce((sum, id) => sum + (mol.atoms.get(id).properties.charge ?? 0), 0);
+    if (totalCharge !== 0) {continue;}
+    const charged = component.filter(id => (mol.atoms.get(id).properties.charge ?? 0) !== 0);
+    if (charged.length === 0) {continue;}
+    for (const id of charged) {
+      mol.atoms.get(id).setCharge(0);
+    }
+  }
+}
+
 /**
  * Serializes a {@link Molecule} to a **canonical** SMILES string.
  *
@@ -2630,6 +3041,12 @@ export function toCanonicalSMILES(molecule) {
   const parts = molecule.getComponents().map(comp => {
     _normalizeNitroGroup(comp);
     _normalizeAmidiniumResonance(comp);
+    _normalizeImineTautomer(comp);
+    _normalizeCarbanionEnolate(comp);
+    _normalizeThioate(comp);
+    _normalizeAmidineAnion(comp);
+    _normalizeExocyclicIminium(comp);
+    _normalizeFusedRingKekule(comp);
     // Always call perceiveAromaticity so that both pure-Kekulé molecules (from
     // parseINCHI) and mixed Kekulé/aromatic molecules (from parseSMILES) end up
     // with the same aromatic bond set.  Consistent aromaticity ensures that
@@ -2637,6 +3054,7 @@ export function toCanonicalSMILES(molecule) {
     // of the same molecule, which is required for correct E/Z stereo assignment
     // and canonical SMILES string equality.
     perceiveAromaticity(comp);
+    _normalizeAromaticRingCharges(comp);
     const ranks = morganRanks(comp);
     return _serializeComponent(comp, id => ranks.get(id) ?? 0);
   });

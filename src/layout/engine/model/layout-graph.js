@@ -32,6 +32,16 @@ function buildAtomBondsIndex(atoms, bonds) {
   return bondsByAtomId;
 }
 
+function buildComponentByAtomIdIndex(components) {
+  const componentByAtomId = new Map();
+  for (const component of components) {
+    for (const atomId of component.atomIds) {
+      componentByAtomId.set(atomId, component);
+    }
+  }
+  return componentByAtomId;
+}
+
 function buildAtomToRingsIndex(rings) {
   const atomToRings = new Map();
   for (const ring of rings) {
@@ -61,6 +71,46 @@ function buildRingSystemByIdIndex(ringSystems) {
     ringSystemById.set(ringSystem.id, ringSystem);
   }
   return ringSystemById;
+}
+
+function buildRingByIdIndex(rings) {
+  const ringById = new Map();
+  for (const ring of rings) {
+    ringById.set(ring.id, ring);
+  }
+  return ringById;
+}
+
+function buildRingAtomIndexes(rings) {
+  const ringAtomIndexByRingId = new Map();
+  const ringAtomSetByRingId = new Map();
+  for (const ring of rings) {
+    const atomIndexById = new Map();
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      atomIndexById.set(ring.atomIds[index], index);
+    }
+    ringAtomIndexByRingId.set(ring.id, atomIndexById);
+    ringAtomSetByRingId.set(ring.id, new Set(ring.atomIds));
+  }
+  return { ringAtomIndexByRingId, ringAtomSetByRingId };
+}
+
+function buildRingConnectionsByRingSystemIdIndex(ringSystems, ringConnections) {
+  const ringSystemIdByRingId = new Map();
+  const ringConnectionsByRingSystemId = new Map();
+  for (const ringSystem of ringSystems) {
+    ringConnectionsByRingSystemId.set(ringSystem.id, []);
+    for (const ringId of ringSystem.ringIds ?? []) {
+      ringSystemIdByRingId.set(ringId, ringSystem.id);
+    }
+  }
+  for (const connection of ringConnections) {
+    const ringSystemIds = new Set([ringSystemIdByRingId.get(connection.firstRingId), ringSystemIdByRingId.get(connection.secondRingId)].filter(ringSystemId => ringSystemId != null));
+    for (const ringSystemId of ringSystemIds) {
+      ringConnectionsByRingSystemId.get(ringSystemId)?.push(connection);
+    }
+  }
+  return ringConnectionsByRingSystemId;
 }
 
 function buildRingAtomIds(rings) {
@@ -302,6 +352,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
   const canonicalAtomRank = computeCanonicalAtomRanks(molecule);
   const rawComponents = getConnectedComponents(molecule, canonicalAtomRank);
   const components = assignComponentRoles(rawComponents);
+  const componentByAtomId = buildComponentByAtomIdIndex(components);
   const ringAnalysis = analyzeRings(molecule, canonicalAtomRank);
   if (molecule && typeof molecule === 'object') {
     molecule._layoutGraphRingSystems = ringAnalysis.ringSystems;
@@ -316,6 +367,9 @@ function buildLayoutGraph(molecule, normalizedOptions) {
   const atomToRings = buildAtomToRingsIndex(ringAnalysis.rings);
   const atomToRingSystemId = buildAtomToRingSystemIdIndex(ringAnalysis.ringSystems);
   const ringSystemById = buildRingSystemByIdIndex(ringAnalysis.ringSystems);
+  const ringById = buildRingByIdIndex(ringAnalysis.rings);
+  const { ringAtomIndexByRingId, ringAtomSetByRingId } = buildRingAtomIndexes(ringAnalysis.rings);
+  const ringConnectionsByRingSystemId = buildRingConnectionsByRingSystemIdIndex(ringAnalysis.ringSystems, ringConnections.connections);
   const ringAtomIdSet = buildRingAtomIds(ringAnalysis.rings);
   const ringCountByAtomId = buildRingCountByAtomId(ringAnalysis.rings);
 
@@ -332,10 +386,15 @@ function buildLayoutGraph(molecule, normalizedOptions) {
     ringAtomIdSet,
     ringCountByAtomId,
     components,
+    componentByAtomId,
     rings: ringAnalysis.rings,
+    ringById,
+    ringAtomIndexByRingId,
+    ringAtomSetByRingId,
     ringSystems: ringAnalysis.ringSystems,
     ringSystemById,
     ringConnections: ringConnections.connections,
+    ringConnectionsByRingSystemId,
     ringAdj: ringConnections.ringAdj,
     ringConnectionByPair: ringConnections.connectionByPair,
     canonicalAtomRank,
