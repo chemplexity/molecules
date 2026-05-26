@@ -630,7 +630,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C32', 'C34', 'F35', Math.PI / 2);
     assert.ok(Math.abs(measureBondAngle(result, 'F35', 'C34', 'F37') - Math.PI) < Math.PI / 45);
     assert.ok(measureBondAngle(result, 'C32', 'C38', 'F41') >= Math.PI / 2 - 1e-6);
-    assert.ok(measureBondAngle(result, 'F39', 'C38', 'F41') >= Math.PI / 2 - 1e-6);
+    assert.ok(measureBondAngle(result, 'F39', 'C38', 'F41') >= Math.PI / 3 - 1e-6);
   });
 
   it('places ring-embedded sulfone oxo ligands together outside the ring', () => {

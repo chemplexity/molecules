@@ -1,6 +1,6 @@
 /** @module templates/placement */
 
-import { getTemplateById, getTemplateCoords } from './library.js';
+import { getTemplateById, getTemplateCoordEntries } from './library.js';
 import { findTemplateMapping } from './match.js';
 
 /**
@@ -19,8 +19,8 @@ export function placeTemplateCoords(layoutGraph, templateId, atomIds, bondLength
   if (!template || template.hasGeometry !== true) {
     return null;
   }
-  const templateCoords = getTemplateCoords(template, bondLength);
-  if (!templateCoords) {
+  const templateCoordEntries = getTemplateCoordEntries(template, bondLength);
+  if (!templateCoordEntries) {
     return null;
   }
   const mapping = findTemplateMapping(layoutGraph, atomIds, template);
@@ -28,10 +28,13 @@ export function placeTemplateCoords(layoutGraph, templateId, atomIds, bondLength
     return null;
   }
   const coords = new Map();
-  for (const [templateAtomId, targetAtomId] of mapping) {
-    const position = templateCoords.get(templateAtomId);
-    if (position) {
-      coords.set(targetAtomId, position);
+  for (const [templateAtomId, position] of templateCoordEntries) {
+    const targetAtomId = mapping.get(templateAtomId);
+    if (targetAtomId) {
+      coords.set(targetAtomId, {
+        x: position.x,
+        y: position.y
+      });
     }
   }
   return coords.size === atomIds.length ? coords : null;

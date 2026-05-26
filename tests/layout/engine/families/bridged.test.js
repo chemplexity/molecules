@@ -275,6 +275,42 @@ describe('layout/engine/families/bridged', () => {
     assert.equal(audit.fallback.mode, null);
   });
 
+  it('constructs aromatic-capped 5-5-4 bridged heterocycles without pinching the N ring', () => {
+    const smiles = 'COC1=COC2=C1C1CN2C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const fourRing = rings.find(ring => ring.atomIds.length === 4 && ring.atomIds.includes('N10'));
+    const bridgedFiveRing = rings.find(ring => ring.atomIds.length === 5 && !ring.aromatic && ring.atomIds.includes('N10'));
+    assert.ok(fourRing);
+    assert.ok(bridgedFiveRing);
+    const assertReadableNRingAngles = (coords, label) => {
+      const fourRingAngles = fourRing.atomIds.map(atomId => ringInternalAngle(fourRing, coords, atomId) * (180 / Math.PI));
+      const bridgedFiveRingAngles = bridgedFiveRing.atomIds.map(atomId => ringInternalAngle(bridgedFiveRing, coords, atomId) * (180 / Math.PI));
+      assert.ok(Math.min(...fourRingAngles) > 85, `expected ${label} four-ring angles to avoid sharp N-ring corners, got ${fourRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.max(...fourRingAngles) < 95, `expected ${label} four-ring angles to stay square, got ${fourRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.min(...bridgedFiveRingAngles) > 85, `expected ${label} bridged five-ring to avoid pinched corners, got ${bridgedFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.max(...bridgedFiveRingAngles) < 130, `expected ${label} bridged five-ring to avoid flattened corners, got ${bridgedFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    };
+
+    assert.equal(result.placementMode, 'constructed-aromatic-capped-5-5-4');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertReadableNRingAngles(result.coords, 'constructed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertReadableNRingAngles(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
   it('balances compact fused-spiro bridged heterorings without bond failures', () => {
     const smiles = 'CC1OC2=NCC(=N)NC3=NCC(C)CC23O1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -670,6 +706,39 @@ describe('layout/engine/families/bridged', () => {
     assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
     assertOpenFiveFourCage(pipelineResult.coords, 'pipeline layout');
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses an alkynyl dicyano oxabicyclobutane template so compact five-four cages keep readable angles', () => {
+    const smiles = 'CC#CC1C2OC(CC#N)(C#N)C1C2O';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const scaffoldPlan = buildScaffoldPlan(graph, graph.components[0]);
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: scaffoldPlan.rootScaffold.templateId
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertReadableFiveFourCage = (coords, label) => {
+      for (const ring of rings) {
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        const limits = ring.atomIds.length === 4 ? { min: 80, max: 105 } : { min: 90, max: 125 };
+        assert.ok(Math.min(...angles) > limits.min, `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+        assert.ok(Math.max(...angles) < limits.max, `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      }
+    };
+
+    assert.equal(scaffoldPlan.rootScaffold.templateId, 'alkynyl-dicyano-oxabicyclobutane-core');
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertReadableFiveFourCage(result.coords, 'template layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertReadableFiveFourCage(pipelineResult.coords, 'pipeline layout');
   });
 
   it('uses an alkyl oxabicyclobutane template so compact five-four ether cages stay structured', () => {

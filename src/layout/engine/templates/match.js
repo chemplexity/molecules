@@ -7,9 +7,62 @@ import { listTemplates } from './library.js';
 const templateElementSignatureCache = new WeakMap();
 const frozenTemplateIndexCache = new WeakMap();
 const templateQueryPlanCache = new WeakMap();
+const candidateAtomIdsKeyCache = new WeakMap();
+const candidateElementSignatureCache = new WeakMap();
+const templateContextGroupsCache = new WeakMap();
 
 function compareStrings(firstValue, secondValue) {
   return String(firstValue).localeCompare(String(secondValue), 'en', { numeric: true });
+}
+
+function atomIdsCacheKey(atomIds) {
+  return [...atomIds].map(atomId => String(atomId)).sort(compareStrings).join('\u0001');
+}
+
+function candidateAtomIdsCacheKey(candidate) {
+  if (!candidate || typeof candidate !== 'object') {
+    return atomIdsCacheKey(candidate?.atomIds ?? []);
+  }
+  const cachedKey = candidateAtomIdsKeyCache.get(candidate);
+  if (cachedKey != null) {
+    return cachedKey;
+  }
+  const key = atomIdsCacheKey(candidate.atomIds ?? []);
+  candidateAtomIdsKeyCache.set(candidate, key);
+  return key;
+}
+
+function getTemplateMappingCache(layoutGraph, template) {
+  if (!layoutGraph || !template || typeof template !== 'object') {
+    return null;
+  }
+  const cacheByTemplate = layoutGraph._templateMappingCacheByTemplate ?? (layoutGraph._templateMappingCacheByTemplate = new WeakMap());
+  let cache = cacheByTemplate.get(template);
+  if (!cache) {
+    cache = new Map();
+    cacheByTemplate.set(template, cache);
+  }
+  return cache;
+}
+
+function cloneTemplateMapping(mapping) {
+  return mapping instanceof Map ? new Map(mapping) : null;
+}
+
+function cachedTemplateMapping(layoutGraph, atomIds, template, atomIdsKey = atomIdsCacheKey(atomIds)) {
+  const cache = getTemplateMappingCache(layoutGraph, template);
+  if (!cache) {
+    return null;
+  }
+  return cloneTemplateMapping(cache.get(atomIdsKey));
+}
+
+function rememberTemplateMapping(layoutGraph, atomIds, template, mapping, atomIdsKey = atomIdsCacheKey(atomIds)) {
+  const cache = getTemplateMappingCache(layoutGraph, template);
+  if (!cache || !(mapping instanceof Map)) {
+    return;
+  }
+  cache.set(atomIdsKey, new Map(mapping));
 }
 
 function templateCompatible(template, candidate) {
@@ -73,6 +126,22 @@ function candidateElementSignature(layoutGraph, atomIds) {
   return elementCountsSignature(countCandidateElements(layoutGraph, atomIds));
 }
 
+function getCandidateElementSignature(layoutGraph, candidate) {
+  if (candidate?.elementSignature != null) {
+    return candidate.elementSignature;
+  }
+  if (!candidate || typeof candidate !== 'object') {
+    return candidateElementSignature(layoutGraph, candidate?.atomIds ?? []);
+  }
+  const cachedEntry = candidateElementSignatureCache.get(candidate);
+  if (cachedEntry?.layoutGraph === layoutGraph) {
+    return cachedEntry.signature;
+  }
+  const signature = candidateElementSignature(layoutGraph, candidate.atomIds ?? []);
+  candidateElementSignatureCache.set(candidate, { layoutGraph, signature });
+  return signature;
+}
+
 function templateElementSignature(template) {
   const cachedSignature = templateElementSignatureCache.get(template);
   if (cachedSignature != null) {
@@ -127,7 +196,7 @@ function getTemplateIndex(templates) {
 }
 
 function getEligibleTemplates(layoutGraph, candidate, templates, includeFamily) {
-  const elementSignature = candidateElementSignature(layoutGraph, candidate.atomIds);
+  const elementSignature = getCandidateElementSignature(layoutGraph, candidate);
   return getEligibleTemplatesForSignature(candidate, templates, includeFamily, elementSignature);
 }
 
@@ -147,8 +216,28 @@ function templateQueryPlan(template) {
   return plan;
 }
 
+function templateContextGroups(template) {
+  const cachedGroups = templateContextGroupsCache.get(template);
+  if (cachedGroups) {
+    return cachedGroups;
+  }
+
+  const exocyclicNeighbors = template.matchContext?.exocyclicNeighbors ?? [];
+  const mappedAtoms = template.matchContext?.mappedAtoms ?? [];
+  const mappedBonds = template.matchContext?.mappedBonds ?? [];
+  const groups = {
+    exocyclicNeighbors,
+    mappedAtoms,
+    mappedBonds,
+    mappedAtomsByTemplateAtomId: constraintsByTemplateAtomId(mappedAtoms),
+    exocyclicNeighborsByTemplateAtomId: constraintsByTemplateAtomId(exocyclicNeighbors)
+  };
+  templateContextGroupsCache.set(template, groups);
+  return groups;
+}
+
 function templateHasLateMatchContext(template) {
-  return (template.matchContext?.mappedBonds?.length ?? 0) > 0;
+  return templateContextGroups(template).mappedBonds.length > 0;
 }
 
 /**
@@ -293,14 +382,11 @@ function constraintsByTemplateAtomId(constraints) {
 }
 
 function createTemplateContextAtomMatch(layoutGraph, template, candidateAtomIdSet) {
-  const mappedAtoms = template.matchContext?.mappedAtoms ?? [];
-  const exocyclicNeighbors = template.matchContext?.exocyclicNeighbors ?? [];
+  const { mappedAtoms, exocyclicNeighbors, mappedAtomsByTemplateAtomId, exocyclicNeighborsByTemplateAtomId } = templateContextGroups(template);
   if (mappedAtoms.length === 0 && exocyclicNeighbors.length === 0) {
     return null;
   }
 
-  const mappedAtomsByTemplateAtomId = constraintsByTemplateAtomId(mappedAtoms);
-  const exocyclicNeighborsByTemplateAtomId = constraintsByTemplateAtomId(exocyclicNeighbors);
   const exocyclicCountCache = new Map();
 
   return (queryAtom, targetAtom) => {
@@ -371,9 +457,7 @@ function matchesMappedBondConstraint(layoutGraph, mapping, constraint) {
  * @returns {boolean} True when the mapping is context-compatible.
  */
 function templateMatchesContext(layoutGraph, atomIds, template, mapping, candidateAtomIdSet = null) {
-  const exocyclicNeighbors = template.matchContext?.exocyclicNeighbors ?? [];
-  const mappedAtoms = template.matchContext?.mappedAtoms ?? [];
-  const mappedBonds = template.matchContext?.mappedBonds ?? [];
+  const { exocyclicNeighbors, mappedAtoms, mappedBonds } = templateContextGroups(template);
   if (exocyclicNeighbors.length === 0 && mappedAtoms.length === 0 && mappedBonds.length === 0) {
     return true;
   }
@@ -386,14 +470,20 @@ function templateMatchesContext(layoutGraph, atomIds, template, mapping, candida
   );
 }
 
-function findTemplateMappingInTarget(layoutGraph, atomIds, template, target, candidateAtomIdSet = null, targetIndex = null) {
+function findTemplateMappingInTarget(layoutGraph, atomIds, template, target, candidateAtomIdSet = null, targetIndex = null, atomIdsKey = atomIdsCacheKey(atomIds)) {
+  const cachedMapping = cachedTemplateMapping(layoutGraph, atomIds, template, atomIdsKey);
+  if (cachedMapping) {
+    return cachedMapping;
+  }
+
   const queryPlan = templateQueryPlan(template);
   const contextAtomIdSet = candidateAtomIdSet ?? new Set(atomIds);
   const atomMatch = createTemplateContextAtomMatch(layoutGraph, template, contextAtomIdSet);
   const limit = templateHasLateMatchContext(template) ? Infinity : 1;
   const matchOptions = atomMatch ? { limit, targetIndex, atomMatch, ...queryPlan } : { limit, targetIndex, ...queryPlan };
   for (const mapping of findSubgraphMappings(target, template.molecule, matchOptions)) {
-    if (templateMatchesContext(layoutGraph, atomIds, template, mapping, candidateAtomIdSet)) {
+    if (templateMatchesContext(layoutGraph, atomIds, template, mapping, contextAtomIdSet)) {
+      rememberTemplateMapping(layoutGraph, atomIds, template, mapping, atomIdsKey);
       return mapping;
     }
   }
@@ -408,8 +498,13 @@ function findTemplateMappingInTarget(layoutGraph, atomIds, template, target, can
  * @returns {Map<string, string>|null} Template atom ID to target atom ID mapping or `null`.
  */
 export function findTemplateMapping(layoutGraph, atomIds, template) {
+  const atomIdsKey = atomIdsCacheKey(atomIds);
+  const cachedMapping = cachedTemplateMapping(layoutGraph, atomIds, template, atomIdsKey);
+  if (cachedMapping) {
+    return cachedMapping;
+  }
   const target = layoutGraph.sourceMolecule.getSubgraph(atomIds);
-  return findTemplateMappingInTarget(layoutGraph, atomIds, template, target, null, createSubgraphIndex(target));
+  return findTemplateMappingInTarget(layoutGraph, atomIds, template, target, null, createSubgraphIndex(target), atomIdsKey);
 }
 
 /**
@@ -426,8 +521,9 @@ function findTemplateMatchFromTemplates(layoutGraph, candidate, templates, targe
   const targetGraph = target ?? layoutGraph.sourceMolecule.getSubgraph(candidate.atomIds);
   const targetGraphIndex = targetIndex ?? createSubgraphIndex(targetGraph);
   const contextAtomIdSet = candidateAtomIdSet ?? new Set(candidate.atomIds);
+  const atomIdsKey = candidateAtomIdsCacheKey(candidate);
   for (const template of templates) {
-    const mapping = findTemplateMappingInTarget(layoutGraph, candidate.atomIds, template, targetGraph, contextAtomIdSet, targetGraphIndex);
+    const mapping = findTemplateMappingInTarget(layoutGraph, candidate.atomIds, template, targetGraph, contextAtomIdSet, targetGraphIndex, atomIdsKey);
     if (mapping) {
       return {
         id: template.id,
@@ -457,7 +553,7 @@ export function findBestTemplateMatch(layoutGraph, candidate, templates = listTe
     return null;
   }
 
-  const elementSignature = candidateElementSignature(layoutGraph, candidate.atomIds);
+  const elementSignature = getCandidateElementSignature(layoutGraph, candidate);
   let target = null;
   let targetIndex = null;
   let candidateAtomIdSet = null;

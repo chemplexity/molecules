@@ -1,7 +1,7 @@
 /** @module scaffold/orientation */
 
 import { computeBounds } from '../geometry/bounds.js';
-import { centroid, rotate, sub } from '../geometry/vec2.js';
+import { centroid, centroidForAtomIds, centroidForPoints, rotate, sub } from '../geometry/vec2.js';
 
 function covarianceAxis(points) {
   if (points.length < 2) {
@@ -61,7 +61,7 @@ export function computeFusedAxis(ringCenters) {
  * @returns {Map<string, {x: number, y: number}>} Reoriented coordinates.
  */
 export function orientCoordsHorizontally(coords, axisAngle) {
-  const center = centroid([...coords.values()]);
+  const center = centroidForPoints(coords.values()) ?? { x: 0, y: 0 };
   const rotated = new Map();
   for (const [atomId, position] of coords) {
     rotated.set(atomId, {
@@ -80,7 +80,7 @@ export function orientCoordsHorizontally(coords, axisAngle) {
 export function rebuildRingCenters(rings, coords) {
   const ringCenters = new Map();
   for (const ring of rings) {
-    ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)));
+    ringCenters.set(ring.id, centroidForAtomIds(coords, ring.atomIds) ?? { x: 0, y: 0 });
   }
   return ringCenters;
 }

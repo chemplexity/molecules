@@ -1,7 +1,44 @@
 # Change Log
 
+## 2026-05-26
+
+- Add an alkynyl dicyano oxabicyclobutane bridged template and keep its nitrile-hydrolysis amide products from re-pinching after reaction-preview scaffold snapping.
+- Keep retained BOC tert-butyl fans open in amide-hydrolysis previews after product scaffold snapping.
+- Spread remaining terminal halogens around edited saturated dehalogenation centers so hidden-H products keep a clean visible heavy-atom fan.
+- Bend edited nitrile-hydrogenation imine products off retained nitrile scaffold lines so aryl C=N products recover a trigonal 120-degree fan.
+- Keep saponification alcohol products on retained lactone ring exits by rebuilding edited saturated ring-anchor fans after scaffold restoration.
+- Split saturated-ring methyl/nitrile exits across fused-ring exterior slots instead of letting terminal triple-bond roots claim the centered carbonyl/alkene priority axis.
+- Balance saturated-ring exterior fans when a carbonyl branch competes with a real linker branch, keeping both exits on the regular exterior-gap slots instead of pinching one angle.
+- Construct exact aromatic-capped 5-5-4 bridged heterocycle layouts so the shared N-ring path keeps square/regular angles instead of pinching under KK projection.
+- Fix `_normalizeFusedRingKekule` in `src/io/smiles.js`: add an sp3-heteroatom guard to `hasRingPiOrHetero` so that charged nitrogen atoms with 2+ explicit hydrogens (e.g. `[NH2+]` in an azetidinium ring) are excluded from pi-donor consideration — prevents the function from incorrectly aromatizing ring paths that pass through saturated ammonium-type nitrogens.
+- Add `_normalizeMetalBonds` to `toCanonicalSMILES` in `src/io/smiles.js`: converts double (or higher) bonds to Group 11 metals (Au, Ag, Cu) to single bonds, matching InChI's convention for coordination-compound bond orders.
+- Add `_normalizeNOxideCarbanion` to `toCanonicalSMILES` in `src/io/smiles.js`: converts pentavalent `N(=C)=O` to `[N+]([C-])=O`, normalizing the charge distribution to match InChI's canonical form. The function runs after `perceiveAromaticity` so that pyridine-N-oxide (aromatic) is excluded.
+- Extend `_normalizeExocyclicIminium` in `src/io/smiles.js` to handle non-adjacent ring heteroatoms: when no ring N is directly bonded to the iminium C, the function now uses `mol.getRings()` to find any ring containing the iminium C that also has a neutral N or S; it then transfers the `[NH2+]` charge to that heteroatom and reassigns all ring bonds to a valid alternating Kekulé form (choosing the traversal direction that minimises changes to existing bond orders). Fixes InChI accuracy rows 2193 (bicyclic amidinium) and 2448 (thiopyrylium `[s+]` aromatization).
+- Add `_normalizeExocyclicThioamideAnion` to `toCanonicalSMILES` in `src/io/smiles.js`: finds ring carbons with an exocyclic double bond to a thioamide C(N)[S-] group, transfers the −1 charge from S to the adjacent ring N, converts the ring-C=C bond to single and C–S to double (thioamide C=S), and reassigns ring Kekulé bonds so the pyrrole-type [N−] atom ends at the last traversal position (single bonds on both sides). Fixes InChI accuracy row 843.
+- Remove the app examples-bar bug verification picker and its global/input-control wiring while keeping the bug corpus available to automated tests.
+- Stream path-like ring-chain aspect/origin calculations and small-ring target centers in the main layout pipeline, trimming temporary center/coordinate arrays around final orientation and square-ring repair.
+- Stream final-orientation principal-axis and centroid calculations over coordinate maps/atom IDs directly, avoiding temporary point arrays during whole-molecule leveling and scaffold center rebuilds.
+- Stream large-molecule block-stitching score comparisons over child and placed coordinates directly, avoiding temporary position arrays for each refinement angle.
+- Centralize incident-ring polygon construction in a direct-loop geometry helper and reuse it across audit, branch-placement, stereo wedge selection, ring-substituent, terminal-hetero, and hypervalent cleanup paths.
+- Add a coordinate-map centroid helper and route ring-chain, terminal-chain, and symmetry retouch centroids through direct atom-id iteration instead of temporary position arrays.
+- Deduplicate attached-ring, ring-substituent, and terminal-hetero presentation candidates by seed before sparse override construction, avoiding duplicate subtree rotation maps and large override-key walks before scoring.
+- Keep peptide amide-hydrolysis reaction previews from collapsing retained-neighbor angles after product splitting by adding adjacent-anchor angle candidates/penalties to edited carbonyl placement.
+- Keep aryl-adjacent alcohol-dehydration reaction previews trigonal by re-running non-carbonyl edited-center angle cleanup after scaffold restoration, preferring retained ring anchors over movable alkyl termini, and bending terminal alkyl continuations away from newly formed alkene centers.
+- Open imine-hydrolysis ester-product ether tails after edited carbonyl placement and solve edited carbonyl centers from retained anchor bond lengths so retained methoxy substituents do not preserve acute imidate angles or stretched ester bonds.
+
 ## 2026-05-25
 
+- Add opt-in sparse coordinate-overlay scoring to shared presentation candidate search and use it for terminal-hetero and ring-substituent candidate probes, avoiding full coordinate-map clones for override-only read paths.
+- Stream label-box collection directly over coordinate entries so repeated label audits/clearance passes avoid spreading coordinate keys plus map/filter allocation churn.
+- Hoist bonded-neighbor set lookups out of audit nonbonded/focused-placement inner loops so grid-backed overlap scans reuse the first atom's adjacency membership across all nearby candidates.
+- Stream overlap-resolution atom-grid neighborhood scans through `someRadius`, skipping temporary `queryRadius` arrays and short-circuiting terminal-carbonyl compression candidates on the first local clearance violation.
+- Add a single-atom coordinate-overlay fast path so one-leaf candidate probes avoid nested override-array allocation and per-entry override `Map` lookups during values/entries iteration.
+- Replace cut-subtree cleanup cache string keys with nested directed atom-id maps and FIFO entry tracking, reducing repeated key allocation on hot subtree probes while preserving cached Set reuse.
+- Cache coordinate-overlay extra keys at construction time and iterate base entries directly for override-only candidate maps, avoiding per-iteration dedupe sets in mixed-layout scoring probes.
+- Cache scaffold-template candidate atom-key/element signatures and grouped template context constraints so strict/fallback template probes avoid repeated atom sorting, element recounting, and constraint regrouping across candidate-template attempts.
+- Stream cached scaffold-template coordinate entries directly into placement output so templated ring placement skips the intermediate coordinate `Map` allocation while preserving fresh returned positions.
+- Cache scaffold-template descriptors by ID and reuse scaled template-coordinate entries per template/bond length while still returning fresh coordinate maps to callers.
+- Cache accepted scaffold-template mappings on the layout graph so templated placement can reuse the match-time VF2 result instead of remapping the same ring system before coordinate assignment.
 - Push scaffold-template mapped-atom and exocyclic-neighbor context into the VF2 atom matcher, caching exocyclic counts per candidate so contextual templates reject impossible atom mappings before full automorphism enumeration.
 - Add reusable VF2 target/query indexes and route scaffold-template matching through them so each candidate subgraph and template query plan is indexed once across strict/fallback template probes.
 - Reuse layout-graph ring indexes for mixed ring-system descriptors, linker aromatic checks, benzene-root orientation, macrocycle angular budgets, ring-dependency summaries, and component ring counting so repeated ring-system work avoids full ring/connection scans.

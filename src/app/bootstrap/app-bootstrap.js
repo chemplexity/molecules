@@ -447,7 +447,6 @@ export function finalizeAppBootstrap(ctx) {
         setInputFormat: (fmt, options = {}) => ctx.input.inputFlowManager.setInputFormat(fmt, options),
         renderExamples: () => ctx.input.inputControls.renderExamples(),
         pickRandomMolecule: () => ctx.input.inputControls.pickRandomMolecule(),
-        pickBugVerificationMolecule: () => ctx.input.inputControls.pickBugVerificationMolecule(),
         pickDebugMolecule: () => ctx.input.inputControls.pickDebugMolecule(),
         getCanonicalMol: () => ctx.overlays.getReactionPreviewSourceMol() ?? ctx.state.getCurrentMol(),
         toSmiles: mol => ctx.io.toSMILES(mol),

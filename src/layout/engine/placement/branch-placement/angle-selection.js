@@ -3,6 +3,7 @@
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, length, perpLeft, sub } from '../../geometry/vec2.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
+import { incidentRingPolygonsForAtom } from '../../geometry/ring-polygons.js';
 import { ringEmbeddedBisOxoSpread } from '../../geometry/ring-hypervalent.js';
 import { BRANCH_CLEARANCE_FLOOR_FACTOR } from '../../constants.js';
 import {
@@ -1706,10 +1707,7 @@ export function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorA
  * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
  */
 export function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
-  if (!layoutGraph || !coords.has(anchorAtomId)) {
-    return [];
-  }
-  return (layoutGraph.atomToRings.get(anchorAtomId) ?? []).map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
+  return incidentRingPolygonsForAtom(layoutGraph, coords, anchorAtomId);
 }
 
 /**
@@ -3375,7 +3373,7 @@ function isPriorityExteriorRingSubstituent(layoutGraph, anchorAtomId, neighborAt
   }
 
   for (const bond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
-    if (!bond || bond === anchorBond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    if (!bond || bond === anchorBond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 2) {
       continue;
     }
     const downstreamAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
@@ -3385,6 +3383,46 @@ function isPriorityExteriorRingSubstituent(layoutGraph, anchorAtomId, neighborAt
     }
   }
   return false;
+}
+
+/**
+ * Returns whether a non-priority sibling is simple enough that a carbonyl or
+ * alkene-like branch may claim the exact exterior axis without making the
+ * local fan look pinched.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} neighborAtomId - Exocyclic neighbor atom ID.
+ * @returns {boolean} True when the sibling is a terminal heavy leaf.
+ */
+function isSimpleExteriorSiblingLeaf(layoutGraph, anchorAtomId, neighborAtomId) {
+  if (!layoutGraph || layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+    return false;
+  }
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.aromatic) {
+    return false;
+  }
+  const anchorBond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
+  if (!anchorBond || anchorBond.kind !== 'covalent' || anchorBond.inRing || anchorBond.aromatic || (anchorBond.order ?? 1) !== 1) {
+    return false;
+  }
+
+  let heavyNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const otherAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
+    const otherAtom = layoutGraph.atoms.get(otherAtomId);
+    if (!otherAtom || otherAtom.element === 'H') {
+      continue;
+    }
+    heavyNeighborCount++;
+    if (otherAtomId !== anchorAtomId) {
+      return false;
+    }
+  }
+  return heavyNeighborCount === 1;
 }
 
 function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighborAngles, exocyclicNeighborIds) {
@@ -3398,6 +3436,10 @@ function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighbo
     isPriorityExteriorRingSubstituent(layoutGraph, descriptor.anchorAtomId, neighborAtomId)
   );
   if (priorityNeighborIds.length !== 1 || !exocyclicNeighborIds.includes(priorityNeighborIds[0])) {
+    return [];
+  }
+  const nonPriorityNeighborIds = descriptor.exocyclicNeighborIds.filter(neighborAtomId => neighborAtomId !== priorityNeighborIds[0]);
+  if (!nonPriorityNeighborIds.every(neighborAtomId => isSimpleExteriorSiblingLeaf(layoutGraph, descriptor.anchorAtomId, neighborAtomId))) {
     return [];
   }
 

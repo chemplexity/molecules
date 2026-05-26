@@ -1156,20 +1156,18 @@ function compressedTerminalCarbonylLeafPosition(layoutGraph, coords, leafAtomId,
     if (opposingDistance < threshold - NUMERIC_EPSILON) {
       continue;
     }
-    let localClearance = threshold;
-    const candidateAtomIds = atomGrid ? atomGrid.queryRadius(candidatePosition, threshold) : coords.keys();
-    for (const otherAtomId of candidateAtomIds) {
+    const hasLocalClash = visitNearbyAtomIds(coords, atomGrid, candidatePosition, threshold, otherAtomId => {
       const otherAtom = layoutGraph.atoms.get(otherAtomId);
       if (otherAtomId === leafAtomId || otherAtom?.visible !== true || otherAtom.element === 'H' || layoutGraph.bondedPairSet?.has(atomPairKey(leafAtomId, otherAtomId))) {
-        continue;
+        return false;
       }
       const otherPosition = coords.get(otherAtomId);
       if (!otherPosition) {
-        continue;
+        return false;
       }
-      localClearance = Math.min(localClearance, Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y));
-    }
-    if (localClearance >= threshold - NUMERIC_EPSILON) {
+      return Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y) < threshold - NUMERIC_EPSILON;
+    });
+    if (!hasLocalClash) {
       return candidatePosition;
     }
   }
@@ -1209,18 +1207,30 @@ function reflectPointAcrossLine(point, lineStart, lineEnd) {
 
 function localNonbondedClearance(layoutGraph, coords, atomId, position, searchRadius, atomGrid) {
   let minimumDistance = searchRadius;
-  const candidateAtomIds = atomGrid ? atomGrid.queryRadius(position, searchRadius) : coords.keys();
-  for (const otherAtomId of candidateAtomIds) {
+  visitNearbyAtomIds(coords, atomGrid, position, searchRadius, otherAtomId => {
     if (otherAtomId === atomId || layoutGraph.bondedPairSet?.has(atomPairKey(atomId, otherAtomId))) {
-      continue;
+      return false;
     }
     const otherPosition = coords.get(otherAtomId);
     if (!otherPosition) {
-      continue;
+      return false;
     }
     minimumDistance = Math.min(minimumDistance, Math.hypot(position.x - otherPosition.x, position.y - otherPosition.y));
-  }
+    return false;
+  });
   return minimumDistance;
+}
+
+function visitNearbyAtomIds(coords, atomGrid, position, radius, visit) {
+  if (atomGrid) {
+    return atomGrid.someRadius(position, radius, visit);
+  }
+  for (const atomId of coords.keys()) {
+    if (visit(atomId)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function reflectedRigidDescriptorPositions(coords, descriptor) {
@@ -1625,17 +1635,17 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
   }
   const minimumNonbondedDistance = candidatePosition => {
     let minimumDistance = Number.POSITIVE_INFINITY;
-    const candidateAtomIds = atomGrid ? atomGrid.queryRadius(candidatePosition, threshold * 2) : coords.keys();
-    for (const otherAtomId of candidateAtomIds) {
+    visitNearbyAtomIds(coords, atomGrid, candidatePosition, threshold * 2, otherAtomId => {
       if (otherAtomId === atomId || otherAtomId === anchorAtomId || layoutGraph.bondedPairSet?.has(atomPairKey(atomId, otherAtomId))) {
-        continue;
+        return false;
       }
       const otherPosition = coords.get(otherAtomId);
       if (!otherPosition) {
-        continue;
+        return false;
       }
       minimumDistance = Math.min(minimumDistance, Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y));
-    }
+      return false;
+    });
     return Number.isFinite(minimumDistance) ? minimumDistance : Number.POSITIVE_INFINITY;
   };
   const compressedCarbonylPosition = compressedTerminalCarbonylLeafPosition(layoutGraph, coords, atomId, opposingAtomId, threshold, bondLength, atomGrid);

@@ -16,39 +16,69 @@ export class CoordOverlay {
   constructor(baseCoords, overrides) {
     this.baseCoords = baseCoords;
     this.overrides = overrides;
-    this.size = overlaySize(baseCoords, overrides);
+    this.extraKeys = overlayExtraKeys(baseCoords, overrides);
+    const singleOverride = overrides.size === 1 ? overrides.entries().next().value : null;
+    this.singleOverrideAtomId = singleOverride?.[0] ?? null;
+    this.singleOverridePosition = singleOverride?.[1] ?? null;
+    this.size = (baseCoords.size ?? 0) + this.extraKeys.length;
   }
 
   get(atomId) {
+    if (this.singleOverrideAtomId === atomId) {
+      return this.singleOverridePosition;
+    }
     return this.overrides.has(atomId) ? this.overrides.get(atomId) : this.baseCoords.get(atomId);
   }
 
   has(atomId) {
+    if (this.singleOverrideAtomId === atomId) {
+      return true;
+    }
     return this.overrides.has(atomId) || this.baseCoords.has(atomId);
   }
 
   *keys() {
-    const emitted = new Set();
     for (const atomId of this.baseCoords.keys()) {
-      emitted.add(atomId);
       yield atomId;
     }
-    for (const atomId of this.overrides.keys()) {
-      if (!emitted.has(atomId)) {
-        yield atomId;
-      }
+    for (const atomId of this.extraKeys) {
+      yield atomId;
     }
   }
 
   *values() {
-    for (const atomId of this.keys()) {
-      yield this.get(atomId);
+    if (this.singleOverrideAtomId != null) {
+      for (const [atomId, position] of this.baseCoords.entries()) {
+        yield atomId === this.singleOverrideAtomId ? this.singleOverridePosition : position;
+      }
+      if (this.extraKeys.length > 0) {
+        yield this.singleOverridePosition;
+      }
+      return;
+    }
+    for (const [atomId, position] of this.baseCoords.entries()) {
+      yield this.overrides.has(atomId) ? this.overrides.get(atomId) : position;
+    }
+    for (const atomId of this.extraKeys) {
+      yield this.overrides.get(atomId);
     }
   }
 
   *entries() {
-    for (const atomId of this.keys()) {
-      yield [atomId, this.get(atomId)];
+    if (this.singleOverrideAtomId != null) {
+      for (const [atomId, position] of this.baseCoords.entries()) {
+        yield [atomId, atomId === this.singleOverrideAtomId ? this.singleOverridePosition : position];
+      }
+      if (this.extraKeys.length > 0) {
+        yield [this.singleOverrideAtomId, this.singleOverridePosition];
+      }
+      return;
+    }
+    for (const [atomId, position] of this.baseCoords.entries()) {
+      yield [atomId, this.overrides.has(atomId) ? this.overrides.get(atomId) : position];
+    }
+    for (const atomId of this.extraKeys) {
+      yield [atomId, this.overrides.get(atomId)];
     }
   }
 
@@ -72,14 +102,14 @@ export class CoordOverlay {
   }
 }
 
-function overlaySize(baseCoords, overrides) {
-  let size = baseCoords.size ?? 0;
+function overlayExtraKeys(baseCoords, overrides) {
+  const extraKeys = [];
   for (const atomId of overrides.keys()) {
     if (!baseCoords.has(atomId)) {
-      size++;
+      extraKeys.push(atomId);
     }
   }
-  return size;
+  return extraKeys;
 }
 
 /**
@@ -90,7 +120,9 @@ function overlaySize(baseCoords, overrides) {
  * @returns {CoordOverlay} Coordinate overlay.
  */
 export function coordOverlayWithOverride(baseCoords, atomId, position) {
-  return coordOverlayWithOverrides(baseCoords, new Map([[atomId, position]]));
+  const overrides = new Map();
+  overrides.set(atomId, position);
+  return coordOverlayWithOverrides(baseCoords, overrides);
 }
 
 /**

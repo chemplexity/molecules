@@ -1,5 +1,7 @@
 /** @module cleanup/candidate-search */
 
+import { coordOverlayWithOverrides } from '../geometry/coord-overlay.js';
+
 const OVERRIDE_KEY_PRECISION = 9;
 
 function formatOverrideCoord(value) {
@@ -56,6 +58,29 @@ export function materializeSparseOverrideCoords(coords, overridePositions) {
   return candidateCoords;
 }
 
+function sparseOverrideCoordView(coords, overridePositions) {
+  if (!(overridePositions instanceof Map)) {
+    return null;
+  }
+  let filteredOverrides = null;
+  for (const [atomId, position] of overridePositions) {
+    if (position) {
+      filteredOverrides?.set(atomId, position);
+    } else if (!filteredOverrides) {
+      filteredOverrides = new Map();
+      for (const [previousAtomId, previousPosition] of overridePositions) {
+        if (previousAtomId === atomId) {
+          break;
+        }
+        if (previousPosition) {
+          filteredOverrides.set(previousAtomId, previousPosition);
+        }
+      }
+    }
+  }
+  return coordOverlayWithOverrides(coords, filteredOverrides ?? overridePositions);
+}
+
 function normalizeFollowupResult(result) {
   if (!result) {
     return null;
@@ -100,10 +125,12 @@ function defaultCompareEquivalentCandidates(candidate, incumbent) {
  * @param {{
  *   context?: object,
  *   generateSeeds?: ((descriptor: unknown, context: object) => Iterable<unknown>|null|undefined),
+ *   buildSeedKey?: ((descriptor: unknown, seed: unknown, context: object, layoutGraph: object|null) => string|null|undefined),
  *   materializeOverrides?: ((coords: Map<string, {x: number, y: number}>, descriptor: unknown, seed: unknown, context: object, layoutGraph: object|null) => Map<string, {x: number, y: number}>|null),
  *   buildCandidateKey?: ((descriptor: unknown, overridePositions: Map<string, {x: number, y: number}>, seed: unknown, context: object, layoutGraph: object|null) => string|null|undefined),
- *   prescore?: ((descriptor: unknown, overridePositions: Map<string, {x: number, y: number}>, candidateCoords: Map<string, {x: number, y: number}>, seed: unknown, context: object, layoutGraph: object|null) => boolean),
- *   scoreSeed?: ((descriptor: unknown, candidateCoords: Map<string, {x: number, y: number}>, seed: unknown, context: object, overridePositions: Map<string, {x: number, y: number}>, layoutGraph: object|null) => unknown),
+ *   useSparseCandidateOverlay?: boolean,
+ *   prescore?: ((descriptor: unknown, overridePositions: Map<string, {x: number, y: number}>, candidateCoords: Map<string, {x: number, y: number}>|object, seed: unknown, context: object, layoutGraph: object|null) => boolean),
+ *   scoreSeed?: ((descriptor: unknown, candidateCoords: Map<string, {x: number, y: number}>|object, seed: unknown, context: object, overridePositions: Map<string, {x: number, y: number}>, layoutGraph: object|null) => unknown),
  *   postAcceptFollowups?: Array<{
  *     name?: string,
  *     maxRuns?: number,
@@ -135,6 +162,7 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
   const materializeOverrides = typeof options.materializeOverrides === 'function' ? options.materializeOverrides : () => null;
   const isBetterScore = typeof options.isBetterScore === 'function' ? options.isBetterScore : defaultIsBetterScore;
   const compareEquivalentCandidates = typeof options.compareEquivalentCandidates === 'function' ? options.compareEquivalentCandidates : defaultCompareEquivalentCandidates;
+  const useSparseCandidateOverlay = options.useSparseCandidateOverlay === true;
   const seenCandidateKeys = new Set();
   let bestSeedCandidate = null;
   let bestFinalCandidate = null;
@@ -142,21 +170,29 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
   let acceptedCount = 0;
 
   for (const seed of generateSeeds(descriptor, context) ?? []) {
+    const seedKey = options.buildSeedKey?.(descriptor, seed, context, layoutGraph) ?? null;
+    if (seedKey && seenCandidateKeys.has(seedKey)) {
+      continue;
+    }
+    if (seedKey) {
+      seenCandidateKeys.add(seedKey);
+    }
+
     const overridePositions = materializeOverrides(coords, descriptor, seed, context, layoutGraph);
     if (!(overridePositions instanceof Map)) {
       continue;
     }
-    const candidateKey = options.buildCandidateKey?.(descriptor, overridePositions, seed, context, layoutGraph) ?? buildSparseOverrideKey(overridePositions);
-    if (candidateKey && seenCandidateKeys.has(candidateKey)) {
+    const candidateKey = seedKey ?? options.buildCandidateKey?.(descriptor, overridePositions, seed, context, layoutGraph) ?? buildSparseOverrideKey(overridePositions);
+    if (candidateKey && candidateKey !== seedKey && seenCandidateKeys.has(candidateKey)) {
       continue;
     }
-    if (candidateKey) {
+    if (candidateKey && candidateKey !== seedKey) {
       seenCandidateKeys.add(candidateKey);
     }
 
     visitedCount++;
-    const candidateCoords = materializeSparseOverrideCoords(coords, overridePositions);
-    if (!(candidateCoords instanceof Map)) {
+    const candidateCoords = useSparseCandidateOverlay ? sparseOverrideCoordView(coords, overridePositions) : materializeSparseOverrideCoords(coords, overridePositions);
+    if (!candidateCoords) {
       continue;
     }
     if (options.prescore?.(descriptor, overridePositions, candidateCoords, seed, context, layoutGraph) === false) {
@@ -200,6 +236,9 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
 
   const followupResults = [];
   let refinedCoords = bestSeedCandidate.coords;
+  if (useSparseCandidateOverlay && (options.postAcceptFollowups?.length ?? 0) > 0 && typeof refinedCoords?.toMap === 'function') {
+    refinedCoords = refinedCoords.toMap();
+  }
   for (const followup of options.postAcceptFollowups ?? []) {
     if (typeof followup?.run !== 'function') {
       continue;

@@ -61,25 +61,24 @@ export function estimateLabelHalfSize(labelText, bondLength, labelMetrics = null
  */
 export function collectLabelBoxes(layoutGraph, coords, bondLength, options = {}) {
   const labelMetrics = options.labelMetrics ?? layoutGraph.options.labelMetrics ?? null;
-  return [...coords.keys()]
-    .map(atomId => {
-      const atom = layoutGraph.atoms.get(atomId);
-      const size = estimateLabelHalfSize(atomLabelText(atom), bondLength, labelMetrics);
-      if (!size) {
-        return null;
-      }
-      const position = coords.get(atomId);
-      if (!position) {
-        return null;
-      }
-      return {
-        atomId,
-        x: position.x,
-        y: position.y,
-        ...size
-      };
-    })
-    .filter(Boolean);
+  const labelBoxes = [];
+  for (const [atomId, position] of coords) {
+    if (!position) {
+      continue;
+    }
+    const atom = layoutGraph.atoms.get(atomId);
+    const size = estimateLabelHalfSize(atomLabelText(atom), bondLength, labelMetrics);
+    if (!size) {
+      continue;
+    }
+    labelBoxes.push({
+      atomId,
+      x: position.x,
+      y: position.y,
+      ...size
+    });
+  }
+  return labelBoxes;
 }
 
 /**

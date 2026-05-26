@@ -60,7 +60,7 @@ import { packComponentPlacements } from './placement/fragment-packing.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
 import { computeBounds } from './geometry/bounds.js';
 import { cloneCoords, rotateAround } from './geometry/transforms.js';
-import { add, angleOf, centroid, rotate, sub } from './geometry/vec2.js';
+import { add, angleOf, centroidForAtomIds, centroidForPoints, rotate, sub } from './geometry/vec2.js';
 import { PRESENTATION_METRIC_EPSILON, atomPairKey } from './constants.js';
 
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
@@ -392,8 +392,7 @@ function shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, coords) {
 }
 
 function ringSystemCenter(coords, ringSystem) {
-  const positions = (ringSystem?.atomIds ?? []).map(atomId => coords.get(atomId)).filter(Boolean);
-  return positions.length > 0 ? centroid(positions) : null;
+  return centroidForAtomIds(coords, ringSystem?.atomIds ?? []);
 }
 
 function pathLikeRingChainAspect(layoutGraph, inputCoords) {
@@ -404,13 +403,21 @@ function pathLikeRingChainAspect(layoutGraph, inputCoords) {
     return Number.POSITIVE_INFINITY;
   }
   const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
-  const centers = orderedRingSystemIds.map(ringSystemId => ringSystemCenter(inputCoords, ringSystemById.get(ringSystemId))).filter(Boolean);
-  if (centers.length !== orderedRingSystemIds.length) {
-    return Number.POSITIVE_INFINITY;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const ringSystemId of orderedRingSystemIds) {
+    const center = ringSystemCenter(inputCoords, ringSystemById.get(ringSystemId));
+    if (!center) {
+      return Number.POSITIVE_INFINITY;
+    }
+    minX = Math.min(minX, center.x);
+    maxX = Math.max(maxX, center.x);
+    minY = Math.min(minY, center.y);
+    maxY = Math.max(maxY, center.y);
   }
-  const xs = centers.map(center => center.x);
-  const ys = centers.map(center => center.y);
-  return (Math.max(...xs) - Math.min(...xs)) / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6);
+  return (maxX - minX) / Math.max(maxY - minY, 1e-6);
 }
 
 function orientPathLikeRingChainCoords(layoutGraph, inputCoords) {
@@ -434,7 +441,10 @@ function orientPathLikeRingChainCoords(layoutGraph, inputCoords) {
   if (Math.abs(Math.sin(rotation)) <= 1e-9) {
     return { coords: inputCoords, changed: false };
   }
-  const origin = centroid([...inputCoords.values()]);
+  const origin = centroidForPoints(inputCoords.values());
+  if (!origin) {
+    return { coords: inputCoords, changed: false };
+  }
   const coords = new Map();
   for (const [atomId, position] of inputCoords) {
     coords.set(atomId, add(origin, rotate(sub(position, origin), rotation)));
@@ -680,11 +690,19 @@ function regularSmallRingTargets(coords, ring, bondLength) {
   if (atomIds.length !== 4 || !Number.isFinite(bondLength) || bondLength <= 0) {
     return null;
   }
-  const positions = atomIds.map(atomId => coords.get(atomId));
-  if (positions.some(position => !position)) {
-    return null;
+  const positions = new Array(atomIds.length);
+  let sumX = 0;
+  let sumY = 0;
+  for (let index = 0; index < atomIds.length; index++) {
+    const position = coords.get(atomIds[index]);
+    if (!position) {
+      return null;
+    }
+    positions[index] = position;
+    sumX += position.x;
+    sumY += position.y;
   }
-  const center = centroid(positions);
+  const center = { x: sumX / atomIds.length, y: sumY / atomIds.length };
   const radius = bondLength / Math.sqrt(2);
   const step = Math.PI / 2;
   let bestTargets = null;

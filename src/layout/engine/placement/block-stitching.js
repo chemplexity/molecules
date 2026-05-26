@@ -1,6 +1,6 @@
 /** @module placement/block-stitching */
 
-import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroidForAtomIds, fromAngle, rotate, sub } from '../geometry/vec2.js';
 
 const STITCH_REFINEMENT_OFFSETS = Object.freeze([0, Math.PI / 12, -Math.PI / 12, Math.PI / 6, -Math.PI / 6, Math.PI / 4, -Math.PI / 4]);
 
@@ -21,7 +21,7 @@ export function stitchChildBlock(childCoords, childAtomIds, childAttachmentAtomI
     return new Map(childCoords);
   }
 
-  const childCenter = centroid(childAtomIds.map(atomId => childCoords.get(atomId)).filter(Boolean));
+  const childCenter = centroidForAtomIds(childCoords, childAtomIds) ?? childAttachment;
   const currentDirection = sub(childCenter, childAttachment);
   const currentAngle = Math.hypot(currentDirection.x, currentDirection.y) <= 1e-12 ? 0 : angleOf(currentDirection);
   const rotation = targetAngle - currentAngle;
@@ -38,12 +38,14 @@ export function stitchChildBlock(childCoords, childAtomIds, childAttachmentAtomI
 }
 
 function scoreStitchedChild(transformedChild, childAtomIds, placedCoords, targetAngle, testedAngle, bondLength) {
-  const childPositions = childAtomIds.map(atomId => transformedChild.get(atomId)).filter(Boolean);
-  const placedPositions = [...placedCoords.values()];
   let score = 0;
 
-  for (const childPosition of childPositions) {
-    for (const placedPosition of placedPositions) {
+  for (const childAtomId of childAtomIds) {
+    const childPosition = transformedChild.get(childAtomId);
+    if (!childPosition) {
+      continue;
+    }
+    for (const placedPosition of placedCoords.values()) {
       const dx = childPosition.x - placedPosition.x;
       const dy = childPosition.y - placedPosition.y;
       const distance = Math.hypot(dx, dy);

@@ -836,6 +836,15 @@ function createAminonitrileOxabicyclobutaneCoreTemplate() {
 }
 
 /**
+ * Creates the compact alkynyl dicyano oxabicyclobutane scaffold graph found in
+ * small ether-bridged hydroxy cages with two carbon exits from the acetal cap.
+ * @returns {Molecule} Alkynyl dicyano oxabicyclobutane scaffold template molecule.
+ */
+function createAlkynylDicyanoOxabicyclobutaneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('alkynyl-dicyano-oxabicyclobutane-core', 'CC#CC1C2OC(CC#N)(C#N)C1C2O');
+}
+
+/**
  * Creates the compact alkyl oxabicyclobutane scaffold graph found in
  * gem-alkyl ether cages with an exocyclic bridge chain.
  * @returns {Molecule} Alkyl oxabicyclobutane scaffold template molecule.
@@ -2492,6 +2501,23 @@ function createAminonitrileOxabicyclobutaneCoreGeometry() {
     ['C4', { x: 0.140749, y: -0.588441 }],
     ['C8', { x: -0.258599, y: -1.056866 }],
     ['O7', { x: 0.65977, y: -0.919843 }]
+  ]);
+}
+
+/**
+ * Creates a compact projection for alkynyl dicyano oxabicyclobutane cages. It
+ * reuses the separated five/four ether lanes while orienting the alkynyl and
+ * geminal carbon exits away from the shared bridge path.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAlkynylDicyanoOxabicyclobutaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C13', { x: -0.742169, y: 0.032046 }],
+    ['C14', { x: -0.071177, y: 0.806388 }],
+    ['C5', { x: 0.802418, y: 0.262412 }],
+    ['C4', { x: 0.140749, y: -0.588441 }],
+    ['C7', { x: -0.258599, y: -1.056866 }],
+    ['O6', { x: 0.65977, y: -0.919843 }]
   ]);
 }
 
@@ -4376,6 +4402,22 @@ export function buildTemplateLibrary() {
           exocyclicNeighbors: [
             { templateAtomId: 'C5', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'alkynyl-dicyano-oxabicyclobutane-core',
+      'bridged',
+      53.870695,
+      createAlkynylDicyanoOxabicyclobutaneCoreTemplate(),
+      geometrySpec('normalized-xy', createAlkynylDicyanoOxabicyclobutaneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C4', element: 'C', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C7', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 },
+            { templateAtomId: 'C14', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }

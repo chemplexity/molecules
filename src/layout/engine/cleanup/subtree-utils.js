@@ -2,6 +2,55 @@
 
 const CUT_SUBTREE_CACHE_MAX_ENTRIES = 4096;
 
+function getCutSubtreeCache(layoutGraph) {
+  if (!layoutGraph) {
+    return null;
+  }
+  const cache = layoutGraph._cutSubtreeCache;
+  if (cache?.byStartAtomId) {
+    return cache;
+  }
+  const nextCache = {
+    byStartAtomId: new Map(),
+    insertionOrder: [],
+    size: 0
+  };
+  layoutGraph._cutSubtreeCache = nextCache;
+  return nextCache;
+}
+
+function cachedCutSubtree(cache, startAtomId, blockedAtomId) {
+  return cache?.byStartAtomId.get(startAtomId)?.get(blockedAtomId) ?? null;
+}
+
+function rememberCutSubtree(cache, startAtomId, blockedAtomId, subtreeAtomIds) {
+  if (!cache) {
+    return;
+  }
+  let blockedAtomCache = cache.byStartAtomId.get(startAtomId);
+  if (!blockedAtomCache) {
+    blockedAtomCache = new Map();
+    cache.byStartAtomId.set(startAtomId, blockedAtomCache);
+  }
+  if (!blockedAtomCache.has(blockedAtomId)) {
+    cache.size++;
+    cache.insertionOrder.push([startAtomId, blockedAtomId]);
+  }
+  blockedAtomCache.set(blockedAtomId, subtreeAtomIds);
+
+  while (cache.size > CUT_SUBTREE_CACHE_MAX_ENTRIES) {
+    const [oldStartAtomId, oldBlockedAtomId] = cache.insertionOrder.shift() ?? [];
+    const oldBlockedAtomCache = cache.byStartAtomId.get(oldStartAtomId);
+    if (!oldBlockedAtomCache?.delete(oldBlockedAtomId)) {
+      continue;
+    }
+    cache.size--;
+    if (oldBlockedAtomCache.size === 0) {
+      cache.byStartAtomId.delete(oldStartAtomId);
+    }
+  }
+}
+
 /**
  * Collects a covalently connected side of the graph while treating one bond as cut.
  * @param {object} layoutGraph - Layout graph shell.
@@ -10,13 +59,10 @@ const CUT_SUBTREE_CACHE_MAX_ENTRIES = 4096;
  * @returns {Set<string>} Connected atoms reachable from the start atom without crossing the cut bond.
  */
 export function collectCutSubtree(layoutGraph, startAtomId, blockedAtomId) {
-  const cacheKey = `${startAtomId}\u0000${blockedAtomId}`;
-  const cache = layoutGraph ? (layoutGraph._cutSubtreeCache ?? (layoutGraph._cutSubtreeCache = new Map())) : null;
-  if (cache) {
-    const cachedAtomIds = cache.get(cacheKey);
-    if (cachedAtomIds) {
-      return cachedAtomIds;
-    }
+  const cache = getCutSubtreeCache(layoutGraph);
+  const cachedAtomIds = cachedCutSubtree(cache, startAtomId, blockedAtomId);
+  if (cachedAtomIds) {
+    return cachedAtomIds;
   }
 
   const subtreeAtomIds = new Set([startAtomId]);
@@ -40,11 +86,6 @@ export function collectCutSubtree(layoutGraph, startAtomId, blockedAtomId) {
     }
   }
 
-  if (cache) {
-    if (cache.size >= CUT_SUBTREE_CACHE_MAX_ENTRIES) {
-      cache.delete(cache.keys().next().value);
-    }
-    cache.set(cacheKey, subtreeAtomIds);
-  }
+  rememberCutSubtree(cache, startAtomId, blockedAtomId, subtreeAtomIds);
   return subtreeAtomIds;
 }

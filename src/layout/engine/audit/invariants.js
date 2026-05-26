@@ -5,6 +5,7 @@ import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
 import { distancePointToSegment, segmentsIntersect, segmentsProperlyIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
+import { incidentRingPolygonsForAtom } from '../geometry/ring-polygons.js';
 import { angleOf, angularDifference, centroid, distance, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import {
@@ -856,12 +857,13 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
       if (!firstPosition || firstOrder == null) {
         continue;
       }
+      const firstBondedAtomIds = bondedAtomIdSet(layoutGraph, firstAtomId);
       atomGrid.forEachRadius(firstPosition, queryRadius, secondAtomId => {
         const secondOrder = atomOrderById.get(secondAtomId);
         if (secondOrder == null || secondOrder <= firstOrder) {
           return;
         }
-        if (areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId)) {
+        if (firstBondedAtomIds.has(secondAtomId)) {
           return;
         }
         const secondPosition = coords.get(secondAtomId);
@@ -887,9 +889,10 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
       continue;
     }
     const firstPosition = coords.get(firstAtomId);
+    const firstBondedAtomIds = bondedAtomIdSet(layoutGraph, firstAtomId);
     for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
       const secondAtomId = atomIds[secondIndex];
-      if ((!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId)) || areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId)) {
+      if ((!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId)) || firstBondedAtomIds.has(secondAtomId)) {
         continue;
       }
       const secondPosition = coords.get(secondAtomId);
@@ -1054,6 +1057,7 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
   for (const firstAtomId of uniqueFocusAtomIds) {
     const firstPosition = coords.get(firstAtomId);
     const firstFocusOrder = focusOrderByAtomId.get(firstAtomId);
+    const firstBondedAtomIds = bondedAtomIdSet(layoutGraph, firstAtomId);
     const scoreCandidate = secondAtomId => {
       if (secondAtomId === firstAtomId || (!atomGridHasVisibleAtoms && !isVisibleLayoutAtom(layoutGraph, secondAtomId))) {
         return;
@@ -1062,7 +1066,7 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
       if (secondFocusOrder != null && secondFocusOrder <= firstFocusOrder) {
         return;
       }
-      if (areLayoutAtomsBonded(layoutGraph, firstAtomId, secondAtomId)) {
+      if (firstBondedAtomIds.has(secondAtomId)) {
         return;
       }
       const secondPosition = coords.get(secondAtomId);
@@ -1593,7 +1597,7 @@ function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorA
 }
 
 function incidentRingPolygons(layoutGraph, coords, atomId) {
-  return (layoutGraph.atomToRings.get(atomId) ?? []).map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
+  return incidentRingPolygonsForAtom(layoutGraph, coords, atomId);
 }
 
 function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, representativeAtomIds, ringPolygons, maxOutwardDeviation) {

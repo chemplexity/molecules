@@ -87,6 +87,9 @@ describe('createInputControls', () => {
 
     assert.match(examplesEl.innerHTML, /inchi-ethanol/);
     assert.match(examplesEl.innerHTML, /pickRandomMolecule/);
+    assert.match(examplesEl.innerHTML, /pickDebugMolecule/);
+    assert.doesNotMatch(examplesEl.innerHTML, /pickBugVerificationMolecule/);
+    assert.doesNotMatch(examplesEl.innerHTML, /bug verification/);
   });
 
   it('parses pasted text immediately through the shared input flow', () => {
@@ -222,41 +225,4 @@ describe('createInputControls', () => {
     }
   });
 
-  it('cycles bug verification molecules in source order and wraps back to the start', () => {
-    const inputEl = createElement();
-    const collectionSelectEl = createElement();
-    const examplesEl = createElement();
-    const records = [];
-
-    const controls = createInputControls({
-      data: {
-        exampleMolecules: [],
-        randomMolecule: [],
-        bugMolecules: ['bug-0', 'bug-1', 'bug-2'],
-        moleculeCatalog: []
-      },
-      state: {
-        getInputMode: () => 'smiles'
-      },
-      dom: {
-        getInputElement: () => inputEl,
-        getCollectionSelectElement: () => collectionSelectEl,
-        getExamplesElement: () => examplesEl
-      },
-      actions: {
-        parseInput: () => {},
-        parseInputWithAutoFormat: value => {
-          records.push(value);
-        }
-      }
-    });
-
-    controls.pickBugVerificationMolecule();
-    controls.pickBugVerificationMolecule();
-    controls.pickBugVerificationMolecule();
-    controls.pickBugVerificationMolecule();
-
-    assert.deepEqual(records, ['bug-0', 'bug-1', 'bug-2', 'bug-0']);
-    assert.equal(inputEl.value, 'bug-0');
-  });
 });

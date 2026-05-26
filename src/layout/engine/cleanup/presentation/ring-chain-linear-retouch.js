@@ -1,7 +1,7 @@
 /** @module cleanup/presentation/ring-chain-linear-retouch */
 
 import { auditLayout } from '../../audit/audit.js';
-import { add, angleOf, centroid, rotate, sub } from '../../geometry/vec2.js';
+import { add, angleOf, centroidForAtomIds, rotate, sub } from '../../geometry/vec2.js';
 import { describePathLikeIsolatedRingChain } from '../../topology/isolated-ring-chain.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 
@@ -54,8 +54,7 @@ function uniqueAngles(angles) {
 }
 
 function ringSystemCenter(coords, ringSystem) {
-  const positions = (ringSystem?.atomIds ?? []).map(atomId => coords.get(atomId)).filter(Boolean);
-  return positions.length > 0 ? centroid(positions) : null;
+  return centroidForAtomIds(coords, ringSystem?.atomIds ?? []);
 }
 
 function orderedRingCenters(coords, ringChain) {

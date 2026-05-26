@@ -5,6 +5,7 @@ import { add, angleOf, angularDifference, distance, fromAngle, rotate, sub, wrap
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { pointInPolygon } from '../geometry/polygon.js';
+import { incidentRingPolygonsForAtom } from '../geometry/ring-polygons.js';
 import { countSevereOverlapsWithOverrides, findSevereOverlaps, measureBondLengthDeviation } from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { runLocalCleanup } from './local-rotation.js';
@@ -810,7 +811,7 @@ function isBetterRingEmbeddedBisOxoFit(candidateFit, incumbentFit) {
  * @returns {boolean} True when no proposed oxo position falls inside an incident ring.
  */
 function ringEmbeddedBisOxoTargetsStayOutsideRings(layoutGraph, coords, centerAtomId, overridePositions) {
-  const incidentRingPolygons = (layoutGraph.atomToRings.get(centerAtomId) ?? []).map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
+  const incidentRingPolygons = incidentRingPolygonsForAtom(layoutGraph, coords, centerAtomId);
   if (incidentRingPolygons.length === 0) {
     return true;
   }

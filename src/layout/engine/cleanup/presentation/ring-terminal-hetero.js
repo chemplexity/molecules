@@ -3,6 +3,7 @@
 import { buildAtomGrid } from '../../audit/invariants.js';
 import { auditLayout } from '../../audit/audit.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
+import { incidentRingPolygonsForAtom } from '../../geometry/ring-polygons.js';
 import { reflectAcrossLine } from '../../geometry/transforms.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
@@ -53,10 +54,7 @@ const HIDDEN_H_MULTIPLE_BOND_VISIBLE_ANGLE = (2 * Math.PI) / 3;
 const TERMINAL_MULTIPLE_BOND_BALANCED_FAN_TOLERANCE = Math.PI / 15;
 
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
-  if (!coords.has(anchorAtomId)) {
-    return [];
-  }
-  return (layoutGraph.atomToRings.get(anchorAtomId) ?? []).map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
+  return incidentRingPolygonsForAtom(layoutGraph, coords, anchorAtomId);
 }
 
 function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) {
@@ -3238,6 +3236,8 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
         subtreeAtomIds: [descriptor.heteroAtomId]
       },
       {
+        useSparseCandidateOverlay: true,
+        buildSeedKey: (_descriptor, candidateAngle) => `terminal-hetero:${Number.isFinite(candidateAngle) ? candidateAngle.toFixed(12) : `${candidateAngle}`}`,
         generateSeeds: () => [...candidateAngles],
         materializeOverrides(_coords, _rotationDescriptor, candidateAngle) {
           return terminalHeteroMoveOverrides(descriptor, add(anchorPosition, fromAngle(candidateAngle, targetRadius)), candidateAngle, bondLength);

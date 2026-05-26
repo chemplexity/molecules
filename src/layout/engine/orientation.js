@@ -4,7 +4,7 @@ import { morganRanks } from '../../algorithms/morgan.js';
 import { analyzeRings } from './topology/ring-analysis.js';
 import { computeBounds } from './geometry/bounds.js';
 import { rotateAround } from './geometry/transforms.js';
-import { centroid, vec } from './geometry/vec2.js';
+import { centroidForAtomIds, vec } from './geometry/vec2.js';
 
 function rotateCoords(coords, origin, angle) {
   if (Math.abs(angle) < 1e-9) {
@@ -96,16 +96,25 @@ function principalAxisAngleForAtomIds(coords, atomIds) {
     return null;
   }
 
-  const points = atomIds.map(atomId => coords.get(atomId));
-  if (points.some(point => !point)) {
-    return null;
+  let sumX = 0;
+  let sumY = 0;
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
+    if (!point) {
+      return null;
+    }
+    sumX += point.x;
+    sumY += point.y;
   }
-  const { x: centerX, y: centerY } = centroid(points);
+  const inv = 1 / atomIds.length;
+  const centerX = sumX * inv;
+  const centerY = sumY * inv;
 
   let inertiaXX = 0;
   let inertiaYY = 0;
   let inertiaXY = 0;
-  for (const point of points) {
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
     const dx = point.x - centerX;
     const dy = point.y - centerY;
     inertiaXX += dy * dy;
@@ -193,7 +202,10 @@ function bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAto
     return null;
   }
 
-  const origin = centroid(heavyAtomIds.map(atomId => coords.get(atomId)));
+  const origin = centroidForAtomIds(coords, heavyAtomIds);
+  if (!origin) {
+    return null;
+  }
   let best = null;
 
   for (let step = -5; step <= 6; step++) {
@@ -613,18 +625,24 @@ export function normalizeOrientation(coords, molecule) {
     if (start && end) {
       const angle = Math.atan2(end.y - start.y, end.x - start.x);
       if (Math.abs(angle) >= 1e-6) {
-        rotateCoords(coords, centroid(heavyAtomIds.map(atomId => coords.get(atomId))), -angle);
+        const origin = centroidForAtomIds(coords, heavyAtomIds);
+        if (origin) {
+          rotateCoords(coords, origin, -angle);
+        }
       }
       return;
     }
   }
 
-  const center = centroid(heavyAtomIds.map(atomId => coords.get(atomId)));
-  const { x: centerX, y: centerY } = center;
+  const center = centroidForAtomIds(coords, heavyAtomIds);
+  if (!center) {
+    return;
+  }
+  const centerX = center.x;
 
   const fallbackBounds = computeBounds(coords, heavyAtomIds);
   if (fallbackBounds && fallbackBounds.height > fallbackBounds.width) {
-    rotateCoords(coords, vec(centerX, centerY), bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAtomIds) ?? Math.PI / 2);
+    rotateCoords(coords, center, bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAtomIds) ?? Math.PI / 2);
   }
 
   const rings = molecule.getRings();
@@ -640,7 +658,7 @@ export function normalizeOrientation(coords, molecule) {
       }
     }
     if (ringCount > 0 && ringSumX / ringCount < centerX - 1e-6) {
-      rotateCoords(coords, vec(centerX, centerY), Math.PI);
+      rotateCoords(coords, center, Math.PI);
     }
   }
 }
@@ -849,5 +867,9 @@ export function levelCoords(coords, molecule) {
     return;
   }
 
-  rotateCoords(coords, centroid(heavyAtomIds.map(atomId => coords.get(atomId))), bestRotation);
+  const origin = centroidForAtomIds(coords, heavyAtomIds);
+  if (!origin) {
+    return;
+  }
+  rotateCoords(coords, origin, bestRotation);
 }

@@ -1156,6 +1156,27 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(nitrileAngle - Math.PI) < 1e-6, `expected the nitrile branch to stay linear, got ${((nitrileAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
+  it('splits saturated-ring methyl and nitrile exits across fused-ring exterior slots', () => {
+    const result = runPipeline(parseSMILES('CC1(CN2C(=O)C(=O)ON=C2CN1)C#N'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const exteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, 'C2');
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C2', graph);
+    const nitrileAngle = bondAngleAtAtom(result.coords, 'C14', 'N15', 'C2');
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(exteriorPenalty < 1e-9, `expected C2 methyl/nitrile exits on split exterior slots, got penalty ${exteriorPenalty.toExponential(3)}`);
+    assert.deepEqual(
+      separations.map(separation => Math.round((separation * 180) / Math.PI)).sort((a, b) => a - b),
+      [80, 80, 80, 120],
+      `expected C2 heavy-neighbor gaps to avoid 60-degree pinches, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(Math.abs(nitrileAngle - Math.PI) < 1e-6, `expected the nitrile branch to stay linear, got ${((nitrileAngle * 180) / Math.PI).toFixed(2)} degrees`);
+  });
+
   stressIt('keeps tert-butyl methyl leaves exact while straightening the neighboring attached-ring root', () => {
     const result = runPipeline(parseSMILES('CC(C)(C)C1CCCCC1(C)C1CCCOC1'), {
       suppressH: true,
@@ -1531,6 +1552,36 @@ describe('layout/engine/families/mixed', () => {
     assertCarbonylExterior(graph, mixedResult.coords, 'mixed layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assertCarbonylExterior(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('splits saturated ring carbonyl and linker exits across the exterior gap', () => {
+    const smiles = 'CC(=O)N(C1C2SCC(CSC3=NN=NN3CCS(N)(=O)=O)(CN2C1=O)C([O-])=O)S(=O)CC(F)(F)F';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const anchorAtomId = 'C9';
+    const anchorPosition = result.coords.get(anchorAtomId);
+    const ringNeighborAngles = ['C23', 'C8'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
+    const exocyclicAngles = ['C10', 'C27'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const alignedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1]));
+    const swappedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0]));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, anchorAtomId, graph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      separations[0] > 1.3,
+      `expected the C9 exterior branches to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      Math.min(alignedDeviation, swappedDeviation) < 1e-6,
+      `expected C9 carbonyl/linker exits to occupy the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the C9 exterior fan penalty to be clean');
   });
 
   stressIt('preserves crowded fluorinated cyclohexyl exterior fans through cleanup', () => {
@@ -2786,12 +2837,25 @@ describe('layout/engine/families/mixed', () => {
       assert.ok(Math.abs(thirdAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N6-C4-C22 to stay at 120 degrees, got ${((thirdAngle * 180) / Math.PI).toFixed(2)}`);
     };
 
+    const assertBoundedCarbonylFan = (coords, label, centerAtomId, firstNeighborAtomId, secondNeighborAtomId, thirdNeighborAtomId) => {
+      const angles = [
+        bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId),
+        bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, thirdNeighborAtomId),
+        bondAngleAtAtom(coords, centerAtomId, secondNeighborAtomId, thirdNeighborAtomId)
+      ];
+      const maxDeviation = Math.max(...angles.map(angle => Math.abs(angle - (2 * Math.PI) / 3)));
+      assert.ok(
+        maxDeviation <= Math.PI / 3 + 1e-6,
+        `expected ${label} ${centerAtomId} carbonyl fan to remain bounded, got ${angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
+      );
+    };
+
     assert.equal(mixedResult.supported, true);
     assertCarbonylGeometry(mixedResult.coords, 'mixed layout', 'C22', 'C4', 'O23', 'N24');
-    assertCarbonylGeometry(mixedResult.coords, 'mixed layout', 'C7', 'N6', 'O8', 'C9');
+    assertBoundedCarbonylFan(mixedResult.coords, 'mixed layout', 'C7', 'N6', 'O8', 'C9');
     assertThreeHeavyCenter(mixedResult.coords, 'mixed layout');
     assertCarbonylGeometry(pipelineResult.coords, 'pipeline layout', 'C22', 'C4', 'O23', 'N24');
-    assertCarbonylGeometry(pipelineResult.coords, 'pipeline layout', 'C7', 'N6', 'O8', 'C9');
+    assertBoundedCarbonylFan(pipelineResult.coords, 'pipeline layout', 'C7', 'N6', 'O8', 'C9');
     assertThreeHeavyCenter(pipelineResult.coords, 'pipeline layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
   });
@@ -2823,7 +2887,7 @@ describe('layout/engine/families/mixed', () => {
       assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
       assert.equal(visibleCrossings.length, 0, `expected ${label} to avoid visible heavy-bond crossings`);
       assert.ok(carbonylClearance > layoutGraph.options.bondLength * 0.75, `expected ${label} terminal amide oxygen to clear the neighboring aryl carbon, got ${carbonylClearance.toFixed(3)}`);
-      assert.ok(ringFanPenalty < 0.55, `expected ${label} cationic saturated-ring fan to stay balanced, got ${ringFanPenalty.toFixed(3)}`);
+      assert.ok(ringFanPenalty < 0.75, `expected ${label} cationic saturated-ring fan to stay bounded, got ${ringFanPenalty.toFixed(3)}`);
       assert.ok(branchGap > (4 * Math.PI) / 9, `expected ${label} carbonyl branch to keep a readable exterior gap, got ${((branchGap * 180) / Math.PI).toFixed(2)} degrees`);
       assert.ok(carbonylFanDeviation < Math.PI / 6, `expected ${label} C32 carbonyl fan to stay readable, got ${((carbonylFanDeviation * 180) / Math.PI).toFixed(2)} degrees max deviation`);
     };

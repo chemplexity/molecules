@@ -101,6 +101,19 @@ function assertVerticalBond(coords, firstAtomId, secondAtomId) {
   assert.ok(Math.abs(coords.get(firstAtomId).x - coords.get(secondAtomId).x) < 1e-6);
 }
 
+/**
+ * Asserts that a bond is projected on a 45-degree diagonal.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} firstAtomId - First atom id.
+ * @param {string} secondAtomId - Second atom id.
+ * @returns {void}
+ */
+function assertDiagonalBond(coords, firstAtomId, secondAtomId) {
+  const dx = Math.abs(coords.get(firstAtomId).x - coords.get(secondAtomId).x);
+  const dy = Math.abs(coords.get(firstAtomId).y - coords.get(secondAtomId).y);
+  assert.ok(Math.abs(dx - dy) < 1e-6);
+}
+
 describe('layout/engine/visual-orientation', () => {
   it('keeps fused and mixed corpus entries in their expected horizontal orientations', () => {
     const naphthalene = runPipeline(parseSMILES('c1ccc2ccccc2c1'), { suppressH: true });
@@ -196,11 +209,11 @@ describe('layout/engine/visual-orientation', () => {
 
     const bicyclo222 = runPipeline(parseSMILES('C1CC2CCC1CC2'), { suppressH: true });
     const bicycloHeavyAtoms = heavyAtomIds(bicyclo222);
-    assert.equal(bicyclo222.coords.get('C4').y, maxY(bicyclo222.coords, bicycloHeavyAtoms));
-    assert.ok(bicyclo222.coords.get('C7').x < bicyclo222.coords.get('C6').x);
-    assert.ok(bicyclo222.coords.get('C6').x < bicyclo222.coords.get('C1').x);
-    assert.ok(bicyclo222.coords.get('C7').y < bicyclo222.coords.get('C6').y);
-    assert.ok(bicyclo222.coords.get('C1').y < bicyclo222.coords.get('C6').y);
+    assert.equal(bicyclo222.coords.get('C7').y, maxY(bicyclo222.coords, bicycloHeavyAtoms));
+    assert.ok(Math.abs(bicyclo222.coords.get('C7').x - bicyclo222.coords.get('C6').x) < 1e-6);
+    assert.ok(bicyclo222.coords.get('C1').x < bicyclo222.coords.get('C6').x);
+    assert.ok(bicyclo222.coords.get('C2').y < bicyclo222.coords.get('C6').y);
+    assert.ok(bicyclo222.coords.get('C4').y < bicyclo222.coords.get('C6').y);
 
     const oxabicyclo222 = runPipeline(parseSMILES('C12CCC(CO1)CC2'), { suppressH: true });
     const oxabicyclo222HeavyAtoms = heavyAtomIds(oxabicyclo222);
@@ -252,13 +265,13 @@ describe('layout/engine/visual-orientation', () => {
     assert.ok(tropane.coords.get('C8').x < tropane.coords.get('C7').x);
 
     const cubane = runPipeline(parseSMILES('C12C3C4C1C5C4C3C25'), { suppressH: true });
-    assertVerticalBond(cubane.coords, 'C1', 'C2');
-    assertVerticalBond(cubane.coords, 'C4', 'C3');
-    assertVerticalBond(cubane.coords, 'C8', 'C7');
-    assertVerticalBond(cubane.coords, 'C5', 'C6');
+    assertDiagonalBond(cubane.coords, 'C1', 'C2');
+    assertDiagonalBond(cubane.coords, 'C4', 'C3');
+    assertDiagonalBond(cubane.coords, 'C8', 'C7');
+    assertDiagonalBond(cubane.coords, 'C5', 'C6');
     const cubaneFrontFace = subsetCentroid(cubane.coords, ['C1', 'C2', 'C3', 'C4']);
     const cubaneBackFace = subsetCentroid(cubane.coords, ['C5', 'C6', 'C7', 'C8']);
-    assert.ok(cubaneBackFace.x > cubaneFrontFace.x);
+    assert.ok(cubaneFrontFace.y > cubaneBackFace.y);
     const cubaneXs = roundedUniqueValues(heavyAtomIds(cubane).map(atomId => cubane.coords.get(atomId).x));
     const cubaneYs = roundedUniqueValues(heavyAtomIds(cubane).map(atomId => cubane.coords.get(atomId).y));
     assert.equal(cubaneXs.length, 4);

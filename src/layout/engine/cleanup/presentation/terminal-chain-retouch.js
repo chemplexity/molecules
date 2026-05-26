@@ -2,7 +2,7 @@
 
 import { auditLayout } from '../../audit/audit.js';
 import { computeBounds } from '../../geometry/bounds.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, sub } from '../../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroidForAtomIds, fromAngle, sub } from '../../geometry/vec2.js';
 import { describePathLikeIsolatedRingChain } from '../../topology/isolated-ring-chain.js';
 
 const MIN_TERMINAL_CHAIN_ATOM_COUNT = 8;
@@ -108,8 +108,7 @@ function terminalChainCandidates(layoutGraph, ringChain) {
 }
 
 function ringSystemCenter(coords, ringSystem) {
-  const positions = (ringSystem?.atomIds ?? []).map(atomId => coords.get(atomId)).filter(Boolean);
-  return positions.length > 0 ? centroid(positions) : null;
+  return centroidForAtomIds(coords, ringSystem?.atomIds ?? []);
 }
 
 function preferredTerminalChainAngle(inputCoords, ringChain, ringSystemId) {

@@ -4,6 +4,7 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { placeTemplateCoords } from '../../../../src/layout/engine/templates/placement.js';
+import { getTemplateCoords } from '../../../../src/layout/engine/templates/library.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { assignBondValidationClass } from '../../../../src/layout/engine/placement/bond-validation.js';
@@ -26,6 +27,15 @@ function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighb
 }
 
 describe('layout/engine/templates/placement', () => {
+  it('returns fresh template coordinate maps while reusing cached scaled entries internally', () => {
+    const firstCoords = getTemplateCoords('benzene', 1.5);
+    const secondCoords = getTemplateCoords('benzene', 1.5);
+    assert.notEqual(firstCoords, secondCoords);
+    assert.deepEqual(secondCoords.get('a0'), firstCoords.get('a0'));
+    firstCoords.get('a0').x = 123;
+    assert.notEqual(secondCoords.get('a0').x, 123);
+  });
+
   it('places an isolated aromatic ring from a matched scaffold template', () => {
     const graph = createLayoutGraph(makeBenzene());
     const coords = placeTemplateCoords(graph, 'benzene', graph.ringSystems[0].atomIds, graph.options.bondLength);

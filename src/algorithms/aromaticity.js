@@ -63,6 +63,15 @@ function _isSubstitutedPyrrolicLikeNitrogen(atom, ringBonds, ringAtomSet, mol) {
     return false;
   }
 
+  // If ring bonds are mixed (some pi, some single), the N is at a ring junction
+  // behaving as pyridine-like (1 e), not substituted-pyrrolic (2 e). Only the
+  // fully-single (Kekulé) or fully-pi (aromatic SMILES) cases are substituted-pyrrolic.
+  const hasPiRingBond = ringBonds.some(_hasPiOrder);
+  const hasSingleRingBond = ringBonds.some(b => !_hasPiOrder(b));
+  if (hasPiRingBond && hasSingleRingBond) {
+    return false;
+  }
+
   const exocyclicHeavySingleBonds = atom.bonds
     .map(bondId => mol.bonds.get(bondId))
     .filter(bond => bond && !ringAtomSet.has(bond.getOtherAtom(atom.id)))

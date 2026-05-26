@@ -38,4 +38,24 @@ describe('layout/engine/cleanup/subtree-utils', () => {
 
     assert.deepEqual([...subtreeAtomIds].sort(), ['a2', 'a4', 'h3']);
   });
+
+  it('reuses cached directed cut subtrees without crossing the opposite side', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('a0', 'C');
+    molecule.addAtom('a1', 'C');
+    molecule.addAtom('a2', 'C');
+    molecule.addAtom('a3', 'C');
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    molecule.addBond('b1', 'a1', 'a2', {}, false);
+    molecule.addBond('b2', 'a2', 'a3', {}, false);
+    const layoutGraph = createLayoutGraph(molecule);
+
+    const firstSubtreeAtomIds = collectCutSubtree(layoutGraph, 'a2', 'a1');
+    const secondSubtreeAtomIds = collectCutSubtree(layoutGraph, 'a2', 'a1');
+    const oppositeSubtreeAtomIds = collectCutSubtree(layoutGraph, 'a1', 'a2');
+
+    assert.equal(secondSubtreeAtomIds, firstSubtreeAtomIds);
+    assert.deepEqual([...secondSubtreeAtomIds].sort(), ['a2', 'a3']);
+    assert.deepEqual([...oppositeSubtreeAtomIds].sort(), ['a0', 'a1']);
+  });
 });

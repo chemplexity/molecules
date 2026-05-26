@@ -2,6 +2,7 @@
 
 import { assignCIPRanks } from '../../../core/Molecule.js';
 import { centroid, distance, normalize, scale, sub } from '../geometry/vec2.js';
+import { incidentRingPolygonsForAtom } from '../geometry/ring-polygons.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
 import { minimumSectorAngle, synthesizeHydrogenPosition } from './wedge-geometry.js';
@@ -32,7 +33,7 @@ function findComponentAtomIds(layoutGraph, atomId) {
  * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
  */
 function incidentRingPolygons(layoutGraph, coords, centerId) {
-  return (layoutGraph.atomToRings.get(centerId) ?? []).map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
+  return incidentRingPolygonsForAtom(layoutGraph, coords, centerId);
 }
 
 /**

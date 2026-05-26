@@ -2,7 +2,7 @@
 
 import { ANGLE_EPSILON, DISTANCE_EPSILON } from '../constants.js';
 import { computeBounds } from '../geometry/bounds.js';
-import { angleOf, angularDifference, centroid, rotate, sub } from '../geometry/vec2.js';
+import { angleOf, angularDifference, centroidForAtomIds, rotate, sub } from '../geometry/vec2.js';
 
 const IDEMPOTENT_AXIS_EPSILON = 1e-12;
 const LOCAL_AXIS_SNAP_ANGLE_EPSILON = Math.PI / 720;
@@ -78,12 +78,11 @@ function rotateComponent(coords, atomIds, rotationAngle) {
     return coords;
   }
 
-  const points = atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
-  if (points.length === 0) {
+  const center = centroidForAtomIds(coords, atomIds);
+  if (!center) {
     return coords;
   }
 
-  const center = centroid(points);
   const rotatedCoords = new Map(coords);
   for (const atomId of atomIds) {
     const position = coords.get(atomId);

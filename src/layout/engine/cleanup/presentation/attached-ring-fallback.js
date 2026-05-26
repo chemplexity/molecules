@@ -150,6 +150,30 @@ const OMITTED_H_FAN_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([0.95
 const CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON = Math.PI / 180;
 const ATTACHED_RING_SPARSE_OVERLAP_MAX_OVERRIDE_ATOMS = 32;
 
+function candidateKeyAngle(angle) {
+  return Number.isFinite(angle) ? wrapAngle(angle).toFixed(12) : `${angle}`;
+}
+
+function attachedRingSeedKey(_descriptor, seed) {
+  if (!seed || typeof seed !== 'object') {
+    return null;
+  }
+  if (seed.kind === 'rigid' || seed.kind === 'root-anchored') {
+    return `${seed.kind}:${candidateKeyAngle(seed.rotation)}:${seed.exactAnchorSideOutward === true ? 'anchor-outward' : ''}:${seed.exactRootOutward === true ? 'root-outward' : ''}`;
+  }
+  if (seed.kind === 'reflected-subtree') {
+    return `reflected-subtree:${seed.reflectAnchor === true ? 'anchor' : 'plain'}`;
+  }
+  if (seed.kind === 'coupled-root-anchored') {
+    return `coupled-root-anchored:${candidateKeyAngle(seed.anchorRotation)}:${candidateKeyAngle(seed.rootRotation)}`;
+  }
+  if (seed.kind === 'composite') {
+    const childAnchor = seed.childDescriptor?.ringAnchorAtomId ?? 'unknown';
+    return `composite:${childAnchor}:${seed.reflectAnchor === true ? 'reflect' : 'plain'}:${candidateKeyAngle(seed.anchorRotation)}:${candidateKeyAngle(seed.ringRotation)}`;
+  }
+  return null;
+}
+
 function largestAngularGapBisector(occupiedAngles) {
   const sortedAngles = [...occupiedAngles]
     .map(wrapAngle)
@@ -4236,6 +4260,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           siblingSwaps,
           geminalPairs
         },
+        buildSeedKey: attachedRingSeedKey,
         generateSeeds(inputDescriptor, searchContext) {
           const rotationAngles = baseOverlapCount > 0 ? [...ATTACHED_RING_FINE_ROTATION_ANGLES, ...ATTACHED_RING_ROTATION_TIDY_ANGLES] : ATTACHED_RING_ROTATION_TIDY_ANGLES;
           const seeds = rotationAngles.filter(rotation => Math.abs(rotation) > 1e-9).map(rotation => ({ kind: 'rigid', rotation }));

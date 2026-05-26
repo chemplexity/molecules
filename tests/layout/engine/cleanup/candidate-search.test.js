@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { visitPresentationDescriptorCandidates } from '../../../../src/layout/engine/cleanup/candidate-search.js';
+import { CoordOverlay } from '../../../../src/layout/engine/geometry/coord-overlay.js';
 
 describe('layout/engine/cleanup/candidate-search', () => {
   it('dedupes equivalent sparse overrides while tracking visited and accepted candidates', () => {
@@ -95,5 +96,70 @@ describe('layout/engine/cleanup/candidate-search', () => {
     assert.equal(search.bestFinalCandidate?.score.value, 15);
     assert.deepEqual(followupSeeds, ['stronger', 'stronger']);
     assert.equal(search.bestFinalCandidate?.followupResults.length, 2);
+  });
+
+  it('can score sparse candidates through an overlay without cloning the base coordinates', () => {
+    const coords = new Map([
+      ['A', { x: 0, y: 0 }],
+      ['B', { x: 1, y: 0 }]
+    ]);
+    const seenCandidateViews = [];
+
+    const search = visitPresentationDescriptorCandidates(
+      null,
+      coords,
+      { id: 'descriptor' },
+      {
+        useSparseCandidateOverlay: true,
+        generateSeeds: () => [{ id: 'overlay', x: 4 }],
+        materializeOverrides(_coords, _descriptor, seed) {
+          return new Map([['B', { x: seed.x, y: 0 }]]);
+        },
+        scoreSeed(_descriptor, candidateCoords) {
+          seenCandidateViews.push(candidateCoords);
+          return { x: candidateCoords.get('B').x };
+        }
+      }
+    );
+
+    assert.equal(coords.get('B').x, 1);
+    assert.ok(seenCandidateViews[0] instanceof CoordOverlay);
+    assert.equal(search.bestFinalCandidate?.score.x, 4);
+  });
+
+  it('dedupes by seed key before materializing sparse overrides', () => {
+    const coords = new Map([
+      ['A', { x: 0, y: 0 }],
+      ['B', { x: 1, y: 0 }]
+    ]);
+    let materializeCount = 0;
+
+    const search = visitPresentationDescriptorCandidates(
+      null,
+      coords,
+      { id: 'descriptor' },
+      {
+        generateSeeds: () => [
+          { id: 'first', x: 2 },
+          { id: 'duplicate', x: 2 },
+          { id: 'second', x: 3 }
+        ],
+        buildSeedKey: (_descriptor, seed) => `x:${seed.x}`,
+        materializeOverrides(_coords, _descriptor, seed) {
+          materializeCount++;
+          return new Map([['B', { x: seed.x, y: 0 }]]);
+        },
+        scoreSeed(_descriptor, candidateCoords) {
+          return { x: candidateCoords.get('B').x };
+        },
+        isBetterScore(candidate, incumbent) {
+          return candidate.x > incumbent.x;
+        }
+      }
+    );
+
+    assert.equal(materializeCount, 2);
+    assert.equal(search.visitedCount, 2);
+    assert.equal(search.bestFinalCandidate?.score.x, 3);
   });
 });

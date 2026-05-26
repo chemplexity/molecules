@@ -138,6 +138,57 @@ export function centroid(points) {
 }
 
 /**
+ * Returns the centroid of coordinate entries referenced by atom IDs.
+ * Missing coordinates are ignored.
+ * @param {Map<string, {x: number, y: number}>|object} coords - Coordinate map or map-like object.
+ * @param {Iterable<string>} atomIds - Atom IDs to average.
+ * @returns {{x: number, y: number}|null} Centroid, or null when no coordinates are present.
+ */
+export function centroidForAtomIds(coords, atomIds) {
+  let sx = 0;
+  let sy = 0;
+  let count = 0;
+  for (const atomId of atomIds ?? []) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    sx += position.x;
+    sy += position.y;
+    count++;
+  }
+  if (count === 0) {
+    return null;
+  }
+  const inv = 1 / count;
+  return { x: sx * inv, y: sy * inv };
+}
+
+/**
+ * Returns the centroid of a point iterable.
+ * @param {Iterable<{x: number, y: number}>} points - Input points.
+ * @returns {{x: number, y: number}|null} Centroid, or null when no points are present.
+ */
+export function centroidForPoints(points) {
+  let sx = 0;
+  let sy = 0;
+  let count = 0;
+  for (const point of points ?? []) {
+    if (!point) {
+      continue;
+    }
+    sx += point.x;
+    sy += point.y;
+    count++;
+  }
+  if (count === 0) {
+    return null;
+  }
+  const inv = 1 / count;
+  return { x: sx * inv, y: sy * inv };
+}
+
+/**
  * Returns the left-hand perpendicular vector.
  * @param {{x: number, y: number}} value - Input vector.
  * @returns {{x: number, y: number}} Perpendicular vector.

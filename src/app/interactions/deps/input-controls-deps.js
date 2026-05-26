@@ -10,7 +10,6 @@ export function createInputControlsDeps(deps) {
   return {
     data: {
       exampleMolecules: deps.data.exampleMolecules,
-      bugMolecules: deps.data.bugMolecules,
       randomMolecule: deps.data.randomMolecule,
       randomMoleculeComplex: deps.data.randomMoleculeComplex,
       moleculeCatalog: deps.data.moleculeCatalog

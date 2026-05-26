@@ -402,6 +402,16 @@ export function buildCleanupStageGraph(context) {
     ) {
       return true;
     }
+    const ringPresentationImproves = (candidate.presentationPenalty ?? Number.POSITIVE_INFINITY) < (incumbent.presentationPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON;
+    if (
+      ringPresentationImproves &&
+      (candidate.audit.severeOverlapCount ?? 0) <= (incumbent.audit.severeOverlapCount ?? 0) &&
+      (candidate.audit.visibleHeavyBondCrossingCount ?? 0) <= (incumbent.audit.visibleHeavyBondCrossingCount ?? 0) &&
+      (candidate.omittedHydrogenTrigonalPenalty ?? 0) <= (incumbent.omittedHydrogenTrigonalPenalty ?? 0) + PRESENTATION_METRIC_EPSILON &&
+      (candidate.trigonalDistortionPenalty ?? 0) <= (incumbent.trigonalDistortionPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return true;
+    }
     return (
       (candidate.audit.severeOverlapCount ?? 0) < (incumbent.audit.severeOverlapCount ?? 0) &&
       (candidate.audit.visibleHeavyBondCrossingCount ?? 0) <= (incumbent.audit.visibleHeavyBondCrossingCount ?? 0) + 1

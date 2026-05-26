@@ -4887,6 +4887,9 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
     if (bestPlacement?.placementMode === 'template' && bestAudit?.ok === true && templateId !== 'n-methyl-amino-diaza-tricyclo-core') {
       return bestPlacement;
     }
+    if (bestPlacement?.placementMode === 'constructed-aromatic-capped-5-5-4' && bestAudit?.ok === true) {
+      return bestPlacement;
+    }
 
     if (connectionKinds.has('fused') && (connectionKinds.has('spiro') || connectionKinds.has('bridged'))) {
       const hybridRescuePlacement = wrapRingSystemPlacementResult(

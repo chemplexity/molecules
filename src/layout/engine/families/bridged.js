@@ -3780,6 +3780,150 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
   return [...owningRingSystem.atomIds];
 }
 
+function rotateRingAtomIdsStartingWith(ring, firstAtomId, secondAtomId) {
+  const firstIndex = ring.atomIds.indexOf(firstAtomId);
+  if (firstIndex < 0) {
+    return null;
+  }
+  const ringSize = ring.atomIds.length;
+
+  for (const direction of [1, -1]) {
+    const nextIndex = (firstIndex + direction + ringSize) % ringSize;
+    if (ring.atomIds[nextIndex] !== secondAtomId) {
+      continue;
+    }
+    return Array.from({ length: ringSize }, (_, index) => {
+      const ringIndex = (firstIndex + direction * index + ringSize) % ringSize;
+      return ring.atomIds[ringIndex];
+    });
+  }
+
+  return null;
+}
+
+function atomIdsAreBonded(layoutGraph, firstAtomId, secondAtomId) {
+  const pairKey = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+  return layoutGraph.bondedPairSet.has(pairKey);
+}
+
+function aromaticCappedFiveFiveFourBridgedOrder(layoutGraph, rings) {
+  if (rings.length !== 3) {
+    return null;
+  }
+  const aromaticRing = rings.find(ring => ring.aromatic && ring.atomIds.length === 5);
+  const bridgedFiveRing = rings.find(ring => !ring.aromatic && ring.atomIds.length === 5);
+  const fourRing = rings.find(ring => !ring.aromatic && ring.atomIds.length === 4);
+  if (!aromaticRing || !bridgedFiveRing || !fourRing) {
+    return null;
+  }
+
+  const fusedAtomIds = sharedRingAtomIds(aromaticRing, bridgedFiveRing);
+  const bridgePathAtomIds = sharedRingAtomIds(bridgedFiveRing, fourRing);
+  if (
+    fusedAtomIds.length !== 2 ||
+    bridgePathAtomIds.length !== 3 ||
+    !atomIdsAreAdjacentInRing(aromaticRing, fusedAtomIds[0], fusedAtomIds[1]) ||
+    !atomIdsAreAdjacentInRing(bridgedFiveRing, fusedAtomIds[0], fusedAtomIds[1])
+  ) {
+    return null;
+  }
+
+  const bridgePathAtomIdSet = new Set(bridgePathAtomIds);
+  const fusedAtomIdSet = new Set(fusedAtomIds);
+  const smallRingUniqueAtomId = fourRing.atomIds.find(atomId => !bridgePathAtomIdSet.has(atomId));
+  if (!smallRingUniqueAtomId) {
+    return null;
+  }
+
+  for (const firstAtomId of bridgePathAtomIds) {
+    for (const secondAtomId of bridgePathAtomIds) {
+      if (secondAtomId === firstAtomId) {
+        continue;
+      }
+      const orderedFiveRing = rotateRingAtomIdsStartingWith(bridgedFiveRing, firstAtomId, secondAtomId);
+      if (
+        !orderedFiveRing ||
+        !orderedFiveRing.slice(0, 3).every(atomId => bridgePathAtomIdSet.has(atomId)) ||
+        !orderedFiveRing.slice(3, 5).every(atomId => fusedAtomIdSet.has(atomId))
+      ) {
+        continue;
+      }
+
+      const [bridgeStartAtomId, bridgeMiddleAtomId, bridgeEndAtomId, fusedRightAtomId, fusedLeftAtomId] = orderedFiveRing;
+      if (!atomIdsAreBonded(layoutGraph, smallRingUniqueAtomId, bridgeStartAtomId) || !atomIdsAreBonded(layoutGraph, smallRingUniqueAtomId, bridgeEndAtomId)) {
+        continue;
+      }
+      const aromaticRingOrder = rotateRingAtomIdsStartingWith(aromaticRing, fusedRightAtomId, fusedLeftAtomId);
+      if (!aromaticRingOrder) {
+        continue;
+      }
+
+      return {
+        fusedLeftAtomId,
+        fusedRightAtomId,
+        aromaticTailAtomIds: aromaticRingOrder.slice(2),
+        bridgeStartAtomId,
+        bridgeMiddleAtomId,
+        bridgeEndAtomId,
+        smallRingUniqueAtomId
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Constructs exact normalized coordinates for aromatic-capped 5-5-4 bridged
+ * systems where a square four-ring shares two adjacent bridge edges with a
+ * fused five-ring. KK/projection tends to pinch the heteroatom lane in this
+ * topology, while the graph has a direct unit-bond solution.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Rings being placed as one bridged component.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Constructed coordinates, or `null`.
+ */
+function buildAromaticCappedFiveFiveFourBridgedCoords(layoutGraph, rings, atomIds, bondLength) {
+  if (atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, atomIds)) {
+    return null;
+  }
+  const order = aromaticCappedFiveFiveFourBridgedOrder(layoutGraph, rings);
+  if (!order) {
+    return null;
+  }
+  const [firstAromaticTailAtomId, secondAromaticTailAtomId, thirdAromaticTailAtomId] = order.aromaticTailAtomIds;
+  if (!firstAromaticTailAtomId || !secondAromaticTailAtomId || !thirdAromaticTailAtomId) {
+    return null;
+  }
+
+  const normalizedCoords = new Map([
+    [order.fusedLeftAtomId, { x: 0, y: 0 }],
+    [order.fusedRightAtomId, { x: 1, y: 0 }],
+    [firstAromaticTailAtomId, { x: -0.30901699437494745, y: -0.9510565162951535 }],
+    [secondAromaticTailAtomId, { x: 0.5, y: -1.5388417685876268 }],
+    [thirdAromaticTailAtomId, { x: 1.3090169943749475, y: -0.9510565162951536 }],
+    [order.bridgeStartAtomId, { x: -0.20791169081775912, y: 0.9781476007338057 }],
+    [order.bridgeMiddleAtomId, { x: 0.5, y: 1.6844485550043924 }],
+    [order.bridgeEndAtomId, { x: 1.2079116908177594, y: 0.9781476007338056 }],
+    [order.smallRingUniqueAtomId, { x: 0.5, y: 0.2718466464632191 }]
+  ]);
+  if (normalizedCoords.size !== atomIds.length || atomIds.some(atomId => !normalizedCoords.has(atomId))) {
+    return null;
+  }
+
+  const center = centroid([...normalizedCoords.values()]);
+  const coords = new Map();
+  for (const [atomId, position] of normalizedCoords) {
+    coords.set(atomId, {
+      x: (position.x - center.x) * bondLength,
+      y: (position.y - center.y) * bondLength
+    });
+  }
+  const audit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  return audit?.ok === true ? coords : null;
+}
+
 /**
  * Places a bridged or caged ring system using matched template coordinates
  * when available, then falls back to a Kamada-Kawai seed for unmatched cases.
@@ -3803,6 +3947,19 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
       coords: templateCoords,
       ringCenters,
       placementMode: 'template'
+    };
+  }
+
+  const constructedCoords = buildAromaticCappedFiveFiveFourBridgedCoords(options.layoutGraph, rings, atomIds, bondLength);
+  if (constructedCoords) {
+    const ringCenters = new Map();
+    for (const ring of rings) {
+      ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => constructedCoords.get(atomId))));
+    }
+    return {
+      coords: constructedCoords,
+      ringCenters,
+      placementMode: 'constructed-aromatic-capped-5-5-4'
     };
   }
 

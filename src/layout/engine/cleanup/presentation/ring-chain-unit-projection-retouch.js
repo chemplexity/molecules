@@ -2,6 +2,7 @@
 
 import { auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps } from '../../audit/invariants.js';
+import { centroidForAtomIds } from '../../geometry/vec2.js';
 import { describePathLikeIsolatedRingChain } from '../../topology/isolated-ring-chain.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 
@@ -30,14 +31,7 @@ function otherBondAtomId(bond, atomId) {
 }
 
 function centroidOf(coords, atomIds) {
-  const positions = atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
-  if (positions.length === 0) {
-    return null;
-  }
-  return {
-    x: positions.reduce((sum, position) => sum + position.x, 0) / positions.length,
-    y: positions.reduce((sum, position) => sum + position.y, 0) / positions.length
-  };
+  return centroidForAtomIds(coords, atomIds);
 }
 
 function edgeBetween(ringChain, firstRingSystemId, secondRingSystemId) {
@@ -759,8 +753,8 @@ function ringSystemCentersFromCoords(coords, ringSystems) {
 }
 
 function translateToInputCentroid(inputCoords, coords) {
-  const inputCenter = centroidOf(inputCoords, [...inputCoords.keys()]);
-  const candidateCenter = centroidOf(coords, [...coords.keys()]);
+  const inputCenter = centroidOf(inputCoords, inputCoords.keys());
+  const candidateCenter = centroidOf(coords, coords.keys());
   if (!inputCenter || !candidateCenter) {
     return coords;
   }

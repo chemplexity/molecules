@@ -2628,6 +2628,8 @@ function _normalizeImineTautomer(mol) {
 
 function _normalizeCarbanionEnolate(mol) {
   // Convert [C-]-C=O (carbanion alpha to carbonyl) to C=C-[O-] (enolate).
+  // Also handles the vinylogous case [C-]-C-C-C=O via sp2/aromatic intermediates:
+  // [C-]-(1)-Csp2-(1 or 1.5)-Csp2-(1)-C=O → C=Csp2-Csp2=C-[O-].
   // InChI normalizes alpha-carbanions to their enolate tautomers, placing the
   // negative charge on oxygen. After this shift, perceiveAromaticity can then
   // correctly recognize the resulting ring as aromatic when applicable.
@@ -2642,26 +2644,72 @@ function _normalizeCarbanionEnolate(mol) {
       return other && other.name === 'N' && other.getHydrogenNeighbors(mol).length > 0;
     });
     if (hasNHNeighbor) {continue;}
+    let found = false;
     for (const bondId of atom.bonds) {
+      if (found) {break;}
       const bond = mol.bonds.get(bondId);
       if (!bond || (bond.properties.order ?? 1) !== 1) {continue;}
-      const carbonyl = mol.atoms.get(bond.getOtherAtom(atom.id));
-      if (!carbonyl || carbonyl.name !== 'C') {continue;}
-      let oBond = null, oAtom = null;
-      for (const bId of carbonyl.bonds) {
+      const cMid1 = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!cMid1 || cMid1.name !== 'C') {continue;}
+      // Direct case: [C-]-C=O
+      for (const bId of cMid1.bonds) {
         if (bId === bondId) {continue;}
         const b = mol.bonds.get(bId);
         if (!b || (b.properties.order ?? 1) !== 2) {continue;}
-        const other = mol.atoms.get(b.getOtherAtom(carbonyl.id));
+        const other = mol.atoms.get(b.getOtherAtom(cMid1.id));
         if (!other || other.name !== 'O' || (other.properties.charge ?? 0) !== 0) {continue;}
-        oBond = b; oAtom = other; break;
+        bond.properties.order = 2;
+        atom.setCharge(0);
+        b.properties.order = 1;
+        other.setCharge(-1);
+        found = true;
+        break;
       }
-      if (!oBond) {continue;}
-      bond.properties.order = 2;
-      atom.setCharge(0);
-      oBond.properties.order = 1;
-      oAtom.setCharge(-1);
-      break;
+      if (found) {break;}
+      // Vinylogous case: [C-]-(1)-Csp2-(pi)-Csp2-(1)-C=O
+      const mid1Order = bond.properties.order ?? 1;
+      if (mid1Order !== 1) {continue;}
+      const mid1HasPi = [...cMid1.bonds].some(b2Id => {
+        const b2 = mol.bonds.get(b2Id);
+        return b2 && (b2.properties.order === 2 || b2.properties.order === 1.5 || b2.properties.aromatic);
+      });
+      if (!mid1HasPi) {continue;}
+      for (const b2Id of cMid1.bonds) {
+        if (b2Id === bondId || found) {continue;}
+        const bond2 = mol.bonds.get(b2Id);
+        if (!bond2) {continue;}
+        const cMid2 = mol.atoms.get(bond2.getOtherAtom(cMid1.id));
+        if (!cMid2 || cMid2.name !== 'C') {continue;}
+        const mid2HasPi = [...cMid2.bonds].some(b3Id => {
+          const b3 = mol.bonds.get(b3Id);
+          return b3 && (b3.properties.order === 2 || b3.properties.order === 1.5 || b3.properties.aromatic);
+        });
+        if (!mid2HasPi) {continue;}
+        for (const b3Id of cMid2.bonds) {
+          if (b3Id === b2Id || found) {continue;}
+          const bond3 = mol.bonds.get(b3Id);
+          if (!bond3 || (bond3.properties.order ?? 1) !== 1) {continue;}
+          const carbonyl = mol.atoms.get(bond3.getOtherAtom(cMid2.id));
+          if (!carbonyl || carbonyl.name !== 'C') {continue;}
+          let oBond = null, oAtom = null;
+          for (const b4Id of carbonyl.bonds) {
+            if (b4Id === b3Id) {continue;}
+            const b4 = mol.bonds.get(b4Id);
+            if (!b4 || (b4.properties.order ?? 1) !== 2) {continue;}
+            const other = mol.atoms.get(b4.getOtherAtom(carbonyl.id));
+            if (!other || other.name !== 'O' || (other.properties.charge ?? 0) !== 0) {continue;}
+            oBond = b4; oAtom = other; break;
+          }
+          if (!oBond) {continue;}
+          bond.properties.order = 2;
+          bond3.properties.order = 2;
+          atom.setCharge(0);
+          oBond.properties.order = 1;
+          oAtom.setCharge(-1);
+          found = true;
+          break;
+        }
+      }
     }
   }
 }
@@ -2788,7 +2836,67 @@ function _normalizeExocyclicIminium(mol) {
       }
       if (found) { ringN = other; ringNBondId = bondId; break; }
     }
-    if (!ringN) {continue;}
+    if (!ringN) {
+      // Non-adjacent ring N: find a ring through dblC containing a neutral N,
+      // then do the charge transfer and reassign all ring bonds to alternating
+      // Kekulé orders so perceiveAromaticity can aromatize the ring.
+      const allRings = mol.getRings();
+      let nonAdjRing = null, nonAdjRingN = null;
+      for (const ring of allRings) {
+        if (!ring.includes(dblC.id)) {continue;}
+        // Prefer N over S as the charge acceptor (N is the more common case)
+        let nid = ring.find(id => {
+          const a = mol.atoms.get(id);
+          return a && a.name === 'N' && (a.properties.charge ?? 0) === 0;
+        });
+        if (!nid) {
+          nid = ring.find(id => {
+            const a = mol.atoms.get(id);
+            return a && a.name === 'S' && (a.properties.charge ?? 0) === 0;
+          });
+        }
+        if (nid) { nonAdjRing = ring; nonAdjRingN = mol.atoms.get(nid); break; }
+      }
+      if (!nonAdjRingN) {continue;}
+      // Verify ring has existing pi character (at least one ring-internal double bond)
+      const ringSet = new Set(nonAdjRing);
+      const rHasPi = nonAdjRing.some(id =>
+        mol.atoms.get(id).bonds.some(bId => {
+          if (bId === dblBond.id) {return false;}
+          const b = mol.bonds.get(bId);
+          return b && (b.properties.order ?? 1) === 2 && ringSet.has(b.getOtherAtom(id));
+        })
+      );
+      if (!rHasPi) {continue;}
+      // Charge transfer
+      dblBond.properties.order = 1;
+      atom.setCharge(0);
+      nonAdjRingN.setCharge(1);
+      // Assign alternating Kekulé bonds. Rotate ring to start at dblC,
+      // then pick the traversal direction that minimises changes to existing
+      // bond orders (preferring to preserve shared ring-junction bonds).
+      let ordered = [...nonAdjRing];
+      const si = ordered.indexOf(dblC.id);
+      ordered = [...ordered.slice(si), ...ordered.slice(0, si)];
+      const orderedB = [ordered[0], ...ordered.slice(1).reverse()];
+      const getBond = (aId, bId) => {
+        for (const bid of mol.atoms.get(aId).bonds) {
+          const b = mol.bonds.get(bid);
+          if (b && b.getOtherAtom(aId) === bId) {return b;}
+        }
+        return null;
+      };
+      const chg = (ord) => ord.reduce((n, id, i) => {
+        const b = getBond(id, ord[(i + 1) % ord.length]);
+        return n + (b && (b.properties.order ?? 1) !== (i % 2 === 0 ? 2 : 1) ? 1 : 0);
+      }, 0);
+      const dir = chg(ordered) <= chg(orderedB) ? ordered : orderedB;
+      for (let i = 0; i < dir.length; i++) {
+        const b = getBond(dir[i], dir[(i + 1) % dir.length]);
+        if (b) {b.properties.order = (i % 2 === 0) ? 2 : 1;}
+      }
+      continue;
+    }
 
     // Only normalize rings with existing pi character (saturated rings like
     // pyrrolidine can't become aromatic). Extract the actual ring-atom set by
@@ -2844,6 +2952,88 @@ function _normalizeExocyclicIminium(mol) {
       if (!other || other.name === 'N' || other.name === 'S' || other.name === 'O') {continue;}
       bond.properties.order = 1;
       break;
+    }
+  }
+}
+
+function _normalizeExocyclicThioamideAnion(mol) {
+  // Convert ring-C=C(N)[S-] → ring-C-C(N)=S with ring-N→[N-].
+  // InChI places the anion on the aromatic ring N (pyrrole-type lone-pair donor)
+  // rather than on the exocyclic S of a thioamide substituent.
+  for (const [sid, satom] of mol.atoms) {
+    if (satom.name !== 'S' || (satom.properties.charge ?? 0) !== -1) {continue;}
+    // Find C bonded to S (the thioamide exo-C)
+    let exoC = null, exoCBond = null;
+    for (const bId of satom.bonds) {
+      const b = mol.bonds.get(bId);
+      if (!b) {continue;}
+      const o = mol.atoms.get(b.getOtherAtom(sid));
+      if (o?.name === 'C') { exoC = o; exoCBond = b; break; }
+    }
+    if (!exoC) {continue;}
+    // exoC must have an amino N substituent
+    const hasAmino = exoC.bonds.some(bId => {
+      const b = mol.bonds.get(bId);
+      const o = b && mol.atoms.get(b.getOtherAtom(exoC.id));
+      return o?.name === 'N';
+    });
+    if (!hasAmino) {continue;}
+    // Find double bond from exoC to a ring atom (ringC)
+    let ringC = null, ringCBond = null;
+    const allRings = mol.getRings();
+    for (const bId of exoC.bonds) {
+      const b = mol.bonds.get(bId);
+      if (!b || (b.properties.order ?? 1) !== 2) {continue;}
+      const o = mol.atoms.get(b.getOtherAtom(exoC.id));
+      if (!o || o.name !== 'C') {continue;}
+      if (allRings.some(r => r.includes(o.id))) { ringC = o; ringCBond = b; break; }
+    }
+    if (!ringC) {continue;}
+    // Find ring containing ringC with a neutral N
+    let targetRing = null, targetN = null;
+    for (const ring of allRings) {
+      if (!ring.includes(ringC.id)) {continue;}
+      const nid = ring.find(id => {
+        const a = mol.atoms.get(id);
+        return a?.name === 'N' && (a.properties.charge ?? 0) === 0;
+      });
+      if (nid) { targetRing = ring; targetN = mol.atoms.get(nid); break; }
+    }
+    if (!targetN) {continue;}
+    // Verify ring has existing pi character
+    const ringSet = new Set(targetRing);
+    const hasPi = targetRing.some(id =>
+      mol.atoms.get(id).bonds.some(bId => {
+        const b = mol.bonds.get(bId);
+        return b && (b.properties.order ?? 1) === 2 && ringSet.has(b.getOtherAtom(id));
+      })
+    );
+    if (!hasPi) {continue;}
+    // Charge transfer: [S-]→S, ring-N→[N-]; exo double→single, C-S→double
+    satom.setCharge(0);
+    targetN.setCharge(-1);
+    ringCBond.properties.order = 1;
+    exoCBond.properties.order = 2;
+    // Kekulé assignment: for pyrrole-type [N-], N should have single ring bonds.
+    // Choose the traversal direction where targetN is at the last (highest) index.
+    let ordered = [...targetRing];
+    const si = ordered.indexOf(ringC.id);
+    ordered = [...ordered.slice(si), ...ordered.slice(0, si)];
+    const orderedB = [ordered[0], ...ordered.slice(1).reverse()];
+    const nIdxA = ordered.indexOf(targetN.id);
+    const nIdxB = orderedB.indexOf(targetN.id);
+    const dir = (nIdxA >= nIdxB) ? ordered : orderedB;
+    const N = dir.length;
+    const getBond = (aId, bId) => {
+      for (const bid of mol.atoms.get(aId).bonds) {
+        const b = mol.bonds.get(bid);
+        if (b && b.getOtherAtom(aId) === bId) {return b;}
+      }
+      return null;
+    };
+    for (let i = 0; i < N; i++) {
+      const b = getBond(dir[i], dir[(i + 1) % N]);
+      if (b) {b.properties.order = (i % 2 === 0 && i !== N - 1) ? 2 : 1;}
     }
   }
 }
@@ -2909,7 +3099,7 @@ function _normalizeFusedRingKekule(mol) {
           }
         }
       }
-      if (!ringBondIds) {
+      if (!ringBondIds || ringBondIds.length < 4) {
         continue;
       }
 
@@ -2932,7 +3122,19 @@ function _normalizeFusedRingKekule(mol) {
         if (!va) {
           return false;
         }
-        if (va.name === 'N' || va.name === 'O' || va.name === 'S') {
+        if (va.name === 'N') {
+          // Charged nitrogen with 2+ H atoms (e.g. [NH2+]) is sp3 and cannot
+          // contribute pi electrons to an aromatic ring.
+          if ((va.properties.charge ?? 0) > 0) {
+            const hCount = [...va.bonds].filter(bId => {
+              const b = mol.bonds.get(bId);
+              return b && mol.atoms.get(b.getOtherAtom(vid))?.name === 'H';
+            }).length;
+            if (hCount >= 2) { return false; }
+          }
+          return true;
+        }
+        if (va.name === 'O' || va.name === 'S') {
           return true;
         }
         return va.bonds.some(vbId => {
@@ -2974,6 +3176,162 @@ function _normalizeFusedRingKekule(mol) {
         if (rb) { rb.properties.order = 1.5; rb.properties.aromatic = true; }
       }
     }
+  }
+}
+
+function _normalizeIsocyanide(mol) {
+  // Convert R[N+]#[C-] (and R[N+]#C) to R[N]=C. InChI writes isocyanide groups
+  // as double bonds: the terminal carbenoid C has no implicit H and no charge,
+  // while the N loses its formal positive charge.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 1) {continue;}
+    for (const bId of atom.bonds) {
+      const bond = mol.bonds.get(bId);
+      if (!bond || (bond.properties.order ?? 1) !== 3) {continue;}
+      const c = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!c || c.name !== 'C') {continue;}
+      const cHeavyBonds = [...c.bonds].filter(b2Id => {
+        const other = mol.atoms.get(mol.bonds.get(b2Id).getOtherAtom(c.id));
+        return other && other.name !== 'H';
+      });
+      if (cHeavyBonds.length !== 1) {continue;}
+      bond.properties.order = 2;
+      atom.setCharge(0);
+      if ((c.properties.charge ?? 0) !== 0) {c.setCharge(0);}
+    }
+  }
+}
+
+function _normalizeAzideDiazonium(mol) {
+  // Convert [N+]#N=N to [N+]-N=N. InChI normalizes the cumulated diazonium
+  // azide chain by reducing the triple bond to a single bond. Detect: N with
+  // charge +1 that has a triple bond to a neutral N which in turn has a double
+  // bond to another neutral N, then lower the triple bond to 1.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 1) {continue;}
+    for (const bId of atom.bonds) {
+      const bond = mol.bonds.get(bId);
+      if (!bond || (bond.properties.order ?? 1) !== 3) {continue;}
+      const n2 = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!n2 || n2.name !== 'N' || (n2.properties.charge ?? 0) !== 0) {continue;}
+      const hasDoubleBondToN = [...n2.bonds].some(b2Id => {
+        const b2 = mol.bonds.get(b2Id);
+        if (!b2 || (b2.properties.order ?? 1) !== 2) {return false;}
+        const n3 = mol.atoms.get(b2.getOtherAtom(n2.id));
+        return n3 && n3.name === 'N';
+      });
+      if (hasDoubleBondToN) {
+        bond.properties.order = 1;
+      }
+    }
+  }
+}
+
+function _normalizeMetalBonds(mol) {
+  // Normalize P=Au, S=Au, etc. to single bonds. Group 11 metals (Cu, Ag, Au)
+  // in drug-like coordination compounds form single bonds; InChI strips the
+  // extra bond order, so we normalize here to match the round-trip canonical.
+  const groupEleven = new Set(['Au', 'Ag', 'Cu']);
+  for (const [, atom] of mol.atoms) {
+    if (!groupEleven.has(atom.name)) {continue;}
+    for (const bId of atom.bonds) {
+      const bond = mol.bonds.get(bId);
+      if (bond && (bond.properties.order ?? 1) > 1) {
+        bond.properties.order = 1;
+      }
+    }
+  }
+}
+
+function _normalizeNOxideCarbanion(mol) {
+  // Convert N(=C)=O to [N+]([C-])=O. A non-aromatic N with two explicit double
+  // bonds (to C and to O) is pentavalent; InChI normalizes it to N+ with the
+  // adjacent C becoming a carbanion. Called after perceiveAromaticity so that
+  // pyridine-N-oxide nitrogens (aromatic, bonds 1.5) are excluded.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0) {continue;}
+    let cBond = null, cAtom = null, oBond = null;
+    for (const bId of atom.bonds) {
+      const bond = mol.bonds.get(bId);
+      if (!bond || (bond.properties.order ?? 1) !== 2) {continue;}
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!other) {continue;}
+      if (other.name === 'O' && (other.properties.charge ?? 0) === 0 && !oBond) {
+        oBond = bond;
+      } else if (other.name === 'C' && (other.properties.charge ?? 0) === 0 && !cBond) {
+        cBond = bond; cAtom = other;
+      }
+    }
+    if (!cBond || !oBond) {continue;}
+    cBond.properties.order = 1;
+    atom.setCharge(1);
+    cAtom.setCharge(-1);
+  }
+}
+
+function _normalizeFuroxan(mol) {
+  // Convert aromatic furoxan rings to the Kekulé form InChI uses. InChI writes
+  // furoxan (1,2,5-oxadiazole-2-oxide) as a non-aromatic ring: C=C-N+(=O)-O-N-
+  // with the charge on the ring N changed to -1. perceiveAromaticity aromatizes
+  // it from SMILES input but cannot recover aromaticity from the Kekulé form, so
+  // the two paths produce different canonical SMILES. Fix: after
+  // perceiveAromaticity, de-aromatize any aromatic ring with the furoxan pattern
+  // (ring 2C, 2N, 1O where one N+ has an exo single bond to O-).
+  const rings = mol.getRings();
+  for (const ring of rings) {
+    if (ring.length !== 5) {continue;}
+    const ringSet = new Set(ring);
+    const atoms = ring.map(id => mol.atoms.get(id));
+    if (!atoms.every(a => a?.properties?.aromatic)) {continue;}
+    const cs = atoms.filter(a => a.name === 'C');
+    const ns = atoms.filter(a => a.name === 'N');
+    const os = atoms.filter(a => a.name === 'O');
+    if (cs.length !== 2 || ns.length !== 2 || os.length !== 1) {continue;}
+    const nPos = ns.find(a => (a.properties.charge ?? 0) === 1);
+    const nNeg = ns.find(a => (a.properties.charge ?? 0) === 0);
+    if (!nPos || !nNeg) {continue;}
+    let exoO = null;
+    for (const bId of nPos.bonds) {
+      const b = mol.bonds.get(bId);
+      if (!b) {continue;}
+      const other = mol.atoms.get(b.getOtherAtom(nPos.id));
+      if (!other || ringSet.has(other.id)) {continue;}
+      if (other.name === 'O' && (other.properties.charge ?? 0) === -1) {
+        exoO = { bond: b, atom: other };
+        break;
+      }
+    }
+    if (!exoO) {continue;}
+    const getBond = (aId, bId) => {
+      const b = mol.getBond(aId, bId);
+      return b;
+    };
+    // C-C bond: the only bond in the ring between two C atoms
+    const ccBond = (() => {
+      for (const c of cs) {
+        for (const bId of c.bonds) {
+          const b = mol.bonds.get(bId);
+          if (!b) {continue;}
+          const other = mol.atoms.get(b.getOtherAtom(c.id));
+          if (other && other.name === 'C' && ringSet.has(other.id)) {return b;}
+        }
+      }
+      return null;
+    })();
+    if (!ccBond) {continue;}
+    // Kekulize: C=C double, all other ring bonds single
+    for (let i = 0; i < ring.length; i++) {
+      const b = getBond(ring[i], ring[(i + 1) % ring.length]);
+      if (!b) {continue;}
+      b.properties.order = (b === ccBond) ? 2 : 1;
+      if (b.properties.aromatic !== undefined) {b.properties.aromatic = false;}
+    }
+    for (const a of atoms) { a.properties.aromatic = false; }
+    // N+ exo: single bond to O(-1) → double bond to neutral O
+    exoO.bond.properties.order = 2;
+    exoO.atom.setCharge(0);
+    // Neutral ring N → N(-1)
+    nNeg.setCharge(-1);
   }
 }
 
@@ -3045,6 +3403,10 @@ export function toCanonicalSMILES(molecule) {
     _normalizeCarbanionEnolate(comp);
     _normalizeThioate(comp);
     _normalizeAmidineAnion(comp);
+    _normalizeIsocyanide(comp);
+    _normalizeAzideDiazonium(comp);
+    _normalizeMetalBonds(comp);
+    _normalizeExocyclicThioamideAnion(comp);
     _normalizeExocyclicIminium(comp);
     _normalizeFusedRingKekule(comp);
     // Always call perceiveAromaticity so that both pure-Kekulé molecules (from
@@ -3054,6 +3416,8 @@ export function toCanonicalSMILES(molecule) {
     // of the same molecule, which is required for correct E/Z stereo assignment
     // and canonical SMILES string equality.
     perceiveAromaticity(comp);
+    _normalizeFuroxan(comp);
+    _normalizeNOxideCarbanion(comp);
     _normalizeAromaticRingCharges(comp);
     const ranks = morganRanks(comp);
     return _serializeComponent(comp, id => ranks.get(id) ?? 0);

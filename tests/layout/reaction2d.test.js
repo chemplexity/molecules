@@ -561,6 +561,34 @@ test('reaction preview centers exocyclic termini after small-ring alcohol dehydr
   }
 });
 
+test('reaction preview keeps aryl-adjacent alcohol dehydration alkene centers trigonal', () => {
+  const sourceMol = parseSMILES('CCC(C)(O)C1=CN2C=CC(=CC2=C1)C(C)C');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
+  assert.equal(mappings.length, 2, 'expected two alcohol-dehydration mappings');
+
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = preparePreviewWithMapping(sourceMol, smirks, mapping);
+    const alkeneCenter = preview.mol.atoms.get('__rxn_product__0:C3');
+    const terminalMethyl = preview.mol.atoms.get('__rxn_product__0:C1');
+    const terminalParent = preview.mol.atoms.get('__rxn_product__0:C2');
+    assert.ok(alkeneCenter, `expected aryl-adjacent dehydration center for mapping ${index}`);
+    assert.ok(terminalMethyl && terminalParent, `expected terminal ethyl tail for mapping ${index}`);
+    const heavyNeighbors = alkeneCenter.getNeighbors(preview.mol).filter(nb => nb.name !== 'H');
+    assert.equal(heavyNeighbors.length, 3, `expected trigonal alkene center for mapping ${index}`);
+
+    for (let firstIndex = 0; firstIndex < heavyNeighbors.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighbors.length; secondIndex++) {
+        const localAngle = angleDeg(heavyNeighbors[firstIndex], alkeneCenter, heavyNeighbors[secondIndex]);
+        assert.ok(localAngle > 105 && localAngle < 135, `expected dehydration C3 fan to stay trigonal for mapping ${index}, got ${localAngle.toFixed(1)}°`);
+      }
+    }
+
+    const tailAngle = angleDeg(terminalMethyl, terminalParent, alkeneCenter);
+    assert.ok(tailAngle > 105 && tailAngle < 135, `expected terminal ethyl tail to stay zig-zag for mapping ${index}, got ${tailAngle.toFixed(1)}°`);
+  }
+});
+
 test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigonal', () => {
   const preview = preparePreview('N#CC(C#N)=C(C#N)C#N', reactionTemplates.nitrileHydrolysisToAmide.smirks);
   const amideCarbonyl = [...preview.mol.atoms.values()].find(atom => {
@@ -579,6 +607,41 @@ test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigon
   assert.ok(angle > 105 && angle < 135, `expected amide O=C-N angle to be trigonal, got ${angle.toFixed(1)}°`);
   assert.ok(distance(amideCarbonyl, oxygen) < 1.4, 'expected carbonyl bond to stay short');
   assert.ok(distance(amideCarbonyl, nitrogen) < 1.7, 'expected amide single bond to stay compact');
+});
+
+test('reaction preview keeps compact oxabicyclobutane nitrile-hydrolysis products readable', () => {
+  const smiles = 'CC#CC1C2OC(CC#N)(C#N)C1C2O';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.nitrileHydrolysisToAmide.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.equal(mappings.length, 2, 'expected both nitrile hydrolysis mappings');
+
+  const ringAtomOrders = [
+    ['C13', 'C14', 'C5', 'O6', 'C7'],
+    ['C13', 'C14', 'C5', 'C4']
+  ];
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.nitrileHydrolysisToAmide.smirks, mapping);
+    const productComponent = preview.productComponentAtomIdSets.find(atomIds => atomIds.has('__rxn_product__0:C7'));
+    assert.ok(productComponent, `expected compact bridged product component for mapping ${index}`);
+    const stats = heavyGeometryStats(preview, productComponent);
+    assert.ok(stats.maxBond < 1.85, `expected compact oxabicyclobutane product bonds for mapping ${index}, got ${stats.maxBond.toFixed(3)} Å`);
+    assert.ok(stats.minNonbonded > 0.8, `expected compact oxabicyclobutane product to avoid overlaps for mapping ${index}, got ${stats.minNonbonded.toFixed(3)} Å`);
+
+    for (const ringAtomOrder of ringAtomOrders) {
+      const productRingAtomIds = ringAtomOrder.map(atomId => `__rxn_product__0:${atomId}`);
+      const angles = productRingAtomIds.map((atomId, atomIndex) => {
+        const previous = preview.mol.atoms.get(productRingAtomIds[(atomIndex - 1 + productRingAtomIds.length) % productRingAtomIds.length]);
+        const center = preview.mol.atoms.get(atomId);
+        const next = preview.mol.atoms.get(productRingAtomIds[(atomIndex + 1) % productRingAtomIds.length]);
+        assert.ok(previous && center && next, `expected product ring atoms for mapping ${index}`);
+        return angleDeg(previous, center, next);
+      });
+      const limits = productRingAtomIds.length === 4 ? { min: 80, max: 105 } : { min: 90, max: 125 };
+      assert.ok(Math.min(...angles) > limits.min, `expected product ring to avoid pinched angles for mapping ${index}, got ${angles.map(angle => angle.toFixed(1)).join(', ')}°`);
+      assert.ok(Math.max(...angles) < limits.max, `expected product ring to avoid folded angles for mapping ${index}, got ${angles.map(angle => angle.toFixed(1)).join(', ')}°`);
+    }
+  }
 });
 
 test('reaction preview keeps lactam hydrolysis acid geometry locally trigonal', () => {
@@ -653,6 +716,40 @@ test('reaction preview keeps ester cleavage alcohol centers locally trigonal aft
   }
 });
 
+test('reaction preview keeps saponification alcohol products on retained lactone ring exits', () => {
+  const smiles = 'CC(OC(N)=O)C1=CC=C(C)C(=O)O1';
+  const sourceMol = parseSMILES(smiles);
+  const mappings = [...findSMARTSRaw(sourceMol, reactionTemplates.saponification.smirks.split('>>')[0])];
+  assert.equal(mappings.length, 2, 'expected two saponification mappings');
+
+  const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.saponification.smirks, mappings[1]);
+  const editedAlcoholCarbon = preview.mol.atoms.get('__rxn_product__0:C2');
+  const ringAnchor = preview.mol.atoms.get('__rxn_product__0:C7');
+  const ringOxygen = preview.mol.atoms.get('__rxn_product__0:O14');
+  const ringAlkeneCarbon = preview.mol.atoms.get('__rxn_product__0:C8');
+  const terminalMethyl = preview.mol.atoms.get('__rxn_product__0:C1');
+  const alcoholOxygen = preview.mol.atoms.get('__rxn_product__0:0');
+  assert.ok(editedAlcoholCarbon && ringAnchor && ringOxygen && ringAlkeneCarbon && terminalMethyl && alcoholOxygen, 'expected retained lactone-ring saponification product atoms');
+
+  for (const [first, second] of [
+    [editedAlcoholCarbon, ringOxygen],
+    [editedAlcoholCarbon, ringAlkeneCarbon],
+    [ringOxygen, ringAlkeneCarbon]
+  ]) {
+    const ringExitAngle = angleDeg(first, ringAnchor, second);
+    assert.ok(ringExitAngle > 105 && ringExitAngle < 135, `expected retained ring-exit angles to stay trigonal, got ${ringExitAngle.toFixed(1)}°`);
+  }
+
+  for (const [first, second] of [
+    [ringAnchor, terminalMethyl],
+    [ringAnchor, alcoholOxygen],
+    [terminalMethyl, alcoholOxygen]
+  ]) {
+    const localAngle = angleDeg(first, editedAlcoholCarbon, second);
+    assert.ok(localAngle > 105 && localAngle < 135, `expected edited alcohol-carbon fan to stay trigonal, got ${localAngle.toFixed(1)}°`);
+  }
+});
+
 test('reaction preview keeps amide hydrolysis carbonate-like centers locally trigonal after scaffold snapping', () => {
   const preview = preparePreview('CC(CN(C([O-])=O)[C](CCCCC#C)=C=C)OC(=O)C(C)=C', reactionTemplates.amideHydrolysis.smirks);
   const center = preview.mol.atoms.get('__rxn_product__1:C5');
@@ -666,6 +763,59 @@ test('reaction preview keeps amide hydrolysis carbonate-like centers locally tri
     for (let secondIndex = firstIndex + 1; secondIndex < oxygens.length; secondIndex++) {
       const localAngle = angleDeg(oxygens[firstIndex], center, oxygens[secondIndex]);
       assert.ok(localAngle > 105 && localAngle < 135, `expected amide hydrolysis C5 angles to stay trigonal, got ${localAngle.toFixed(1)}°`);
+    }
+  }
+});
+
+test('reaction preview keeps retained BOC tert-butyl fans open after amide hydrolysis', () => {
+  const smiles = 'CC(N(C)C(=O)OC(C)(C)C)C(=O)NC1C[NH2+]CCC2CCC(N2C1=O)C(=O)NC1CCCC2=CC=CC=C12';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.amideHydrolysis.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.equal(mappings.length, 4, 'expected four amide-hydrolysis mappings');
+
+  for (const [mappingIndex, mapping] of mappings.entries()) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.amideHydrolysis.smirks, mapping);
+    const bocCenter = [...preview.mol.atoms.values()].find(atom => atom.id.startsWith('__rxn_product__') && atom.id.endsWith(':C8'));
+    assert.ok(bocCenter, `expected retained BOC tert-butyl center for mapping ${mappingIndex}`);
+    const productComponent = preview.productComponentAtomIdSets.find(component => component.has(bocCenter.id));
+    const heavyNeighbors = bocCenter.getNeighbors(preview.mol).filter(nb => productComponent?.has(nb.id) && nb.name !== 'H');
+    assert.equal(heavyNeighbors.length, 4, `expected four heavy neighbors at retained BOC center for mapping ${mappingIndex}`);
+
+    const pairAngles = [];
+    for (let firstIndex = 0; firstIndex < heavyNeighbors.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighbors.length; secondIndex++) {
+        pairAngles.push(angleDeg(heavyNeighbors[firstIndex], bocCenter, heavyNeighbors[secondIndex]));
+      }
+    }
+    const angleSummary = pairAngles.map(angle => angle.toFixed(1)).join(', ');
+    assert.ok(Math.max(...pairAngles) < 170, `expected retained BOC fan to avoid square opposition for mapping ${mappingIndex}, got ${angleSummary}°`);
+    assert.ok(Math.min(...pairAngles) > 70, `expected retained BOC fan to avoid pinched angles for mapping ${mappingIndex}, got ${angleSummary}°`);
+  }
+});
+
+test('reaction preview keeps peptide amide hydrolysis retained-neighbor angles open', () => {
+  const smiles = 'NCCCC[C@H](<NC(=O)[C@@H](Cc1ccccc1)NC(=O)[C@H](Cc2c[nH]c3ccccc23)NC(=O)NNC(=O)[C@@H](Cc4c[nH]c5ccccc45)NC(=O)[C@@H](N)Cc6cnc[nH]6>)C(=O)N';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.amideHydrolysis.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.ok(mappings.length >= 5, 'expected peptide amide-hydrolysis mappings');
+
+  for (const { mappingIndex, centerId } of [
+    { mappingIndex: 1, centerId: '__rxn_product__1:N39' },
+    { mappingIndex: 4, centerId: '__rxn_product__1:C59' }
+  ]) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.amideHydrolysis.smirks, mappings[mappingIndex]);
+    const center = preview.mol.atoms.get(centerId);
+    assert.ok(center, `expected mapped product center ${centerId}`);
+    const heavyNeighbors = center.getNeighbors(preview.mol).filter(nb => nb.name !== 'H');
+    assert.ok(heavyNeighbors.length >= 2, `expected ${centerId} to have at least two heavy neighbors`);
+
+    for (let firstIndex = 0; firstIndex < heavyNeighbors.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighbors.length; secondIndex++) {
+        const localAngle = angleDeg(heavyNeighbors[firstIndex], center, heavyNeighbors[secondIndex]);
+        assert.ok(localAngle > 100 && localAngle < 145, `expected ${centerId} angle to stay open, got ${localAngle.toFixed(1)}°`);
+      }
     }
   }
 });
@@ -720,6 +870,28 @@ test('reaction preview preserves local zig-zag geometry for branched-chain dehal
   const rightAngle = angleDeg(c4, c6, c7);
   assert.ok(leftAngle > 100 && leftAngle < 140, `expected left branch angle to stay zig-zag-like, got ${leftAngle.toFixed(1)}°`);
   assert.ok(rightAngle > 100 && rightAngle < 140, `expected right branch angle to stay zig-zag-like, got ${rightAngle.toFixed(1)}°`);
+});
+
+test('reaction preview spreads remaining terminal halogens after dehalogenation', () => {
+  const smiles = 'CC(=O)N(C1C2SCC(CSC3=NN=NN3CCS(N)(=O)=O)(CN2C1=O)C([O-])=O)S(=O)CC(F)(F)F';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.dehalogenation.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.equal(mappings.length, 3, 'expected three terminal fluorine dehalogenation mappings');
+
+  for (const mapping of mappings) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.dehalogenation.smirks, mapping);
+    const center = [...preview.editedProductAtomIds].map(atomId => preview.mol.atoms.get(atomId)).find(atom => atom?.name === 'C');
+    assert.ok(center, 'expected edited product carbon after dehalogenation');
+    const heavyNeighbors = center.getNeighbors(preview.mol).filter(atom => preview.productAtomIds.has(atom.id) && atom.name !== 'H');
+    assert.equal(heavyNeighbors.length, 3, 'expected two fluorines plus retained carbon neighbor after dehalogenation');
+    for (let i = 0; i < heavyNeighbors.length; i++) {
+      for (let j = i + 1; j < heavyNeighbors.length; j++) {
+        const angle = angleDeg(heavyNeighbors[i], center, heavyNeighbors[j]);
+        assert.ok(angle > 110 && angle < 130, `expected remaining halogen fan to stay near 120 degrees, got ${angle.toFixed(1)}°`);
+      }
+    }
+  }
 });
 
 test('reaction preview preserves product wedge or dash display for an untouched stereocenter', () => {
@@ -854,6 +1026,22 @@ test('reaction preview keeps imine-hydrolysis edited carbonyl centers trigonal',
   assert.ok(stats.minNonbonded > 0.8, `expected product component to avoid retained-scaffold overlaps, got ${stats.minNonbonded.toFixed(3)} Å`);
 });
 
+test('reaction preview opens imine-hydrolysis ester ether tails', () => {
+  const preview = preparePreview('CCC1(CC1CS(=O)(=O)CC=O)N=C(C)OC', reactionTemplates.imineHydrolysis.smirks);
+  const carbonyl = preview.mol.atoms.get('__rxn_product__1:C14');
+  const etherOxygen = preview.mol.atoms.get('__rxn_product__1:O16');
+  const terminalMethyl = preview.mol.atoms.get('__rxn_product__1:C17');
+  const carbonylOxygen = preview.mol.atoms.get('__rxn_product__1:0');
+  assert.ok(carbonyl && etherOxygen && terminalMethyl && carbonylOxygen, 'expected imine-hydrolysis ester product atoms');
+
+  const etherAngle = angleDeg(carbonyl, etherOxygen, terminalMethyl);
+  assert.ok(etherAngle > 105 && etherAngle < 135, `expected ester ether tail to stay open, got ${etherAngle.toFixed(1)}°`);
+  const carbonylAngle = angleDeg(etherOxygen, carbonyl, carbonylOxygen);
+  assert.ok(carbonylAngle > 105 && carbonylAngle < 140, `expected edited carbonyl fan to stay open, got ${carbonylAngle.toFixed(1)}°`);
+  assert.ok(Math.abs(distance(carbonyl, etherOxygen) - 1.5) < 1e-6, `expected ester C-O bond to stay compact, got ${distance(carbonyl, etherOxygen).toFixed(3)} Å`);
+  assert.ok(Math.abs(distance(etherOxygen, terminalMethyl) - 1.5) < 1e-6, `expected ether O-C bond to stay compact, got ${distance(etherOxygen, terminalMethyl).toFixed(3)} Å`);
+});
+
 test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {
   const preview = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.aromaticAzaProtonation.smirks);
 
@@ -952,6 +1140,21 @@ test('reaction preview keeps nitrile-to-imine product scaffold compact', () => {
   const stats = heavyGeometryStats(preview, largestProductComponent(preview));
   assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in nitrile-to-imine preview, got ${stats.maxBond.toFixed(3)} Å`);
   assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in nitrile-to-imine preview, got ${stats.minNonbonded.toFixed(3)} Å`);
+});
+
+test('reaction preview bends aryl nitrile hydrogenation imine products onto a trigonal fan', () => {
+  const preview = preparePreview('COC1=CC(C=CC=C(C#N)C(=O)C2=CC=CS2)=CC=C1O', reactionTemplates.nitrileHydrogenationToImine.smirks);
+  const anchor = preview.mol.atoms.get('__rxn_product__0:C9');
+  const imineCarbon = preview.mol.atoms.get('__rxn_product__0:C10');
+  const imineNitrogen = preview.mol.atoms.get('__rxn_product__0:N11');
+  assert.ok(anchor && imineCarbon && imineNitrogen, 'expected aryl imine product atoms');
+
+  const angle = angleDeg(anchor, imineCarbon, imineNitrogen);
+  assert.ok(angle > 105 && angle < 135, `expected nitrile-hydrogenation imine C9-C10-N11 angle to stay trigonal, got ${angle.toFixed(1)}°`);
+  assert.ok(
+    Math.abs(distance(imineCarbon, imineNitrogen) - 1.29) < 1e-6,
+    `expected imine C=N bond to stay short, got ${distance(imineCarbon, imineNitrogen).toFixed(3)} Å`
+  );
 });
 
 test('reaction preview keeps all nitrile-to-imine mappings compact', () => {
