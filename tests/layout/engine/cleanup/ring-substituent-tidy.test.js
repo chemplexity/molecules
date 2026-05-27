@@ -332,6 +332,24 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.equal(afterAudit.ok, true);
   });
 
+  it('prioritizes the off-angle side of oversized linked-ring sugar bridges', () => {
+    const smiles =
+      'NC[C@@H]1O[C@H](<O[C@@H]2[C@@H](CO)O[C@@H](O[C@@H]3[C@@H](O)[C@H](N)C[C@H](N)[C@H]3O[C@H]3O[C@H](CO)[C@@H](O)[C@H](O)[C@H]3N)[C@@H]2OCCNC[C@@H]2CCCNC2>)[C@H](N)[C@@H](O)[C@@H]1O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+    const audit = auditLayout(result.layoutGraph, result.coords, { bondLength: result.layoutGraph.options.bondLength });
+    const idealTrigonalAngle = (2 * Math.PI) / 3;
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C31', 'C19', 'O18') - idealTrigonalAngle) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'O18', 'C19', 'C21') - idealTrigonalAngle) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C31', 'C19', 'C21') - idealTrigonalAngle) < 1e-6);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(audit.ok, true);
+  });
+
   it('re-snaps lone terminal multiple-bond leaves on ring trigonal centers to the exact outward angle', () => {
     const smiles = 'O=C1CCCCC1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

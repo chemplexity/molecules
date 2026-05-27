@@ -375,6 +375,19 @@ const MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION = Math.PI / 6;
 const MACROCYCLE_AROMATIC_RESCUE_TARGET_ANGLE_DEVIATION = Math.PI / 18;
 const MACROCYCLE_AROMATIC_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
 const MACROCYCLE_AROMATIC_BRIDGE_EXIT_MIN_IMPROVEMENT = Math.PI / 12;
+const MACROCYCLE_AROMATIC_LINKER_RELAXATION_MIN_RING_SIZE = 12;
+const MACROCYCLE_AROMATIC_LINKER_RELAXATION_PASSES = 20;
+const MACROCYCLE_AROMATIC_LINKER_RELAXATION_STEP = 0.1;
+const MACROCYCLE_AROMATIC_HETERO_BRIDGE_TARGET_ANGLE = (11 * Math.PI) / 12;
+const MACROCYCLE_AROMATIC_HETERO_BRIDGE_MIN_ANGLE_IMPROVEMENT = Math.PI / 90;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_RUN_ATOMS = 4;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_AMPLITUDE_FACTOR = 0.08;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_AMPLITUDE_FACTOR = 0.24;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_PATH_SLACK_FACTOR = 0.2;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_FLAT_ANGLE = (8 * Math.PI) / 9;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_ANGLE = (5 * Math.PI) / 9;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_IMPROVEMENT = Math.PI / 18;
+const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_AMPLITUDE_FACTORS = Object.freeze([1, 0.75, 0.5]);
 
 function mixedRootRetryHeavyAtomLimit(layoutGraph) {
   const ringSystems = layoutGraph.ringSystems ?? [];
@@ -4543,7 +4556,510 @@ function buildMacrocycleAromaticRegularizedCoords(rings, coords, bondLength, ble
   return candidateCoords;
 }
 
-function macrocycleAromaticRegularizedRescueCandidates(rings, bondLength, basePlacement) {
+/**
+ * Relaxes non-aromatic linker atoms after embedded aromatic rings have been
+ * regularized. Aromatic ring atoms stay fixed; only atoms on large
+ * non-aromatic macrocycle rings move, and each pass pulls macrocycle edges
+ * back toward the target bond length.
+ * @param {object[]} rings - Ring descriptors in the ring system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Relaxed coordinate map, or null when no linker relaxation applies.
+ */
+function relaxMacrocycleAromaticLinkerBonds(rings, coords, bondLength) {
+  if (!Number.isFinite(bondLength) || bondLength <= 0) {
+    return null;
+  }
+
+  const fixedAtomIds = new Set();
+  for (const ring of rings) {
+    if (!ring.aromatic) {
+      continue;
+    }
+    for (const atomId of ring.atomIds) {
+      fixedAtomIds.add(atomId);
+    }
+  }
+  if (fixedAtomIds.size === 0) {
+    return null;
+  }
+
+  const macrocycleRings = rings.filter(ring => !ring.aromatic && ring.atomIds.length >= MACROCYCLE_AROMATIC_LINKER_RELAXATION_MIN_RING_SIZE);
+  const movableAtomIds = new Set();
+  for (const ring of macrocycleRings) {
+    for (const atomId of ring.atomIds) {
+      if (!fixedAtomIds.has(atomId) && coords.has(atomId)) {
+        movableAtomIds.add(atomId);
+      }
+    }
+  }
+  if (movableAtomIds.size === 0) {
+    return null;
+  }
+
+  const edgeKeys = new Set();
+  const edges = [];
+  for (const ring of macrocycleRings) {
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const firstAtomId = ring.atomIds[index];
+      const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      if ((!movableAtomIds.has(firstAtomId) && !movableAtomIds.has(secondAtomId)) || !coords.has(firstAtomId) || !coords.has(secondAtomId)) {
+        continue;
+      }
+      const edgeKey = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+      if (edgeKeys.has(edgeKey)) {
+        continue;
+      }
+      edgeKeys.add(edgeKey);
+      edges.push([firstAtomId, secondAtomId]);
+    }
+  }
+  if (edges.length === 0) {
+    return null;
+  }
+
+  const relaxedCoords = new Map(coords);
+  for (const atomId of movableAtomIds) {
+    const position = coords.get(atomId);
+    relaxedCoords.set(atomId, { x: position.x, y: position.y });
+  }
+
+  let changed = false;
+  for (let pass = 0; pass < MACROCYCLE_AROMATIC_LINKER_RELAXATION_PASSES; pass++) {
+    for (const [firstAtomId, secondAtomId] of edges) {
+      const firstPosition = relaxedCoords.get(firstAtomId);
+      const secondPosition = relaxedCoords.get(secondAtomId);
+      const dx = secondPosition.x - firstPosition.x;
+      const dy = secondPosition.y - firstPosition.y;
+      const currentLength = Math.hypot(dx, dy);
+      if (currentLength <= 1e-9) {
+        continue;
+      }
+
+      const delta = (currentLength - bondLength) * MACROCYCLE_AROMATIC_LINKER_RELAXATION_STEP;
+      if (Math.abs(delta) <= 1e-9) {
+        continue;
+      }
+      const unitX = dx / currentLength;
+      const unitY = dy / currentLength;
+      const firstMovable = movableAtomIds.has(firstAtomId);
+      const secondMovable = movableAtomIds.has(secondAtomId);
+
+      if (firstMovable && secondMovable) {
+        firstPosition.x += unitX * delta * 0.5;
+        firstPosition.y += unitY * delta * 0.5;
+        secondPosition.x -= unitX * delta * 0.5;
+        secondPosition.y -= unitY * delta * 0.5;
+      } else if (firstMovable) {
+        firstPosition.x += unitX * delta;
+        firstPosition.y += unitY * delta;
+      } else if (secondMovable) {
+        secondPosition.x -= unitX * delta;
+        secondPosition.y -= unitY * delta;
+      }
+      changed = true;
+    }
+  }
+
+  return changed ? relaxedCoords : null;
+}
+
+/**
+ * Bends two-coordinate hetero linkers between aromatic macrocycle anchors
+ * toward the macrocycle interior. This keeps the aryl rings fixed and only
+ * uses the bend when the implied C/N/O/S-linker bonds stay inside bridged
+ * validation bounds.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the ring system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Bent coordinate map, or null when no bridge bend applies.
+ */
+function bendMacrocycleAromaticHeteroBridgesInward(layoutGraph, rings, coords, bondLength) {
+  if (!layoutGraph || !Number.isFinite(bondLength) || bondLength <= 0) {
+    return null;
+  }
+
+  const aromaticAtomIds = new Set();
+  const ringSystemAtomIds = new Set();
+  const macrocycleAtomIds = new Set();
+  for (const ring of rings) {
+    for (const atomId of ring.atomIds) {
+      ringSystemAtomIds.add(atomId);
+      if (ring.aromatic) {
+        aromaticAtomIds.add(atomId);
+      } else if (ring.atomIds.length >= MACROCYCLE_AROMATIC_LINKER_RELAXATION_MIN_RING_SIZE) {
+        macrocycleAtomIds.add(atomId);
+      }
+    }
+  }
+  if (aromaticAtomIds.size === 0 || macrocycleAtomIds.size === 0) {
+    return null;
+  }
+
+  const macrocyclePositions = [...macrocycleAtomIds].map(atomId => coords.get(atomId)).filter(Boolean);
+  if (macrocyclePositions.length < 3) {
+    return null;
+  }
+  const macrocycleCenter = centroid(macrocyclePositions);
+  const bentCoords = new Map(coords);
+  const processedAtomIds = new Set();
+  let changed = false;
+
+  for (const ring of rings) {
+    if (ring.aromatic || ring.atomIds.length < MACROCYCLE_AROMATIC_LINKER_RELAXATION_MIN_RING_SIZE) {
+      continue;
+    }
+    for (const linkerAtomId of ring.atomIds) {
+      if (processedAtomIds.has(linkerAtomId)) {
+        continue;
+      }
+      processedAtomIds.add(linkerAtomId);
+      const linkerAtom = layoutGraph.atoms.get(linkerAtomId);
+      const linkerPosition = bentCoords.get(linkerAtomId);
+      if (!linkerAtom || linkerAtom.element === 'H' || linkerAtom.element === 'C' || linkerAtom.aromatic || linkerAtom.heavyDegree !== 2 || !linkerPosition) {
+        continue;
+      }
+
+      const heavyNeighborIds = [];
+      const attachedHydrogenIds = [];
+      for (const bond of layoutGraph.bondsByAtomId.get(linkerAtomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const neighborAtomId = bond.a === linkerAtomId ? bond.b : bond.a;
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        if (!neighborAtom) {
+          continue;
+        }
+        if (neighborAtom.element === 'H') {
+          if (bentCoords.has(neighborAtomId)) {
+            attachedHydrogenIds.push(neighborAtomId);
+          }
+          continue;
+        }
+        if (ringSystemAtomIds.has(neighborAtomId) && bentCoords.has(neighborAtomId)) {
+          heavyNeighborIds.push(neighborAtomId);
+        }
+      }
+      if (
+        heavyNeighborIds.length !== 2 ||
+        !heavyNeighborIds.every(neighborAtomId => aromaticAtomIds.has(neighborAtomId) && layoutGraph.atoms.get(neighborAtomId)?.aromatic === true)
+      ) {
+        continue;
+      }
+
+      const [firstAtomId, secondAtomId] = heavyNeighborIds;
+      const firstPosition = bentCoords.get(firstAtomId);
+      const secondPosition = bentCoords.get(secondAtomId);
+      const currentAngle = angularDifference(angleOf(sub(firstPosition, linkerPosition)), angleOf(sub(secondPosition, linkerPosition)));
+      if (currentAngle <= MACROCYCLE_AROMATIC_HETERO_BRIDGE_TARGET_ANGLE + MACROCYCLE_AROMATIC_HETERO_BRIDGE_MIN_ANGLE_IMPROVEMENT) {
+        continue;
+      }
+
+      const dx = secondPosition.x - firstPosition.x;
+      const dy = secondPosition.y - firstPosition.y;
+      const chordLength = Math.hypot(dx, dy);
+      if (chordLength <= 1e-9) {
+        continue;
+      }
+      const targetBondLength = chordLength / (2 * Math.sin(MACROCYCLE_AROMATIC_HETERO_BRIDGE_TARGET_ANGLE / 2));
+      if (targetBondLength > bondLength * BRIDGED_VALIDATION.maxBondLengthFactor || targetBondLength < bondLength * BRIDGED_VALIDATION.minBondLengthFactor) {
+        continue;
+      }
+
+      const inwardSide = Math.sign(dx * (macrocycleCenter.y - firstPosition.y) - dy * (macrocycleCenter.x - firstPosition.x));
+      if (inwardSide === 0) {
+        continue;
+      }
+      const midpoint = {
+        x: (firstPosition.x + secondPosition.x) / 2,
+        y: (firstPosition.y + secondPosition.y) / 2
+      };
+      const height = chordLength / (2 * Math.tan(MACROCYCLE_AROMATIC_HETERO_BRIDGE_TARGET_ANGLE / 2));
+      const targetPosition = {
+        x: midpoint.x + (-dy / chordLength) * height * inwardSide,
+        y: midpoint.y + (dx / chordLength) * height * inwardSide
+      };
+      const shift = {
+        x: targetPosition.x - linkerPosition.x,
+        y: targetPosition.y - linkerPosition.y
+      };
+      if (Math.hypot(shift.x, shift.y) <= 1e-9) {
+        continue;
+      }
+
+      bentCoords.set(linkerAtomId, targetPosition);
+      for (const hydrogenAtomId of attachedHydrogenIds) {
+        const hydrogenPosition = bentCoords.get(hydrogenAtomId);
+        bentCoords.set(hydrogenAtomId, {
+          x: hydrogenPosition.x + shift.x,
+          y: hydrogenPosition.y + shift.y
+        });
+      }
+      changed = true;
+    }
+  }
+
+  return changed ? bentCoords : null;
+}
+
+/**
+ * Adds skeletal structure to long non-aromatic macrocycle spans between
+ * embedded aromatic anchors. Short strained bridges are left alone; eligible
+ * runs receive a bounded alternating offset along their existing envelope so
+ * large aryl macrocycles read as deliberate chains instead of nearly straight
+ * ellipse arcs.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the ring system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Structured coordinate map, or null when no linker run applies.
+ */
+function structureMacrocycleAromaticLinkerRuns(layoutGraph, rings, coords, bondLength) {
+  if (!layoutGraph || !Number.isFinite(bondLength) || bondLength <= 0) {
+    return null;
+  }
+
+  const aromaticAtomIds = new Set();
+  for (const ring of rings) {
+    if (!ring.aromatic) {
+      continue;
+    }
+    for (const atomId of ring.atomIds) {
+      aromaticAtomIds.add(atomId);
+    }
+  }
+  if (aromaticAtomIds.size === 0) {
+    return null;
+  }
+
+  const macrocycleRings = rings.filter(ring => !ring.aromatic && ring.atomIds.length >= MACROCYCLE_AROMATIC_LINKER_RELAXATION_MIN_RING_SIZE);
+  if (macrocycleRings.length === 0) {
+    return null;
+  }
+
+  const structuredCoords = new Map(coords);
+  const structuredAtomIds = new Set();
+  let changed = false;
+
+  for (const ring of macrocycleRings) {
+    if (ring.atomIds.some(atomId => !coords.has(atomId))) {
+      continue;
+    }
+
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const startAtomId = ring.atomIds[index];
+      if (!aromaticAtomIds.has(startAtomId)) {
+        continue;
+      }
+
+      const runAtomIds = [];
+      let cursor = (index + 1) % ring.atomIds.length;
+      while (cursor !== index && !aromaticAtomIds.has(ring.atomIds[cursor])) {
+        runAtomIds.push(ring.atomIds[cursor]);
+        cursor = (cursor + 1) % ring.atomIds.length;
+      }
+      if (cursor === index || runAtomIds.length < MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_RUN_ATOMS) {
+        continue;
+      }
+
+      const endAtomId = ring.atomIds[cursor];
+      if (runAtomIds.some(atomId => structuredAtomIds.has(atomId) || !isMacrocycleAromaticLinkerRunAtomMovable(layoutGraph, ring, atomId, aromaticAtomIds))) {
+        continue;
+      }
+
+      const startPosition = structuredCoords.get(startAtomId);
+      const endPosition = structuredCoords.get(endAtomId);
+      const chordX = endPosition.x - startPosition.x;
+      const chordY = endPosition.y - startPosition.y;
+      const chordLength = Math.hypot(chordX, chordY);
+      const segmentCount = runAtomIds.length + 1;
+      const pathSlack = segmentCount * bondLength - chordLength;
+      if (chordLength <= 1e-9 || pathSlack < bondLength * MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_PATH_SLACK_FACTOR) {
+        continue;
+      }
+
+      const waveValues = Array.from({ length: segmentCount + 1 }, (_value, waveIndex) => Math.sin((waveIndex * Math.PI * (segmentCount - 1)) / segmentCount));
+      const amplitude = Math.min(bondLength * MACROCYCLE_AROMATIC_LINKER_STRUCTURE_AMPLITUDE_FACTOR, pathSlack * 0.25);
+      if (amplitude < bondLength * MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_AMPLITUDE_FACTOR) {
+        continue;
+      }
+
+      const normalX = -chordY / chordLength;
+      const normalY = chordX / chordLength;
+      const baseScore = scoreMacrocycleAromaticLinkerRunStructure(ring, runAtomIds, structuredCoords);
+      let bestRunCoords = null;
+      let bestScore = baseScore;
+
+      for (const amplitudeFactor of MACROCYCLE_AROMATIC_LINKER_STRUCTURE_AMPLITUDE_FACTORS) {
+        for (const direction of [-1, 1]) {
+          const candidateCoords = new Map(structuredCoords);
+          for (let runIndex = 0; runIndex < runAtomIds.length; runIndex++) {
+            const atomId = runAtomIds[runIndex];
+            const currentPosition = structuredCoords.get(atomId);
+            const offset = direction * amplitude * amplitudeFactor * waveValues[runIndex + 1];
+            candidateCoords.set(atomId, {
+              x: currentPosition.x + normalX * offset,
+              y: currentPosition.y + normalY * offset
+            });
+          }
+          if (!macrocycleAromaticLinkerRunBondLengthsWithinBounds(startAtomId, runAtomIds, endAtomId, candidateCoords, bondLength)) {
+            continue;
+          }
+
+          const candidateScore = scoreMacrocycleAromaticLinkerRunStructure(ring, runAtomIds, candidateCoords);
+          if (isBetterMacrocycleAromaticLinkerRunStructureScore(candidateScore, bestScore)) {
+            bestRunCoords = candidateCoords;
+            bestScore = candidateScore;
+          }
+        }
+      }
+
+      if (!bestRunCoords || baseScore.penalty - bestScore.penalty < MACROCYCLE_AROMATIC_LINKER_STRUCTURE_IMPROVEMENT) {
+        continue;
+      }
+
+      for (const atomId of runAtomIds) {
+        const nextPosition = bestRunCoords.get(atomId);
+        if (distance(structuredCoords.get(atomId), nextPosition) <= 1e-9) {
+          continue;
+        }
+        structuredCoords.set(atomId, nextPosition);
+        structuredAtomIds.add(atomId);
+        changed = true;
+      }
+    }
+  }
+
+  return changed ? structuredCoords : null;
+}
+
+/**
+ * Scores whether a macrocycle linker run has readable alternating bends.
+ * @param {object} ring - Macrocycle ring descriptor.
+ * @param {string[]} runAtomIds - Non-aromatic linker atoms between aromatic anchors.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @returns {{penalty: number, maxAngle: number, minAngle: number}} Linker structure score.
+ */
+function scoreMacrocycleAromaticLinkerRunStructure(ring, runAtomIds, coords) {
+  let penalty = 0;
+  let maxAngle = 0;
+  let minAngle = Number.POSITIVE_INFINITY;
+
+  for (const atomId of runAtomIds) {
+    const atomIndex = ring.atomIds.indexOf(atomId);
+    if (atomIndex < 0) {
+      continue;
+    }
+    const previousAtomId = ring.atomIds[(atomIndex - 1 + ring.atomIds.length) % ring.atomIds.length];
+    const nextAtomId = ring.atomIds[(atomIndex + 1) % ring.atomIds.length];
+    const atomPosition = coords.get(atomId);
+    const previousPosition = coords.get(previousAtomId);
+    const nextPosition = coords.get(nextAtomId);
+    if (!atomPosition || !previousPosition || !nextPosition) {
+      continue;
+    }
+
+    const angle = angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition)));
+    penalty += Math.max(0, angle - MACROCYCLE_AROMATIC_LINKER_STRUCTURE_FLAT_ANGLE);
+    penalty += Math.max(0, MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_ANGLE - angle) * 2;
+    maxAngle = Math.max(maxAngle, angle);
+    minAngle = Math.min(minAngle, angle);
+  }
+
+  return {
+    penalty,
+    maxAngle,
+    minAngle
+  };
+}
+
+/**
+ * Returns whether one linker structure score improves another.
+ * @param {{penalty: number, maxAngle: number, minAngle: number}} candidateScore - Candidate linker score.
+ * @param {{penalty: number, maxAngle: number, minAngle: number}} incumbentScore - Incumbent linker score.
+ * @returns {boolean} True when the candidate is a better structured linker.
+ */
+function isBetterMacrocycleAromaticLinkerRunStructureScore(candidateScore, incumbentScore) {
+  if (candidateScore.penalty < incumbentScore.penalty - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidateScore.penalty > incumbentScore.penalty + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidateScore.maxAngle < incumbentScore.maxAngle - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidateScore.maxAngle > incumbentScore.maxAngle + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  return candidateScore.minAngle > incumbentScore.minAngle + IMPROVEMENT_EPSILON;
+}
+
+/**
+ * Checks that a reshaped macrocycle linker run stays inside bridged bond bounds.
+ * @param {string} startAtomId - Aromatic anchor before the linker run.
+ * @param {string[]} runAtomIds - Non-aromatic linker atoms.
+ * @param {string} endAtomId - Aromatic anchor after the linker run.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when all run bonds remain in bounds.
+ */
+function macrocycleAromaticLinkerRunBondLengthsWithinBounds(startAtomId, runAtomIds, endAtomId, coords, bondLength) {
+  const minBondLength = bondLength * BRIDGED_VALIDATION.minBondLengthFactor;
+  const maxBondLength = bondLength * BRIDGED_VALIDATION.maxBondLengthFactor;
+  const atomIds = [startAtomId, ...runAtomIds, endAtomId];
+
+  for (let index = 0; index < atomIds.length - 1; index++) {
+    const firstPosition = coords.get(atomIds[index]);
+    const secondPosition = coords.get(atomIds[index + 1]);
+    if (!firstPosition || !secondPosition) {
+      return false;
+    }
+    const bondDistance = distance(firstPosition, secondPosition);
+    if (bondDistance < minBondLength || bondDistance > maxBondLength) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Returns whether a macrocycle linker atom can move without distorting another non-aromatic ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} macrocycleRing - Macrocycle ring descriptor.
+ * @param {string} atomId - Candidate linker atom ID.
+ * @param {Set<string>} aromaticAtomIds - Aromatic atoms kept fixed.
+ * @returns {boolean} True when the atom is eligible for linker structuring.
+ */
+function isMacrocycleAromaticLinkerRunAtomMovable(layoutGraph, macrocycleRing, atomId, aromaticAtomIds) {
+  if (aromaticAtomIds.has(atomId)) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic) {
+    return false;
+  }
+  return !(layoutGraph.atomToRings.get(atomId) ?? []).some(ring => ring !== macrocycleRing && !ring.aromatic);
+}
+
+/**
+ * Appends a constructed macrocycle aromatic rescue candidate.
+ * @param {object[]} candidates - Mutable candidate list.
+ * @param {object[]} rings - Ring descriptors in the ring system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @returns {void}
+ */
+function addMacrocycleAromaticRescueCandidate(candidates, rings, coords) {
+  candidates.push({
+    coords,
+    ringCenters: ringCentersForCoords(rings, coords),
+    placementMode: 'constructed-bridged'
+  });
+}
+
+function macrocycleAromaticRegularizedRescueCandidates(layoutGraph, rings, bondLength, basePlacement) {
   if (!basePlacement?.coords || !rings.some(ring => ring.aromatic)) {
     return [];
   }
@@ -4554,11 +5070,35 @@ function macrocycleAromaticRegularizedRescueCandidates(rings, bondLength, basePl
     if (!coords) {
       continue;
     }
-    candidates.push({
-      coords,
-      ringCenters: ringCentersForCoords(rings, coords),
-      placementMode: 'constructed-bridged'
-    });
+    const relaxedCoords = relaxMacrocycleAromaticLinkerBonds(rings, coords, bondLength);
+    if (relaxedCoords) {
+      const bentRelaxedCoords = bendMacrocycleAromaticHeteroBridgesInward(layoutGraph, rings, relaxedCoords, bondLength);
+      if (bentRelaxedCoords) {
+        const structuredBentRelaxedCoords = structureMacrocycleAromaticLinkerRuns(layoutGraph, rings, bentRelaxedCoords, bondLength);
+        if (structuredBentRelaxedCoords) {
+          addMacrocycleAromaticRescueCandidate(candidates, rings, structuredBentRelaxedCoords);
+        }
+        addMacrocycleAromaticRescueCandidate(candidates, rings, bentRelaxedCoords);
+      }
+      const structuredRelaxedCoords = structureMacrocycleAromaticLinkerRuns(layoutGraph, rings, relaxedCoords, bondLength);
+      if (structuredRelaxedCoords) {
+        addMacrocycleAromaticRescueCandidate(candidates, rings, structuredRelaxedCoords);
+      }
+      addMacrocycleAromaticRescueCandidate(candidates, rings, relaxedCoords);
+    }
+    const bentCoords = bendMacrocycleAromaticHeteroBridgesInward(layoutGraph, rings, coords, bondLength);
+    if (bentCoords) {
+      const structuredBentCoords = structureMacrocycleAromaticLinkerRuns(layoutGraph, rings, bentCoords, bondLength);
+      if (structuredBentCoords) {
+        addMacrocycleAromaticRescueCandidate(candidates, rings, structuredBentCoords);
+      }
+      addMacrocycleAromaticRescueCandidate(candidates, rings, bentCoords);
+    }
+    const structuredCoords = structureMacrocycleAromaticLinkerRuns(layoutGraph, rings, coords, bondLength);
+    if (structuredCoords) {
+      addMacrocycleAromaticRescueCandidate(candidates, rings, structuredCoords);
+    }
+    addMacrocycleAromaticRescueCandidate(candidates, rings, coords);
   }
   return candidates;
 }
@@ -4869,10 +5409,13 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
         bestPlacement = bridgedRescuePlacement;
         bestAudit = bridgedRescueAudit;
       }
-      for (const regularizedResult of macrocycleAromaticRegularizedRescueCandidates(rings, bondLength, macrocyclePlacement)) {
+      for (const regularizedResult of macrocycleAromaticRegularizedRescueCandidates(layoutGraph, rings, bondLength, macrocyclePlacement)) {
         const regularizedRescuePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, regularizedResult, templateId);
         const regularizedRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, regularizedRescuePlacement, bondLength);
-        if (isBetterMacrocycleAromaticBridgePoseRescue(layoutGraph, ringSystem, regularizedRescuePlacement, bestPlacement, regularizedRescueAudit, bestAudit, rings)) {
+        if (
+          isBetterMacrocycleAromaticRingRescue(regularizedRescuePlacement, bestPlacement, regularizedRescueAudit, bestAudit, rings) ||
+          isBetterMacrocycleAromaticBridgePoseRescue(layoutGraph, ringSystem, regularizedRescuePlacement, bestPlacement, regularizedRescueAudit, bestAudit, rings)
+        ) {
           bestPlacement = regularizedRescuePlacement;
           bestAudit = regularizedRescueAudit;
         }

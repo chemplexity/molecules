@@ -921,6 +921,71 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(bridgeMetrics.maxBondDeviation < 1e-6, `expected the six-carbon bridge ring bonds to stay exact, got ${bridgeMetrics.maxBondDeviation.toFixed(6)}`);
   });
 
+  it('keeps aromatic rings strict inside bridged macrocycle root scaffolds', () => {
+    const smiles = 'FC(F)(F)COC1=NC2=NC(NC3=CC=C(C=C3)C(=O)NCCCCNC(=O)C3=CC=C(CN2)C=C3)=N1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const aromaticRings = result.layoutGraph.rings.filter(ring => ring.aromatic);
+    const macrocycleRing = result.layoutGraph.rings.find(ring => !ring.aromatic && ring.atomIds.length >= 12);
+    const aromaticMetrics = aromaticRings.map(ring => measureResultRingMetrics(result, ring));
+    const maxAngleDeviation = Math.max(...aromaticMetrics.map(metrics => metrics.maxAngleDeviation));
+    const maxBondDeviation = Math.max(...aromaticMetrics.map(metrics => metrics.maxBondDeviation));
+    const n12Angle = bondAngleAtAtom(result.coords, 'N12', 'C11', 'C13');
+
+    assert.equal(aromaticRings.length, 3);
+    assert.ok(macrocycleRing, 'expected the bridged aryl macrocycle ring');
+    const macrocycleMetrics = measureResultRingMetrics(result, macrocycleRing, 180 - 360 / macrocycleRing.atomIds.length);
+    const macrocycleCenter = centroid(macrocycleRing.atomIds.map(atomId => result.coords.get(atomId)));
+    const c11 = result.coords.get('C11');
+    const c13 = result.coords.get('C13');
+    const n12 = result.coords.get('N12');
+    const chordX = c13.x - c11.x;
+    const chordY = c13.y - c11.y;
+    const centerSide = Math.sign(chordX * (macrocycleCenter.y - c11.y) - chordY * (macrocycleCenter.x - c11.x));
+    const n12Side = Math.sign(chordX * (n12.y - c11.y) - chordY * (n12.x - c11.x));
+    const longLinkerAtomIds = ['C27', 'N26', 'C25', 'C24', 'C23', 'C22', 'N21', 'C19'];
+    const macrocycleAtomIndex = new Map(macrocycleRing.atomIds.map((atomId, index) => [atomId, index]));
+    const longLinkerAngles = longLinkerAtomIds.map(atomId => {
+      const atomIndex = macrocycleAtomIndex.get(atomId);
+      const previousAtomId = macrocycleRing.atomIds[(atomIndex - 1 + macrocycleRing.atomIds.length) % macrocycleRing.atomIds.length];
+      const nextAtomId = macrocycleRing.atomIds[(atomIndex + 1) % macrocycleRing.atomIds.length];
+      return bondAngleAtAtom(result.coords, atomId, previousAtomId, nextAtomId);
+    });
+    const c29 = result.coords.get('C29');
+    const c16 = result.coords.get('C16');
+    const longLinkerChordX = c16.x - c29.x;
+    const longLinkerChordY = c16.y - c29.y;
+    const longLinkerChordLength = Math.hypot(longLinkerChordX, longLinkerChordY);
+    const longLinkerOffsets = longLinkerAtomIds.map(atomId => {
+      const position = result.coords.get(atomId);
+      return (longLinkerChordX * (position.y - c29.y) - longLinkerChordY * (position.x - c29.x)) / longLinkerChordLength;
+    });
+    let longLinkerDirectionChanges = 0;
+    let previousOffsetDirection = 0;
+    for (let index = 1; index < longLinkerOffsets.length; index++) {
+      const offsetDirection = Math.sign(longLinkerOffsets[index] - longLinkerOffsets[index - 1]);
+      if (offsetDirection !== 0 && previousOffsetDirection !== 0 && offsetDirection !== previousOffsetDirection) {
+        longLinkerDirectionChanges++;
+      }
+      if (offsetDirection !== 0) {
+        previousOffsetDirection = offsetDirection;
+      }
+    }
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(maxAngleDeviation < 4, `expected embedded aromatic ring angles to stay strict, got max deviation ${maxAngleDeviation.toFixed(2)} degrees`);
+    assert.ok(maxBondDeviation < 0.03, `expected embedded aromatic ring bonds to stay near-regular, got max deviation ${maxBondDeviation.toFixed(3)}`);
+    assert.ok(macrocycleMetrics.maxBondDeviation < 0.45, `expected the aryl macrocycle linker bonds to stay bounded, got max deviation ${macrocycleMetrics.maxBondDeviation.toFixed(3)}`);
+    assert.ok(n12Angle < (17 * Math.PI) / 18, `expected the aryl-bridging hetero linker to bend inward, got ${((n12Angle * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.equal(n12Side, centerSide);
+    assert.ok(Math.max(...longLinkerAngles) < (11 * Math.PI) / 12, 'expected the long aryl macrocycle linker to avoid a flat ellipse arc');
+    assert.ok(longLinkerDirectionChanges >= 4, `expected the long aryl macrocycle linker to alternate bends, got ${longLinkerDirectionChanges}`);
+  });
+
   it('keeps directly attached cyclohexyl blocks on the local outward ring axis instead of leaving the attachment tangential', () => {
     const smiles = '[H][C@@](CC1CCCCC1)(NC1=NC2=CC=CC=C2O1)C(=O)NCCNC1=CC=C(OC)C=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

@@ -3335,6 +3335,107 @@ function _normalizeFuroxan(mol) {
   }
 }
 
+function _normalizeOverchargedNitrogen(mol) {
+  // InChI sometimes distributes the positive charge of an amidinium or similar
+  // delocalized group across two N atoms in the same component, writing one N
+  // as N+2 (or higher) and balancing it with an N-1 elsewhere.  The canonical
+  // chemistry is N+1 / N(0).  Fix: for each N with charge > 1, find the nearest
+  // N-1 in the same connected component and reduce both by 1.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N' || (atom.properties.charge ?? 0) < 2) {continue;}
+    const component = new Set([atom.id]);
+    const queue = [atom.id];
+    while (queue.length > 0) {
+      const id = queue.shift();
+      for (const bId of mol.atoms.get(id).bonds) {
+        const b = mol.bonds.get(bId);
+        if (!b) {continue;}
+        const other = mol.atoms.get(b.getOtherAtom(id));
+        if (!other || component.has(other.id) || other.name === 'H') {continue;}
+        component.add(other.id);
+        queue.push(other.id);
+      }
+    }
+    let nMinus = null;
+    for (const id of component) {
+      const a = mol.atoms.get(id);
+      if (a && a !== atom && a.name === 'N' && (a.properties.charge ?? 0) === -1) {
+        nMinus = a; break;
+      }
+    }
+    if (!nMinus) {continue;}
+    atom.setCharge((atom.properties.charge ?? 0) - 1);
+    nMinus.setCharge(0);
+  }
+}
+
+function _normalizeThiazolol(mol) {
+  // Convert aromatic 1,3-thiazol-4-ol (thiazolol) rings to the Kekulé
+  // thiazolinone form InChI uses: C=C-[N-]-S-C(=O).
+  // Pattern: 5-membered aromatic ring with 3C + 1S + 1N, one C bearing exo [O-],
+  // and S adjacent to both N and C([O-]) in the ring.
+  const rings = mol.getRings();
+  for (const ring of rings) {
+    if (ring.length !== 5) {continue;}
+    const ringSet = new Set(ring);
+    const atoms = ring.map(id => mol.atoms.get(id));
+    if (!atoms.every(a => a?.properties?.aromatic)) {continue;}
+    const cs = atoms.filter(a => a.name === 'C');
+    const ns = atoms.filter(a => a.name === 'N');
+    const ss = atoms.filter(a => a.name === 'S');
+    if (cs.length !== 3 || ns.length !== 1 || ss.length !== 1) {continue;}
+    const nAtom = ns[0];
+    const sAtom = ss[0];
+    // Find the C with exo [O-]
+    let cOx = null, exoO = null, exoOBond = null;
+    for (const c of cs) {
+      for (const bId of c.bonds) {
+        const b = mol.bonds.get(bId);
+        if (!b) {continue;}
+        const other = mol.atoms.get(b.getOtherAtom(c.id));
+        if (!other || ringSet.has(other.id)) {continue;}
+        if (other.name === 'O' && (other.properties.charge ?? 0) === -1) {
+          cOx = c; exoO = other; exoOBond = b; break;
+        }
+      }
+      if (cOx) {break;}
+    }
+    if (!cOx) {continue;}
+    // Verify S is adjacent (in the ring) to both N and cOx
+    const sRingAdj = [...sAtom.bonds].map(bId => {
+      const b = mol.bonds.get(bId);
+      return b ? mol.atoms.get(b.getOtherAtom(sAtom.id))?.id : null;
+    }).filter(id => id && ringSet.has(id));
+    if (!sRingAdj.includes(nAtom.id) || !sRingAdj.includes(cOx.id)) {continue;}
+    // The two remaining carbons (ca adjacent to N, cb adjacent to cOx) get the C=C bond
+    const remainingCs = cs.filter(c => c !== cOx);
+    let ca = null, cb = null;
+    for (const c of remainingCs) {
+      const cRingAdj = [...c.bonds].map(bId => {
+        const b = mol.bonds.get(bId);
+        return b ? mol.atoms.get(b.getOtherAtom(c.id))?.id : null;
+      }).filter(id => id && ringSet.has(id));
+      if (cRingAdj.includes(nAtom.id)) {ca = c;}
+      if (cRingAdj.includes(cOx.id)) {cb = c;}
+    }
+    if (!ca || !cb || ca === cb) {continue;}
+    // Dearomatize: ca=cb double bond, all other ring bonds single
+    for (let i = 0; i < ring.length; i++) {
+      const b = mol.getBond(ring[i], ring[(i + 1) % ring.length]);
+      if (!b) {continue;}
+      const isDbl = (ring[i] === ca.id && ring[(i + 1) % ring.length] === cb.id) ||
+                    (ring[i] === cb.id && ring[(i + 1) % ring.length] === ca.id);
+      b.properties.order = isDbl ? 2 : 1;
+      if (b.properties.aromatic !== undefined) {b.properties.aromatic = false;}
+    }
+    for (const a of atoms) {a.properties.aromatic = false;}
+    // exo [O-] → =O (ketone), N → [N-]
+    exoOBond.properties.order = 2;
+    exoO.setCharge(0);
+    nAtom.setCharge(-1);
+  }
+}
+
 /**
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
  * @returns {void}
@@ -3373,6 +3474,35 @@ function _normalizeAromaticRingCharges(mol) {
       mol.atoms.get(id).setCharge(0);
     }
   }
+  // Second pass: mixed aromatic [n+] / aliphatic [N-] in the same ring.
+  // InChI sometimes writes a vinylogous amidine zwitterion as c-[N-]-C=C-[n+]
+  // instead of the neutral c=N-C=C-n. The aromatic component walk above misses
+  // [N-] because it is not aromatic. Fix: scan rings for exactly this pair,
+  // total ring charge = 0, then neutralise and restore the exo double bond.
+  const rings = mol.getRings();
+  for (const ring of rings) {
+    const ringAtoms = ring.map(id => mol.atoms.get(id));
+    const chargedAtoms = ringAtoms.filter(a => (a?.properties?.charge ?? 0) !== 0);
+    if (chargedAtoms.length !== 2) {continue;}
+    const totalCharge = chargedAtoms.reduce((s, a) => s + (a.properties.charge ?? 0), 0);
+    if (totalCharge !== 0) {continue;}
+    const nPlus = chargedAtoms.find(a => a.name === 'N' && a.properties.aromatic && (a.properties.charge ?? 0) === 1);
+    const nMinus = chargedAtoms.find(a => a.name === 'N' && !a.properties.aromatic && (a.properties.charge ?? 0) === -1);
+    if (!nPlus || !nMinus) {continue;}
+    // Restore the bond from nMinus to its aromatic ring-C neighbour to order=2
+    // (InChI lowered it to single when it introduced the zwitterion form).
+    const ringSet = new Set(ring);
+    for (const bId of nMinus.bonds) {
+      const b = mol.bonds.get(bId);
+      if (!b) {continue;}
+      const other = mol.atoms.get(b.getOtherAtom(nMinus.id));
+      if (!other || !ringSet.has(other.id) || !other.properties.aromatic || other.name !== 'C') {continue;}
+      b.properties.order = 2;
+      break;
+    }
+    nPlus.setCharge(0);
+    nMinus.setCharge(0);
+  }
 }
 
 /**
@@ -3409,6 +3539,7 @@ export function toCanonicalSMILES(molecule) {
     _normalizeExocyclicThioamideAnion(comp);
     _normalizeExocyclicIminium(comp);
     _normalizeFusedRingKekule(comp);
+    _normalizeOverchargedNitrogen(comp);
     // Always call perceiveAromaticity so that both pure-Kekulé molecules (from
     // parseINCHI) and mixed Kekulé/aromatic molecules (from parseSMILES) end up
     // with the same aromatic bond set.  Consistent aromaticity ensures that
@@ -3417,6 +3548,7 @@ export function toCanonicalSMILES(molecule) {
     // and canonical SMILES string equality.
     perceiveAromaticity(comp);
     _normalizeFuroxan(comp);
+    _normalizeThiazolol(comp);
     _normalizeNOxideCarbanion(comp);
     _normalizeAromaticRingCharges(comp);
     const ranks = morganRanks(comp);

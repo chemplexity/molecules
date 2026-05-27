@@ -958,6 +958,11 @@ function shouldReplaceTidyeableDescriptor(candidate, incumbent) {
   if (candidate.prefersIdealOutwardGeometry !== incumbent.prefersIdealOutwardGeometry) {
     return candidate.prefersIdealOutwardGeometry;
   }
+  const candidateForwardLinkedOutwardDeviation = candidate.forwardLinkedRingOutwardDeviation ?? 0;
+  const incumbentForwardLinkedOutwardDeviation = incumbent.forwardLinkedRingOutwardDeviation ?? 0;
+  if (Math.abs(candidateForwardLinkedOutwardDeviation - incumbentForwardLinkedOutwardDeviation) > TIDY_ANGLE_EPSILON) {
+    return candidateForwardLinkedOutwardDeviation > incumbentForwardLinkedOutwardDeviation;
+  }
   const candidateLinkedOutwardDeviation = candidate.exactLinkedRingOutwardDeviation ?? 0;
   const incumbentLinkedOutwardDeviation = incumbent.exactLinkedRingOutwardDeviation ?? 0;
   if (Math.abs(candidateLinkedOutwardDeviation - incumbentLinkedOutwardDeviation) > TIDY_ANGLE_EPSILON) {
@@ -1257,6 +1262,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
         reverseOutwardAngles,
         reverseEnforcesOutwardReadability: isRingSystemSubstituent ? supportsRingSubstituentOutwardReadability(layoutGraph, reverseAnchorAtomId) : false,
         largeExactLinkedRingOnly,
+        forwardLinkedRingOutwardDeviation: Number.isFinite(forwardLinkedRingOutwardDeviation) ? forwardLinkedRingOutwardDeviation : 0,
         exactLinkedRingOutwardDeviation
       };
       if (!descriptorTouchesFocusAtomIds(descriptor, focusSet)) {
