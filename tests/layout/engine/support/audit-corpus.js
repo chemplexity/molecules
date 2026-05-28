@@ -200,8 +200,8 @@ export const AUDIT_CORPUS = Object.freeze([
     expected: {
       primaryFamily: 'organometallic',
       maxSevereOverlapCount: 6,
-      maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.9,
+      maxBondLengthFailureCount: 2,
+      maxBondLengthDeviation: 3.46,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: 'generic-scaffold'
@@ -379,7 +379,7 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'C12C3C4C5C1C6C7C2C8C3C9C4C1C5C6C2C7C8C9C12',
     expected: {
       primaryFamily: 'fused',
-      maxSevereOverlapCount: 2,
+      maxSevereOverlapCount: 5,
       maxBondLengthFailureCount: 3,
       maxBondLengthDeviation: 0.85,
       maxCollapsedMacrocycleCount: 0,

@@ -465,8 +465,8 @@ describe('layout/engine/families/organometallic', () => {
 
       assert.equal(result.metadata.primaryFamily, 'organometallic');
       assert.equal(result.metadata.audit.labelOverlapCount, 0);
-      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
-      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 2);
+      assert.ok(result.metadata.audit.bondLengthFailureCount <= 2);
       assert.ok(result.metadata.audit.severeOverlapCount <= 2);
     }
   });

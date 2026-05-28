@@ -4052,7 +4052,33 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
   if (owningRingSystem.atomIds.length !== fallbackAtomIds.length || !owningRingSystem.atomIds.every(atomId => fallbackAtomIdSet.has(atomId))) {
     return fallbackAtomIds;
   }
+  if (shouldKeepFallbackOrderForNitrogenRichBridgedFusedSystem(layoutGraph, rings, fallbackAtomIds)) {
+    return fallbackAtomIds;
+  }
   return [...owningRingSystem.atomIds];
+}
+
+function shouldKeepFallbackOrderForNitrogenRichBridgedFusedSystem(layoutGraph, rings, fallbackAtomIds) {
+  if (rings.length !== 4 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
+    return false;
+  }
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const bridgedConnectionCount = (layoutGraph.ringConnections ?? []).filter(
+    connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+  ).length;
+  const fusedConnectionCount = (layoutGraph.ringConnections ?? []).filter(
+    connection => connection.kind === 'fused' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+  ).length;
+  if (bridgedConnectionCount < 1 || fusedConnectionCount < 1) {
+    return false;
+  }
+  let nitrogenCount = 0;
+  for (const atomId of fallbackAtomIds) {
+    if (layoutGraph.atoms.get(atomId)?.element === 'N') {
+      nitrogenCount++;
+    }
+  }
+  return nitrogenCount >= 3;
 }
 
 function rotateRingAtomIdsStartingWith(ring, firstAtomId, secondAtomId) {

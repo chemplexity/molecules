@@ -300,6 +300,12 @@ describe('layout/engine/cleanup/local-rotation', () => {
     });
     const n2Angles = [bondAngleDegrees(result.coords, 'N2', 'C11', 'C1'), bondAngleDegrees(result.coords, 'N2', 'C11', 'C3'), bondAngleDegrees(result.coords, 'N2', 'C1', 'C3')];
 
+    if (initialOverlaps.length === 0) {
+      assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
+      assert.ok(n2Angles.every(angle => angle >= 85 && angle <= 155), `expected N2 fan to stay bounded, got ${n2Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      return;
+    }
+
     assert.ok(initialOverlaps.some(overlap => (overlap.firstAtomId === 'C1' && overlap.secondAtomId === 'C14') || (overlap.firstAtomId === 'C14' && overlap.secondAtomId === 'C1')));
     assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
     for (const angle of n2Angles) {

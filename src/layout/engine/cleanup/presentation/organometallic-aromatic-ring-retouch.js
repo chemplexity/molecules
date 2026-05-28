@@ -2,12 +2,16 @@
 
 import { auditLayout } from '../../audit/audit.js';
 import { isMetalAtom } from '../../topology/metal-centers.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, sub } from '../../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, scale, sub } from '../../geometry/vec2.js';
 
 const COORDINATE_BOND_KINDS = new Set(['coordinate', 'dative', 'haptic']);
 const RING_RETOUCH_MIN_ANGLE_DEVIATION = Math.PI / 7.5;
 const RING_RETOUCH_MIN_IMPROVEMENT = Math.PI / 18;
 const RING_RETOUCH_BOND_DEVIATION_SLACK_FACTOR = 0.02;
+const COORDINATE_LIGAND_OUTWARD_STEPS = Object.freeze([0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75]);
+const COORDINATE_LIGAND_MAX_HEAVY_ATOMS = 12;
+const COORDINATE_LIGAND_MAX_LAYOUT_HEAVY_ATOMS = 80;
+const COORDINATE_LIGAND_MAX_PASSES = 2;
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -260,6 +264,221 @@ function covalentSubtree(layoutGraph, rootAtomId, blockedAtomIds) {
   }
 
   return atomIds;
+}
+
+function isMetalAtomId(layoutGraph, atomId) {
+  return isMetalAtom(layoutGraph.sourceMolecule?.atoms?.get(atomId) ?? layoutGraph.atoms.get(atomId));
+}
+
+function coordinateMetalNeighborIds(layoutGraph, atomId) {
+  const metalAtomIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || !COORDINATE_BOND_KINDS.has(bond.kind)) {
+      continue;
+    }
+    const neighborAtomId = otherBondAtomId(bond, atomId);
+    if (isMetalAtomId(layoutGraph, neighborAtomId)) {
+      metalAtomIds.push(neighborAtomId);
+    }
+  }
+  return metalAtomIds;
+}
+
+function ligandFragmentHasAromaticRing(layoutGraph, atomIdSet) {
+  return (layoutGraph.rings ?? []).some(ring => ring.aromatic && ring.atomIds.length >= 5 && ring.atomIds.every(atomId => atomIdSet.has(atomId)));
+}
+
+function visibleHeavyAtomCount(layoutGraph, atomIds) {
+  return atomIds.reduce((count, atomId) => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && atom.element !== 'H' && atom.visible !== false ? count + 1 : count;
+  }, 0);
+}
+
+function collectSingleAnchorCoordinateAromaticLigands(layoutGraph, coords) {
+  const records = [];
+  const seenKeys = new Set();
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (!atom || atom.element === 'H' || !coords.has(atomId)) {
+      continue;
+    }
+    const metalAtomIds = coordinateMetalNeighborIds(layoutGraph, atomId).filter(metalAtomId => coords.has(metalAtomId));
+    if (metalAtomIds.length !== 1) {
+      continue;
+    }
+    const fragmentAtomIds = covalentSubtree(layoutGraph, atomId, new Set(metalAtomIds));
+    const fragmentAtomIdSet = new Set(fragmentAtomIds);
+    const coordinateAnchorIds = fragmentAtomIds.filter(fragmentAtomId => coordinateMetalNeighborIds(layoutGraph, fragmentAtomId).length > 0);
+    if (coordinateAnchorIds.length !== 1 || coordinateAnchorIds[0] !== atomId) {
+      continue;
+    }
+    if (visibleHeavyAtomCount(layoutGraph, fragmentAtomIds) > COORDINATE_LIGAND_MAX_HEAVY_ATOMS || !ligandFragmentHasAromaticRing(layoutGraph, fragmentAtomIdSet)) {
+      continue;
+    }
+    const key = fragmentAtomIds.sort().join('|');
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    records.push({
+      anchorAtomId: atomId,
+      metalAtomId: metalAtomIds[0],
+      atomIds: fragmentAtomIds
+    });
+  }
+  return records;
+}
+
+function translateAtomIds(coords, atomIds, displacement) {
+  const nextCoords = new Map(coords);
+  for (const atomId of atomIds) {
+    const position = nextCoords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    nextCoords.set(atomId, add(position, displacement));
+  }
+  return nextCoords;
+}
+
+function coordinateLigandAuditDoesNotRegress(candidateAudit, baseAudit, bondLength) {
+  if (!candidateAudit || !baseAudit) {
+    return false;
+  }
+  return (
+    candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount &&
+    candidateAudit.mildBondLengthFailureCount <= baseAudit.mildBondLengthFailureCount &&
+    candidateAudit.severeBondLengthFailureCount <= baseAudit.severeBondLengthFailureCount &&
+    candidateAudit.maxBondLengthDeviation <= baseAudit.maxBondLengthDeviation + bondLength * RING_RETOUCH_BOND_DEVIATION_SLACK_FACTOR &&
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
+    candidateAudit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount &&
+    candidateAudit.labelOverlapCount <= baseAudit.labelOverlapCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount &&
+    !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+  );
+}
+
+function coordinateLigandAuditImproves(candidateAudit, baseAudit) {
+  if (candidateAudit.ok && !baseAudit.ok) {
+    return true;
+  }
+  if (candidateAudit.severeOverlapCount !== baseAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < baseAudit.severeOverlapCount;
+  }
+  if (candidateAudit.visibleHeavyBondCrossingCount !== baseAudit.visibleHeavyBondCrossingCount) {
+    return candidateAudit.visibleHeavyBondCrossingCount < baseAudit.visibleHeavyBondCrossingCount;
+  }
+  if (candidateAudit.worstOverlapDeficit !== baseAudit.worstOverlapDeficit) {
+    return candidateAudit.worstOverlapDeficit < baseAudit.worstOverlapDeficit;
+  }
+  return candidateAudit.severeOverlapPenalty < baseAudit.severeOverlapPenalty;
+}
+
+function coordinateLigandCandidateScore(audit) {
+  return (
+    (audit.ok ? -1e9 : 0) +
+    audit.bondLengthFailureCount * 1e8 +
+    audit.severeOverlapCount * 1e6 +
+    audit.visibleHeavyBondCrossingCount * 1e4 +
+    audit.labelOverlapCount * 1e3 +
+    audit.ringSubstituentReadabilityFailureCount * 1e3 +
+    audit.worstOverlapDeficit * 100 +
+    audit.severeOverlapPenalty
+  );
+}
+
+/**
+ * Translates small monodentate coordinate-bound aromatic ligands farther along
+ * their metal-anchor axis when the ligand sits on top of another ligand ring.
+ * Coordinate links are intentionally allowed to lengthen because covalent
+ * geometry is unchanged and the move is accepted only when all audit counts
+ * improve or stay flat.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Input coordinate map.
+ * @param {{bondLength?: number, bondValidationClasses?: Map<string, 'planar'|'bridged'>}} [options] - Retouch options.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], severeOverlapCountBefore: number, severeOverlapCountAfter: number, visibleHeavyBondCrossingCountBefore: number, visibleHeavyBondCrossingCountAfter: number}} Retouch result.
+ */
+export function runOrganometallicCoordinateLigandOutwardRetouch(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const layoutHeavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  let currentCoords = coords;
+  let currentAudit = auditLayout(layoutGraph, currentCoords, {
+    bondLength,
+    bondValidationClasses: options.bondValidationClasses
+  });
+  const initialAudit = currentAudit;
+  if (
+    layoutHeavyAtomCount > COORDINATE_LIGAND_MAX_LAYOUT_HEAVY_ATOMS ||
+    currentAudit.ok ||
+    (currentAudit.severeOverlapCount === 0 && currentAudit.visibleHeavyBondCrossingCount === 0)
+  ) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: currentAudit.severeOverlapCount,
+      severeOverlapCountAfter: currentAudit.severeOverlapCount,
+      visibleHeavyBondCrossingCountBefore: currentAudit.visibleHeavyBondCrossingCount,
+      visibleHeavyBondCrossingCountAfter: currentAudit.visibleHeavyBondCrossingCount
+    };
+  }
+
+  const movedAtomIds = new Set();
+  for (let pass = 0; pass < COORDINATE_LIGAND_MAX_PASSES; pass++) {
+    const ligands = collectSingleAnchorCoordinateAromaticLigands(layoutGraph, currentCoords);
+    let bestCandidate = null;
+    let bestScore = coordinateLigandCandidateScore(currentAudit);
+    for (const ligand of ligands) {
+      const anchorPosition = currentCoords.get(ligand.anchorAtomId);
+      const metalPosition = currentCoords.get(ligand.metalAtomId);
+      if (!anchorPosition || !metalPosition) {
+        continue;
+      }
+      const axis = sub(anchorPosition, metalPosition);
+      const axisLength = distance(anchorPosition, metalPosition);
+      if (axisLength <= 1e-9) {
+        continue;
+      }
+      const direction = scale(axis, 1 / axisLength);
+      for (const step of COORDINATE_LIGAND_OUTWARD_STEPS) {
+        const displacement = scale(direction, bondLength * step);
+        const candidateCoords = translateAtomIds(currentCoords, ligand.atomIds, displacement);
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: options.bondValidationClasses
+        });
+        if (!coordinateLigandAuditDoesNotRegress(candidateAudit, currentAudit, bondLength) || !coordinateLigandAuditImproves(candidateAudit, currentAudit)) {
+          continue;
+        }
+        const score = coordinateLigandCandidateScore(candidateAudit) + step * 1e-6;
+        if (score < bestScore) {
+          bestCandidate = { coords: candidateCoords, audit: candidateAudit, movedAtomIds: ligand.atomIds };
+          bestScore = score;
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    if (currentAudit.ok) {
+      break;
+    }
+  }
+
+  return {
+    changed: movedAtomIds.size > 0,
+    coords: currentCoords,
+    movedAtomIds: [...movedAtomIds],
+    severeOverlapCountBefore: initialAudit.severeOverlapCount,
+    severeOverlapCountAfter: currentAudit.severeOverlapCount,
+    visibleHeavyBondCrossingCountBefore: initialAudit.visibleHeavyBondCrossingCount,
+    visibleHeavyBondCrossingCountAfter: currentAudit.visibleHeavyBondCrossingCount
+  };
 }
 
 function translatePendantSubtrees(layoutGraph, coords, displacements, retouchedAtomIds, movedAtomIds) {

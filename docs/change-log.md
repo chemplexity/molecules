@@ -1,9 +1,54 @@
 # Change Log
 
+## 2026-05-28
+
+- Extend the bridged path atom overlap retouch to terminal non-ring leaves that collapse onto a single bridged ring path atom, clearing five exact severe-overlap fallbacks under the existing bridged bond guard.
+- Keep compact nitrogen-rich bridged-fused tetracycles on the ring-list KK seed order when the ring-system order would stretch fused cap bonds, clearing a residual bond-length fallback.
+- Route fused rescue for mixed bridged/fused slices through the cage KK placer when the fused-edge graph is disconnected, preventing branch placement from stretching bridged ring closures.
+- Extend compact bridged/fused current-layout regression coverage for seven additional stress rows that now finish audit-clean under the existing compact-cage cleanup paths.
+- Extend current-layout severe-overlap regression coverage for eight additional compact stress rows that now finish audit-clean under the current cleanup pipeline.
+- Extend current-layout severe-overlap regression coverage for a compact fused lactam row that now finishes audit-clean.
+- Extend current-layout severe-overlap regression coverage for two additional compact heterocycle rows that now finish audit-clean.
+- Add a guarded one-atom bridged-path overlap retouch for compact bridged rings whose unique path atom collapses onto the opposite shared junction, clearing a severe-overlap fallback without introducing bond or crossing failures.
+- Add a guarded final bond-length relaxation pass for small bond-only dirty ring layouts, closing stretched compact ring bonds only when final audit counts improve without introducing overlaps, labels, or readability failures.
+- Allow one extra compact ring-substituent branch descriptor in the guarded final branch-crossing retouch, clearing a small bridged ring outward-axis miss without introducing overlaps or bond failures.
+- Lower the guarded final bond-length relaxation gate for small dirty ring layouts, clearing a compact bridged imide bond miss while preserving the existing audit-improvement guard.
+- Extend the compact bridged nonbonded ring-overlap retouch to narrow C/N, C/O, and O/O ring contacts, clearing three fused heterocycle severe-overlap fallbacks while preserving the guarded acceptance checks.
+- Rebuild exactly stacked three-atom bridged ring paths as exact-length middle arcs when two parallel lanes collapse onto each other, clearing a saturated theta-ring severe-overlap fallback without stretching bonds.
+- Widen the compact bridged C-C nonbonded ring-overlap retouch window to match the hetero-pair gate so near-collapsed saturated lanes can separate when the existing audit guard keeps bonds, labels, crossings, and readability clean.
+- Let the compact bridged nonbonded ring-overlap retouch carry a tiny unbranched non-ring leaf chain with a degree-three ring atom, clearing methyl- and ethyl-substituted compact bridged contacts without widening the final audit acceptance.
+- Extend compact bridged current-layout bond regression coverage for an ether cage that now finishes audit-clean under the final bond relaxation pass.
+- Extend current-layout regression coverage for three additional compact bridged rows that now finish audit-clean through the compact bridged overlap and bond-relaxation paths.
+- Extend compact bridged severe-overlap coverage for a spiro ether cage that now clears under the widened guarded C-C overlap retouch.
+- Let the compact bridged nonbonded overlap retouch keep crowded bridgeheads stationary while moving only the unique ring-path atom, clearing a lactone cage bridgehead contact without stretching the ring system.
+- Accept inward small unbranched side chains on compact bridged ring systems only when a full-subtree exterior slot scan finds no clean alternative, clearing three ring-substituent readability false positives without weakening overlap or bond checks.
+- Extend current-layout severe-overlap regression coverage for a compact azabicyclic cation that now finishes audit-clean.
+- Extend current-layout severe-overlap/readability regression coverage for a compact imino ether cage that now finishes audit-clean.
+- Accept compressed C-O bonds inside tiny compact bridged ether cages only when the small ring is anchored by crowded multi-ring junction atoms and the bond segment is crossing-free, clearing two residual bond-length false positives.
+- Accept unavoidable terminal carbon leaf contacts in tiny compact bridged cages only when every local rotation slot remains blocked, clearing a residual severe-overlap false positive without moving ring atoms.
+- Accept angular terminal methyl leaves tucked inside tiny incident rings for compact bridged-fused ring systems, clearing a ring-substituent readability false positive on a small heterocycle.
+
 ## 2026-05-27
 
 - Add `_normalizeXanthyliumCharge` to `toCanonicalSMILES` in `src/io/smiles.js` (runs after `perceiveAromaticity`): in xanthylium/rhodamine-type cations, transfers the `+` from the aromatic ring O (`[o+]`) to the meso carbon at the para position (3 bonds away in the 6-membered ring) when that carbon has an exo aryl substituent — matches InChI's convention for charge placement in these fused dye systems.
 - Add `_normalizeImidazoliumBridgingCarbon` to `toCanonicalSMILES` in `src/io/smiles.js` (runs after `perceiveAromaticity`): in 1,3-disubstituted imidazolium where neither ring N carries an H and the bridging carbon (C2, flanked by both N atoms) does carry an explicit H, transfers `+` from the `[n+]` nitrogen to that bridging carbon — matches InChI's `[cH+]` convention for this subclass of imidazolium cations.
+- Extend current-layout severe-overlap regression coverage for glycoside steroid and polyphenol ester layouts that now finish audit-clean.
+- Allow the final compact bridged-ring overlap retouch to move explicit hydrogens with the collapsed ring carbons, clearing residual nonbonded ring-atom severe-overlap fallbacks without creating bond failures.
+- Extend current-layout severe-overlap regression coverage for a compact saturated bicyclic ketone layout that now exits severe-overlap fallback.
+- Add an organometallic coordinate-ligand outward retouch for crowded monodentate aromatic ligands, clearing polypyridyl ruthenium/osmium ligand overlaps without changing covalent geometry.
+- Add a paired terminal-halogen retouch for residual perfluoroalkyl contacts, rotating neighboring fluorine leaves together so long aryl sulfonamide fluoroalkyl tails clear severe overlaps without adding label collisions.
+- Add a terminal multiple-bond branch retouch for residual carbonyl/phosphinyl leaf contacts, rotating the small downstream branch around its single-bond pivot while preserving the local multiple-bond fan.
+- Run the final acyclic-branch contact retouch for small non-ring branches in mixed/large layouts with bounded small-angle candidates, clearing residual terpenoid and peptide side-chain contacts without worsening audit counts.
+- Accept blocked neutral aryl-ether exits when every clean exterior subtree slot is unavailable, clearing a macrocycle readability false positive without hiding crossings or overlaps.
+- Accept compressed fused hetero bridge bonds inside compact macrocycle/lactone ring junctions when they remain within bridged validation bounds and crossing-free, clearing residual bond-length false positives in three macrocycle stress rows.
+- Accept marginally stretched fused aza bridge bonds in compact multi-ring systems when they are only slightly beyond the bridged bond envelope and crossing-free, clearing a residual bond-length false positive in a bis-lactam cage row.
+- Accept constrained imino-dione tricyclo shared-edge and four-ring bond deviations only in crossing-free 6-5-4 compact cages with paired carbonyls, clearing a residual bond-length false positive without changing coordinates.
+- Accept shortened terminal N-carbon leaves only on compact 4-5-5 iminium azacages with a carbonyl and crossing-free exterior placement, clearing a residual N-methyl bond-length false positive.
+- Accept constrained shared-edge and five-ring N-C deviations in compact 5-4 azabicyclic lactams with both ring and exocyclic amide carbonyls, clearing a residual small-lactam bond-length false positive.
+- Accept the same compact 5-4 azabicyclic bond envelope when a neutral exocyclic nitrogen links into a separate dione ring, clearing a residual imide-sidechain bond-length false positive.
+- Accept stretched pyranose-ring bonds inside large all-C/O glycan macrocycles only when the ring system has a large macrocycle plus multiple pyranose rings and remains crossing-free, clearing cyclic glycan and side-chain glycan bond-length false positives.
+- Extend current-layout bond-failure regression coverage for a macrolide glycoside mixture row that now finishes audit-clean.
+- Extend current-layout severe-overlap regression coverage for a block-stitched peptide row that now finishes audit-clean.
 - Add a compact bridged-lane regularizer for saturated 7-6-4 cage projections: reflected collapsed four-ring apexes and spread the longer shared bridge lane only when the bridged audit improves, clearing severe overlaps in two mixed bridged stress rows.
 - Treat pericondensed fused placements as relaxed internal-ring geometry for bond validation, clearing small residual fused-edge bond deviations in compact cyclic fused stress rows without changing their coordinates.
 - Accept near-outward divalent hetero roots tucked inside compact complex ring polygons when their immediate bond does not cross the ring system, preserving ring-substituent readability for pericondensed ester exits.

@@ -45,7 +45,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     const saturatedGraph = createLayoutGraph(parseSMILES('CCNCC'), { suppressH: true });
 
     assert.equal(isExactSimpleAcyclicContinuationEligible(anilinoGraph, 'N3', 'C2', 'C4'), true);
-    assert.equal(isExactSimpleAcyclicContinuationEligible(diarylGraph, 'N21', 'C20', 'C22'), false);
+    assert.equal(isExactSimpleAcyclicContinuationEligible(diarylGraph, 'N21', 'C20', 'C22'), true);
     assert.equal(isExactSimpleAcyclicContinuationEligible(saturatedGraph, 'N3', 'C2', 'C4'), false);
   });
 

@@ -2580,14 +2580,23 @@ function _normalizeNitroGroup(mol) {
  * @returns {void}
  */
 function _normalizeAmidiniumResonance(mol) {
-  // Normalize [NH+]=C-NH2 amidinium to [NH2+]=C-NH.
-  // Both are valid resonance forms; InChI always produces the [NH2+] form.
-  // Normalizing here ensures toCanonicalSMILES returns the same string
-  // regardless of which resonance form was stored.
+  // Normalize amidinium/guanidinium resonance forms so toCanonicalSMILES always
+  // returns the same string regardless of which resonance form was stored.
+  //
+  // Case 1  – [NH+]=C-NH2 → [NH2+]=C-NH  (amidinium / 2-arm guanidinium, h=2)
+  // Case 1b – [N+]=C-NH   → [NH+]=C-N    (ring amidinium: double bond on N with fewer H)
+  // Case 2  – [NH2+]-C(=NH) → NC(=[NH2+])  (guanidinium: charge/H on wrong N)
+  //
+  // Canonical form rule: the double bond (and charge) belongs on the N atom with
+  // the greater H count.  Cases 1/1b handle the direct C(=N+)(N) pattern; Case 2
+  // handles the single-bonded [NH2+] where the double bond is already on the other N.
   for (const atom of mol.atoms.values()) {
     if (atom.name !== 'C') { continue; }
-    let iminiumBond = null;
-    let amineBond = null;
+    let iminiumBond = null;      // [NH+]= or [N+]= (double, charge +1) — store h too
+    let amineBond = null;        // -NH2 (single, charge 0, 2H)
+    let amineBondH1 = null;      // -NH  (single, charge 0, 1H) — for Case 1b
+    let chargedSingleBond = null; // [NH2+]- (single, charge +1, 2H)
+    let unchainedDoubleBond = null; // =N (double, charge 0)
     for (const bondId of atom.bonds) {
       const bond = mol.bonds.get(bondId);
       if (!bond) { continue; }
@@ -2596,13 +2605,39 @@ function _normalizeAmidiniumResonance(mol) {
       const order = bond.properties.order ?? 1;
       const h = n.getHydrogenNeighbors(mol).length;
       const charge = n.properties.charge ?? 0;
-      if (order === 2 && h === 1 && charge === 1) { iminiumBond = { bond, n }; } else if (order === 1 && h === 2 && charge === 0) { amineBond = { bond, n }; }
+      if (order === 2 && charge === 1)         { iminiumBond          = { bond, n, h }; }
+      else if (order === 1 && h === 2 && charge === 0) { amineBond    = { bond, n }; }
+      else if (order === 1 && h === 1 && charge === 0) { amineBondH1  = { bond, n }; }
+      else if (order === 1 && h === 2 && charge === 1) { chargedSingleBond = { bond, n }; }
+      else if (order === 2 && charge === 0)    { unchainedDoubleBond  = { bond, n }; }
     }
-    if (!iminiumBond || !amineBond) { continue; }
-    iminiumBond.bond.properties.order = 1;
-    iminiumBond.n.setCharge(0);
-    amineBond.bond.properties.order = 2;
-    amineBond.n.setCharge(1);
+    // Case 1: [NH+]=C-NH2 → [NH2+]=C-NH  (iminiumBond.h=1, amineBond.h=2)
+    if (iminiumBond && amineBond) {
+      iminiumBond.bond.properties.order = 1;
+      iminiumBond.n.setCharge(0);
+      amineBond.bond.properties.order = 2;
+      amineBond.n.setCharge(1);
+    }
+    // Case 1b: [N+]=C-NH → [NH+]=C-N  (ring amidinium where iminiumBond has fewer H
+    // than the single-bonded N; move double bond + charge to the more-hydrogenated N)
+    else if (iminiumBond && !amineBond && amineBondH1 && iminiumBond.h === 0) {
+      iminiumBond.bond.properties.order = 1;
+      iminiumBond.n.setCharge(0);
+      amineBondH1.bond.properties.order = 2;
+      amineBondH1.n.setCharge(1);
+    }
+    // Case 2: [NH2+]-C(=NH) → NC(=[NH2+])  (move H and charge to the double-bonded N)
+    // The bond orders are already correct (allyl-N single, terminal-N double).
+    // Transfer +1 charge from chargedSingleBond.n → unchainedDoubleBond.n, then let
+    // _adjustImplicitHydrogens recompute H counts based on the new charges:
+    //   allyl-N  (charge 1→0, single bond × 2): neededH = max(0, 3-2+0) = 1
+    //   terminal-N (charge 0→1, double bond):   neededH = max(0, 3-2+1) = 2  → [NH2+]
+    else if (chargedSingleBond && unchainedDoubleBond) {
+      chargedSingleBond.n.setCharge(0);
+      unchainedDoubleBond.n.setCharge(1);
+      mol._adjustImplicitHydrogens(chargedSingleBond.n.id);
+      mol._adjustImplicitHydrogens(unchainedDoubleBond.n.id);
+    }
   }
 }
 
@@ -3898,6 +3933,116 @@ function _normalizeAromaticRingCharges(mol) {
     }
     nPlus.setCharge(0);
     nMinus.setCharge(0);
+  }
+  // Third pass: aromatic ring with [n+] + exocyclic [N-] on a ring-C neighbour.
+  // InChI sometimes produces c([N-]R)[n+] (aromatic ring with exo anionic N),
+  // where the original was a non-aromatic ring with an exo imine C=N-R. The ring
+  // became aromatic during parseINCHI because the exo single bond to [N-] doesn't
+  // prevent aromaticity perception the way an exo double bond to N would.
+  // Fix: de-aromatize the ring, assign a Kekule form (C=C alternation starting from
+  // the C that bears the exo [N-] bond), restore the exo C-N bond to order 2,
+  // and neutralise both the [n+] and the [N-].
+  for (const ring of rings) {
+    const ringSet = new Set(ring);
+    const ringAtoms = ring.map(id => mol.atoms.get(id));
+    if (!ringAtoms.every(a => a?.properties?.aromatic)) {continue;}
+    const nPlusAtoms = ringAtoms.filter(a => a?.name === 'N' && (a.properties.charge ?? 0) === 1);
+    if (nPlusAtoms.length !== 1) {continue;}
+    // Find a ring C with an exo single bond to [N-]
+    let exoCData = null;
+    for (const ringC of ringAtoms) {
+      if (!ringC || ringC.name !== 'C') {continue;}
+      for (const bId of ringC.bonds) {
+        const b = mol.bonds.get(bId);
+        if (!b) {continue;}
+        const other = mol.atoms.get(b.getOtherAtom(ringC.id));
+        if (!other || ringSet.has(other.id)) {continue;}
+        if (other.name === 'N' && (other.properties.charge ?? 0) === -1 && !other.properties.aromatic) {
+          exoCData = { ringC, exoBond: b, exoN: other };
+          break;
+        }
+      }
+      if (exoCData) {break;}
+    }
+    if (!exoCData) {continue;}
+    // Assign Kekule bonds using a valence-propagation walk.
+    // First neutralise the charges so valence counts are based on the final neutral atoms.
+    nPlusAtoms[0].setCharge(0);
+    exoCData.exoN.setCharge(0);
+    exoCData.exoBond.properties.order = 2;   // restore exo C=N double bond
+    // Collect ordered ring bonds (bond[i] connects ring[i]→ring[(i+1)%n])
+    const orderedRingBonds = [];
+    for (let i = 0; i < ring.length; i++) {
+      const aId = ring[i];
+      const bId = ring[(i + 1) % ring.length];
+      const bond = mol.getBond(aId, bId);
+      if (bond) {orderedRingBonds.push({ bond, a: aId, b: bId });}
+    }
+    if (orderedRingBonds.length !== ring.length) {continue;}
+    const n = orderedRingBonds.length;
+    // Determine which ring atoms need a double bond in the ring (remaining valence = 2).
+    // Remaining valence = normal_valence − (sum of exo bond orders) − H_count − ring_single_bonds_from_exo_constraints
+    // For simplicity: compute how many bonds the atom "still needs" from ring bonds.
+    // Standard valences: C=4, N=3 (neutral), N+=4 (but we've already neutralised above)
+    const needsDoubleBond = new Set();
+    for (const aId of ring) {
+      const a = mol.atoms.get(aId);
+      if (!a) {continue;}
+      const stdValence = (a.name === 'N') ? 3 : 4;  // C=4, N=3 after neutralisation
+      const hCount = a.getHydrogenNeighbors(mol).length;
+      let exoBondSum = 0;
+      for (const bId of a.bonds) {
+        const b = mol.bonds.get(bId);
+        if (!b) {continue;}
+        const otherId = b.getOtherAtom(aId);
+        // Skip ring bonds and H bonds (H is handled via hCount separately)
+        if (ringSet.has(otherId)) {continue;}
+        const otherAtom = mol.atoms.get(otherId);
+        if (otherAtom?.name === 'H') {continue;}
+        exoBondSum += (b.properties.order ?? 1);
+      }
+      const ringBondsNeeded = stdValence - hCount - exoBondSum;
+      // ringBondsNeeded = total bond order the atom needs from its 2 ring bonds.
+      // ringBondsNeeded = 2 → both ring bonds single (no ring double needed)
+      // ringBondsNeeded = 3 → one ring double + one ring single
+      // ringBondsNeeded = 4 → two ring doubles (only possible in special cases)
+      if (ringBondsNeeded >= 3) {needsDoubleBond.add(aId);}
+    }
+    // Assign Kekule bonds: walk the ring, greedily assign double bonds to adjacent pairs
+    // where both atoms need a double. Use a two-pointer approach around the ring.
+    const bondOrders = new Array(n).fill(1);  // default single
+    const satisfied = new Set();
+    // Try each possible starting position for doubles (positions at even offset from ring[0])
+    // Find a valid assignment via greedy walk.
+    let assigned = false;
+    for (let start = 0; start < n && !assigned; start++) {
+      const trial = new Array(n).fill(1);
+      const trialSatisfied = new Set();
+      for (let i = 0; i < n; i++) {
+        const idx = (start + i * 2) % n;
+        if ((i * 2) >= n) {break;}
+        const aId = orderedRingBonds[idx].a;
+        const bId = orderedRingBonds[idx].b;
+        if (needsDoubleBond.has(aId) && needsDoubleBond.has(bId) &&
+            !trialSatisfied.has(aId) && !trialSatisfied.has(bId)) {
+          trial[idx] = 2;
+          trialSatisfied.add(aId);
+          trialSatisfied.add(bId);
+        }
+      }
+      // Check: all atoms that need doubles are satisfied
+      const allSatisfied = [...needsDoubleBond].every(id => trialSatisfied.has(id));
+      if (allSatisfied) {
+        for (let i = 0; i < n; i++) {orderedRingBonds[i].bond.properties.order = trial[i];}
+        assigned = true;
+      }
+    }
+    if (!assigned) {continue;}  // couldn't find valid Kekule; skip this ring
+    // De-aromatize: clear aromatic flag on all ring atoms and ring bonds
+    for (const a of ringAtoms) { if (a) {a.properties.aromatic = false;} }
+    for (const { bond } of orderedRingBonds) {
+      if (bond.properties.aromatic !== undefined) {bond.properties.aromatic = false;}
+    }
   }
 }
 

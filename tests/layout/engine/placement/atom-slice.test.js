@@ -27,7 +27,7 @@ describe('layout/engine/placement/atom-slice', () => {
     assert.deepEqual(adjacency.get('c1'), ['n1']);
   });
 
-  it('uses fused ring atoms, not visible hydrogens, when gating compact cage rescue', () => {
+  it('uses fused ring atoms, not visible hydrogens, when gating compact cage placement', () => {
     const graph = createLayoutGraph(parseSMILES('C1CC2=C3C1CN1CCC4C5C4C1C3C5C2'), {
       suppressH: true
     });
@@ -38,7 +38,7 @@ describe('layout/engine/placement/atom-slice', () => {
     });
 
     assert.equal(result.family, 'fused');
-    assert.equal(result.placementMode, 'kamada-kawai-cage');
+    assert.equal(result.placementMode, 'pericondensed');
     assert.equal(audit.ok, true);
     assert.equal(audit.bondLengthFailureCount, 0);
     assert.equal(audit.severeOverlapCount, 0);

@@ -261,6 +261,39 @@ function hasFusedAdjacencyCycle(rings, ringAdj) {
 }
 
 /**
+ * Returns whether the fused-only adjacency graph reaches every ring.
+ * Mixed bridged/fused slices can have a connected ring system whose fused-edge
+ * subgraph is disconnected; polygon growth across only fused edges would then
+ * leave bridged-connected rings to branch placement and stretch ring closures.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, number[]>} ringAdj - Fused-only ring adjacency map.
+ * @returns {boolean} True when every ring is reachable through fused edges.
+ */
+function isConnectedFusedAdjacency(rings, ringAdj) {
+  if (rings.length <= 1) {
+    return true;
+  }
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const firstRingId = rings[0]?.id;
+  if (firstRingId == null) {
+    return true;
+  }
+  const visited = new Set([firstRingId]);
+  const stack = [firstRingId];
+  while (stack.length > 0) {
+    const ringId = stack.pop();
+    for (const neighborRingId of ringAdj.get(ringId) ?? []) {
+      if (!ringIds.has(neighborRingId) || visited.has(neighborRingId)) {
+        continue;
+      }
+      visited.add(neighborRingId);
+      stack.push(neighborRingId);
+    }
+  }
+  return visited.size === ringIds.size;
+}
+
+/**
  * Returns the ideal center-to-center distance for two fused rings that share an edge.
  * @param {number} firstRingSize - First ring size.
  * @param {number} secondRingSize - Second ring size.
@@ -800,6 +833,12 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
       ringCenters: rebuildRingCenters(rings, orientedCoords),
       placementMode: 'template'
     };
+  }
+  if (!isConnectedFusedAdjacency(rings, ringAdj) && options.layoutGraph) {
+    const cageKkResult = layoutFusedCageKamadaKawai(rings, bondLength, options);
+    if (cageKkResult) {
+      return cageKkResult;
+    }
   }
   if (hasFusedAdjacencyCycle(rings, ringAdj)) {
     return layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength, options);

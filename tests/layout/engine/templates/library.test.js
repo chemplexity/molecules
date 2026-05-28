@@ -32,6 +32,7 @@ describe('layout/engine/templates/library', () => {
       'aminonitrile-acetal-bridged-core',
       'cyano-formyl-acetal-bridged-core',
       'aminonitrile-oxabicyclobutane-core',
+      'alkynyl-dicyano-oxabicyclobutane-core',
       'alkyl-oxabicyclobutane-core',
       'ammonium-cyanomethyl-oxatricyclo-core',
       'amino-pyrimidine-cyclobutane-core',

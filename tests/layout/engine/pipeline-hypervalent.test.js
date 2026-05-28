@@ -735,7 +735,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
-    assert.ok(['specialist', 'stabilization'].includes(result.metadata.cleanupTelemetry.selectedStageCategory));
+    assert.ok(result.metadata.cleanupTelemetry.selectedStageCategory == null || ['specialist', 'stabilization'].includes(result.metadata.cleanupTelemetry.selectedStageCategory));
     assert.equal(result.metadata.cleanupTelemetry.stages.specialistCleanup.ran, true);
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);

@@ -3937,7 +3937,7 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
-  it('stretches blocked bridgehead terminal methyl leaves to keep ammonium fans readable', () => {
+  it('keeps blocked bridgehead terminal methyl leaves readable without stretching ammonium fans', () => {
     const smiles = 'Cc1ccc(F)cc1C(O)(C[C@H]2C[C@H]3CC[C@@H](C2)[N+]3(C)C)c4cc(F)ccc4C';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -3953,7 +3953,7 @@ describe('layout/engine/families/mixed', () => {
       n22Separations[0] >= (7 * Math.PI) / 36 - 1e-6,
       `expected the bridgehead ammonium methyl fan to keep at least 35 degrees, got ${((n22Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
     );
-    assert.ok(Math.max(...methylBondLengths) > result.layoutGraph.options.bondLength * 1.1, 'expected one blocked terminal methyl bond to stretch out of the bridge core');
+    assert.ok(Math.max(...methylBondLengths) <= result.layoutGraph.options.bondLength * 1.01, 'expected terminal methyl bonds to remain close to the target length');
     assert.ok(
       distance(result.coords.get('C23'), result.coords.get('C18')) > result.layoutGraph.options.bondLength * 0.55,
       'expected the stretched terminal methyl carbon to keep readable clearance from the bridge atom'
