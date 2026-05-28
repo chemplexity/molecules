@@ -2,7 +2,7 @@
 
 import { auditLayout } from '../audit/audit.js';
 import { detectCollapsedMacrocycles, measureOverlapState } from '../audit/invariants.js';
-import { ORGANOMETALLIC_RESCUE_LIMITS, PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS } from '../constants.js';
+import { ORGANOMETALLIC_RESCUE_LIMITS, PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS, RING_SYSTEM_RESCUE_LIMITS } from '../constants.js';
 import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { layoutLargeMoleculeFamily } from '../families/large-molecule.js';
 import { layoutOrganometallicFamily } from '../families/organometallic.js';
@@ -459,7 +459,7 @@ function isOrganometallicPreferredPlacement(layoutGraph, candidateScore, incumbe
   return candidateScore.placement.family === 'organometallic' && incumbentScore.placement.family !== 'organometallic';
 }
 
-function isMetalMixedRingRescuePreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
+function isMixedRingRescuePreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
   if (!candidateScore) {
     return false;
   }
@@ -500,8 +500,87 @@ function shouldTryOrganometallicMixedRingRescue(layoutGraph, component, familyPl
   );
 }
 
+function shouldTryCompactOrganometallicRingRescue(layoutGraph, component, familyPlacement) {
+  if (familyPlacement?.supported || familyPlacement?.family !== 'organometallic') {
+    return false;
+  }
+  const metalAtomIds = componentMetalAtomIds(layoutGraph, component);
+  if (metalAtomIds.size === 0) {
+    return false;
+  }
+  const atomCount = component.heavyAtomCount ?? component.atomIds.length;
+  if (atomCount > ORGANOMETALLIC_RESCUE_LIMITS.compactMetalRingSystemRescueMaxAtomCount) {
+    return false;
+  }
+  if (componentRingCount(layoutGraph, component) < ORGANOMETALLIC_RESCUE_LIMITS.compactMetalRingSystemRescueMinRingCount) {
+    return false;
+  }
+  return (
+    componentHasRingConnectionKind(layoutGraph, component, 'fused') ||
+    componentHasRingConnectionKind(layoutGraph, component, 'bridged') ||
+    componentHasRingConnectionKind(layoutGraph, component, 'spiro')
+  );
+}
+
+function shouldTryCompactMixedRingRescue(layoutGraph, component, familyPlacement) {
+  if (!familyPlacement?.supported || familyPlacement.family !== 'mixed') {
+    return false;
+  }
+  if (componentContainsMetal(layoutGraph, component)) {
+    return false;
+  }
+  const atomCount = component.heavyAtomCount ?? component.atomIds.length;
+  if (atomCount > RING_SYSTEM_RESCUE_LIMITS.compactBridgedAtomCount) {
+    return false;
+  }
+  if (componentRingCount(layoutGraph, component) > RING_SYSTEM_RESCUE_LIMITS.compactBridgedRingCount) {
+    return false;
+  }
+  return (
+    componentHasRingConnectionKind(layoutGraph, component, 'fused') ||
+    componentHasRingConnectionKind(layoutGraph, component, 'bridged') ||
+    componentHasRingConnectionKind(layoutGraph, component, 'spiro')
+  );
+}
+
+function rescueCompactMixedRingPlacement(layoutGraph, component, familyPlacement, macrocycleRings = []) {
+  if (!shouldTryCompactMixedRingRescue(layoutGraph, component, familyPlacement)) {
+    return familyPlacement;
+  }
+
+  let bestPlacement = familyPlacement;
+  let bestScore = placementAuditScore(layoutGraph, familyPlacement);
+  ensurePlacementAudit(layoutGraph, bestScore);
+  if (!bestScore?.audit || bestScore.audit.ok === true) {
+    return familyPlacement;
+  }
+
+  const candidateFamilies = [
+    ...(componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'spiro') ? ['bridged'] : []),
+    ...(componentHasRingConnectionKind(layoutGraph, component, 'fused') ? ['fused'] : [])
+  ];
+
+  for (const forcedFamily of candidateFamilies) {
+    const rescuePlacement = withProtectedCleanupRigidSubtrees(
+      layoutGraph,
+      component,
+      layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength, { forceFamily: forcedFamily }),
+      macrocycleRings
+    );
+    const rescueScore = placementAuditScore(layoutGraph, rescuePlacement);
+    if (isMixedRingRescuePreferredPlacement(layoutGraph, rescueScore, bestScore)) {
+      bestPlacement = rescuePlacement;
+      bestScore = rescueScore;
+    }
+  }
+
+  return bestPlacement;
+}
+
 function rescueMixedMetalRingPlacement(layoutGraph, component, familyPlacement, macrocycleRings = []) {
-  if (!shouldTryOrganometallicMixedRingRescue(layoutGraph, component, familyPlacement)) {
+  const shouldTryLargeMixedRingRescue = shouldTryOrganometallicMixedRingRescue(layoutGraph, component, familyPlacement);
+  const shouldTryCompactRingRescue = shouldTryCompactOrganometallicRingRescue(layoutGraph, component, familyPlacement);
+  if (!shouldTryLargeMixedRingRescue && !shouldTryCompactRingRescue) {
     return familyPlacement;
   }
 
@@ -520,7 +599,7 @@ function rescueMixedMetalRingPlacement(layoutGraph, component, familyPlacement, 
       macrocycleRings
     );
     const rescueScore = placementAuditScore(layoutGraph, rescuePlacement);
-    if (isMetalMixedRingRescuePreferredPlacement(layoutGraph, rescueScore, bestScore)) {
+    if (isMixedRingRescuePreferredPlacement(layoutGraph, rescueScore, bestScore)) {
       bestPlacement = rescuePlacement;
       bestScore = rescueScore;
     }
@@ -598,6 +677,7 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
 
   let familyPlacement = withProtectedCleanupRigidSubtrees(layoutGraph, component, layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength), macrocycleRings);
   if (!componentContainsMetal(layoutGraph, component)) {
+    familyPlacement = rescueCompactMixedRingPlacement(layoutGraph, component, familyPlacement, macrocycleRings);
     return familyPlacement;
   }
 

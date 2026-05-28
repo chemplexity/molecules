@@ -36,7 +36,7 @@ function templateValidationClass(templateId) {
  * @returns {'planar'|'bridged'|'haptic'} Validation class for the placed bonds.
  */
 export function resolvePlacementValidationClass(family, placementMode, templateId = null) {
-  if (placementMode === 'projected-kamada-kawai' || placementMode === 'kamada-kawai-cage') {
+  if (placementMode === 'projected-kamada-kawai' || placementMode === 'kamada-kawai-cage' || placementMode === 'pericondensed') {
     return 'bridged';
   }
   if (placementMode === 'constructed-bridged') {

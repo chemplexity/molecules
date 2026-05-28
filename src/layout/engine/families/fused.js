@@ -11,6 +11,8 @@ import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
 
 const FUSED_RESCUE_LIMITS = Object.freeze({
+  compactTricyclicMaxAtomCount: 9,
+  compactTetracyclicMaxAtomCount: 16,
   compactCageMaxAtomCount: 20,
   compactCageMinRingCount: 6,
   largeCageMinRingCount: 10,
@@ -36,6 +38,8 @@ export function shouldTryBridgedRescueForFusedSystem(atomCount, ringCount, templ
     return false;
   }
   return (
+    (atomCount <= FUSED_RESCUE_LIMITS.compactTricyclicMaxAtomCount && ringCount >= 3) ||
+    (atomCount <= FUSED_RESCUE_LIMITS.compactTetracyclicMaxAtomCount && ringCount >= 4) ||
     (atomCount <= FUSED_RESCUE_LIMITS.compactCageMaxAtomCount && ringCount >= FUSED_RESCUE_LIMITS.compactCageMinRingCount) ||
     ringCount >= FUSED_RESCUE_LIMITS.largeCageMinRingCount ||
     ringCount >= Math.ceil(atomCount / 2)
@@ -67,6 +71,13 @@ export function shouldShortCircuitToFusedCageKk(atomCount, ringCount, templateId
  */
 export function isBetterBridgedRescueForFusedSystem(candidateAudit, incumbentAudit) {
   if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (
+    incumbentAudit.bondLengthFailureCount === 0 &&
+    incumbentAudit.severeOverlapCount === 0 &&
+    candidateAudit.severeOverlapCount > 0
+  ) {
     return false;
   }
   if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount + FUSED_RESCUE_LIMITS.maxRescueOverlapPenalty) {

@@ -4,7 +4,7 @@ import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { cloneCoords } from '../geometry/transforms.js';
 import { auditLayout } from '../audit/audit.js';
 import { circumradiusForRegularPolygon } from '../geometry/polygon.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { orientBridgedSeed, projectBridgePaths } from './bridge-projection.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
@@ -15,6 +15,8 @@ import { collectCutSubtree } from '../cleanup/subtree-utils.js';
 
 const COMPACT_BRIDGED_KK_THRESHOLD = 0.02;
 const COMPACT_BRIDGED_NONBONDED_COLLAPSE_FACTOR = 0.8;
+const COLLAPSED_FOUR_MEMBERED_BRIDGE_APEX_FACTOR = 0.2;
+const COMPACT_SHARED_BRIDGE_LANE_SPREAD_FACTORS = Object.freeze([1.28, 1.3, 1.32, 1.34, 1.36, 1.38]);
 const STRAINED_COMPACT_BRIDGED_KK_THRESHOLD = 0.1;
 const STRAINED_COMPACT_BRIDGED_MAX_DEVIATION = 0.35;
 const BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR = 0.5;
@@ -569,6 +571,24 @@ function reflectPointAcrossLine(point, firstPosition, secondPosition) {
   return {
     x: projectedPoint.x * 2 - point.x,
     y: projectedPoint.y * 2 - point.y
+  };
+}
+
+function scalePointFromLine(point, firstPosition, secondPosition, factor) {
+  const edgeVector = sub(secondPosition, firstPosition);
+  const edgeLengthSquared = edgeVector.x ** 2 + edgeVector.y ** 2;
+  if (edgeLengthSquared <= 1e-12) {
+    return null;
+  }
+  const pointVector = sub(point, firstPosition);
+  const projectionScale = (pointVector.x * edgeVector.x + pointVector.y * edgeVector.y) / edgeLengthSquared;
+  const projectedPoint = {
+    x: firstPosition.x + edgeVector.x * projectionScale,
+    y: firstPosition.y + edgeVector.y * projectionScale
+  };
+  return {
+    x: projectedPoint.x + (point.x - projectedPoint.x) * factor,
+    y: projectedPoint.y + (point.y - projectedPoint.y) * factor
   };
 }
 
@@ -3567,6 +3587,18 @@ function compareBridgedProjectionAudits(candidateAudit, incumbentAudit) {
   if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
     return candidateAudit.bondLengthFailureCount - incumbentAudit.bondLengthFailureCount;
   }
+  const candidateCrossings = candidateAudit.visibleHeavyBondCrossingCount ?? 0;
+  const incumbentCrossings = incumbentAudit.visibleHeavyBondCrossingCount ?? 0;
+  if (candidateCrossings !== incumbentCrossings) {
+    return candidateCrossings - incumbentCrossings;
+  }
+  if (
+    candidateAudit.minSevereOverlapDistance != null &&
+    incumbentAudit.minSevereOverlapDistance != null &&
+    Math.abs(candidateAudit.minSevereOverlapDistance - incumbentAudit.minSevereOverlapDistance) > 1e-9
+  ) {
+    return incumbentAudit.minSevereOverlapDistance - candidateAudit.minSevereOverlapDistance;
+  }
   if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-9) {
     return candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation;
   }
@@ -3601,6 +3633,247 @@ function selectBridgedProjectionCoords(layoutGraph, atomIds, kkCoords, projected
   return hasCatastrophicBridgeProjectionCollapse(projectedAudit, bondLength) && compareBridgedProjectionAudits(baselineAudit, projectedAudit) < 0 ? baselineCoords : projectedCoords;
 }
 
+function heavyNeighborCount(layoutGraph, atomId) {
+  let count = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    const neighborId = bond.a === atomId ? bond.b : bond.a;
+    if (layoutGraph.atoms.get(neighborId)?.element !== 'H') {
+      count++;
+    }
+  }
+  return count;
+}
+
+function collapsedFourMemberedBridgeApexMovableAtomId(layoutGraph, firstAtomId, secondAtomId) {
+  const firstRingCount = layoutGraph.atomToRings.get(firstAtomId)?.length ?? 0;
+  const secondRingCount = layoutGraph.atomToRings.get(secondAtomId)?.length ?? 0;
+  if (firstRingCount !== secondRingCount) {
+    return firstRingCount < secondRingCount ? firstAtomId : secondAtomId;
+  }
+
+  const firstHeavyNeighborCount = heavyNeighborCount(layoutGraph, firstAtomId);
+  const secondHeavyNeighborCount = heavyNeighborCount(layoutGraph, secondAtomId);
+  if (firstHeavyNeighborCount !== secondHeavyNeighborCount) {
+    return firstHeavyNeighborCount < secondHeavyNeighborCount ? firstAtomId : secondAtomId;
+  }
+
+  return firstAtomId;
+}
+
+function shouldAcceptBridgedRegularizationCandidate(candidateAudit, incumbentAudit) {
+  if (!candidateAudit) {
+    return false;
+  }
+  if (!incumbentAudit) {
+    return true;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount) {
+    return true;
+  }
+  return compareBridgedProjectionAudits(candidateAudit, incumbentAudit) < 0;
+}
+
+function resolveCollapsedFourMemberedBridgeApexes(layoutGraph, rings, atomIds, coords, bondLength) {
+  if (rings.length < 3 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, bestCoords, bondLength);
+  const collapseThreshold = bondLength * COLLAPSED_FOUR_MEMBERED_BRIDGE_APEX_FACTOR;
+
+  for (const ring of rings) {
+    if (ring.aromatic || ring.atomIds.length !== 4) {
+      continue;
+    }
+    for (const [firstIndex, secondIndex] of [
+      [0, 2],
+      [1, 3]
+    ]) {
+      const firstAtomId = ring.atomIds[firstIndex];
+      const secondAtomId = ring.atomIds[secondIndex];
+      const firstPosition = bestCoords.get(firstAtomId);
+      const secondPosition = bestCoords.get(secondAtomId);
+      if (!firstPosition || !secondPosition || distance(firstPosition, secondPosition) > collapseThreshold) {
+        continue;
+      }
+
+      const movableAtomId = collapsedFourMemberedBridgeApexMovableAtomId(layoutGraph, firstAtomId, secondAtomId);
+      const movableIndex = ring.atomIds.indexOf(movableAtomId);
+      if (movableIndex < 0) {
+        continue;
+      }
+      const previousAtomId = ring.atomIds[(movableIndex - 1 + ring.atomIds.length) % ring.atomIds.length];
+      const nextAtomId = ring.atomIds[(movableIndex + 1) % ring.atomIds.length];
+      const movablePosition = bestCoords.get(movableAtomId);
+      const previousPosition = bestCoords.get(previousAtomId);
+      const nextPosition = bestCoords.get(nextAtomId);
+      if (!movablePosition || !previousPosition || !nextPosition) {
+        continue;
+      }
+
+      const reflectedPosition = reflectPointAcrossLine(movablePosition, previousPosition, nextPosition);
+      if (!reflectedPosition) {
+        continue;
+      }
+      const candidateCoords = cloneCoords(bestCoords);
+      candidateCoords.set(movableAtomId, reflectedPosition);
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      if (shouldAcceptBridgedRegularizationCandidate(candidateAudit, bestAudit)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
+function longestSharedRunInRing(ring, sharedAtomIdSet) {
+  const ringSize = ring.atomIds.length;
+  if (ringSize === 0 || ring.atomIds.every(atomId => sharedAtomIdSet.has(atomId))) {
+    return null;
+  }
+
+  let bestRun = null;
+  for (let index = 0; index < ringSize; index++) {
+    const atomId = ring.atomIds[index];
+    const previousAtomId = ring.atomIds[(index - 1 + ringSize) % ringSize];
+    if (!sharedAtomIdSet.has(atomId) || sharedAtomIdSet.has(previousAtomId)) {
+      continue;
+    }
+
+    let length = 0;
+    while (length < ringSize && sharedAtomIdSet.has(ring.atomIds[(index + length) % ringSize])) {
+      length++;
+    }
+    if (!bestRun || length > bestRun.length) {
+      bestRun = { startIndex: index, length };
+    }
+  }
+
+  return bestRun && bestRun.length >= 2 ? bestRun : null;
+}
+
+function sharedBridgeLaneDescriptor(ring, sharedAtomIdSet) {
+  const sharedRun = longestSharedRunInRing(ring, sharedAtomIdSet);
+  if (!sharedRun) {
+    return null;
+  }
+
+  const ringSize = ring.atomIds.length;
+  const firstEndpointAtomId = ring.atomIds[sharedRun.startIndex];
+  const secondEndpointAtomId = ring.atomIds[(sharedRun.startIndex + sharedRun.length - 1) % ringSize];
+  const laneAtomIds = [];
+  let index = (sharedRun.startIndex + sharedRun.length) % ringSize;
+  while (index !== sharedRun.startIndex) {
+    laneAtomIds.push(ring.atomIds[index]);
+    index = (index + 1) % ringSize;
+  }
+  if (laneAtomIds.some(atomId => sharedAtomIdSet.has(atomId))) {
+    return null;
+  }
+
+  return {
+    firstEndpointAtomId,
+    secondEndpointAtomId,
+    laneAtomIds
+  };
+}
+
+function sameEndpointPair(firstDescriptor, secondDescriptor) {
+  return (
+    (firstDescriptor.firstEndpointAtomId === secondDescriptor.firstEndpointAtomId && firstDescriptor.secondEndpointAtomId === secondDescriptor.secondEndpointAtomId) ||
+    (firstDescriptor.firstEndpointAtomId === secondDescriptor.secondEndpointAtomId && firstDescriptor.secondEndpointAtomId === secondDescriptor.firstEndpointAtomId)
+  );
+}
+
+function compactSharedBridgeLaneDescriptors(rings) {
+  const descriptors = [];
+  for (let firstIndex = 0; firstIndex < rings.length; firstIndex++) {
+    const firstRing = rings[firstIndex];
+    if (firstRing.aromatic) {
+      continue;
+    }
+    for (let secondIndex = firstIndex + 1; secondIndex < rings.length; secondIndex++) {
+      const secondRing = rings[secondIndex];
+      if (secondRing.aromatic) {
+        continue;
+      }
+
+      const sharedAtomIds = sharedRingAtomIds(firstRing, secondRing);
+      if (sharedAtomIds.length < 4) {
+        continue;
+      }
+      const sharedAtomIdSet = new Set(sharedAtomIds);
+      const firstDescriptor = sharedBridgeLaneDescriptor(firstRing, sharedAtomIdSet);
+      const secondDescriptor = sharedBridgeLaneDescriptor(secondRing, sharedAtomIdSet);
+      if (!firstDescriptor || !secondDescriptor || !sameEndpointPair(firstDescriptor, secondDescriptor)) {
+        continue;
+      }
+
+      const longerDescriptor = firstDescriptor.laneAtomIds.length >= secondDescriptor.laneAtomIds.length ? firstDescriptor : secondDescriptor;
+      if (longerDescriptor.laneAtomIds.length < 3) {
+        continue;
+      }
+      descriptors.push(longerDescriptor);
+    }
+  }
+  return descriptors;
+}
+
+function spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, coords, bondLength) {
+  if (rings.length < 3 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  const laneDescriptors = compactSharedBridgeLaneDescriptors(rings);
+  if (laneDescriptors.length === 0) {
+    return coords;
+  }
+
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, bestCoords, bondLength);
+  for (const descriptor of laneDescriptors) {
+    const firstEndpointPosition = bestCoords.get(descriptor.firstEndpointAtomId);
+    const secondEndpointPosition = bestCoords.get(descriptor.secondEndpointAtomId);
+    if (!firstEndpointPosition || !secondEndpointPosition) {
+      continue;
+    }
+
+    for (const spreadFactor of COMPACT_SHARED_BRIDGE_LANE_SPREAD_FACTORS) {
+      const candidateCoords = cloneCoords(bestCoords);
+      let complete = true;
+      for (const atomId of descriptor.laneAtomIds) {
+        const position = bestCoords.get(atomId);
+        const scaledPosition = position ? scalePointFromLine(position, firstEndpointPosition, secondEndpointPosition, spreadFactor) : null;
+        if (!scaledPosition) {
+          complete = false;
+          break;
+        }
+        candidateCoords.set(atomId, scaledPosition);
+      }
+      if (!complete) {
+        continue;
+      }
+
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      if (shouldAcceptBridgedRegularizationCandidate(candidateAudit, bestAudit)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        if (bestAudit?.ok === true) {
+          break;
+        }
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
 /**
  * Applies the bridged-family ring regularization stack to an existing ring
  * system placement. Mixed-family layouts can pick a hybrid fused/bridged seed
@@ -3626,6 +3899,8 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
   selectedCoords = regularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = resolveCollapsedFourMemberedBridgeApexes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   return selectedCoords;
 }
 

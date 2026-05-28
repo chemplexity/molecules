@@ -157,6 +157,26 @@ describe('layout/engine/families/organometallic', () => {
     }
   });
 
+  it('keeps bulky six-coordinate copper ligands separated with one-atom ligands on diagonal relief slots', () => {
+    const smilesCases = [
+      'O[Cu+](O)(N1C=CN=C1)(N1C=CN=C1)(N1C=CN=C1)N1C=CN=C1',
+      'O[Cu++](O)(N1C=CN=C1)(N1C=CN=C1)(N1C=CN=C1)N1C=CN=C1'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = generateCoords(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'organometallic');
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.ok, true);
+    }
+  });
+
   it('adds projected wedge and dash hints for safe trigonal-bipyramidal five-coordinate iron centers', () => {
     const graph = createLayoutGraph(makeProjectedTrigonalBipyramidalIronComplex(), { suppressH: true });
     const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
@@ -428,6 +448,26 @@ describe('layout/engine/families/organometallic', () => {
       if (result.coords.has('H50')) {
         assert.ok(Math.abs(bondAngleAt(result.coords, 'C18', 'C17', 'H50') - (2 * Math.PI) / 3) < 1e-6, `expected ${label} C17-C18-H50 to share the companion trigonal slot`);
       }
+    }
+  });
+
+  it('lets dirty cobalt-corrin final retouches clear residual label overlaps', () => {
+    const smilesCases = [
+      '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C)=C3)C=C(C(C)=C4)C',
+      '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C#N)=C3)C=C(C(C)=C4)C'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = generateCoords(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'organometallic');
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.ok(result.metadata.audit.severeOverlapCount <= 2);
     }
   });
 });

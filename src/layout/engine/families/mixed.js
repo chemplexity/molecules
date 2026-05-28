@@ -308,6 +308,7 @@ const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_LAYOUT_HEAVY_ATOMS = 140;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_LAYOUT_HEAVY_ATOMS = 700;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_FAILURES = 3;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS = 48;
+const RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_MOVED_HEAVY_ATOMS = 96;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_DESCRIPTOR_COUNT = 3;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_PAIR_DESCRIPTOR_COUNT = 2;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_TARGET_SLACK = Math.PI / 720;
@@ -2119,7 +2120,8 @@ function nearestRingSubstituentReadabilityTargetAngle(layoutGraph, coords, ancho
   return targetAngles.reduce((bestAngle, candidateAngle) => (angularDifference(candidateAngle, currentAngle) < angularDifference(bestAngle, currentAngle) ? candidateAngle : bestAngle));
 }
 
-function ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchorAtomId, childAtomId) {
+function ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchorAtomId, childAtomId, options = {}) {
+  const maxMovedHeavyAtoms = options.maxMovedHeavyAtoms ?? RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS;
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
@@ -2162,7 +2164,7 @@ function ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchor
   }
 
   const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId).filter(atomId => coords.has(atomId));
-  if (movedAtomIds.length === 0 || movedAtomIds.includes(anchorAtomId) || heavyAtomCountInIds(layoutGraph, movedAtomIds) > RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS) {
+  if (movedAtomIds.length === 0 || movedAtomIds.includes(anchorAtomId) || heavyAtomCountInIds(layoutGraph, movedAtomIds) > maxMovedHeavyAtoms) {
     return null;
   }
 
@@ -2182,11 +2184,12 @@ function ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchor
  * for hard-clean large layouts that only need a tiny final readability nudge.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @param {{maxLayoutHeavyAtoms?: number}} [options] - Descriptor collection limits.
+ * @param {{maxLayoutHeavyAtoms?: number, maxMovedHeavyAtoms?: number}} [options] - Descriptor collection limits.
  * @returns {Array<{anchorAtomId: string, rootAtomId: string, movedAtomIds: string[], currentAngle: number, targetAngle: number, outwardDelta: number, outwardDeviation: number}>} Candidate descriptors.
  */
 function ringSubstituentBoundedReadabilityDescriptors(layoutGraph, coords, options = {}) {
   const maxLayoutHeavyAtoms = options.maxLayoutHeavyAtoms ?? RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_LAYOUT_HEAVY_ATOMS;
+  const maxMovedHeavyAtoms = options.maxMovedHeavyAtoms ?? RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS;
   if (heavyAtomCountInIds(layoutGraph, [...coords.keys()]) > maxLayoutHeavyAtoms) {
     return [];
   }
@@ -2200,7 +2203,7 @@ function ringSubstituentBoundedReadabilityDescriptors(layoutGraph, coords, optio
         continue;
       }
       seenPairs.add(pairKey);
-      const descriptor = ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchorAtomId, childAtomId);
+      const descriptor = ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchorAtomId, childAtomId, { maxMovedHeavyAtoms });
       if (descriptor) {
         descriptors.push(descriptor);
       }
@@ -2356,7 +2359,11 @@ export function resolveRingSubstituentBoundedReadability(layoutGraph, coords, bo
     !hasHardAuditFailure && (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) <= RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_FAILURES
       ? RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_LAYOUT_HEAVY_ATOMS
       : RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_LAYOUT_HEAVY_ATOMS;
-  const descriptors = ringSubstituentBoundedReadabilityDescriptors(layoutGraph, coords, { maxLayoutHeavyAtoms });
+  const maxMovedHeavyAtoms =
+    !hasHardAuditFailure && (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) <= RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_FAILURES
+      ? RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_MOVED_HEAVY_ATOMS
+      : RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_MOVED_HEAVY_ATOMS;
+  const descriptors = ringSubstituentBoundedReadabilityDescriptors(layoutGraph, coords, { maxLayoutHeavyAtoms, maxMovedHeavyAtoms });
   if (descriptors.length === 0 || descriptors.length > RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_DESCRIPTOR_COUNT) {
     return { changed: false };
   }
@@ -20301,8 +20308,10 @@ export function resolveMixedAcylBranchSevereContacts(layoutGraph, coords, bondVa
       }
       if (
         allowRelaxedAcylFan &&
-        (bestCandidate == null || (bestCandidate.audit.visibleHeavyBondCrossingCount ?? 0) >= (baseAudit.visibleHeavyBondCrossingCount ?? 0)) &&
-        (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 0
+        (bestCandidate == null ||
+          (bestCandidate.audit.visibleHeavyBondCrossingCount ?? 0) >= (baseAudit.visibleHeavyBondCrossingCount ?? 0) ||
+          (bestCandidate.audit.severeOverlapCount ?? 0) >= (baseAudit.severeOverlapCount ?? 0)) &&
+        ((baseAudit.visibleHeavyBondCrossingCount ?? 0) > 0 || (baseAudit.severeOverlapCount ?? 0) > 0)
       ) {
         for (const branchAngle of mixedAcylBranchRelaxedContactBranchAngles(coords, descriptor)) {
           for (const orientation of [1, -1]) {

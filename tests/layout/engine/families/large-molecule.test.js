@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
+import { generateCoords } from '../../../../src/layout/engine/api.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { layoutLargeMoleculeFamily } from '../../../../src/layout/engine/families/large-molecule.js';
@@ -187,5 +188,23 @@ describe('layout/engine/families/large-molecule', () => {
     assert.equal(denseAudit.bondLengthFailureCount, 0);
     assert.ok(denseAudit.severeOverlapCount < coarseAudit.severeOverlapCount);
     assert.ok(denseAudit.visibleHeavyBondCrossingCount <= coarseAudit.visibleHeavyBondCrossingCount);
+  });
+
+  it('uses guarded final axis rotation to clear residual acetyl glycan label overlaps', () => {
+    const result = generateCoords(
+      parseSMILES(
+        'CCCCCCCCC[C@H](CCCCCCCC(=O)C)O[C@@H]1O[C@H](COC(=O)C)[C@@H](OC(=O)C)[C@H](OC(=O)C)[C@H]1O[C@@H]2O[C@H](CO[C@@H]3O[C@H](C)[C@H](OC(=O)C)[C@H](OC(=O)C)[C@@H]3OC(=O)C)[C@@H](OCCC)[C@H](OC(=O)CCC)[C@H]2O[C@@H]4O[C@@H](C)[C@H](OC(=O)C)[C@@H](OC(=O)C)C4OC(=O)C'
+      ),
+      {
+        suppressH: true,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
   });
 });

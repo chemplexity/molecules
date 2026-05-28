@@ -185,6 +185,8 @@ export const ORGANOMETALLIC_RESCUE_LIMITS = Object.freeze({
   octahedralFrameworkRadiusFactor: 0.8,
   octahedralBridgeOffsetFactor: 2.3,
   octahedralDuplicateBridgeSpreadFactor: 0.8,
+  compactMetalRingSystemRescueMaxAtomCount: 32,
+  compactMetalRingSystemRescueMinRingCount: 2,
   mixedRingSystemRescueMinAtomCount: 40,
   mixedRingSystemRescueMinRingCount: 8,
   polyoxoMinMetalCount: 4,

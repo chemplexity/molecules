@@ -78,6 +78,32 @@ function arrangementSpecs(layoutGraph, metalAtomId, records) {
   return organometallicArrangementSpecs(geometryKind, records.length);
 }
 
+function visibleHeavyRecordAtomCount(layoutGraph, record) {
+  return record.atomIds.reduce((count, atomId) => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && atom.element !== 'H' && atom.visible !== false ? count + 1 : count;
+  }, 0);
+}
+
+function arrangementSpecsForRecords(layoutGraph, metalAtomId, records) {
+  if (
+    records.length === 6 &&
+    records.every(record => record.anchorAtomIds.length === 1 && record.anchorMetalIds.length === 1) &&
+    records.filter(record => visibleHeavyRecordAtomCount(layoutGraph, record) > 1).length === 4 &&
+    records.filter(record => visibleHeavyRecordAtomCount(layoutGraph, record) === 1).length === 2
+  ) {
+    return [
+      { angle: Math.PI / 2, displayType: null },
+      { angle: 0, displayType: null },
+      { angle: -Math.PI / 2, displayType: null },
+      { angle: Math.PI, displayType: null },
+      { angle: Math.PI / 4, displayType: null },
+      { angle: (-3 * Math.PI) / 4, displayType: null }
+    ];
+  }
+  return arrangementSpecs(layoutGraph, metalAtomId, records);
+}
+
 /**
  * Finds the bond that joins a metal center to a ligand anchor atom.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1217,7 +1243,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
   for (const metalAtomId of metalAtomIds) {
     const provisionalMetalPosition = metalCoords.get(metalAtomId);
     const records = groupedByMetal.get(metalAtomId) ?? [];
-    const specs = arrangementSpecs(layoutGraph, metalAtomId, records);
+    const specs = arrangementSpecsForRecords(layoutGraph, metalAtomId, records);
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
       const ligandLayout = layoutLigandFragment(layoutGraph, record, bondLength);

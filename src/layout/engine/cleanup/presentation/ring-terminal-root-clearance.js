@@ -278,6 +278,49 @@ function escapeCurrentRootSubtreeCrossing(layoutGraph, coords, descriptor, baseA
   return best?.coords ?? null;
 }
 
+function escapeCurrentRootSubtreeInwardReadability(layoutGraph, coords, descriptor, baseAudit, options) {
+  if ((baseAudit.ringSubstituentReadabilityFailureCount ?? 0) === 0 && (baseAudit.inwardRingSubstituentCount ?? 0) === 0) {
+    return null;
+  }
+
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const basePenalty = auditPenalty(baseAudit);
+  let best = null;
+  for (const targetAngle of ROOT_SUBTREE_CROSSING_ESCAPE_ANGLES) {
+    const candidateCoords = translateRootSubtreeToAngle(coords, descriptor, targetAngle);
+    if (!candidateCoords) {
+      continue;
+    }
+    const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: options.bondValidationClasses
+    });
+    if (
+      candidateAudit.ok !== true ||
+      (candidateAudit.bondLengthFailureCount ?? 0) > (baseAudit.bondLengthFailureCount ?? 0) ||
+      (candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0) ||
+      (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0) ||
+      (candidateAudit.labelOverlapCount ?? 0) > (baseAudit.labelOverlapCount ?? 0) ||
+      (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) >= (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) ||
+      auditPenalty(candidateAudit) >= basePenalty
+    ) {
+      continue;
+    }
+    const rotation = angularDifference(
+      targetAngle,
+      angleOf(sub(coords.get(descriptor.rootAtomId), coords.get(descriptor.centerAtomId)))
+    );
+    const score = auditPenalty(candidateAudit) + rootDeviation(candidateCoords, descriptor) * 10_000 + rotation * 100;
+    if (!best || score < best.score - CLEANUP_EPSILON) {
+      best = {
+        coords: candidateCoords,
+        score
+      };
+    }
+  }
+  return best?.coords ?? null;
+}
+
 function collectReliefDescriptor(layoutGraph, coords, rootAtomId, parentAtomId, protectedAtomIds, frozenAtomIds) {
   const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)].filter(atomId => coords.has(atomId));
   if (
@@ -1171,6 +1214,22 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
       coords,
       nudges: crossingEscapeNudges,
       linkedRootNudges,
+      changed: true
+    };
+  }
+
+  for (const descriptor of collectTerminalRingRootDescriptors(layoutGraph, coords, options.frozenAtomIds ?? null)) {
+    const inwardEscapeCoords = escapeCurrentRootSubtreeInwardReadability(layoutGraph, coords, descriptor, baseAudit, {
+      ...options,
+      bondLength
+    });
+    if (!inwardEscapeCoords) {
+      continue;
+    }
+    return {
+      coords: inwardEscapeCoords,
+      nudges: 1,
+      linkedRootNudges: descriptor.allowsInternalRelief ? 1 : 0,
       changed: true
     };
   }

@@ -381,6 +381,78 @@ describe('layout/engine/pipeline', () => {
     assert.equal(typeof result.metadata.audit.ok, 'boolean');
   });
 
+  it('rescues compact metal ring systems with forced fused placement', () => {
+    const cases = [
+      { smiles: 'O1[Ti++]OC2=CC=CC=C12', closureBondId: '1' },
+      { smiles: '[Cu]12[S@]34[Cu]5[Cu@]13[Cu@]245', closureBondId: null }
+    ];
+
+    for (const { smiles, closureBondId } of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'organometallic');
+      assert.deepEqual(result.metadata.placedFamilies, ['fused']);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+
+      if (closureBondId) {
+        const closureBond = result.layoutGraph.bonds.get(closureBondId);
+        assert.ok(closureBond);
+        assert.ok(Math.abs(distance(result.coords.get(closureBond.a), result.coords.get(closureBond.b)) - result.layoutGraph.options.bondLength) < 1e-6);
+      }
+    }
+  });
+
+  it('rescues compact mixed ring systems with whole-slice ring placement', () => {
+    const smilesCases = [
+      'CCC12CCOCC(C)([NH2+]1)C2C1CC1',
+      'O=C1NC2CC3(NC2CC13)C#N',
+      '[H][C@@]12OC3=C(OC)C=CC4=C3[C@@]11CCN(C)[C@]([H])(C4)[C@]1([H])C=C[C@@H]2O'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.mixedMode, true);
+      assert.notDeepEqual(result.metadata.placedFamilies, ['mixed']);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    }
+  });
+
+  it('accepts unavoidable terminal leaves in compact fused cage slots', () => {
+    const smilesCases = [
+      'CC12C=CC3CC4OC(=O)N5C(C15)C4C23N',
+      'CCNC(=O)C1=CC2C3NC=C(C1=NO)C23C',
+      'CC1(CC2CN=C3NCCC1C23C)NCCN',
+      'CCC12CCOC3C(=N)NC(CC1=NO)C23O',
+      'CC1(C)OC2OCCOCC3OC(=O)C1C23N'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.mixedMode, true);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+    }
+  });
+
   it('records per-phase timing metadata when explicitly enabled', () => {
     const result = runPipeline(makeOrganometallic(), {
       timing: true
@@ -2759,6 +2831,9 @@ describe('layout/engine/pipeline', () => {
     });
 
     assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
     assert.equal(result.metadata.stereo.ezViolationCount, 0);
     assert.equal(result.metadata.stereo.unsupportedCenterCount, 1);
     assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Fe17']);
@@ -4430,6 +4505,320 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('does not flag exact outward branching aryl-alkene linker roots by their downstream ring centroids', () => {
+    const result = runPipeline(parseSMILES('CCCCCCCCCC(=O)OC1=CC=C(C=C1)C(=CC1=CC=C(OC)C=C1)C#N'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const anchorAtomId = 'C16';
+    const childAtomId = 'C19';
+    const outwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, anchorAtomId, atomId => result.coords.get(atomId) ?? null);
+    const childAngle = angleOf(sub(result.coords.get(childAtomId), result.coords.get(anchorAtomId)));
+
+    assert.equal(outwardAngles.length, 1);
+    assert.ok(angularDifference(childAngle, outwardAngles[0]) < 1e-6, `expected ${anchorAtomId}-${childAtomId} to keep the exact local aromatic outward axis`);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('scores flexible tertiary amine methylene linked rings by the immediate ring exit', () => {
+    const result = runPipeline(parseSMILES('CC(=O)NCCCOC1=CC=CC(OC2=CC=C(CN(CC3=CC=CC=C3)C3=CC=CC(NS(C)(=O)=O)=C3C)C=C2)=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const anchorAtomId = 'C28';
+    const childAtomId = 'N20';
+    const outwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, anchorAtomId, atomId => result.coords.get(atomId) ?? null);
+    const childAngle = angleOf(sub(result.coords.get(childAtomId), result.coords.get(anchorAtomId)));
+
+    assert.ok(outwardAngles.length > 0);
+    assert.ok(outwardAngles.some(outwardAngle => angularDifference(childAngle, outwardAngle) < 1e-6), `expected ${anchorAtomId}-${childAtomId} to keep an exact local aromatic outward axis`);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('accepts exact outward immediate roots tucked inside complex ring polygons', () => {
+    const smilesCases = [
+      'COC1=C2SC=C1CC(C)CCCCC2(C)C',
+      'CC1CC2CC(C2)CC(=O)C2=C([O-])C1=NS2',
+      'NC1=C2SC=C1CCOCC1=C([O-])C2=CS1',
+      'CN1C(=O)N(C=C\\C1=N/C(N)=O)[C@@H]1S[C@@H]([C@@H](O)[C@@H](NC(=O)[C@@H](CO)NC(=O)[C@H]2CCCN3O[Fe]456(ON(CCC[C@H](N)C(=O)N[C@@H](CCCN(O4)C(C)=[O]5)C(=O)N2)C(C)=[O]6)[O]=C3C)C(O)=O)[C@H](O)[C@H]1O'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount ?? 0, 0);
+      assert.equal(result.metadata.audit.inwardRingSubstituentFailureCount ?? 0, 0);
+      assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount ?? 0, 0);
+      assert.equal(result.metadata.audit.ok, true);
+    }
+  });
+
+  it('keeps compact bridged and fused current-layout ring exits audit-clean', { timeout: 20000 }, () => {
+    const smilesCases = [
+      'CC1(C)CC[C@H](O)[C@]23CO[C@](O)([C@@H](O)[C@H]12)[C@@]45[C@H](OC(=O)C6CCCCC6)[C@@H](CC[C@@H]34)C(=C)C5=O',
+      'CC(CN)C12C3CCC(N)C1N=CN2C(N)=N3',
+      'CCC12C3COC1C(=O)CCCC2(C)N=CO3',
+      'CC1(CCN)OC2OCC3C(N)CC1C23CN',
+      'CCOC1C2CC[NH2+]CC1N(C)C(=O)N2',
+      'CC12CCC(CCOC1)[NH+]2CCCO',
+      'CC1CC2(C)NCC3OCC(C(=O)O1)C23C#C',
+      'CC(C)[NH2+]C1C2CCCCC1C(=O)C(C)N2C',
+      'CC(=O)C1=CC(O)=C2C(=C1O)C1(Cl)C(Cl)=C(Cl)C2(Cl)C1(Cl)Cl',
+      'C1CC1C12CCCCCC1CC[NH2+]CCC2',
+      'COc1ccc(N\\C(=C(\\C(=C(Cl)Cl)Cl)/[N+](=O)[O-])\\n2nnc3ccccc23)cc1',
+      'CCCC1(N)C2CNC1(CC)C(C)(N)C(C)C2',
+      'NC1=CC=CC(=C1)C1(O)C2CCC1C[NH+](CC1=CC=C3C=CC=CC3=C1)C2',
+      'CC12CC(N)C(N3C1CN=C3N)C2(O)C(N)=O',
+      'CC12C(CCN1C=O)C1OCCNC2CC1N',
+      'CCN1CCNC2=NCC3CCC1C23OC',
+      'CC1CC2CC[NH2+]C(C2OCCO)C1=O',
+      'CCOC1C2COC(C)C1C1=NCCN1C2=N',
+      'CC[C@H]1OC(=O)[C@H](C)[C@@H](O[C@H]2C[C@@](C)(OC)[C@@H](O)[C@H](C)O2)[C@H](C)[C@@H](O[C@@H]3O[C@H](C)C[C@@H]([C@H]3O)N(C)C)[C@](C)(O)C[C@@H](C)CN(CCCNC(=O)[C@H]4[C@H](C)C[C@H]5[C@@H]6CCC7=CC(=O)C=C[C@]7(C)[C@@]6(F)[C@@H](O)C[C@]45C)[C@H](C)[C@@H](O)[C@]1(C)O',
+      'CC(=O)NC1(C)C2CC(C#C)C1N=C(C)OC2'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+      assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+      assert.equal(result.metadata.audit.ok, true);
+    }
+  });
+
+  it('keeps compact bridged and fused current-layout bond-failure regressions audit-clean', { timeout: 20000 }, () => {
+    const smilesCases = [
+      'CCCC1NC2=NCCC3C1C23OC(C)=O',
+      'CCOC12C3C[NH+]=C(N)C1C(=O)OC23',
+      'CCC1OC2(C(CO)C1S2(=O)=O)C1CCNC1',
+      'CCC(N)CC12NC(C1O)C(C)C2C(N)=N',
+      '[NH3+]C1(CC1)C1N2CCC1(O)C(C2)C#N',
+      'CCC1C2OC(=O)C1(N1C=CC=N1)C2(C)[NH3+]',
+      'CCC1C2CC1(CO2)C1(C)CC(C)C1',
+      'CCC1=C(C2C3CNC2C3C)C(OC)OC1',
+      'CC12CC(C1)OC2C1(CCC1)NC=[NH2+]',
+      'CCCC12CC(CC1)(O2)C1CC1C',
+      'CCC12NC(CC1[NH3+])C2C1=CC=NN1C',
+      'CC1NCC2C3C(O)C(N)(C12)C(N)C(O)C3N',
+      'CC1OC2CCC(C)C1C2C1C2COC1CN2',
+      'CC1(C)C(CN)OCC2CC1CC(N)CCO2',
+      'CC1CCC2CCC1(C)CC(C)(CO)OCC2',
+      'CN(Cc1ccccc1)c2nc3N(C)C(=O)NC(=O)c3n2Cc4ccccc4F',
+      'CC1NC2(C)CC(=NO)C1C1(CC1)OC2(C)C',
+      'CCC1C(O)C2NCC1C(N)C1CCC2(C)O1',
+      'CC1(N)CCC2CCNC(C(C1)C2O)C(O)=O',
+      'CC(C(=O)CO)C1(NC2COC1OC2=N)C#C',
+      'CC1C(N)C2CN1C1CCC(O)(CNC1C)C2',
+      'CC1(C)[NH2+]C2CC1(CCO)C1CCCC2CC1',
+      'O=C1C2=C(C(=O)c3ccccc13)C4(N5CCCC25)C(=O)N(CC#C)c6ccccc46',
+      'COC1CC2CCC1(O)CC1(C)CC2C1',
+      'CCOC1CCC(C#N)C2NC(=O)N3C2C13',
+      'CC1(CN=C2C=CC3C(C1)N23)C(=O)C=NO',
+      'CC12CCOCC3(C#N)C(C13)C(=N)N2',
+      'CCC1CC2(N)CNC=NC3C1(O)C23N',
+      'CC1NC2CCC=C(C3C1C23)C(C=O)=NO',
+      'CC(=NO)C1(CO)C2C3OCC(COC1=N)C23',
+      'O=C1CC2C3[NH2+]CCC(C1)C23',
+      'CC12C3CCCC(=CCC1C(=NO)C#C)C23',
+      'CC(N)C12CC(O)C(O)C3C(NC=N1)C23',
+      'CC(C)CC12C3OCOC(C=CC1C)C23',
+      'CC1OC(=O)C(=O)CC2=C(CN3C1C23)C#C',
+      'S1N2C3=CC=CC=C3C3=C2C(=CC=C3)N2C3=CC=CC=C3C3=CC=CC1=C23',
+      'Brc1ccc2[nH]c3c(c4C(=O)NC(=O)c4c5c6cccc7CCCn(c67)c35)c2c1',
+      'CC12C3C1C(=CC3OCOC2(C)C)C#N',
+      '[H][C@@]12CC3=C4C(NC=C4[C@]1([H])[C@]1([H])N(C(O)=C(C(C)=O)C1=O)C2(C)C)=CC=C3',
+      'CC12C3C=CC(CO)OCC(N13)C(=NO)C2O',
+      'CC(O)C1=CC=CC2=CCC3C2C3C1=NO',
+      'CCC12NCC3=CCCCC(C)C1(CN)C23',
+      'CC12CC(=NO)C3CN=C(CO)OCC1C23',
+      'CC12C3OC(=O)C1OCC(C)(C)NC(=[NH2+])C23',
+      'CC(C)C1COCC2C3C(CC(N)C23C)C1',
+      'CC1CC2C3CC(CO)CC(CC1C=O)C23',
+      'CN1CCN2C=[NH+]C3C(NC1=O)C23',
+      'CC#CC1CN=CNCC2(C)C3CCC1N23',
+      'CC12C[NH+]=CNC3C(OCOC1=O)C23',
+      'CCC1NC2C3C2C1=CNC(=O)C#CC3C',
+      '[H][C@@]12CCC(=O)[C@@]1(C)C[C@@]([H])(OC(C)=O)C1=C2C(=O)C2=C3C(=CO2)C(=O)O[C@]([H])(COC)[C@]13C',
+      'CC1C=CCNCC2C3CN=C(C#C)N1C23',
+      'CSC[C@H]1[C@H]2CC[C@@]3(CC[C@H]4[C@@](C)(CCC[C@@]4(C)C(=O)O)[C@@H]3C2)[C@@H]1O',
+      'C[C@@]12OO[C@@](CCC(O)=O)(C3=CC=CC=C13)C1=C2C=CC=C1',
+      'CC1OC2CC(CN)C1N1C=NC(=N)C(C)=C21',
+      'CCC1(O)C(O)C2CCNC1C1N=C(N)NC21',
+      'CCC1C2C(C#N)N3CC1(C)C1C3C21C',
+      'CC(N)C(C)C12NCC3C1C2CNC3C',
+      'CC(=CCC\\C(=C\\Cc1c(O)c2C(=O)C3=C(Oc2c4C=CC(C)(C)Oc14)c5c(O)cc(O)c6OC(C)(C)C(C3)c56)\\C)C',
+      '[NH3+]CC12C3COC1COCCC23',
+      'ClC1=CC2=C(C=C1Cl)C1=CC(Cl)=C(Cl)C=C1C1=C3N2C2=CC=CC=C2C2=C(C=C4C5=CC=CC=C5C5=CC=CC=C5C4=C2)C3=CC=C1',
+      '[O-]C(=O)C1=CC=C2C(=C1)N1CCCN3CCC4=C3C(=CC=C4)C1=C2C1CCCCC1',
+      'CC12CN3CCC4C5C6C(C16)C(C45)C23',
+      'CCC1(O)C(=O)OCC2=C1C=C1N(CC3=C1N=C1C=CC(C)=C4C(CCC3=C14)N1C(=O)C3=CC=CC=C3C1=O)C2=O',
+      'CC1(C)C2=C(C=CCC2)C2=CC=CC(C3CC4=C(C=C3)N3C5=C(C=CC=C45)C(C)(C)C4=CC=CC=C34)=C12',
+      'CC1=CC(=CC(=C1)S([O-])(=O)=O)N1C(=O)C2=CC=C3C4=C5C(=CC=C6C(=O)N(C(=O)C(C=C4)=C56)C4=CC=CC=C4)C4=C3C2=C(C=C4)C1=O',
+      'COC(=O)C[C@@H]1[C@@]2(C)[C@H](C[C@@H](OC(=O)C)[C@@]3(C)CO[C@@H]([C@H]4O[C@@H]5CC(=C(C)C5[C@@]14C)C6=CC(=O)OC6O)[C@H]23)OC(=O)\\C(=C\\C)\\C',
+      'CCC1CC[NH+]=C2N(C)CC3C1C23CC',
+      'CC1C2NS(=O)(=O)C3C(CC=C1CO)C23C#N',
+      'CC1N2C3CC(=O)C=C(CS1(=O)=O)C23CO',
+      'CC[NH2+]C12C3NC(=O)COC1CN(C)C23',
+      'C[NH2+]C12C3COCC(=O)C1OC(=O)C23',
+      'CC(=O)C1(C)N=C(C)OC2C3NC=NC1C23',
+      'CC1N=CNC2C3C1(N)C3(OC2=O)C(O)=O',
+      'CC1=CC2OCCC3C(C23NC=O)S(=O)(=O)C1'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+      assert.equal(result.metadata.audit.ok, true);
+    }
+  });
+
+  it('keeps current-layout severe-overlap regressions audit-clean', { timeout: 45000 }, () => {
+    const smilesCases = [
+      'CC1CC2C(NC=N)=C1CCCOC2=O',
+      'CC1CC2CS(=O)(=O)CN(C1)C2(C)C1(C)CC1',
+      'CN1CC2(O)CC(=N)OC(C)(C1=N)C2(C)C=O',
+      'CCC1C2NC(C#C)C(C)(C)C1OCC2C=O',
+      'CN1C2CCC(CC(N)C#N)C1CC(CN)C2',
+      'CN1N=CC=C1C1C2C[NH2+]C(CO)C1O2',
+      'CCCC1C2CCCC1(C[NH2+]C2)OC',
+      'CCC1=C2N3CC(C)N(C4=CNC=C34)C2=CO1',
+      'CNCCCC12CCC(C3=CC=CC=C13)C1=CC=CC=C21',
+      'CN1CC2NC2C2C(C1)C1C=CC2(O)C=C1',
+      'CC(C)C12CCC3(COC13)C[NH2+]2',
+      'CNCC12CCC(C3=CC=CC=C13)C1=CC=CC=C21',
+      '[NH3+]C1CC23CC(=O)NC2CC1CO3',
+      'C[NH2+]C1CC2NCC1(C)C1=CN=CC=C21',
+      'NC(=O)C12CCC3(CC1C3)CC2',
+      'CCC12CC3(C1)COC2CC3C',
+      'CCC12CC3(C1)COC2OCC3',
+      'CC(C)C1CC23CC(C2)C1C[NH2+]C3',
+      'CN1CC=C2C1C1CCC=CC2C(N)C=C1',
+      'CCN(C)C12C[NH2+]C(C3CC1O3)C2(C)C',
+      'CC1OCOC11C2NC1C1C=CC2N1C',
+      'CC1CCC2(C[NH3+])CC11CC(C1)O2',
+      'CCC12CCC(C1)C1CC2C1',
+      'CCC(=O)C(CC(C)N(C)C)(C1=CC=CC=C1)C1=CC=CC=C1',
+      'CC1C2C=CC(C)(C1=NO)C21N=CN2CC12',
+      'CC1CNC(=N1)C1C2NC(C)C1(N)CC2(C)C',
+      'CCC1C2CC(C)(C)C(=NCCN1C=N)N2C',
+      'CC(C)C1CC2CN(C)C(N)=[NH+]C(C1)C(=O)O2',
+      'CCNC1C2CC(CNC1C=O)NC2(C)CC',
+      'CC1=NC=C(N1)C1C2CC(N)=NCC1(C)O2',
+      'CCC1(COC2COC(CCOC2C)C1)NC',
+      '[H][C@@]12N(C)C3=C(C=C(C(OC)=C3)[C@]3(C[C@@H]4CN(C[C@](O)(CC)C4)CCC4=C3NC3=CC=CC=C43)C(=O)OC)[C@@]11CCN3CC=C[C@@](CC)([C@@H](OC(C)=O)[C@]2(O)C(=O)OC)[C@@]13[H]',
+      'CC1=CC2OC3(CC#C)OCC11C2(C)C31N',
+      'CC1C(CO)CCC2CCCC(C)(C)C1[NH2+]C2',
+      'CC12CCCC([NH2+]1)C2(N)C1COC1',
+      'CC1CC(C)(O)C2COC1CN=C(N)CCN2',
+      'CC(C1(CCCC1(O)C(N)=O)C#C)S(N)(=O)=O',
+      'CCC(C)C1(C)N=C2CC(=O)C(=N)NCC1N2',
+      'CCC(CC)([NH2+]C(CC)(CC)C(C[SiH3])OC)C(C[SiH3])OC',
+      'C[N+](C)(CCCCCC[N+](C)(C)C1C2=C(C=CC=C2)C2=C1C=CC=C2)C1C2=C(C=CC=C2)C2=C1C=CC=C2',
+      'CC1C2CCC3CNC(C1(C)CO)C23C(N)=O',
+      'CCC(CN)C(CO)(N=C(N)N)C#CC#N',
+      'CCC(CCCCC(C)O)(C(C)CCC(C)CO)C(O)(CCCC(C)CO)CCC(C)CCO',
+      'CCCCCCCCCCCCCCCC(CCCCCCCCF)(CC[Si](Cl)(Cl)Cl)CC[Si](Cl)(Cl)Cl',
+      'CCCC[Sn](CCCC)(CCCC)[Sn](CCCC)(OC(C)=O)OC(C)=O',
+      'CCC[NH2+][Si](CC)(C(C)=CC)[Si](C(C)C)(C(C)C)C(C)C',
+      'CC(C)(C)C(F)(F)C(F)(F)C(C)(C)C(C)(C)C(F)(OC(F)(F)C(F)(C(C)(C)OC(F)(F)C(F)(F)S([O-])(=O)=O)C(F)(F)F)C(F)(F)C(C)(C)C',
+      'C[C@H](CN1CCOCC1)C(C(=O)N1CCCC1)(C1=CC=CC=C1)C1=CC=CC=C1',
+      'CSCC[C@H](NC(=O)[C@@H]1CCCN1C(=O)[C@@H](CCCNC(=N)N)[C@H]2CSSC[C@H](N)C(=O)NCC(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC(C)C)C(=O)N2)C(=O)NC(=O)C',
+      'CC(C)C[C@H](NC(=O)[C@H]1O[C@@H]1C(=O)N[C@@H](CCCNC(=N)N)C(=O)N2CCC[C@H]2C(=O)N3CCC[C@H]3C(=O)N4CCC[C@H]4C(=O)N[C@@H](CO)C(=O)N)C(=O)N5CCC[C@H]5C(=O)N[C@@H]([C@@H](C)O)C(=O)N',
+      'CC1OCC2COCOC1C2N=C(C)N(C)C',
+      'CC(C)N(CCC(C(N)=O)(C1=CC=CC=C1)C1=NC=CC=C1)C(C)C',
+      'CC(C)[N+](C)(CCC(C(N)=O)(C1=CC=CC=C1)C1=CC=CC=C1)C(C)C',
+      'CCOC(=O)C(CC1=CC(F)=CC=C1CCP(=O)(OCC)OCC)(NC(C)=O)C(=O)OCC',
+      'OC([C@H](CC1CCCCC1)NC(=O)[C@H](Cc2c[nH]cn2)NC(=O)[C@H](Cc3ccccc3)NS(=O)(=O)N4CCOCC4)C(F)(F)C(=O)NCCN5CCOCC5',
+      'CCC1=C(CC)\\C\\2=C\\C3=N\\C(=C/c4[nH]c(c(C)c4CC)c5[nH]c(\\C=C\\6/N=C(\\C=C\\1/N2)C(=C6C)CCC(=O)NCCOCCOCCO)c(CC)c5C)\\C(=C3CCC(=O)NCCOCCOCCO)C',
+      'CC(=O)O[C@H]1C(=O)[C@]2(C)[C@@H](O)CC3OC[C@@]3(OC(=O)C)[C@H]2[C@H](OC(=O)c4ccccc4)[C@]5(O)C[C@H](OC(=O)[C@H](O)[C@H](NC(=O)c6ccccc6)c7ccc(O)cc7)C(=C1C5(C)C)C',
+      'COC1=CC=C(C2=N[C@@H]([C@H](N2C(=O)N2CCNCC2)C2=CC=C(Cl)C=C2)C2=CC=C(Cl)C=C2)C(OC(C)C)=C1',
+      'O=P(C1=CC=CC=C1)(C1=CC=CC=C1)C1=CC=C2C=CC=C(C2=N1)P(=O)(C1=CC=CC=C1)C1=CC=CC=C1',
+      'CC12N=C(N)NC(=O)C1C1CCC2NC1',
+      'CC1CC2OC(OCC=O)C1C1=C2NC(=N)N1',
+      '[H][C@]12[C@H](OC(=O)C3=CC=CC=C3)[C@]3(O)C[C@H](OC(=O)[C@H](O)[C@@H](NC(=O)C4=CC=CC=C4)C4=CC=CC=C4)C(C)=C([C@@H](OC(C)=O)C(=O)[C@]1(C)[C@@H](O)C[C@H]1OC[C@@]21OC(C)=O)C3(C)C',
+      'COc1ccc(Cl)cc1N2CCN(C3CC4CCCC(C3)N4C)C2=O',
+      '[H][C@]12C(=O)N(C(=O)[C@@]1([H])[C@]1([H])CC[C@@]2([H])CC1)C1=CC=C(C2=CC=CC=C12)[N+]([O-])=O',
+      'CC1C2CC22CC(=O)C1(C)C[NH2+]2',
+      'C[NH+]1C2CCCC1CN(C2)C1=CC=C(I)C=N1',
+      'C1C[NH2+]C(C1)C1=NC=C(N1)C1=CC=C(C=C1)C1=CC=C(C2=CN=C(N2)C2CCC[NH2+]2)C2=C1C1CCC2CC1',
+      'ClC1=CC=C(C=C1Cl)C12CCC(C3=CC=CC=C13)C1(C[NH2+]CC21)C(=O)OCC1=CC=CC=C1',
+      'CC(=O)C1=NC=C(NC23CC4CC(F)(CC(F)(C4)C2)C3)C2=C1C1CCC2CC1',
+      'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F',
+      'CCOC1=CC(OC)=CC=C1C1=N[C@@H]([C@H](N1C(=O)N1CCN(CCO)CC1)C1=CC=C(Br)C=C1)C1=CC=C(Br)C=C1',
+      'COC1=CC=CC=C1NC1CC2CCCC(C1)[NH+]2C',
+      'CCN1C23CCC(OC2)C3S1(=O)=O',
+      'CCNC(CC#C)C1C2N=C(N)C1(N)CC2O',
+      '[H][C@]12[C@H](OC(=O)C3=CC=CC=C3)[C@]3(O)C[C@H](OC(=O)[C@H](O)[C@@H](NC(=O)C4=CC=CC=C4)C4=CC=CC=C4)C(C)=C([C@@H](OC(C)=O)C(=O)[C@]1(C)[C@@H](O)C[C@H]1OC[C@@]21OC(C)=O)C3(C)C',
+      'COC(=O)C(CC1=CC=CC=C1)(CC1=CC=C(NS(O)(=O)=O)C=C1)C(=O)OC',
+      'CCOC(=O)C(CCNC(=O)OC(C)(C)C)(CC1=CC=C(NS(O)(=O)=O)C=C1)C(=O)OCC',
+      'COC(=O)C1=C(C=O)N=CN1C(C1=CC=CC=C1)(C1=CC=CC=C1)C1=CC=CC=C1',
+      'CCCCCCCCCCCCCCCCC1CC2(C)C(CCC3C4(C)CCC(O)C(C)(C)C4CCC23C)C2C(CCC12C([O-])=O)C(C)=C',
+      'CC1OCC(C)(N)C(O)(C1N)C(C)(N)C(O)=O',
+      'CCS(=O)(=O)N(C)C(CC1NC(=O)C(C)(CC([O-])=O)CC1C1=CC=CC(Cl)=C1)(C1CC1)C1=CC=C(Cl)C=C1',
+      'CO[Si]([NH2+]C([NH2+][Si](OC)(OC)OC)(C1=CC=CC=C1)C1=CC=CC=C1)(OC)OC',
+      'COC1=CC=C2N=CC(=CC2=C1)N1CC2CCCC(C1)[NH+]2C',
+      'CC1=CC=C(C=C1C)[Zr](=C)(C1=CC=CC1)(C1=CC=C(C)C(C)=C1)C1=C2CC3=CC(=CC=C3C2=CC=C1C(C)(C)C)C(C)(C)C',
+      'COC1=CC=C(C=C1)C(OCC1OCCC1OP(OCCC#N)[NH+](C(C)C)C(C)C)(C1=CC=CC=C1)C1=CC=C(OC)C=C1',
+      'CN1N=C(C(=O)N[C@@H]2C[C@@H]3CCC[C@H](C2)N3C)C2=C1C=CC=C2',
+      'C[SiH](O[Si](C)(C)C)O[Si](O[Si](C)(C)C)(C1CC=CC=C1)C1CC=CC=C1',
+      'C[C@@]12Oc3c(O)ccc4CC5N(CC6CC6)CCC1(c34)[C@]5(CCC2=O)NC(=O)CCc7ccc(cc7)[N+](=O)[O-]',
+      'CN1CC23CC4=C5C2N3C2C1(C4)C52C',
+      'Cl.FC(F)(F)c1ccc(nc1)N2CCN(CCCCN3C(=O)C4C5CCCC(CC5)C4C3=O)CC2',
+      'CC1NC2C(O)CNC1(C=O)C1=C2OC(N)=N1',
+      'CCCC12OC(CC1=O)C1(O)CC2C1CO',
+      'CCC1(OC(N)=N)C2CCC1C1=C(C2)N=NN1',
+      'CC1C2CCC(N3N=C(O)C=C23)C(C)(C)C1O',
+      'CC1CC2C3CC(N)(CN3)C(C1O)C2OC=N',
+      'CN1CC2C3CC(C(C1)C2(C)OC=O)C(=N)O3',
+      'CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC',
+      'CCC12OC11CNCC3CCC(=C2)C13OC',
+      'CCOB(OCC)OC(C(C1=CC=CC=C1C)C1=CC=CC=C1C)(C1=CC=CC=C1C)C1=CC=CC=C1C',
+      'CC1=CC=C(C=C1)C(OC(=O)CCCCCNC(=O)OCC1C2=CC=CC=C2C2=CC=CC=C12)(C1=CC=CC=C1)C1=CC=CC=C1Cl'
+    ];
+
+    for (const smiles of smilesCases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+      assert.equal(result.metadata.audit.ok, true);
+    }
+  });
+
   it('keeps saturated multi-ring bridgehead alkyl exits on their local incident-ring bisector even before late presentation cleanup', () => {
     const result = runPipeline(parseSMILES('CNCCCC12CCC(C3=CC=CC=C13)C1=CC=CC=C21'), {
       suppressH: true,
@@ -5664,6 +6053,207 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
     assert.ok(result.metadata.timing.totalMs < 8000, `expected macrocycle chromophore retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('nudges large aromatic macrocycle side chains instead of leaving a residual outward-axis miss', { timeout: 12000 }, () => {
+    const cases = [
+      [
+        'dual naphthyl peptide tails',
+        'CC(C)C[C@@H]1NC(=O)[C@H](CCCCN)NC(=O)[C@@H](Cc2c[nH]c3ccccc23)NC(=O)[C@H](Cc4cccnc4)NC(=O)[C@H](CSSC[C@H](NC1=O)C(=O)N[C@@H](Cc5ccc6ccccc6c5)C(=O)N)NC(=O)[C@@H](N)Cc7ccc8ccccc8c7'
+      ],
+      [
+        'phenyl peptide tail',
+        '[H][C@]1(NC(=O)[C@H](CCCCN)NC(=O)[C@@H](CC2=CNC3=C2C=CC=C3)NC(=O)[C@H](CC2=CC=CC=C2)NC(=O)[C@H](CSSC[C@H](NC1=O)C(=O)N[C@H](CO)[C@@H](C)O)NC(=O)[C@H](N)CC1=CC=CC=C1)[C@@H](C)O'
+      ]
+    ];
+
+    for (const [label, smiles] of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.ok, true, `expected ${label} to finish audit-clean`);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0, `expected ${label} to clear ring-substituent readability`);
+      assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0, `expected ${label} to clear outward-axis misses`);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0, `expected ${label} to avoid visible crossings`);
+      assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), [], `expected ${label} to avoid geometric crossings`);
+    }
+  });
+
+  it('accepts collision-free large macrocycle side-chain roots tucked inside the macrocycle envelope', { timeout: 30000 }, () => {
+    const cases = [
+      [
+        'cyclosporin alkenyl tail',
+        String.raw`CC\C=C\C[C@@H](C)[C@@H](O)[C@@H]1N(C)C(=O)[C@H](C(C)C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](C)NC(=O)[C@H](C)NC(=O)[C@@H](CC(C)C)N(C)C(=O)[C@H](NC(=O)[C@@H](CC(C)C)N(C)C(=O)CN(C)C(=O)[C@H](C)NC1=O)C(C)C`
+      ],
+      [
+        'chlorinated cyclosporin tail',
+        String.raw`C\C=C\C[C@@H](C)[C@@H](O)[C@@H]1N(C)C(=O)[C@H](C(C)C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](NC(=O)[C@H](CC(C)C)N(C)C(=O)CN(C)C(=O)[C@H](CC(Cl)Cl)NC1=O)C(C)C`
+      ],
+      [
+        'reverse cyclosporin alkenyl tail',
+        String.raw`CC[C@@H]1NC(=O)[C@H]([C@H](O)[C@H](C)C\C=C\C)N(C)C(=O)[C@H](C(C)C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](NC(=O)[C@H](CC(C)C)N(C)C(=O)CN(C)C1=O)C(C)C`
+      ],
+      [
+        'chromophore peptide tail',
+        'CC[C@H](C)[C@@H]1NC(=O)[C@H](CCCCN)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CO)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](Cc2c[nH]c3ccccc23)NC(=O)CCN(C(=O)c4ccccc4C5=C6C=CC(=O)C=C6Oc7cc(O)ccc57)C(=O)NCCN(CC(=O)N)C(=O)[C@@H](NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](CC(=O)O)NC1=O)C(C)C'
+      ],
+      [
+        'arginine-rich cyclic peptide tail',
+        'CC[C@H](C)[C@@H]1NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@H](CC(O)=O)NC(=O)[C@H](CCSC)NC(=O)[C@H](CCCNC(N)=N)NC(=O)CNC(=O)CNC(=O)[C@H](CC2=CC=CC=C2)NC(=O)[C@H](CSSC[C@H](NC(=O)CNC(=O)[C@H](CC(C)C)NC(=O)CNC(=O)[C@H](CO)NC(=O)[C@H](CCC(N)=O)NC(=O)[C@H](C)NC(=O)CNC1=O)C(=O)N[C@@H](CC(N)=O)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(O)=O)NC(=O)[C@H](CO)NC(=O)[C@H](CO)NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CO)NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@@H]1CCCN1C(=O)[C@H](C)NC(=O)[C@@H](N)[C@@H](C)O'
+      ],
+      [
+        'cyclic peptide arylmethyl side chain',
+        '[H][C@@]12CCCN1C(=O)[C@@H](CCCCN)NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)[C@H](CSSC[C@H](NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC2=O)C(=O)N[C@@H](CCCNC(N)=N)C(O)=O)NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@@H](N)CCCNC(N)=N'
+      ],
+      [
+        'annulated macrolide terminal methyl',
+        '[H][C@]12N(CCCCN3C=C(N=N3)C3=CC(N)=CC=C3)C(=O)O[C@]1(C)[C@@]([H])(CC)OC(=O)[C@@](C)(F)C(=O)[C@]([H])(C)[C@@]([H])(O[C@]1([H])O[C@]([H])(C)C[C@]([H])(N(C)C)[C@@]1([H])O)[C@@](C)(C[C@@]([H])(C)C(=O)[C@]2([H])C)OC'
+      ],
+      [
+        'macrocycle spacer terminal methyl',
+        'CC(C)C[C@@H]1N(C)C(=O)CN(C)C(=O)CNC(=O)[C@H](Cc2ccccc2)NC(=O)[C@H](Cc3c[nH]cn3)NC(=O)CNC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](Cc4ccccc4)NC(=O)[C@H](CCCNC(=N)N)NC(=O)CCOCCOCCOCCOCCOCCC(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](Cc5ccccc5)C(=O)N[C@@H]6C(=O)N[C@@H]([C@@H](C)O)C(=O)NCC(=O)N[C@@H](Cc7c[nH]cn7)C(=O)N[C@@H](Cc8ccccc8)C(=O)NCC(=O)N(C)CC(=O)N(C)[C@@H](CC(C)C)C(=O)N[C@@H](Cc9ccc(O)cc9)C(=O)C(=O)N%10CCC[C@H]%10C(=O)N[C@@H](CSSC6(C)C)C(=O)N)C(C)(C)SSC[C@H](NC(=O)[C@@H]%11CCCN%11C(=O)C(=O)[C@H](Cc%12ccc(O)cc%12)NC1=O)C(=O)N)[C@@H](C)O'
+      ],
+      [
+        'macrocycle alkyl terminal methyl',
+        'CC(C)C[C@@H]1N(C)C(=O)CN(C)C(=O)CNC(=O)[C@H](Cc2ccccc2)NC(=O)[C@H](Cc3c[nH]cn3)NC(=O)CNC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](Cc4ccccc4)NC(=O)[C@H](CCCNC(=N)N)NC(=O)C[C@H](C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](Cc5ccccc5)C(=O)N[C@@H]6C(=O)N[C@@H]([C@@H](C)O)C(=O)NCC(=O)N[C@@H](Cc7c[nH]cn7)C(=O)N[C@@H](Cc8ccccc8)C(=O)NCC(=O)N(C)CC(=O)N(C)[C@@H](CC(C)C)C(=O)N[C@@H](Cc9ccc(O)cc9)C(=O)C(=O)N%10CCC[C@H]%10C(=O)N[C@@H](CSSC6(C)C)C(=O)N)C(C)(C)SSC[C@H](NC(=O)[C@@H]%11CCCN%11C(=O)C(=O)[C@H](Cc%12ccc(O)cc%12)NC1=O)C(=O)N)[C@@H](C)O'
+      ]
+    ];
+
+    for (const [label, smiles] of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.ok, true, `expected ${label} to finish audit-clean`);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0, `expected ${label} to clear ring-substituent readability`);
+      assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0, `expected ${label} to clear inward side-chain roots`);
+      assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0, `expected ${label} to clear outward-axis misses`);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0, `expected ${label} to avoid bond failures`);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected ${label} to avoid severe overlaps`);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0, `expected ${label} to avoid visible crossings`);
+      assert.equal(result.metadata.audit.fallback.mode, null, `expected ${label} to avoid audit fallback`);
+    }
+  });
+
+  it('accepts near-outward simple carbonyl ring roots when collision-free', { timeout: 12000 }, () => {
+    const result = runPipeline(parseSMILES('CC(C)(C)c1cc(C(=O)O)c2c(c1)C(=O)OC2(c3ccccc3)c4ccccc4C(=O)O'), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('accepts saturated fused polycycle angular terminal leaves inside incident ring polygons', { timeout: 12000 }, () => {
+    const result = runPipeline(
+      parseSMILES(
+        String.raw`CC(=O)N[C@@H]1[C@@H](O)[C@H](O[C@@H]2O[C@H](CO)[C@@H](O)[C@H](O)[C@H]2O)[C@@H](CO[C@@H]3OC[C@H](O)[C@H](O[C@@H]4OC[C@H](O)[C@H](O)[C@H]4O)[C@H]3O)O[C@H]1O[C@H]5CC[C@@]6(C)[C@@H](CC[C@]7(C)[C@@H]6CC=C8[C@@H]9CC(C)(C)[C@@H](O)C[C@@]9([C@H](O)C[C@@]78C)C(=O)O[C@@H]%10O[C@H](COC(=O)C)[C@@H](O)[C@H](O[C@@H]%11OC[C@@H](O)[C@H](OC(=O)\C(=C\CC[C@](C)(O)C=C)\C)[C@H]%11OC(=O)\C=C\c%12ccccc%12)[C@H]%10O[C@@H]%13OC[C@@H](O)[C@H](O[C@@H]%14OC[C@](O)(CO)[C@H]%14O)[C@H]%13O)C5(C)C`
+      ),
+      {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('accepts bridged terminal hetero leaves when exterior slots miss the severe immediate axis', { timeout: 12000 }, () => {
+    const result = runPipeline(parseSMILES('CCNC1CCCC2(N)C(O)CC(C2O)C1O'), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('moves bridged terminal roots out of inward incident-ring slots when a clean exterior slot exists', { timeout: 12000 }, () => {
+    const result = runPipeline(parseSMILES('CC(O)C1CNC2CN(C)C(C)(C2)C(O)C1C'), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('accepts direct linked aromatic rings when the immediate inter-ring bond is exact outward', { timeout: 12000 }, () => {
+    const result = runPipeline(
+      parseSMILES('COC(=O)[C@]12CCC(C)(C)C[C@H]1C3=CC[C@@H]4[C@@]5(C)Cc6c(nc(N)nc6C(C)(C)[C@@H]5CC[C@@]4(C)[C@]3(C)CC2)c7ccccc7'),
+      {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('accepts exact-outward tetrahedral branch roots with regular linked-ring centroid offsets', { timeout: 12000 }, () => {
+    const cases = [
+      [
+        'quaternary carbon piperazine aryl branch',
+        'CN(CCO)C(=O)C1=CC=C(N=C1)C(C)(O)CN1CCN(C(C1)C1=CC=C(Cl)C=C1)C1=CC=C(C=C1Cl)C#N'
+      ],
+      [
+        'silicon bisaryl peroxide branch',
+        'CCOC(=O)C=C1C(COC1C1COC(C)(C)O1)OO[Si](C1=CC=CC=C1)(C1=CC=CC=C1)C(C)(C)C'
+      ],
+      [
+        'quaternary carbon phosphate aryl branch',
+        'CC(CC1=CC=CC=C1)(OP(=O)OC(C)(CC1=CC=CC=C1)C1=CC=CC=C1)C1=CC=CC=C1'
+      ]
+    ];
+
+    for (const [label, smiles] of cases) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.audit.ok, true, `expected ${label} to finish audit-clean`);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0, `expected ${label} to clear linked-ring centroid readability`);
+      assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0, `expected ${label} to clear outward-axis misses`);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0, `expected ${label} to avoid visible crossings`);
+      assert.equal(result.metadata.audit.fallback.mode, null, `expected ${label} to avoid audit fallback`);
+    }
   });
 
   it('keeps audit-clean macrocycle core cleanup over dirtier protected placement', { timeout: 12000 }, () => {

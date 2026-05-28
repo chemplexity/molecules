@@ -489,13 +489,29 @@ function isConjugatedTrigonalCenter(layoutGraph, atomId) {
   return multipleBondCount === 1;
 }
 
+function isHeteroAromaticRingAtom(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!atom || atom.aromatic !== true) {
+    return false;
+  }
+  for (const ring of layoutGraph.atomToRings.get(atomId) ?? []) {
+    if (ring.aromatic === true && ring.atomIds.some(ringAtomId => {
+      const ringAtom = layoutGraph.atoms.get(ringAtomId);
+      return ringAtom && ringAtom.element !== 'C' && ringAtom.element !== 'H';
+    })) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Returns whether a pair of heavy neighbors should make an attached divalent
  * nitrogen preserve a planar 120-degree continuation. Conjugated
  * carbonyl/imine-like neighbors already imply planarity; one aryl neighbor is
- * enough for secondary anilino hidden-H fans, while diaryl amines stay out of
- * this simple-continuation path so direct ring-root selection remains in
- * charge of both rigid aryl exits.
+ * enough for secondary anilino hidden-H fans. Diaryl amines stay out of this
+ * simple-continuation path unless one ring is heteroaromatic, where the linker
+ * is more imide-like and should remain planar.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string|null} firstAtomId - First neighbor atom ID.
  * @param {string|null} secondAtomId - Second neighbor atom ID.
@@ -510,7 +526,16 @@ export function isPlanarDivalentNitrogenContinuationPair(layoutGraph, firstAtomI
   }
   const firstAtom = layoutGraph.atoms.get(firstAtomId);
   const secondAtom = layoutGraph.atoms.get(secondAtomId);
-  return Boolean(firstAtom && secondAtom && firstAtom.element !== 'H' && secondAtom.element !== 'H' && firstAtom.aromatic !== secondAtom.aromatic);
+  if (!firstAtom || !secondAtom || firstAtom.element === 'H' || secondAtom.element === 'H') {
+    return false;
+  }
+  if (firstAtom.aromatic !== secondAtom.aromatic) {
+    return true;
+  }
+  if (firstAtom.aromatic === true && secondAtom.aromatic === true) {
+    return isHeteroAromaticRingAtom(layoutGraph, firstAtomId) || isHeteroAromaticRingAtom(layoutGraph, secondAtomId);
+  }
+  return false;
 }
 
 /**

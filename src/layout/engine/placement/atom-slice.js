@@ -232,6 +232,7 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   } else if (family === 'fused') {
     const ringAdj = new Map(sliceRings.map(ring => [ring.id, []]));
     const ringConnectionByPair = new Map();
+    const fusedRingAtomCount = new Set(sliceRings.flatMap(ring => ring.atomIds)).size;
     for (const connection of sliceConnections) {
       if (connection.kind !== 'fused') {
         continue;
@@ -242,13 +243,13 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
       ringConnectionByPair.set(key, connection);
     }
     const templateId = scaffoldPlan.rootScaffold.templateId ?? null;
-    if (shouldShortCircuitToFusedCageKk(atomIds.length, sliceRings.length, templateId)) {
+    if (shouldShortCircuitToFusedCageKk(fusedRingAtomCount, sliceRings.length, templateId)) {
       result = layoutFusedCageKamadaKawai(sliceRings, bondLength, { layoutGraph, templateId }) ?? layoutFusedFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
     } else {
       result = layoutFusedFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
       let bestResult = result;
       let bestAudit = auditSlicePlacement(layoutGraph, atomIds, family, result, bondLength, templateId);
-      if (shouldTryBridgedRescueForFusedSystem(atomIds.length, sliceRings.length, templateId, bestAudit)) {
+      if (shouldTryBridgedRescueForFusedSystem(fusedRingAtomCount, sliceRings.length, templateId, bestAudit)) {
         const bridgedResult = layoutBridgedFamily(sliceRings, bondLength, { layoutGraph, templateId });
         const bridgedAudit = auditSlicePlacement(layoutGraph, atomIds, family, bridgedResult, bondLength, templateId);
         if (isBetterBridgedRescueForFusedSystem(bridgedAudit, bestAudit)) {
