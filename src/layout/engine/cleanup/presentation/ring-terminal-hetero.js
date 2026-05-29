@@ -2316,8 +2316,9 @@ function isSaturatedBridgeheadTerminalHeteroAnchor(layoutGraph, anchorAtomId, an
 }
 
 /**
- * Re-centers terminal multiple-bond hetero leaves onto an improved trigonal fan
- * when either one leaf or a paired set can move without increasing overlaps.
+ * Re-centers terminal multiple-bond hetero leaves onto an improved trigonal fan,
+ * including equivalent fan slots that clear local contacts without increasing
+ * overlaps, when either one leaf or a paired set can move safely.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
  * @param {object} [options] - Hook options.
@@ -2517,8 +2518,13 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       usedCompressedTargetPositions &&
       targetLeafClearance > currentLeafClearance + TIDY_IMPROVEMENT_EPSILON &&
       candidatePenalty <= descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON;
+    const equivalentSlotClearanceImproves =
+      !usedCompressedTargetPositions &&
+      targetLeafClearance > currentLeafClearance + TIDY_IMPROVEMENT_EPSILON &&
+      candidatePenalty <= descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON &&
+      (targetOverlapCount < currentOverlapCount || (candidateAudit.severeOverlapCount ?? 0) < (getCurrentAudit().severeOverlapCount ?? 0));
     if (
-      compressedClearanceImproves
+      compressedClearanceImproves || equivalentSlotClearanceImproves
         ? false
         : usedCompressedTargetPositions
           ? candidatePenalty > descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON

@@ -72,6 +72,7 @@ const MEDIUM_BRIDGED_RING_EDGE_POLISH_MIN_BOND_DEVIATION_FACTOR = 0.22;
 const MEDIUM_BRIDGED_RING_EDGE_POLISH_MAX_PASSES = 4;
 const MEDIUM_BRIDGED_RING_EDGE_POLISH_STEP_FACTORS = Object.freeze([0.03, 0.02, 0.012]);
 const MEDIUM_BRIDGED_RING_POLISH_MAX_PENDANT_HEAVY_ATOMS = 4;
+const AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_STRETCH_FACTORS = Object.freeze([1.15, 1.2, 1.1, 1.05, 1]);
 const PERIPHERAL_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 4;
 const PERIPHERAL_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.9, 0.8, 0.7, 0.6]);
 const SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 8;
@@ -326,9 +327,20 @@ function hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, 
   if (!projectedAudit || !baselineAudit) {
     return false;
   }
+  const baselineCrossings = baselineAudit.visibleHeavyBondCrossingCount ?? 0;
+  const projectedCrossings = projectedAudit.visibleHeavyBondCrossingCount ?? 0;
+  if (
+    baselineAudit.severeOverlapCount === 0 &&
+    projectedAudit.severeOverlapCount >= 2 &&
+    projectedAudit.bondLengthFailureCount >= baselineAudit.bondLengthFailureCount + 3 &&
+    projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * 0.25 &&
+    baselineCrossings <= projectedCrossings + 1
+  ) {
+    return true;
+  }
   return (
     baselineAudit.severeOverlapCount <= projectedAudit.severeOverlapCount &&
-    (baselineAudit.visibleHeavyBondCrossingCount ?? 0) <= (projectedAudit.visibleHeavyBondCrossingCount ?? 0) &&
+    baselineCrossings <= projectedCrossings &&
     projectedAudit.bondLengthFailureCount > baselineAudit.bondLengthFailureCount &&
     projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR
   );
@@ -336,6 +348,36 @@ function hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, 
 
 function shouldRefineStrainedCompactBridgedSeed(layoutGraph, atomIds, audit) {
   return atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit && !containsMetalAtom(layoutGraph, atomIds) && (audit?.maxBondLengthDeviation ?? 0) > STRAINED_COMPACT_BRIDGED_MAX_DEVIATION;
+}
+
+function isCompactSharedPathSpiroFiveRingSystem(layoutGraph, rings, atomIds) {
+  if (rings.length !== 3 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, atomIds)) {
+    return false;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (ringSizes[0] !== 3 || ringSizes[1] !== 5 || ringSizes[2] !== 5) {
+    return false;
+  }
+
+  const ringById = new Map(rings.map(ring => [ring.id, ring]));
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const connections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  return (
+    connections.some(connection => connection.kind === 'bridged' && (connection.sharedAtomIds?.length ?? 0) >= 3) &&
+    connections.some(connection => {
+      if (connection.kind !== 'spiro' || (connection.sharedAtomIds?.length ?? 0) !== 1) {
+        return false;
+      }
+      const firstRing = ringById.get(connection.firstRingId);
+      const secondRing = ringById.get(connection.secondRingId);
+      return firstRing?.atomIds.length === 3 || secondRing?.atomIds.length === 3;
+    })
+  );
+}
+
+function shouldTryStrictCompactBridgedBondRescue(layoutGraph, rings, atomIds, audit) {
+  return Boolean(audit && audit.bondLengthFailureCount > 0 && isCompactSharedPathSpiroFiveRingSystem(layoutGraph, rings, atomIds));
 }
 
 function fitRegularRingTargets(ring, coords, bondLength) {
@@ -3928,6 +3970,170 @@ function compactSmallRingFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds
   return atomIds.length === fallbackAtomIds.length ? atomIds : null;
 }
 
+function compactSaturatedSpiroLaneFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (rings.length !== 3 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
+    return null;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  const supportedRingSizeSet =
+    (ringSizes[0] === 3 && ringSizes[1] === 5 && ringSizes[2] === 6) ||
+    (ringSizes[0] === 5 && ringSizes[1] === 6 && ringSizes[2] === 7);
+  if (!supportedRingSizeSet) {
+    return null;
+  }
+
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const connections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  if (!connections.some(connection => connection.kind === 'bridged') || !connections.some(connection => connection.kind === 'spiro')) {
+    return null;
+  }
+  if (!connections.some(connection => (connection.sharedAtomIds?.length ?? 0) >= 3)) {
+    return null;
+  }
+
+  const atomIds = [...new Set([...rings].sort((firstRing, secondRing) => firstRing.atomIds.length - secondRing.atomIds.length || firstRing.id - secondRing.id).flatMap(ring => ring.atomIds))];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+function compactSingleSpiroSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (rings.length !== 3 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
+    return null;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (ringSizes.join(',') !== '3,5,5') {
+    return null;
+  }
+
+  const ringById = new Map(rings.map(ring => [ring.id, ring]));
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const connections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  const bridgedConnection = connections.find(connection => connection.kind === 'bridged' && (connection.sharedAtomIds?.length ?? 0) >= 3);
+  const spiroConnections = connections.filter(connection => connection.kind === 'spiro' && (connection.sharedAtomIds?.length ?? 0) === 1);
+  if (!bridgedConnection || spiroConnections.length !== 1) {
+    return null;
+  }
+
+  const spiroConnection = spiroConnections[0];
+  const spiroRing = [ringById.get(spiroConnection.firstRingId), ringById.get(spiroConnection.secondRingId)].find(ring => ring?.atomIds.length === 3);
+  const parentRing = [ringById.get(spiroConnection.firstRingId), ringById.get(spiroConnection.secondRingId)].find(ring => ring?.atomIds.length === 5);
+  const bridgedMateRing = [ringById.get(bridgedConnection.firstRingId), ringById.get(bridgedConnection.secondRingId)].find(ring => ring && ring !== parentRing);
+  if (!spiroRing || !parentRing || !bridgedMateRing || bridgedMateRing.atomIds.length !== 5) {
+    return null;
+  }
+
+  const atomIds = [...new Set([parentRing, spiroRing, bridgedMateRing].flatMap(ring => ring.atomIds))];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+function compactDoubleSharedPathSixSevenEightRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (rings.length !== 3 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
+    return null;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (ringSizes.join(',') !== '6,7,8') {
+    return null;
+  }
+
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const connections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  if (connections.length !== 2 || connections.some(connection => connection.kind !== 'bridged' || (connection.sharedAtomIds?.length ?? 0) < 3)) {
+    return null;
+  }
+
+  const connectionCountByRingId = new Map(rings.map(ring => [ring.id, 0]));
+  for (const connection of connections) {
+    connectionCountByRingId.set(connection.firstRingId, (connectionCountByRingId.get(connection.firstRingId) ?? 0) + 1);
+    connectionCountByRingId.set(connection.secondRingId, (connectionCountByRingId.get(connection.secondRingId) ?? 0) + 1);
+  }
+  const centralRing = rings.find(ring => connectionCountByRingId.get(ring.id) === 2);
+  if (!centralRing || centralRing.atomIds.length !== 8) {
+    return null;
+  }
+
+  const sideRings = rings.filter(ring => ring !== centralRing).sort((firstRing, secondRing) => firstRing.atomIds.length - secondRing.atomIds.length || firstRing.id - secondRing.id);
+  const atomIds = [...new Set([centralRing, ...sideRings].flatMap(ring => ring.atomIds))];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+function isAromaticFusedBridgeLaneFirstBridgedSystem(layoutGraph, rings, atomIds) {
+  if (rings.length !== 5 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, atomIds)) {
+    return false;
+  }
+
+  const aromaticRings = rings.filter(ring => ring.aromatic);
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (aromaticRings.length !== 1 || aromaticRings[0].atomIds.length !== 6 || ringSizes.join(',') !== '5,6,6,6,6') {
+    return false;
+  }
+
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const connections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  if (!connections.some(connection => connection.kind === 'bridged' && (connection.sharedAtomIds?.length ?? 0) >= 4)) {
+    return false;
+  }
+  if (!connections.some(connection => connection.kind === 'fused') || !connections.some(connection => connection.kind === 'spiro')) {
+    return false;
+  }
+
+  return true;
+}
+
+function aromaticFusedBridgeLaneFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (!isAromaticFusedBridgeLaneFirstBridgedSystem(layoutGraph, rings, fallbackAtomIds)) {
+    return null;
+  }
+
+  const atomIds = [
+    ...new Set(
+      [...rings]
+        .sort((firstRing, secondRing) => {
+          if (firstRing.atomIds.length !== secondRing.atomIds.length) {
+            return firstRing.atomIds.length - secondRing.atomIds.length;
+          }
+          if (firstRing.aromatic !== secondRing.aromatic) {
+            return firstRing.aromatic ? 1 : -1;
+          }
+          return firstRing.id - secondRing.id;
+        })
+        .flatMap(ring => ring.atomIds)
+    )
+  ];
+  return atomIds.length === fallbackAtomIds.length ? atomIds : null;
+}
+
+function saturatedDoubleBridgedRingSystemAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (rings.length !== 3 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
+    return null;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (ringSizes[0] !== 6 || ringSizes[1] !== 7 || ringSizes[2] !== 7) {
+    return null;
+  }
+
+  const ringIds = rings.map(ring => ring.id);
+  const ringIdSet = new Set(ringIds);
+  const connections = (layoutGraph.ringConnections ?? []).filter(connection => ringIdSet.has(connection.firstRingId) && ringIdSet.has(connection.secondRingId));
+  const bridgedConnections = connections.filter(connection => connection.kind === 'bridged');
+  if (bridgedConnections.length !== 2 || bridgedConnections.some(connection => (connection.sharedAtomIds?.length ?? 0) < 3)) {
+    return null;
+  }
+
+  const owningRingSystem = (layoutGraph.ringSystems ?? []).find(ringSystem => {
+    const systemRingIds = ringSystem.ringIds ?? [];
+    return systemRingIds.length === ringIds.length && systemRingIds.every(ringId => ringIdSet.has(ringId));
+  });
+  if (!owningRingSystem || !Array.isArray(owningRingSystem.atomIds)) {
+    return null;
+  }
+
+  const fallbackAtomIdSet = new Set(fallbackAtomIds);
+  return owningRingSystem.atomIds.length === fallbackAtomIds.length && owningRingSystem.atomIds.every(atomId => fallbackAtomIdSet.has(atomId)) ? [...owningRingSystem.atomIds] : null;
+}
+
 /**
  * Returns an aromatic-cap-first atom order for compact bridged systems where a
  * fused aromatic cap is attached to a saturated bridged core. Seeding KK from
@@ -3999,6 +4205,30 @@ function compactSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
   return atomIds.length === fallbackAtomIds.length ? atomIds : null;
 }
 
+function compactSharedPathFourFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds) {
+  if (rings.length !== 2 || fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || rings.some(ring => ring.aromatic) || containsMetalAtom(layoutGraph, fallbackAtomIds)) {
+    return null;
+  }
+
+  const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
+  if (ringSizes[0] !== 4 || ringSizes[1] !== 5 || sharedRingAtomIds(rings[0], rings[1]).length !== 3) {
+    return null;
+  }
+
+  const ringIds = rings.map(ring => ring.id);
+  const ringIdSet = new Set(ringIds);
+  const owningRingSystem = (layoutGraph.ringSystems ?? []).find(ringSystem => {
+    const systemRingIds = ringSystem.ringIds ?? [];
+    return systemRingIds.length === ringIds.length && systemRingIds.every(ringId => ringIdSet.has(ringId));
+  });
+  if (!owningRingSystem || !Array.isArray(owningRingSystem.atomIds)) {
+    return null;
+  }
+
+  const fallbackAtomIdSet = new Set(fallbackAtomIds);
+  return owningRingSystem.atomIds.length === fallbackAtomIds.length && owningRingSystem.atomIds.every(atomId => fallbackAtomIdSet.has(atomId)) ? [...owningRingSystem.atomIds] : null;
+}
+
 /**
  * Returns a stable atom order for bridged KK seeding. The order produced by
  * flattening SSSR ring atom lists can start dense tetracyclic cages in a
@@ -4022,6 +4252,31 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
     return compactSmallRingFirstAtomIds;
   }
 
+  const compactSaturatedSpiroLaneAtomIds = compactSaturatedSpiroLaneFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (compactSaturatedSpiroLaneAtomIds) {
+    return compactSaturatedSpiroLaneAtomIds;
+  }
+
+  const compactSingleSpiroSharedPathFiveRingAtomIdsResult = compactSingleSpiroSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (compactSingleSpiroSharedPathFiveRingAtomIdsResult) {
+    return compactSingleSpiroSharedPathFiveRingAtomIdsResult;
+  }
+
+  const compactDoubleSharedPathSixSevenEightRingAtomIdsResult = compactDoubleSharedPathSixSevenEightRingAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (compactDoubleSharedPathSixSevenEightRingAtomIdsResult) {
+    return compactDoubleSharedPathSixSevenEightRingAtomIdsResult;
+  }
+
+  const aromaticFusedBridgeLaneFirstAtomIds = aromaticFusedBridgeLaneFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (aromaticFusedBridgeLaneFirstAtomIds) {
+    return aromaticFusedBridgeLaneFirstAtomIds;
+  }
+
+  const saturatedDoubleBridgedRingSystemAtomIdsResult = saturatedDoubleBridgedRingSystemAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (saturatedDoubleBridgedRingSystemAtomIdsResult) {
+    return saturatedDoubleBridgedRingSystemAtomIdsResult;
+  }
+
   const aromaticCapFirstAtomIds = aromaticCapFirstBridgedAtomIds(layoutGraph, rings, fallbackAtomIds);
   if (aromaticCapFirstAtomIds) {
     return aromaticCapFirstAtomIds;
@@ -4030,6 +4285,11 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
   const compactSharedPathFiveRingAtomIdsResult = compactSharedPathFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds);
   if (compactSharedPathFiveRingAtomIdsResult) {
     return compactSharedPathFiveRingAtomIdsResult;
+  }
+
+  const compactSharedPathFourFiveRingAtomIdsResult = compactSharedPathFourFiveRingAtomIds(layoutGraph, rings, fallbackAtomIds);
+  if (compactSharedPathFourFiveRingAtomIdsResult) {
+    return compactSharedPathFourFiveRingAtomIdsResult;
   }
 
   if (rings.length !== 4) {
@@ -4174,6 +4434,311 @@ function aromaticCappedFiveFiveFourBridgedOrder(layoutGraph, rings) {
   return null;
 }
 
+function regularPolygonVertexCoords(vertexCount, bondLength, mirrored = false) {
+  const radius = bondLength / (2 * Math.sin(Math.PI / vertexCount));
+  return Array.from({ length: vertexCount }, (_, index) => ({
+    x: Math.cos((2 * Math.PI * index) / vertexCount) * radius,
+    y: Math.sin((2 * Math.PI * index) / vertexCount) * radius * (mirrored ? -1 : 1)
+  }));
+}
+
+function transformPolygonEdgeToCoords(points, firstIndex, secondIndex, firstTarget, secondTarget) {
+  const firstPoint = points[firstIndex];
+  const secondPoint = points[secondIndex];
+  const sourceVector = sub(secondPoint, firstPoint);
+  const targetVector = sub(secondTarget, firstTarget);
+  const sourceLength = Math.hypot(sourceVector.x, sourceVector.y);
+  const targetLength = Math.hypot(targetVector.x, targetVector.y);
+  if (sourceLength <= 1e-9 || targetLength <= 1e-9) {
+    return null;
+  }
+  const scale = targetLength / sourceLength;
+  const rotation = angleOf(targetVector) - angleOf(sourceVector);
+  const cosRotation = Math.cos(rotation);
+  const sinRotation = Math.sin(rotation);
+  return points.map(point => {
+    const localX = (point.x - firstPoint.x) * scale;
+    const localY = (point.y - firstPoint.y) * scale;
+    return {
+      x: firstTarget.x + localX * cosRotation - localY * sinRotation,
+      y: firstTarget.y + localX * sinRotation + localY * cosRotation
+    };
+  });
+}
+
+function edgeSideTowardPoint(firstPoint, secondPoint, point) {
+  const edge = sub(secondPoint, firstPoint);
+  const midpoint = {
+    x: (firstPoint.x + secondPoint.x) / 2,
+    y: (firstPoint.y + secondPoint.y) / 2
+  };
+  const normal = { x: -edge.y, y: edge.x };
+  const side = (point.x - midpoint.x) * normal.x + (point.y - midpoint.y) * normal.y;
+  return side >= 0 ? 1 : -1;
+}
+
+function placeRegularRingOnEdge(coords, ringAtomIds, firstEdgeAtomId, secondEdgeAtomId, side, bondLength) {
+  const firstIndex = ringAtomIds.indexOf(firstEdgeAtomId);
+  const secondIndex = ringAtomIds.indexOf(secondEdgeAtomId);
+  if (firstIndex < 0 || secondIndex < 0 || !coords.has(firstEdgeAtomId) || !coords.has(secondEdgeAtomId)) {
+    return null;
+  }
+
+  const firstTarget = coords.get(firstEdgeAtomId);
+  const secondTarget = coords.get(secondEdgeAtomId);
+  const edge = sub(secondTarget, firstTarget);
+  const midpoint = {
+    x: (firstTarget.x + secondTarget.x) / 2,
+    y: (firstTarget.y + secondTarget.y) / 2
+  };
+  const normal = { x: -edge.y, y: edge.x };
+  const candidates = [];
+  for (const mirrored of [false, true]) {
+    const points = regularPolygonVertexCoords(ringAtomIds.length, bondLength, mirrored);
+    for (const [sourceFirstIndex, sourceSecondIndex, targetFirstPoint, targetSecondPoint] of [
+      [firstIndex, secondIndex, firstTarget, secondTarget],
+      [secondIndex, firstIndex, secondTarget, firstTarget]
+    ]) {
+      const transformed = transformPolygonEdgeToCoords(points, sourceFirstIndex, sourceSecondIndex, targetFirstPoint, targetSecondPoint);
+      if (transformed) {
+        candidates.push(transformed);
+      }
+    }
+  }
+
+  let bestCandidate = null;
+  let bestScore = -Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const candidateCenter = centroid(ringAtomIds.map((atomId, index) => candidate[index]));
+    const score = side * ((candidateCenter.x - midpoint.x) * normal.x + (candidateCenter.y - midpoint.y) * normal.y);
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = candidate;
+    }
+  }
+  if (!bestCandidate) {
+    return null;
+  }
+
+  const nextCoords = cloneCoords(coords);
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    nextCoords.set(ringAtomIds[index], bestCandidate[index]);
+  }
+  return nextCoords;
+}
+
+function circularBridgeLaneTargets(firstPoint, secondPoint, internalAtomCount, side, segmentLength) {
+  const chord = sub(secondPoint, firstPoint);
+  const chordLength = Math.hypot(chord.x, chord.y);
+  const segmentCount = internalAtomCount + 1;
+  if (chordLength <= 1e-9 || segmentCount <= 1 || chordLength >= segmentCount * segmentLength - 1e-9) {
+    return null;
+  }
+
+  let lowTheta = 1e-6;
+  let highTheta = 2 * Math.PI - 1e-6;
+  const targetRatio = chordLength / segmentLength;
+  for (let iteration = 0; iteration < 64; iteration++) {
+    const midTheta = (lowTheta + highTheta) / 2;
+    const ratio = Math.sin(midTheta / 2) / Math.sin(midTheta / (2 * segmentCount));
+    if (ratio > targetRatio) {
+      lowTheta = midTheta;
+    } else {
+      highTheta = midTheta;
+    }
+  }
+
+  const theta = (lowTheta + highTheta) / 2;
+  const radius = chordLength / (2 * Math.sin(theta / 2));
+  const centerOffset = chordLength / (2 * Math.tan(theta / 2));
+  const unitChord = {
+    x: chord.x / chordLength,
+    y: chord.y / chordLength
+  };
+  const unitNormal = {
+    x: -unitChord.y,
+    y: unitChord.x
+  };
+  const midpoint = {
+    x: (firstPoint.x + secondPoint.x) / 2,
+    y: (firstPoint.y + secondPoint.y) / 2
+  };
+  const center = {
+    x: midpoint.x + unitNormal.x * side * centerOffset,
+    y: midpoint.y + unitNormal.y * side * centerOffset
+  };
+  const startAngle = angleOf(sub(firstPoint, center));
+  const endAngle = angleOf(sub(secondPoint, center));
+  const sweep =
+    side > 0 ? (endAngle - startAngle + 2 * Math.PI) % (2 * Math.PI) : -((startAngle - endAngle + 2 * Math.PI) % (2 * Math.PI));
+
+  return Array.from({ length: internalAtomCount }, (_, index) => {
+    const angle = startAngle + sweep * ((index + 1) / segmentCount);
+    return {
+      x: center.x + Math.cos(angle) * radius,
+      y: center.y + Math.sin(angle) * radius
+    };
+  });
+}
+
+function cyclicRingPathAvoidingInternalAtoms(ring, firstAtomId, secondAtomId, blockedInternalAtomIds) {
+  const firstIndex = ring.atomIds.indexOf(firstAtomId);
+  const secondIndex = ring.atomIds.indexOf(secondAtomId);
+  if (firstIndex < 0 || secondIndex < 0) {
+    return null;
+  }
+
+  for (const direction of [1, -1]) {
+    const path = [firstAtomId];
+    let index = firstIndex;
+    for (let step = 0; step < ring.atomIds.length; step++) {
+      index = (index + direction + ring.atomIds.length) % ring.atomIds.length;
+      path.push(ring.atomIds[index]);
+      if (index === secondIndex) {
+        break;
+      }
+    }
+    if (path[path.length - 1] === secondAtomId && path.slice(1, -1).every(atomId => !blockedInternalAtomIds.has(atomId))) {
+      return path;
+    }
+  }
+  return null;
+}
+
+function ringOrderVariants(ring) {
+  const variants = [];
+  for (let startIndex = 0; startIndex < ring.atomIds.length; startIndex++) {
+    for (const direction of [1, -1]) {
+      variants.push(
+        Array.from({ length: ring.atomIds.length }, (_, offset) => {
+          const index = (startIndex + direction * offset + ring.atomIds.length) % ring.atomIds.length;
+          return ring.atomIds[index];
+        })
+      );
+    }
+  }
+  return variants;
+}
+
+function aromaticCappedFusedSquareBridgeOrder(layoutGraph, rings, atomIds) {
+  if (rings.length !== 4 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, atomIds)) {
+    return null;
+  }
+  const aromaticRing = rings.find(ring => ring.aromatic && ring.atomIds.length === 5);
+  const squareRing = rings.find(ring => !ring.aromatic && ring.atomIds.length === 4);
+  const sixRing = rings.find(ring => !ring.aromatic && ring.atomIds.length === 6);
+  const sevenRing = rings.find(ring => !ring.aromatic && ring.atomIds.length === 7);
+  if (!aromaticRing || !squareRing || !sixRing || !sevenRing) {
+    return null;
+  }
+
+  const bridgeSharedAtomIds = sharedRingAtomIds(sixRing, sevenRing);
+  const aromaticEdgeAtomIds = sharedRingAtomIds(sixRing, aromaticRing);
+  const squareEdgeAtomIds = sharedRingAtomIds(sixRing, squareRing);
+  if (
+    bridgeSharedAtomIds.length !== 4 ||
+    aromaticEdgeAtomIds.length !== 2 ||
+    squareEdgeAtomIds.length !== 2 ||
+    !aromaticEdgeAtomIds.every(atomId => bridgeSharedAtomIds.includes(atomId)) ||
+    !atomIdsAreAdjacentInRing(sixRing, aromaticEdgeAtomIds[0], aromaticEdgeAtomIds[1]) ||
+    !atomIdsAreAdjacentInRing(aromaticRing, aromaticEdgeAtomIds[0], aromaticEdgeAtomIds[1]) ||
+    !atomIdsAreAdjacentInRing(sixRing, squareEdgeAtomIds[0], squareEdgeAtomIds[1]) ||
+    !atomIdsAreAdjacentInRing(squareRing, squareEdgeAtomIds[0], squareEdgeAtomIds[1])
+  ) {
+    return null;
+  }
+
+  const bridgeEndpointAtomIds = bridgeSharedAtomIds.filter(atomId => !aromaticEdgeAtomIds.includes(atomId));
+  if (bridgeEndpointAtomIds.length !== 2) {
+    return null;
+  }
+  const bridgeSharedAtomIdSet = new Set(bridgeSharedAtomIds);
+
+  for (const baseRingAtomIds of ringOrderVariants(sixRing)) {
+    if (
+      !bridgeEndpointAtomIds.includes(baseRingAtomIds[0]) ||
+      !bridgeEndpointAtomIds.includes(baseRingAtomIds[3]) ||
+      !baseRingAtomIds.slice(1, 3).every(atomId => aromaticEdgeAtomIds.includes(atomId)) ||
+      !baseRingAtomIds.slice(4, 6).every(atomId => squareEdgeAtomIds.includes(atomId))
+    ) {
+      continue;
+    }
+    const outerBridgePathAtomIds = cyclicRingPathAvoidingInternalAtoms(sevenRing, baseRingAtomIds[3], baseRingAtomIds[0], bridgeSharedAtomIdSet);
+    if (!outerBridgePathAtomIds || outerBridgePathAtomIds.length !== 5) {
+      continue;
+    }
+    return {
+      baseRingAtomIds,
+      aromaticRingAtomIds: aromaticRing.atomIds,
+      squareRingAtomIds: squareRing.atomIds,
+      aromaticEdgeAtomIds: [baseRingAtomIds[2], baseRingAtomIds[1]],
+      squareEdgeAtomIds: [baseRingAtomIds[4], baseRingAtomIds[5]],
+      outerBridgePathAtomIds
+    };
+  }
+  return null;
+}
+
+function buildAromaticCappedFusedSquareBridgeCoords(layoutGraph, rings, atomIds, bondLength) {
+  const order = aromaticCappedFusedSquareBridgeOrder(layoutGraph, rings, atomIds);
+  if (!order) {
+    return null;
+  }
+
+  const baseRingCoords = regularPolygonVertexCoords(order.baseRingAtomIds.length, bondLength);
+  const baseCoords = new Map();
+  for (let index = 0; index < order.baseRingAtomIds.length; index++) {
+    baseCoords.set(order.baseRingAtomIds[index], baseRingCoords[index]);
+  }
+  const baseCenter = centroid(order.baseRingAtomIds.map(atomId => baseCoords.get(atomId)));
+  const aromaticSide =
+    -edgeSideTowardPoint(baseCoords.get(order.aromaticEdgeAtomIds[0]), baseCoords.get(order.aromaticEdgeAtomIds[1]), baseCenter);
+  const squareSide = -edgeSideTowardPoint(baseCoords.get(order.squareEdgeAtomIds[0]), baseCoords.get(order.squareEdgeAtomIds[1]), baseCenter);
+
+  const aromaticCoords = placeRegularRingOnEdge(baseCoords, order.aromaticRingAtomIds, order.aromaticEdgeAtomIds[0], order.aromaticEdgeAtomIds[1], aromaticSide, bondLength);
+  if (!aromaticCoords) {
+    return null;
+  }
+  const fusedCoords = placeRegularRingOnEdge(aromaticCoords, order.squareRingAtomIds, order.squareEdgeAtomIds[0], order.squareEdgeAtomIds[1], squareSide, bondLength);
+  if (!fusedCoords) {
+    return null;
+  }
+
+  let bestCoords = null;
+  let bestAudit = null;
+  const [firstBridgeAtomId, ...bridgeTailAtomIds] = order.outerBridgePathAtomIds;
+  const secondBridgeAtomId = bridgeTailAtomIds[bridgeTailAtomIds.length - 1];
+  const internalBridgeAtomIds = bridgeTailAtomIds.slice(0, -1);
+  for (const stretchFactor of AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_STRETCH_FACTORS) {
+    for (const side of [-1, 1]) {
+      const targets = circularBridgeLaneTargets(
+        fusedCoords.get(firstBridgeAtomId),
+        fusedCoords.get(secondBridgeAtomId),
+        internalBridgeAtomIds.length,
+        side,
+        bondLength * stretchFactor
+      );
+      if (!targets) {
+        continue;
+      }
+      const candidateCoords = cloneCoords(fusedCoords);
+      for (let index = 0; index < internalBridgeAtomIds.length; index++) {
+        candidateCoords.set(internalBridgeAtomIds[index], targets[index]);
+      }
+      const audit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      if (audit?.ok === true) {
+        return candidateCoords;
+      }
+      if (compareBridgedProjectionAudits(audit, bestAudit) < 0) {
+        bestCoords = candidateCoords;
+        bestAudit = audit;
+      }
+    }
+  }
+
+  return bestAudit?.ok === true ? bestCoords : null;
+}
+
 /**
  * Constructs exact normalized coordinates for aromatic-capped 5-5-4 bridged
  * systems where a square four-ring shares two adjacent bridge edges with a
@@ -4264,6 +4829,19 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
     };
   }
 
+  const fusedSquareBridgeCoords = buildAromaticCappedFusedSquareBridgeCoords(options.layoutGraph, rings, atomIds, bondLength);
+  if (fusedSquareBridgeCoords) {
+    const ringCenters = new Map();
+    for (const ring of rings) {
+      ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => fusedSquareBridgeCoords.get(atomId))));
+    }
+    return {
+      coords: fusedSquareBridgeCoords,
+      ringCenters,
+      placementMode: 'constructed-aromatic-capped-fused-square-bridge'
+    };
+  }
+
   const kkSeeds = bridgedKamadaKawaiSeeds(options.layoutGraph, atomIds);
   if (shouldShortCircuitLargeProjection(atomIds, kkSeeds.pinnedAtomIds)) {
     const selectedCoords = projectBridgePaths(options.layoutGraph, atomIds, buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength), bondLength).coords;
@@ -4283,11 +4861,16 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   if (shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)) {
     kkSeeds.coords = projectBridgePaths(options.layoutGraph, atomIds, buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength), bondLength).coords;
   }
+  const useTightBridgeLaneSeed = isAromaticFusedBridgeLaneFirstBridgedSystem(options.layoutGraph, rings, atomIds);
   let kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
     bondLength,
     coords: kkSeeds.coords,
     pinnedAtomIds: kkSeeds.pinnedAtomIds,
-    ...(shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds) ? bridgedProjectionSeededKamadaKawaiOptions(atomIds) : bridgedKamadaKawaiOptions(atomIds))
+    ...(useTightBridgeLaneSeed
+      ? compactBridgedKamadaKawaiOptions(atomIds)
+      : shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)
+        ? bridgedProjectionSeededKamadaKawaiOptions(atomIds)
+        : bridgedKamadaKawaiOptions(atomIds))
   });
   if (hasCompactBridgedNonbondedCollapse(options.layoutGraph, atomIds, kkResult.coords, bondLength)) {
     kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
@@ -4303,7 +4886,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
 
   const projected = projectBridgePaths(options.layoutGraph, atomIds, kkResult.coords, bondLength);
   let selectedCoords = selectBridgedProjectionCoords(options.layoutGraph, atomIds, kkResult.coords, projected, bondLength);
-  const selectedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, selectedCoords, bondLength);
+  let selectedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, selectedCoords, bondLength);
   if (shouldRefineStrainedCompactBridgedSeed(options.layoutGraph, atomIds, selectedAudit)) {
     const refinedKkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
       bondLength,
@@ -4316,6 +4899,22 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
     const refinedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, refinedSelectedCoords, bondLength);
     if (compareBridgedProjectionAudits(refinedAudit, selectedAudit) < 0) {
       selectedCoords = refinedSelectedCoords;
+      selectedAudit = refinedAudit;
+    }
+  }
+  if (shouldTryStrictCompactBridgedBondRescue(options.layoutGraph, rings, atomIds, selectedAudit)) {
+    const compactKkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
+      bondLength,
+      coords: kkSeeds.coords,
+      pinnedAtomIds: kkSeeds.pinnedAtomIds,
+      ...compactBridgedKamadaKawaiOptions(atomIds)
+    });
+    const compactProjected = projectBridgePaths(options.layoutGraph, atomIds, compactKkResult.coords, bondLength);
+    const compactSelectedCoords = selectBridgedProjectionCoords(options.layoutGraph, atomIds, compactKkResult.coords, compactProjected, bondLength);
+    const compactAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, compactSelectedCoords, bondLength);
+    if (compareBridgedProjectionAudits(compactAudit, selectedAudit) < 0) {
+      selectedCoords = compactSelectedCoords;
+      selectedAudit = compactAudit;
     }
   }
   selectedCoords = regularizeBridgedRingSystemGeometry(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);

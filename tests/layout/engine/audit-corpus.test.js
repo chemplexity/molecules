@@ -42,7 +42,7 @@ function inspectPlacementAndFinalAudit(smiles, options = { suppressH: true }) {
 describe('layout/engine/audit-corpus', () => {
   for (const entry of AUDIT_CORPUS) {
     it(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
-      const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles);
+      const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);
       const audit = result.metadata.audit;
 
       assert.equal(result.metadata.primaryFamily, entry.expected.primaryFamily);

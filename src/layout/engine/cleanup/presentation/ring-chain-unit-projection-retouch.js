@@ -25,6 +25,7 @@ const NEIGHBOR_SIDE_BRANCH_RELIEF_ROTATIONS = Object.freeze([
 const INTERNAL_LIGAND_RELIEF_MAX_ROOT_DEVIATION = Math.PI / 180;
 const HYPERVALENT_BRANCH_CENTER_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const HYPERVALENT_CROSS_GEOMETRY_SCORE_WEIGHT = 1_000;
+const SHARED_BACKBONE_LINKER_SCALE_CANDIDATES = Object.freeze([1.16, 1.18, 1.14, 1.2]);
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -45,19 +46,19 @@ function edgeBetween(ringChain, firstRingSystemId, secondRingSystemId) {
 }
 
 function orderedEdgeAttachment(edge, previousRingSystemId, nextRingSystemId) {
-  if (!edge || edge.linkerAtomIds?.length !== 1) {
+  if (!edge || ![1, 2].includes(edge.linkerAtomIds?.length ?? 0)) {
     return null;
   }
   if (edge.firstRingSystemId === previousRingSystemId && edge.secondRingSystemId === nextRingSystemId) {
     return {
-      linkerAtomId: edge.linkerAtomIds[0],
+      linkerAtomIds: edge.linkerAtomIds,
       previousAttachmentAtomId: edge.firstAttachmentAtomId,
       nextAttachmentAtomId: edge.secondAttachmentAtomId
     };
   }
   if (edge.secondRingSystemId === previousRingSystemId && edge.firstRingSystemId === nextRingSystemId) {
     return {
-      linkerAtomId: edge.linkerAtomIds[0],
+      linkerAtomIds: [...edge.linkerAtomIds].reverse(),
       previousAttachmentAtomId: edge.secondAttachmentAtomId,
       nextAttachmentAtomId: edge.firstAttachmentAtomId
     };
@@ -76,6 +77,25 @@ function orderedLinkEdges(ringChain) {
     edges.push(edge);
   }
   return edges;
+}
+
+function bondBetweenAtomIds(layoutGraph, firstAtomId, secondAtomId) {
+  const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+  return layoutGraph.bondByAtomPair?.get(key) ?? null;
+}
+
+function relaxedLinkerBondValidationClasses(layoutGraph, ringChain, baseBondValidationClasses = null) {
+  const bondValidationClasses = new Map(baseBondValidationClasses ?? []);
+  for (const edge of ringChain.edges ?? []) {
+    const atomPath = [edge.firstAttachmentAtomId, ...(edge.linkerAtomIds ?? []), edge.secondAttachmentAtomId];
+    for (let index = 1; index < atomPath.length; index++) {
+      const bond = bondBetweenAtomIds(layoutGraph, atomPath[index - 1], atomPath[index]);
+      if (bond) {
+        bondValidationClasses.set(bond.id, 'bridged');
+      }
+    }
+  }
+  return bondValidationClasses;
 }
 
 function ringUnitAtomIds(layoutGraph, inputCoords, ringSystem, ringAtomIds, linkerAtomIds, claimedAtomIds) {
@@ -187,6 +207,20 @@ function rotatedAtomsCoords(coords, atomIds, origin, angle) {
     });
   }
   return nextCoords;
+}
+
+function addScaledVector(position, vector, scale) {
+  return {
+    x: position.x + vector.x * scale,
+    y: position.y + vector.y * scale
+  };
+}
+
+function subtractScaledVector(position, vector, scale) {
+  return {
+    x: position.x - vector.x * scale,
+    y: position.y - vector.y * scale
+  };
 }
 
 function ringNeighborIds(layoutGraph, ringSystem, atomId) {
@@ -770,6 +804,102 @@ function translateToInputCentroid(inputCoords, coords) {
   return translated;
 }
 
+function sharedBackboneAttachmentByRingSystemId(ringChain) {
+  const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
+  const attachmentsByRingSystemId = new Map();
+  for (let index = 0; index < orderedRingSystemIds.length; index++) {
+    const ringSystemId = orderedRingSystemIds[index];
+    const previousEdge =
+      index > 0 ? orderedEdgeAttachment(edgeBetween(ringChain, orderedRingSystemIds[index - 1], ringSystemId), orderedRingSystemIds[index - 1], ringSystemId) : null;
+    const nextEdge =
+      index < orderedRingSystemIds.length - 1 ? orderedEdgeAttachment(edgeBetween(ringChain, ringSystemId, orderedRingSystemIds[index + 1]), ringSystemId, orderedRingSystemIds[index + 1]) : null;
+    const previousAttachmentAtomId = previousEdge?.nextAttachmentAtomId ?? null;
+    const nextAttachmentAtomId = nextEdge?.previousAttachmentAtomId ?? null;
+    const attachmentAtomId = previousAttachmentAtomId ?? nextAttachmentAtomId;
+    if (!attachmentAtomId || (previousAttachmentAtomId && nextAttachmentAtomId && previousAttachmentAtomId !== nextAttachmentAtomId)) {
+      return null;
+    }
+    attachmentsByRingSystemId.set(ringSystemId, attachmentAtomId);
+  }
+  return attachmentsByRingSystemId;
+}
+
+function buildSharedBackboneRingChainCoords(layoutGraph, inputCoords, ringChain, bondLength, options = {}) {
+  const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
+  const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
+  const linkEdges = orderedLinkEdges(ringChain);
+  if (orderedRingSystemIds.length < 4 || linkEdges.length !== orderedRingSystemIds.length - 1) {
+    return null;
+  }
+  const attachmentByRingSystemId = sharedBackboneAttachmentByRingSystemId(ringChain);
+  if (!attachmentByRingSystemId) {
+    return null;
+  }
+
+  const linkerScale = options.linkerScale ?? 1;
+  const startSign = options.startSign ?? 1;
+  const ringAtomIds = new Set((ringChain.ringSystems ?? []).flatMap(ringSystem => ringSystem.atomIds ?? []));
+  const linkerAtomIds = new Set(linkEdges.flatMap(edge => edge.linkerAtomIds ?? []));
+  const anchorByRingSystemId = new Map();
+  let backboneX = 0;
+  for (let index = 0; index < orderedRingSystemIds.length; index++) {
+    const ringSystemId = orderedRingSystemIds[index];
+    if (index > 0) {
+      const edge = linkEdges[index - 1];
+      backboneX += ((edge.linkerAtomIds?.length ?? 0) + 1) * bondLength * linkerScale;
+    }
+    anchorByRingSystemId.set(ringSystemId, {
+      atomId: attachmentByRingSystemId.get(ringSystemId),
+      position: { x: backboneX, y: 0 },
+      sign: index % 2 === 0 ? startSign : -startSign
+    });
+  }
+
+  const coords = new Map(inputCoords);
+  const claimedAtomIds = new Set();
+  for (const ringSystemId of orderedRingSystemIds) {
+    const ringSystem = ringSystemById.get(ringSystemId);
+    const anchor = anchorByRingSystemId.get(ringSystemId);
+    const sourceAnchor = anchor ? inputCoords.get(anchor.atomId) : null;
+    const sourceCenter = ringSystem ? centroidOf(inputCoords, ringSystem.atomIds ?? []) : null;
+    if (!ringSystem || !anchor || !sourceAnchor || !sourceCenter) {
+      return null;
+    }
+    const currentAngle = Math.atan2(sourceCenter.y - sourceAnchor.y, sourceCenter.x - sourceAnchor.x);
+    const targetAngle = anchor.sign >= 0 ? Math.PI / 2 : -Math.PI / 2;
+    const rotation = normalizeAngle(targetAngle - currentAngle);
+    for (const atomId of ringUnitAtomIds(layoutGraph, inputCoords, ringSystem, ringAtomIds, linkerAtomIds, claimedAtomIds)) {
+      const sourcePosition = inputCoords.get(atomId);
+      if (!sourcePosition) {
+        continue;
+      }
+      const relativePosition = rotateRelative(sourcePosition, sourceAnchor, rotation);
+      coords.set(atomId, {
+        x: anchor.position.x + relativePosition.x,
+        y: anchor.position.y + relativePosition.y
+      });
+    }
+  }
+
+  for (let index = 1; index < orderedRingSystemIds.length; index++) {
+    const edge = linkEdges[index - 1];
+    const previousAnchor = anchorByRingSystemId.get(orderedRingSystemIds[index - 1]);
+    const linkerAtomIdsForEdge = edge.linkerAtomIds ?? [];
+    if (!previousAnchor || linkerAtomIdsForEdge.length === 0) {
+      return null;
+    }
+    const step = ((linkerAtomIdsForEdge.length + 1) * bondLength * linkerScale) / (linkerAtomIdsForEdge.length + 1);
+    for (let linkerIndex = 0; linkerIndex < linkerAtomIdsForEdge.length; linkerIndex++) {
+      coords.set(linkerAtomIdsForEdge[linkerIndex], {
+        x: previousAnchor.position.x + step * (linkerIndex + 1),
+        y: previousAnchor.position.y
+      });
+    }
+  }
+
+  return translateToInputCentroid(inputCoords, coords);
+}
+
 function buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bondLength) {
   const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
   const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
@@ -786,7 +916,7 @@ function buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bond
   }
 
   const ringAtomIds = new Set((ringChain.ringSystems ?? []).flatMap(ringSystem => ringSystem.atomIds ?? []));
-  const linkerAtomIds = new Set(linkEdges.map(edge => edge.linkerAtomId));
+  const linkerAtomIds = new Set(linkEdges.flatMap(edge => edge.linkerAtomIds ?? []));
   const claimedAtomIds = new Set();
   const relativePositionsByRingSystemId = new Map();
   const outwardVectorsByRingSystemId = new Map();
@@ -836,18 +966,37 @@ function buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bond
     }
 
     const previousCenter = targetCenters[index - 1];
+    const previousAttachmentPosition = {
+      x: previousCenter.x + previousRelativeAttachment.x,
+      y: previousCenter.y + previousRelativeAttachment.y
+    };
+    const previousLinkerPosition = addScaledVector(previousAttachmentPosition, previousOutwardVector, bondLength);
+    let nextLinkerPosition = previousLinkerPosition;
+    if ((edge.linkerAtomIds?.length ?? 0) === 2) {
+      const linkerAxis =
+        normalizeVector({
+          x: previousOutwardVector.x - nextOutwardVector.x,
+          y: previousOutwardVector.y - nextOutwardVector.y
+        }) ?? previousOutwardVector;
+      nextLinkerPosition = addScaledVector(previousLinkerPosition, linkerAxis, bondLength);
+    }
+    const nextAttachmentPosition = subtractScaledVector(nextLinkerPosition, nextOutwardVector, bondLength);
     const nextCenter = {
-      x: previousCenter.x + previousRelativeAttachment.x - nextRelativeAttachment.x + bondLength * (previousOutwardVector.x - nextOutwardVector.x),
-      y: previousCenter.y + previousRelativeAttachment.y - nextRelativeAttachment.y + bondLength * (previousOutwardVector.y - nextOutwardVector.y)
+      x: nextAttachmentPosition.x - nextRelativeAttachment.x,
+      y: nextAttachmentPosition.y - nextRelativeAttachment.y
     };
     if (!Number.isFinite(nextCenter.x) || !Number.isFinite(nextCenter.y)) {
       return null;
     }
     targetCenters.push(nextCenter);
-    linkerPositionsByAtomId.set(edge.linkerAtomId, {
-      x: previousCenter.x + previousRelativeAttachment.x + bondLength * previousOutwardVector.x,
-      y: previousCenter.y + previousRelativeAttachment.y + bondLength * previousOutwardVector.y
-    });
+    if (edge.linkerAtomIds?.length === 1) {
+      linkerPositionsByAtomId.set(edge.linkerAtomIds[0], previousLinkerPosition);
+    } else if (edge.linkerAtomIds?.length === 2) {
+      linkerPositionsByAtomId.set(edge.linkerAtomIds[0], previousLinkerPosition);
+      linkerPositionsByAtomId.set(edge.linkerAtomIds[1], nextLinkerPosition);
+    } else {
+      return null;
+    }
   }
 
   const coords = new Map(inputCoords);
@@ -934,12 +1083,12 @@ export function runRingChainSideBranchExitRetouch(layoutGraph, inputCoords, opti
 /**
  * Rebuilds path-like isolated ring chains as rigid ring units on a single
  * projected backbone, preserving local ring geometry and re-solving the
- * single-atom glycosidic linkers plus single side-branch exits at valid bond
- * length.
+ * short glycosidic linkers plus single side-branch exits at readable bond
+ * lengths.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinates.
  * @param {object} [options] - Retouch options.
- * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean, movedAtomIds: string[], audit: object|null}} Retouch result.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean, movedAtomIds: string[], audit: object|null, bondValidationClasses?: Map<string, string>}} Retouch result.
  */
 export function runRingChainUnitProjectionRetouch(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
@@ -949,10 +1098,55 @@ export function runRingChainUnitProjectionRetouch(layoutGraph, inputCoords, opti
     if (!ringChain) {
       continue;
     }
-    const coords = buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bondLength);
-    if (!coords) {
-      continue;
+    let bestCandidate = null;
+    const sharedBackboneBondValidationClasses = relaxedLinkerBondValidationClasses(layoutGraph, ringChain, bondValidationClasses);
+    for (const linkerScale of SHARED_BACKBONE_LINKER_SCALE_CANDIDATES) {
+      for (const startSign of [1, -1]) {
+        const coords = buildSharedBackboneRingChainCoords(layoutGraph, inputCoords, ringChain, bondLength, {
+          linkerScale,
+          startSign
+        });
+        if (!coords) {
+          continue;
+        }
+        const audit = auditLayout(layoutGraph, coords, {
+          bondLength,
+          bondValidationClasses: sharedBackboneBondValidationClasses
+        });
+        const score = auditScore(audit);
+        if (!bestCandidate || score < bestCandidate.score - 1e-9) {
+          bestCandidate = {
+            coords,
+            audit,
+            bondValidationClasses: sharedBackboneBondValidationClasses,
+            score
+          };
+        }
+        if (audit.ok) {
+          break;
+        }
+      }
+      if (bestCandidate?.audit?.ok) {
+        break;
+      }
     }
+
+    if (!bestCandidate) {
+      const coords = buildProjectedRingChainCoords(layoutGraph, inputCoords, ringChain, bondLength);
+      if (!coords) {
+        continue;
+      }
+      bestCandidate = {
+        coords,
+        audit: auditLayout(layoutGraph, coords, {
+          bondLength,
+          bondValidationClasses
+        }),
+        bondValidationClasses,
+        score: null
+      };
+    }
+    const coords = bestCandidate.coords;
     const movedAtomIds = [...coords.keys()].filter(atomId => {
       const previousPosition = inputCoords.get(atomId);
       const nextPosition = coords.get(atomId);
@@ -962,10 +1156,8 @@ export function runRingChainUnitProjectionRetouch(layoutGraph, inputCoords, opti
       coords,
       changed: movedAtomIds.length > 0,
       movedAtomIds,
-      audit: auditLayout(layoutGraph, coords, {
-        bondLength,
-        bondValidationClasses
-      })
+      audit: bestCandidate.audit,
+      bondValidationClasses: bestCandidate.bondValidationClasses
     };
   }
   return {

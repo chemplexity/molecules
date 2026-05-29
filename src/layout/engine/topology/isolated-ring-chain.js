@@ -2,7 +2,8 @@
 
 const DEFAULT_MIN_RING_SYSTEM_COUNT = 4;
 const DEFAULT_HETERO_PER_RING_FLOOR = 1.5;
-const DEFAULT_ATOM_COUNT_CEILING = 260;
+const DEFAULT_ATOM_COUNT_CEILING = 1000;
+const MAX_RING_LINKER_ATOM_COUNT = 2;
 
 function componentAtomIdSet(componentOrAtomIds) {
   return new Set(Array.isArray(componentOrAtomIds?.atomIds) ? componentOrAtomIds.atomIds : componentOrAtomIds);
@@ -37,13 +38,86 @@ function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
 }
 
-function heavyNeighborIds(layoutGraph, atomId, componentAtomIds) {
-  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
-    .map(bond => otherBondAtomId(bond, atomId))
-    .filter(neighborAtomId => {
-      const atom = layoutGraph.atoms.get(neighborAtomId);
-      return atom && atom.element !== 'H' && componentAtomIds.has(neighborAtomId);
-    });
+function isAcceptedSingleAtomRingLinker(layoutGraph, linkerAtomId) {
+  const linkerAtom = layoutGraph.atoms.get(linkerAtomId);
+  return Boolean(linkerAtom && linkerAtom.element !== 'C' && linkerAtom.heavyDegree === 2);
+}
+
+function isAcceptedTwoAtomRingLinker(layoutGraph, linkerAtomIds) {
+  if (linkerAtomIds.length !== 2) {
+    return false;
+  }
+  const linkerAtoms = linkerAtomIds.map(linkerAtomId => layoutGraph.atoms.get(linkerAtomId));
+  if (linkerAtoms.some(atom => !atom || atom.heavyDegree !== 2)) {
+    return false;
+  }
+  const heteroCount = linkerAtoms.filter(atom => atom.element !== 'C').length;
+  const carbonCount = linkerAtoms.filter(atom => atom.element === 'C').length;
+  return heteroCount === 1 && carbonCount === 1;
+}
+
+function isAcceptedRingLinkerPath(layoutGraph, linkerAtomIds) {
+  if (linkerAtomIds.length === 1) {
+    return isAcceptedSingleAtomRingLinker(layoutGraph, linkerAtomIds[0]);
+  }
+  return isAcceptedTwoAtomRingLinker(layoutGraph, linkerAtomIds);
+}
+
+function collectRingLinkEdgesFromAtom(layoutGraph, ringSystem, ringAtomId, ringSystemByAtomId, componentAtomIds) {
+  const edges = [];
+  const queue = [
+    {
+      atomId: ringAtomId,
+      linkerAtomIds: []
+    }
+  ];
+  const seen = new Set([`${ringAtomId}:`]);
+
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+    const current = queue[queueIndex];
+    for (const bond of layoutGraph.bondsByAtomId.get(current.atomId) ?? []) {
+      if (bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = otherBondAtomId(bond, current.atomId);
+      if (!componentAtomIds.has(neighborAtomId)) {
+        continue;
+      }
+      const neighborRingSystemId = ringSystemByAtomId.get(neighborAtomId);
+      if (neighborRingSystemId != null) {
+        if (neighborRingSystemId !== ringSystem.id && isAcceptedRingLinkerPath(layoutGraph, current.linkerAtomIds)) {
+          edges.push({
+            firstRingSystemId: ringSystem.id,
+            secondRingSystemId: neighborRingSystemId,
+            firstAttachmentAtomId: ringAtomId,
+            secondAttachmentAtomId: neighborAtomId,
+            linkerAtomIds: current.linkerAtomIds
+          });
+        }
+        continue;
+      }
+
+      if (current.linkerAtomIds.length >= MAX_RING_LINKER_ATOM_COUNT || current.linkerAtomIds.includes(neighborAtomId)) {
+        continue;
+      }
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.heavyDegree !== 2) {
+        continue;
+      }
+      const nextLinkerAtomIds = [...current.linkerAtomIds, neighborAtomId];
+      const seenKey = `${neighborAtomId}:${nextLinkerAtomIds.join(',')}`;
+      if (seen.has(seenKey)) {
+        continue;
+      }
+      seen.add(seenKey);
+      queue.push({
+        atomId: neighborAtomId,
+        linkerAtomIds: nextLinkerAtomIds
+      });
+    }
+  }
+
+  return edges;
 }
 
 function ringLinkEdges(layoutGraph, ringSystems, componentAtomIds) {
@@ -58,35 +132,14 @@ function ringLinkEdges(layoutGraph, ringSystems, componentAtomIds) {
   const seenEdgeKeys = new Set();
   for (const ringSystem of ringSystems) {
     for (const ringAtomId of ringSystem.atomIds) {
-      for (const linkerAtomId of heavyNeighborIds(layoutGraph, ringAtomId, componentAtomIds)) {
-        if (ringSystemByAtomId.get(linkerAtomId) != null) {
-          continue;
-        }
-        const linkerAtom = layoutGraph.atoms.get(linkerAtomId);
-        if (!linkerAtom || linkerAtom.element === 'C') {
-          continue;
-        }
-        const linkerNeighbors = heavyNeighborIds(layoutGraph, linkerAtomId, componentAtomIds);
-        if (linkerNeighbors.length !== 2 || !linkerNeighbors.includes(ringAtomId)) {
-          continue;
-        }
-        const otherRingAtomId = linkerNeighbors.find(atomId => atomId !== ringAtomId) ?? null;
-        const otherRingSystemId = otherRingAtomId ? ringSystemByAtomId.get(otherRingAtomId) : null;
-        if (otherRingSystemId == null || otherRingSystemId === ringSystem.id) {
-          continue;
-        }
+      for (const edge of collectRingLinkEdgesFromAtom(layoutGraph, ringSystem, ringAtomId, ringSystemByAtomId, componentAtomIds)) {
+        const otherRingSystemId = edge.secondRingSystemId;
         const edgeKey = ringSystem.id < otherRingSystemId ? `${ringSystem.id}:${otherRingSystemId}` : `${otherRingSystemId}:${ringSystem.id}`;
         if (seenEdgeKeys.has(edgeKey)) {
           continue;
         }
         seenEdgeKeys.add(edgeKey);
-        edges.push({
-          firstRingSystemId: ringSystem.id,
-          secondRingSystemId: otherRingSystemId,
-          firstAttachmentAtomId: ringAtomId,
-          secondAttachmentAtomId: otherRingAtomId,
-          linkerAtomIds: [linkerAtomId]
-        });
+        edges.push(edge);
       }
     }
   }
@@ -164,7 +217,8 @@ function orderedRingSystemIdsForPath(ringSystems, adjacency) {
 
 /**
  * Detects large components that are mostly a path of simple isolated rings
- * connected by single hetero-atom linkers, such as sulfated glycoside chains.
+ * connected by short hetero-containing linkers, such as sulfated and acetal
+ * glycoside chains.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object|string[]} componentOrAtomIds - Component descriptor or atom IDs.
  * @param {object} [options] - Detection thresholds.

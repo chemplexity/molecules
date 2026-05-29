@@ -38,6 +38,8 @@ const ATTACHED_RING_ROTATION_TIDY_ANGLES = [Math.PI / 6, -Math.PI / 6, Math.PI /
 const ATTACHED_RING_FINE_ROTATION_ANGLES = [Math.PI / 12, -(Math.PI / 12), Math.PI / 4, -(Math.PI / 4)];
 const ATTACHED_RING_PREFERRED_SIDE_HEAVY_GAP = 3;
 const ATTACHED_RING_COUPLED_RESCUE_ANGLES = [Math.PI / 12, -(Math.PI / 12), Math.PI / 6, -(Math.PI / 6), Math.PI / 4, -(Math.PI / 4)];
+const ATTACHED_RING_ROOT_CLEARANCE_ROTATIONS = [Math.PI / 6, -(Math.PI / 6), Math.PI / 2, -(Math.PI / 2)];
+const ATTACHED_RING_ROOT_CLEARANCE_STRETCHES = [0.15];
 const ATTACHED_RING_PERIPHERAL_FOCUS_CLEARANCE_FACTOR = 0.75;
 const MAX_ANCHOR_SIDE_OUTWARD_SUBTREE_HEAVY_ATOMS = 24;
 const ATTACHED_RING_PARENT_CONJUGATED_HETERO_ELEMENTS = new Set(['O', 'S', 'Se', 'P']);
@@ -166,6 +168,9 @@ function attachedRingSeedKey(_descriptor, seed) {
   }
   if (seed.kind === 'coupled-root-anchored') {
     return `coupled-root-anchored:${candidateKeyAngle(seed.anchorRotation)}:${candidateKeyAngle(seed.rootRotation)}`;
+  }
+  if (seed.kind === 'root-clearance-stretch') {
+    return `root-clearance-stretch:${candidateKeyAngle(seed.rotation)}:${seed.stretch}`;
   }
   if (seed.kind === 'composite') {
     const childAnchor = seed.childDescriptor?.ringAnchorAtomId ?? 'unknown';
@@ -678,6 +683,24 @@ function applyRigidRotationToCoords(coords, subtreeAtomIds, pivotAtomId, rotatio
     rotatedCoords.set(atomId, add(pivotPosition, rotate(sub(currentPosition, pivotPosition), rotation)));
   }
   return rotatedCoords;
+}
+
+function stretchAttachedRingRootClearance(coords, descriptor, rotation, stretch) {
+  const rotatedCoords = applyRigidRotationToCoords(coords, descriptor.subtreeAtomIds, descriptor.anchorAtomId, rotation);
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = rotatedCoords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition || !(stretch > 0)) {
+    return null;
+  }
+  const clearanceOffset = fromAngle(angleOf(sub(rootPosition, anchorPosition)), stretch);
+  const overridePositions = new Map();
+  for (const atomId of descriptor.subtreeAtomIds) {
+    const position = rotatedCoords.get(atomId);
+    if (position) {
+      overridePositions.set(atomId, add(position, clearanceOffset));
+    }
+  }
+  return overridePositions;
 }
 
 function reflectSubtreeAcrossBond(coords, subtreeAtomIds, lineStartAtomId, lineEndAtomId, fixedAtomIds = new Set()) {
@@ -4300,6 +4323,17 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
               }
             }
           }
+          if (baseOverlapCount > 0) {
+            for (const rotation of ATTACHED_RING_ROOT_CLEARANCE_ROTATIONS) {
+              for (const stretch of ATTACHED_RING_ROOT_CLEARANCE_STRETCHES) {
+                seeds.push({
+                  kind: 'root-clearance-stretch',
+                  rotation,
+                  stretch
+                });
+              }
+            }
+          }
           if (searchContext.attachedCarbonylRingChildren.length > 0) {
             const compositeRotations = [0, ...ATTACHED_RING_ROTATION_TIDY_ANGLES];
             for (const childDescriptor of searchContext.attachedCarbonylRingChildren) {
@@ -4364,6 +4398,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
               }
             }
             return overridePositions;
+          }
+          if (seed.kind === 'root-clearance-stretch') {
+            return stretchAttachedRingRootClearance(inputCoords, inputDescriptor, seed.rotation, seed.stretch);
           }
           if (seed.kind !== 'composite') {
             return null;

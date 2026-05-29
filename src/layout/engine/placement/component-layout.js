@@ -468,6 +468,15 @@ function isMixedRingRescuePreferredPlacement(layoutGraph, candidateScore, incumb
   }
   ensurePlacementAudit(layoutGraph, candidateScore);
   ensurePlacementAudit(layoutGraph, incumbentScore);
+  if (
+    candidateScore.audit.severeOverlapCount > 0 &&
+    incumbentScore.audit.severeOverlapCount > 0 &&
+    candidateScore.audit.severeOverlapCount >= incumbentScore.audit.severeOverlapCount &&
+    candidateScore.audit.severeOverlapPenalty > incumbentScore.audit.severeOverlapPenalty + 1e-6 &&
+    candidateScore.audit.severeBondLengthFailureCount <= incumbentScore.audit.severeBondLengthFailureCount
+  ) {
+    return false;
+  }
   if (candidateScore.audit.bondLengthFailureCount !== incumbentScore.audit.bondLengthFailureCount) {
     return candidateScore.audit.bondLengthFailureCount < incumbentScore.audit.bondLengthFailureCount;
   }

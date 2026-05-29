@@ -121,6 +121,8 @@ const DIRECT_ATTACHED_RING_ROOT_PARENT_SWEEP_OFFSETS = [
   -(2 * Math.PI) / 3,
   Math.PI
 ];
+const CHELATE_MACROCYCLE_CENTER_ELEMENTS = new Set(['Al', 'Ga', 'In']);
+const CHELATE_MACROCYCLE_BRIDGED_RING_ORDER_CANDIDATE_LIMIT = 180;
 const DIRECT_ATTACHMENT_FINE_ANGLE_OFFSETS = [Math.PI / 12, -(Math.PI / 12)];
 const DIRECT_ATTACHMENT_LOCAL_REFINEMENT_RING_ROTATION_OFFSETS = [0, Math.PI / 15, -(Math.PI / 15), Math.PI / 12, -(Math.PI / 12), Math.PI / 6, -(Math.PI / 6)];
 const DIRECT_ATTACHMENT_LOCAL_ROOT_ROTATION_REFINEMENT_OFFSETS = [Math.PI / 60, -(Math.PI / 60), Math.PI / 30, -(Math.PI / 30), Math.PI / 20, -(Math.PI / 20), Math.PI / 15, -(Math.PI / 15)];
@@ -5193,6 +5195,136 @@ function shouldTryMacrocycleAromaticRingRescue(rings, templateId, placement) {
   return regularity.ringCount > 0 && regularity.maxAngleDeviation > MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION;
 }
 
+function isChelateMacrocycleCenterAtom(atom) {
+  return isMetalAtom(atom) || CHELATE_MACROCYCLE_CENTER_ELEMENTS.has(atom?.element);
+}
+
+function shouldTryMetalChelateMacrocycleBridgedRescue(layoutGraph, ringSystem, rings, templateId, audit) {
+  if (templateId || !audit || audit.bondLengthFailureCount === 0 || !ringSystem?.atomIds?.some(atomId => isChelateMacrocycleCenterAtom(layoutGraph.atoms.get(atomId)))) {
+    return false;
+  }
+  if (!rings.some(ring => ring.atomIds.length >= 12)) {
+    return false;
+  }
+
+  const ringIds = new Set(ringSystem.ringIds ?? []);
+  const chelateConnections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  const bridgedChelateConnectionCount = chelateConnections.filter(connection => connection.kind === 'bridged').length;
+  const metalChelateRingCount = rings.filter(ring => ring.atomIds.some(atomId => isChelateMacrocycleCenterAtom(layoutGraph.atoms.get(atomId)))).length;
+  return bridgedChelateConnectionCount >= 3 && metalChelateRingCount >= 3;
+}
+
+function isBetterMetalChelateMacrocycleBridgedRescue(candidateAudit, incumbentAudit) {
+  if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount || candidateAudit.labelOverlapCount > incumbentAudit.labelOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) > (incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.ok !== incumbentAudit.ok) {
+    return candidateAudit.ok === true;
+  }
+  if (candidateAudit.severeBondLengthFailureCount !== incumbentAudit.severeBondLengthFailureCount) {
+    return candidateAudit.severeBondLengthFailureCount < incumbentAudit.severeBondLengthFailureCount;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  const candidateCrossings = candidateAudit.visibleHeavyBondCrossingCount ?? 0;
+  const incumbentCrossings = incumbentAudit.visibleHeavyBondCrossingCount ?? 0;
+  if (candidateCrossings !== incumbentCrossings) {
+    return candidateCrossings < incumbentCrossings;
+  }
+  if (candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  return false;
+}
+
+function appendUniqueChelateMacrocycleRingOrder(orders, seenKeys, ringOrder) {
+  if (orders.length >= CHELATE_MACROCYCLE_BRIDGED_RING_ORDER_CANDIDATE_LIMIT) {
+    return false;
+  }
+  const key = ringOrder.map(ring => ring.id).join('|');
+  if (seenKeys.has(key)) {
+    return true;
+  }
+  seenKeys.add(key);
+  orders.push(ringOrder);
+  return orders.length < CHELATE_MACROCYCLE_BRIDGED_RING_ORDER_CANDIDATE_LIMIT;
+}
+
+function appendChelateMacrocycleRingOrderPermutations(orders, seenKeys, prefix, remainingRings) {
+  if (orders.length >= CHELATE_MACROCYCLE_BRIDGED_RING_ORDER_CANDIDATE_LIMIT) {
+    return false;
+  }
+  if (remainingRings.length === 0) {
+    return appendUniqueChelateMacrocycleRingOrder(orders, seenKeys, prefix);
+  }
+  for (let index = 0; index < remainingRings.length; index++) {
+    const nextRing = remainingRings[index];
+    const nextRemainingRings = [...remainingRings.slice(0, index), ...remainingRings.slice(index + 1)];
+    if (!appendChelateMacrocycleRingOrderPermutations(orders, seenKeys, [...prefix, nextRing], nextRemainingRings)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function ringIdSort(firstRing, secondRing) {
+  return (Number(firstRing.id) || 0) - (Number(secondRing.id) || 0);
+}
+
+function metalChelateMacrocycleBridgedRingOrders(layoutGraph, rings) {
+  const orders = [];
+  const seenKeys = new Set();
+  appendUniqueChelateMacrocycleRingOrder(orders, seenKeys, rings);
+  if (rings.length > 6) {
+    return orders;
+  }
+
+  const centerSmallRings = rings
+    .filter(ring => (ring.atomIds?.length ?? 0) <= 6 && ring.atomIds.some(atomId => isChelateMacrocycleCenterAtom(layoutGraph.atoms.get(atomId))))
+    .sort((firstRing, secondRing) => -ringIdSort(firstRing, secondRing));
+  const largeRings = rings.filter(ring => (ring.atomIds?.length ?? 0) >= 12).sort(ringIdSort);
+  if (centerSmallRings.length === 0 || largeRings.length === 0) {
+    return orders;
+  }
+
+  for (const firstRing of centerSmallRings) {
+    for (const secondRing of largeRings) {
+      const remainingRings = rings.filter(ring => ring !== firstRing && ring !== secondRing);
+      if (!appendChelateMacrocycleRingOrderPermutations(orders, seenKeys, [firstRing, secondRing], remainingRings)) {
+        return orders;
+      }
+    }
+  }
+  return orders;
+}
+
+function selectMetalChelateMacrocycleBridgedPlacement(layoutGraph, ringSystem, rings, family, bondLength, templateId) {
+  let bestPlacement = null;
+  let bestAudit = null;
+  for (const ringOrder of metalChelateMacrocycleBridgedRingOrders(layoutGraph, rings)) {
+    const placement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutBridgedFamily(ringOrder, bondLength, { layoutGraph, templateId }), templateId);
+    const audit = auditRingSystemPlacement(layoutGraph, ringSystem, placement, bondLength);
+    if (!bestPlacement || isBetterMetalChelateMacrocycleBridgedRescue(audit, bestAudit)) {
+      bestPlacement = placement;
+      bestAudit = audit;
+      if (audit?.ok === true && (audit.visibleHeavyBondCrossingCount ?? 0) === 0) {
+        break;
+      }
+    }
+  }
+  return {
+    placement: bestPlacement,
+    audit: bestAudit
+  };
+}
+
 function isBetterMacrocycleAromaticRingRescue(candidatePlacement, incumbentPlacement, candidateAudit, incumbentAudit, rings) {
   if (!candidatePlacement?.coords || !candidateAudit || !incumbentPlacement?.coords || !incumbentAudit) {
     return false;
@@ -5409,6 +5541,13 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
     const macrocyclePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutMacrocycleFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
     let bestPlacement = macrocyclePlacement;
     let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
+    if (shouldTryMetalChelateMacrocycleBridgedRescue(layoutGraph, ringSystem, rings, templateId, bestAudit)) {
+      const { placement: bridgedChelatePlacement, audit: bridgedChelateAudit } = selectMetalChelateMacrocycleBridgedPlacement(layoutGraph, ringSystem, rings, family, bondLength, templateId);
+      if (isBetterMetalChelateMacrocycleBridgedRescue(bridgedChelateAudit, bestAudit)) {
+        bestPlacement = bridgedChelatePlacement;
+        bestAudit = bridgedChelateAudit;
+      }
+    }
     if (shouldTryMacrocycleAromaticRingRescue(rings, templateId, bestPlacement)) {
       const bridgedRescuePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
       const bridgedRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bridgedRescuePlacement, bondLength);

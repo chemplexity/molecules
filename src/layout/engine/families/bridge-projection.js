@@ -91,6 +91,19 @@ function bridgePathSegmentCounts(paths) {
   return paths.map(path => path.length - 1).filter(segmentCount => segmentCount > 0);
 }
 
+function bridgePathsHaveDistinctInternalAtoms(paths) {
+  const seenAtomIds = new Set();
+  for (const path of paths) {
+    for (const atomId of path.slice(1, -1)) {
+      if (seenAtomIds.has(atomId)) {
+        return false;
+      }
+      seenAtomIds.add(atomId);
+    }
+  }
+  return true;
+}
+
 /**
  * Returns the shortest bridge path segment count.
  * @param {string[][]} paths - Enumerated bridge paths.
@@ -109,6 +122,24 @@ function shortestBridgePathSegmentCount(paths) {
 function isBalancedLongThetaPathSet(paths) {
   const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
   return segmentCounts.length === 3 && segmentCounts[0] >= 3 && segmentCounts[2] - segmentCounts[0] <= 1;
+}
+
+function isExactThetaProjectionPathSet(paths) {
+  const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
+  return (
+    segmentCounts.length === 3 &&
+    segmentCounts[0] >= 3 &&
+    segmentCounts[1] > segmentCounts[0] &&
+    segmentCounts[2] > segmentCounts[0] &&
+    segmentCounts[2] - segmentCounts[0] <= 4 &&
+    segmentCounts[2] <= 8 &&
+    bridgePathsHaveDistinctInternalAtoms(paths)
+  );
+}
+
+function exactThetaProjectionPathSetScore(paths) {
+  const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
+  return Math.max(...segmentCounts) * 100 + (segmentCounts[2] - segmentCounts[0]) * 10 + segmentCounts.reduce((sum, count) => sum + count, 0);
 }
 
 /**
@@ -157,7 +188,7 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
   const defaultPaths = enumerateBridgePaths(layoutGraph, atomIds, defaultBridgeheadAtomIds, {
     maxPathCount: BRIDGE_PROJECTION_FACTORS.maxProjectedPathCount + 1
   });
-  if (isBalancedLongThetaPathSet(defaultPaths) || shortestBridgePathSegmentCount(defaultPaths) >= 3) {
+  if (isExactThetaProjectionPathSet(defaultPaths) || ((isBalancedLongThetaPathSet(defaultPaths) || shortestBridgePathSegmentCount(defaultPaths) >= 3) && bridgePathsHaveDistinctInternalAtoms(defaultPaths))) {
     return defaultBridgeheadAtomIds;
   }
 
@@ -165,6 +196,8 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
   const candidateAtomIds = atomIds
     .filter(atomId => bridgeProjectionInternalHeavyDegree(layoutGraph, atomId, atomIdSet) >= 3 && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) > 1)
     .sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+  let bestExactThetaPair = isExactThetaProjectionPathSet(defaultPaths) ? defaultBridgeheadAtomIds : null;
+  let bestExactThetaScore = bestExactThetaPair ? exactThetaProjectionPathSetScore(defaultPaths) : Number.POSITIVE_INFINITY;
   let bestPair = defaultBridgeheadAtomIds;
   let bestScore = Number.POSITIVE_INFINITY;
 
@@ -180,6 +213,13 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
       const candidatePaths = enumerateBridgePaths(layoutGraph, atomIds, candidatePair, {
         maxPathCount: BRIDGE_PROJECTION_FACTORS.maxProjectedPathCount + 1
       });
+      if (isExactThetaProjectionPathSet(candidatePaths)) {
+        const candidateScore = exactThetaProjectionPathSetScore(candidatePaths);
+        if (candidateScore < bestExactThetaScore) {
+          bestExactThetaPair = candidatePair;
+          bestExactThetaScore = candidateScore;
+        }
+      }
       if (!isBalancedLongThetaPathSet(candidatePaths)) {
         continue;
       }
@@ -191,7 +231,120 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
     }
   }
 
+  if (bestExactThetaPair) {
+    return bestExactThetaPair;
+  }
   return bestPair;
+}
+
+function circularBridgePathTargets(firstHead, secondHead, internalAtomIds, side, bondLength) {
+  const chord = sub(secondHead, firstHead);
+  const chordLength = Math.hypot(chord.x, chord.y);
+  const segmentCount = internalAtomIds.length + 1;
+  if (chordLength <= 1e-9 || segmentCount <= 1 || chordLength >= segmentCount * bondLength - 1e-9) {
+    return null;
+  }
+
+  let lowTheta = 1e-6;
+  let highTheta = 2 * Math.PI - 1e-6;
+  function chordToSegmentRatio(theta) {
+    return Math.sin(theta / 2) / Math.sin(theta / (2 * segmentCount));
+  }
+
+  const targetRatio = chordLength / bondLength;
+  for (let iteration = 0; iteration < 64; iteration++) {
+    const midTheta = (lowTheta + highTheta) / 2;
+    if (chordToSegmentRatio(midTheta) > targetRatio) {
+      lowTheta = midTheta;
+    } else {
+      highTheta = midTheta;
+    }
+  }
+
+  const theta = (lowTheta + highTheta) / 2;
+  const radius = chordLength / (2 * Math.sin(theta / 2));
+  const centerOffset = chordLength / (2 * Math.tan(theta / 2));
+  const unitChord = {
+    x: chord.x / chordLength,
+    y: chord.y / chordLength
+  };
+  const unitNormal = {
+    x: -unitChord.y,
+    y: unitChord.x
+  };
+  const midpoint = {
+    x: (firstHead.x + secondHead.x) / 2,
+    y: (firstHead.y + secondHead.y) / 2
+  };
+  const center = {
+    x: midpoint.x + unitNormal.x * side * centerOffset,
+    y: midpoint.y + unitNormal.y * side * centerOffset
+  };
+  const startAngle = angleOf(sub(firstHead, center));
+  const step = theta / segmentCount;
+  const forwardEnd = {
+    x: center.x + Math.cos(startAngle + theta) * radius,
+    y: center.y + Math.sin(startAngle + theta) * radius
+  };
+  const direction = distance(forwardEnd, secondHead) <= 1e-6 ? 1 : -1;
+
+  const targets = new Map();
+  for (let index = 0; index < internalAtomIds.length; index++) {
+    const angle = startAngle + direction * step * (index + 1);
+    targets.set(internalAtomIds[index], {
+      x: center.x + Math.cos(angle) * radius,
+      y: center.y + Math.sin(angle) * radius
+    });
+  }
+  return targets;
+}
+
+function exactThetaOuterPathSide(path, orientedCoords, fallbackSide) {
+  const internalAtomIds = path.slice(1, -1);
+  if (internalAtomIds.length === 0) {
+    return fallbackSide;
+  }
+  const meanSeedY = internalAtomIds.reduce((sum, atomId) => sum + (orientedCoords.get(atomId)?.y ?? 0), 0) / internalAtomIds.length;
+  return meanSeedY > 1e-6 ? 1 : meanSeedY < -1e-6 ? -1 : fallbackSide;
+}
+
+function buildExactThetaProjectionCoords(sortedPaths, bridgeheadAtomIds, orientedCoords, bondLength) {
+  if (!isExactThetaProjectionPathSet(sortedPaths)) {
+    return null;
+  }
+
+  const segmentCounts = bridgePathSegmentCounts(sortedPaths).sort((firstCount, secondCount) => firstCount - secondCount);
+  const headDistance = segmentCounts[0] * bondLength;
+  const [firstHeadId, secondHeadId] = bridgeheadAtomIds;
+  const firstHead = { x: -headDistance / 2, y: 0 };
+  const secondHead = { x: headDistance / 2, y: 0 };
+  const coords = new Map(orientedCoords);
+  coords.set(firstHeadId, firstHead);
+  coords.set(secondHeadId, secondHead);
+
+  const centerPathInternalAtomIds = sortedPaths[0].slice(1, -1);
+  for (let index = 0; index < centerPathInternalAtomIds.length; index++) {
+    const t = (index + 1) / (centerPathInternalAtomIds.length + 1);
+    coords.set(centerPathInternalAtomIds[index], {
+      x: firstHead.x + (secondHead.x - firstHead.x) * t,
+      y: 0
+    });
+  }
+
+  const firstOuterSide = exactThetaOuterPathSide(sortedPaths[1], orientedCoords, 1);
+  const outerSides = [firstOuterSide, -firstOuterSide];
+  for (let pathIndex = 1; pathIndex < sortedPaths.length; pathIndex++) {
+    const internalAtomIds = sortedPaths[pathIndex].slice(1, -1);
+    const targets = circularBridgePathTargets(firstHead, secondHead, internalAtomIds, outerSides[pathIndex - 1], bondLength);
+    if (!targets) {
+      return null;
+    }
+    for (const [atomId, position] of targets) {
+      coords.set(atomId, position);
+    }
+  }
+
+  return coords;
 }
 
 /**
@@ -347,6 +500,14 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     }
     return firstPath.join('>').localeCompare(secondPath.join('>'), 'en', { numeric: true });
   });
+  const exactThetaCoords = buildExactThetaProjectionCoords(sortedPaths, bridgeheadAtomIds, oriented.coords, bondLength);
+  if (exactThetaCoords) {
+    return {
+      coords: exactThetaCoords,
+      bridgeheadAtomIds,
+      pathCount: paths.length
+    };
+  }
   for (let pathIndex = 0; pathIndex < sortedPaths.length; pathIndex++) {
     const path = sortedPaths[pathIndex];
     const internalAtomIds = path.slice(1, -1);

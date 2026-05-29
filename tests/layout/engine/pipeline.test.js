@@ -42,6 +42,13 @@ const GLYCOPEPTIDE_MACROCYCLE_SMILES =
   'C[NH2+][C@@H](CC(C)C)C(=O)N[C@@H]1[C@H](O)C2=CC=C(OC3=CC4=CC(OC5=CC=C(C=C5Cl)[C@@H](O[C@H]5C[C@@](C)([NH3+])[C@H](O)[C@@H](C)O5)[C@H]5NC(=O)[C@H](NC(=O)[C@H]4NC(=O)[C@@H](CC(N)=O)NC1=O)C1=CC=C(O)C(=C1)C1=C(O)C=C(O)C=C1[C@@H](NC5=O)C(O)=O)=C3O[C@H]1O[C@@H](CO)[C@H](O)[C@@H](O)[C@@H]1O[C@@H]1C[C@](C)([NH3+])[C@@H](O)[C@H](C)O1)C(Cl)=C2';
 const LARGE_PHOSPHATE_RING_CHAIN_SMILES =
   'CO[C@@H]1[C@H](<OP(=O)(O)OC[C@H]2O[C@H]([C@H](OC)[C@@H]2OP(=O)(O)OC[C@H]3O[C@H]([C@H](OC)[C@@H]3OP(=O)(O)OC[C@H]4O[C@H]([C@H](OC)[C@@H]4OP(=O)(O)OC[C@H]5O[C@H]([C@H](OC)[C@@H]5OP(=O)(O)O)N6C=CC(=NC6=O)N)n7cnc8C(=O)NC(=Nc78)N)n9cnc%10C(=O)NC(=Nc9%10)N)N%11C=CC(=NC%11=O)N>)[C@@H](<COP(=O)(O)O[C@@H]%12[C@@H](COP(=O)(O)O[C@@H]%13[C@@H](COP(=O)(O)O[C@@H]%14[C@@H](COP(=O)(O)O[C@@H]%15[C@@H](COP(=O)(O)O[C@@H]%16[C@@H](COP(=O)(O)O[C@@H]%17[C@@H](COP(=O)(O)O[C@@H]%18[C@@H](COP(=O)(O)OP(=O)(O)O[C@@H]%19[C@@H](COP(=O)(O)O[C@@H]%20[C@@H](COP(=O)(O)O[C@@H]%21[C@@H](COP(=O)(O)O[C@@H]%22[C@@H](COP(=O)(O)O[C@@H]%23[C@@H](COP(=O)(O)O[C@H]%24C[C@@H](O[C@@H]%24CN%25NNC(=C%25)CO[C@H]%26CC[C@]%27(C)[C@H]%28CC[C@]%29(C)[C@H](CC[C@H]%29[C@@H]%28CC=C%27C%26)[C@H](C)CCCC(C)C)N%30C=C(C)C(=O)NC%30=O)O[C@H]([C@@H]%23OC)n%31cnc%32c(N)ncnc%31%32)O[C@H]([C@@H]%22OC)N%33C=CC(=NC%33=O)N)O[C@H]([C@@H]%21OC)N%34C=CC(=NC%34=O)N)O[C@H]([C@@H]%20OC)N%35C=CC(=NC%35=O)N)O[C@H]([C@@H]%19OC)n%36cnc%37c(N)ncnc%36%37)O[C@H]([C@@H]%18OC)n%38cnc%39c(N)ncnc%38%39)O[C@H]([C@@H]%17OC)N%40C=CC(=NC%40=O)N)O[C@H]([C@@H]%16OC)n%41cnc%42c(N)ncnc%41%42)O[C@H]([C@@H]%15OC)N%43C=CC(=NC%43=O)N)O[C@H]([C@@H]%14OC)N%44C=CC(=O)NC%44=O)O[C@H]([C@@H]%13OC)n%45cnc%46c(N)ncnc%45%46)O[C@H]([C@@H]%12OC)N%47C=CC(=NC%47=O)N>)O[C@H]1N%48C=CC(=O)NC%48=O';
+const GALLIUM_CHELATE_MACROCYCLE_SMILES =
+  'CC1=[O][Ga]2345ON1CCC[C@H]1NC(=O)CNC(=O)[C@H](CO)NC(=O)CNC(=O)[C@H](CCCN(O2)C(C)=[O]3)NC(=O)C(CCCN(O4)C(C)=[O]5)NC1=O';
+const SINGLE_SPIRO_SHARED_PATH_FIVE_RING_CAGE_SMILES = 'CCC1(CC)C2CC3(CC3)C1C[NH+]2C';
+const DOUBLE_SHARED_PATH_SIX_SEVEN_EIGHT_CAGE_SMILES = 'CC(=O)C12CNC(CN1)C1CN=CNC(C1)C2';
+const LONG_THETA_SHARED_PATH_AMMONIUM_CAGE_SMILES = 'CC(C)C12CCC(CCC[NH2+]C1)C(C)CC2O';
+const AMINO_ETHER_LONG_THETA_CAGE_SMILES = 'CCCCC1(N)CNC2CN(C)C1COCC2';
+const AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_SMILES = 'C1CC2C1C1CCNC2C2=C1N=CO2';
 
 /**
  * Returns the interior angles for an ordered ring path.
@@ -454,6 +461,181 @@ describe('layout/engine/pipeline', () => {
       assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
       assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
     }
+  });
+
+  it('shifts collapsed compact fused cage peripheral paths away from severe contacts', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'CCC12C3C4C5OCC(N)(C1CNC25)C34C');
+    assert.ok(smiles, 'expected the compact fused cage peripheral-path regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 1);
+  });
+
+  it('bends flattened compact aza bridges away from stretched three-member chords', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'CCN1CC23C=CC4OC(C)CN2C34C1=N');
+    assert.ok(smiles, 'expected the compact aza bridge regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.placementMode, 'kamada-kawai-cage');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 1);
+  });
+
+  it('seeds compact saturated bridged-spiro cages from the shortest lane', () => {
+    const smilesCases = [
+      'CC1C[NH+]2CCC11CCC(C1)C2',
+      'CC(C)C1CC2(C[NH3+])CCCC1C21CC1'
+    ];
+
+    for (const smiles of smilesCases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected the compact saturated bridged-spiro regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'bridged');
+      assert.equal(result.metadata.mixedMode, true);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+      assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 2);
+    }
+  });
+
+  it('keeps compact bridged projection from replacing a cleaner regularized seed', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'CC12CCCC(CC11C[NH2+]C1)OCCO2');
+    assert.ok(smiles, 'expected the compact projection-regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 1);
+  });
+
+  it('seeds aromatic fused bridged scaffolds from the five-member bridge lane', () => {
+    const smilesCases = [
+      'CC(=CCc1c(O)cc(O)c2C(=O)C3=C[C@@H]4[C@H](CN5CCCCC5)[C@H]6COC(CC=C(C)C)(C4=O)[C@@]36Oc12)C',
+      'CC(=CCc1c(O)cc(O)c2C(=O)C3=C[C@@H]4C[C@H]5C(C)(C)OC(CC=C(C)C)(C4=O)[C@@]35Oc12)C'
+    ];
+
+    for (const smiles of smilesCases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected the aromatic fused bridged regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'bridged');
+      assert.equal(result.metadata.mixedMode, true);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+      assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 2);
+    }
+  });
+
+  it('seeds saturated double-bridged seven-member lanes from ring-system order', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'CC1OC2CC(C1N)C1CC(N)CC2C(=N)N1');
+    assert.ok(smiles, 'expected the saturated double-bridged regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+  });
+
+  it('seeds compact bridged four-five shared paths from ring-system order', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'C[NH2+]C1(C)C2CCC1C2(O)C([O-])=O');
+    assert.ok(smiles, 'expected the compact four-five bridged regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 1);
+  });
+
+  it('keeps compact sulfone aza cyclopropane cages on the bridged seed', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'CC1CC23NS(=O)(=O)CC2(CO1)NC1CC31C');
+    assert.ok(smiles, 'expected the compact sulfone aza cyclopropane regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.placementMode, 'projected-kamada-kawai');
+    assert.deepEqual(result.metadata.placedFamilies, ['bridged']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 2);
   });
 
   it('records per-phase timing metadata when explicitly enabled', () => {
@@ -2699,7 +2881,7 @@ describe('layout/engine/pipeline', () => {
     }
   });
 
-  it('short-circuits giant fullerene-like fused cages to the direct cage KK rescue without changing the current audit ceiling', () => {
+  it('short-circuits giant fullerene-like fused cages to a polished direct cage KK rescue', () => {
     const molecule = parseSMILES(
       'C12=C3C4=C5C6=C1C7=C8C9=C1C%10=C%11C(=C29)C3=C2C3=C4C4=C5C5=C9C6=C7C6=C7C8=C1C1=C8C%10=C%10C%11=C2C2=C3C3=C4C4=C5C5=C%11C%12=C(C6=C95)C7=C1C1=C%12C5=C%11C4=C3C3=C5C(=C81)C%10=C23'
     );
@@ -2710,9 +2892,11 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'fused');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.coords.size, molecule.atoms.size);
-    assert.ok(result.metadata.audit.severeOverlapCount <= 2);
-    assert.ok(result.metadata.audit.bondLengthFailureCount <= 15);
-    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.75);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.6);
     assert.ok(result.metadata.timing.placementMs < 1000, `expected the giant fused cage to bypass the runaway planar fused pass, got ${result.metadata.timing.placementMs}ms`);
     assert.ok(elapsed < 2000, `expected the giant fused cage to finish comfortably under 2s, got ${elapsed}ms`);
   });
@@ -3414,7 +3598,8 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.fallback.mode, null);
     assert.equal(result.metadata.placementAudit.bondLengthFailureCount, 0);
-    assert.ok(pathLikeRingChainAspect(result.layoutGraph, result.coords) > 8);
+    const ringChainAspect = pathLikeRingChainAspect(result.layoutGraph, result.coords);
+    assert.ok(Math.max(ringChainAspect, 1 / ringChainAspect) > 8);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'S35', 'O34', 'O38') - 180) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'S98', 'O97', 'O101') - 180) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'S35', 'O36', 'O38') - 90) < 1e-6);
@@ -3437,6 +3622,53 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.fallback.mode, null);
     assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords) < 1e-9);
+  });
+
+  it('projects shared-anomeric glycan chains onto a clean stretched backbone', { timeout: 15000 }, () => {
+    const smiles = bugMolecules.find(candidate => candidate.startsWith('OC[C@H]1O[C@@](CO)(OC[C@@]2('));
+    assert.ok(smiles, 'expected the shared-anomeric glycan regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    const ringChainAspect = pathLikeRingChainAspect(result.layoutGraph, result.coords);
+    assert.ok(Math.max(ringChainAspect, 1 / ringChainAspect) > 10);
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected shared-anomeric glycan chain to stay under 10s, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('clears cyclic glycan macrocycle pyranose bond failures without terminal hydroxyl crossings', { timeout: 10000 }, () => {
+    const smiles = bugMolecules.find(candidate => candidate.startsWith('OC[C@H]1O[C@H]2O[C@@H]3[C@H](CO)O[C@H](O[C@@H]4'));
+    assert.ok(smiles, 'expected the cyclic glycan macrocycle regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected cyclic glycan macrocycle to stay under 10s, got ${result.metadata.timing.totalMs}ms`);
   });
 
   it('keeps the inter-ring ether between fused sugar rings on a proper ether bond angle', () => {
@@ -4591,7 +4823,10 @@ describe('layout/engine/pipeline', () => {
       'CC(=O)NC1(C)C2CC(C#C)C1N=C(C)OC2',
       'CC1NC2COCCCC1CC2NCCC#C',
       'CC1(C)CCOC2CCC(C1)[NH+](CCC#N)C2',
-      'CC1CC2C(N)C(C(CC#N)N2C)C(O)CO1'
+      'CC1CC2C(N)C(C(CC#N)N2C)C(O)CO1',
+      'CC1C2OCC(=N)OCC1(C#C)C(O)C2CN',
+      'CC(C)CNC1CC2NC(C)CNCC1C2=O',
+      'CC12CCC(N)(C3=C1C(O)=C(N)N3)C2(O)C#N'
     ];
 
     for (const smiles of smilesCases) {
@@ -4713,6 +4948,7 @@ describe('layout/engine/pipeline', () => {
       'CC1C2CC(CC3CCCN23)C2=C1ON=C2',
       'CS[C@]12[C@H]3[C@H](C(=O)N(C)C3=O)[C@](C)(C(=O)N1C)C(=O)N2c4ccccc4',
       'CC1C2C3OCOC3CN1C1CNC(=N)C21O',
+      'CC1C2CC3CCC(=O)CN3CC1[NH2+]2',
       'COCC12CCCC(CC1[NH3+])C1=NC=NC=C21',
       'CC(=O)OC[C@]1(O)[C@@H]2CC[C@H]3[C@]4(C)CC[C@@]5(O)OC(=O)C=C5[C@H]4CC[C@]3(C2)[C@H]1O',
       'CN1[C@H]2Cc3cc4OCOc4cc3[C@@H]1Cc5cc6OCOc6cc25',
@@ -4787,6 +5023,7 @@ describe('layout/engine/pipeline', () => {
       'C[NH2+]C1C2C(O)C1C(=O)C1=C2SC=N1',
       'CC1CC2C3C(COC3=O)OC(O1)C2CO',
       'CC1CC2C3CC3(CO)OC(C)(O1)C2C#C',
+      'CC1C2CC[NH2+]CC1(C#N)C2(C)C',
       'CCC12NCC1=CC1C=CCC2C1CNC',
       'CC#CC1=CC2CC(C3CC3S1(=O)=O)N(C)C2',
       'CC12NC(=O)OC3(C)C1CCOC23',
@@ -4889,10 +5126,25 @@ describe('layout/engine/pipeline', () => {
       'CCC12OC11CNCC3CCC(=C2)C13OC',
       'CCOB(OCC)OC(C(C1=CC=CC=C1C)C1=CC=CC=C1C)(C1=CC=CC=C1C)C1=CC=CC=C1C',
       'CC1=CC=C(C=C1)C(OC(=O)CCCCCNC(=O)OCC1C2=CC=CC=C2C2=CC=CC=C12)(C1=CC=CC=C1)C1=CC=CC=C1Cl',
-      'CS(=O)(=O)N1CC2([NH3+])CC3CC2C13',
-      'CCCC1(C)CN2C3CC2C1([NH3+])C3',
-      'COC12CC3C(C1)OCC23O',
-      'COC(C)C1C2CC(=O)CC1CCCC2'
+	      'CS(=O)(=O)N1CC2([NH3+])CC3CC2C13',
+	      'CCCC1(C)CN2C3CC2C1([NH3+])C3',
+	      'CCC1=C(CO)CC2OC(OC1)C(O)C2=O',
+	      'CC12OCC(=O)OC(C1[NH3+])C2O',
+	      'CC1C(CO)C2CC(C#C)C1(C)CCOCO2',
+	      'COC12CC3C(C1)OCC23O',
+      'CC1CC2(CC(O)CC(N=CO2)C1C=O)C#C',
+      'NC[C@@H]1O[C@H](O[C@H]2[C@@H](O)[C@H](O[C@@H]3[C@@H](O)[C@H](N)C[C@H](N)[C@H]3O[C@H]4O[C@H](CN)[C@@H](O)[C@H](O)[C@H]4N)O[C@@H]2C(=O)Nc5ccc(cc5)c6cn(CCCN7CCN(CC7)c8cc9N(C=C(C(=O)O)C(=O)c9cc8F)C%10CC%10)nn6)[C@H](N)[C@@H](O)[C@@H]1O',
+      'COC(C)C1C2CC(=O)CC1CCCC2',
+      'CC(CO)CC1CC2CCCC(C1)C(C)(C)C2',
+      'CCC12CC(C)CC(O)(CNC1C)C(C)C2C',
+      'CC1(N)C2C(N)C(O)C1(O)C2(CN)CCO',
+      'CC(C)C(O)C1(O)C2(C)CCC1(O)CCCO2',
+      'CCC1(C)CC2CCC(C)CC(C)(C)CC1[NH2+]2',
+      '[H][C@@]12CC[C@]3(O)C[C@H](C[C@@H](O)[C@]3(CO)[C@@]1([H])[C@H](O)C[C@]1(C)[C@H](CC[C@]21O)C1=CC(=O)OC1)O[C@@H]1O[C@@H](C)[C@H](O)[C@@H](O)[C@H]1O',
+      'CCC12CS(=O)(=O)CC(CC(=O)N1)C=C2C#N',
+      'CCC1(O)C2C3C(C3(C)CO)C1(O)CN2C',
+      'CCC12CC(O)(C#N)C(C=C1C)N=C(N)O2',
+      'O=C(N1C[C@H]2CC[C@@H]1CN(C2)C(=O)c3ccccn3)c4ccsc4'
     ];
 
     for (const smiles of smilesCases) {
@@ -5107,6 +5359,28 @@ describe('layout/engine/pipeline', () => {
       firstCarbonylAngle > 90 && secondCarbonylAngle > 90,
       `expected compact bridged carbonyl to sit outside the ring, got ${firstCarbonylAngle.toFixed(2)} and ${secondCarbonylAngle.toFixed(2)} degrees`
     );
+  });
+
+  it('compresses constrained bridged lactone carbonyl leaves to clear equivalent-slot contacts', () => {
+    const result = runPipeline(parseSMILES('OCC1CC(=O)C2C[NH2+]CC1OC2=O'), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+    const bondLength = result.layoutGraph.options.bondLength;
+    const carbonylLength = distance(result.coords.get('C14'), result.coords.get('O15'));
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(carbonylLength >= bondLength * 0.75 - 1e-6, `expected the carbonyl compression to stay bounded, got ${carbonylLength.toFixed(3)}`);
+    assert.ok(carbonylLength < bondLength, `expected the constrained carbonyl to shorten, got ${carbonylLength.toFixed(3)}`);
+    assert.ok(distance(result.coords.get('O15'), result.coords.get('C4')) > bondLength * 0.55, 'expected the carbonyl oxygen to clear the upper ring atom');
+    assert.ok(distance(result.coords.get('O15'), result.coords.get('C8')) > bondLength * 0.55, 'expected the carbonyl oxygen to clear the lower ring atom');
   });
 
   it('keeps the scaffold-side C11/C5 exits exact while the attached phenyl rescue clears the severe overlap', () => {
@@ -5819,6 +6093,37 @@ describe('layout/engine/pipeline', () => {
     assert.ok(maxAngleDeviation(c43Angles, 120) < 8, `expected the C43 amide fan to stay near trigonal, got ${c43Angles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
+  it('uses balanced dense partitions for ring-decorated peptide chains to stay horizontal', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CCC[C@H](<NC(=O)[C@@H](NC(=O)[C@H](Cc1ccc(O)cc1)NC(=O)C)C(C)C>)C(=O)NCC(=O)N[C@@H](Cc2c[nH]cn2)C(=O)N[C@@H](Cc3ccccc3)C(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](Cc4c[nH]c5cCcccc45)C(=O)N[C@@H](<CC(=O)O>)C(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](Cc6ccccc6)C(=O)NCC(=O)ON'
+      ),
+      {
+        suppressH: true
+      }
+    );
+    const bounds = computeBounds(result.coords, [...result.coords.keys()]);
+    const trigonalDistortion = measureTrigonalDistortion(result.layoutGraph, result.coords);
+    const divalentDistortion = measureDivalentContinuationDistortion(result.layoutGraph, result.coords);
+    const threeHeavyDistortion = measureThreeHeavyContinuationDistortion(result.layoutGraph, result.coords);
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(bounds.width / bounds.height > 1.8, `expected the peptide chain to stay horizontally spread, got aspect ${(bounds.width / bounds.height).toFixed(3)}`);
+    assert.ok(trigonalDistortion.maxDeviation < 0.15, `expected trigonal fans to stay readable, got ${trigonalDistortion.maxDeviation}`);
+    assert.ok(divalentDistortion.maxDeviation < 0.05, `expected divalent peptide continuations to stay readable, got ${divalentDistortion.maxDeviation}`);
+    assert.ok(threeHeavyDistortion.maxDeviation < 0.35, `expected suppressed-hydrogen three-heavy fans to remain bounded, got ${threeHeavyDistortion.maxDeviation}`);
+    assert.ok(
+      trigonalDistortion.totalDeviation + divalentDistortion.totalDeviation + threeHeavyDistortion.totalDeviation < 0.75,
+      'expected dense partitioning to avoid the compact peptide angle collapse'
+    );
+  });
+
   it('keeps peptide timeout regressions well under the stress-test budget after large-molecule partitioning', () => {
     const start = Date.now();
     const result = runPipeline(
@@ -6111,6 +6416,111 @@ describe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.totalMs < 3000, `expected chloropyridyl oxime layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
+  it('retouches terminal oxime hydroxyl branches out of compact bridged cage overlaps', () => {
+    const molecule = parseSMILES('CCCC1C2C3OC3C(O)C(CC1=O)C2=NO');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected compact oxime overlap to clear, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C6'), result.coords.get('O17')) > 1.5 * 0.55, 'expected O17 to move off the C6 cage atom');
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N16', 'C15', 'O17') - 120) <= 20, 'expected the oxime hydroxyl fan to stay near trigonal');
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact oxime retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('opens compact bridged cage atoms away from crowded exocyclic ethyl roots', () => {
+    const molecule = parseSMILES('CCC1C2CCC(CN=CN)CC1C2N');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected compact ethyl-root overlap to clear, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C2'), result.coords.get('C6')) > 1.5 * 0.55, 'expected C6 to open away from the exocyclic C2 root');
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.4, `expected compact bridged cage stretch to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact ethyl-root retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('opens compact fused spiro ring atoms out of nonbonded ring pinches', () => {
+    const molecule = parseSMILES('CC1CC2(C)CNC=NCCC22NC(=N)NC12');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected compact fused-spiro ring pinch to clear, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C11'), result.coords.get('N13')) > 1.5 * 0.55, 'expected the nonbonded ring atoms to separate');
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.12, `expected fused-spiro ring nudge to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact fused-spiro retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('opens compact bridged ether atoms away from crowded exocyclic ethyl roots', () => {
+    const molecule = parseSMILES('CCN1C2CNC(=O)C(COC2)(C=O)C1(C)C');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected compact ether-root overlap to clear, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C2'), result.coords.get('O11')) > 1.5 * 0.55, 'expected O11 to open away from the exocyclic C2 root');
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.3, `expected compact bridged ether nudge to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.timing.totalMs < 8000, `expected compact bridged ether retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('opens compact bridged ether junction atoms away from unique ring paths', () => {
+    const molecule = parseSMILES('NC12C3CC(CCOC1=O)(O3)C2[NH3+]');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected compact ether-junction overlap to clear, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C6'), result.coords.get('O11')) > 1.5 * 0.55, 'expected C6 to open away from the shared ether junction');
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.55, `expected compact ether-junction nudge to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact ether-junction retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
   it('keeps aromatic amide nitro trifluoromethyl labels clean after final orientation', () => {
     const result = runPipeline(parseSMILES('CC(=O)Nc1ccc(OCC(C)(O)C(=O)Nc2ccc(c(c2)C(F)(F)F)[N+](=O)[O-])cc1'), {
       suppressH: true,
@@ -6383,6 +6793,23 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('keeps spiro-fused angular methyl overlap stress row audit-clean', () => {
+    const result = runPipeline(parseSMILES('[H][C@@]12CC[C@@]3(CCC(=O)O3)[C@@]1(C)C[C@H]1O[C@@]11[C@@]2([H])[C@@H](CC2=CC(=O)CC[C@]12C)C(=O)OC'), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
@@ -6754,6 +7181,412 @@ describe('layout/engine/pipeline', () => {
     );
   });
 
+  it('keeps compact shared-path spiro amide cages bond-clean after strict KK rescue', () => {
+    const result = runPipeline(parseSMILES('CNCCNC(=O)[C@@H]1[C@H]2C=C[C@@H]([C@H]1C(=O)NCc3ccc(Br)cc3)C24CC4'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const cageAtomIds = new Set(['C8', 'C10', 'C12', 'C13', 'C14', 'C16', 'C29', 'C30', 'C31']);
+    const visibleHeavyBondCrossings = findVisibleHeavyBondCrossings(result.layoutGraph, result.coords);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.6, `expected compact spiro cage bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+    assert.ok(
+      visibleHeavyBondCrossings.every(crossing => crossing.firstAtomIds.every(atomId => cageAtomIds.has(atomId)) && crossing.secondAtomIds.every(atomId => cageAtomIds.has(atomId))),
+      `expected any remaining crossing to stay internal to the compact spiro cage, got ${visibleHeavyBondCrossings.map(crossing => `${crossing.firstAtomIds.join('-')}/${crossing.secondAtomIds.join('-')}`).join(', ')}`
+    );
+  });
+
+  it('keeps single-spiro shared-path five-ring cages bond-clean', () => {
+    const smiles = bugMolecules.find(candidate => candidate === SINGLE_SPIRO_SHARED_PATH_FIVE_RING_CAGE_SMILES);
+    assert.ok(smiles, 'expected the single-spiro shared-path regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.3, `expected compact single-spiro cage bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+  });
+
+  it('keeps compact double-shared-path six-seven-eight cages uncrossed', () => {
+    const smiles = bugMolecules.find(candidate => candidate === DOUBLE_SHARED_PATH_SIX_SEVEN_EIGHT_CAGE_SMILES);
+    assert.ok(smiles, 'expected the double-shared-path regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.35, `expected compact double-shared-path cage bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+  });
+
+  it('keeps long theta shared-path ammonium cages on exact projection lanes', () => {
+    const smiles = bugMolecules.find(candidate => candidate === LONG_THETA_SHARED_PATH_AMMONIUM_CAGE_SMILES);
+    assert.ok(smiles, 'expected the long theta shared-path ammonium regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.15, `expected long theta shared-path cage bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+  });
+
+  it('keeps amino ether long theta cages on exact projection lanes', () => {
+    const smiles = bugMolecules.find(candidate => candidate === AMINO_ETHER_LONG_THETA_CAGE_SMILES);
+    assert.ok(smiles, 'expected the amino ether long theta regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.15, `expected amino ether long theta cage bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+  });
+
+  it('keeps aromatic-capped fused-square bridges on a constructed cage seed', () => {
+    const smiles = bugMolecules.find(candidate => candidate === AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_SMILES);
+    assert.ok(smiles, 'expected the aromatic-capped fused-square bridge regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.placementMode, 'constructed-aromatic-capped-fused-square-bridge');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.25, `expected aromatic-capped fused-square bridge bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+  });
+
+  it('keeps additional compact bridged current-layout stress rows audit-clean', () => {
+    const smilesCases = [
+      'CC1=NC(=NO1)C1(N)C2CCC1[NH2+]2',
+      'CC(CC(N)=O)C1C2COC1C2=O',
+      'CC1C2OCC1(C2C#N)C(N)=[NH2+]',
+      'CC(C(CO)N(C)C=O)N1C2CCC1C2=O',
+      'CCC1NC2CC1C2(C)OC(=O)C(O)=O',
+      'CC12CNCC(C(=O)CO1)C(=O)NC(C2)C#N'
+    ];
+
+    for (const smiles of smilesCases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected compact bridged stress regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'bridged');
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
+  });
+
+  it('keeps additional current-layout bridged stress rows audit-clean', { timeout: 30000 }, () => {
+    const smilesCases = [
+      'CC1COC11CC2CCCC1CCOC2',
+      'CN1C=C(NC2C3CCC2[NH2+]3)C=N1',
+      'CC1(CN)COC2(CN)CNC(=N)C1C(N)C2',
+      'CC1=C(OC2C3CC2C(CO)C3)OC=C1O',
+      'CC[NH2+]C1C2CC1S(=O)(=O)N2',
+      'CC(=NO)C12CC(N1)(C=O)C=C2C#CC#C',
+      'CC12CC(C1)(OC2=N)C#CC1=CSC(O)=N1',
+      'CN1CC2(CC1(CO)C2)OCC(=N)NC=O',
+      'CC1C(=O)C2(CC1(O2)C1=NC=NO1)C#N',
+      'CC(N)C(CO)C12CC(CC1C)(C#C)N2C',
+      'CCNC12CC(NC1)(C#CC)C2C(N)C#N',
+      'CCC12CC(CO)([NH2+]1)C(C)C2',
+      'CC(C)CC(O)C1C2CC1(C=C2)N(C)C',
+      'Cc1ccc(CCNC(=O)[C@@H]2[C@@H]3C=C[C@H]([C@H]2C(=O)NCCCCN4CCCC4)C35CC5)cc1.OC=O',
+      'C[NH2+]C1(C)C2OCC1(N(C)C(C)C)C2=O',
+      'CC(OC1CC2N(C)C1C2=NO)C=C',
+      'CN1C=CC(OC2C3CCC2N3C=[NH2+])=C1',
+      '[NH3+]C1C2CCC1N2C(=O)C([O-])=O',
+      'CC12N(C=O)C(CC1=O)(C2=O)S(=O)(=O)C(O)=O',
+      'CC1C(O)CC2(CCCO)CCC1CCOC2',
+      'CC12CC(CC#C)(C1=NO)C(CO)(O2)C=NO',
+      'CC(C)C(=N)OCCC12CC(N1)C(C)(C)C2',
+      'CCOCC12CC(C1N(C)C=N)C(=N)N2',
+      'N=CNC(=O)C1CC2CC11CC1O2',
+      'CC1N=C(N)CC2COC(C)CNC1CN2C',
+      'CC1=CC2CCCC(C1)C1C(O)CC=C21',
+      'CC(C)C1=CC2CC3(C=O)C4CC[C@@H](C)C4CC2(CCOC(=O)[C@@H]5CCC(=O)N5)C13C(=O)O',
+      'CC1CC2C(C)CN(C1)C(CN2C(C)=O)C#N',
+      'CCOCC1(C)CC2N=C(N)C(COC2C)N1'
+    ];
+
+    for (const smiles of smilesCases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected bridged stress regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, 'bridged');
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
+  });
+
+  it('keeps additional mixed current-layout stress rows audit-clean', { timeout: 20000 }, () => {
+    const cases = [
+      {
+        smiles: 'CC1(C)CC2CC(C#C)C(C1)CCCC2C#N',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'COC(=O)C1=CC2C(CC1OC2=O)C#N',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: '[H][C@]12NC(=O)[C@]([H])(NC(=O)[C@]3([H])NC(=O)[C@H](CC(N)=O)NC(=O)[C@H](NC(=O)[C@@H](CC(C)C)NC)[C@H](O)C4=CC(Cl)=C(OC5=C(O[C@@H]6O[C@H](CO)[C@@H](O)[C@H](O)[C@H]6O[C@H]6C[C@](C)(NCC7=CC=C(C=C7)C7=CC=C(Cl)C=C7)[C@@H](O)[C@H](C)O6)C(OC6=C(Cl)C=C(C=C6)[C@H]1O[C@H]1C[C@](C)(N)[C@@H](O)[C@H](C)O1)=CC3=C5)C=C4)C1=CC(=C(O)C=C1)C1=C(C=C(O)C=C1O)[C@H](NC2=O)C(O)=O',
+        primaryFamily: 'macrocycle'
+      },
+      {
+        smiles: 'CC1OC2C(O)C(O)C1C1=C2N=CC(=O)O1',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CN1CC23CCC(C#C)C12C(C)(C)C(O)C3',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CN1CCC2(C)CN(C)C(=N)C1C21CO1',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CC1C[NH+]2CC3(C)CC(C3)(C1)C2C',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CC1CC=CC23C4NC=NC2CNC34C1=O',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CC1CC2NCC1([NH3+])CN(C)S2(=O)=O',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CNC1=CSC(=O)C2=C1CC1C(C)C2C1=O',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'COC1=CC=CC=C1CCC(=O)OC1C=CC2C3CC4=CC=C(OC(C)=O)C5=C4C2(CC[NH+]3C)C1O5',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CC1CCN2CCNC1C2C1=CN(C)C(C)=N1',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CC(C)(C)N[PH+](N1CCCC1)N(=P(N1CCCC1)(N1CCCC1)N1CCCC1)=P(N1CCCC1)(N1CCCC1)N1CCCC1',
+        primaryFamily: 'isolated-ring'
+      },
+      {
+        smiles: 'CCN1C2CC(CC2(C)CCOC)NCC1=O',
+        primaryFamily: 'bridged'
+      }
+    ];
+
+    for (const { smiles, primaryFamily } of cases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected current-layout stress regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, primaryFamily);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
+  });
+
+  it('keeps additional fused, bridged, and large-molecule overlap stress rows audit-clean', { timeout: 20000 }, () => {
+    const cases = [
+      {
+        smiles: 'CCCCCCCCC(C)C(=O)N1CCCC1C(=O)N2C(CC(=O)CC)CC(C)CC2C(=O)NC(C)C(=O)NC(C)(C)C(=O)NC(C)(C)C(=O)NC(C(C)CC)C(=O)NC(C)C(=O)NC(C)(C)C(=O)NC(C)(C)C(=O)NC(C)CN(C)CCO',
+        primaryFamily: 'large-molecule'
+      },
+      {
+        smiles: 'C1C=CC=C2C1C=CC1=C2C2=C(N1C1=CC=CC=C1)C1=C(C=C2)C2=CC=CC=C2N1C1=NC(=NC(=N1)C1=CC=CC=C1)C1=CC=CC=C1',
+        primaryFamily: 'fused'
+      },
+      {
+        smiles: 'CN(CCCC(=O)NCCCCn1nnc2C(CCCCCc12)OCCNC(=O)CCCN(C)C[C@H]3O[C@H]([C@H](O)[C@@H]3O)n4cnc5c(N)ncnc45)C[C@H]6O[C@H]([C@H](O)[C@@H]6O)n7cnc8c(N)ncnc78',
+        primaryFamily: 'fused'
+      },
+      {
+        smiles: 'CCC1OC2C(CC(O)C=O)C(O1)C2NC',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CC(=O)N[C@H]1CO[C@H](CO)[C@@H](O[C@H]2O[C@@H](CO)[C@@H](O[C@H]3O[C@@H](CO[C@H]4O[C@@H](CO)[C@H](O)[C@@H](O[C@H]5O[C@@H](CO)[C@H](O)[C@@H](O)[C@@H]5O)[C@@H]4O)[C@H](O)[C@H](O[C@H]4O[C@@H](CO)[C@H](O)[C@@H](O)[C@H]4O[C@H]4O[C@@H](CO)[C@H](O)[C@@H](O)[C@H]4O[C@H]4O[C@@H](CO)[C@H](O)[C@@H](O)[C@@H]4O)[C@@H]3O)[C@@H](O)[C@@H]2NC(C)=O)[C@@H]1O',
+        primaryFamily: 'large-molecule'
+      },
+      {
+        smiles: 'C[NH2+]C1C2CC(=O)C(CNC(C)=O)C1(C)O2',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CCC1C2CCCC1C1(CC1)C[NH+]2CC',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'CN1C2=C(C=C(Cl)C=C2)C2(OC(C)=CC(=O)N2CC1=O)C1=CC=CC=C1',
+        primaryFamily: 'fused'
+      },
+      {
+        smiles: 'C[NH2+]CC1=C(C2CCC1CC2)C1=C2SC=C(C)C2=CC=C1',
+        primaryFamily: 'fused'
+      },
+      {
+        smiles: 'C[C@@H](O)[C@H](N)C(=O)N1CCC[C@H]1C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](C)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)O',
+        primaryFamily: 'large-molecule'
+      }
+    ];
+
+    for (const { smiles, primaryFamily } of cases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected overlap stress regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, primaryFamily);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
+  });
+
+  it('keeps additional readability-tagged overlap stress rows audit-clean', { timeout: 12000 }, () => {
+    const cases = [
+      {
+        smiles: 'CC1C2(C)CC(CN)C(N)(CN2)C1(N)CC#C',
+        primaryFamily: 'bridged'
+      },
+      {
+        smiles: 'Cc1cccc(C(=O)N[C@@H](Cc2ccccc2)[C@@H](O)[C@@H](O)[C@H](Cc3ccccc3)NC(=O)c4cccc(C)c4NC(=O)OCc5ccccc5)c1NC(=O)OCc6ccccc6',
+        primaryFamily: 'isolated-ring'
+      }
+    ];
+
+    for (const { smiles, primaryFamily } of cases) {
+      assert.ok(bugMolecules.includes(smiles), 'expected readability stress regression molecule to be registered');
+
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true
+      });
+
+      assert.equal(result.metadata.primaryFamily, primaryFamily);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+    }
+  });
+
+  it('keeps compact tri-apex aminoketone stress row audit-clean', () => {
+    const smiles = 'CCN1C2C3CC(=O)CC2C13';
+    assert.ok(bugMolecules.includes(smiles), 'expected compact tri-apex aminoketone regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('keeps group-13 chelate macrocycles on an uncrossed bridged rescue seed', () => {
+    const smiles = bugMolecules.find(candidate => candidate === GALLIUM_CHELATE_MACROCYCLE_SMILES);
+    assert.ok(smiles, 'expected the gallium chelate macrocycle regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= result.layoutGraph.options.bondLength * (BRIDGED_VALIDATION.maxBondLengthFactor - 1) + 1e-6);
+  });
+
   it('keeps triazaadamantane thiourea cages overlap-free and uncrossed', () => {
     const result = runPipeline(parseSMILES('COc1ccccc1N=C(S)NC23CN4CN(CN(C4)C2)C3'), {
       suppressH: true,
@@ -6993,7 +7826,7 @@ describe('layout/engine/pipeline', () => {
       },
       {
         smiles: String.raw`CC12CN(CCC(N)=N)CC(N=CN1)C2=NO`,
-        requireCleanAudit: false,
+        requireCleanAudit: true,
         maxLabelOverlapCount: 0
       }
     ];

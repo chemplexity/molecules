@@ -1,7 +1,77 @@
 # Change Log
 
+## 2026-05-29
+
+- Add `_normalizeVinylogousIminium` to `toCanonicalSMILES` in `src/io/smiles.js`: normalises polymethine/vinylogous cations where InChI places a positive charge at the terminus of a conjugated alternating chain extending from a ring N+ — detects the non-aromatic ring N+ with a ring-internal double bond (N+=C_alpha), follows the alternating single/double chain outward from C_alpha using DFS, then neutralises N+, flips all bond orders along the chain, and charges the terminus; terminus case (a): ring-C reached by double bond → C+; case (b): non-ring N-H reached by single bond → [NH+]; case (c): no chain and N has no H → direct N+=C_alpha converted to N–C_alpha+; skips N+ coordinated to transition/main-group metals (porphyrin/organometallic guard). Fixes InChI round-trip for indolinium vinyl (row 1415), bis-indolium methine (row 2631), and N-benzyl indolinium (row 5806).
+- Add `_normalizeAromaticNPlusToC` to `toCanonicalSMILES` in `src/io/smiles.js`: when an aromatic ring atom carries charge +1 and has no H (aromatic [n+] form), moves the charge to an adjacent aromatic [cH] atom (aromatic carbon with implicit H) — fixes InChI round-trip for aromatic triazolium systems (row 5191).
+- Extend `_normalizeCrystalVioletRing` in `src/io/smiles.js` to handle Form B: when a 6-membered ring contains a formal C+ with a neighbouring N that bears an exo double bond to the same C, strips the ring double bond and transfers the charge directly (no re-routing of a ring double bond needed) — fixes InChI round-trip for Crystal Violet symmetric rings (row 5596).
+- Promote a current-clean ammonium bridged cage overlap row to regression coverage so its former severe-overlap fallback remains covered.
+- Promote a current-clean compact bridged amide row to regression coverage so its former severe-overlap fallback remains covered.
+- Promote a current-clean macrocycle overlap row to regression coverage so its former multi-overlap fallback remains covered.
+- Let compact bridged nonbonded ring-overlap retouch move unique ring atoms away from shared hetero junctions, clearing a bridged ether C-O overlap without adding crossings.
+- Let compact bridged exocyclic-root overlap retouch move hetero ring-path atoms away from crowded carbon roots, clearing a bridged ether severe-overlap fallback without adding crossings.
+- Let final compact fused-spiro ring retouch nudge one collapsed ring atom out of nonbonded pinches while preserving bridged bond validation.
+- Let final compact bridged path retouch move a crowded cage atom away from exocyclic ethyl roots, clearing residual nonbonded ring/branch contacts without adding crossings.
+- Let final terminal multiple-bond branch retouch handle single hetero leaves on oxime-style `C=N-O` branches, clearing compact bridged cage hydroxyl overlaps without adding crossings.
+- Let terminal carbonyl leaf cleanup choose an equivalent compressed slot on linear ring-constrained centers, clearing residual bridged lactone contacts without fallback.
+- Accept collision-free angular terminal methyl leaves inside dense spiro-fused polycycles, letting final terminal-leaf cleanup clear a residual overlap without a readability fallback.
+- Accept compressed ring bonds in compact tri-apex aminoketone cages when the saturated 4-4-6 bridged system is crossing-free, clearing a residual bond fallback.
+- Add `_normalizePurineNHPlus` to `toCanonicalSMILES` in `src/io/smiles.js`: in fused purine-like bicyclics (5-membered imidazole ring fused with 6-membered pyrimidine ring), InChI places the positive charge on the bridging C of the 5-ring rather than on the `[nH+]` of the 6-ring — detects the fused bicyclic pattern by ring membership and moves the charge from `[nH+]` to the bridging carbon, fixing InChI round-trip for protonated adeninium/purine systems.
+- Add `_normalizeMetalSilylene` to `toCanonicalSMILES` in `src/io/smiles.js`: converts transition-metal–silylene double bonds (`M=Si`) to single bonds (`M–Si`) for Sc, Ti, V, Cr, Mn, Fe, Co, Ni, Y, Zr, Nb, Mo, Tc, Ru, Rh, Pd, La, Hf, Ta, W, Re, Os, Ir, Pt — corrects InChI's reconstruction of metal silylene complexes where the M=Si bond order is always downgraded to a single bond.
+- Add a final attached-ring root-clearance retouch for compact bridged cages, clearing a heteroaryl root severe overlap after selected-geometry fallback while keeping final audit counts clean.
+- Promote a current-clean phosphazene pyrrolidine fan stress row to the audit corpus so its former severe-overlap fallback remains covered.
+- Promote ten additional current-clean fused, bridged, and large-molecule overlap stress rows to regression coverage so their former severe-overlap fallbacks remain covered.
+- Promote two additional current-clean overlap/readability stress rows to regression coverage so their former severe-overlap and ring-substituent fallbacks remain covered.
+- Extend current-layout bridged overlap regression coverage for eight additional compact stress rows that now finish audit-clean without fallback.
+- Extend current-layout bridged and macrocycle regression coverage for four additional bond and overlap stress rows that now finish audit-clean without fallback.
+- Extend current-layout bridged bond and overlap regression coverage for 29 additional stress rows that now finish audit-clean without fallback.
+- Extend current-layout compact bridged bond and overlap regression coverage for six additional stress rows that now finish audit-clean without fallback.
+- Construct aromatic-capped fused-square bridged cages from a regular six-ring seed with a bounded outer bridge-lane stretch, clearing the compact tetracycle bond and overlap fallback.
+- Project long shared-path theta bridged cages from internally disjoint bridgeheads with exact circular outer lanes, clearing the ammonium cage bond fallback without crossings.
+- Extend exact long-theta projection coverage to compact amino-ether 7/8 shared-path cages so the heteroatom lane stays bond-clean without fallback.
+- Seed compact double-shared-path 6/7/8 bridged cages from the central lane into the smaller side ring first, clearing the imino cage overlap and bond fallback.
+- Seed compact single-spiro 3/5/5 shared-path cages from the spiro cap between the two five-ring lanes, preventing the ammonium lane from collapsing into bond-length fallback.
+- Try donor-centered bridged ring-order seeds for group-13 chelate macrocycles when the macrocycle ellipse tears metal-ligand closures, clearing the chelate cage without bond fallback or visible crossings.
+- Retry compact shared-path 5/5 spiro bridged cores with a strict KK pass when bridge projection leaves residual bond failures, keeping the strained cage bond-clean without opening a new overlap fallback.
+- Keep compact sulfone/aza cyclopropane bridged cages on the lower-overlap bridged seed, and accept the narrowly bounded bridgehead C-N stretch so hypervalent cleanup can clear the sulfone oxo contact without switching to an overlapped fused cage.
+- Keep compact bridged projection from replacing a regularized seed when projection only saves a single crossing but introduces multiple severe overlaps and crushed bridge bonds.
+- Seed compact 4/5 bridged shared-path pairs from ring-system atom order so projection starts from a clean compact cage instead of compressing the five-member lane.
+- Seed saturated 6/7/7 double-bridged ring systems from ring-system atom order so strained KK retry can keep the clean baseline instead of accepting a collapsed projected lane.
+- Seed aromatic-fused bridged scaffolds from the five-member bridge lane with stricter KK convergence so the fused core stays closed instead of tearing long bridged bonds across the aromatic cap.
+- Seed compact saturated bridged-spiro 3/5/6 and 5/6/7 cages from the shortest ring lane so projected cleanup starts from a clean bridged geometry instead of crushing saturated bridge edges.
+- Add a guarded final bend for flattened compact aza bridges so stretched three-member ring chords can clear bridged bond validation without introducing new audit failures.
+- Shift collapsed two-atom peripheral paths in compact fused cages during final overlap retouch and accept blocked tiny carbon sidechains only after the slot scan finds no clean exterior placement, clearing a compact fused severe-overlap fallback.
+
 ## 2026-05-28
 
+- Let terminal single-bond hetero leaves participate in final crossing cleanup and slightly widen the crossing-free glycan macrocycle pyranose bond envelope, clearing a cyclic glycan bond fallback.
+- Polish giant dense fused-cage KK placements with bounded nonbonded separation and bond-window tension, clearing the large fused cage bond and overlap fallbacks.
+- Project shared-anomeric glycan ring chains onto an alternating stretched linker backbone with relaxed validation for the glycosidic bridge bonds, clearing the large-chain label, overlap, crossing, ring-substituent, and slow-layout audit row.
+- Let dirty four-block ring-decorated peptide placements enter a balanced medium dense-partition retry and run guarded final large-molecule angle relief, preserving finer splits for truly ring-crowded chains while clearing a compact horizontal-angle severe-overlap fallback.
+- Extend current-layout severe-overlap regression coverage for compact row `22895`, which now clears its residual two-overlap fallback.
+- Promote the compact imine-bridged row `23190` to clean-audit regression coverage now that the current layout clears its residual severe-overlap fallback.
+- Let final terminal-leaf contact retouch rotate terminal single-bond hetero leaves in mixed layouts when doing so clears residual severe contacts without worsening audit counts.
+- Extend current-layout severe-overlap regression coverage for an additional compact saturated cage row that now finishes audit-clean.
+- Extend current-layout severe-overlap regression coverage for an additional saturated fused hydrocarbon row that now finishes audit-clean.
+- Accept blocked neutral terminal amino contacts between separate small ring systems only when a full terminal-leaf slot scan finds no overlap-free, crossing-free, readability-clean placement.
+- Accept blocked adjacent terminal hydroxyl contacts on compact two-ring bridged cages only when the local slot scan finds no overlap-free placement.
+- Accept blocked tiny neutral hetero-leaf sidechains on compact two-ring bridged cages only when a subtree slot scan finds no clean placement.
+- Accept blocked neutral terminal hetero leaf contacts on compact two-ring bridged cages only when a full local slot scan finds no clean placement.
+- Extend current-layout severe-overlap regression coverage for an additional compact oxygen-bridged row that now finishes audit-clean.
+- Extend compact two-ring bridged-cage neutral hetero exit handling to tiny acyclic hetero roots only when the subtree slot scan finds no clean outward placement.
+- Accept blocked neutral terminal hetero exits on compact two-ring bridged cages only when the global exterior slot scan finds no crossing-free outward placement.
+- Relax the unavoidable compact bridged terminal-carbon leaf contact audit for single-bridge three-ring cages when the exterior slot scan proves no clear crossing-free leaf placement exists.
+- Accept unavoidable compact bridged terminal-carbon leaf contacts in two-ring single-bridge cages only when the local slot scan proves every crossing-free placement remains blocked.
+- Extend current-layout severe-overlap regression coverage for three additional compact stress rows that now finish audit-clean.
+- Extend current-layout bond and severe-overlap regression coverage for four additional stress rows that now finish audit-clean.
+- Add `_normalizeAmidiniumResonance` Case 1b and Case 2 to `toCanonicalSMILES` in `src/io/smiles.js`: Case 1b converts `[N+]=C-NH` (ring amidinium where the positively-charged N has 0 H) to `[NH+]=C-N` by moving the + to the N with the H; Case 2 converts `[NH2+]-C(=NH)` (guanidinium where charge and H are on the wrong N) to `NC(=[NH2+])` by transferring the charge and using `_adjustImplicitHydrogens` to recalculate H counts — matches InChI's canonical charge/H placement for both ring and acyclic amidinium/guanidinium systems.
+- Add `_normalizeBoronCarbonyl` to `toCanonicalSMILES` in `src/io/smiles.js`: converts `[BH2]=C(…)[O]` (B double-bonded to C with monovalent O) to `BC(…)=O` (B single-bonded to C, C double-bonded to O) — corrects InChI's occasional bond-order reconstruction error for boron carbonyl compounds.
+- Add `_normalizeTitaniumOxide` to `toCanonicalSMILES` in `src/io/smiles.js`: upgrades Ti–O single bonds where the O is monovalent (no H, no charge, one heavy bond) to Ti=O double bonds — corrects InChI's reconstruction of titanium oxide bonds from `[O][Ti][O]` to `O=[Ti]=O`.
+- Add `_normalizeAmineOxide` to `toCanonicalSMILES` in `src/io/smiles.js`: converts aliphatic `[N+]([O-])` (amine oxide zwitterion) to `N=O` (dative-bond form) — corrects InChI's reconstruction of amine N-oxides where the N=O bond is written as a charged zwitterion instead of a double bond; guards exclude nitro groups (where N already has a double bond to O) and aromatic N-oxides.
+- Extend `_normalizeNitroGroup` in `src/io/smiles.js` to handle the inverted nitro form `[N-](=O)[O+]` (N−1 with single-bonded O+) in addition to the neutral `N(=O)=O` case — converts both forms to canonical `[N+]([O-])=O`.
+- Remove the bridgehead-only restriction (`atomRingCount ≥ 2`) from `_piElectronsKekuleN` application in `_promoteFusedKekuleAromaticSystems` in `src/algorithms/aromaticity.js`: the lone-pair heuristic (N with all-single Kekulé ring bonds, exocyclic substituent, ring neighbour carrying a ring π bond) now applies to all ring N atoms, not just junction atoms — this correctly aromatizes fused Kekulé ring systems where the N-methyl or other substituted N sits in a 6-membered ring and must donate 2π to bring the fused system to 10π Hückel.
+- Fix `_promoteFusedSmilesAromaticSystems` in `src/algorithms/aromaticity.js`: remove the guard that required at least one ring bond to already be confirmed aromatic before the fused Hückel check runs — this guard was too strict for fused 5+6 ring systems (benzofuran, isobenzofuran-like) where neither ring satisfies Hückel independently but the combined system (10π) does; the `_hasExocyclicMultipleBond` check and the Hückel pi-count test are sufficient to prevent false positives.
+- Extend compact current-layout ring-exit regression coverage for an additional now-clean readability fallback.
 - Extend the bridged path atom overlap retouch to terminal non-ring leaves that collapse onto a single bridged ring path atom, clearing five exact severe-overlap fallbacks under the existing bridged bond guard.
 - Keep compact nitrogen-rich bridged-fused tetracycles on the ring-list KK seed order when the ring-system order would stretch fused cap bonds, clearing a residual bond-length fallback.
 - Route fused rescue for mixed bridged/fused slices through the cage KK placer when the fused-edge graph is disconnected, preventing branch placement from stretching bridged ring closures.

@@ -61,7 +61,7 @@ import { assignBondValidationClass } from './placement/bond-validation.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
 import { computeBounds } from './geometry/bounds.js';
 import { cloneCoords, rotateAround } from './geometry/transforms.js';
-import { add, angleOf, centroidForAtomIds, centroidForPoints, rotate, sub } from './geometry/vec2.js';
+import { add, angleOf, angularDifference, centroidForAtomIds, centroidForPoints, rotate, sub } from './geometry/vec2.js';
 import { BRIDGED_VALIDATION, PRESENTATION_METRIC_EPSILON, atomPairKey } from './constants.js';
 
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
@@ -95,6 +95,17 @@ const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_ROTATIONS = Object.freeze(
     .map(degrees => (degrees * Math.PI) / 180)
     .flatMap(offset => [offset, -offset])
 );
+const FINAL_TERMINAL_SINGLE_HETERO_MULTIPLE_BOND_BRANCH_ROOT_ROTATIONS = Object.freeze(
+  [5, 6, 8, 10, 12, 15, 18, 20, 22, 24, 26, 28, 30, 35, 45]
+    .map(degrees => (degrees * Math.PI) / 180)
+    .flatMap(offset => [offset, -offset])
+);
+const FINAL_TERMINAL_SINGLE_HETERO_MULTIPLE_BOND_BRANCH_LEAF_ROTATIONS = Object.freeze(
+  [0, ...[5, 6, 8, 10, 12, 15, 18, 20, 24, 30, 45, 60, 90, 110, 120, 140].flatMap(degrees => [degrees, -degrees])].map(
+    degrees => (degrees * Math.PI) / 180
+  )
+);
+const FINAL_TERMINAL_SINGLE_HETERO_MULTIPLE_BOND_LEAF_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_PASSES = 2;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_LAYOUT_HEAVY_ATOMS = 180;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_MOVED_HEAVY_ATOMS = 16;
@@ -117,6 +128,8 @@ const FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS = 6;
 const FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_DISTANCE_FACTOR = 0.05;
 const FINAL_COMPACT_BRIDGED_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR = 0.5;
 const FINAL_COMPACT_BRIDGED_HETERO_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR = 0.5;
+const FINAL_COMPACT_FUSED_RING_PATH_SHIFT_MAGNITUDE_FACTORS = Object.freeze([0.25, 1 / 3, 0.4, 0.5, 0.6, 0.75]);
+const FINAL_COMPACT_FUSED_RING_PATH_SHIFT_ANGLES = Object.freeze(Array.from({ length: 36 }, (_value, index) => (index * 2 * Math.PI) / 36));
 const FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_ALONG_FACTORS = Object.freeze([-0.5, -0.375, -0.25, 0.25, 0.375, 0.5]);
 const FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_SPREAD_FACTORS = Object.freeze([0.25, 1 / 3, 0.5, 0.75]);
 const FINAL_PARALLEL_BRIDGED_RING_PATH_ARC_HEIGHT_FACTORS = Object.freeze([
@@ -149,6 +162,10 @@ const FINAL_BOND_LENGTH_RELAXATION_PROFILES = Object.freeze([
   Object.freeze({ iterations: 480, stiffness: 0.08 }),
   Object.freeze({ iterations: 800, stiffness: 0.08 })
 ]);
+const FINAL_COMPACT_AZA_BRIDGE_BEND_MAX_HEAVY_ATOMS = 40;
+const FINAL_COMPACT_AZA_BRIDGE_BEND_MAX_DISTANCE_FACTOR = BRIDGED_VALIDATION.maxBondLengthFactor + 0.12;
+const FINAL_COMPACT_AZA_BRIDGE_BEND_MAGNITUDE_FACTORS = Object.freeze([0.2, 0.3, 0.4, 0.5, 0.6, 0.75]);
+const FINAL_COMPACT_AZA_BRIDGE_BEND_ANGLES = Object.freeze(Array.from({ length: 36 }, (_value, index) => (index * 2 * Math.PI) / 36));
 const FINAL_CONNECTOR_LABEL_ROTATIONS = Object.freeze(Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_CONNECTOR_LABEL_WIDE_ROTATIONS = Object.freeze(
   [15, -15, 20, -20, 25, -25, 30, -30, 45, -45, 60, -60, 75, -75, 90, -90, 120, -120, 150, -150, 180].map(degrees => (degrees * Math.PI) / 180)
@@ -156,6 +173,12 @@ const FINAL_CONNECTOR_LABEL_WIDE_ROTATIONS = Object.freeze(
 const FINAL_TERMINAL_LABEL_LEAF_ROTATIONS = Object.freeze(
   [-180, -150, -120, -90, -75, -60, -45, -30, -20, -15, -10, -5, 5, 10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180].map(degrees => (degrees * Math.PI) / 180)
 );
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze(
+  [5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation])
+);
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 4;
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
 const FINAL_LABEL_AXIS_ROTATIONS = Object.freeze([-8, 8, -10, 10, -12, 12, -15, 15, -20, 20, -25, 25, -30, 30, -45, 45, -60, 60, -90, 90].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_COMPRESSED_PAIRED_TERMINAL_HETERO_COMPRESSION_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
 const FINAL_CONNECTOR_LABEL_MAX_SUBTREE_ATOMS = 700;
@@ -455,6 +478,10 @@ function shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions
 }
 
 function shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, coords) {
+  const ringChainAspect = pathLikeRingChainAspect(layoutGraph, coords);
+  if (Number.isFinite(ringChainAspect) && ringChainAspect >= MIN_PROJECTED_RING_CHAIN_ASPECT) {
+    return false;
+  }
   const heavyAtomIds = [...coords.keys()].filter(atomId => layoutGraph.atoms.has(atomId) && layoutGraph.atoms.get(atomId)?.element !== 'H');
   const bounds = computeBounds(coords, heavyAtomIds);
   return Boolean(bounds && bounds.height > bounds.width);
@@ -1046,6 +1073,199 @@ function maybeRelaxFinalBondLengthFailures(molecule, layoutGraph, finalCoords, p
   };
 }
 
+function compactAzaBridgeBendRingSystem(layoutGraph, nitrogenAtomId, carbonAtomId) {
+  const nitrogenRingSystemId = layoutGraph.atomToRingSystemId.get(nitrogenAtomId);
+  const carbonRingSystemId = layoutGraph.atomToRingSystemId.get(carbonAtomId);
+  if (nitrogenRingSystemId == null || nitrogenRingSystemId !== carbonRingSystemId) {
+    return null;
+  }
+  const ringSystem = layoutGraph.ringSystemById.get(nitrogenRingSystemId);
+  if (
+    !ringSystem ||
+    (ringSystem.atomIds?.length ?? 0) > FINAL_COMPACT_AZA_BRIDGE_BEND_MAX_HEAVY_ATOMS ||
+    (ringSystem.ringIds?.length ?? 0) < 3
+  ) {
+    return null;
+  }
+  const ringSystemRingIds = new Set(ringSystem.ringIds ?? []);
+  const hasBridgedConnection = (layoutGraph.ringConnections ?? []).some(
+    connection => connection.kind === 'bridged' && ringSystemRingIds.has(connection.firstRingId) && ringSystemRingIds.has(connection.secondRingId)
+  );
+  return hasBridgedConnection ? ringSystem : null;
+}
+
+function compactAzaBridgeBendDescriptors(layoutGraph, coords, placement, bondLength) {
+  const descriptors = [];
+  for (const bond of layoutGraph.bonds.values()) {
+    if (
+      !bond ||
+      !bond.inRing ||
+      bond.aromatic ||
+      bond.kind !== 'covalent' ||
+      (bond.order ?? 1) !== 1 ||
+      placement.bondValidationClasses?.get(bond.id) !== 'bridged'
+    ) {
+      continue;
+    }
+    const firstAtom = layoutGraph.atoms.get(bond.a);
+    const secondAtom = layoutGraph.atoms.get(bond.b);
+    const firstIsNitrogen = firstAtom?.element === 'N';
+    const secondIsNitrogen = secondAtom?.element === 'N';
+    if (firstIsNitrogen === secondIsNitrogen) {
+      continue;
+    }
+    const nitrogenAtomId = firstIsNitrogen ? bond.a : bond.b;
+    const carbonAtomId = firstIsNitrogen ? bond.b : bond.a;
+    const nitrogenAtom = layoutGraph.atoms.get(nitrogenAtomId);
+    const carbonAtom = layoutGraph.atoms.get(carbonAtomId);
+    if (
+      !nitrogenAtom ||
+      !carbonAtom ||
+      carbonAtom.element !== 'C' ||
+      nitrogenAtom.aromatic === true ||
+      carbonAtom.aromatic === true ||
+      (nitrogenAtom.charge ?? 0) !== 0 ||
+      (nitrogenAtom.heavyDegree ?? 0) !== 3 ||
+      (carbonAtom.heavyDegree ?? 0) < 3 ||
+      (layoutGraph.ringCountByAtomId.get(nitrogenAtomId) ?? 0) < 2 ||
+      (layoutGraph.ringCountByAtomId.get(carbonAtomId) ?? 0) < 2
+    ) {
+      continue;
+    }
+    const nitrogenPosition = coords.get(nitrogenAtomId);
+    const carbonPosition = coords.get(carbonAtomId);
+    if (!nitrogenPosition || !carbonPosition || layoutGraph.fixedCoords?.has(nitrogenAtomId)) {
+      continue;
+    }
+    const distance = Math.hypot(nitrogenPosition.x - carbonPosition.x, nitrogenPosition.y - carbonPosition.y);
+    if (
+      distance <= bondLength * BRIDGED_VALIDATION.maxBondLengthFactor + PRESENTATION_METRIC_EPSILON ||
+      distance > bondLength * FINAL_COMPACT_AZA_BRIDGE_BEND_MAX_DISTANCE_FACTOR + PRESENTATION_METRIC_EPSILON
+    ) {
+      continue;
+    }
+    const ringSystem = compactAzaBridgeBendRingSystem(layoutGraph, nitrogenAtomId, carbonAtomId);
+    if (!ringSystem) {
+      continue;
+    }
+    const smallAzaRing = (layoutGraph.atomToRings.get(nitrogenAtomId) ?? []).find(
+      ring => ring.atomIds?.length === 3 && ring.atomIds.includes(carbonAtomId)
+    );
+    if (!smallAzaRing) {
+      continue;
+    }
+    const movedAtomIds = [nitrogenAtomId];
+    for (const neighborBond of layoutGraph.bondsByAtomId.get(nitrogenAtomId) ?? []) {
+      const neighborAtomId = neighborBond.a === nitrogenAtomId ? neighborBond.b : neighborBond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (neighborAtom?.element === 'H' && coords.has(neighborAtomId) && !layoutGraph.fixedCoords?.has(neighborAtomId)) {
+        movedAtomIds.push(neighborAtomId);
+      }
+    }
+    descriptors.push({
+      bondId: bond.id,
+      nitrogenAtomId,
+      carbonAtomId,
+      ringAtomIds: [...new Set([...(ringSystem.atomIds ?? []), ...(smallAzaRing.atomIds ?? [])])],
+      movedAtomIds
+    });
+  }
+  return descriptors;
+}
+
+function compactAzaBridgeBendCandidate(coords, descriptor, bondLength, magnitudeFactor, angle) {
+  const nitrogenPosition = coords.get(descriptor.nitrogenAtomId);
+  if (!nitrogenPosition) {
+    return null;
+  }
+  const candidateCoords = cloneCoords(coords);
+  translateAtomGroup(candidateCoords, coords, descriptor.movedAtomIds, {
+    x: Math.cos(angle) * bondLength * magnitudeFactor,
+    y: Math.sin(angle) * bondLength * magnitudeFactor
+  });
+  return candidateCoords;
+}
+
+function compareCompactAzaBridgeBendCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  for (const key of ['bondLengthFailureCount', 'severeOverlapCount', 'visibleHeavyBondCrossingCount', 'labelOverlapCount']) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (Math.abs((candidate.audit.maxBondLengthDeviation ?? 0) - (incumbent.audit.maxBondLengthDeviation ?? 0)) > PRESENTATION_METRIC_EPSILON) {
+    return (candidate.audit.maxBondLengthDeviation ?? 0) - (incumbent.audit.maxBondLengthDeviation ?? 0);
+  }
+  if (Math.abs((candidate.audit.meanBondLengthDeviation ?? 0) - (incumbent.audit.meanBondLengthDeviation ?? 0)) > PRESENTATION_METRIC_EPSILON) {
+    return (candidate.audit.meanBondLengthDeviation ?? 0) - (incumbent.audit.meanBondLengthDeviation ?? 0);
+  }
+  return candidate.totalMove - incumbent.totalMove;
+}
+
+function maybeBendFinalCompactAzaBridgeBonds(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
+  if (
+    (currentAudit.bondLengthFailureCount ?? 0) <= 0 ||
+    (currentAudit.severeOverlapCount ?? 0) > 0 ||
+    (currentAudit.labelOverlapCount ?? 0) > 0 ||
+    (currentAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0 ||
+    (currentAudit.collapsedMacrocycleCount ?? 0) > 0 ||
+    (currentAudit.stereoContradiction ?? false)
+  ) {
+    return {
+      changed: false,
+      coords: finalCoords,
+      movedAtomIds: [],
+      audit: currentAudit
+    };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of compactAzaBridgeBendDescriptors(layoutGraph, finalCoords, placement, bondLength)) {
+    for (const magnitudeFactor of FINAL_COMPACT_AZA_BRIDGE_BEND_MAGNITUDE_FACTORS) {
+      for (const angle of FINAL_COMPACT_AZA_BRIDGE_BEND_ANGLES) {
+        const candidateCoords = compactAzaBridgeBendCandidate(finalCoords, descriptor, bondLength, magnitudeFactor, angle);
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength);
+        if (
+          !finalAuditCountsDoNotWorsen(candidateAudit, currentAudit) ||
+          (candidateAudit.bondLengthFailureCount ?? 0) >= (currentAudit.bondLengthFailureCount ?? 0)
+        ) {
+          continue;
+        }
+        const candidate = {
+          coords: candidateCoords,
+          audit: candidateAudit,
+          movedAtomIds: descriptor.movedAtomIds,
+          totalMove: finalAcyclicBranchContactCandidateMove(finalCoords, candidateCoords, descriptor.movedAtomIds)
+        };
+        if (compareCompactAzaBridgeBendCandidates(candidate, bestCandidate) < 0) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return {
+      changed: false,
+      coords: finalCoords,
+      movedAtomIds: [],
+      audit: currentAudit
+    };
+  }
+  return {
+    changed: true,
+    coords: bestCandidate.coords,
+    movedAtomIds: bestCandidate.movedAtomIds,
+    audit: bestCandidate.audit
+  };
+}
+
 function finalThreeHeavyFanDescriptors(layoutGraph, coords) {
   const descriptors = [];
   if (layoutGraph.options.suppressH !== true) {
@@ -1224,6 +1444,207 @@ function maybeRetouchFinalThreeHeavyContinuationFans(molecule, layoutGraph, fina
     movedAtomIds: [...movedAtomIds],
     maxDeviationBefore: measureThreeHeavyContinuationDistortion(layoutGraph, finalCoords).maxDeviation,
     maxDeviationAfter: currentPenalty.maxDeviation
+  };
+}
+
+/**
+ * Scores aggregate final-angle distortion across the presentation angle
+ * families that make large peptide-like layouts look kinked.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @returns {{totalDeviation: number, maxDeviation: number, trigonal: object, divalent: object, threeHeavy: object}} Aggregate angle score.
+ */
+function finalLargeMoleculeAngularReliefScore(layoutGraph, coords) {
+  const trigonal = measureTrigonalDistortion(layoutGraph, coords);
+  const divalent = measureDivalentContinuationDistortion(layoutGraph, coords);
+  const threeHeavy = measureThreeHeavyContinuationDistortion(layoutGraph, coords);
+  return {
+    totalDeviation: trigonal.totalDeviation + divalent.totalDeviation + threeHeavy.totalDeviation,
+    maxDeviation: Math.max(trigonal.maxDeviation, divalent.maxDeviation, threeHeavy.maxDeviation),
+    trigonal,
+    divalent,
+    threeHeavy
+  };
+}
+
+/**
+ * Returns whether a final-angle score improves the incumbent.
+ * @param {{totalDeviation: number, maxDeviation: number}} candidateScore - Candidate angle score.
+ * @param {{totalDeviation: number, maxDeviation: number}} incumbentScore - Current angle score.
+ * @returns {boolean} True when the candidate improves max or tied total distortion.
+ */
+function finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, incumbentScore) {
+  if (candidateScore.maxDeviation < incumbentScore.maxDeviation - PRESENTATION_METRIC_EPSILON) {
+    return true;
+  }
+  if (candidateScore.maxDeviation > incumbentScore.maxDeviation + PRESENTATION_METRIC_EPSILON) {
+    return false;
+  }
+  return candidateScore.totalDeviation < incumbentScore.totalDeviation - PRESENTATION_METRIC_EPSILON;
+}
+
+/**
+ * Returns whether one atom has enough focused angle distortion to search.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} atomId - Candidate center atom ID.
+ * @returns {boolean} True when the center exceeds the final relief threshold.
+ */
+function finalLargeMoleculeAngularReliefCenterNeedsWork(layoutGraph, coords, atomId) {
+  const focusAtomIds = new Set([atomId]);
+  const trigonal = measureTrigonalDistortion(layoutGraph, coords, { focusAtomIds });
+  const divalent = measureDivalentContinuationDistortion(layoutGraph, coords, { focusAtomIds });
+  const threeHeavy = measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds });
+  return Math.max(trigonal.maxDeviation, divalent.maxDeviation, threeHeavy.maxDeviation) > FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION;
+}
+
+/**
+ * Rotates one cut subtree around a distorted center by a small angle.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} centerAtomId - Distorted center atom ID.
+ * @param {string} rootAtomId - Neighbor root of the moved subtree.
+ * @param {number} rotation - Rotation angle in radians.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], totalMove: number, rotationMagnitude: number}|null} Candidate or null.
+ */
+function rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, coords, centerAtomId, rootAtomId, rotation) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition || Math.abs(rotation) <= PRESENTATION_METRIC_EPSILON) {
+    return null;
+  }
+
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerAtomId)) {
+    return null;
+  }
+  for (const atomId of subtreeAtomIds) {
+    if (layoutGraph.fixedCoords?.has(atomId)) {
+      return null;
+    }
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  let totalMove = 0;
+  for (const atomId of subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const rotatedPosition = add(centerPosition, rotate(sub(position, centerPosition), rotation));
+    candidateCoords.set(atomId, rotatedPosition);
+    totalMove += Math.hypot(rotatedPosition.x - position.x, rotatedPosition.y - position.y);
+  }
+
+  return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, movedAtomIds: subtreeAtomIds, totalMove, rotationMagnitude: Math.abs(rotation) } : null;
+}
+
+/**
+ * Builds small-rotation descriptors for distorted large-molecule angle centers.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @returns {Array<{centerAtomId: string, rootAtomId: string}>} Rotation descriptors.
+ */
+function finalLargeMoleculeAngleReliefDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  for (const atomId of coords.keys()) {
+    if (!finalLargeMoleculeAngularReliefCenterNeedsWork(layoutGraph, coords, atomId)) {
+      continue;
+    }
+    for (const { bond, neighborAtomId } of visibleHeavyCovalentBonds(layoutGraph, coords, atomId)) {
+      if (bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      descriptors.push({ centerAtomId: atomId, rootAtomId: neighborAtomId });
+    }
+  }
+  return descriptors;
+}
+
+/**
+ * Returns whether bounded final angle relief should run for this layout size.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{primaryFamily: string}} familySummary - Family classification.
+ * @returns {boolean} True for medium large-molecule layouts where the bounded search stays cheap.
+ */
+function shouldRunFinalLargeMoleculeAngleRelief(layoutGraph, familySummary) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  return familySummary.primaryFamily === 'large-molecule' && heavyAtomCount <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS;
+}
+
+/**
+ * Applies small rigid branch rotations around remaining large-molecule angle
+ * kinks after the exact final fan pass. The search is audit-preserving and
+ * scores only aggregate presentation-angle relief, so it can smooth peptide
+ * continuations without reopening overlaps or bond-length failures.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], scoreBefore: object, scoreAfter: object, audit: object}} Angle relief result.
+ */
+function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  let currentCoords = finalCoords;
+  let currentScore = finalLargeMoleculeAngularReliefScore(layoutGraph, currentCoords);
+  const scoreBefore = currentScore;
+  if (currentScore.maxDeviation <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION) {
+    const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
+    return { changed: false, coords: finalCoords, movedAtomIds: [], scoreBefore, scoreAfter: currentScore, audit: currentAudit };
+  }
+
+  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
+  const movedAtomIds = new Set();
+  let changed = false;
+  for (let passIndex = 0; passIndex < FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES; passIndex++) {
+    let bestCandidate = null;
+    for (const descriptor of finalLargeMoleculeAngleReliefDescriptors(layoutGraph, currentCoords)) {
+      for (const rotation of FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS) {
+        const candidate = rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, currentCoords, descriptor.centerAtomId, descriptor.rootAtomId, rotation);
+        if (!candidate) {
+          continue;
+        }
+        const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+        if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+          continue;
+        }
+        const candidateScore = finalLargeMoleculeAngularReliefScore(layoutGraph, candidate.coords);
+        if (!finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, currentScore)) {
+          continue;
+        }
+        if (
+          !bestCandidate ||
+          finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, bestCandidate.score) ||
+          (Math.abs(candidateScore.maxDeviation - bestCandidate.score.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+            Math.abs(candidateScore.totalDeviation - bestCandidate.score.totalDeviation) <= PRESENTATION_METRIC_EPSILON &&
+            candidate.totalMove < bestCandidate.totalMove - PRESENTATION_METRIC_EPSILON)
+        ) {
+          bestCandidate = {
+            ...candidate,
+            audit: candidateAudit,
+            score: candidateScore
+          };
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    currentScore = bestCandidate.score;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    changed = true;
+  }
+
+  return {
+    changed,
+    coords: currentCoords,
+    movedAtomIds: [...movedAtomIds],
+    scoreBefore,
+    scoreAfter: currentScore,
+    audit: currentAudit
   };
 }
 
@@ -1762,7 +2183,8 @@ function finalTerminalCarbonLeafContactDescriptor(layoutGraph, coords, atomId, o
   return {
     anchorAtomId,
     leafAtomId: atomId,
-    movedAtomIds
+    movedAtomIds,
+    singleBondHeteroLeaf: isSingleBondRetouchableLeaf
   };
 }
 
@@ -1811,6 +2233,7 @@ function finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, coords, bond
  * local crossings without moving ring atoms or larger substituent branches.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} [options] - Descriptor options forwarded to the contact descriptor builder.
  * @returns {Array<object>} Terminal carbon leaf descriptors touching crossings.
  */
 function finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, coords, options = {}) {
@@ -1946,7 +2369,8 @@ function finalTerminalCarbonLeafContactAuditCanReplace(
   baseAudit,
   candidateClearance = Number.POSITIVE_INFINITY,
   baseClearance = Number.POSITIVE_INFINITY,
-  clearanceThreshold = Number.POSITIVE_INFINITY
+  clearanceThreshold = Number.POSITIVE_INFINITY,
+  options = {}
 ) {
   if (!candidateAudit || !baseAudit || (baseAudit.ok === true && candidateAudit.ok !== true)) {
     return false;
@@ -1967,6 +2391,9 @@ function finalTerminalCarbonLeafContactAuditCanReplace(
     }
   }
   if ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  if (options.preventSevereOverlapWorsening === true && (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0)) {
     return false;
   }
   const clearanceImproves =
@@ -2046,6 +2473,24 @@ function shouldSkipDirtyGenericFinalTerminalMultipleBondFanRetouch(familySummary
   );
 }
 
+/**
+ * Returns terminal-leaf descriptor options for the current final-contact audit.
+ * Single-bond hetero leaves are only considered when a counted contact or
+ * crossing needs relief, preserving the tighter clean-layout descriptor scan.
+ * @param {object} audit - Current audit summary.
+ * @param {object} options - Caller-supplied descriptor options.
+ * @returns {object} Descriptor options for terminal-leaf scans.
+ */
+function finalTerminalLeafDescriptorOptionsForAudit(audit, options) {
+  if ((audit?.severeOverlapCount ?? 0) > 0 || (audit?.visibleHeavyBondCrossingCount ?? 0) > 0) {
+    return options;
+  }
+  return {
+    ...options,
+    includeSingleBondHeteroLeaves: false
+  };
+}
+
 function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoords, placement, bondLength, options = {}) {
   let currentCoords = finalCoords;
   let baseAudit = auditLayout(layoutGraph, currentCoords, {
@@ -2055,10 +2500,11 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
   const rotationOffsets = shouldUseCoarseDirtyLargeTerminalLeafContactRotations(layoutGraph, baseAudit)
     ? FINAL_TERMINAL_LEAF_CONTACT_DIRTY_LARGE_ROTATIONS
     : FINAL_TERMINAL_LEAF_CONTACT_ROTATIONS;
+  const descriptorOptions = finalTerminalLeafDescriptorOptionsForAudit(baseAudit, options);
   if (
     (baseAudit.severeOverlapCount ?? 0) === 0 &&
-    finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, options).length === 0 &&
-    finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, options).length === 0
+    finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, descriptorOptions).length === 0 &&
+    finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, descriptorOptions).length === 0
   ) {
     return { coords: finalCoords, changed: false, movedAtomIds: [] };
   }
@@ -2067,19 +2513,20 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
   let changed = false;
   for (let passIndex = 0; passIndex < FINAL_TERMINAL_LEAF_CONTACT_MAX_PASSES; passIndex++) {
     const descriptorByKey = new Map();
+    const passDescriptorOptions = finalTerminalLeafDescriptorOptionsForAudit(baseAudit, options);
     for (const overlap of findSevereOverlaps(layoutGraph, currentCoords, bondLength)) {
       for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
-        const descriptor = finalTerminalCarbonLeafContactDescriptor(layoutGraph, currentCoords, atomId, options);
+        const descriptor = finalTerminalCarbonLeafContactDescriptor(layoutGraph, currentCoords, atomId, passDescriptorOptions);
         if (!descriptor) {
           continue;
         }
         descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
       }
     }
-    for (const descriptor of finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, options)) {
+    for (const descriptor of finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, passDescriptorOptions)) {
       descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
     }
-    for (const descriptor of finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, options)) {
+    for (const descriptor of finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, passDescriptorOptions)) {
       descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
     }
     if (descriptorByKey.size === 0) {
@@ -2114,7 +2561,11 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
           }
         }
         const candidateClearance = Number.isFinite(descriptor.clearance) ? finalTerminalCarbonLeafContactClearance(layoutGraph, candidateCoords, descriptor) : Number.POSITIVE_INFINITY;
-        if (!finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit, candidateClearance, descriptor.clearance, descriptor.clearanceThreshold)) {
+        if (
+          !finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit, candidateClearance, descriptor.clearance, descriptor.clearanceThreshold, {
+            preventSevereOverlapWorsening: descriptor.singleBondHeteroLeaf === true
+          })
+        ) {
           continue;
         }
         const candidate = {
@@ -2143,8 +2594,8 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
     changed = true;
     if (
       (baseAudit.severeOverlapCount ?? 0) === 0 &&
-      finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, options).length === 0 &&
-      finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, options).length === 0
+      finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, finalTerminalLeafDescriptorOptionsForAudit(baseAudit, options)).length === 0 &&
+      finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, finalTerminalLeafDescriptorOptionsForAudit(baseAudit, options)).length === 0
     ) {
       break;
     }
@@ -2399,10 +2850,83 @@ function finalTerminalMultipleBondLeafCenterDescriptor(layoutGraph, coords, leaf
   return { leafAtomId, centerAtomId };
 }
 
+/**
+ * Describes terminal single-bond hetero leaves attached to an acyclic
+ * multiple-bond center, such as crowded bridged oxime `C=N-O` branches.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} leafAtomId - Candidate terminal hetero leaf.
+ * @param {string} blockerAtomId - Overlapping atom that must not move with the branch.
+ * @returns {object|null} Branch descriptor, or null when the contact is outside this retouch class.
+ */
+function finalTerminalSingleHeteroMultipleBondBranchContactDescriptor(layoutGraph, coords, leafAtomId, blockerAtomId) {
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !leafAtom ||
+    !FINAL_TERMINAL_SINGLE_HETERO_MULTIPLE_BOND_LEAF_ELEMENTS.has(leafAtom.element) ||
+    leafAtom.aromatic ||
+    leafAtom.heavyDegree !== 1 ||
+    layoutGraph.ringAtomIdSet.has(leafAtomId) ||
+    !coords.has(leafAtomId)
+  ) {
+    return null;
+  }
+
+  const singleCenterBonds = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? []).filter(bond => {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || bond.inRing || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const centerAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    return centerAtom && centerAtom.element !== 'H' && !centerAtom.aromatic && !layoutGraph.ringAtomIdSet.has(centerAtomId) && coords.has(centerAtomId);
+  });
+  if (singleCenterBonds.length !== 1) {
+    return null;
+  }
+
+  const centerAtomId = singleCenterBonds[0].a === leafAtomId ? singleCenterBonds[0].b : singleCenterBonds[0].a;
+  const multiplePivotBonds = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? []).filter(bond => {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || bond.inRing || (bond.order ?? 1) <= 1) {
+      return false;
+    }
+    const pivotAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const pivotAtom = layoutGraph.atoms.get(pivotAtomId);
+    return pivotAtom && pivotAtom.element !== 'H' && coords.has(pivotAtomId);
+  });
+  if (multiplePivotBonds.length !== 1) {
+    return null;
+  }
+
+  const pivotAtomId = multiplePivotBonds[0].a === centerAtomId ? multiplePivotBonds[0].b : multiplePivotBonds[0].a;
+  const movedAtomIds = collectFinalTerminalCarbonLeafSubtreeAtomIds(layoutGraph, centerAtomId, pivotAtomId, coords);
+  if (!movedAtomIds.includes(leafAtomId) || (blockerAtomId && movedAtomIds.includes(blockerAtomId))) {
+    return null;
+  }
+  const movedHeavyAtomIds = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+  if (movedHeavyAtomIds.length < 2 || movedHeavyAtomIds.length > FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_MOVED_HEAVY_ATOMS) {
+    return null;
+  }
+
+  const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+  if (!leafSubtreeAtomIds.includes(leafAtomId)) {
+    return null;
+  }
+
+  return {
+    kind: 'terminal-single-hetero-multiple-bond-branch',
+    leafAtomId,
+    centerAtomId,
+    pivotAtomId,
+    movedAtomIds,
+    movedHeavyAtomCount: movedHeavyAtomIds.length,
+    leafSubtreeAtomIds
+  };
+}
+
 function finalTerminalMultipleBondBranchContactDescriptor(layoutGraph, coords, leafAtomId, blockerAtomId) {
   const leafDescriptor = finalTerminalMultipleBondLeafCenterDescriptor(layoutGraph, coords, leafAtomId);
   if (!leafDescriptor) {
-    return null;
+    return finalTerminalSingleHeteroMultipleBondBranchContactDescriptor(layoutGraph, coords, leafAtomId, blockerAtomId);
   }
 
   let bestDescriptor = null;
@@ -2433,6 +2957,7 @@ function finalTerminalMultipleBondBranchContactDescriptor(layoutGraph, coords, l
     }
 
     const descriptor = {
+      kind: 'terminal-multiple-bond-leaf',
       leafAtomId,
       centerAtomId: leafDescriptor.centerAtomId,
       pivotAtomId,
@@ -2477,7 +3002,7 @@ function finalTerminalMultipleBondBranchContactDescriptors(layoutGraph, coords, 
   return descriptors;
 }
 
-function rotateFinalTerminalMultipleBondBranchContactCandidate(coords, descriptor, rotationOffset) {
+function rotateFinalTerminalMultipleBondBranchContactCandidate(coords, descriptor, rotationOffset, leafRotationOffset = 0) {
   const pivotPosition = coords.get(descriptor.pivotAtomId);
   if (!pivotPosition) {
     return null;
@@ -2489,7 +3014,39 @@ function rotateFinalTerminalMultipleBondBranchContactCandidate(coords, descripto
       candidateCoords.set(atomId, rotateAround(position, pivotPosition, rotationOffset));
     }
   }
+  if ((descriptor.leafSubtreeAtomIds?.length ?? 0) > 0 && Math.abs(leafRotationOffset) > PRESENTATION_METRIC_EPSILON) {
+    const centerPosition = candidateCoords.get(descriptor.centerAtomId);
+    if (!centerPosition) {
+      return null;
+    }
+    for (const atomId of descriptor.leafSubtreeAtomIds) {
+      const position = candidateCoords.get(atomId);
+      if (position) {
+        candidateCoords.set(atomId, rotateAround(position, centerPosition, leafRotationOffset));
+      }
+    }
+  }
   return candidateCoords;
+}
+
+/**
+ * Scores the retained trigonal fan at single-hetero multiple-bond branch centers.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {object} descriptor - Final branch-contact descriptor.
+ * @returns {number} Absolute deviation from the 120-degree center fan.
+ */
+function finalTerminalSingleHeteroMultipleBondBranchAnglePenalty(coords, descriptor) {
+  if (descriptor.kind !== 'terminal-single-hetero-multiple-bond-branch') {
+    return 0;
+  }
+  const pivotPosition = coords.get(descriptor.pivotAtomId);
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!pivotPosition || !centerPosition || !leafPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const angleAtCenter = angularDifference(angleOf(sub(pivotPosition, centerPosition)), angleOf(sub(leafPosition, centerPosition)));
+  return Math.abs(angleAtCenter - EXACT_TRIGONAL_CONTINUATION_ANGLE);
 }
 
 function finalTerminalMultipleBondBranchContactAuditCanReplace(candidateAudit, baseAudit, candidateFanPenalty, baseFanPenalty) {
@@ -2524,6 +3081,9 @@ function compareFinalTerminalMultipleBondBranchContactCandidates(candidate, incu
   if (candidate.movedHeavyAtomCount !== incumbent.movedHeavyAtomCount) {
     return candidate.movedHeavyAtomCount - incumbent.movedHeavyAtomCount;
   }
+  if (Math.abs((candidate.anglePenalty ?? 0) - (incumbent.anglePenalty ?? 0)) > PRESENTATION_METRIC_EPSILON) {
+    return (candidate.anglePenalty ?? 0) - (incumbent.anglePenalty ?? 0);
+  }
   if (Math.abs(candidate.totalMove - incumbent.totalMove) > PRESENTATION_METRIC_EPSILON) {
     return candidate.totalMove - incumbent.totalMove;
   }
@@ -2553,30 +3113,39 @@ function maybeRetouchFinalTerminalMultipleBondBranchSevereContacts(layoutGraph, 
     const baseFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, currentCoords);
     let bestCandidate = null;
     for (const descriptor of descriptors) {
-      for (const rotationOffset of FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_ROTATIONS) {
-        const candidateCoords = rotateFinalTerminalMultipleBondBranchContactCandidate(currentCoords, descriptor, rotationOffset);
-        if (!candidateCoords) {
-          continue;
-        }
-        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
-          bondLength,
-          bondValidationClasses: placement.bondValidationClasses
-        });
-        const candidateFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, candidateCoords);
-        if (!finalTerminalMultipleBondBranchContactAuditCanReplace(candidateAudit, baseAudit, candidateFanPenalty, baseFanPenalty)) {
-          continue;
-        }
-        const candidate = {
-          coords: candidateCoords,
-          audit: candidateAudit,
-          key: `${descriptor.pivotAtomId}:${descriptor.centerAtomId}:${descriptor.leafAtomId}`,
-          movedAtomIds: descriptor.movedAtomIds,
-          movedHeavyAtomCount: descriptor.movedHeavyAtomCount,
-          rotationMagnitude: Math.abs(rotationOffset),
-          totalMove: finalTerminalCarbonLeafContactCandidateMove(currentCoords, candidateCoords, descriptor.movedAtomIds)
-        };
-        if (compareFinalTerminalMultipleBondBranchContactCandidates(candidate, bestCandidate) < 0) {
-          bestCandidate = candidate;
+      const rootRotationOffsets =
+        descriptor.kind === 'terminal-single-hetero-multiple-bond-branch'
+          ? FINAL_TERMINAL_SINGLE_HETERO_MULTIPLE_BOND_BRANCH_ROOT_ROTATIONS
+          : FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_ROTATIONS;
+      const leafRotationOffsets =
+        descriptor.kind === 'terminal-single-hetero-multiple-bond-branch' ? FINAL_TERMINAL_SINGLE_HETERO_MULTIPLE_BOND_BRANCH_LEAF_ROTATIONS : [0];
+      for (const rotationOffset of rootRotationOffsets) {
+        for (const leafRotationOffset of leafRotationOffsets) {
+          const candidateCoords = rotateFinalTerminalMultipleBondBranchContactCandidate(currentCoords, descriptor, rotationOffset, leafRotationOffset);
+          if (!candidateCoords) {
+            continue;
+          }
+          const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+            bondLength,
+            bondValidationClasses: placement.bondValidationClasses
+          });
+          const candidateFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, candidateCoords);
+          if (!finalTerminalMultipleBondBranchContactAuditCanReplace(candidateAudit, baseAudit, candidateFanPenalty, baseFanPenalty)) {
+            continue;
+          }
+          const candidate = {
+            coords: candidateCoords,
+            audit: candidateAudit,
+            key: `${descriptor.pivotAtomId}:${descriptor.centerAtomId}:${descriptor.leafAtomId}:${rotationOffset}:${leafRotationOffset}`,
+            movedAtomIds: descriptor.movedAtomIds,
+            movedHeavyAtomCount: descriptor.movedHeavyAtomCount,
+            anglePenalty: finalTerminalSingleHeteroMultipleBondBranchAnglePenalty(candidateCoords, descriptor),
+            rotationMagnitude: Math.abs(rotationOffset) + Math.abs(leafRotationOffset),
+            totalMove: finalTerminalCarbonLeafContactCandidateMove(currentCoords, candidateCoords, descriptor.movedAtomIds)
+          };
+          if (compareFinalTerminalMultipleBondBranchContactCandidates(candidate, bestCandidate) < 0) {
+            bestCandidate = candidate;
+          }
         }
       }
     }
@@ -2952,10 +3521,14 @@ function compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bond
     const secondRetouchable = isCompactBridgedOverlapRetouchableRingAtom(layoutGraph, coords, secondAtom, secondAtomId);
     const firstStationaryBridgehead = isCompactBridgedOverlapStationaryBridgehead(layoutGraph, firstAtom, firstAtomId);
     const secondStationaryBridgehead = isCompactBridgedOverlapStationaryBridgehead(layoutGraph, secondAtom, secondAtomId);
+    const firstStationaryHeteroJunction = isCompactBridgedOverlapStationaryHeteroJunction(layoutGraph, firstAtom, firstAtomId);
+    const secondStationaryHeteroJunction = isCompactBridgedOverlapStationaryHeteroJunction(layoutGraph, secondAtom, secondAtomId);
     const isRetouchablePair = firstRetouchable && secondRetouchable;
     const isRetouchableBridgeheadPair =
       elementPair === 'C-C' && ((firstRetouchable && secondStationaryBridgehead) || (secondRetouchable && firstStationaryBridgehead));
-    if (!isRetouchablePair && !isRetouchableBridgeheadPair) {
+    const isRetouchableHeteroJunctionPair =
+      isCompactHeteroPair && ((firstRetouchable && secondStationaryHeteroJunction) || (secondRetouchable && firstStationaryHeteroJunction));
+    if (!isRetouchablePair && !isRetouchableBridgeheadPair && !isRetouchableHeteroJunctionPair) {
       continue;
     }
     const overlapThreshold =
@@ -2978,11 +3551,11 @@ function compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bond
 
     const ringSystemAtomIdSet = new Set(ringSystem.atomIds ?? []);
     const firstMovedAtomIds =
-      firstRetouchable && (isRetouchablePair || !firstStationaryBridgehead)
+      firstRetouchable && (isRetouchablePair || (!firstStationaryBridgehead && !firstStationaryHeteroJunction))
         ? finalExactBridgedRingPathMoveGroup(layoutGraph, coords, firstAtomId, ringSystemAtomIdSet)
         : [];
     const secondMovedAtomIds =
-      secondRetouchable && (isRetouchablePair || !secondStationaryBridgehead)
+      secondRetouchable && (isRetouchablePair || (!secondStationaryBridgehead && !secondStationaryHeteroJunction))
         ? finalExactBridgedRingPathMoveGroup(layoutGraph, coords, secondAtomId, ringSystemAtomIdSet)
         : [];
     const firstMovedHeavyAtomIds = firstMovedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
@@ -3006,6 +3579,262 @@ function compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bond
   return descriptors;
 }
 
+/**
+ * Finds compact bridged ring atoms, including hetero path atoms, that can be
+ * nudged away from a crowded exocyclic carbon root when branch rotation cannot
+ * find a clean slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Preferred bond length.
+ * @returns {Array<object>} Existing bridged-path candidate descriptors.
+ */
+function compactBridgedExocyclicRootOverlapDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  const seenPairs = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    const firstAtomId = overlap.firstAtomId;
+    const secondAtomId = overlap.secondAtomId;
+    const pairKey = atomPairKey(firstAtomId, secondAtomId);
+    if (seenPairs.has(pairKey) || layoutGraph.bondedPairSet.has(pairKey)) {
+      continue;
+    }
+    seenPairs.add(pairKey);
+
+    const firstAtom = layoutGraph.atoms.get(firstAtomId);
+    const secondAtom = layoutGraph.atoms.get(secondAtomId);
+    if (!firstAtom || !secondAtom || firstAtom.aromatic || secondAtom.aromatic) {
+      continue;
+    }
+    const elementPair = [firstAtom.element, secondAtom.element].sort().join('-');
+    if (elementPair !== 'C-C' && elementPair !== 'C-O') {
+      continue;
+    }
+    const firstRetouchable = isCompactBridgedOverlapRetouchableRingAtom(layoutGraph, coords, firstAtom, firstAtomId);
+    const secondRetouchable = isCompactBridgedOverlapRetouchableRingAtom(layoutGraph, coords, secondAtom, secondAtomId);
+    if (firstRetouchable === secondRetouchable) {
+      continue;
+    }
+    const ringAtomId = firstRetouchable ? firstAtomId : secondAtomId;
+    const branchAtomId = firstRetouchable ? secondAtomId : firstAtomId;
+    const branchAtom = layoutGraph.atoms.get(branchAtomId);
+    if (!branchAtom || layoutGraph.ringAtomIdSet.has(branchAtomId) || branchAtom.element !== 'C' || (branchAtom.heavyDegree ?? 0) > 2) {
+      continue;
+    }
+    const overlapThreshold =
+      bondLength * (elementPair === 'C-O' ? FINAL_COMPACT_BRIDGED_HETERO_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR : FINAL_COMPACT_BRIDGED_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR);
+    if ((overlap.distance ?? Number.POSITIVE_INFINITY) > overlapThreshold) {
+      continue;
+    }
+
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(ringAtomId);
+    const ringSystem = ringSystemId != null ? layoutGraph.ringSystemById.get(ringSystemId) : null;
+    if (!ringSystem || (ringSystem.atomIds?.length ?? 0) > 16 || (ringSystem.ringIds?.length ?? 0) < 2 || !hasBridgedConnectionForRingSystem(layoutGraph, ringSystem)) {
+      continue;
+    }
+    const ringSystemAtomIdSet = new Set(ringSystem.atomIds ?? []);
+    const branchTouchesRingSystem = (layoutGraph.bondsByAtomId.get(branchAtomId) ?? []).some(bond => {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || bond.inRing || (bond.order ?? 1) !== 1) {
+        return false;
+      }
+      const neighborAtomId = bond.a === branchAtomId ? bond.b : bond.a;
+      return ringSystemAtomIdSet.has(neighborAtomId);
+    });
+    if (!branchTouchesRingSystem) {
+      continue;
+    }
+
+    const movedAtomIds = finalExactBridgedRingPathMoveGroup(layoutGraph, coords, ringAtomId, ringSystemAtomIdSet);
+    const movedHeavyAtomIds = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+    if (!isCompactBridgedOverlapMoveGroup(layoutGraph, ringAtomId, movedHeavyAtomIds)) {
+      continue;
+    }
+
+    descriptors.push({
+      firstAtomId: branchAtomId,
+      secondAtomId: ringAtomId,
+      ringAtomIds: ringSystem.atomIds ?? [],
+      firstMovedAtomIds: [],
+      secondMovedAtomIds: movedAtomIds,
+      movedAtomIds
+    });
+  }
+  return descriptors;
+}
+
+/**
+ * Returns whether a ring system is a compact fused/spiro cage suitable for
+ * one-sided final ring-atom overlap relief.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object|null} ringSystem - Candidate ring-system descriptor.
+ * @returns {boolean} True when the ring system has connected fused and spiro blocks.
+ */
+function hasCompactFusedSpiroCageRingSystem(layoutGraph, ringSystem) {
+  if (!ringSystem || (ringSystem.atomIds?.length ?? 0) > 16 || (ringSystem.ringIds?.length ?? 0) < 3) {
+    return false;
+  }
+  const ringIds = new Set(ringSystem.ringIds ?? []);
+  let fusedConnectionCount = 0;
+  let spiroConnectionCount = 0;
+  for (const connection of layoutGraph.ringConnections ?? []) {
+    if (!ringIds.has(connection.firstRingId) || !ringIds.has(connection.secondRingId)) {
+      continue;
+    }
+    if (connection.kind === 'fused') {
+      fusedConnectionCount += 1;
+    } else if (connection.kind === 'spiro') {
+      spiroConnectionCount += 1;
+    }
+  }
+  return fusedConnectionCount >= 1 && spiroConnectionCount >= 1 && fusedConnectionCount + spiroConnectionCount >= ringIds.size - 1;
+}
+
+/**
+ * Finds one-sided nudges for compact fused-spiro ring systems where nonbonded
+ * ring atoms collapse onto one another after an otherwise bond-clean layout.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Preferred bond length.
+ * @returns {Array<object>} Existing bridged-path candidate descriptors.
+ */
+function compactFusedSpiroNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  const seenDescriptors = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    const firstAtomId = overlap.firstAtomId;
+    const secondAtomId = overlap.secondAtomId;
+    const pairKey = atomPairKey(firstAtomId, secondAtomId);
+    if (layoutGraph.bondedPairSet.has(pairKey)) {
+      continue;
+    }
+
+    const firstAtom = layoutGraph.atoms.get(firstAtomId);
+    const secondAtom = layoutGraph.atoms.get(secondAtomId);
+    if (!firstAtom || !secondAtom || firstAtom.aromatic || secondAtom.aromatic) {
+      continue;
+    }
+    const elementPair = [firstAtom.element, secondAtom.element].sort().join('-');
+    if (elementPair !== 'C-C' && elementPair !== 'C-N' && elementPair !== 'N-N') {
+      continue;
+    }
+    const overlapThreshold = bondLength * FINAL_COMPACT_BRIDGED_HETERO_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR;
+    if ((overlap.distance ?? Number.POSITIVE_INFINITY) > overlapThreshold) {
+      continue;
+    }
+
+    const firstRingSystemId = layoutGraph.atomToRingSystemId.get(firstAtomId);
+    const secondRingSystemId = layoutGraph.atomToRingSystemId.get(secondAtomId);
+    const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId ? layoutGraph.ringSystemById.get(firstRingSystemId) : null;
+    if (!hasCompactFusedSpiroCageRingSystem(layoutGraph, ringSystem)) {
+      continue;
+    }
+    const sharedRing = (layoutGraph.atomToRings.get(firstAtomId) ?? []).some(firstRing => (layoutGraph.atomToRings.get(secondAtomId) ?? []).some(secondRing => secondRing.id === firstRing.id));
+    if (sharedRing) {
+      continue;
+    }
+
+    const ringSystemAtomIdSet = new Set(ringSystem.atomIds ?? []);
+    for (const [movingAtomId, stationaryAtomId, movingAtom] of [
+      [firstAtomId, secondAtomId, firstAtom],
+      [secondAtomId, firstAtomId, secondAtom]
+    ]) {
+      if (!isCompactBridgedOverlapRetouchableRingAtom(layoutGraph, coords, movingAtom, movingAtomId)) {
+        continue;
+      }
+      const movedAtomIds = finalExactBridgedRingPathMoveGroup(layoutGraph, coords, movingAtomId, ringSystemAtomIdSet);
+      const movedHeavyAtomIds = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+      if (!isCompactBridgedOverlapMoveGroup(layoutGraph, movingAtomId, movedHeavyAtomIds)) {
+        continue;
+      }
+      const descriptorKey = `${movingAtomId}:${stationaryAtomId}:${movedHeavyAtomIds.join(',')}`;
+      if (seenDescriptors.has(descriptorKey)) {
+        continue;
+      }
+      seenDescriptors.add(descriptorKey);
+      descriptors.push({
+        firstAtomId: movingAtomId,
+        secondAtomId: stationaryAtomId,
+        ringAtomIds: ringSystem.atomIds ?? [],
+        firstMovedAtomIds: movedAtomIds,
+        secondMovedAtomIds: [],
+        movedAtomIds
+      });
+    }
+  }
+  return descriptors;
+}
+
+function hasCompactFusedCageRingSystem(layoutGraph, ringSystem) {
+  if (!ringSystem || (ringSystem.atomIds?.length ?? 0) > 18 || (ringSystem.ringIds?.length ?? 0) < 3) {
+    return false;
+  }
+  const ringIds = new Set(ringSystem.ringIds ?? []);
+  const fusedConnectionCount = (layoutGraph.ringConnections ?? []).filter(
+    connection => connection.kind === 'fused' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+  ).length;
+  return fusedConnectionCount >= ringIds.size;
+}
+
+function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength) {
+  if (findSevereOverlaps(layoutGraph, coords, bondLength).length === 0 && findVisibleHeavyBondCrossings(layoutGraph, coords).length === 0) {
+    return [];
+  }
+
+  const descriptors = [];
+  const seenDescriptors = new Set();
+  const crossingBondIds = new Set(findVisibleHeavyBondCrossings(layoutGraph, coords).flatMap(crossing => [crossing.firstBondId, crossing.secondBondId]));
+  const overlapAtomIds = new Set(findSevereOverlaps(layoutGraph, coords, bondLength).flatMap(overlap => [overlap.firstAtomId, overlap.secondAtomId]));
+  for (const ring of layoutGraph.rings ?? []) {
+    if (ring.aromatic || ring.atomIds.length < 5 || ring.atomIds.length > 6 || !ring.atomIds.every(atomId => coords.has(atomId))) {
+      continue;
+    }
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(ring.atomIds[0]);
+    const ringSystem = ringSystemId != null ? layoutGraph.ringSystemById.get(ringSystemId) : null;
+    if (!hasCompactFusedCageRingSystem(layoutGraph, ringSystem)) {
+      continue;
+    }
+    const uniqueRingAtomIds = ring.atomIds.filter(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom && atom.element !== 'H' && atom.aromatic !== true && (atom.heavyDegree ?? 0) <= 2 && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) === 1;
+    });
+    if (uniqueRingAtomIds.length !== 2 || !uniqueRingAtomIds.some(atomId => overlapAtomIds.has(atomId))) {
+      continue;
+    }
+    const orderedPair = orderedAdjacentRingAtomPair(ring, uniqueRingAtomIds[0], uniqueRingAtomIds[1]);
+    if (!orderedPair) {
+      continue;
+    }
+    const pathBond = layoutGraph.bondByAtomPair.get(atomPairKey(orderedPair[0], orderedPair[1]));
+    if (!pathBond || !crossingBondIds.has(pathBond.id)) {
+      continue;
+    }
+    const ringAtomIdSet = new Set(ringSystem?.atomIds ?? ring.atomIds);
+    const firstMovedAtomIds = finalExactBridgedRingPathMoveGroup(layoutGraph, coords, orderedPair[0], ringAtomIdSet);
+    const secondMovedAtomIds = finalExactBridgedRingPathMoveGroup(layoutGraph, coords, orderedPair[1], ringAtomIdSet);
+    const movedAtomIds = [...new Set([...firstMovedAtomIds, ...secondMovedAtomIds])];
+    const movedHeavyAtomIds = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+    if (
+      firstMovedAtomIds.some(atomId => secondMovedAtomIds.includes(atomId)) ||
+      movedHeavyAtomIds.length !== 2 ||
+      !orderedPair.every(atomId => movedHeavyAtomIds.includes(atomId))
+    ) {
+      continue;
+    }
+    const descriptorKey = `${ring.id}:${orderedPair.join(':')}`;
+    if (seenDescriptors.has(descriptorKey)) {
+      continue;
+    }
+    seenDescriptors.add(descriptorKey);
+    descriptors.push({
+      kind: 'compactFusedPathShift',
+      firstAtomId: orderedPair[0],
+      secondAtomId: orderedPair[1],
+      ringAtomIds: ringSystem?.atomIds ?? ring.atomIds,
+      movedAtomIds
+    });
+  }
+  return descriptors;
+}
+
 function isCompactBridgedOverlapRetouchableRingAtom(layoutGraph, coords, atom, atomId) {
   return (
     atom &&
@@ -3021,6 +3850,12 @@ function isCompactBridgedOverlapStationaryBridgehead(layoutGraph, atom, atomId) 
   const ringCount = layoutGraph.ringCountByAtomId.get(atomId) ?? 0;
   const heavyDegree = atom?.heavyDegree ?? 0;
   return atom && atom.element === 'C' && atom.aromatic !== true && ringCount >= 2 && heavyDegree >= 3 && heavyDegree <= 4;
+}
+
+function isCompactBridgedOverlapStationaryHeteroJunction(layoutGraph, atom, atomId) {
+  const ringCount = layoutGraph.ringCountByAtomId.get(atomId) ?? 0;
+  const heavyDegree = atom?.heavyDegree ?? 0;
+  return atom && (atom.element === 'N' || atom.element === 'O') && atom.aromatic !== true && ringCount >= 2 && heavyDegree >= 2 && heavyDegree <= 3;
 }
 
 function isCompactBridgedOverlapMoveGroup(layoutGraph, rootAtomId, movedHeavyAtomIds) {
@@ -3280,15 +4115,7 @@ function terminalBlockedBridgedRingPathAtomOverlapDescriptors(layoutGraph, coord
         continue;
       }
       const blockerAtom = layoutGraph.atoms.get(blockerAtomId);
-      const blockerHeavyDegree = blockerAtom?.heavyDegree ?? 0;
-      if (
-        !blockerAtom ||
-        blockerAtom.element === 'H' ||
-        blockerAtom.aromatic === true ||
-        layoutGraph.ringAtomIdSet.has(blockerAtomId) ||
-        blockerHeavyDegree < 1 ||
-        blockerHeavyDegree > 2
-      ) {
+      if (!blockerAtom || blockerAtom.element === 'H' || blockerAtom.aromatic === true || layoutGraph.ringAtomIdSet.has(blockerAtomId) || (blockerAtom.heavyDegree ?? 0) !== 1) {
         continue;
       }
       const ringSystemId = layoutGraph.atomToRingSystemId.get(atomId);
@@ -3357,7 +4184,12 @@ function finalExactBridgedRingPathOverlapDescriptors(layoutGraph, coords, bondLe
     exactOverlapAtomIds.add(overlap.secondAtomId);
   }
   if (exactOverlapAtomIds.size === 0) {
-    return compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength);
+    return [
+      ...compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength),
+      ...compactBridgedExocyclicRootOverlapDescriptors(layoutGraph, coords, bondLength),
+      ...compactFusedSpiroNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength),
+      ...compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength)
+    ];
   }
 
   const descriptors = [];
@@ -3408,6 +4240,24 @@ function finalExactBridgedRingPathOverlapDescriptors(layoutGraph, coords, bondLe
     }
   }
   for (const descriptor of compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength)) {
+    descriptors.push(descriptor);
+    if (descriptors.length > FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS) {
+      return [];
+    }
+  }
+  for (const descriptor of compactBridgedExocyclicRootOverlapDescriptors(layoutGraph, coords, bondLength)) {
+    descriptors.push(descriptor);
+    if (descriptors.length > FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS) {
+      return [];
+    }
+  }
+  for (const descriptor of compactFusedSpiroNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength)) {
+    descriptors.push(descriptor);
+    if (descriptors.length > FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS) {
+      return [];
+    }
+  }
+  for (const descriptor of compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength)) {
     descriptors.push(descriptor);
     if (descriptors.length > FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS) {
       return [];
@@ -3594,6 +4444,22 @@ function parallelBridgedRingPathOverlapCandidates(coords, descriptor, bondLength
   return candidates;
 }
 
+function compactFusedRingPathShiftCandidates(coords, descriptor, bondLength) {
+  const candidates = [];
+  for (const magnitudeFactor of FINAL_COMPACT_FUSED_RING_PATH_SHIFT_MAGNITUDE_FACTORS) {
+    const magnitude = magnitudeFactor * bondLength;
+    for (const angle of FINAL_COMPACT_FUSED_RING_PATH_SHIFT_ANGLES) {
+      const candidateCoords = cloneCoords(coords);
+      translateAtomGroup(candidateCoords, coords, descriptor.movedAtomIds, {
+        x: Math.cos(angle) * magnitude,
+        y: Math.sin(angle) * magnitude
+      });
+      candidates.push(candidateCoords);
+    }
+  }
+  return candidates;
+}
+
 function compareFinalExactBridgedRingPathOverlapCandidates(candidate, incumbent) {
   if (!incumbent) {
     return -1;
@@ -3661,6 +4527,34 @@ function maybeRetouchFinalExactBridgedRingPathOverlaps(layoutGraph, finalCoords,
     }
     if (descriptor.kind === 'parallelBridgedPath') {
       for (const candidateCoords of parallelBridgedRingPathOverlapCandidates(finalCoords, descriptor, bondLength)) {
+        const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, descriptor.ringAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: candidateBondValidationClasses
+        });
+        if (
+          !finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) ||
+          (candidateAudit.severeOverlapCount ?? 0) >= (baseAudit.severeOverlapCount ?? 0)
+        ) {
+          continue;
+        }
+        const candidate = {
+          coords: candidateCoords,
+          audit: candidateAudit,
+          firstAtomId: descriptor.firstAtomId,
+          secondAtomId: descriptor.secondAtomId,
+          bondValidationClasses: candidateBondValidationClasses,
+          movedAtomIds: descriptor.movedAtomIds,
+          totalMove: finalAcyclicBranchContactCandidateMove(finalCoords, candidateCoords, descriptor.movedAtomIds)
+        };
+        if (compareFinalExactBridgedRingPathOverlapCandidates(candidate, bestCandidate) < 0) {
+          bestCandidate = candidate;
+        }
+      }
+      continue;
+    }
+    if (descriptor.kind === 'compactFusedPathShift') {
+      for (const candidateCoords of compactFusedRingPathShiftCandidates(finalCoords, descriptor, bondLength)) {
         const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, descriptor.ringAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
         const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
           bondLength,
@@ -4439,38 +5333,45 @@ function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bon
   if (!projection.changed) {
     return { coords: finalCoords, changed: false };
   }
+  if (!finalAuditCountsDoNotWorsen(projection.audit, baseAudit)) {
+    return { coords: finalCoords, changed: false };
+  }
 
   let candidateCoords = projection.coords;
   let movedAtomCount = projection.movedAtomIds.length;
-  const projectedHypervalentRetouch = runRingChainHypervalentBranchRetouch(layoutGraph, candidateCoords, {
-    bondLength,
-    bondValidationClasses: placement.bondValidationClasses
-  });
-  if (projectedHypervalentRetouch.changed) {
-    candidateCoords = projectedHypervalentRetouch.coords;
-    movedAtomCount += projectedHypervalentRetouch.movedAtomIds.length;
-  }
-  const projectedTerminalRetouch = runTerminalAcyclicChainRetouch(layoutGraph, candidateCoords, {
-    bondLength,
-    bondValidationClasses: placement.bondValidationClasses
-  });
-  if (projectedTerminalRetouch.changed) {
-    candidateCoords = projectedTerminalRetouch.coords;
-    movedAtomCount += projectedTerminalRetouch.movedAtomIds.length;
-  }
-  const projectedSideBranchRetouch = runRingChainSideBranchExitRetouch(layoutGraph, candidateCoords, {
-    bondLength,
-    bondValidationClasses: placement.bondValidationClasses
-  });
-  if (projectedSideBranchRetouch.changed) {
-    candidateCoords = projectedSideBranchRetouch.coords;
-    movedAtomCount += projectedSideBranchRetouch.movedAtomIds.length;
-  }
+  const candidateBondValidationClasses = projection.bondValidationClasses instanceof Map ? projection.bondValidationClasses : placement.bondValidationClasses;
+  let candidateAudit = projection.audit;
+  if (!candidateAudit?.ok) {
+    const projectedHypervalentRetouch = runRingChainHypervalentBranchRetouch(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: candidateBondValidationClasses
+    });
+    if (projectedHypervalentRetouch.changed) {
+      candidateCoords = projectedHypervalentRetouch.coords;
+      movedAtomCount += projectedHypervalentRetouch.movedAtomIds.length;
+    }
+    const projectedTerminalRetouch = runTerminalAcyclicChainRetouch(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: candidateBondValidationClasses
+    });
+    if (projectedTerminalRetouch.changed) {
+      candidateCoords = projectedTerminalRetouch.coords;
+      movedAtomCount += projectedTerminalRetouch.movedAtomIds.length;
+    }
+    const projectedSideBranchRetouch = runRingChainSideBranchExitRetouch(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: candidateBondValidationClasses
+    });
+    if (projectedSideBranchRetouch.changed) {
+      candidateCoords = projectedSideBranchRetouch.coords;
+      movedAtomCount += projectedSideBranchRetouch.movedAtomIds.length;
+    }
 
-  const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
-    bondLength,
-    bondValidationClasses: placement.bondValidationClasses
-  });
+    candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+      bondLength,
+      bondValidationClasses: candidateBondValidationClasses
+    });
+  }
   if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
     return { coords: finalCoords, changed: false };
   }
@@ -4485,6 +5386,9 @@ function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bon
     previousAspect: baseAspect,
     projectedAspect: candidateAspect
   });
+  if (projection.bondValidationClasses instanceof Map) {
+    placement.bondValidationClasses = projection.bondValidationClasses;
+  }
   return { coords: candidateCoords, changed: true };
 }
 
@@ -5674,6 +6578,42 @@ export function runPipeline(molecule, options = {}) {
       }
     }
   }
+  const residualAttachedRingRetouchAudit =
+    (familySummary.primaryFamily === 'bridged' || familySummary.mixedMode) && (layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0) <= 90
+      ? auditFinalRetouchCoords(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+      : null;
+  if ((residualAttachedRingRetouchAudit?.severeOverlapCount ?? 0) > 0) {
+    const residualAttachedRingRetouch = timeFinalRetouch('residualAttachedRingRetouch', () =>
+      runAttachedRingRotationTouchup(layoutGraph, finalCoords, {
+        bondLength: normalizedOptions.bondLength,
+        bondValidationClasses: placement.bondValidationClasses,
+        frozenAtomIds: placement.frozenAtomIds,
+        maxHeavyAtomCount: 90,
+        maxPasses: 2
+      })
+    );
+    if ((residualAttachedRingRetouch.nudges ?? 0) > 0) {
+      const candidateAudit = auditFinalRetouchCoords(workingMolecule, layoutGraph, residualAttachedRingRetouch.coords, placement, normalizedOptions.bondLength);
+      const visibleCrossingAllowance = Math.max(residualAttachedRingRetouchAudit.visibleHeavyBondCrossingCount ?? 0, 1);
+      if (
+        candidateAudit.ok &&
+        (candidateAudit.severeOverlapCount ?? 0) < (residualAttachedRingRetouchAudit.severeOverlapCount ?? 0) &&
+        (candidateAudit.bondLengthFailureCount ?? 0) <= (residualAttachedRingRetouchAudit.bondLengthFailureCount ?? 0) &&
+        (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) <= (residualAttachedRingRetouchAudit.ringSubstituentReadabilityFailureCount ?? 0) &&
+        (candidateAudit.labelOverlapCount ?? 0) <= (residualAttachedRingRetouchAudit.labelOverlapCount ?? 0) &&
+        (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= visibleCrossingAllowance &&
+        !((candidateAudit.stereoContradiction ?? false) && !(residualAttachedRingRetouchAudit.stereoContradiction ?? false))
+      ) {
+        finalCoords = residualAttachedRingRetouch.coords;
+        finalCoordsModified = true;
+        onStep?.('Residual Attached Ring Retouch', 'Attached ring subtree nudged away from a compact bridged overlap after final cleanup.', cloneCoords(finalCoords), {
+          nudges: residualAttachedRingRetouch.nudges,
+          severeOverlapCountBefore: residualAttachedRingRetouchAudit.severeOverlapCount,
+          severeOverlapCountAfter: candidateAudit.severeOverlapCount
+        });
+      }
+    }
+  }
   if (familySummary.primaryFamily === 'organometallic') {
     const organometallicAromaticRingRetouch = timeFinalRetouch('organometallicAromaticRingRetouch', () =>
       runOrganometallicAromaticRingRetouch(layoutGraph, finalCoords, {
@@ -5811,7 +6751,7 @@ export function runPipeline(molecule, options = {}) {
   }
   const finalTerminalCarbonLeafContactRetouch = timeFinalRetouch('finalTerminalCarbonLeafContactRetouch', () =>
     maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoords, placement, normalizedOptions.bondLength, {
-      includeSingleBondHeteroLeaves: familySummary.primaryFamily === 'acyclic' && familySummary.mixedMode !== true
+      includeSingleBondHeteroLeaves: true
     })
   );
   if (finalTerminalCarbonLeafContactRetouch.changed) {
@@ -6000,6 +6940,22 @@ export function runPipeline(molecule, options = {}) {
       });
     }
   }
+  if (shouldRunFinalLargeMoleculeAngleRelief(layoutGraph, familySummary)) {
+    const finalLargeMoleculeAngleRelief = timeFinalRetouch('finalLargeMoleculeAngleRelief', () => {
+      return maybeRelieveFinalLargeMoleculeAngles(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
+    });
+    if (finalLargeMoleculeAngleRelief.changed) {
+      finalCoords = finalLargeMoleculeAngleRelief.coords;
+      finalCoordsModified = true;
+      onStep?.('Final Large Molecule Angle Relief', 'Remaining large-molecule peptide kinks softened with guarded rigid branch rotations after exact fan retouch.', cloneCoords(finalCoords), {
+        movedAtomCount: finalLargeMoleculeAngleRelief.movedAtomIds.length,
+        maxDeviationBefore: finalLargeMoleculeAngleRelief.scoreBefore.maxDeviation,
+        maxDeviationAfter: finalLargeMoleculeAngleRelief.scoreAfter.maxDeviation,
+        totalDeviationBefore: finalLargeMoleculeAngleRelief.scoreBefore.totalDeviation,
+        totalDeviationAfter: finalLargeMoleculeAngleRelief.scoreAfter.totalDeviation
+      });
+    }
+  }
   const finalSmallRingSnap = timeFinalRetouch('finalSmallRingSnap', () => {
     return maybeSnapFinalSmallFourRings(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
   });
@@ -6008,6 +6964,18 @@ export function runPipeline(molecule, options = {}) {
     finalCoordsModified = true;
     onStep?.('Final Small-Ring Snap', 'Near-regular four-membered rings snapped back to exact square presentation after cleanup.', cloneCoords(finalCoords), {
       snappedRingCount: finalSmallRingSnap.snappedRingCount
+    });
+  }
+  const finalCompactAzaBridgeBend = timeFinalRetouch('finalCompactAzaBridgeBend', () =>
+    maybeBendFinalCompactAzaBridgeBonds(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+  );
+  if (finalCompactAzaBridgeBend.changed) {
+    finalCoords = finalCompactAzaBridgeBend.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Compact Aza Bridge Bend', 'Flattened compact aza bridge nitrogens nudged away from stretched three-member ring chords after guarded final cleanup.', cloneCoords(finalCoords), {
+      movedAtomCount: finalCompactAzaBridgeBend.movedAtomIds.length,
+      bondLengthFailureCountAfter: finalCompactAzaBridgeBend.audit?.bondLengthFailureCount ?? null,
+      maxBondLengthDeviationAfter: finalCompactAzaBridgeBend.audit?.maxBondLengthDeviation ?? null
     });
   }
   const finalBondLengthRelaxation = timeFinalRetouch('finalBondLengthRelaxation', () => maybeRelaxFinalBondLengthFailures(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength));

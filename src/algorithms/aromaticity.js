@@ -638,23 +638,16 @@ function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
     // Exocyclic multiple bonds disqualify the component (same as SMILES variant).
     if (_hasExocyclicMultipleBond(mol, atomIds, ringBondIds)) { continue; }
 
-    // Count how many SSSR rings each atom participates in within this component.
-    // _piElectronsKekuleN is a bridgehead-only heuristic — only apply it to atoms
-    // that appear in ≥2 rings (true bridgehead atoms, e.g. the N in indolizine).
-    const atomRingCount = new Map();
-    for (const ringIndex of component) {
-      for (const atomId of rings[ringIndex]) {
-        atomRingCount.set(atomId, (atomRingCount.get(atomId) ?? 0) + 1);
-      }
-    }
-
     let piTotal = 0;
     let valid = true;
     for (const atomId of atomIds) {
       const atom = mol.atoms.get(atomId);
       let pi = atom ? _piElectrons(atom, atomIds, mol) : null;
-      // Bridgehead N with all-single Kekulé ring bonds — use lone-pair heuristic.
-      if (pi === null && (atomRingCount.get(atomId) ?? 0) >= 2) { pi = _piElectronsKekuleN(atom, atomIds, mol); }
+      // N with all-single Kekulé ring bonds (e.g. N-methyl in a fused 6-membered ring
+      // whose neighbour carries the ring π bond) — use lone-pair heuristic.  This was
+      // previously restricted to bridgehead atoms (≥2 rings) but the same pattern
+      // occurs for non-bridgehead N atoms in fused diazine/pyrazine rings.
+      if (pi === null) { pi = _piElectronsKekuleN(atom, atomIds, mol); }
       if (pi === null) {
         valid = false;
         break;
@@ -705,7 +698,6 @@ function _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds) {
     if (
       ringBonds.length === 0 ||
       ringBonds.every(bond => aromaticBondIds.has(bond.id)) ||
-      !ringBonds.some(bond => aromaticBondIds.has(bond.id)) ||
       !ringBonds.every(_isSourceAromaticBond) ||
       _hasExocyclicMultipleBond(mol, atomIds, ringBondIds)
     ) {

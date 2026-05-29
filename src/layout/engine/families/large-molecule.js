@@ -17,11 +17,12 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   rootRetryRepulsionMoveCeiling: 64,
   maxAlternateRootCandidates: 1,
   densePartitionRetryOverlapFloor: 4,
-  densePartitionRetryBlockCountCeiling: 3,
+  densePartitionRetryBlockCountCeiling: 4,
   densePartitionRetryRingSystemFloor: 4,
-  densePartitionRetryHeavyAtomCap: 42,
+  densePartitionRetryHeavyAtomCap: 70,
   fineDensePartitionRetryHeavyAtomCap: 24,
   fineDensePartitionRetryComponentHeavyAtomCap: 160,
+  fineDensePartitionRetryRingFloor: 8,
   linearRingChainDensePartitionHeavyAtomCap: 18,
   hypervalentRingChainDensePartitionHeavyAtomCap: 20,
   hypervalentRingChainDensePartitionHeavyAtomFloor: 280,
@@ -75,6 +76,17 @@ function participantThresholdFor(threshold) {
 
 function countRingSystems(layoutGraph, atomIds) {
   return containedRingSystems(layoutGraph, new Set(atomIds)).length;
+}
+
+/**
+ * Counts rings fully contained by the atom set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Component atom IDs.
+ * @returns {number} Contained ring count.
+ */
+function countContainedRings(layoutGraph, atomIds) {
+  const atomIdSet = new Set(atomIds);
+  return (layoutGraph.rings ?? []).filter(ring => ring.atomIds.every(atomId => atomIdSet.has(atomId))).length;
 }
 
 /**
@@ -1105,7 +1117,10 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
     return null;
   }
   const pathLikeIsolatedRingChain = describePathLikeIsolatedRingChain(layoutGraph, component);
+  const singleLinkerPathLikeIsolatedRingChain =
+    pathLikeIsolatedRingChain && (pathLikeIsolatedRingChain.edges ?? []).every(edge => (edge.linkerAtomIds?.length ?? 0) === 1);
   const componentHeavyAtomCount = countHeavyAtoms(layoutGraph, component.atomIds);
+  const ringCount = countContainedRings(layoutGraph, component.atomIds);
   const simpleIsolatedRingSystemCount = countSimpleIsolatedRingSystems(layoutGraph, component.atomIds);
   const hypervalentConnectorCount = countHypervalentConnectorAtoms(layoutGraph, component.atomIds);
   const hypervalentRingChain =
@@ -1113,15 +1128,18 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
     ringSystemCount >= LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionRingSystemFloor &&
     simpleIsolatedRingSystemCount >= ringSystemCount * LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionSimpleRingRatio &&
     hypervalentConnectorCount >= Math.max(4, Math.floor(ringSystemCount * 0.25));
+  const useFineDensePartition =
+    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap &&
+    ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryRingFloor;
   const denseHeavyAtomCap =
     hypervalentRingChain
       ? LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomCap
-      : componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap
+      : useFineDensePartition
       ? LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryHeavyAtomCap
       : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {
     ...threshold,
-    heavyAtomCount: pathLikeIsolatedRingChain ? LARGE_MOLECULE_LAYOUT_LIMITS.linearRingChainDensePartitionHeavyAtomCap : denseHeavyAtomCap
+    heavyAtomCount: singleLinkerPathLikeIsolatedRingChain ? LARGE_MOLECULE_LAYOUT_LIMITS.linearRingChainDensePartitionHeavyAtomCap : denseHeavyAtomCap
   };
 }
 

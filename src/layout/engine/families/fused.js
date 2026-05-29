@@ -22,6 +22,16 @@ const FUSED_RESCUE_LIMITS = Object.freeze({
   giantCageMinRingCount: 24
 });
 
+const DENSE_FUSED_CAGE_POLISH = Object.freeze({
+  iterations: 80,
+  nonbondedSeparationFactor: 0.6,
+  minBondLengthFactor: 0.7,
+  maxBondLengthFactor: 1.3,
+  overlapRepulsion: 0.2,
+  bondTension: 0.4,
+  stepScale: 0.15
+});
+
 /**
  * Returns whether a fused system should try the bridged/KK rescue path.
  * Dense fused cages and compact high-ring-count cages often behave more like
@@ -163,6 +173,156 @@ function isBetterFusedCageCandidate(candidateAudit, incumbentAudit) {
 }
 
 /**
+ * Returns a stable key for an unordered atom pair.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {string} Canonical pair key.
+ */
+function atomPairKey(firstAtomId, secondAtomId) {
+  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+}
+
+/**
+ * Returns whether a dense KK fused-cage projection should get a bounded polish.
+ * @param {number} atomCount - Fused-system atom count.
+ * @param {number} ringCount - Fused-system ring count.
+ * @param {object|null} audit - Current fused-cage audit.
+ * @returns {boolean} True when the candidate is large, dense, and still audit-dirty.
+ */
+function shouldPolishDenseFusedCageCandidate(atomCount, ringCount, audit) {
+  return (
+    atomCount >= FUSED_RESCUE_LIMITS.giantCageMinAtomCount &&
+    ringCount >= FUSED_RESCUE_LIMITS.giantCageMinRingCount &&
+    ((audit?.severeOverlapCount ?? 0) > 0 || (audit?.bondLengthFailureCount ?? 0) > 0)
+  );
+}
+
+/**
+ * Applies a small displacement to one atom in a mutable displacement map.
+ * @param {Map<string, {x: number, y: number}>} displacements - Mutable displacement map.
+ * @param {string} atomId - Atom ID to move.
+ * @param {number} dx - Delta x.
+ * @param {number} dy - Delta y.
+ * @returns {void}
+ */
+function addDenseFusedCageDisplacement(displacements, atomId, dx, dy) {
+  const displacement = displacements.get(atomId);
+  if (!displacement) {
+    return;
+  }
+  displacement.x += dx;
+  displacement.y += dy;
+}
+
+/**
+ * Nudges a dense non-planar fused cage away from severe nonbonded overlaps
+ * while keeping internal ring bonds inside the existing bridged tolerance.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Atom IDs in the fused cage.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Polished coordinates.
+ */
+function polishDenseFusedCageCoords(layoutGraph, atomIds, inputCoords, bondLength) {
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const atomIdSet = new Set(atomIds);
+  const bondedPairs = new Set();
+  const internalBonds = [];
+
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!bond || bond.kind !== 'covalent' || !atomIdSet.has(bond.a) || !atomIdSet.has(bond.b)) {
+      continue;
+    }
+    bondedPairs.add(atomPairKey(bond.a, bond.b));
+    internalBonds.push(bond);
+  }
+
+  const minNonbondedDistance = bondLength * DENSE_FUSED_CAGE_POLISH.nonbondedSeparationFactor;
+  const minBondDistance = bondLength * DENSE_FUSED_CAGE_POLISH.minBondLengthFactor;
+  const maxBondDistance = bondLength * DENSE_FUSED_CAGE_POLISH.maxBondLengthFactor;
+
+  for (let iteration = 0; iteration < DENSE_FUSED_CAGE_POLISH.iterations; iteration++) {
+    const displacements = new Map(atomIds.map(atomId => [atomId, { x: 0, y: 0 }]));
+
+    for (let firstIndex = 0; firstIndex < atomIds.length; firstIndex++) {
+      const firstAtomId = atomIds[firstIndex];
+      const firstPosition = coords.get(firstAtomId);
+      if (!firstPosition) {
+        continue;
+      }
+      for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
+        const secondAtomId = atomIds[secondIndex];
+        if (bondedPairs.has(atomPairKey(firstAtomId, secondAtomId))) {
+          continue;
+        }
+        const secondPosition = coords.get(secondAtomId);
+        if (!secondPosition) {
+          continue;
+        }
+        let dx = secondPosition.x - firstPosition.x;
+        let dy = secondPosition.y - firstPosition.y;
+        let currentDistance = Math.hypot(dx, dy);
+        if (currentDistance >= minNonbondedDistance) {
+          continue;
+        }
+        if (currentDistance <= 1e-9) {
+          dx = 1;
+          dy = 0;
+          currentDistance = 1;
+        }
+        const force = (minNonbondedDistance - currentDistance) * DENSE_FUSED_CAGE_POLISH.overlapRepulsion;
+        const unitX = dx / currentDistance;
+        const unitY = dy / currentDistance;
+        addDenseFusedCageDisplacement(displacements, firstAtomId, -unitX * force, -unitY * force);
+        addDenseFusedCageDisplacement(displacements, secondAtomId, unitX * force, unitY * force);
+      }
+    }
+
+    for (const bond of internalBonds) {
+      const firstPosition = coords.get(bond.a);
+      const secondPosition = coords.get(bond.b);
+      if (!firstPosition || !secondPosition) {
+        continue;
+      }
+      const dx = secondPosition.x - firstPosition.x;
+      const dy = secondPosition.y - firstPosition.y;
+      const currentDistance = Math.hypot(dx, dy);
+      if (currentDistance <= 1e-9) {
+        continue;
+      }
+      let targetDistance = null;
+      if (currentDistance < minBondDistance) {
+        targetDistance = minBondDistance;
+      } else if (currentDistance > maxBondDistance) {
+        targetDistance = maxBondDistance;
+      }
+      if (targetDistance == null) {
+        continue;
+      }
+      const force = (currentDistance - targetDistance) * DENSE_FUSED_CAGE_POLISH.bondTension;
+      const unitX = dx / currentDistance;
+      const unitY = dy / currentDistance;
+      addDenseFusedCageDisplacement(displacements, bond.a, unitX * force, unitY * force);
+      addDenseFusedCageDisplacement(displacements, bond.b, -unitX * force, -unitY * force);
+    }
+
+    for (const atomId of atomIds) {
+      const position = coords.get(atomId);
+      const displacement = displacements.get(atomId);
+      if (!position || !displacement) {
+        continue;
+      }
+      coords.set(atomId, {
+        x: position.x + displacement.x * DENSE_FUSED_CAGE_POLISH.stepScale,
+        y: position.y + displacement.y * DENSE_FUSED_CAGE_POLISH.stepScale
+      });
+    }
+  }
+
+  return coords;
+}
+
+/**
  * Places a giant fused cage directly on the atom graph with Kamada-Kawai
  * instead of assuming a planar fused-ring scaffold.
  * @param {object[]} rings - Ring descriptors in the fused system.
@@ -206,6 +366,16 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
   for (const scaleFactor of [1, 1.05, 1.1]) {
     const scaledCoords = scaleCoordsAboutCentroid(regularizedCoords, scaleFactor);
     const orientedCoords = orientCoordsHorizontally(scaledCoords, computeFusedAxis(rebuildRingCenters(rings, scaledCoords)));
+    const candidateAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, orientedCoords, bondLength);
+    if (isBetterFusedCageCandidate(candidateAudit, bestAudit)) {
+      bestCoords = orientedCoords;
+      bestAudit = candidateAudit;
+    }
+  }
+
+  if (shouldPolishDenseFusedCageCandidate(atomIds.length, rings.length, bestAudit)) {
+    const polishedCoords = polishDenseFusedCageCoords(options.layoutGraph, atomIds, bestCoords, bondLength);
+    const orientedCoords = orientCoordsHorizontally(polishedCoords, computeFusedAxis(rebuildRingCenters(rings, polishedCoords)));
     const candidateAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, orientedCoords, bondLength);
     if (isBetterFusedCageCandidate(candidateAudit, bestAudit)) {
       bestCoords = orientedCoords;

@@ -39,7 +39,7 @@ export function resolvePlacementValidationClass(family, placementMode, templateI
   if (placementMode === 'projected-kamada-kawai' || placementMode === 'kamada-kawai-cage' || placementMode === 'pericondensed') {
     return 'bridged';
   }
-  if (placementMode === 'constructed-bridged') {
+  if (placementMode === 'constructed-bridged' || placementMode === 'constructed-aromatic-capped-fused-square-bridge') {
     return 'bridged';
   }
   if (placementMode === 'template') {
