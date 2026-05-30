@@ -4382,6 +4382,69 @@ function isAcceptedImmediateOutwardLinkedRingInside(layoutGraph, coords, anchorA
   return immediateDeviation != null && immediateDeviation <= maxOutwardDeviation + 1e-9;
 }
 
+function ringHasMetalAtom(layoutGraph, ring) {
+  return (ring?.atomIds ?? []).some(atomId => isMetalAtom(layoutGraph.sourceMolecule?.atoms?.get(atomId) ?? layoutGraph.atoms.get(atomId)));
+}
+
+function representativeIsInsideOnlyCoordinateMetalRings(layoutGraph, coords, anchorAtomId, representativeAtomIds) {
+  const representativePosition = ringSubstituentRepresentativePosition(coords, representativeAtomIds);
+  if (!representativePosition) {
+    return false;
+  }
+
+  let insideMetalRing = false;
+  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
+    const polygon = [];
+    for (const atomId of ring.atomIds ?? []) {
+      const position = coords.get(atomId);
+      if (position) {
+        polygon.push(position);
+      }
+    }
+    if (polygon.length < 3 || !pointInPolygon(representativePosition, polygon)) {
+      continue;
+    }
+    if (!ringHasMetalAtom(layoutGraph, ring)) {
+      return false;
+    }
+    insideMetalRing = true;
+  }
+  return insideMetalRing;
+}
+
+function isAcceptedCoordinateMetalPseudoRingSubstituentInside(layoutGraph, coords, anchorAtomId, childAtomId, representativeAtomIds, maxOutwardDeviation) {
+  if (!layoutGraph || representativeAtomIds.length !== 1 || representativeAtomIds[0] !== childAtomId || !layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    !anchorAtom ||
+    !childAtom ||
+    isMetalAtom(anchorAtom) ||
+    isMetalAtom(childAtom) ||
+    childAtom.element === 'H' ||
+    childAtom.aromatic === true ||
+    layoutGraph.ringAtomIdSet.has(childAtomId) ||
+    (childAtom.heavyDegree ?? 0) > 1
+  ) {
+    return false;
+  }
+
+  const incidentRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  if (!incidentRings.some(ring => ringHasMetalAtom(layoutGraph, ring)) || !representativeIsInsideOnlyCoordinateMetalRings(layoutGraph, coords, anchorAtomId, representativeAtomIds)) {
+    return false;
+  }
+
+  if (!coords.has(anchorAtomId) || !coords.has(childAtomId)) {
+    return false;
+  }
+
+  const immediateDeviation = immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId);
+  return immediateDeviation != null && immediateDeviation <= maxOutwardDeviation + 1e-9;
+}
+
 function isTerminalRingSubstituentLeaf(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
   return !!atom && atom.element !== 'H' && atom.aromatic !== true && !layoutGraph.ringAtomIdSet.has(atomId) && (atom.heavyDegree ?? 0) <= 1;
@@ -4679,12 +4742,16 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       const immediateOutwardLinkedRingInsideAccepted =
         forwardSide.insideIncidentRing &&
         isAcceptedImmediateOutwardLinkedRingInside(layoutGraph, coords, anchorAtomId, childAtomId, childDescriptor.representativeAtomIds, ringPolygons, maxOutwardDeviation);
+      const coordinateMetalPseudoRingInsideAccepted =
+        forwardSide.insideIncidentRing &&
+        isAcceptedCoordinateMetalPseudoRingSubstituentInside(layoutGraph, coords, anchorAtomId, childAtomId, childDescriptor.representativeAtomIds, maxOutwardDeviation);
       const forwardInsideAccepted =
         inwardSlotIsUnavoidable ||
         exactOutwardComplexInsideAccepted ||
         largeMacrocycleSideChainInsideAccepted ||
         fusedPolycyclicAngularTerminalLeafInsideAccepted ||
-        immediateOutwardLinkedRingInsideAccepted;
+        immediateOutwardLinkedRingInsideAccepted ||
+        coordinateMetalPseudoRingInsideAccepted;
       if (
         forwardSide.insideIncidentRing &&
         !forwardInsideAccepted

@@ -1,8 +1,10 @@
 /** @module cleanup/presentation/organometallic-aromatic-ring-retouch */
 
 import { auditLayout } from '../../audit/audit.js';
+import { findSevereOverlaps } from '../../audit/invariants.js';
 import { isMetalAtom } from '../../topology/metal-centers.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, scale, sub } from '../../geometry/vec2.js';
+import { atomPairKey } from '../../constants.js';
 
 const COORDINATE_BOND_KINDS = new Set(['coordinate', 'dative', 'haptic']);
 const RING_RETOUCH_MIN_ANGLE_DEVIATION = Math.PI / 7.5;
@@ -12,6 +14,10 @@ const COORDINATE_LIGAND_OUTWARD_STEPS = Object.freeze([0.25, 0.5, 0.75, 1, 1.25,
 const COORDINATE_LIGAND_MAX_HEAVY_ATOMS = 12;
 const COORDINATE_LIGAND_MAX_LAYOUT_HEAVY_ATOMS = 80;
 const COORDINATE_LIGAND_MAX_PASSES = 2;
+const RING_ATOM_OVERLAP_MAX_LAYOUT_HEAVY_ATOMS = 120;
+const RING_ATOM_OVERLAP_MAX_MOVED_HEAVY_ATOMS = 8;
+const RING_ATOM_OVERLAP_MAX_DEVIATION_SLACK_FACTOR = 0.18;
+const RING_ATOM_OVERLAP_SPREAD_FACTORS = Object.freeze([0.15, 0.18, 0.2, 0.24, 0.28, 1 / 3]);
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -339,6 +345,215 @@ function translateAtomIds(coords, atomIds, displacement) {
     nextCoords.set(atomId, add(position, displacement));
   }
   return nextCoords;
+}
+
+function atomHasCoordinateMetalRing(layoutGraph, atomId) {
+  return (layoutGraph.atomToRings.get(atomId) ?? []).some(ring => ringHasCoordinateMetalLink(layoutGraph, ring));
+}
+
+function collectRingAtomOverlapMoveGroup(layoutGraph, coords, atomId, blockedAtomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || !coords.has(atomId) || !layoutGraph.ringAtomIdSet.has(atomId) || !atomHasCoordinateMetalRing(layoutGraph, atomId)) {
+    return [];
+  }
+
+  const atomIds = new Set([atomId]);
+  const blockedAtomIds = new Set([blockedAtomId, atomId]);
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = otherBondAtomId(bond, atomId);
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    if (neighborAtom.element === 'H') {
+      atomIds.add(neighborAtomId);
+      continue;
+    }
+    if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+      continue;
+    }
+    for (const subtreeAtomId of covalentSubtree(layoutGraph, neighborAtomId, blockedAtomIds)) {
+      if (coords.has(subtreeAtomId)) {
+        atomIds.add(subtreeAtomId);
+      }
+    }
+  }
+
+  const movedHeavyAtomCount = [...atomIds].filter(currentAtomId => {
+    const currentAtom = layoutGraph.atoms.get(currentAtomId);
+    return currentAtom && currentAtom.element !== 'H' && currentAtom.visible !== false;
+  }).length;
+  return movedHeavyAtomCount <= RING_ATOM_OVERLAP_MAX_MOVED_HEAVY_ATOMS ? [...atomIds] : [];
+}
+
+function coordinateRingAtomOverlapDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    const firstAtom = layoutGraph.atoms.get(overlap.firstAtomId);
+    const secondAtom = layoutGraph.atoms.get(overlap.secondAtomId);
+    if (!firstAtom || !secondAtom || firstAtom.element === 'H' || secondAtom.element === 'H') {
+      continue;
+    }
+    if (layoutGraph.bondByAtomPair?.has(atomPairKey(overlap.firstAtomId, overlap.secondAtomId))) {
+      continue;
+    }
+    const firstGroup = collectRingAtomOverlapMoveGroup(layoutGraph, coords, overlap.firstAtomId, overlap.secondAtomId);
+    const secondGroup = collectRingAtomOverlapMoveGroup(layoutGraph, coords, overlap.secondAtomId, overlap.firstAtomId);
+    if (firstGroup.length === 0 || secondGroup.length === 0 || firstGroup.some(atomId => secondGroup.includes(atomId))) {
+      continue;
+    }
+    descriptors.push({
+      firstAtomId: overlap.firstAtomId,
+      secondAtomId: overlap.secondAtomId,
+      firstGroup,
+      secondGroup
+    });
+  }
+  return descriptors;
+}
+
+function coordinateRingAtomOverlapCandidate(coords, descriptor, bondLength, spreadFactor) {
+  const firstPosition = coords.get(descriptor.firstAtomId);
+  const secondPosition = coords.get(descriptor.secondAtomId);
+  if (!firstPosition || !secondPosition) {
+    return null;
+  }
+  const axis = sub(firstPosition, secondPosition);
+  const axisLength = distance(firstPosition, secondPosition);
+  if (axisLength <= 1e-9) {
+    return null;
+  }
+  const displacement = scale(axis, (bondLength * spreadFactor) / axisLength);
+  let candidateCoords = translateAtomIds(coords, descriptor.firstGroup, displacement);
+  candidateCoords = translateAtomIds(candidateCoords, descriptor.secondGroup, scale(displacement, -1));
+  return candidateCoords;
+}
+
+function coordinateRingAtomOverlapCandidateMove(coords, candidateCoords, atomIds) {
+  return atomIds.reduce((totalMove, atomId) => {
+    const before = coords.get(atomId);
+    const after = candidateCoords.get(atomId);
+    return before && after ? totalMove + distance(before, after) : totalMove;
+  }, 0);
+}
+
+function coordinateRingAtomOverlapAuditDoesNotRegress(candidateAudit, baseAudit, bondLength) {
+  if (!candidateAudit || !baseAudit) {
+    return false;
+  }
+  const maxDeviationLimit = Math.max(baseAudit.maxBondLengthDeviation ?? 0, bondLength * 0.3) + bondLength * RING_ATOM_OVERLAP_MAX_DEVIATION_SLACK_FACTOR;
+  return (
+    candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount &&
+    candidateAudit.mildBondLengthFailureCount <= baseAudit.mildBondLengthFailureCount &&
+    candidateAudit.severeBondLengthFailureCount <= baseAudit.severeBondLengthFailureCount &&
+    candidateAudit.maxBondLengthDeviation <= maxDeviationLimit &&
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
+    candidateAudit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount &&
+    candidateAudit.labelOverlapCount <= baseAudit.labelOverlapCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount &&
+    !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+  );
+}
+
+function coordinateRingAtomOverlapAuditImproves(candidateAudit, baseAudit) {
+  if (candidateAudit.ok && !baseAudit.ok) {
+    return true;
+  }
+  if (candidateAudit.severeOverlapCount !== baseAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < baseAudit.severeOverlapCount;
+  }
+  return candidateAudit.severeOverlapPenalty < (baseAudit.severeOverlapPenalty ?? Number.POSITIVE_INFINITY);
+}
+
+function coordinateRingAtomOverlapScore(candidate) {
+  return (
+    (candidate.audit.ok ? -1e9 : 0) +
+    candidate.audit.severeOverlapCount * 1e7 +
+    candidate.audit.visibleHeavyBondCrossingCount * 1e5 +
+    candidate.audit.bondLengthFailureCount * 1e5 +
+    candidate.audit.maxBondLengthDeviation * 1e3 +
+    candidate.move
+  );
+}
+
+/**
+ * Separates saturated chelate-ring atoms that collapse into each other in
+ * organometallic macrocycles. The move is deliberately local and symmetric:
+ * the two overlapping ring atoms, plus hydrogens or tiny exocyclic branches
+ * attached to them, are nudged apart only if the audited organometallic
+ * validation classes remain clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Input coordinate map.
+ * @param {{bondLength?: number, bondValidationClasses?: Map<string, 'planar'|'bridged'|'haptic'>}} [options] - Retouch options.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], severeOverlapCountBefore: number, severeOverlapCountAfter: number, maxBondLengthDeviationAfter: number}} Retouch result.
+ */
+export function runOrganometallicRingAtomOverlapRetouch(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const layoutHeavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  const baseAudit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: options.bondValidationClasses
+  });
+  if (layoutHeavyAtomCount > RING_ATOM_OVERLAP_MAX_LAYOUT_HEAVY_ATOMS || baseAudit.ok || baseAudit.severeOverlapCount <= 0 || baseAudit.visibleHeavyBondCrossingCount > 0) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: baseAudit.severeOverlapCount,
+      severeOverlapCountAfter: baseAudit.severeOverlapCount,
+      maxBondLengthDeviationAfter: baseAudit.maxBondLengthDeviation
+    };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of coordinateRingAtomOverlapDescriptors(layoutGraph, coords, bondLength)) {
+    const movedAtomIds = [...new Set([...descriptor.firstGroup, ...descriptor.secondGroup])];
+    for (const spreadFactor of RING_ATOM_OVERLAP_SPREAD_FACTORS) {
+      const candidateCoords = coordinateRingAtomOverlapCandidate(coords, descriptor, bondLength, spreadFactor);
+      if (!candidateCoords) {
+        continue;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (!coordinateRingAtomOverlapAuditDoesNotRegress(candidateAudit, baseAudit, bondLength) || !coordinateRingAtomOverlapAuditImproves(candidateAudit, baseAudit)) {
+        continue;
+      }
+      const candidate = {
+        coords: candidateCoords,
+        audit: candidateAudit,
+        movedAtomIds,
+        move: coordinateRingAtomOverlapCandidateMove(coords, candidateCoords, movedAtomIds)
+      };
+      if (!bestCandidate || coordinateRingAtomOverlapScore(candidate) < coordinateRingAtomOverlapScore(bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: baseAudit.severeOverlapCount,
+      severeOverlapCountAfter: baseAudit.severeOverlapCount,
+      maxBondLengthDeviationAfter: baseAudit.maxBondLengthDeviation
+    };
+  }
+
+  return {
+    changed: true,
+    coords: bestCandidate.coords,
+    movedAtomIds: bestCandidate.movedAtomIds,
+    severeOverlapCountBefore: baseAudit.severeOverlapCount,
+    severeOverlapCountAfter: bestCandidate.audit.severeOverlapCount,
+    maxBondLengthDeviationAfter: bestCandidate.audit.maxBondLengthDeviation
+  };
 }
 
 function coordinateLigandAuditDoesNotRegress(candidateAudit, baseAudit, bondLength) {

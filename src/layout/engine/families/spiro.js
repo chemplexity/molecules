@@ -79,9 +79,10 @@ function orderSpiroPath(rings, ringConnectionByPair) {
  * @param {object[]} rings - Ring descriptors in the target spiro system.
  * @param {number[]} ringOrder - Candidate path order from one endpoint to the other.
  * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
+ * @param {object|null} [layoutGraph] - Optional layout graph for atom element checks.
  * @returns {boolean} True when endpoint-rooted path placement should be used.
  */
-function shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair) {
+function shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair, layoutGraph = null) {
   if (!ringOrder || ringOrder.length < 3) {
     return false;
   }
@@ -98,6 +99,17 @@ function shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair) {
 
     const previousConnectionKey = ringOrder[index - 1] < ring.id ? `${ringOrder[index - 1]}:${ring.id}` : `${ring.id}:${ringOrder[index - 1]}`;
     const nextConnectionKey = ring.id < ringOrder[index + 1] ? `${ring.id}:${ringOrder[index + 1]}` : `${ringOrder[index + 1]}:${ring.id}`;
+    const endpointRings = [ringById.get(ringOrder[0]), ringById.get(ringOrder[ringOrder.length - 1])];
+    const isSaturatedCarbonFiveSixFive =
+      ringOrder.length === 3 &&
+      ring.atomIds.length === 6 &&
+      endpointRings.every(endpointRing => endpointRing?.atomIds.length === 5) &&
+      [ring, ...endpointRings].every(candidateRing => candidateRing && !candidateRing.aromatic) &&
+      [ring, ...endpointRings].every(candidateRing => candidateRing?.atomIds.every(atomId => layoutGraph?.atoms?.get(atomId)?.element === 'C'));
+    if (isSaturatedCarbonFiveSixFive) {
+      continue;
+    }
+
     if (ringConnectionByPair.has(previousConnectionKey) && ringConnectionByPair.has(nextConnectionKey)) {
       return false;
     }
@@ -478,7 +490,7 @@ export function layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLeng
   }
 
   const ringOrder = options.layoutGraph ? orderSpiroPath(rings, ringConnectionByPair) : null;
-  if (ringOrder && shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair)) {
+  if (ringOrder && shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair, options.layoutGraph ?? null)) {
     return layoutSpiroPath(options.layoutGraph, rings, ringOrder, ringConnectionByPair, bondLength);
   }
 

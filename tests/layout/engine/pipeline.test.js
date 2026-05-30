@@ -3270,6 +3270,9 @@ describe('layout/engine/pipeline', () => {
     assert.deepEqual(result.metadata.stereo.unsupportedCenterIds, ['Cu27']);
     assert.deepEqual(result.metadata.stereo.missingCenterIds, []);
     assert.equal(result.metadata.audit.stereoContradiction, false);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
     assert.ok(!result.metadata.audit.fallback.reasons.includes('stereo-contradiction'));
   });
 
@@ -5921,6 +5924,52 @@ describe('layout/engine/pipeline', () => {
     }
   });
 
+  it('spreads collapsed organometallic chelate ring atoms without crossing the porphyrin core', () => {
+    const smilesCases = [
+      {
+        index: 9174,
+        smiles: 'CCC1=C(C)C2=[N+]3C1=CC1=C(C)C(C=C)=C4C=C5C(C)=C(CCC(O)=O)C6=[N+]5[Fe@@]3(N3C(=C2)C(C)=C(CCC(O)=O)C3=C6)N14'
+      },
+      {
+        index: 9547,
+        smiles: 'CC1=C(CCC(O)=O)C2=CC3=[N+]4C(=CC5=C(C=C)C(C)=C6C=C7C(C=C)=C(C)C8=[N+]7[Fe@]4(N2C1=C8)N56)C(C)=C3CCC(O)=O'
+      },
+      {
+        index: 10334,
+        smiles: 'CC(=O)C1=C2C=C3C(C)=C(CCC(O)=O)C4=[N+]3[Fe@@]35N6C(=CC7=[N+]3C(=CC(N25)=C1C)C(C(O)=C)=C7C)C(C)=C(CCC(O)=O)C6=C4'
+      }
+    ];
+
+    for (const { index, smiles } of smilesCases) {
+      let retouchMetrics = null;
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH: true,
+        auditTelemetry: true,
+        timing: true,
+        debug: {
+          onStep(label, _description, _coords, metrics) {
+            if (label === 'Organometallic Ring Atom Overlap Retouch') {
+              retouchMetrics = metrics;
+            }
+          }
+        }
+      });
+
+      assert.ok(bugMolecules.includes(smiles), `expected row ${index} to stay listed with bug molecules`);
+      assert.equal(result.metadata.primaryFamily, 'organometallic');
+      assert.equal(result.metadata.mixedMode, true);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.fallback.mode, null);
+      assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.35, `expected row ${index} bond deviation to stay bounded`);
+      assert.ok((result.metadata.timing.finalRetouchBreakdownMs.organometallicRingAtomOverlapRetouch ?? 0) > 0);
+      assert.ok((retouchMetrics?.severeOverlapCountBefore ?? 0) > 0, `expected row ${index} to use the chelate-ring overlap retouch`);
+      assert.equal(retouchMetrics?.severeOverlapCountAfter, 0);
+    }
+  });
+
   it('keeps mixed organometallic ring-to-metal exits on the local cyclopentadienyl exterior axis', () => {
     const result = runPipeline(parseSMILES('CC1C(C)=C(C)C(C)=C1[Hf]([NH2+]C1CCCCCCCC1)[SiH](C1=CC=CC=C1)C1=CC=CC=C1'), { suppressH: true });
     const c9OutwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, 'C9', atomId => result.coords.get(atomId) ?? null);
@@ -6437,6 +6486,30 @@ describe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.totalMs < 3000, `expected compact oxime retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
+  it('articulates terminal alcohol leaves out of compact bridged cage overlaps', () => {
+    const smiles = 'CC12CCC3CC3(C[NH2+]C1)C2CO';
+    const molecule = parseSMILES(smiles);
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.ok(bugMolecules.includes(smiles), 'expected compact bridged alcohol regression molecule to be registered');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected terminal alcohol branch overlap to clear, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C13'), result.coords.get('N9')) > 1.5 * 0.55, 'expected the alcohol root to move off the ring nitrogen');
+    assert.ok(distance(result.coords.get('O14'), result.coords.get('C4')) > 1.5 * 0.55, 'expected the terminal oxygen to stay out of the cage face');
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.1, `expected terminal alcohol articulation to keep bond lengths stable, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected terminal alcohol articulation to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
   it('opens compact bridged cage atoms away from crowded exocyclic ethyl roots', () => {
     const molecule = parseSMILES('CCC1C2CCC(CN=CN)CC1C2N');
     const result = runPipeline(molecule, {
@@ -6456,6 +6529,30 @@ describe('layout/engine/pipeline', () => {
     assert.ok(distance(result.coords.get('C2'), result.coords.get('C6')) > 1.5 * 0.55, 'expected C6 to open away from the exocyclic C2 root');
     assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.4, `expected compact bridged cage stretch to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation}`);
     assert.ok(result.metadata.timing.totalMs < 3000, `expected compact ethyl-root retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('spreads collapsed four-atom compact bridged lanes apart symmetrically', () => {
+    const smiles = 'CC12CCNCC(NCCN1)C1=C(N)OC=C21';
+    const molecule = parseSMILES(smiles);
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const graph = createLayoutGraphFromNormalized(molecule, normalizeOptions({ suppressH: true, bondLength: 1.5 }));
+    const overlapPairs = findSevereOverlaps(graph, result.coords, 1.5).map(overlap => `${overlap.firstAtomId}-${overlap.secondAtomId}`);
+
+    assert.ok(bugMolecules.includes(smiles), 'expected compact bridged lane regression molecule to be registered');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0, `expected compact bridged lanes to separate, got ${overlapPairs.join(', ')}`);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(distance(result.coords.get('C3'), result.coords.get('N11')) > 1.5 * 0.55, 'expected the first collapsed lane pair to separate');
+    assert.ok(distance(result.coords.get('C4'), result.coords.get('C10')) > 1.5 * 0.55, 'expected the inner collapsed lane pair to separate');
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= 0.45, `expected compact bridged lane spread to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact bridged lane spread to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
   it('opens compact fused spiro ring atoms out of nonbonded ring pinches', () => {

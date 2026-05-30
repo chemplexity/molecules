@@ -55,6 +55,18 @@ describe('layout/engine/audit-corpus', () => {
         audit.maxBondLengthDeviation <= entry.expected.maxBondLengthDeviation + 1e-9,
         `expected ${entry.name} max bond deviation <= ${entry.expected.maxBondLengthDeviation}, got ${audit.maxBondLengthDeviation}`
       );
+      if (Object.hasOwn(entry.expected, 'maxLabelOverlapCount')) {
+        assert.ok(
+          audit.labelOverlapCount <= entry.expected.maxLabelOverlapCount,
+          `expected ${entry.name} label overlaps <= ${entry.expected.maxLabelOverlapCount}, got ${audit.labelOverlapCount}`
+        );
+      }
+      if (Object.hasOwn(entry.expected, 'maxRingSubstituentReadabilityFailureCount')) {
+        assert.ok(
+          audit.ringSubstituentReadabilityFailureCount <= entry.expected.maxRingSubstituentReadabilityFailureCount,
+          `expected ${entry.name} ring-substituent readability failures <= ${entry.expected.maxRingSubstituentReadabilityFailureCount}, got ${audit.ringSubstituentReadabilityFailureCount}`
+        );
+      }
       assert.ok(
         audit.collapsedMacrocycleCount <= entry.expected.maxCollapsedMacrocycleCount,
         `expected ${entry.name} collapsed macrocycles <= ${entry.expected.maxCollapsedMacrocycleCount}, got ${audit.collapsedMacrocycleCount}`

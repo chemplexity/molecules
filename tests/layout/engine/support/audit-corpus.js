@@ -13,6 +13,8 @@
  *     maxSevereOverlapCount: number,
  *     maxBondLengthFailureCount: number,
  *     maxBondLengthDeviation: number,
+ *     maxLabelOverlapCount?: number,
+ *     maxRingSubstituentReadabilityFailureCount?: number,
  *     maxCollapsedMacrocycleCount: number,
  *     stereoContradiction: boolean,
  *     fallbackMode: string|null
@@ -576,6 +578,81 @@ export const AUDIT_CORPUS = Object.freeze([
       maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 0.6,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-9174-pre-cleanup-overlap-only-organometallic-chelate-ring',
+    sourceIndex: 9174,
+    smiles: 'CCC1=C(C)C2=[N+]3C1=CC1=C(C)C(C=C)=C4C=C5C(C)=C(CCC(O)=O)C6=[N+]5[Fe@@]3(N3C(=C2)C(C)=C(CCC(O)=O)C3=C6)N14',
+    expected: {
+      primaryFamily: 'organometallic',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.35,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-9547-pre-cleanup-overlap-only-organometallic-chelate-ring',
+    sourceIndex: 9547,
+    smiles: 'CC1=C(CCC(O)=O)C2=CC3=[N+]4C(=CC5=C(C=C)C(C)=C6C=C7C(C=C)=C(C)C8=[N+]7[Fe@]4(N2C1=C8)N56)C(C)=C3CCC(O)=O',
+    expected: {
+      primaryFamily: 'organometallic',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.35,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-10334-pre-cleanup-overlap-only-organometallic-chelate-ring',
+    sourceIndex: 10334,
+    smiles: 'CC(=O)C1=C2C=C3C(C)=C(CCC(O)=O)C4=[N+]3[Fe@@]35N6C(=CC7=[N+]3C(=CC(N25)=C1C)C(C(O)=C)=C7C)C(C)=C(CCC(O)=O)C6=C4',
+    expected: {
+      primaryFamily: 'organometallic',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.35,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-10821-pre-cleanup-overlap-only-zinc-porphyrin-chelate-ring',
+    sourceIndex: 10821,
+    smiles: 'CC1=C(CCC(O)=O)C2=CC3=[N+]4C(=CC5=C(C=C)C(C)=C6C=C7C(C=C)=C(C)C8=[N+]7[Zn@]4(N2C1=C8)N56)C(C)=C3CCC(O)=O',
+    expected: {
+      primaryFamily: 'organometallic',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.34,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-9180-pre-cleanup-overlap-readability-organometallic-chelate-ring',
+    sourceIndex: 9180,
+    smiles: 'CCC1=C(C)C2=CC3=C(CC)C(C)=C4C=C5C(C)=C(CCC(O)=O)C6=[N+]5[Cu@@]5(N7C(=CC1=[N+]25)C(C)=C(CCC(O)=O)C7=C6)[N@+]34C',
+    expected: {
+      primaryFamily: 'organometallic',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.58,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: null
@@ -1702,6 +1779,263 @@ export const AUDIT_CORPUS = Object.freeze([
     }
   },
   {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-22300-pre-cleanup-bond-only-bridged-oxime-oxaaza-cage',
+    sourceIndex: 22300,
+    smiles: 'CC1CC23C(C)C(=NO)C4CN1C21COCC341',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.6,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-8316-pre-cleanup-bond-only-macrocycle-bond-cleared-residual-readability',
+    sourceIndex: 8316,
+    smiles:
+      'CO[C@H]1\\C=C\\O[C@@]2(C)OC3=C(C2=O)C2=C(C(O)=C3C)C(O)=C(NC(=O)\\C(C)=C/C=C/[C@H](C)[C@H](O)[C@@H](C)[C@@H](O)[C@@H](C)[C@H](OC(C)=O)[C@@H]1C)C(\\C=N\\N1CCN(CC1)C1CCCC1)=C2O',
+    expected: {
+      primaryFamily: 'macrocycle',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.43,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-6991-pre-cleanup-bond-only-bridged-polycycle-bond-cleared-residual-overlap',
+    sourceIndex: 6991,
+    smiles: 'CC1(C)CCC[C@]2(C)[C@@H]1C[C@@H](O)[C@@]34[C@H](O)[C@@H]([C@@H](O)C[C@@H]23)C(=C)C4=O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 1,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.42,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: false
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-28033-pre-cleanup-bond-only-imino-diaza-cage-bond-cleared-residual-overlap',
+    sourceIndex: 28033,
+    smiles: 'CC1CC2=C3CC4CN1C2C12NC=NC31C42',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 1,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.51,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: false
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-24460-pre-cleanup-bond-only-diaza-oxa-cage-bond-cleared-residual-overlap',
+    sourceIndex: 24460,
+    smiles: 'CC1COC23C4CNC12CCC3(C)CN4',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 2,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.22,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-1341-pre-cleanup-bond-only-diterpene-cage-bond-cleared-residual-readability',
+    sourceIndex: 1341,
+    smiles: 'CCC(=O)O[C@@H]1C(=C)[C@H]2C[C@@H]3C4N5C[C@]6(C)CCC[C@]47[C@H]([C@H]2O)[C@]13C[C@]5(O)[C@H]67',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 1,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.58,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-12016-pre-cleanup-bond-only-bridged-lactone-bond-cleared-residual-overlap',
+    sourceIndex: 12016,
+    smiles: 'C[C@@H]1C(=O)O[C@H]2[C@H](O)[C@@]34[C@H]5C[C@@H](C(C)(C)C)[C@@]33[C@@H](O)C(=O)O[C@H]3O[C@@]4(C(=O)O5)[C@@]12O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 2,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.56,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-27074-pre-cleanup-bond-only-thiazole-oxa-cage-bond-cleared-residual-overlap',
+    sourceIndex: 27074,
+    smiles: 'CC1C2CC2C2OC(N)=NC1C1=NSC=C21',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 3,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 1e-6,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-overlap',
+    name: 'row-25846-pre-cleanup-bond-overlap-ether-cage-bond-cleared-residual-overlap',
+    sourceIndex: 25846,
+    smiles: 'CCOC1C(O)C2COC1C1CCC(O1)C2O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 2,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.49,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: false,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-34750-pre-cleanup-bond-only-chlorinated-cage-bond-cleared-residual-overlap',
+    sourceIndex: 34750,
+    smiles: 'ClC1C2(Cl)C3C4CC5C3C(Cl)(C2(Cl)Cl)C1(Cl)C5C4=O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 3,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.6,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-overlap',
+    name: 'row-25209-pre-cleanup-bond-overlap-aminal-cage-bond-cleared-residual-overlap',
+    sourceIndex: 25209,
+    smiles: 'CC1C2CN(C(CC(CO)O2)CN1C)C(C)=N',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 1,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.08,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-23712-pre-cleanup-overlap-only-aminonitrile-cage-overlap-cleared-residual-bond',
+    sourceIndex: 23712,
+    smiles: 'CC1OC23C4C(N)C(C#N)C2=CCC34C1C',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 1,
+      maxBondLengthDeviation: 0.65,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
+    bucket: 'pre-cleanup-bond-only',
+    name: 'row-14262-pre-cleanup-bond-only-chloro-aza-cage-bond-cleared-residual-overlap-label',
+    sourceIndex: 14262,
+    smiles: 'CN1CCC23NC(=O)CC(C2C1)C1=CC(Cl)=CC=C1O3',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 3,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 1e-6,
+      maxLabelOverlapCount: 1,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: 'generic-scaffold'
+    },
+    relations: {
+      finalBondFailuresAtMostPlacement: true,
+      finalOverlapsAtMostPlacement: true,
+      finalMaxDeviationAtMostPlacement: true
+    }
+  },
+  {
     bucket: 'pre-cleanup-overlap-only',
     name: 'row-7825-pre-cleanup-overlap-only-spiro-fused-angular-methyl',
     sourceIndex: 7825,
@@ -1763,6 +2097,21 @@ export const AUDIT_CORPUS = Object.freeze([
   },
   {
     bucket: 'pre-cleanup-overlap-only',
+    name: 'row-19684-pre-cleanup-overlap-only-carbon-dispiro-5-6-5',
+    sourceIndex: 19684,
+    smiles: 'CC1CCC(C)C11CCC(=O)CC11CCCC1',
+    expected: {
+      primaryFamily: 'spiro',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 1e-6,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
     name: 'row-27064-pre-cleanup-overlap-only-bridged-ether-exocyclic-root',
     sourceIndex: 27064,
     smiles: 'CCN1C2CNC(=O)C(COC2)(C=O)C1(C)C',
@@ -1808,6 +2157,21 @@ export const AUDIT_CORPUS = Object.freeze([
   },
   {
     bucket: 'pre-cleanup-overlap-only',
+    name: 'row-17150-pre-cleanup-overlap-only-bridged-terminal-alcohol',
+    sourceIndex: 17150,
+    smiles: 'CC12CCC3CC3(C[NH2+]C1)C2CO',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.1,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
     name: 'row-20091-pre-cleanup-overlap-only-linear-ring-carbonyl-leaf',
     sourceIndex: 20091,
     smiles: 'OCC1CC(=O)C2C[NH2+]CC1OC2=O',
@@ -1831,6 +2195,345 @@ export const AUDIT_CORPUS = Object.freeze([
       maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 0.1,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-26273-pre-cleanup-overlap-only-parallel-bridged-lanes',
+    sourceIndex: 26273,
+    smiles: 'CC12CCNCC(NCCN1)C1=C(N)OC=C21',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.45,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-24087-pre-cleanup-overlap-only-hydroxy-aza-bridged-aldehyde',
+    sourceIndex: 24087,
+    smiles: 'CC1(O)CNCC2C=C(CC2(O)C=O)C=C1',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.31,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-20485-pre-cleanup-overlap-only-iminium-bridged-ketone',
+    sourceIndex: 20485,
+    smiles: 'CN1CC2N(C=[NH2+])C(C(=O)C1)C2(C)C',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.48,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-23852-pre-cleanup-overlap-only-amino-oxa-azabicycle-nitrile',
+    sourceIndex: 23852,
+    smiles: 'CC(N)CN1CC2(COCC1CCC2C)C#N',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.16,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-26892-pre-cleanup-overlap-only-diazabicycle-amino-nitrile',
+    sourceIndex: 26892,
+    smiles: 'CC1NCCN2CC(CC1O)C(N)(CC#N)C2',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.55,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-28821-pre-cleanup-overlap-only-amino-azabicycle-alcohol',
+    sourceIndex: 28821,
+    smiles: 'CN1C2(C)CC1(C)C1NCC(N)(CO)C1C2',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.16,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-25944-pre-cleanup-overlap-only-oxa-aza-decalin-alcohol',
+    sourceIndex: 25944,
+    smiles: 'CCC1OC2CCCC(CC)(C1O)C2(O)CN',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.54,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-6355-pre-cleanup-overlap-slow-ester-decalin-glycoside',
+    sourceIndex: 6355,
+    smiles: 'CCCCCC(=O)O[C@H]1C(O)[C@H](OCC23C[C@@H]4[C@H](C)CC[C@H]4C5(CC2C=C(C(C)C)C35C(=O)O)C=O)O[C@H](C)[C@H]1OC',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.59,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-7166-pre-cleanup-overlap-slow-ester-decalin-glycoside',
+    sourceIndex: 7166,
+    smiles: 'CCCCC(C)C(=O)O[C@H]1C(O)[C@H](OCC23C[C@@H]4[C@H](C)CC[C@H]4C5(CC2C=C(C(C)C)C35C(=O)O)C=O)O[C@H](C)[C@H]1OC',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.59,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-23078-pre-cleanup-overlap-only-sulfone-oxo-leaf',
+    sourceIndex: 23078,
+    smiles: 'CC1OCC2CCCC1(CC#C)NS2(=O)=O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.08,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-15797-pre-cleanup-overlap-only-ring-sulfone-branch',
+    sourceIndex: 15797,
+    smiles: 'CCC1C2CCCS(=O)(=O)C1N2C',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.19,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-19075-pre-cleanup-overlap-only-bridged-amidine-root',
+    sourceIndex: 19075,
+    smiles: 'CC1C2CCCC(C)(CCC2(C)C)C1C(N)=[NH2+]',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.51,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-22840-pre-cleanup-overlap-only-bridged-amide-root',
+    sourceIndex: 22840,
+    smiles: 'CN1C2C(CO)C(N)C(C1=N)C2(C#C)C(N)=O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.49,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-21849-pre-cleanup-overlap-only-bridged-imine-nitrogen-root',
+    sourceIndex: 21849,
+    smiles: 'CC(N)=NC1(C)C2CNC(C#N)C1(C)CCN2',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.49,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-21804-pre-cleanup-overlap-only-bridged-oxime-center-root',
+    sourceIndex: 21804,
+    smiles: 'CCCNC12C=CC(NC1C(N)=N)C2=NO',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.29,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-15469-pre-cleanup-overlap-only-bridged-ring-oxime-center',
+    sourceIndex: 15469,
+    smiles: 'CCC12CCC(C[NH2+]C)OC(C1C)C2=NO',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.57,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-23729-pre-cleanup-overlap-only-bridged-nitrile-lactam',
+    sourceIndex: 23729,
+    smiles: 'CC(CC#C)N1C(C)C2CCC1(C#N)C(=O)N2',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.57,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-15136-pre-cleanup-overlap-only-bridged-lactam-carbonyl-center',
+    sourceIndex: 15136,
+    smiles: 'CC12CCC1C1(O)C[NH2+]CCN2CCC1=O',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.51,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-28831-pre-cleanup-overlap-only-bridged-imine-ring-path-tail',
+    sourceIndex: 28831,
+    smiles: 'CC1CC2CN=C3CCC(O)C(CN3)C(O2)=N1',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.53,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-24892-pre-cleanup-overlap-only-fused-acyl-leaf-fan',
+    sourceIndex: 24892,
+    smiles: 'CC1C2OCC3CCN(C1(C)C#C)C23C(C)=O',
+    expected: {
+      primaryFamily: 'fused',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.08,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
+      maxCollapsedMacrocycleCount: 0,
+      stereoContradiction: false,
+      fallbackMode: null
+    }
+  },
+  {
+    bucket: 'pre-cleanup-overlap-only',
+    name: 'row-27853-pre-cleanup-overlap-only-terminal-imine-leaf-bridged-path',
+    sourceIndex: 27853,
+    smiles: 'CC1(O)C(N)CC2CC(N)C(N)C1(C)OC2=N',
+    expected: {
+      primaryFamily: 'bridged',
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.2,
+      maxLabelOverlapCount: 0,
+      maxRingSubstituentReadabilityFailureCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: null

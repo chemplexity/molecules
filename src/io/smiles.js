@@ -2294,7 +2294,30 @@ function _serializeComponent(mol, sortFn = null) {
       if (fromA === null || fromB === null) {
         continue;
       }
-      ezEntries.push({ dblBond, sA: sAInfo.b, sB: sBInfo.b, expectedParity, fromA, fromB, sABId: sAInfo.bId });
+
+      // Detect whether BOTH substituent bonds are "bridge" bonds: bonds that
+      // connect the sp2 atom to another double-bond atom (i.e., they are the
+      // shared single bond between two consecutive double bonds in a conjugated
+      // chain).  For such interior double bonds, getEZStereo() can return a
+      // notation-dependent parity because the bridge bond direction is
+      // determined by the ADJACENT double bond's notation rather than by a true
+      // non-double-bond substituent.  When both sides are bridge bonds, the
+      // expected parity is unreliable and Phase 3 should NOT flip any bond to
+      // "correct" it — the canonical result already reflects the actual geometry
+      // via the already-assigned adjacent bonds.
+      const otherA = sAInfo.b.getOtherAtom(idCanoA);
+      const sAIsBridge = (heavy.atoms.get(otherA)?.bonds ?? []).some(bId2 => {
+        if (bId2 === dblBond.id || bId2 === sAInfo.bId) { return false; }
+        return (heavy.bonds.get(bId2)?.properties.order ?? 1) === 2;
+      });
+      const otherB = sBInfo.b.getOtherAtom(idCanoB);
+      const sBIsBridge = (heavy.atoms.get(otherB)?.bonds ?? []).some(bId2 => {
+        if (bId2 === dblBond.id || bId2 === sBInfo.bId) { return false; }
+        return (heavy.bonds.get(bId2)?.properties.order ?? 1) === 2;
+      });
+      const bothBridge = sAIsBridge && sBIsBridge;
+
+      ezEntries.push({ dblBond, sA: sAInfo.b, sB: sBInfo.b, expectedParity, fromA, fromB, sABId: sAInfo.bId, bothBridge });
     }
 
     // Sort ezEntries by DFS emission order of their sA substituent bond.
@@ -2345,7 +2368,7 @@ function _serializeComponent(mol, sortFn = null) {
     //     C-R (for C=D's C-side).  After Phase 3, C carries stereo on two bonds.
     //     The isolation below temporarily hides the one that belongs to a different
     //     double bond so getEZStereo sees only the intended pair.
-    for (const { dblBond, sA, sB, expectedParity, fromA, fromB } of ezEntries) {
+    for (const { dblBond, sA, sB, expectedParity, fromA, fromB, bothBridge } of ezEntries) {
       const [idA, idB] = dblBond.atoms;
 
       // Temporarily null out stereo on bonds adjacent to either sp2 atom that
@@ -2376,7 +2399,7 @@ function _serializeComponent(mol, sortFn = null) {
         sB.properties.stereo = sB.atoms[0] === fromB ? '/' : '\\';
       }
 
-      if (heavy.getEZStereo(dblBond.id) !== expectedParity) {
+      if (heavy.getEZStereo(dblBond.id) !== expectedParity && !bothBridge) {
         if (!sBWasSet) {
           sB.properties.stereo = sB.atoms[0] === fromB ? '\\' : '/';
         } else if (!sAWasSet) {
@@ -2927,8 +2950,12 @@ function _normalizeExocyclicIminium(mol) {
     if (!dblC) {continue;}
 
     // Find a ring N adjacent to dblC that is in the same ring as dblC
-    // (i.e., removing the dblC-ringN bond still connects them via a ring path)
+    // (i.e., removing the dblC-ringN bond still connects them via a ring path).
+    // Prefer N atoms that do NOT already have a ring double bond, so that adding
+    // the new ringN=dblC double bond does not create an over-bonded N (which
+    // would break the Kekulé alternating pattern for aromaticity detection).
     let ringN = null, ringNBondId = null;
+    let ringNFallback = null, ringNBondIdFallback = null;
     for (const bondId of dblC.bonds) {
       if (bondId === dblBond.id) {continue;}
       const bond = mol.bonds.get(bondId);
@@ -2951,7 +2978,24 @@ function _normalizeExocyclicIminium(mol) {
           if (!seen.has(next)) { seen.add(next); q.push(next); }
         }
       }
-      if (found) { ringN = other; ringNBondId = bondId; break; }
+      if (!found) {continue;}
+      // Check if this N already has a double bond (ring or exo).
+      // If it does, save as fallback and keep looking for a better candidate
+      // (one with no existing double bond is preferred to avoid over-bonding).
+      const hasExistingDbl = other.bonds.some(bId2 => {
+        if (bId2 === bondId) {return false;}
+        const b2 = mol.bonds.get(bId2);
+        return b2 && (b2.properties.order ?? 1) === 2;
+      });
+      if (!hasExistingDbl) {
+        ringN = other; ringNBondId = bondId; break;
+      } else if (!ringNFallback) {
+        ringNFallback = other; ringNBondIdFallback = bondId;
+      }
+    }
+    // If no ideal (no-double-bond) candidate found, use fallback
+    if (!ringN && ringNFallback) {
+      ringN = ringNFallback; ringNBondId = ringNBondIdFallback;
     }
     if (!ringN) {
       // Non-adjacent ring N: find a ring through dblC containing a neutral N,
