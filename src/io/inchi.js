@@ -723,14 +723,36 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
               const other = mol.atoms.get(otherId);
               if (!other || (other.properties.charge ?? 0) !== 0) {return false;}
               const otherEl = elements[other.name];
-              if (!otherEl || otherEl.group !== 16) {return false;}
-              // Must have unsatisfied valence (remaining>0) — distinguishes
-              // lactone/carbonyl O (no H, remaining=1) from phenol O (has H, remaining=0).
+              if (!otherEl) {return false;}
+              // Must have unsatisfied valence (remaining>0).
               if (remaining(otherId) <= 0) {return false;}
-              return other.bonds.filter(b2 => {
+              const otherHeavyBonds = other.bonds.filter(b2 => {
                 const ob = mol.bonds.get(b2);
                 return ob && heavySet.has(ob.getOtherAtom(otherId));
-              }).length === 1;
+              });
+              if (otherEl.group === 16) {
+                // Terminal chalcogen (O or S with 1 heavy bond): C=O / C=S carbonyl.
+                return otherHeavyBonds.length === 1;
+              }
+              if (otherEl.group === 15) {
+                // Imine nitrogen: exactly 2 heavy bonds, no H, and all other heavy
+                // neighbours are saturated (remaining=0) so Phase B cannot form a
+                // C=N bond via the exocyclic neighbour after aromatisation.
+                // This catches bicyclic C=N-CH3 imines but not C=N-C= imines where
+                // the exocyclic C still has unsatisfied valence (Phase B handles those).
+                const hasHBond = other.bonds.some(b2 => {
+                  const ob = mol.bonds.get(b2);
+                  return ob && !heavySet.has(ob.getOtherAtom(otherId));
+                });
+                if (hasHBond || otherHeavyBonds.length !== 2) {return false;}
+                return otherHeavyBonds.every(b2 => {
+                  const ob = mol.bonds.get(b2);
+                  if (!ob) {return false;}
+                  const nbId = ob.getOtherAtom(otherId);
+                  return nbId === id || remaining(nbId) <= 0;
+                });
+              }
+              return false;
             });
             if (hasCarbonyl) { validRing = false; break; }
           }
@@ -885,12 +907,29 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
               const other = mol.atoms.get(otherId);
               if (!other || (other.properties.charge ?? 0) !== 0) {return false;}
               const otherEl = elements[other.name];
-              if (!otherEl || otherEl.group !== 16) {return false;}
+              if (!otherEl) {return false;}
               if (remaining(otherId) <= 0) {return false;}
-              return other.bonds.filter(b2 => {
+              const otherHeavyBonds = other.bonds.filter(b2 => {
                 const ob = mol.bonds.get(b2);
                 return ob && heavySet.has(ob.getOtherAtom(otherId));
-              }).length === 1;
+              });
+              if (otherEl.group === 16) {
+                return otherHeavyBonds.length === 1;
+              }
+              if (otherEl.group === 15) {
+                const hasHBond = other.bonds.some(b2 => {
+                  const ob = mol.bonds.get(b2);
+                  return ob && !heavySet.has(ob.getOtherAtom(otherId));
+                });
+                if (hasHBond || otherHeavyBonds.length !== 2) {return false;}
+                return otherHeavyBonds.every(b2 => {
+                  const ob = mol.bonds.get(b2);
+                  if (!ob) {return false;}
+                  const nbId = ob.getOtherAtom(otherId);
+                  return nbId === atomId || remaining(nbId) <= 0;
+                });
+              }
+              return false;
             });
             if (hasCarbonyl) { ok = false; break; }
           }
@@ -964,6 +1003,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
 
       // That carbon must have an exocyclic double bond to a terminal O or S.
       let rescueBond = null;
+      let rescueOtherId = null;
       for (const bondId of blocker.bonds) {
         const bond = mol.bonds.get(bondId);
         if (!bond || bond.properties.order !== 2) {
@@ -986,6 +1026,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
           continue;
         }
         rescueBond = bond;
+        rescueOtherId = otherId;
         break;
       }
       if (!rescueBond) {
@@ -1010,6 +1051,20 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
       }
 
       if (validRing && isHuckel(pi)) {
+        // Guard: the exocyclic O/S must not end up as a radical after demotion.
+        // A neutral atom with remaining > 0 (no H, no charge) would be written
+        // as [O] or [S] in SMILES — that is a wrong radical representation.
+        // Charged atoms (e.g. [O-] phenolate) are fine with remaining=1.
+        // Exception: when the molecule has a net negative charge (totalCharge < 0),
+        // the exocyclic O will receive the formal charge via assignComponentFormalCharges,
+        // becoming [O-] (remaining=0) — allow the rescue in that case.
+        const rescueOther = mol.atoms.get(rescueOtherId);
+        if (rescueOther && remaining(rescueOtherId) > 0 &&
+            (rescueOther.properties.charge ?? 0) === 0 &&
+            totalCharge >= 0) {
+          rescueBond.properties.order = 2; // restore — would produce radical
+          continue;
+        }
         for (let i = 0; i < ring.length - 1; i++) {
           const b = mol.getBond(ring[i], ring[i + 1]);
           if (b) {
@@ -2218,7 +2273,11 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       }
       let token = tokenForParity(entry.parity);
       if (hydrogenIds.length === 0 && !center.isInRing(mol)) {
-        token = token === '@' ? '@@' : '@';
+        const hasChargedNeighbor = center.name === 'P' &&
+          orderedHeavy.some(nbId => (mol.atoms.get(nbId)?.properties?.charge ?? 0) !== 0);
+        if (!hasChargedNeighbor) {
+          token = token === '@' ? '@@' : '@';
+        }
       }
 
       center.properties.chirality = computeRS(token, neighborOrder, centerId, mol);

@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-05-30
+
+- Promote two current-clean bridged glycoside bond rows to regression coverage after current layout clears their former bond-length fallbacks.
+- Promote a current-clean bridged phenol cage bond row and a current-clean bridged lactone-amide overlap row to regression coverage after current layout clears their former fallbacks.
+- Promote four current-clean compact bridged bond rows to regression coverage after current layout clears their former bond-length fallbacks without overlaps, labels, or readability failures.
+- Add a final stretched bridged ring-bond endpoint retouch for compact bridged ring systems, nudging the endpoint only when it clears the last bond-length fallback without adding overlaps, labels, or readability failures.
+- Fix phosphorus stereo parity in `applyTetrahedralStereo` (`src/io/inchi.js`): for P atoms where all heavy neighbours are uncharged, skip the parity flip that is applied to non-ring non-H-bearing stereo centres — previously the condition `center.name !== 'P'` was inverted or absent, causing incorrect R/S assignment for phosphine stereocentres.
+- Fix phenolate rescue in `inferBondOrders` (`src/io/inchi.js`): guard the Hückel-ring demotion of an exocyclic C=O bond — if the exocyclic O (or S) is neutral and has `remaining > 0` after demotion to a single bond, abort the rescue and restore the double bond order; previously demoting a ketone C=O left the O atom with one bond, no H, and no charge, which the SMILES writer rendered as a radical `[O]`.
+- Extend carbonyl check in Phase A and Phase A2 of `inferBondOrders` (`src/io/inchi.js`) to cover imine-type exocyclic N: in addition to group-16 exocyclic atoms (O/S) that block Hückel aromatisation of ring C atoms, also block aromatisation when the exocyclic atom is a group-15 N with exactly 2 heavy bonds, no H, `remaining = 1`, and all heavy neighbours outside the ring are already saturated (`remaining = 0`) — this prevents incorrectly aromatising rings whose C atom bears a C=N-CH3 imine where the saturated CH3 prevents Phase B from later forming the C=N bond.
+
 ## 2026-05-29
 
 - Fix `_normalizeExocyclicIminium` in `toCanonicalSMILES` (`src/io/smiles.js`) to prefer ring-N atoms that do not already carry an existing double bond when selecting the target for exocyclic iminium normalisation — previously the function always picked the first adjacent ring N regardless of its current valence, causing over-bonded N in molecules with multiple ring-N atoms (e.g., benzimidazolium/imidazolium systems).
@@ -40,6 +50,13 @@
 - Let final compact fused-spiro ring retouch nudge one collapsed ring atom out of nonbonded pinches while preserving bridged bond validation.
 - Let final compact bridged path retouch move a crowded cage atom away from exocyclic ethyl roots, clearing residual nonbonded ring/branch contacts without adding crossings.
 - Let final post-branch terminal acyl leaf cleanup rotate compact acetyl methyl leaves into a cleaner trigonal fan, clearing fused-ring severe-overlap fallbacks after branch retouch.
+- Promote a current-clean compact bridged ammonium cage to regression coverage so its former severe-overlap fallback remains covered.
+- Add final compact bridged single-overlap micro-relaxation, clearing ring/branch overlaps only when the accepted candidate audits clean without fallback.
+- Let final compact bridged single-overlap micro-relaxation run on small layouts that already contain bounded crossings, clearing a crowded ureide cage overlap while reducing crossings and preserving a clean audit.
+- Let final compact bridged single-overlap micro-relaxation handle one mild starting bond failure and mid-sized bridged systems, clearing benzo-cage and amino-aryl cage overlap fallbacks while preserving clean final audits.
+- Promote a current-clean oxa-imino bridged cage bond row to regression coverage so its former bond-length fallback remains covered.
+- Promote five additional current-clean compact bridged overlap rows to regression coverage after current layout clears their former severe-overlap fallbacks.
+- Add a final stretched bridged aromatic ring-bond retouch for compact fused cages, translating the small aromatic cap only when it clears the last bond failure without restoring overlaps.
 - Let final terminal multiple-bond branch retouch handle single hetero leaves on oxime-style `C=N-O` branches, clearing compact bridged cage hydroxyl overlaps without adding crossings.
 - Let final acyclic branch retouch articulate terminal hetero leaves after root rotation, clearing compact bridged terminal-alcohol overlaps without adding crossings.
 - Let organometallic final retouch spread collapsed chelate-ring atoms symmetrically, clearing porphyrin C-C severe overlaps without adding crossings.
