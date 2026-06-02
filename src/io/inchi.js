@@ -1062,8 +1062,37 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0, atomComponentCharge
         if (rescueOther && remaining(rescueOtherId) > 0 &&
             (rescueOther.properties.charge ?? 0) === 0 &&
             totalCharge >= 0) {
-          rescueBond.properties.order = 2; // restore — would produce radical
-          continue;
+          // Allow rescue when another atom in the same component has remaining < 0
+          // (it will receive a positive formal charge from assignComponentFormalCharges,
+          // balancing the negative charge that will go to the exocyclic O/S).
+          const hasPositiveChargeCandidate = heavyAtomIds.some(aid => {
+            if (aid === rescueOtherId) { return false; }
+            const a = mol.atoms.get(aid);
+            if (!a || (a.properties.charge ?? 0) !== 0) { return false; }
+            if (remaining(aid) < 0) { return true; } // already hypervalent
+            // Terminal N with ≥2 H bonds adjacent to a non-aromatic C with remaining>0:
+            // Phase B will promote C=N, making this N hypervalent (+1 charge).
+            if (a.name !== 'N' || remaining(aid) !== 0) { return false; }
+            const heavyBondsN = a.bonds.filter(bId => {
+              const b = mol.bonds.get(bId);
+              return b && heavySet.has(b.getOtherAtom(aid));
+            });
+            if (heavyBondsN.length !== 1) { return false; }
+            const hBondsN = a.bonds.filter(bId => {
+              const b = mol.bonds.get(bId);
+              return b && !heavySet.has(b.getOtherAtom(aid));
+            });
+            if (hBondsN.length < 2) { return false; }
+            const adjBond = mol.bonds.get(heavyBondsN[0]);
+            if (!adjBond) { return false; }
+            const adjId = adjBond.getOtherAtom(aid);
+            const adj = mol.atoms.get(adjId);
+            return adj?.name === 'C' && !isAromaticRingAtom(adjId, aromaticBondIds) && remaining(adjId) > 0;
+          });
+          if (!hasPositiveChargeCandidate) {
+            rescueBond.properties.order = 2; // restore — would produce radical
+            continue;
+          }
         }
         for (let i = 0; i < ring.length - 1; i++) {
           const b = mol.getBond(ring[i], ring[i + 1]);
@@ -2773,6 +2802,29 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
           bond.properties.order = 2;
           bond2.properties.order = 1;
           return;
+        }
+      }
+    }
+
+    // Pattern 3 — aromatic phenolate: aromatic ring C bonded to terminal O
+    // (no H, neutral, single bond) where the net charge is +1 above target.
+    // fixIminiumCharge may have added +1 to N (amidinium) but assignComponentFormalCharges
+    // missed the matching -1 on the exocyclic O due to Kekulé-form discrepancy in
+    // adjacent aromatic rings.  Assign -1 to O to balance.
+    const targetCharge = componentChargeTargets.reduce((s, c) => s + c, 0);
+    const currentCharge = [...mol.atoms.values()].reduce((s, a) => s + (a.properties.charge ?? 0), 0);
+    if (currentCharge - targetCharge === 1) {
+      for (const atomId of heavyAtomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom || !atom.properties.aromatic) { continue; }
+        for (const bondId of atom.bonds) {
+          const bond = mol.bonds.get(bondId);
+          if (!bond || bond.properties.aromatic) { continue; }
+          const oId = bond.getOtherAtom(atomId);
+          if (isTerminalHeteroatom(oId)) {
+            mol.atoms.get(oId).setCharge(-1);
+            return;
+          }
         }
       }
     }

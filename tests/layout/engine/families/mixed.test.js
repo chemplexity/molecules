@@ -3937,6 +3937,26 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('keeps bridgehead terminal methyl leaves outside incident fused ring faces after cleanup', () => {
+    const smiles = 'CC(=C)[C@@H]1CC[C@@]2(CC[C@]3(C)[C@H](<CC[C@@H]4[C@@]5(C)CC=C(c6ccc(cc6)C7(CC7)C(=O)O)C(C)(C)[C@@H]5CC[C@@]34C>)[C@@H]12)C(=O)O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const insideIncidentRings = (anchorAtomId, leafAtomId) =>
+      (result.layoutGraph.atomToRings.get(anchorAtomId) ?? []).filter(ring =>
+        pointInPolygon(
+          result.coords.get(leafAtomId),
+          ring.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean)
+        )
+      ).length;
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length, 0);
+    assert.equal(insideIncidentRings('C11', 'C12'), 0);
+    assert.equal(insideIncidentRings('C43', 'C44'), 0);
+  });
+
   it('keeps blocked bridgehead terminal methyl leaves readable without stretching ammonium fans', () => {
     const smiles = 'Cc1ccc(F)cc1C(O)(C[C@H]2C[C@H]3CC[C@@H](C2)[N+]3(C)C)c4cc(F)ccc4C';
     const result = runPipeline(parseSMILES(smiles), {

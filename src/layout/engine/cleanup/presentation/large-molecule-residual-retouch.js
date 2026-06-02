@@ -49,6 +49,11 @@ const FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT = 0.2;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT = 0.05;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS = 100;
 const FINAL_ANGLE_POLISH_ULTRA_LARGE_HEAVY_ATOM_LIMIT = 400;
+const SHARED_CENTER_TRANSLATION_TARGET_MARGIN_FACTOR = 0.01;
+const SHARED_CENTER_TRANSLATION_MAX_STEP_FACTOR = 0.15;
+const SHARED_CENTER_TRANSLATION_MAX_TOTAL_ATOMS = 220;
+const SHARED_CENTER_TRANSLATION_MAX_TOTAL_HEAVY_ATOMS = 140;
+const SHARED_CENTER_TRANSLATION_STEP_FACTORS = Object.freeze([0.85, 1, 1.15, 1.3, 1.5]);
 const RING_FAN_ANGLE_POLISH_MAX_PASSES = 28;
 const RING_FAN_ANGLE_POLISH_CENTER_SCAN_LIMIT = 10;
 const RING_FAN_ANGLE_POLISH_DIRECTION_COUNT = 12;
@@ -1153,6 +1158,229 @@ function withRotatedSubtree(layoutGraph, coords, descriptor, angle, callback) {
       coords.set(atomId, position);
     }
   }
+}
+
+function atomIsFixed(layoutGraph, atomId) {
+  return layoutGraph.fixedCoords?.has?.(atomId) === true;
+}
+
+function atomCanParticipateInSharedCenterTranslation(layoutGraph, coords, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return atom && atom.element !== 'H' && coords.has(atomId) && !layoutGraph.ringAtomIdSet.has(atomId) && !atomIsFixed(layoutGraph, atomId);
+}
+
+function bondAllowsSharedCenterTranslation(bond) {
+  return bond?.kind === 'covalent' && !bond.aromatic && (bond.order ?? 1) === 1;
+}
+
+function subtreesAreDisjoint(firstAtomIds, secondAtomIds) {
+  const firstSet = new Set(firstAtomIds);
+  return secondAtomIds.every(atomId => !firstSet.has(atomId));
+}
+
+function subtreeContainsFrozenAtom(subtreeAtomIds, frozenAtomIds) {
+  return frozenAtomIds instanceof Set && subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId));
+}
+
+function collectSharedCenterTranslationDescriptors(layoutGraph, coords, currentScore, frozenAtomIds) {
+  const descriptors = [];
+  const seenKeys = new Set();
+  const sortedOverlaps = [...(currentScore.overlaps ?? [])].sort((first, second) => first.distance - second.distance);
+
+  for (const overlap of sortedOverlaps) {
+    const { firstAtomId, secondAtomId } = overlap;
+    if (
+      !atomCanParticipateInSharedCenterTranslation(layoutGraph, coords, firstAtomId) ||
+      !atomCanParticipateInSharedCenterTranslation(layoutGraph, coords, secondAtomId)
+    ) {
+      continue;
+    }
+
+    for (const firstBond of layoutGraph.bondsByAtomId.get(firstAtomId) ?? []) {
+      if (!bondAllowsSharedCenterTranslation(firstBond)) {
+        continue;
+      }
+      const centerAtomId = firstBond.a === firstAtomId ? firstBond.b : firstBond.a;
+      if (
+        !atomCanParticipateInSharedCenterTranslation(layoutGraph, coords, centerAtomId) ||
+        frozenAtomIds?.has(firstAtomId) ||
+        frozenAtomIds?.has(secondAtomId) ||
+        frozenAtomIds?.has(centerAtomId)
+      ) {
+        continue;
+      }
+      const secondBond = findBond(layoutGraph, secondAtomId, centerAtomId);
+      if (!bondAllowsSharedCenterTranslation(secondBond)) {
+        continue;
+      }
+
+      const key = `${[firstAtomId, secondAtomId].sort().join(':')}@${centerAtomId}`;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+
+      const firstSubtreeAtomIds = [...collectCutSubtree(layoutGraph, firstAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+      const secondSubtreeAtomIds = [...collectCutSubtree(layoutGraph, secondAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+      if (
+        firstSubtreeAtomIds.length === 0 ||
+        secondSubtreeAtomIds.length === 0 ||
+        firstSubtreeAtomIds.includes(centerAtomId) ||
+        secondSubtreeAtomIds.includes(centerAtomId) ||
+        firstSubtreeAtomIds.includes(secondAtomId) ||
+        secondSubtreeAtomIds.includes(firstAtomId) ||
+        !subtreesAreDisjoint(firstSubtreeAtomIds, secondSubtreeAtomIds) ||
+        subtreeContainsFrozenAtom(firstSubtreeAtomIds, frozenAtomIds) ||
+        subtreeContainsFrozenAtom(secondSubtreeAtomIds, frozenAtomIds)
+      ) {
+        continue;
+      }
+
+      const totalAtomCount = firstSubtreeAtomIds.length + secondSubtreeAtomIds.length;
+      const totalHeavyAtomCount = visibleHeavyAtomCount(layoutGraph, firstSubtreeAtomIds) + visibleHeavyAtomCount(layoutGraph, secondSubtreeAtomIds);
+      if (totalAtomCount > SHARED_CENTER_TRANSLATION_MAX_TOTAL_ATOMS || totalHeavyAtomCount > SHARED_CENTER_TRANSLATION_MAX_TOTAL_HEAVY_ATOMS) {
+        continue;
+      }
+
+      descriptors.push({
+        firstAtomId,
+        secondAtomId,
+        centerAtomId,
+        firstSubtreeAtomIds,
+        secondSubtreeAtomIds,
+        subtreeAtomIds: [...firstSubtreeAtomIds, ...secondSubtreeAtomIds]
+      });
+    }
+  }
+
+  return descriptors;
+}
+
+function translatedSharedCenterSubtrees(coords, descriptor, unitX, unitY, step) {
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of descriptor.firstSubtreeAtomIds) {
+    const position = candidateCoords.get(atomId);
+    if (position) {
+      candidateCoords.set(atomId, {
+        x: position.x - unitX * step,
+        y: position.y - unitY * step
+      });
+    }
+  }
+  for (const atomId of descriptor.secondSubtreeAtomIds) {
+    const position = candidateCoords.get(atomId);
+    if (position) {
+      candidateCoords.set(atomId, {
+        x: position.x + unitX * step,
+        y: position.y + unitY * step
+      });
+    }
+  }
+  return candidateCoords;
+}
+
+function sharedCenterTranslationSteps(distance, bondLength) {
+  const targetDistance = bondLength * (SEVERE_OVERLAP_FACTOR + SHARED_CENTER_TRANSLATION_TARGET_MARGIN_FACTOR);
+  const baseStep = Math.max(0, (targetDistance - distance) / 2);
+  const maxStep = bondLength * SHARED_CENTER_TRANSLATION_MAX_STEP_FACTOR;
+  const steps = [];
+  const seenSteps = new Set();
+  for (const factor of SHARED_CENTER_TRANSLATION_STEP_FACTORS) {
+    const step = Math.min(maxStep, baseStep * factor);
+    if (step <= 1e-9) {
+      continue;
+    }
+    const key = step.toFixed(8);
+    if (!seenSteps.has(key)) {
+      seenSteps.add(key);
+      steps.push(step);
+    }
+  }
+  return steps;
+}
+
+function sharedCenterTranslationAuditAllows(candidateAudit, currentAudit, candidateScore, currentScore) {
+  if (candidateScore.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > currentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidateAudit.labelOverlapCount > currentAudit.labelOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.ringSubstituentReadabilityFailureCount > currentAudit.ringSubstituentReadabilityFailureCount) {
+    return false;
+  }
+  if (candidateAudit.collapsedMacrocycleCount > currentAudit.collapsedMacrocycleCount) {
+    return false;
+  }
+  return candidateAudit.maxBondLengthDeviation <= currentAudit.maxBondLengthDeviation + SHARED_CENTER_TRANSLATION_MAX_STEP_FACTOR;
+}
+
+function sharedCenterTranslationCandidateIsBetter(candidate, incumbent) {
+  if (scoreIsBetter(candidate.score, incumbent.score)) {
+    return true;
+  }
+  if (scoreIsBetter(incumbent.score, candidate.score)) {
+    return false;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > RETOUCH_SCORE_EPSILON) {
+    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  }
+  return candidate.step < incumbent.step;
+}
+
+function selectBestSharedCenterTranslationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds) {
+  if (currentScore.severeOverlapCount <= 0) {
+    return null;
+  }
+  const currentAudit = auditLayout(layoutGraph, coords, { bondLength });
+  const descriptors = collectSharedCenterTranslationDescriptors(layoutGraph, coords, currentScore, frozenAtomIds);
+  let bestCandidate = null;
+
+  for (const descriptor of descriptors) {
+    const firstPosition = coords.get(descriptor.firstAtomId);
+    const secondPosition = coords.get(descriptor.secondAtomId);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    const deltaX = secondPosition.x - firstPosition.x;
+    const deltaY = secondPosition.y - firstPosition.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (distance <= 1e-9) {
+      continue;
+    }
+    const unitX = deltaX / distance;
+    const unitY = deltaY / distance;
+
+    for (const step of sharedCenterTranslationSteps(distance, bondLength)) {
+      const candidateCoords = translatedSharedCenterSubtrees(coords, descriptor, unitX, unitY, step);
+      const candidateScore = scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds);
+      if (!scoreIsBetter(candidateScore, currentScore)) {
+        continue;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      if (!sharedCenterTranslationAuditAllows(candidateAudit, currentAudit, candidateScore, currentScore)) {
+        continue;
+      }
+      const candidate = {
+        coords: candidateCoords,
+        score: candidateScore,
+        audit: candidateAudit,
+        descriptor,
+        step
+      };
+      if (!bestCandidate || sharedCenterTranslationCandidateIsBetter(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  return bestCandidate;
 }
 
 function addDescriptorForEndpoint(layoutGraph, coords, descriptors, seenDescriptors, atomId, currentScore, frozenAtomIds, descriptorOptions = {}) {
@@ -2652,6 +2880,9 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
         descriptorCache,
         prefilterResidualCandidates: allowUltraLargeResidualRepair
       });
+    }
+    if (!bestCandidate && currentScore.severeOverlapCount > 0) {
+      bestCandidate = selectBestSharedCenterTranslationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds);
     }
 
     if (!bestCandidate) {

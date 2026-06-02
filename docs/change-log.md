@@ -1,5 +1,47 @@
 # Change Log
 
+## 2026-06-01
+
+- Add Pattern 3 to `fixEnolateCharge` in `src/io/inchi.js`: when `fixIminiumCharge` adds +1 to an amidinium N but `assignComponentFormalCharges` cannot assign the balancing -1 to the phenolate O (because an adjacent aromatic ring's Kekulé representation skews the total), detect the remaining +1 charge excess and assign -1 to the terminal neutral O on any aromatic ring C — fixes phenolate round-trip for benzimidazole-amidinium-phenolate molecules (rows 5197, 7601) and reduced total regression count from 98 to 81.
+- Add `_normalizeEnolateNoxide` to `toCanonicalSMILES` (`src/io/smiles.js`): converts the enolate-Noxide tautomer `[O-]-C=C-N=O` to the keto-hydroxamate form `O=C-C=N-[O-]` — moves the enolate charge from the alpha-carbon O to the N-oxide O, matching InChI's canonical representation (row 6898).
+- Add `_normalizePolysulfideAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): when InChI represents a terminal polysulfide anion as a neutral S double-bonded to an inner [S-], demotes the double bond to single and transfers the negative charge to the terminal S, matching the standard `[S-]-S-...` polysulfide notation (row 7835).
+- Add `_normalizeAmidinoHydroximateAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): normalises `C(=[N-H]-aro)(-N=O)` to `C(=N-[O-])(-NH-aro)` — when InChI assigns [N-] to an imino-N bonded to an aromatic ring (with H), and the N=O oxide is on the adjacent amide N, shifts the double bond from imino-C to amide-N, demotes N=O to N-[O-], and moves the negative charge from N to O (row 1961 and similar isoxazoline-hydroxamate anions).
+- Reject compact bridged projection candidates that keep the same bond-failure count as baseline while massively inflating the worst ring-closure deviation..
+- Add a guarded suppressed-hydrogen compact bridged whole-component KK rescue.
+- Let the compact bridged whole-component KK rescue use a tightly guarded promoted-validation profile for single stretched compact bridged ring closures.
+- Extend the final stretched bridged ring-bond retouch with bounded adjacent-tail moves.
+- Let the final stretched bridged ring-bond retouch search farther and carry bridged validation for accepted candidates, clearing a macrolide bridged-spiro macrocycle bond fallback without adding overlaps, labels, or readability failures.
+- Promote a current-clean large branched peptide overlap row to regression coverage after current layout clears its former severe-overlap fallback.
+- Add a guarded large-molecule shared-center sibling-overlap retouch that separates disjoint cut subtrees around a common amide center, clearing a glycopeptide repeat severe-overlap fallback without adding crossings, labels, readability failures, or bond failures.
+- Promote a current-clean macrocycle porphyrinoid overlap/readability row to regression coverage after current layout clears its former severe-overlap fallback.
+- Add a fused-only final acyclic sidechain contact retouch that allows medium sidechains to rotate as one subtree only when the result is audit-clean, clearing a residual fused scaffold severe overlap.
+- Add a final terminal carbonyl oxo contact retouch that rotates one terminal C=O oxygen by small guarded offsets, clearing a residual bridged alkaloid severe-overlap fallback without adding bond, label, or readability failures.
+- Add a final paired stretched bridged ring-bond retouch that nudges one endpoint on each of two mild stretched bridged ring bonds, clearing a residual phenol-cage bond fallback without adding overlaps, labels, or readability failures.
+- Add a final paired bridged hinge-bond retouch that nudges opposite endpoints around a shared hinge, clearing coupled stretched/compressed bridged ring-bond fallbacks without adding overlaps or readability failures.
+- Extend the final stretched bridged ring-bond retouch with rigid side-fragment translations, clearing a residual bond fallback in a compact bridged ammonium phenoxy cage without adding overlaps or readability failures.
+- Extend `_canSatisfyHuckelWithAmbiguousN` in `src/algorithms/aromaticity.js` with a Kekulé-variant condition: a neutral N with exactly 2 ring bonds (no exocyclic substituents), exactly one Kekulé double bond, and a single-bond ring neighbour that itself carries no ring π bond is now treated as a potential pyrrole-like lone-pair donor (2e). This allows `perceiveAromaticity` to detect 5-membered rings where the Kekulé assignment places the double bond on N but the ring structure requires N to donate its lone pair for Hückel aromaticity.
+- Add `_normalizeExocyclicAlkylideneImine` to `toCanonicalSMILES` (`src/io/smiles.js`): after `_normalizeExocyclicAromaticDoubleBond` reduces a `c=C` exo bond to `c-C`, the external C (valence 3 with one H) has its adjacent `C-N=C` bond shifted to `C=N-C`, restoring normal valence and producing the same canonical chain as the InChI-parsed form.
+- Promote a current-clean bridged glycoside alkyne-lactone bond row to regression coverage after current layout clears its former bond-length fallback.
+- Let the final stretched bridged ring-bond retouch handle two-shared-atom bridged ring systems, clearing the residual bond fallback for a compact bridged diene/oxime ether cage.
+- Add a final terminal carbon ring-leaf intrusion retouch so crowded fused bridgehead methyl leaves are pulled back outside incident ring faces without adding overlaps, crossings, or bond failures.
+
+## 2026-05-31
+
+- Add `_normalizeNitrogenAnionEnolate` to `toCanonicalSMILES` (`src/io/smiles.js`): converts non-aromatic ring `[N-]-C(=O_exo)` to `N=C-[O-]` (isoxazolate and pyrazolate anion normalisation) — moves the negative charge from ring N to the exocyclic O, enabling `perceiveAromaticity` to detect the ring as aromatic.
+- Add `_normalizeIsoxazolateONAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): normalises the N-O adjacent form of isoxazolate anions where `[N-]` is bonded to the ring-O and a ring `Ca=Cb` or `Ca=N` double bond blocks recognition — flips Ca=Cb to single, promotes Ca=N[-] and Cb=C9 to double, demotes C9=O_exo to single, and transfers charge from N to O_exo.
+- Add `_piElectronsKekuleC` heuristic to `_promoteFusedKekuleAromaticSystems` in `src/algorithms/aromaticity.js`: when a neutral carbon with no ring pi bond has an exocyclic substituent and both ring-internal neighbours carry Kekulé (non-source-aromatic) pi bonds to other ring atoms, treats the carbon as contributing 1π electron. Allows `perceiveAromaticity` to detect fused pyrazolate rings where a bridging C is left with `remaining=1` after the adjacent N-anion normalization.
+- Extend phenolate rescue in `inferBondOrders` (`src/io/inchi.js`) guard: the existing guard (preventing rescue when the exocyclic O/S would be a neutral radical) now also allows rescue when the component contains a terminal NH2 group bonded to a non-aromatic C with `remaining>0` — such groups will be promoted to [NH2+] by Phase B, providing the +1 charge that balances the new [O-] on the exo oxygen. Fixes interactions between phenolate rescue and amidinium charge assignment.
+- Add a final compact bridged ring-validation promotion that lets small saturated or aromatic-capped bridged cages use bridged bond validation for their ring systems and direct exits when that clears a bond-only fallback without adding overlaps, labels, or readability failures.
+- Add a final compact attached bridged-branch anchor nudge that moves small bridged amine branches off aromatic ring anchors without adding bond, label, or readability failures.
+- Add a final compact bridged terminal multiple-bond center/ring nudge that moves crowded cyano branches off bridged ring junctions without adding bond, label, or readability failures.
+- Add a final compact bridged acyl-leaf ring-path nudge that clears a terminal acyl carbon/ring-path severe-overlap fallback without adding bond, label, or readability failures.
+- Add a final same-ring bridged path/bridgehead nudge that clears a compact aminopolycycle severe-overlap fallback without adding bond, label, or readability failures.
+- Promote a current-clean bridged diketo indoline slow-overlap row to regression coverage after current layout clears its former severe-overlap fallback.
+- Promote a current-clean compact keto oxa-bridged overlap row to regression coverage after current layout clears its former severe-overlap fallback.
+- Promote a current-clean compact bridged amidine alcohol overlap row to regression coverage after current layout clears its former severe-overlap fallback.
+- Promote a current-clean bridged enone alcohol overlap row to regression coverage after current layout clears its former severe-overlap fallback.
+- Add a final small hetero ring-substituent retouch that rotates compact O/N/S/Se acyclic branches around ring anchors, clearing a bridged methoxy lactam readability fallback without adding overlaps, labels, or bond failures.
+
 ## 2026-05-30
 
 - Promote two current-clean bridged glycoside bond rows to regression coverage after current layout clears their former bond-length fallbacks.
@@ -58,6 +100,7 @@
 - Promote five additional current-clean compact bridged overlap rows to regression coverage after current layout clears their former severe-overlap fallbacks.
 - Add a final stretched bridged aromatic ring-bond retouch for compact fused cages, translating the small aromatic cap only when it clears the last bond failure without restoring overlaps.
 - Let final terminal multiple-bond branch retouch handle single hetero leaves on oxime-style `C=N-O` branches, clearing compact bridged cage hydroxyl overlaps without adding crossings.
+- Add a final bulky oxygen ring-substituent fan retouch that places benzyl-oxygen branches onto an outward slot and rotates their downstream aryl group only when it clears the last readability fallback without adding overlaps, labels, or bond failures.
 - Let final acyclic branch retouch articulate terminal hetero leaves after root rotation, clearing compact bridged terminal-alcohol overlaps without adding crossings.
 - Let organometallic final retouch spread collapsed chelate-ring atoms symmetrically, clearing porphyrin C-C severe overlaps without adding crossings.
 - Treat terminal substituents on organometallic chelate nitrogens as readable when they only sit inside coordinate-metal pseudo-rings, clearing a copper porphyrin readability fallback without moving the N-methyl bond.

@@ -275,6 +275,29 @@ function _canSatisfyHuckelWithAmbiguousN(ring, ringAtomSet, piTotal, mol) {
       const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId)).filter(b => b && ringAtomSet.has(b.getOtherAtom(atomId)));
       if (atom.bonds.length === ringBonds.length && ringBonds.every(_hasPiOrder)) {
         ambiguousCount++;
+      } else if (
+        // Kekulé variant: N has exactly 2 ring bonds (no exocyclic substituents),
+        // exactly one of which is a Kekulé double bond — the N appears pyridine-like
+        // in this resonance form but may donate its lone pair (pyrrole-like).
+        // Guard: the N's single-bond ring neighbour must itself carry no ring pi bond;
+        // if it does, this N is a genuine pyridine-like N at a ring junction.
+        ringBonds.length === 2 &&
+        atom.bonds.length === ringBonds.length &&
+        !ringBonds.some(_isSourceAromaticBond) &&
+        ringBonds.filter(b => b.properties.order === 2).length === 1
+      ) {
+        const singleBondNeighbor = mol.atoms.get(
+          ringBonds.find(b => b.properties.order !== 2)?.getOtherAtom(atomId)
+        );
+        if (singleBondNeighbor) {
+          const neighborHasRingPi = singleBondNeighbor.bonds.some(bId => {
+            const nb = mol.bonds.get(bId);
+            return nb && ringAtomSet.has(nb.getOtherAtom(singleBondNeighbor.id)) && _hasPiOrder(nb);
+          });
+          if (!neighborHasRingPi) {
+            ambiguousCount++;
+          }
+        }
       }
     }
   }
@@ -597,6 +620,60 @@ function _piElectronsKekuleN(atom, ringAtomSet, mol) {
 }
 
 /**
+ * Returns 1 for a Kekulé carbon with no ring pi bond that is "sandwiched"
+ * between two ring atoms that each carry a pi bond to another ring atom.
+ * Handles the case where parseINCHI leaves a radical C (3 heavy bonds, no pi)
+ * between an already-aromatic atom and a newly-normalised sp2 atom.
+ * Returns null when the heuristic does not apply.
+ * @param {import('../core/Atom.js').Atom|undefined} atom - Candidate atom.
+ * @param {Set<string>} ringAtomSet - Atom ids in the fused ring system.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @returns {number|null} 1 when the atom should contribute 1 π electron, null otherwise.
+ */
+function _piElectronsKekuleC(atom, ringAtomSet, mol) {
+  if (!atom || atom.name !== 'C' || (atom.properties.charge ?? 0) !== 0) { return null; }
+  const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId))
+    .filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
+  if (ringBonds.some(_hasPiOrder)) { return null; } // already has ring pi
+  if (ringBonds.length < 2) { return null; }
+  // Must have at least one exocyclic non-H substituent (not sp3 bridge CH2).
+  const hasExo = atom.bonds.some(bId => {
+    const b = mol.bonds.get(bId);
+    if (!b) { return false; }
+    const other = mol.atoms.get(b.getOtherAtom(atom.id));
+    return other && other.name !== 'H' && !ringAtomSet.has(other.id);
+  });
+  if (!hasExo) { return null; }
+  // Every ring-internal neighbour must carry a pi bond to another ring atom.
+  const allNeighborsHavePi = ringBonds.every(rb => {
+    const neighbor = mol.atoms.get(rb.getOtherAtom(atom.id));
+    if (!neighbor) { return false; }
+    return neighbor.bonds.some(nbId => {
+      const nb = mol.bonds.get(nbId);
+      return nb && nb.id !== rb.id && _hasPiOrder(nb) && ringAtomSet.has(nb.getOtherAtom(neighbor.id));
+    });
+  });
+  if (!allNeighborsHavePi) { return null; }
+  // At least one neighbour must have a non-source-aromatic Kekulé pi bond (order 2,
+  // not 1.5 and not aromatic-flagged) to another ring atom.  This guards against
+  // carbonyl carbons bonded only to existing aromatic atoms, which would be
+  // incorrectly promoted to sp2 in the aromatic ring.
+  const hasNeighborWithKekule = ringBonds.some(rb => {
+    const neighbor = mol.atoms.get(rb.getOtherAtom(atom.id));
+    if (!neighbor) { return false; }
+    return neighbor.bonds.some(nbId => {
+      const nb = mol.bonds.get(nbId);
+      if (!nb || nb.id === rb.id) { return false; }
+      if (!_hasPiOrder(nb)) { return false; }
+      if (!ringAtomSet.has(nb.getOtherAtom(neighbor.id))) { return false; }
+      // Must be a Kekulé double bond (order=2), not a source-aromatic bond.
+      return nb.properties.order === 2 && !nb.properties.aromatic;
+    });
+  });
+  return hasNeighborWithKekule ? 1 : null;
+}
+
+/**
  * Promotes fused Kekulé ring systems that individually fail Hückel (because no
  * single ring reaches 4n+2 on its own) but satisfy Hückel as a full fused
  * component.  Handles bicyclics like benzofuran, indolizine, and purine-type
@@ -648,6 +725,7 @@ function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
       // previously restricted to bridgehead atoms (≥2 rings) but the same pattern
       // occurs for non-bridgehead N atoms in fused diazine/pyrazine rings.
       if (pi === null) { pi = _piElectronsKekuleN(atom, atomIds, mol); }
+      if (pi === null) { pi = _piElectronsKekuleC(atom, atomIds, mol); }
       if (pi === null) {
         valid = false;
         break;

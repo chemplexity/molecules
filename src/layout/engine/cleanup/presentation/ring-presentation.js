@@ -11,6 +11,7 @@ import {
   measureAttachedRingPeripheralFocusPenalty,
   measureAttachedRingRootOutwardPresentationPenalty,
   runExactAttachedRingRootOutwardRetidy,
+  runTerminalCarbonRingLeafIntrusionRetidy,
   runTerminalCarbonRingLeafRetidy,
   runAttachedRingRotationTouchup
 } from './attached-ring-fallback.js';
@@ -1216,6 +1217,19 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
       options
     );
     usedRingSubstituentTidy = currentState.steps.length > previousStepCount;
+  }
+
+  if (includeRingSubstituent) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'terminal-carbon-ring-leaf-intrusion',
+      runTerminalCarbonRingLeafIntrusionRetidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
   }
 
   if (includeRingSubstituent && hasPhosphateArylTailNeed(currentState) && (!usedPhosphateArylTailTidy || usedRingSubstituentTidy)) {

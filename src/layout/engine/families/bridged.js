@@ -20,6 +20,8 @@ const COMPACT_SHARED_BRIDGE_LANE_SPREAD_FACTORS = Object.freeze([1.28, 1.3, 1.32
 const STRAINED_COMPACT_BRIDGED_KK_THRESHOLD = 0.1;
 const STRAINED_COMPACT_BRIDGED_MAX_DEVIATION = 0.35;
 const BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR = 0.5;
+const BRIDGED_PROJECTION_SAME_FAILURE_MAX_BASELINE_DEVIATION_FACTOR = 0.5;
+const BRIDGED_PROJECTION_SAME_FAILURE_MAX_REGRESSION_FACTOR = 1.0;
 const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]);
 const FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
 const FUSED_CYCLOHEXANE_BRANCH_SLOT_BLOCKER_FACTOR = 0.65;
@@ -335,6 +337,15 @@ function hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, 
     projectedAudit.bondLengthFailureCount >= baselineAudit.bondLengthFailureCount + 3 &&
     projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * 0.25 &&
     baselineCrossings <= projectedCrossings + 1
+  ) {
+    return true;
+  }
+  if (
+    baselineAudit.severeOverlapCount <= projectedAudit.severeOverlapCount &&
+    baselineCrossings <= projectedCrossings &&
+    projectedAudit.bondLengthFailureCount >= baselineAudit.bondLengthFailureCount &&
+    baselineAudit.maxBondLengthDeviation <= bondLength * BRIDGED_PROJECTION_SAME_FAILURE_MAX_BASELINE_DEVIATION_FACTOR &&
+    projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * BRIDGED_PROJECTION_SAME_FAILURE_MAX_REGRESSION_FACTOR
   ) {
     return true;
   }
