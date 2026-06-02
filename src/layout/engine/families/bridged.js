@@ -1,6 +1,6 @@
 /** @module families/bridged */
 
-import { BRIDGED_KK_LIMITS } from '../constants.js';
+import { BRIDGED_KK_LIMITS, BRIDGED_VALIDATION } from '../constants.js';
 import { cloneCoords } from '../geometry/transforms.js';
 import { auditLayout } from '../audit/audit.js';
 import { circumradiusForRegularPolygon } from '../geometry/polygon.js';
@@ -17,6 +17,7 @@ const COMPACT_BRIDGED_KK_THRESHOLD = 0.02;
 const COMPACT_BRIDGED_NONBONDED_COLLAPSE_FACTOR = 0.8;
 const COLLAPSED_FOUR_MEMBERED_BRIDGE_APEX_FACTOR = 0.2;
 const COMPACT_SHARED_BRIDGE_LANE_SPREAD_FACTORS = Object.freeze([1.28, 1.3, 1.32, 1.34, 1.36, 1.38]);
+const COLLAPSED_SATURATED_THREE_ATOM_BRIDGE_ARC_HEIGHT_FACTORS = Object.freeze([1.7, 1.85, 2, 1.55, 2.15]);
 const STRAINED_COMPACT_BRIDGED_KK_THRESHOLD = 0.1;
 const STRAINED_COMPACT_BRIDGED_MAX_DEVIATION = 0.35;
 const BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR = 0.5;
@@ -82,6 +83,10 @@ const SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1
 const SPIRO_JUNCTION_RING_SPREAD_MIN_CROSS_ANGLE = Math.PI / 3;
 const SPIRO_JUNCTION_RING_SPREAD_OFFSETS = Object.freeze(Array.from({ length: 72 }, (_, index) => ((index + 1) * 5 * Math.PI) / 180).flatMap(angle => [angle, -angle]));
 const SPIRO_JUNCTION_RING_SPREAD_EPSILON = 1e-6;
+const MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MAX_EXCESS_FACTOR = 0.08;
+const MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_BUFFER_FACTOR = 0.004;
+const MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_ATOMS = 30;
+const MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_RINGS = 8;
 
 /**
  * Returns tuned KK options for small unmatched bridged systems.
@@ -3658,6 +3663,62 @@ function compareBridgedProjectionAudits(candidateAudit, incumbentAudit) {
   return 0;
 }
 
+function retouchMarginalStretchedBridgedRingBonds(layoutGraph, atomIds, coords, bondLength, baseAudit = null) {
+  const atomIdSet = new Set(atomIds);
+  const maxDistance = bondLength * BRIDGED_VALIDATION.maxBondLengthFactor;
+  const maxRetouchDistance = maxDistance + bondLength * MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MAX_EXCESS_FACTOR;
+  const buffer = bondLength * MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_BUFFER_FACTOR;
+  let bestCoords = coords;
+  let bestAudit = baseAudit ?? auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  if (!bestAudit || (bestAudit.bondLengthFailureCount ?? 0) === 0) {
+    return coords;
+  }
+
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!bond || bond.kind !== 'covalent' || !bond.inRing || !atomIdSet.has(bond.a) || !atomIdSet.has(bond.b)) {
+      continue;
+    }
+    const firstPosition = bestCoords.get(bond.a);
+    const secondPosition = bestCoords.get(bond.b);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    const dx = secondPosition.x - firstPosition.x;
+    const dy = secondPosition.y - firstPosition.y;
+    const currentDistance = Math.hypot(dx, dy);
+    if (currentDistance <= maxDistance + 1e-9 || currentDistance > maxRetouchDistance || currentDistance <= 1e-9) {
+      continue;
+    }
+
+    const unitX = dx / currentDistance;
+    const unitY = dy / currentDistance;
+    const reduction = currentDistance - maxDistance + buffer;
+    for (const movedAtomId of [bond.b, bond.a]) {
+      if (layoutGraph.fixedCoords.has(movedAtomId)) {
+        continue;
+      }
+      const candidateCoords = cloneCoords(bestCoords);
+      const movedPosition = candidateCoords.get(movedAtomId);
+      if (!movedPosition) {
+        continue;
+      }
+      const direction = movedAtomId === bond.b ? -1 : 1;
+      candidateCoords.set(movedAtomId, {
+        x: movedPosition.x + direction * unitX * reduction,
+        y: movedPosition.y + direction * unitY * reduction
+      });
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      if (compareBridgedProjectionAudits(candidateAudit, bestAudit) < 0) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        break;
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
 /**
  * Selects the projected bridge coordinates unless a clean KK seed or a clearly
  * better catastrophic-collapse fallback should replace it.
@@ -3927,6 +3988,130 @@ function spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, coords, bon
   return bestCoords;
 }
 
+function moveAtomAndAttachedHydrogens(layoutGraph, coords, atomId, targetPosition) {
+  const currentPosition = coords.get(atomId);
+  if (!currentPosition) {
+    return;
+  }
+  const dx = targetPosition.x - currentPosition.x;
+  const dy = targetPosition.y - currentPosition.y;
+  coords.set(atomId, targetPosition);
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    if (layoutGraph.atoms.get(neighborAtomId)?.element !== 'H') {
+      continue;
+    }
+    const neighborPosition = coords.get(neighborAtomId);
+    if (neighborPosition) {
+      coords.set(neighborAtomId, {
+        x: neighborPosition.x + dx,
+        y: neighborPosition.y + dy
+      });
+    }
+  }
+}
+
+function collapsedThreeAtomBridgeRunDescriptors(layoutGraph, rings, coords, bondLength) {
+  const descriptors = [];
+  for (const ring of rings) {
+    if (ring.aromatic || ring.atomIds.length !== 6) {
+      continue;
+    }
+    const ringSize = ring.atomIds.length;
+    for (let startIndex = 0; startIndex < ringSize; startIndex++) {
+      const firstEndpointAtomId = ring.atomIds[startIndex];
+      const internalAtomIds = [1, 2, 3].map(offset => ring.atomIds[(startIndex + offset) % ringSize]);
+      const secondEndpointAtomId = ring.atomIds[(startIndex + 4) % ringSize];
+      if (internalAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+        continue;
+      }
+      if (
+        internalAtomIds.some(atomId => {
+          const atom = layoutGraph.atoms.get(atomId);
+          return atom?.element !== 'C' || (atom.heavyDegree ?? 0) > 2;
+        })
+      ) {
+        continue;
+      }
+      const firstEndpointPosition = coords.get(firstEndpointAtomId);
+      const secondEndpointPosition = coords.get(secondEndpointAtomId);
+      if (!firstEndpointPosition || !secondEndpointPosition || distance(firstEndpointPosition, secondEndpointPosition) > bondLength * 1.6) {
+        continue;
+      }
+      let minInternalBondDistance = Number.POSITIVE_INFINITY;
+      const pathAtomIds = [firstEndpointAtomId, ...internalAtomIds, secondEndpointAtomId];
+      for (let index = 0; index < pathAtomIds.length - 1; index++) {
+        const firstPosition = coords.get(pathAtomIds[index]);
+        const secondPosition = coords.get(pathAtomIds[index + 1]);
+        if (!firstPosition || !secondPosition) {
+          minInternalBondDistance = Number.POSITIVE_INFINITY;
+          break;
+        }
+        minInternalBondDistance = Math.min(minInternalBondDistance, distance(firstPosition, secondPosition));
+      }
+      if (minInternalBondDistance > bondLength * 0.72) {
+        continue;
+      }
+      descriptors.push({
+        firstEndpointAtomId,
+        secondEndpointAtomId,
+        internalAtomIds
+      });
+    }
+  }
+  return descriptors;
+}
+
+function retouchCollapsedSaturatedThreeAtomBridgeLanes(layoutGraph, rings, atomIds, coords, bondLength) {
+  const descriptors = collapsedThreeAtomBridgeRunDescriptors(layoutGraph, rings, coords, bondLength);
+  if (descriptors.length === 0) {
+    return coords;
+  }
+
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, bestCoords, bondLength);
+  for (const descriptor of descriptors) {
+    const firstEndpointPosition = bestCoords.get(descriptor.firstEndpointAtomId);
+    const secondEndpointPosition = bestCoords.get(descriptor.secondEndpointAtomId);
+    if (!firstEndpointPosition || !secondEndpointPosition) {
+      continue;
+    }
+    const dx = secondEndpointPosition.x - firstEndpointPosition.x;
+    const dy = secondEndpointPosition.y - firstEndpointPosition.y;
+    const spanLength = Math.hypot(dx, dy);
+    if (spanLength <= 1e-9) {
+      continue;
+    }
+    const normals = [
+      { x: dy / spanLength, y: -dx / spanLength },
+      { x: -dy / spanLength, y: dx / spanLength }
+    ];
+    for (const normal of normals) {
+      for (const heightFactor of COLLAPSED_SATURATED_THREE_ATOM_BRIDGE_ARC_HEIGHT_FACTORS) {
+        const candidateCoords = cloneCoords(bestCoords);
+        for (let index = 0; index < descriptor.internalAtomIds.length; index++) {
+          const t = (index + 1) / (descriptor.internalAtomIds.length + 1);
+          const bulge = Math.sin(Math.PI * t) * bondLength * heightFactor;
+          moveAtomAndAttachedHydrogens(layoutGraph, candidateCoords, descriptor.internalAtomIds[index], {
+            x: firstEndpointPosition.x + dx * t + normal.x * bulge,
+            y: firstEndpointPosition.y + dy * t + normal.y * bulge
+          });
+        }
+        const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+        if (shouldAcceptBridgedRegularizationCandidate(candidateAudit, bestAudit)) {
+          bestCoords = candidateCoords;
+          bestAudit = candidateAudit;
+          if (bestAudit?.ok === true) {
+            return bestCoords;
+          }
+        }
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
 /**
  * Applies the bridged-family ring regularization stack to an existing ring
  * system placement. Mixed-family layouts can pick a hybrid fused/bridged seed
@@ -3940,6 +4125,7 @@ function spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, coords, bon
  * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
  */
 export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds, coords, bondLength) {
+  const baseAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
   let selectedCoords = coords;
   selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
@@ -3954,6 +4140,13 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
   selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = resolveCollapsedFourMemberedBridgeApexes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = retouchCollapsedSaturatedThreeAtomBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  const selectedAudit = selectedCoords === coords ? baseAudit : auditBridgedPlacementCandidate(layoutGraph, atomIds, selectedCoords, bondLength);
+  const canRetouchMarginalStretch =
+    atomIds.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_ATOMS && rings.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_RINGS;
+  if (canRetouchMarginalStretch && compareBridgedProjectionAudits(selectedAudit, baseAudit) > 0) {
+    return retouchMarginalStretchedBridgedRingBonds(layoutGraph, atomIds, coords, bondLength, baseAudit);
+  }
   return selectedCoords;
 }
 

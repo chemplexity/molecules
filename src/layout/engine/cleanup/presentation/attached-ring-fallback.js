@@ -34,6 +34,7 @@ import { rigidDescriptorKey, rotateRigidDescriptorPositions } from '../rigid-rot
 import { collectCutSubtree } from '../subtree-utils.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
 import { reflectAcrossLine } from '../../geometry/transforms.js';
+import { SEVERE_OVERLAP_FACTOR } from '../../constants.js';
 
 const ATTACHED_RING_ROTATION_TIDY_ANGLES = [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI];
 const ATTACHED_RING_FINE_ROTATION_ANGLES = [Math.PI / 12, -(Math.PI / 12), Math.PI / 4, -(Math.PI / 4)];
@@ -157,6 +158,10 @@ const TERMINAL_RING_LEAF_INTRUSION_COMPANION_OFFSETS = Object.freeze([
   0,
   ...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 75, 90, 120, 150, 180].flatMap(degrees => [(degrees * Math.PI) / 180, -((degrees * Math.PI) / 180)])
 ]);
+const TERMINAL_CARBON_RING_LEAF_ELEMENTS = new Set(['C']);
+const TERMINAL_RING_HETERO_LEAF_INTRUSION_ELEMENTS = new Set(['O', 'S', 'Se', 'F', 'Cl', 'Br', 'I']);
+const TERMINAL_RING_HETERO_LEAF_INTRUSION_HEAVY_ATOM_LIMIT = 120;
+const TERMINAL_RING_HETERO_LEAF_INTRUSION_COMPRESSION_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.62, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55, 0.5]);
 const OMITTED_H_FAN_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6]);
 const CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON = Math.PI / 180;
 const ATTACHED_RING_SPARSE_OVERLAP_MAX_OVERRIDE_ATOMS = 32;
@@ -1198,11 +1203,11 @@ function snapTerminalCarbonRingLeavesToOutward(layoutGraph, coords) {
   return candidateCoords;
 }
 
-function terminalCarbonRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds = null) {
+function terminalRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds = null, allowedElements = TERMINAL_CARBON_RING_LEAF_ELEMENTS) {
   const leafAtom = layoutGraph.atoms.get(leafAtomId);
   if (
     !leafAtom ||
-    leafAtom.element !== 'C' ||
+    !allowedElements.has(leafAtom.element) ||
     leafAtom.aromatic ||
     leafAtom.heavyDegree !== 1 ||
     layoutGraph.ringAtomIdSet.has(leafAtomId) ||
@@ -1234,9 +1239,14 @@ function terminalCarbonRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, fro
   return {
     leafAtomId,
     anchorAtomId,
+    element: leafAtom.element,
     angle: angleOf(sub(leafPosition, anchorPosition)),
     distance: Math.hypot(leafPosition.x - anchorPosition.x, leafPosition.y - anchorPosition.y)
   };
+}
+
+function terminalCarbonRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds = null) {
+  return terminalRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds, TERMINAL_CARBON_RING_LEAF_ELEMENTS);
 }
 
 function collectOmittedHydrogenFanTerminalLeafCompressionVariants(layoutGraph, coords, descriptor, bondLength, frozenAtomIds) {
@@ -1433,14 +1443,14 @@ function terminalRingLeafHeavyClearance(layoutGraph, coords, leafAtomId) {
   return Number.isFinite(clearance) ? clearance : Number.POSITIVE_INFINITY;
 }
 
-function snapTerminalLeafRecordToAngle(coords, descriptor, targetAngle) {
+function snapTerminalLeafRecordToAngle(coords, descriptor, targetAngle, distanceFactor = 1) {
   const anchorPosition = coords.get(descriptor.anchorAtomId);
   const bondDistance = descriptor.bondDistance ?? descriptor.distance;
   if (!anchorPosition || !Number.isFinite(bondDistance) || bondDistance <= 1e-6) {
     return coords;
   }
   const candidateCoords = new Map(coords);
-  candidateCoords.set(descriptor.leafAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance)));
+  candidateCoords.set(descriptor.leafAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance * distanceFactor)));
   return candidateCoords;
 }
 
@@ -1526,16 +1536,25 @@ function terminalRingLeafIntrusionTargetAngles(layoutGraph, coords, descriptor, 
 }
 
 function collectTerminalRingLeafIntrusionDescriptors(layoutGraph, coords, frozenAtomIds = null) {
-  if ((layoutGraph.traits.heavyAtomCount ?? 0) > CROWDED_CENTER_HEAVY_ATOM_LIMIT) {
+  const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? 0;
+  const allowCarbonLeaves = heavyAtomCount <= CROWDED_CENTER_HEAVY_ATOM_LIMIT;
+  const allowHeteroLeaves = heavyAtomCount <= TERMINAL_RING_HETERO_LEAF_INTRUSION_HEAVY_ATOM_LIMIT;
+  if (!allowCarbonLeaves && !allowHeteroLeaves) {
     return [];
   }
 
   const descriptors = [];
   for (const [leafAtomId, atom] of layoutGraph.atoms ?? []) {
-    if (!atom || atom.element !== 'C' || atom.aromatic || atom.heavyDegree !== 1 || layoutGraph.ringAtomIdSet.has(leafAtomId) || (frozenAtomIds && frozenAtomIds.has(leafAtomId))) {
+    if (!atom || atom.aromatic || atom.heavyDegree !== 1 || layoutGraph.ringAtomIdSet.has(leafAtomId) || (frozenAtomIds && frozenAtomIds.has(leafAtomId))) {
       continue;
     }
-    const record = terminalCarbonRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds);
+    const isCarbonLeaf = atom.element === 'C';
+    const isHeteroLeaf = TERMINAL_RING_HETERO_LEAF_INTRUSION_ELEMENTS.has(atom.element);
+    if ((!isCarbonLeaf || !allowCarbonLeaves) && (!isHeteroLeaf || !allowHeteroLeaves)) {
+      continue;
+    }
+    const allowedElements = isCarbonLeaf ? TERMINAL_CARBON_RING_LEAF_ELEMENTS : TERMINAL_RING_HETERO_LEAF_INTRUSION_ELEMENTS;
+    const record = terminalRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds, allowedElements);
     if (!record) {
       continue;
     }
@@ -1545,6 +1564,10 @@ function collectTerminalRingLeafIntrusionDescriptors(layoutGraph, coords, frozen
     }
   }
   return descriptors;
+}
+
+function terminalRingLeafIntrusionDistanceFactors(descriptor) {
+  return TERMINAL_RING_HETERO_LEAF_INTRUSION_ELEMENTS.has(descriptor.element) ? TERMINAL_RING_HETERO_LEAF_INTRUSION_COMPRESSION_FACTORS : [1];
 }
 
 function collectTerminalRingLeafIntrusionCompanions(layoutGraph, coords, descriptor, bondLength, frozenAtomIds = null) {
@@ -1603,8 +1626,21 @@ function terminalRingLeafIntrusionMoveDistance(layoutGraph, beforeCoords, afterC
   return totalMove;
 }
 
-function scoreTerminalRingLeafIntrusionCandidate(layoutGraph, coords, descriptor, bondLength, baseMetrics, nudges, movedDescriptors) {
-  const audit = auditLayout(layoutGraph, coords, { bondLength });
+function scoreTerminalRingLeafIntrusionCandidate(layoutGraph, coords, descriptor, bondLength, baseMetrics, nudges, movedDescriptors, options = {}) {
+  const insideCount = terminalRingLeafIncidentInsideCount(layoutGraph, coords, descriptor.anchorAtomId, descriptor.leafAtomId);
+  if (insideCount >= baseMetrics.insideCount) {
+    return null;
+  }
+  const clearance = terminalRingLeafHeavyClearance(layoutGraph, coords, descriptor.leafAtomId);
+  const needsCompressedClearanceCheck = options.allowCompressedClearanceTradeoff === true && clearance < baseMetrics.clearance - 1e-6;
+  if (!needsCompressedClearanceCheck && clearance < baseMetrics.clearance - 1e-6) {
+    return null;
+  }
+
+  const audit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: options.bondValidationClasses
+  });
   if (baseMetrics.audit.ok && !audit.ok) {
     return null;
   }
@@ -1618,16 +1654,16 @@ function scoreTerminalRingLeafIntrusionCandidate(layoutGraph, coords, descriptor
     return null;
   }
 
-  const insideCount = terminalRingLeafIncidentInsideCount(layoutGraph, coords, descriptor.anchorAtomId, descriptor.leafAtomId);
-  if (insideCount >= baseMetrics.insideCount) {
-    return null;
-  }
-  const clearance = terminalRingLeafHeavyClearance(layoutGraph, coords, descriptor.leafAtomId);
-  if (clearance < baseMetrics.clearance - 1e-6) {
-    return null;
-  }
   const readability = measureRingSubstituentReadability(layoutGraph, coords);
   if (readabilityTupleWorsens(readability, baseMetrics.readability)) {
+    return null;
+  }
+  const acceptsCompressedReadabilityClearance =
+    options.allowCompressedClearanceTradeoff === true &&
+    audit.ok === true &&
+    clearance >= bondLength * SEVERE_OVERLAP_FACTOR - 1e-6 &&
+    (readability.failingSubstituentCount ?? 0) < (baseMetrics.readability.failingSubstituentCount ?? 0);
+  if (!acceptsCompressedReadabilityClearance && clearance < baseMetrics.clearance - 1e-6) {
     return null;
   }
 
@@ -1678,13 +1714,14 @@ function isBetterTerminalRingLeafIntrusionCandidate(candidate, incumbent) {
 export function runTerminalCarbonRingLeafIntrusionRetidy(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  const bondValidationClasses = options.bondValidationClasses instanceof Map ? options.bondValidationClasses : null;
   let coords = inputCoords;
   let nudges = 0;
 
   for (const descriptor of collectTerminalRingLeafIntrusionDescriptors(layoutGraph, coords, frozenAtomIds)) {
     const baseMetrics = {
       coords,
-      audit: auditLayout(layoutGraph, coords, { bondLength }),
+      audit: auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses }),
       insideCount: descriptor.insideCount,
       clearance: terminalRingLeafHeavyClearance(layoutGraph, coords, descriptor.leafAtomId),
       readability: measureRingSubstituentReadability(layoutGraph, coords)
@@ -1693,19 +1730,26 @@ export function runTerminalCarbonRingLeafIntrusionRetidy(layoutGraph, inputCoord
     const companions = collectTerminalRingLeafIntrusionCompanions(layoutGraph, coords, descriptor, bondLength, frozenAtomIds);
     const targetAngles = terminalRingLeafIntrusionTargetAngles(layoutGraph, coords, descriptor);
     for (const targetAngle of targetAngles) {
-      const targetCoords = snapTerminalLeafRecordToAngle(coords, descriptor, targetAngle);
-      const targetCandidate = scoreTerminalRingLeafIntrusionCandidate(layoutGraph, targetCoords, descriptor, bondLength, baseMetrics, 1, [descriptor]);
-      if (targetCandidate && isBetterTerminalRingLeafIntrusionCandidate(targetCandidate, bestCandidate)) {
-        bestCandidate = targetCandidate;
-      }
+      for (const distanceFactor of terminalRingLeafIntrusionDistanceFactors(descriptor)) {
+        const targetCoords = snapTerminalLeafRecordToAngle(coords, descriptor, targetAngle, distanceFactor);
+        const targetCandidate = scoreTerminalRingLeafIntrusionCandidate(layoutGraph, targetCoords, descriptor, bondLength, baseMetrics, 1, [descriptor], {
+          bondValidationClasses,
+          allowCompressedClearanceTradeoff: distanceFactor < 1
+        });
+        if (targetCandidate && isBetterTerminalRingLeafIntrusionCandidate(targetCandidate, bestCandidate)) {
+          bestCandidate = targetCandidate;
+        }
 
-      for (const companion of companions) {
-        const companionAngles = terminalRingLeafIntrusionTargetAngles(layoutGraph, targetCoords, companion, true);
-        for (const companionAngle of companionAngles) {
-          const candidateCoords = snapTerminalLeafRecordToAngle(targetCoords, companion, companionAngle);
-          const candidate = scoreTerminalRingLeafIntrusionCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseMetrics, 2, [descriptor, companion]);
-          if (candidate && isBetterTerminalRingLeafIntrusionCandidate(candidate, bestCandidate)) {
-            bestCandidate = candidate;
+        for (const companion of companions) {
+          const companionAngles = terminalRingLeafIntrusionTargetAngles(layoutGraph, targetCoords, companion, true);
+          for (const companionAngle of companionAngles) {
+            const candidateCoords = snapTerminalLeafRecordToAngle(targetCoords, companion, companionAngle);
+            const candidate = scoreTerminalRingLeafIntrusionCandidate(layoutGraph, candidateCoords, descriptor, bondLength, baseMetrics, 2, [descriptor, companion], {
+              bondValidationClasses
+            });
+            if (candidate && isBetterTerminalRingLeafIntrusionCandidate(candidate, bestCandidate)) {
+              bestCandidate = candidate;
+            }
           }
         }
       }

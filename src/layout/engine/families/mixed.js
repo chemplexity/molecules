@@ -4,6 +4,7 @@ import { angleOf, angularDifference, centroid, distance, fromAngle, normalize, s
 import { computeBounds } from '../geometry/bounds.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { coordOverlayWithOverride, coordOverlayWithOverrides } from '../geometry/coord-overlay.js';
+import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { alignCoordsToFixed, reflectAcrossLine } from '../geometry/transforms.js';
 import { nonSharedPath } from '../geometry/ring-path.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
@@ -50,11 +51,11 @@ import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily, regularizeBridgedRingSystemGeometry, scoreBridgedSmallRingGeometry } from './bridged.js';
 import { isBetterBridgedRescueForFusedSystem, layoutFusedCageKamadaKawai, layoutFusedFamily, shouldShortCircuitToFusedCageKk, shouldTryBridgedRescueForFusedSystem } from './fused.js';
 import { layoutIsolatedRingFamily } from './isolated-ring.js';
-import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from './macrocycle.js';
+import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily, layoutMacrocycleKamadaKawaiRescue } from './macrocycle.js';
 import { layoutSpiroFamily } from './spiro.js';
 import { classifyRingSystemFamily } from '../model/scaffold-plan.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
-import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SUBSTITUENT_READABILITY_LIMITS, RING_SYSTEM_RESCUE_LIMITS, SEVERE_OVERLAP_FACTOR, atomPairKey } from '../constants.js';
+import { BRIDGED_KK_LIMITS, BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SUBSTITUENT_READABILITY_LIMITS, RING_SYSTEM_RESCUE_LIMITS, SEVERE_OVERLAP_FACTOR, atomPairKey } from '../constants.js';
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
@@ -5512,6 +5513,54 @@ function shouldTryCompactBridgedRingSystemRescue(ringSystem, templateId, audit) 
   );
 }
 
+function shouldTryCompactBridgedSeededKamadaKawaiRescue(ringSystem, templateId, audit, placement) {
+  if (templateId || !audit || !placement?.coords) {
+    return false;
+  }
+  return (
+    ringSystem.atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+    ringSystem.ringIds.length >= 4 &&
+    (audit.bondLengthFailureCount ?? 0) > 0 &&
+    (audit.severeOverlapCount ?? 0) === 0 &&
+    (audit.labelOverlapCount ?? 0) === 0 &&
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) === 0 &&
+    (audit.collapsedMacrocycleCount ?? 0) === 0 &&
+    !(audit.stereoContradiction ?? false)
+  );
+}
+
+function layoutCompactBridgedSeededKamadaKawaiRescue(layoutGraph, ringSystem, rings, bondLength, referenceCoords) {
+  if (!layoutGraph || !(referenceCoords instanceof Map)) {
+    return null;
+  }
+  const ringSystemAtomIds = new Set(ringSystem.atomIds);
+  const atomIds = [...layoutGraph.atoms.keys()].filter(atomId => ringSystemAtomIds.has(atomId));
+  if (atomIds.length === 0 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit) {
+    return null;
+  }
+  const seedCoords = new Map(atomIds.map(atomId => [atomId, referenceCoords.get(atomId)]).filter(([, position]) => position));
+  const seedPoints = [...seedCoords.values()];
+  const center = seedPoints.length > 0 ? centroid(seedPoints) : { x: 0, y: 0 };
+  const kkResult = layoutKamadaKawai(layoutGraph.sourceMolecule, atomIds, {
+    bondLength,
+    coords: seedCoords,
+    center,
+    maxComponentSize: BRIDGED_KK_LIMITS.fastAtomLimit,
+    threshold: 0.02,
+    innerThreshold: 0.02,
+    maxIterations: BRIDGED_KK_LIMITS.largeMaxIterations,
+    maxInnerIterations: BRIDGED_KK_LIMITS.largeMaxInnerIterations
+  });
+  if (kkResult.coords.size !== atomIds.length) {
+    return null;
+  }
+  return {
+    coords: kkResult.coords,
+    ringCenters: ringCentersForCoords(rings, kkResult.coords),
+    placementMode: 'projected-kamada-kawai'
+  };
+}
+
 function shouldTryBridgedRingSystemRescue(ringSystem, templateId, audit) {
   if (templateId || !audit) {
     return false;
@@ -5521,6 +5570,102 @@ function shouldTryBridgedRingSystemRescue(ringSystem, templateId, audit) {
     ringSystem.ringIds.length >= RING_SYSTEM_RESCUE_LIMITS.bridgedTemplateMissRingCount &&
     (audit.severeOverlapCount > 0 || audit.bondLengthFailureCount > 0)
   );
+}
+
+function shouldTryMacrocycleKamadaKawaiRescue(ringSystem, templateId, audit) {
+  if (templateId || !audit) {
+    return false;
+  }
+  return (
+    ringSystem.atomIds.length >= 24 &&
+    ringSystem.atomIds.length <= 64 &&
+    ringSystem.ringIds.length >= 4 &&
+    ((audit.bondLengthFailureCount ?? 0) > 0 || audit.fallback?.mode === 'generic-scaffold')
+  );
+}
+
+function isBetterMacrocycleKamadaKawaiRescue(candidateAudit, incumbentAudit) {
+  if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (
+    candidateAudit.ok === true &&
+    candidateAudit.fallback?.mode == null &&
+    (candidateAudit.bondLengthFailureCount ?? 0) === 0 &&
+    (candidateAudit.severeOverlapCount ?? 0) === 0 &&
+    (candidateAudit.labelOverlapCount ?? 0) === 0 &&
+    (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) === 0 &&
+    (candidateAudit.collapsedMacrocycleCount ?? 0) === 0 &&
+    !(candidateAudit.stereoContradiction ?? false) &&
+    ((incumbentAudit.bondLengthFailureCount ?? 0) > 0 || incumbentAudit.fallback?.mode === 'generic-scaffold')
+  ) {
+    return true;
+  }
+  return isBetterRingSystemPlacement({ placementMode: 'macrocycle-kamada-kawai-rescue' }, { placementMode: 'macrocycle-incumbent' }, candidateAudit, incumbentAudit, true);
+}
+
+function shouldTryMacrocycleMixedRootKamadaKawaiRescue(layoutGraph, scaffoldPlan, audit, options = null) {
+  if (options?.disableMacrocycleKamadaKawaiRootRetry === true || !audit || !scaffoldPlan?.rootScaffold) {
+    return false;
+  }
+  const root = scaffoldPlan.rootScaffold;
+  if (root.type !== 'ring-system' || root.family !== 'macrocycle' || root.templateId) {
+    return false;
+  }
+  const rootRingSystem = root.id?.startsWith('ring-system:') ? layoutGraph.ringSystemById.get(Number(root.id.slice('ring-system:'.length))) : null;
+  if (!rootRingSystem) {
+    return false;
+  }
+  return (
+    rootRingSystem.atomIds.length >= 24 &&
+    rootRingSystem.atomIds.length <= 64 &&
+    rootRingSystem.ringIds.length >= 4 &&
+    ((audit.bondLengthFailureCount ?? 0) > 0 || audit.fallback?.mode === 'generic-scaffold')
+  );
+}
+
+function buildMacrocycleMixedRootKamadaKawaiLayouts(layoutGraph, scaffoldPlan, bondLength, referenceCoords) {
+  const root = scaffoldPlan?.rootScaffold;
+  const rootRingSystem = root?.id?.startsWith('ring-system:') ? layoutGraph.ringSystemById.get(Number(root.id.slice('ring-system:'.length))) : null;
+  if (!rootRingSystem) {
+    return [];
+  }
+  const rings = ringsForRingSystem(layoutGraph, rootRingSystem);
+  const candidateOptions = [
+    {},
+    { seedMode: 'unseeded', scaleFactors: [1] },
+    { seedMode: 'unseeded', scaleFactors: [1], threshold: 0.05 },
+    { seedMode: 'seeded', scaleFactors: [1] },
+    { seedMode: 'unseeded', scaleFactors: [0.96, 0.92, 0.88] }
+  ];
+  const seenSignatures = new Set();
+  const placements = [];
+  for (const candidateOption of candidateOptions) {
+    const placement = wrapRingSystemPlacementResult(
+      layoutGraph,
+      rootRingSystem,
+      'macrocycle',
+      layoutMacrocycleKamadaKawaiRescue(rings, bondLength, {
+        layoutGraph,
+        referenceCoords,
+        ...candidateOption
+      }),
+      root.templateId ?? null
+    );
+    if (!placement?.coords) {
+      continue;
+    }
+    const signature = [...placement.coords.entries()]
+      .map(([atomId, position]) => `${atomId}:${Math.round(position.x * 1000)},${Math.round(position.y * 1000)}`)
+      .sort()
+      .join('|');
+    if (seenSignatures.has(signature)) {
+      continue;
+    }
+    seenSignatures.add(signature);
+    placements.push(placement);
+  }
+  return placements;
 }
 
 /**
@@ -5546,6 +5691,20 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
       if (isBetterMetalChelateMacrocycleBridgedRescue(bridgedChelateAudit, bestAudit)) {
         bestPlacement = bridgedChelatePlacement;
         bestAudit = bridgedChelateAudit;
+      }
+    }
+    if (shouldTryMacrocycleKamadaKawaiRescue(ringSystem, templateId, bestAudit)) {
+      const kkRescuePlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutMacrocycleKamadaKawaiRescue(rings, bondLength, { layoutGraph, referenceCoords: bestPlacement?.coords }),
+        templateId
+      );
+      const kkRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, kkRescuePlacement, bondLength);
+      if (isBetterMacrocycleKamadaKawaiRescue(kkRescueAudit, bestAudit)) {
+        bestPlacement = kkRescuePlacement;
+        bestAudit = kkRescueAudit;
       }
     }
     if (shouldTryMacrocycleAromaticRingRescue(rings, templateId, bestPlacement)) {
@@ -5632,6 +5791,21 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
           bestPlacement = regularizedPlacement;
           bestAudit = regularizedAudit;
         }
+      }
+    }
+
+    if (shouldTryCompactBridgedSeededKamadaKawaiRescue(ringSystem, templateId, bestAudit, bestPlacement)) {
+      const seededKkPlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutCompactBridgedSeededKamadaKawaiRescue(layoutGraph, ringSystem, rings, bondLength, bestPlacement.coords),
+        templateId
+      );
+      const seededKkAudit = auditRingSystemPlacement(layoutGraph, ringSystem, seededKkPlacement, bondLength);
+      if (isBetterRingSystemPlacement(seededKkPlacement, bestPlacement, seededKkAudit, bestAudit, true)) {
+        bestPlacement = seededKkPlacement;
+        bestAudit = seededKkAudit;
       }
     }
 
@@ -17689,7 +17863,7 @@ function getPendingRingLayout(cache, layoutGraph, pendingRingSystem, bondLength)
  * @param {Map<string, string[]>} adjacency - Component adjacency map.
  * @param {object} scaffoldPlan - Scaffold plan.
  * @param {number} bondLength - Target bond length.
- * @param {{conservativeAttachmentScoring?: boolean, disableAlternateRootRetry?: boolean, rootScaffold?: object|null}|null} [options] - Optional mixed-family placement overrides.
+ * @param {{conservativeAttachmentScoring?: boolean, disableAlternateRootRetry?: boolean, disableMacrocycleKamadaKawaiRootRetry?: boolean, rootScaffold?: object|null, rootLayoutOverride?: {ringSystemId: number, layout: object}|null}|null} [options] - Optional mixed-family placement overrides.
  * @returns {{finalResult?: {family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}, state?: object}} Initialization result.
  */
 function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan, bondLength, options = null) {
@@ -17720,7 +17894,8 @@ function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan,
   }
 
   const rootRingSystem = root.id?.startsWith('ring-system:') ? layoutGraph.ringSystemById.get(Number(root.id.slice('ring-system:'.length))) : undefined;
-  const rootLayout = rootRingSystem ? layoutRingSystem(layoutGraph, rootRingSystem, bondLength, root.templateId ?? null) : null;
+  const rootLayoutOverride = rootRingSystem && options?.rootLayoutOverride?.ringSystemId === rootRingSystem.id ? cloneRingSystemLayoutResult(options.rootLayoutOverride.layout) : null;
+  const rootLayout = rootLayoutOverride ?? (rootRingSystem ? layoutRingSystem(layoutGraph, rootRingSystem, bondLength, root.templateId ?? null) : null);
   if (!rootLayout) {
     return {
       finalResult: {
@@ -22545,7 +22720,7 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
  * @param {Map<string, string[]>} adjacency - Component adjacency map.
  * @param {object} scaffoldPlan - Scaffold plan.
  * @param {number} bondLength - Target bond length.
- * @param {{conservativeAttachmentScoring?: boolean, disableAlternateRootRetry?: boolean, rootScaffold?: object|null}|null} [options] - Optional mixed-family placement overrides.
+ * @param {{conservativeAttachmentScoring?: boolean, disableAlternateRootRetry?: boolean, disableMacrocycleKamadaKawaiRootRetry?: boolean, rootScaffold?: object|null, rootLayoutOverride?: {ringSystemId: number, layout: object}|null}|null} [options] - Optional mixed-family placement overrides.
  * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>, rootScaffoldId?: string|null, rootRetryAttemptCount?: number, rootRetryUsed?: boolean}} Mixed placement result.
  */
 export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPlan, bondLength, options = null) {
@@ -22569,16 +22744,40 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
     rootRetryUsed: false
   };
   const primaryAudit = auditMixedPlacement(layoutGraph, primaryResult, bondLength);
-  const rootPlacementMetricsCache = new WeakMap();
-
-  if (!shouldRetryMixedWithAlternateRoot(layoutGraph, resolvedScaffoldPlan, primaryAudit, options, primaryResult, null, rootPlacementMetricsCache)) {
-    return primaryResult;
-  }
-
   let bestPlacement = primaryResult;
   let bestAudit = primaryAudit;
-  let rootRetryAttemptCount = 0;
+  const rootPlacementMetricsCache = new WeakMap();
   const rootPreviewScoreCache = new WeakMap();
+
+  if (shouldTryMacrocycleMixedRootKamadaKawaiRescue(layoutGraph, resolvedScaffoldPlan, primaryAudit, options)) {
+    const rootRingSystemId = Number(resolvedScaffoldPlan.rootScaffold.id.slice('ring-system:'.length));
+    for (const kkRootLayout of buildMacrocycleMixedRootKamadaKawaiLayouts(layoutGraph, resolvedScaffoldPlan, bondLength, primaryResult.coords)) {
+      const kkRootPlacement = layoutMixedFamily(layoutGraph, component, adjacency, resolvedScaffoldPlan, bondLength, {
+        ...(options ?? {}),
+        disableAlternateRootRetry: true,
+        disableMacrocycleKamadaKawaiRootRetry: true,
+        rootLayoutOverride: {
+          ringSystemId: rootRingSystemId,
+          layout: kkRootLayout
+        }
+      });
+      const kkRootAudit = auditMixedPlacement(layoutGraph, kkRootPlacement, bondLength);
+      if (isBetterMixedRootPlacement(kkRootPlacement, kkRootAudit, bestPlacement, bestAudit, layoutGraph.canonicalAtomRank, layoutGraph, bondLength, rootPreviewScoreCache, rootPlacementMetricsCache)) {
+        bestPlacement = kkRootPlacement;
+        bestAudit = kkRootAudit;
+      }
+    }
+  }
+
+  if (!shouldRetryMixedWithAlternateRoot(layoutGraph, resolvedScaffoldPlan, bestAudit, options, bestPlacement, null, rootPlacementMetricsCache)) {
+    return {
+      ...bestPlacement,
+      rootRetryAttemptCount: 0,
+      rootRetryUsed: bestPlacement.rootScaffoldId !== primaryResult.rootScaffoldId || bestPlacement !== primaryResult
+    };
+  }
+
+  let rootRetryAttemptCount = 0;
   const alternateRootCandidates = (resolvedScaffoldPlan.candidates ?? [])
     .filter(candidate => candidate.type === 'ring-system' && candidate.id !== resolvedScaffoldPlan.rootScaffold.id)
     .slice(0, MIXED_ROOT_RETRY_LIMITS.maxAlternateRootCandidates);

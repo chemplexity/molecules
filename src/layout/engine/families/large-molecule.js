@@ -22,7 +22,7 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   densePartitionRetryHeavyAtomCap: 70,
   fineDensePartitionRetryHeavyAtomCap: 24,
   fineDensePartitionRetryComponentHeavyAtomCap: 160,
-  fineDensePartitionRetryRingFloor: 8,
+  fineDensePartitionRetryRingFloor: 7,
   linearRingChainDensePartitionHeavyAtomCap: 18,
   hypervalentRingChainDensePartitionHeavyAtomCap: 20,
   hypervalentRingChainDensePartitionHeavyAtomFloor: 280,
@@ -1149,7 +1149,10 @@ function initialDensePartitionThreshold(layoutGraph, component, threshold, optio
   }
   const componentHeavyAtomCount = countHeavyAtoms(layoutGraph, component.atomIds);
   const ringSystemCount = countRingSystems(layoutGraph, component.atomIds);
-  if (componentHeavyAtomCount < 160 || ringSystemCount <= threshold.ringSystemCount) {
+  const useFineDensePartition =
+    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap &&
+    countContainedRings(layoutGraph, component.atomIds) >= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryRingFloor;
+  if (!useFineDensePartition && (componentHeavyAtomCount < 160 || ringSystemCount <= threshold.ringSystemCount)) {
     return null;
   }
   return densePartitionRetryThreshold(layoutGraph, component, threshold);

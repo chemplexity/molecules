@@ -3265,6 +3265,37 @@ function _normalizeThioate(mol) {
   }
 }
 
+function _normalizeOximateAnion(mol) {
+  // Normalize C(=N[O-]) to [C-](N=O). InChI writes aldoximate/ketoximate anions
+  // as nitroso carbanions ([C-]-N=O) rather than the C=N-O- oximate form.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N') { continue; }
+    if ((atom.properties.charge ?? 0) !== 0) { continue; }
+    let cBond = null, cAtom = null, oBond = null, oAtom = null;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) { continue; }
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!other) { continue; }
+      const order = bond.properties.order ?? 1;
+      if (other.name === 'C' && order === 2 && (other.properties.charge ?? 0) === 0) {
+        cBond = bond; cAtom = other;
+      } else if (other.name === 'O' && order === 1 && (other.properties.charge ?? 0) === -1) {
+        oBond = bond; oAtom = other;
+      }
+    }
+    if (!cBond || !oBond) { continue; }
+    // N must have exactly these two heavy-atom bonds (no additional substituents).
+    if (atom.bonds.length !== 2) { continue; }
+    // O must be terminal (no other heavy bonds).
+    if (oAtom.bonds.length !== 1) { continue; }
+    cBond.properties.order = 1;
+    cAtom.setCharge(-1);
+    oBond.properties.order = 2;
+    oAtom.setCharge(0);
+  }
+}
+
 function _normalizeAmidineAnion(mol) {
   // Normalize [N-]-C=N (exo anion) to N=C-[N-] (ring anion) in amidine-like systems.
   // InChI places the negative charge on the ring nitrogen when one N is cyclic.
@@ -3744,6 +3775,12 @@ function _normalizeIsocyanide(mol) {
   // Convert R[N+]#[C-] (and R[N+]#C) to R[N]=C. InChI writes isocyanide groups
   // as double bonds: the terminal carbenoid C has no implicit H and no charge,
   // while the N loses its formal positive charge.
+  // When [N+]#C (neutral terminal C, no C- to cancel N+) is converted, the
+  // net positive charge decreases.  Compensate by:
+  //   1. Reducing a nearby N with charge ≥ 2 (e.g. [N+2] from over-assignment).
+  //   2. If no such N exists and the molecule's net charge has dropped to 0,
+  //      give the terminal C a +1 charge — matching InChI's [CH+]=N form for
+  //      molecules whose only positive charge was the isocyanide N+.
   for (const atom of mol.atoms.values()) {
     if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 1) {continue;}
     for (const bId of atom.bonds) {
@@ -3758,7 +3795,23 @@ function _normalizeIsocyanide(mol) {
       if (cHeavyBonds.length !== 1) {continue;}
       bond.properties.order = 2;
       atom.setCharge(0);
-      if ((c.properties.charge ?? 0) !== 0) {c.setCharge(0);}
+      const hadCMinus = (c.properties.charge ?? 0) !== 0;
+      if (hadCMinus) {c.setCharge(0); continue;}
+      // C was neutral. First try to drain an overcharged N (e.g. [N+2]).
+      let drained = false;
+      for (const [, a] of mol.atoms) {
+        if (a.name === 'N' && (a.properties.charge ?? 0) >= 2) {
+          a.setCharge((a.properties.charge ?? 0) - 1);
+          drained = true;
+          break;
+        }
+      }
+      if (drained) {continue;}
+      // No N≥2 to drain. If the molecule's net charge is now 0 (isocyanide N+
+      // was the only positive charge), give C +1 to match InChI's [CH+]=N form.
+      let netCharge = 0;
+      for (const [, a] of mol.atoms) { netCharge += (a.properties.charge ?? 0); }
+      if (netCharge === 0) { c.setCharge(1); }
     }
   }
 }
@@ -3768,6 +3821,89 @@ function _normalizeAzideDiazonium(mol) {
   // azide chain by reducing the triple bond to a single bond. Detect: N with
   // charge +1 that has a triple bond to a neutral N which in turn has a double
   // bond to another neutral N, then lower the triple bond to 1.
+  //
+  // Also convert C-N=N (radical C adjacent to diazo) to C=[N+]=N. InChI
+  // sometimes represents diazonium `C=[N+]=N` as a radical `[C]-N=N` where the
+  // C has remaining=1 (undervalent). Promote the C-N single bond to double and
+  // add +1 to the inner N, restoring the canonical diazonium form.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'C' || (atom.properties.charge ?? 0) !== 0) { continue; }
+    if (atom.properties.aromatic) { continue; }
+    // C must not be in a ring (only chain carbons form diazonium)
+    if (atom.isInRing(mol)) { continue; }
+    // C must have remaining = 1 (exactly one undervalent bond)
+    const cValence = atom.bonds.reduce((s, bId) => {
+      const b = mol.bonds.get(bId);
+      return s + (b?.properties?.order ?? 1);
+    }, 0);
+    if (4 - cValence !== 1) { continue; } // remaining must be exactly 1
+    // Find C-N single bond where N is the inner diazo N
+    for (const bId of atom.bonds) {
+      const b = mol.bonds.get(bId);
+      if (!b || (b.properties.order ?? 1) !== 1) { continue; }
+      const nInner = mol.atoms.get(b.getOtherAtom(atom.id));
+      if (!nInner || nInner.name !== 'N' || (nInner.properties.charge ?? 0) !== 0) { continue; }
+      if (nInner.properties.aromatic) { continue; }
+      // Inner N must have exactly 1 double bond to a terminal N
+      let diazoNBond = null, termN = null;
+      for (const b2Id of nInner.bonds) {
+        if (b2Id === bId) { continue; }
+        const b2 = mol.bonds.get(b2Id);
+        if (!b2 || (b2.properties.order ?? 1) !== 2) { continue; }
+        const nt = mol.atoms.get(b2.getOtherAtom(nInner.id));
+        if (!nt || nt.name !== 'N' || (nt.properties.charge ?? 0) !== 0) { continue; }
+        // Terminal N: exactly 1 heavy bond (to inner N), no H
+        const ntHeavy = [...nt.bonds].filter(b3Id => {
+          const b3 = mol.bonds.get(b3Id);
+          return b3 && mol.atoms.get(b3.getOtherAtom(nt.id))?.name !== 'H';
+        }).length;
+        if (ntHeavy !== 1) { continue; }
+        const ntH = [...nt.bonds].filter(b3Id => {
+          const b3 = mol.bonds.get(b3Id);
+          return b3 && mol.atoms.get(b3.getOtherAtom(nt.id))?.name === 'H';
+        }).length;
+        diazoNBond = b2; termN = nt; break;
+      }
+      if (!termN) { continue; }
+      // Inner N must have no other heavy bonds besides C and terminal N
+      const nInnerHeavy = [...nInner.bonds].filter(b2Id => {
+        const b2 = mol.bonds.get(b2Id);
+        return b2 && mol.atoms.get(b2.getOtherAtom(nInner.id))?.name !== 'H';
+      }).length;
+      if (nInnerHeavy !== 2) { continue; }
+      // Promote C-N to C=N, inner N gets +1
+      b.properties.order = 2;
+      nInner.setCharge(1);
+      // After promoting C=N+, the adjacent chain C may have a carboxylate with a
+      // neutral O radical ([O]) instead of [O-]. Give it the -1 charge to balance.
+      for (const adjBId of atom.bonds) {
+        const adjB = mol.bonds.get(adjBId);
+        if (!adjB || (adjB.properties.order ?? 1) !== 1) { continue; }
+        const adjC = mol.atoms.get(adjB.getOtherAtom(atom.id));
+        if (!adjC || adjC.name !== 'C' || (adjC.properties.charge ?? 0) !== 0) { continue; }
+        for (const cBId of adjC.bonds) {
+          const cB = mol.bonds.get(cBId);
+          if (!cB || (cB.properties.order ?? 1) !== 1) { continue; }
+          const oAtom = mol.atoms.get(cB.getOtherAtom(adjC.id));
+          if (!oAtom || oAtom.name !== 'O' || (oAtom.properties.charge ?? 0) !== 0) { continue; }
+          const oHeavy = [...oAtom.bonds].filter(obId => {
+            const ob = mol.bonds.get(obId);
+            return ob && mol.atoms.get(ob.getOtherAtom(oAtom.id))?.name !== 'H';
+          }).length;
+          if (oHeavy !== 1) { continue; }
+          // Check that adjC also has a =O (double bond to another O)
+          const hasDoubleO = [...adjC.bonds].some(cBId2 => {
+            const cB2 = mol.bonds.get(cBId2);
+            if (!cB2 || (cB2.properties.order ?? 1) !== 2) { return false; }
+            const oa2 = mol.atoms.get(cB2.getOtherAtom(adjC.id));
+            return oa2 && oa2.name === 'O';
+          });
+          if (hasDoubleO) { oAtom.setCharge(-1); }
+        }
+      }
+      break;
+    }
+  }
   for (const atom of mol.atoms.values()) {
     if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 1) {continue;}
     for (const bId of atom.bonds) {
@@ -4080,9 +4216,31 @@ function _normalizeOverchargedNitrogen(mol) {
         nMinus = a; break;
       }
     }
-    if (!nMinus) {continue;}
+    if (nMinus) {
+      atom.setCharge((atom.properties.charge ?? 0) - 1);
+      nMinus.setCharge(0);
+      continue;
+    }
+    // Also reduce N+2 when the molecule has a terminal iminyl C=N (written as
+    // [CH]=N or similar from former isocyanide normalization).  The isocyanide
+    // N+ is neutralised by _normalizeIsocyanide in the smiles canonical but
+    // not in the inchi canonical (because the triple bond wasn't formed there),
+    // leaving the inchi form with one extra +1 on another N.
+    const hasTerminalIminyl = [...component].some(id => {
+      const a = mol.atoms.get(id);
+      if (!a || a.name !== 'C' || (a.properties.charge ?? 0) !== 0) { return false; }
+      const heavyBonds = [...a.bonds].filter(bId => {
+        const b = mol.bonds.get(bId);
+        return b && mol.atoms.get(b.getOtherAtom(id))?.name !== 'H';
+      });
+      if (heavyBonds.length !== 1) { return false; }  // terminal C (1 heavy bond)
+      const bond = mol.bonds.get(heavyBonds[0]);
+      if (!bond || (bond.properties.order ?? 1) !== 2) { return false; }  // double bond
+      const n = mol.atoms.get(bond.getOtherAtom(id));
+      return n && n.name === 'N' && (n.properties.charge ?? 0) === 0;
+    });
+    if (!hasTerminalIminyl) { continue; }
     atom.setCharge((atom.properties.charge ?? 0) - 1);
-    nMinus.setCharge(0);
   }
 }
 
@@ -5204,6 +5362,7 @@ export function toCanonicalSMILES(molecule) {
     _normalizeEnolateNoxide(comp);
     _normalizePolysulfideAnion(comp);
     _normalizeThioate(comp);
+    _normalizeOximateAnion(comp);
     _normalizeAmidineAnion(comp);
     _normalizeIsocyanide(comp);
     _normalizeAzideDiazonium(comp);

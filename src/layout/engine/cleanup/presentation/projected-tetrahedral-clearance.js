@@ -21,6 +21,20 @@ const MIN_PROJECTED_FAN_RELIEF_DEVIATION = Math.PI / 12;
 const MIN_PROJECTED_FAN_RELIEF_IMPROVEMENT = 1e-4;
 const BRANCH_CLEARANCE_ROTATION_STEPS = [Math.PI / 12, -Math.PI / 12, Math.PI / 9, -Math.PI / 9, Math.PI / 18, -Math.PI / 18, (5 * Math.PI) / 36, (-5 * Math.PI) / 36, Math.PI / 6, -Math.PI / 6];
 const PROJECTED_FAN_RELIEF_ROTATION_STEPS = [Math.PI / 36, -(Math.PI / 36), Math.PI / 18, -(Math.PI / 18), Math.PI / 12, -(Math.PI / 12), Math.PI / 9, -(Math.PI / 9)];
+const SILOXANE_ARYL_CLEARANCE_ROTATION_STEPS = [
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  (5 * Math.PI) / 36,
+  (-5 * Math.PI) / 36,
+  Math.PI / 6,
+  -Math.PI / 6
+];
 
 function projectedCenterPenalty(coords, centerAtomId, neighborAtomIds) {
   const centerPosition = coords.get(centerAtomId);
@@ -491,6 +505,188 @@ function applyProjectedFanReliefRotations(coords, descriptor, rotations) {
 
 function scoreProjectedFanReliefCandidate(candidate) {
   return candidate.centerPenalty.maxDeviation * 1000 + candidate.centerPenalty.totalDeviation * 100 + candidate.totalRotation + candidate.movedHeavyAtomCount * CLEANUP_EPSILON;
+}
+
+function visibleHeavyAtomCount(layoutGraph, atomIds) {
+  return atomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
+}
+
+function atomIsArylRingRoot(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return Boolean(atom && atom.element === 'C' && atom.aromatic === true && layoutGraph.ringAtomIdSet.has(atomId));
+}
+
+function collectSiloxaneArylClearanceDescriptors(layoutGraph, coords, frozenAtomIds) {
+  const descriptors = [];
+  const seenKeys = new Set();
+  for (const [oxygenAtomId, oxygenAtom] of layoutGraph.atoms) {
+    if (oxygenAtom?.element !== 'O' || !coords.has(oxygenAtomId) || frozenAtomIds?.has(oxygenAtomId)) {
+      continue;
+    }
+    const siliconNeighborIds = visibleHeavyCovalentBonds(layoutGraph, coords, oxygenAtomId)
+      .filter(({ bond, neighborAtomId }) => !bond.aromatic && (bond.order ?? 1) === 1 && layoutGraph.atoms.get(neighborAtomId)?.element === 'Si')
+      .map(({ neighborAtomId }) => neighborAtomId);
+    if (siliconNeighborIds.length !== 2) {
+      continue;
+    }
+
+    for (const centerAtomId of siliconNeighborIds) {
+      if (frozenAtomIds?.has(centerAtomId)) {
+        continue;
+      }
+      const remoteSiliconAtomId = siliconNeighborIds.find(atomId => atomId !== centerAtomId);
+      if (!remoteSiliconAtomId || frozenAtomIds?.has(remoteSiliconAtomId)) {
+        continue;
+      }
+      const centerAtom = layoutGraph.atoms.get(centerAtomId);
+      const remoteAtom = layoutGraph.atoms.get(remoteSiliconAtomId);
+      if (
+        !centerAtom ||
+        !remoteAtom ||
+        centerAtom.aromatic ||
+        remoteAtom.aromatic ||
+        layoutGraph.ringAtomIdSet.has(centerAtomId) ||
+        layoutGraph.ringAtomIdSet.has(remoteSiliconAtomId)
+      ) {
+        continue;
+      }
+      const arylLigandIds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId)
+        .filter(({ bond, neighborAtomId }) => neighborAtomId !== oxygenAtomId && !bond.aromatic && (bond.order ?? 1) === 1 && atomIsArylRingRoot(layoutGraph, neighborAtomId))
+        .map(({ neighborAtomId }) => neighborAtomId);
+      if (arylLigandIds.length === 0) {
+        continue;
+      }
+      const bridgeSubtreeAtomIds = [...collectCutSubtree(layoutGraph, remoteSiliconAtomId, oxygenAtomId)].filter(atomId => coords.has(atomId));
+      if (
+        bridgeSubtreeAtomIds.length === 0 ||
+        bridgeSubtreeAtomIds.includes(centerAtomId) ||
+        bridgeSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId)) ||
+        visibleHeavyAtomCount(layoutGraph, bridgeSubtreeAtomIds) > MAX_DIRECT_SLOT_SUBTREE_HEAVY_ATOMS
+      ) {
+        continue;
+      }
+      for (const arylAtomId of arylLigandIds) {
+        const arylSubtreeAtomIds = [...collectCutSubtree(layoutGraph, arylAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+        if (
+          arylSubtreeAtomIds.length === 0 ||
+          arylSubtreeAtomIds.includes(oxygenAtomId) ||
+          arylSubtreeAtomIds.includes(remoteSiliconAtomId) ||
+          arylSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId)) ||
+          visibleHeavyAtomCount(layoutGraph, arylSubtreeAtomIds) > MAX_DIRECT_SLOT_SUBTREE_HEAVY_ATOMS
+        ) {
+          continue;
+        }
+        const key = `${centerAtomId}:${arylAtomId}:${oxygenAtomId}:${remoteSiliconAtomId}`;
+        if (seenKeys.has(key)) {
+          continue;
+        }
+        seenKeys.add(key);
+        descriptors.push({
+          centerAtomId,
+          arylAtomId,
+          oxygenAtomId,
+          remoteSiliconAtomId,
+          arylSubtreeAtomIds,
+          bridgeSubtreeAtomIds,
+          movedHeavyAtomCount: visibleHeavyAtomCount(layoutGraph, arylSubtreeAtomIds) + visibleHeavyAtomCount(layoutGraph, bridgeSubtreeAtomIds)
+        });
+      }
+    }
+  }
+  return descriptors;
+}
+
+function rotateAtomIdsAroundPivot(coords, atomIds, pivotAtomId, rotation) {
+  const pivot = coords.get(pivotAtomId);
+  if (!pivot) {
+    return null;
+  }
+  const candidateCoords = new Map(coords);
+  for (const atomId of atomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, rotateAround(position, pivot, rotation));
+  }
+  return candidateCoords;
+}
+
+function siloxaneArylCandidateScore(candidate) {
+  return candidate.totalRotation + candidate.movedHeavyAtomCount * CLEANUP_EPSILON;
+}
+
+/**
+ * Rotates one aryl ligand and the opposite Si-O-Si side of compact siloxanes
+ * when exact projected placement stacks the aryl ring over the bridged silicon
+ * cluster. Candidates must clear the final audit completely.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null, bondValidationClasses?: Map<string, string>}} [options] - Cleanup options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number, changed: boolean, movedAtomIds: string[]}} Retouch result.
+ */
+export function runSiloxaneArylBranchClearance(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const baseOverlaps = findSevereOverlaps(layoutGraph, inputCoords, bondLength);
+  if (baseOverlaps.length === 0) {
+    return {
+      coords: inputCoords,
+      nudges: 0,
+      changed: false,
+      movedAtomIds: []
+    };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of collectSiloxaneArylClearanceDescriptors(layoutGraph, inputCoords, options.frozenAtomIds ?? null)) {
+    for (const arylRotation of SILOXANE_ARYL_CLEARANCE_ROTATION_STEPS) {
+      const arylCoords = rotateAtomIdsAroundPivot(inputCoords, descriptor.arylSubtreeAtomIds, descriptor.centerAtomId, arylRotation);
+      if (!arylCoords) {
+        continue;
+      }
+      for (const bridgeRotation of SILOXANE_ARYL_CLEARANCE_ROTATION_STEPS) {
+        const candidateCoords = rotateAtomIdsAroundPivot(arylCoords, descriptor.bridgeSubtreeAtomIds, descriptor.oxygenAtomId, bridgeRotation);
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+          bondLength,
+          bondValidationClasses: options.bondValidationClasses
+        });
+        if (candidateAudit.ok !== true) {
+          continue;
+        }
+        const candidate = {
+          coords: candidateCoords,
+          audit: candidateAudit,
+          descriptor,
+          rotations: [arylRotation, bridgeRotation],
+          totalRotation: Math.abs(arylRotation) + Math.abs(bridgeRotation),
+          movedHeavyAtomCount: descriptor.movedHeavyAtomCount
+        };
+        if (!bestCandidate || siloxaneArylCandidateScore(candidate) < siloxaneArylCandidateScore(bestCandidate) - PRESENTATION_METRIC_EPSILON) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return {
+      coords: inputCoords,
+      nudges: 0,
+      changed: false,
+      movedAtomIds: []
+    };
+  }
+
+  return {
+    coords: bestCandidate.coords,
+    nudges: 2,
+    changed: true,
+    movedAtomIds: [...new Set([...bestCandidate.descriptor.arylSubtreeAtomIds, ...bestCandidate.descriptor.bridgeSubtreeAtomIds])],
+    rotations: bestCandidate.rotations
+  };
 }
 
 function findProjectedFanReliefCandidate(layoutGraph, inputCoords, options, baseAudit) {

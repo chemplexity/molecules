@@ -29,6 +29,14 @@ const LARGE_SWING_MIN_CROSSING_REDUCTION = 2;
 const LARGE_SWING_REPAIR_OVERLAP_SLACK = 2;
 const LARGE_SWING_REPAIR_CROSSING_SLACK = 2;
 const LARGE_SWING_REPAIR_PASSES = 2;
+const SMALL_EXACT_OVERLAP_REPAIR_DISTANCE_FACTOR = 1e-6;
+const SMALL_EXACT_OVERLAP_REPAIR_MAX_HEAVY_ATOMS = 32;
+const EXACT_SHARED_CENTER_FOLDBACK_REPAIR_OVERLAP_SLACK = 3;
+const EXACT_SHARED_CENTER_FOLDBACK_REPAIR_CROSSING_SLACK = 2;
+const SMALL_EXACT_OVERLAP_REPAIR_CROSSING_SLACK = 1;
+const SMALL_EXACT_OVERLAP_REPAIR_PASSES = 2;
+const SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_PATH_EDGES = 4;
+const SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_DESCRIPTOR_HEAVY_ATOMS = 220;
 const ANGLE_RELIEF_TOTAL_THRESHOLD = 1.8;
 const ANGLE_RELIEF_WORST_THRESHOLD = 0.25;
 const ANGLE_RELIEF_MIN_TOTAL_IMPROVEMENT = 0.02;
@@ -111,6 +119,8 @@ const ROTATION_STEPS = [
   -Math.PI / 2,
   (2 * Math.PI) / 3,
   (-2 * Math.PI) / 3,
+  (7 * Math.PI) / 9,
+  (-7 * Math.PI) / 9,
   (5 * Math.PI) / 6,
   (-5 * Math.PI) / 6,
   Math.PI
@@ -373,6 +383,65 @@ function largeSwingCandidateIsWorthResidualRepair(descriptor, candidateScore, cu
     return false;
   }
   return candidateScore.severeOverlapCount > 0 || candidateScore.visibleHeavyBondCrossingCount > 0;
+}
+
+/**
+ * Returns whether an exact single-overlap candidate is worth a bounded
+ * second-stage repair. Some folded peptide sidechains need one small branch
+ * rotation before the normal residual pass can separate the remaining contact.
+ * @param {object} descriptor - Rotation descriptor for the first small move.
+ * @param {object} candidateScore - Score after the first small move.
+ * @param {object} currentScore - Incumbent residual score.
+ * @param {number} bondLength - Target depiction bond length.
+ * @returns {boolean} True when a bounded follow-up repair is safe to try.
+ */
+function smallExactOverlapCandidateIsWorthResidualRepair(descriptor, candidateScore, currentScore, bondLength) {
+  if (descriptor.largeSwing || descriptor.heavyAtomCount > SMALL_EXACT_OVERLAP_REPAIR_MAX_HEAVY_ATOMS) {
+    return false;
+  }
+  const exactOverlapThreshold = bondLength * SMALL_EXACT_OVERLAP_REPAIR_DISTANCE_FACTOR;
+  if (currentScore.severeOverlapCount !== 1 || (currentScore.minSevereOverlapDistance ?? Number.POSITIVE_INFINITY) > exactOverlapThreshold) {
+    return false;
+  }
+  if (candidateScore.severeOverlapCount > currentScore.severeOverlapCount) {
+    return false;
+  }
+  if (candidateScore.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount + SMALL_EXACT_OVERLAP_REPAIR_CROSSING_SLACK) {
+    return false;
+  }
+  return candidateScore.severeOverlapCount > 0 || candidateScore.visibleHeavyBondCrossingCount > 0;
+}
+
+function exactSharedCenterFoldbackCandidateIsWorthRepair(descriptor, candidateScore, currentScore) {
+  if (descriptor.largeSwing || descriptor.heavyAtomCount > SMALL_EXACT_OVERLAP_REPAIR_MAX_HEAVY_ATOMS) {
+    return false;
+  }
+  if (candidateScore.severeOverlapCount > currentScore.severeOverlapCount + EXACT_SHARED_CENTER_FOLDBACK_REPAIR_OVERLAP_SLACK) {
+    return false;
+  }
+  if (candidateScore.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount + EXACT_SHARED_CENTER_FOLDBACK_REPAIR_CROSSING_SLACK) {
+    return false;
+  }
+  return candidateScore.severeOverlapCount > 0 || candidateScore.visibleHeavyBondCrossingCount > 0;
+}
+
+function commonSingleBondCenterAtomIds(layoutGraph, firstAtomId, secondAtomId) {
+  const centerAtomIds = [];
+  for (const firstBond of layoutGraph.bondsByAtomId.get(firstAtomId) ?? []) {
+    if (!firstBond || firstBond.kind !== 'covalent' || firstBond.aromatic || (firstBond.order ?? 1) !== 1) {
+      continue;
+    }
+    const centerAtomId = firstBond.a === firstAtomId ? firstBond.b : firstBond.a;
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (!centerAtom || centerAtom.element === 'H') {
+      continue;
+    }
+    const secondBond = findBond(layoutGraph, secondAtomId, centerAtomId);
+    if (secondBond && secondBond.kind === 'covalent' && !secondBond.aromatic && (secondBond.order ?? 1) === 1) {
+      centerAtomIds.push(centerAtomId);
+    }
+  }
+  return centerAtomIds;
 }
 
 function shouldRunAngleRelief(score) {
@@ -2794,12 +2863,245 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
             repairedMovedAtomIds: repairedCandidate.movedAtomIds
           };
         }
+      } else if (
+        descriptorOptions.allowSmallExactOverlapCandidateRepair === true &&
+        smallExactOverlapCandidateIsWorthResidualRepair(descriptor, candidateScore, currentScore, bondLength)
+      ) {
+        const candidateCoords = rotateSubtree(coords, descriptor, angle);
+        const repairedCandidate = repairCandidateResiduals(layoutGraph, candidateCoords, candidateScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, {
+          includeNearbyContainingEndpointDescriptors: true,
+          maxPasses: SMALL_EXACT_OVERLAP_REPAIR_PASSES,
+          descriptorCache: descriptorOptions.descriptorCache ?? null,
+          prefilterResidualCandidates: shouldPrefilterResidualCandidates
+        });
+        if (scoreIsBetter(repairedCandidate.score, currentScore) && auditLayout(layoutGraph, repairedCandidate.coords, { bondLength }).ok === true) {
+          selectedCandidate = {
+            coords: repairedCandidate.coords,
+            score: repairedCandidate.score,
+            descriptor,
+            repairedMovedAtomIds: repairedCandidate.movedAtomIds
+          };
+        }
       }
       if (!selectedCandidate) {
         continue;
       }
       if (!bestCandidate || scoreIsBetter(selectedCandidate.score, bestCandidate.score)) {
         bestCandidate = selectedCandidate;
+      }
+    }
+  }
+
+  return bestCandidate;
+}
+
+function shortestVisibleHeavyPath(layoutGraph, coords, startAtomId, endAtomId, maxEdges) {
+  const visitedAtomIds = new Set([startAtomId]);
+  const queue = [{ atomId: startAtomId, path: [startAtomId] }];
+  while (queue.length > 0) {
+    const { atomId, path } = queue.shift();
+    if (path.length - 1 >= maxEdges) {
+      continue;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (visitedAtomIds.has(neighborAtomId) || !coords.has(neighborAtomId)) {
+        continue;
+      }
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.aromatic === true) {
+        continue;
+      }
+      const nextPath = [...path, neighborAtomId];
+      if (neighborAtomId === endAtomId) {
+        return nextPath;
+      }
+      visitedAtomIds.add(neighborAtomId);
+      queue.push({ atomId: neighborAtomId, path: nextPath });
+    }
+  }
+  return null;
+}
+
+function shortFoldedPathEndpointAnchorIds(layoutGraph, coords, endpointAtomId, pathNeighborAtomId) {
+  const anchorAtomIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(endpointAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === endpointAtomId ? bond.b : bond.a;
+    if (neighborAtomId === pathNeighborAtomId || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    anchorAtomIds.push(neighborAtomId);
+  }
+  return anchorAtomIds;
+}
+
+function shortFoldedPathPairRotationDescriptors(layoutGraph, coords, path, currentScore, frozenAtomIds, descriptorCache) {
+  if (path.length !== SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_PATH_EDGES + 1) {
+    return [];
+  }
+  const [firstEndpointAtomId, firstPathAtomId, centerAtomId, secondPathAtomId, secondEndpointAtomId] = path;
+  const firstDescriptor = collectRotationDescriptor(layoutGraph, coords, firstPathAtomId, centerAtomId, currentScore, frozenAtomIds, { descriptorCache });
+  if (
+    !firstDescriptor ||
+    firstDescriptor.heavyAtomCount > SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_DESCRIPTOR_HEAVY_ATOMS ||
+    !firstDescriptor.subtreeAtomIdSet.has(firstEndpointAtomId) ||
+    firstDescriptor.subtreeAtomIdSet.has(secondEndpointAtomId)
+  ) {
+    return [];
+  }
+
+  const descriptorPairs = [];
+  for (const endpointAnchorAtomId of shortFoldedPathEndpointAnchorIds(layoutGraph, coords, secondEndpointAtomId, secondPathAtomId)) {
+    const secondDescriptor = collectRotationDescriptor(layoutGraph, coords, secondEndpointAtomId, endpointAnchorAtomId, currentScore, frozenAtomIds, { descriptorCache });
+    if (
+      !secondDescriptor ||
+      secondDescriptor.heavyAtomCount > SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_DESCRIPTOR_HEAVY_ATOMS ||
+      !secondDescriptor.subtreeAtomIdSet.has(firstEndpointAtomId) ||
+      !secondDescriptor.subtreeAtomIdSet.has(secondEndpointAtomId)
+    ) {
+      continue;
+    }
+    descriptorPairs.push([firstDescriptor, secondDescriptor]);
+  }
+  return descriptorPairs;
+}
+
+function rotateSubtreePair(coords, firstDescriptor, firstAngle, secondDescriptor, secondAngle) {
+  return rotateSubtree(rotateSubtree(coords, firstDescriptor, firstAngle), secondDescriptor, secondAngle);
+}
+
+function selectBestShortFoldedPathPairRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, descriptorCache) {
+  if (currentScore.severeOverlapCount !== 1) {
+    return null;
+  }
+  const overlap = currentScore.overlaps?.[0];
+  if (!overlap) {
+    return null;
+  }
+
+  const paths = [
+    shortestVisibleHeavyPath(layoutGraph, coords, overlap.firstAtomId, overlap.secondAtomId, SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_PATH_EDGES),
+    shortestVisibleHeavyPath(layoutGraph, coords, overlap.secondAtomId, overlap.firstAtomId, SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_PATH_EDGES)
+  ].filter(path => path?.length === SHORT_FOLDED_PATH_PAIR_ROTATION_MAX_PATH_EDGES + 1);
+  let bestCandidate = null;
+  for (const path of paths) {
+    for (const [firstDescriptor, secondDescriptor] of shortFoldedPathPairRotationDescriptors(layoutGraph, coords, path, currentScore, frozenAtomIds, descriptorCache)) {
+      for (const firstAngle of candidateAnglesForDescriptor(layoutGraph, coords, firstDescriptor, false, currentScore)) {
+        const firstCandidateCoords = rotateSubtree(coords, firstDescriptor, firstAngle);
+        const firstCandidateScore = scoreCoords(layoutGraph, firstCandidateCoords, bondLength, trackedAngularContexts, visibleAtomIds);
+        for (const secondAngle of candidateAnglesForDescriptor(layoutGraph, firstCandidateCoords, secondDescriptor, false, firstCandidateScore)) {
+          const candidateCoords = rotateSubtreePair(coords, firstDescriptor, firstAngle, secondDescriptor, secondAngle);
+          const candidateScore = scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds);
+          if (!scoreIsBetter(candidateScore, currentScore) || candidateScore.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount) {
+            continue;
+          }
+          if (auditLayout(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
+            continue;
+          }
+          const selectedCandidate = {
+            coords: candidateCoords,
+            score: candidateScore,
+            descriptor: {
+              subtreeAtomIds: [...new Set([...firstDescriptor.subtreeAtomIds, ...secondDescriptor.subtreeAtomIds])]
+            }
+          };
+          if (!bestCandidate || scoreIsBetter(selectedCandidate.score, bestCandidate.score)) {
+            bestCandidate = selectedCandidate;
+          }
+        }
+      }
+    }
+  }
+  return bestCandidate;
+}
+
+function selectBestExactSharedCenterFoldbackRepairCandidate(
+  layoutGraph,
+  coords,
+  currentScore,
+  bondLength,
+  trackedAngularContexts,
+  visibleAtomIds,
+  frozenAtomIds,
+  descriptorCache = null
+) {
+  if (currentScore.severeOverlapCount !== 1) {
+    return null;
+  }
+  const overlap = currentScore.overlaps?.[0];
+  const exactOverlapThreshold = bondLength * SMALL_EXACT_OVERLAP_REPAIR_DISTANCE_FACTOR;
+  if (!overlap || overlap.distance > exactOverlapThreshold) {
+    return null;
+  }
+
+  const { firstAtomId, secondAtomId } = overlap;
+  const firstAtom = layoutGraph.atoms.get(firstAtomId);
+  const secondAtom = layoutGraph.atoms.get(secondAtomId);
+  if (
+    !firstAtom ||
+    !secondAtom ||
+    firstAtom.element === 'H' ||
+    secondAtom.element === 'H' ||
+    layoutGraph.ringAtomIdSet.has(firstAtomId) ||
+    layoutGraph.ringAtomIdSet.has(secondAtomId) ||
+    frozenAtomIds?.has(firstAtomId) ||
+    frozenAtomIds?.has(secondAtomId)
+  ) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  for (const centerAtomId of commonSingleBondCenterAtomIds(layoutGraph, firstAtomId, secondAtomId)) {
+    if (frozenAtomIds?.has(centerAtomId) || layoutGraph.ringAtomIdSet.has(centerAtomId)) {
+      continue;
+    }
+    for (const [rootAtomId, staticAtomId] of [
+      [firstAtomId, secondAtomId],
+      [secondAtomId, firstAtomId]
+    ]) {
+      const descriptor = collectRotationDescriptor(layoutGraph, coords, rootAtomId, centerAtomId, currentScore, frozenAtomIds, { descriptorCache });
+      if (!descriptor || descriptor.subtreeAtomIdSet.has(staticAtomId) || descriptor.largeSwing || descriptor.heavyAtomCount > SMALL_EXACT_OVERLAP_REPAIR_MAX_HEAVY_ATOMS) {
+        continue;
+      }
+      for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
+        const candidateScore = withRotatedSubtree(layoutGraph, coords, descriptor, angle, candidateCoords =>
+          scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds)
+        );
+        if (!exactSharedCenterFoldbackCandidateIsWorthRepair(descriptor, candidateScore, currentScore)) {
+          continue;
+        }
+        const candidateCoords = rotateSubtree(coords, descriptor, angle);
+        const repairedCandidate = repairCandidateResiduals(layoutGraph, candidateCoords, candidateScore, bondLength, frozenAtomIds, trackedAngularContexts, visibleAtomIds, {
+          includeNearbyContainingEndpointDescriptors: true,
+          maxPasses: SMALL_EXACT_OVERLAP_REPAIR_PASSES,
+          descriptorCache
+        });
+        if (!scoreIsBetter(repairedCandidate.score, currentScore) || repairedCandidate.score.visibleHeavyBondCrossingCount > currentScore.visibleHeavyBondCrossingCount) {
+          continue;
+        }
+        const repairedAudit = auditLayout(layoutGraph, repairedCandidate.coords, { bondLength });
+        if (repairedAudit.ok !== true || repairedAudit.fallback?.mode != null) {
+          continue;
+        }
+        const candidate = {
+          coords: repairedCandidate.coords,
+          score: repairedCandidate.score,
+          descriptor,
+          repairedMovedAtomIds: repairedCandidate.movedAtomIds
+        };
+        if (!bestCandidate || repairScoreIsBetter(candidate.score, bestCandidate.score)) {
+          bestCandidate = candidate;
+        }
       }
     }
   }
@@ -2873,13 +3175,38 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
       prefilterResidualCandidates: allowUltraLargeResidualRepair
     });
     if (!bestCandidate && currentScore.severeOverlapCount > 0) {
+      bestCandidate = selectBestExactSharedCenterFoldbackRepairCandidate(
+        layoutGraph,
+        coords,
+        currentScore,
+        bondLength,
+        trackedAngularContexts,
+        visibleAtomIds,
+        frozenAtomIds,
+        descriptorCache
+      );
+    }
+    if (!bestCandidate && currentScore.severeOverlapCount > 0) {
       bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds, {
         includeNearbyContainingEndpointDescriptors: true,
         largeSwingOverlapLimit: allowUltraLargeResidualRepair ? LARGE_SWING_CLUSTER_OVERLAP_LIMIT : undefined,
         allowCandidateRepair: allowUltraLargeResidualRepair,
+        allowSmallExactOverlapCandidateRepair: true,
         descriptorCache,
         prefilterResidualCandidates: allowUltraLargeResidualRepair
       });
+    }
+    if (!bestCandidate && currentScore.severeOverlapCount === 1) {
+      bestCandidate = selectBestShortFoldedPathPairRotationCandidate(
+        layoutGraph,
+        coords,
+        currentScore,
+        bondLength,
+        trackedAngularContexts,
+        visibleAtomIds,
+        frozenAtomIds,
+        descriptorCache
+      );
     }
     if (!bestCandidate && currentScore.severeOverlapCount > 0) {
       bestCandidate = selectBestSharedCenterTranslationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleAtomIds, frozenAtomIds);
@@ -2892,6 +3219,9 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
     coords = bestCandidate.coords;
     currentScore = bestCandidate.score;
     for (const atomId of bestCandidate.descriptor.subtreeAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    for (const atomId of bestCandidate.repairedMovedAtomIds ?? []) {
       movedAtomIds.add(atomId);
     }
     passes++;

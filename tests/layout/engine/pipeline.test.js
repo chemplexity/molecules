@@ -6349,6 +6349,28 @@ describe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.totalMs < 15000, `expected lipidated peptide label retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
+  it('uses fine initial dense partitioning for compact ring-rich glycan phosphates', { timeout: 12000 }, () => {
+    const result = runPipeline(
+      parseSMILES(
+        'C[C@@H]1O[C@@H](O[C@H]2[C@H](O)[C@H](NC(=O)C)[C@H](O[C@@H]3[C@@H](OP(=O)(O)OC[C@@H](OCCN(C4CCCCC4)C5CCCCC5)C(=O)O)O[C@@H](C(=O)N)[C@@](C)(O)[C@@H]3OC(=O)N)O[C@H]2CO[C@@H]6O[C@@H](CO)[C@@H](O)[C@H](O)[C@@H]6O)[C@@H](NC(=O)C)[C@@H](O)[C@@H]1O[C@@H]7O[C@H]([C@H](O)[C@H](O)[C@@H]7O)C(=O)N'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected compact ring-rich glycan phosphate layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
   it('clears final glycan phosphate terminal-label overlaps after large-molecule retouch', { timeout: 30000 }, () => {
     let finalLabelClearanceMetrics = null;
     const result = runPipeline(

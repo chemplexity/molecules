@@ -1,12 +1,21 @@
 /** @module families/macrocycle */
 
 import { auditLayout } from '../audit/audit.js';
+import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, rotate, scale, sub, vec, wrapAngle } from '../geometry/vec2.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { ellipsePerimeterPoints, macrocycleAspectRatio, solveEllipseScale } from '../geometry/ellipse.js';
+import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { placeTemplateCoords } from '../templates/placement.js';
 import { ringConnectionKey } from '../model/ring-connection.js';
 import { nonSharedPath } from '../geometry/ring-path.js';
+import { assignBondValidationClass } from '../placement/bond-validation.js';
+
+const MACROCYCLE_KAMADA_KAWAI_RESCUE_LIMITS = Object.freeze({
+  maxAtomCount: 64,
+  threshold: 0.02
+});
+const MACROCYCLE_KAMADA_KAWAI_SCALE_FACTORS = Object.freeze([1, 0.96, 0.94, 0.92, 0.9, 0.88, 0.86, 0.84, 0.82, 0.8, 0.79]);
 
 /**
  * Rebuilds ring centers from already placed ring coordinates.
@@ -577,17 +586,30 @@ function scoreRingCompletionCandidate(layoutGraph, coords, predictedCoords, bond
   };
 }
 
-function isBetterRingCompletionCandidate(candidate, incumbent) {
+function macrocycleHasBridgedRingConnection(layoutGraph, rings) {
+  if (!layoutGraph || rings.length <= 1) {
+    return false;
+  }
+  const ringIds = new Set(rings.map(ring => ring.id));
+  return layoutGraph.ringConnections.some(
+    connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+  );
+}
+
+function isBetterRingCompletionCandidate(candidate, incumbent, options = {}) {
   if (!incumbent) {
     return true;
   }
-  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
-    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
-  }
   const candidateBondFailureCount = candidate.audit.bondLengthFailureCount + (candidate.bridgeClosureRisk?.failureCount ?? 0);
   const incumbentBondFailureCount = incumbent.audit.bondLengthFailureCount + (incumbent.bridgeClosureRisk?.failureCount ?? 0);
+  if (!options.preferBondIntegrity && candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
   if (candidateBondFailureCount !== incumbentBondFailureCount) {
     return candidateBondFailureCount < incumbentBondFailureCount;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
   }
   const candidateMaxBondDeviation = Math.max(candidate.audit.maxBondLengthDeviation, candidate.bridgeClosureRisk?.maxDeviation ?? 0);
   const incumbentMaxBondDeviation = Math.max(incumbent.audit.maxBondLengthDeviation, incumbent.bridgeClosureRisk?.maxDeviation ?? 0);
@@ -703,6 +725,7 @@ function growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, la
  */
 function growRemainingRingAtoms(rings, coords, bondLength, layoutGraph = null) {
   let progressed = true;
+  const preferBondIntegrity = macrocycleHasBridgedRingConnection(layoutGraph, rings);
   while (progressed) {
     progressed = false;
     for (const ring of rings) {
@@ -735,20 +758,20 @@ function growRemainingRingAtoms(rings, coords, bondLength, layoutGraph = null) {
         let selectedCandidate = null;
         for (const bridgeFit of bridgeFits) {
           const bridgeCandidate = layoutGraph ? scoreRingCompletionCandidate(layoutGraph, coords, bridgeFit, bondLength, rings) : { predictedCoords: bridgeFit };
-          if (isBetterRingCompletionCandidate(bridgeCandidate, selectedCandidate)) {
+          if (isBetterRingCompletionCandidate(bridgeCandidate, selectedCandidate, { preferBondIntegrity })) {
             selectedCandidate = bridgeCandidate;
           }
         }
         for (const fitted of fittedCandidates) {
           const fittedMissingCoords = new Map(unplacedIds.map(atomId => [atomId, fitted.predicted.get(atomId)]).filter(([, position]) => Boolean(position)));
           const fittedCandidate = layoutGraph ? scoreRingCompletionCandidate(layoutGraph, coords, fittedMissingCoords, bondLength, rings) : { predictedCoords: fittedMissingCoords };
-          if (isBetterRingCompletionCandidate(fittedCandidate, selectedCandidate)) {
+          if (isBetterRingCompletionCandidate(fittedCandidate, selectedCandidate, { preferBondIntegrity })) {
             selectedCandidate = fittedCandidate;
           }
         }
         for (const arcFit of arcFits) {
           const arcCandidate = layoutGraph ? scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength, rings) : { predictedCoords: arcFit.predicted };
-          if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate)) {
+          if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate, { preferBondIntegrity })) {
             selectedCandidate = arcCandidate;
           }
         }
@@ -965,6 +988,148 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
   return {
     coords,
     ringCenters: buildRingCentersFromCoords(rings, coords),
-    placementMode: 'ellipse'
+    placementMode: macrocycleHasBridgedRingConnection(options.layoutGraph ?? null, rings) ? 'constructed-bridged' : 'ellipse'
+  };
+}
+
+function macrocycleKamadaKawaiSeeds(layoutGraph, atomIds, referenceCoords) {
+  const coords = new Map();
+  const pinnedAtomIds = [];
+  if (!layoutGraph) {
+    return { coords, pinnedAtomIds };
+  }
+
+  for (const atomId of atomIds) {
+    const fixedPosition = layoutGraph.fixedCoords.get(atomId);
+    if (fixedPosition) {
+      coords.set(atomId, { ...fixedPosition });
+      pinnedAtomIds.push(atomId);
+      continue;
+    }
+    const referencePosition = referenceCoords?.get?.(atomId);
+    if (referencePosition) {
+      coords.set(atomId, { ...referencePosition });
+      continue;
+    }
+    const existingPosition = layoutGraph.options.existingCoords.get(atomId);
+    if (existingPosition) {
+      coords.set(atomId, { ...existingPosition });
+    }
+  }
+
+  return { coords, pinnedAtomIds };
+}
+
+function scaleCoordsAboutCentroid(inputCoords, scaleFactor) {
+  if (Math.abs(scaleFactor - 1) <= 1e-9) {
+    return new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  }
+  const center = centroid([...inputCoords.values()]);
+  const coords = new Map();
+  for (const [atomId, position] of inputCoords) {
+    coords.set(atomId, {
+      x: center.x + (position.x - center.x) * scaleFactor,
+      y: center.y + (position.y - center.y) * scaleFactor
+    });
+  }
+  return coords;
+}
+
+function auditMacrocycleKamadaKawaiCandidate(layoutGraph, atomIds, coords, bondLength) {
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  return auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses
+  });
+}
+
+function isBetterMacrocycleKamadaKawaiCandidate(candidateAudit, incumbentAudit) {
+  if (!candidateAudit) {
+    return false;
+  }
+  if (!incumbentAudit) {
+    return true;
+  }
+  if (candidateAudit.ok !== incumbentAudit.ok) {
+    return candidateAudit.ok === true;
+  }
+  if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  if ((candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) !== (incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0)) {
+    return (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) < (incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0);
+  }
+  if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-9) {
+    return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+  }
+  return (candidateAudit.visibleHeavyBondCrossingCount ?? 0) < (incumbentAudit.visibleHeavyBondCrossingCount ?? 0);
+}
+
+/**
+ * Builds a graph-relaxed macrocycle candidate for dense non-planar multi-ring
+ * systems whose ellipse completion leaves closure bonds stretched.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {number} bondLength - Target bond length.
+ * @param {{layoutGraph?: object, center?: {x: number, y: number}, referenceCoords?: Map<string, {x: number, y: number}>, scaleFactors?: number[], seedMode?: 'seeded'|'unseeded'|'both', threshold?: number}} [options] - Placement options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}|null} Placement result.
+ */
+export function layoutMacrocycleKamadaKawaiRescue(rings, bondLength, options = {}) {
+  if (rings.length === 0 || !options.layoutGraph) {
+    return null;
+  }
+
+  const atomIdSet = new Set(rings.flatMap(ring => ring.atomIds));
+  const atomIds = [...options.layoutGraph.atoms.keys()].filter(atomId => atomIdSet.has(atomId));
+  if (atomIds.length === 0 || atomIds.length > MACROCYCLE_KAMADA_KAWAI_RESCUE_LIMITS.maxAtomCount) {
+    return null;
+  }
+
+  let bestCoords = null;
+  let bestAudit = null;
+  const seedMode = options.seedMode ?? 'both';
+  const seedOptions = [
+    ...(seedMode === 'unseeded' ? [] : [macrocycleKamadaKawaiSeeds(options.layoutGraph, atomIds, options.referenceCoords ?? null)]),
+    ...(seedMode === 'seeded' ? [] : [{ coords: new Map(), pinnedAtomIds: [] }])
+  ];
+  const scaleFactors = options.scaleFactors ?? MACROCYCLE_KAMADA_KAWAI_SCALE_FACTORS;
+  const threshold = options.threshold ?? MACROCYCLE_KAMADA_KAWAI_RESCUE_LIMITS.threshold;
+  for (const kkSeeds of seedOptions) {
+    const seededPoints = [...kkSeeds.coords.values()];
+    const center = options.center ?? (seededPoints.length > 0 ? centroid(seededPoints) : vec(0, 0));
+    const kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
+      bondLength,
+      coords: kkSeeds.coords,
+      pinnedAtomIds: kkSeeds.pinnedAtomIds,
+      center,
+      maxComponentSize: MACROCYCLE_KAMADA_KAWAI_RESCUE_LIMITS.maxAtomCount,
+      threshold,
+      innerThreshold: threshold,
+      maxIterations: BRIDGED_KK_LIMITS.largeMaxIterations,
+      maxInnerIterations: BRIDGED_KK_LIMITS.largeMaxInnerIterations
+    });
+    if (kkResult.coords.size !== atomIds.length) {
+      continue;
+    }
+
+    for (const scaleFactor of scaleFactors) {
+      const candidateCoords = scaleCoordsAboutCentroid(kkResult.coords, scaleFactor);
+      const candidateAudit = auditMacrocycleKamadaKawaiCandidate(options.layoutGraph, atomIds, candidateCoords, bondLength);
+      if (isBetterMacrocycleKamadaKawaiCandidate(candidateAudit, bestAudit)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+      }
+    }
+  }
+  if (!bestCoords) {
+    return null;
+  }
+
+  return {
+    coords: bestCoords,
+    ringCenters: buildRingCentersFromCoords(rings, bestCoords),
+    placementMode: 'kamada-kawai-cage'
   };
 }

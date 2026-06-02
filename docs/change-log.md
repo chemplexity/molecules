@@ -1,15 +1,48 @@
 # Change Log
 
+## 2026-06-02
+
+- Add a guarded macrocycle Kamada-Kawai rescue for dense multi-ring macrocycles whose ellipse completion leaves ring closures detached.
+- Add a compact bridged seeded-Kamada-Kawai rescue for projected ring systems that keep bond-only closure failures.
+- Add an audit-gated saturated three-atom bridge-lane arc retouch for collapsed six-member bridged rings.
+- Guard bridged ring-system regularization against audit regressions and add a marginal stretched-ring-bond endpoint retouch.
+- Add a late, audit-gated terminal ring-leaf intrusion retouch for terminal hetero/halogen leaves, allowing compressed outward phenol placement only when the final audit is clean.
+- Add a guarded isolated-ring siloxane aryl retouch that first accepts readable attached-ring exits, then rotates a compact Si-O-Si aryl/bridge pair only when the final audit becomes clean.
+- Extend the guarded bridged single-overlap relaxation to saturated bridged systems up to the same compact size handled by the aromatic path, preserving already-accepted bridged bond-deviation ceilings.
+- Add an organometallic-only final mild bridged ring-bond nudge that symmetrically shortens a single clean residual bridged ring stretch.
+- Prefer bond-integrity candidates when completing missing arcs in bridged macrocycle ring systems and validate those compact bridged macrocycle placements with bridged ring-bond tolerances.
+- Add a late, audit-gated large-molecule residual retouch pass so final branch/stereo cleanup cannot leave a shared-center peptide contact unresolved.
+- Add a guarded large-molecule short folded-path pair-rotation repair that opens a folded peptide sidechain/alpha-carbon contact with two coordinated local rotations.
+- Add a guarded hetero-ring quaternary aryl fan retouch that rotates triaryl methane-like substituents from tetrazole nitrogens.
+- Add a guarded dimethyl diaza fused cyclopropane cage template with separated nitrogen and diene lanes.
+- Add a fused amino-hydroxy dimethyl cage template with separated bridgehead lanes.
+- Add a guarded sulfonyl oxatricyclo lactone final projection retouch that keeps the methyl, hydroxy, formyl, sulfone, and carbonyl exits with the compact bridged scaffold.
+- Extend `_normalizeIsocyanide` in `toCanonicalSMILES` (`src/io/smiles.js`): when `[N+]#C` is converted to `[N]=C` and no N≥2 is found to drain, give the terminal C a +1 charge if the molecule's net charge dropped to 0 — this matches InChI's `[CH+]=N` carbenoid representation for molecules whose only positive charge was the isocyanide N+.
+- Fix P-H stereocenter parity in `applyTetrahedralStereo` (`src/io/inchi.js`): extend the parity-flip rule to cover phosphorus atoms with exactly one H and at least one charged heavy neighbour (e.g. `[P@@H]([O-])=O`) — such centres were previously unflipped, leaving the configuration inverted.
+- Add a guarded organometallic metal-branch fan retouch that rotates tiny covalent branches around a shared metal center after attached-ring cleanup.
+- Tighten the organometallic aromatic-ring regularizer acceptance guard so ring-angle cleanup cannot add crossings, label/readability failures, or stereo contradictions.
+- Add a guarded organometallic ring-sidechain fan retouch that rotates tiny acyclic sidechains outward from coordinate-bound rings.
+- Add a guarded large-molecule shared-center foldback repair that allows an exact overlapped peptide sidechain to make one temporary local rotation and then run bounded residual cleanup.
+- Add a guarded compact-bridged remote two-atom path retouch that re-lays stretched five-member bridge paths beside their existing ring path and rotates tiny side branches outward.
+
 ## 2026-06-01
 
-- Add Pattern 3 to `fixEnolateCharge` in `src/io/inchi.js`: when `fixIminiumCharge` adds +1 to an amidinium N but `assignComponentFormalCharges` cannot assign the balancing -1 to the phenolate O (because an adjacent aromatic ring's Kekulé representation skews the total), detect the remaining +1 charge excess and assign -1 to the terminal neutral O on any aromatic ring C — fixes phenolate round-trip for benzimidazole-amidinium-phenolate molecules (rows 5197, 7601) and reduced total regression count from 98 to 81.
-- Add `_normalizeEnolateNoxide` to `toCanonicalSMILES` (`src/io/smiles.js`): converts the enolate-Noxide tautomer `[O-]-C=C-N=O` to the keto-hydroxamate form `O=C-C=N-[O-]` — moves the enolate charge from the alpha-carbon O to the N-oxide O, matching InChI's canonical representation (row 6898).
-- Add `_normalizePolysulfideAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): when InChI represents a terminal polysulfide anion as a neutral S double-bonded to an inner [S-], demotes the double bond to single and transfers the negative charge to the terminal S, matching the standard `[S-]-S-...` polysulfide notation (row 7835).
-- Add `_normalizeAmidinoHydroximateAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): normalises `C(=[N-H]-aro)(-N=O)` to `C(=N-[O-])(-NH-aro)` — when InChI assigns [N-] to an imino-N bonded to an aromatic ring (with H), and the N=O oxide is on the adjacent amide N, shifts the double bond from imino-C to amide-N, demotes N=O to N-[O-], and moves the negative charge from N to O (row 1961 and similar isoxazoline-hydroxamate anions).
+- Add `_normalizeOximateAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): converts aldoximate/ketoximate anion `C(=N[O-])` to nitroso carbanion `[C-](N=O)` — InChI consistently represents oximate anions in the carbanion-nitroso form.
+- Add Pattern 3 to `fixEnolateCharge` in `src/io/inchi.js`: when `fixIminiumCharge` adds +1 to an amidinium N but `assignComponentFormalCharges` cannot assign the balancing -1 to the phenolate O (because an adjacent aromatic ring's Kekulé representation skews the total), detect the remaining +1 charge excess and assign -1 to the terminal neutral O on any aromatic ring C — fixes phenolate round-trip for benzimidazole-amidinium-phenolate molecules.
+- Add `_normalizeEnolateNoxide` to `toCanonicalSMILES` (`src/io/smiles.js`): converts the enolate-Noxide tautomer `[O-]-C=C-N=O` to the keto-hydroxamate form `O=C-C=N-[O-]` — moves the enolate charge from the alpha-carbon O to the N-oxide O, matching InChI's canonical representation.
+- Add `_normalizePolysulfideAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): when InChI represents a terminal polysulfide anion as a neutral S double-bonded to an inner [S-], demotes the double bond to single and transfers the negative charge to the terminal S, matching the standard `[S-]-S-...` polysulfide notation.
+- Add `_normalizeAmidinoHydroximateAnion` to `toCanonicalSMILES` (`src/io/smiles.js`): normalises `C(=[N-H]-aro)(-N=O)` to `C(=N-[O-])(-NH-aro)` — when InChI assigns [N-] to an imino-N bonded to an aromatic ring (with H), and the N=O oxide is on the adjacent amide N, shifts the double bond from imino-C to amide-N, demotes N=O to N-[O-], and moves the negative charge from N to O.
+- Extend `_normalizeAzideDiazonium` in `toCanonicalSMILES` (`src/io/smiles.js`): handles InChI's radical diazonium representation `[C]-N=N` (chain C with remaining=1) by promoting the C-N bond to C=[N+], adding +1 to the inner diazo N, and repairing any adjacent carboxylate O left as a neutral radical [O] after the promotion.
+- Extend `_normalizeOverchargedNitrogen` in `toCanonicalSMILES` (`src/io/smiles.js`): when `[N+2]` cannot be balanced by `[N-]` but the molecule has a terminal iminyl C=N group (from `_normalizeIsocyanide` neutralising a former `[N+]#C`), reduce `[N+2]` to `[N+]` — fixes the charge-distribution mismatch where `_normalizeIsocyanide` removes +1 in the SMILES path but not the InChI path.
 - Reject compact bridged projection candidates that keep the same bond-failure count as baseline while massively inflating the worst ring-closure deviation..
 - Add a guarded suppressed-hydrogen compact bridged whole-component KK rescue.
 - Let the compact bridged whole-component KK rescue use a tightly guarded promoted-validation profile for single stretched compact bridged ring closures.
 - Extend the final stretched bridged ring-bond retouch with bounded adjacent-tail moves.
+- Let the dirty bridged fast path run the guarded single-overlap relaxation for compact aromatic fused/spiro cores.
+- Add intermediate large-molecule residual rotation steps so exact peptide branch overlaps can clear before terminal-leaf crossing repair.
+- Add a guarded small exact-overlap repair for collapsed acyclic peptide paths in large-molecule residual retouch.
+- Add a guarded final compact bridged amino/formyl retouch that flips a terminal amino clash, restores formyl readability.
+- Add a guarded final compact bridged hydroxy-sidechain retouch that articulates a small C-O leaf after attached-ring cleanup.
 - Let the final stretched bridged ring-bond retouch search farther and carry bridged validation for accepted candidates, clearing a macrolide bridged-spiro macrocycle bond fallback without adding overlaps, labels, or readability failures.
 - Promote a current-clean large branched peptide overlap row to regression coverage after current layout clears its former severe-overlap fallback.
 - Add a guarded large-molecule shared-center sibling-overlap retouch that separates disjoint cut subtrees around a common amide center, clearing a glycopeptide repeat severe-overlap fallback without adding crossings, labels, readability failures, or bond failures.
@@ -19,6 +52,7 @@
 - Add a final paired stretched bridged ring-bond retouch that nudges one endpoint on each of two mild stretched bridged ring bonds, clearing a residual phenol-cage bond fallback without adding overlaps, labels, or readability failures.
 - Add a final paired bridged hinge-bond retouch that nudges opposite endpoints around a shared hinge, clearing coupled stretched/compressed bridged ring-bond fallbacks without adding overlaps or readability failures.
 - Extend the final stretched bridged ring-bond retouch with rigid side-fragment translations, clearing a residual bond fallback in a compact bridged ammonium phenoxy cage without adding overlaps or readability failures.
+- Add a guarded compact bridged overlap/bond repair that spreads a shared-neighbor ring contact while pulling a paired mild bridged ring bond back under validation.
 - Extend `_canSatisfyHuckelWithAmbiguousN` in `src/algorithms/aromaticity.js` with a Kekulé-variant condition: a neutral N with exactly 2 ring bonds (no exocyclic substituents), exactly one Kekulé double bond, and a single-bond ring neighbour that itself carries no ring π bond is now treated as a potential pyrrole-like lone-pair donor (2e). This allows `perceiveAromaticity` to detect 5-membered rings where the Kekulé assignment places the double bond on N but the ring structure requires N to donate its lone pair for Hückel aromaticity.
 - Add `_normalizeExocyclicAlkylideneImine` to `toCanonicalSMILES` (`src/io/smiles.js`): after `_normalizeExocyclicAromaticDoubleBond` reduces a `c=C` exo bond to `c-C`, the external C (valence 3 with one H) has its adjacent `C-N=C` bond shifted to `C=N-C`, restoring normal valence and producing the same canonical chain as the InChI-parsed form.
 - Promote a current-clean bridged glycoside alkyne-lactone bond row to regression coverage after current layout clears its former bond-length fallback.

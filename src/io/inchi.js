@@ -2301,10 +2301,16 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
       let token = tokenForParity(entry.parity);
-      if (hydrogenIds.length === 0 && !center.isInRing(mol)) {
+      if (!center.isInRing(mol)) {
         const hasChargedNeighbor = center.name === 'P' &&
           orderedHeavy.some(nbId => (mol.atoms.get(nbId)?.properties?.charge ?? 0) !== 0);
-        if (!hasChargedNeighbor) {
+        if (hydrogenIds.length === 0) {
+          // No H: flip for all non-P atoms and for P without charged neighbors.
+          if (!hasChargedNeighbor) {
+            token = token === '@' ? '@@' : '@';
+          }
+        } else if (hydrogenIds.length === 1 && center.name === 'P' && hasChargedNeighbor) {
+          // P-H with a charged neighbor (e.g. [P@@H]([O-])=O): needs a flip.
           token = token === '@' ? '@@' : '@';
         }
       }

@@ -18,6 +18,17 @@ const RING_ATOM_OVERLAP_MAX_LAYOUT_HEAVY_ATOMS = 120;
 const RING_ATOM_OVERLAP_MAX_MOVED_HEAVY_ATOMS = 8;
 const RING_ATOM_OVERLAP_MAX_DEVIATION_SLACK_FACTOR = 0.18;
 const RING_ATOM_OVERLAP_SPREAD_FACTORS = Object.freeze([0.15, 0.18, 0.2, 0.24, 0.28, 1 / 3]);
+const METAL_BRANCH_FAN_MAX_LAYOUT_HEAVY_ATOMS = 80;
+const METAL_BRANCH_FAN_MAX_MOVED_HEAVY_ATOMS = 6;
+const METAL_BRANCH_FAN_ROTATIONS = Object.freeze([10, 15, 20, 30, 40, 45, 50, 55, 60, 75, 90].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const RING_SIDECHAIN_FAN_MAX_LAYOUT_HEAVY_ATOMS = 120;
+const RING_SIDECHAIN_FAN_MAX_MOVED_HEAVY_ATOMS = 12;
+const RING_SIDECHAIN_FAN_MAX_PATH_ATOMS = 7;
+const RING_SIDECHAIN_FAN_ROTATIONS = Object.freeze(
+  [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180]
+    .map(degrees => (degrees * Math.PI) / 180)
+    .flatMap(rotation => [rotation, -rotation])
+);
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -347,6 +358,25 @@ function translateAtomIds(coords, atomIds, displacement) {
   return nextCoords;
 }
 
+function rotateAtomIdsAroundPivot(coords, atomIds, pivot, rotation) {
+  const nextCoords = new Map(coords);
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  for (const atomId of atomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const dx = position.x - pivot.x;
+    const dy = position.y - pivot.y;
+    nextCoords.set(atomId, {
+      x: pivot.x + dx * cos - dy * sin,
+      y: pivot.y + dx * sin + dy * cos
+    });
+  }
+  return nextCoords;
+}
+
 function atomHasCoordinateMetalRing(layoutGraph, atomId) {
   return (layoutGraph.atomToRings.get(atomId) ?? []).some(ring => ringHasCoordinateMetalLink(layoutGraph, ring));
 }
@@ -438,6 +468,367 @@ function coordinateRingAtomOverlapCandidateMove(coords, candidateCoords, atomIds
     const after = candidateCoords.get(atomId);
     return before && after ? totalMove + distance(before, after) : totalMove;
   }, 0);
+}
+
+function sharedMetalNeighborIds(layoutGraph, firstAtomId, secondAtomId, coords) {
+  const secondMetalAtomIds = new Set();
+  for (const bond of layoutGraph.bondsByAtomId.get(secondAtomId) ?? []) {
+    const neighborAtomId = otherBondAtomId(bond, secondAtomId);
+    if (coords.has(neighborAtomId) && isMetalAtomId(layoutGraph, neighborAtomId)) {
+      secondMetalAtomIds.add(neighborAtomId);
+    }
+  }
+
+  const metalAtomIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(firstAtomId) ?? []) {
+    const neighborAtomId = otherBondAtomId(bond, firstAtomId);
+    if (secondMetalAtomIds.has(neighborAtomId)) {
+      metalAtomIds.push(neighborAtomId);
+    }
+  }
+  return metalAtomIds;
+}
+
+function collectMetalBranchFanMoveGroup(layoutGraph, coords, rootAtomId, metalAtomId) {
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (!rootAtom || rootAtom.element === 'H' || rootAtom.visible === false || isMetalAtomId(layoutGraph, rootAtomId) || layoutGraph.ringAtomIdSet.has(rootAtomId) || !coords.has(rootAtomId)) {
+    return [];
+  }
+  const atomIds = covalentSubtree(layoutGraph, rootAtomId, new Set([metalAtomId]));
+  const movedHeavyAtomIds = atomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && atom.element !== 'H' && atom.visible !== false;
+  });
+  if (movedHeavyAtomIds.length === 0 || movedHeavyAtomIds.length > METAL_BRANCH_FAN_MAX_MOVED_HEAVY_ATOMS) {
+    return [];
+  }
+  const hasExtraMetalAnchor = atomIds.some(atomId => {
+    if (atomId === rootAtomId) {
+      return false;
+    }
+    return (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => isMetalAtomId(layoutGraph, otherBondAtomId(bond, atomId)));
+  });
+  return hasExtraMetalAnchor ? [] : atomIds.filter(atomId => coords.has(atomId));
+}
+
+function metalBranchFanDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  const seenKeys = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    if (layoutGraph.bondByAtomPair?.has(atomPairKey(overlap.firstAtomId, overlap.secondAtomId))) {
+      continue;
+    }
+    const metalAtomIds = sharedMetalNeighborIds(layoutGraph, overlap.firstAtomId, overlap.secondAtomId, coords);
+    for (const metalAtomId of metalAtomIds) {
+      for (const [movedRootAtomId, blockerAtomId] of [
+        [overlap.firstAtomId, overlap.secondAtomId],
+        [overlap.secondAtomId, overlap.firstAtomId]
+      ]) {
+        const movedAtomIds = collectMetalBranchFanMoveGroup(layoutGraph, coords, movedRootAtomId, metalAtomId);
+        if (movedAtomIds.length === 0) {
+          continue;
+        }
+        const key = `${metalAtomId}:${movedAtomIds.slice().sort().join('|')}`;
+        if (seenKeys.has(key)) {
+          continue;
+        }
+        seenKeys.add(key);
+        descriptors.push({
+          metalAtomId,
+          movedRootAtomId,
+          blockerAtomId,
+          movedAtomIds,
+          movedHeavyAtomCount: visibleHeavyAtomCount(layoutGraph, movedAtomIds)
+        });
+      }
+    }
+  }
+  return descriptors;
+}
+
+function metalBranchFanCandidateScore(candidate) {
+  return (
+    (candidate.audit.ok ? -1e9 : 0) +
+    candidate.audit.severeOverlapCount * 1e7 +
+    candidate.audit.visibleHeavyBondCrossingCount * 1e5 +
+    candidate.audit.bondLengthFailureCount * 1e5 +
+    candidate.audit.labelOverlapCount * 1e4 +
+    candidate.audit.ringSubstituentReadabilityFailureCount * 1e4 +
+    candidate.movedHeavyAtomCount * 100 +
+    candidate.rotationMagnitude
+  );
+}
+
+function ringSidechainFanPathToRing(layoutGraph, coords, rootAtomId) {
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (!rootAtom || rootAtom.element === 'H' || rootAtom.visible === false || layoutGraph.ringAtomIdSet.has(rootAtomId) || isMetalAtomId(layoutGraph, rootAtomId) || !coords.has(rootAtomId)) {
+    return [];
+  }
+
+  const queue = [[rootAtomId]];
+  const seen = new Set([rootAtomId]);
+  while (queue.length > 0) {
+    const path = queue.shift();
+    const atomId = path[path.length - 1];
+    if (path.length >= RING_SIDECHAIN_FAN_MAX_PATH_ATOMS) {
+      continue;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = otherBondAtomId(bond, atomId);
+      if (seen.has(neighborAtomId) || !coords.has(neighborAtomId) || isMetalAtomId(layoutGraph, neighborAtomId)) {
+        continue;
+      }
+      const nextPath = [...path, neighborAtomId];
+      if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+        return atomHasCoordinateMetalRing(layoutGraph, neighborAtomId) ? nextPath : [];
+      }
+      seen.add(neighborAtomId);
+      queue.push(nextPath);
+    }
+  }
+  return [];
+}
+
+function collectRingSidechainFanMoveGroup(layoutGraph, coords, rootAtomId, pivotAtomId) {
+  const atomIds = covalentSubtree(layoutGraph, rootAtomId, new Set([pivotAtomId]));
+  if (atomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId) || isMetalAtomId(layoutGraph, atomId))) {
+    return [];
+  }
+  const movedHeavyAtomIds = atomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && atom.element !== 'H' && atom.visible !== false;
+  });
+  if (movedHeavyAtomIds.length === 0 || movedHeavyAtomIds.length > RING_SIDECHAIN_FAN_MAX_MOVED_HEAVY_ATOMS) {
+    return [];
+  }
+  return atomIds.filter(atomId => coords.has(atomId));
+}
+
+function ringSidechainFanDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  const seenKeys = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    if (layoutGraph.bondByAtomPair?.has(atomPairKey(overlap.firstAtomId, overlap.secondAtomId))) {
+      continue;
+    }
+    for (const [sidechainAtomId, ringAtomId] of [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ]) {
+      if (!layoutGraph.ringAtomIdSet.has(ringAtomId) || !atomHasCoordinateMetalRing(layoutGraph, ringAtomId)) {
+        continue;
+      }
+      const pathToRing = ringSidechainFanPathToRing(layoutGraph, coords, sidechainAtomId);
+      if (pathToRing.length < 3) {
+        continue;
+      }
+      const pivotAtomId = pathToRing[pathToRing.length - 2];
+      const movedRootAtomId = pathToRing[pathToRing.length - 3];
+      const movedAtomIds = collectRingSidechainFanMoveGroup(layoutGraph, coords, movedRootAtomId, pivotAtomId);
+      if (movedAtomIds.length === 0 || !movedAtomIds.includes(sidechainAtomId)) {
+        continue;
+      }
+      const key = `${pivotAtomId}:${movedAtomIds.slice().sort().join('|')}`;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      descriptors.push({
+        pivotAtomId,
+        movedRootAtomId,
+        ringAtomId,
+        sidechainAtomId,
+        movedAtomIds,
+        movedHeavyAtomCount: visibleHeavyAtomCount(layoutGraph, movedAtomIds)
+      });
+    }
+  }
+  return descriptors;
+}
+
+function ringSidechainFanCandidateScore(candidate) {
+  return (
+    (candidate.audit.ok ? -1e9 : 0) +
+    candidate.audit.severeOverlapCount * 1e7 +
+    candidate.audit.visibleHeavyBondCrossingCount * 1e5 +
+    candidate.audit.bondLengthFailureCount * 1e5 +
+    candidate.audit.labelOverlapCount * 1e4 +
+    candidate.audit.ringSubstituentReadabilityFailureCount * 1e4 +
+    candidate.movedHeavyAtomCount * 100 +
+    candidate.rotationMagnitude
+  );
+}
+
+/**
+ * Rotates tiny acyclic sidechains away from coordinate-bound organometallic
+ * rings when a terminal branch folds inward across the ring face.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Input coordinate map.
+ * @param {{bondLength?: number, bondValidationClasses?: Map<string, 'planar'|'bridged'|'haptic'>}} [options] - Retouch options.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], severeOverlapCountBefore: number, severeOverlapCountAfter: number, visibleHeavyBondCrossingCountBefore: number, visibleHeavyBondCrossingCountAfter: number}} Retouch result.
+ */
+export function runOrganometallicRingSidechainFanRetouch(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const layoutHeavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  const baseAudit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: options.bondValidationClasses
+  });
+  if (layoutHeavyAtomCount > RING_SIDECHAIN_FAN_MAX_LAYOUT_HEAVY_ATOMS || baseAudit.ok || baseAudit.severeOverlapCount <= 0) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: baseAudit.severeOverlapCount,
+      severeOverlapCountAfter: baseAudit.severeOverlapCount,
+      visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
+      visibleHeavyBondCrossingCountAfter: baseAudit.visibleHeavyBondCrossingCount
+    };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of ringSidechainFanDescriptors(layoutGraph, coords, bondLength)) {
+    const pivot = coords.get(descriptor.pivotAtomId);
+    if (!pivot) {
+      continue;
+    }
+    for (const rotation of RING_SIDECHAIN_FAN_ROTATIONS) {
+      const candidateCoords = rotateAtomIdsAroundPivot(coords, descriptor.movedAtomIds, pivot, rotation);
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (
+        !candidateAudit.ok ||
+        candidateAudit.visibleHeavyBondCrossingCount > baseAudit.visibleHeavyBondCrossingCount ||
+        candidateAudit.labelOverlapCount > baseAudit.labelOverlapCount ||
+        candidateAudit.ringSubstituentReadabilityFailureCount > baseAudit.ringSubstituentReadabilityFailureCount ||
+        ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+      ) {
+        continue;
+      }
+      const candidate = {
+        coords: candidateCoords,
+        audit: candidateAudit,
+        movedAtomIds: descriptor.movedAtomIds,
+        movedHeavyAtomCount: descriptor.movedHeavyAtomCount,
+        rotationMagnitude: Math.abs(rotation)
+      };
+      if (!bestCandidate || ringSidechainFanCandidateScore(candidate) < ringSidechainFanCandidateScore(bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: baseAudit.severeOverlapCount,
+      severeOverlapCountAfter: baseAudit.severeOverlapCount,
+      visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
+      visibleHeavyBondCrossingCountAfter: baseAudit.visibleHeavyBondCrossingCount
+    };
+  }
+
+  return {
+    changed: true,
+    coords: bestCandidate.coords,
+    movedAtomIds: bestCandidate.movedAtomIds,
+    severeOverlapCountBefore: baseAudit.severeOverlapCount,
+    severeOverlapCountAfter: bestCandidate.audit.severeOverlapCount,
+    visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
+    visibleHeavyBondCrossingCountAfter: bestCandidate.audit.visibleHeavyBondCrossingCount
+  };
+}
+
+/**
+ * Rotates tiny covalent branches around a shared metal center when the branch
+ * collapses onto a neighboring metal-bound ring atom. This is deliberately
+ * exact-clean only so ordinary ligand geometry is left untouched.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Input coordinate map.
+ * @param {{bondLength?: number, bondValidationClasses?: Map<string, 'planar'|'bridged'|'haptic'>}} [options] - Retouch options.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], severeOverlapCountBefore: number, severeOverlapCountAfter: number, visibleHeavyBondCrossingCountBefore: number, visibleHeavyBondCrossingCountAfter: number}} Retouch result.
+ */
+export function runOrganometallicMetalBranchFanRetouch(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const layoutHeavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  const baseAudit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: options.bondValidationClasses
+  });
+  if (layoutHeavyAtomCount > METAL_BRANCH_FAN_MAX_LAYOUT_HEAVY_ATOMS || baseAudit.ok || baseAudit.severeOverlapCount <= 0) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: baseAudit.severeOverlapCount,
+      severeOverlapCountAfter: baseAudit.severeOverlapCount,
+      visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
+      visibleHeavyBondCrossingCountAfter: baseAudit.visibleHeavyBondCrossingCount
+    };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of metalBranchFanDescriptors(layoutGraph, coords, bondLength)) {
+    const pivot = coords.get(descriptor.metalAtomId);
+    if (!pivot) {
+      continue;
+    }
+    for (const rotation of METAL_BRANCH_FAN_ROTATIONS) {
+      const candidateCoords = rotateAtomIdsAroundPivot(coords, descriptor.movedAtomIds, pivot, rotation);
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (
+        !candidateAudit.ok ||
+        candidateAudit.visibleHeavyBondCrossingCount > baseAudit.visibleHeavyBondCrossingCount ||
+        candidateAudit.labelOverlapCount > baseAudit.labelOverlapCount ||
+        candidateAudit.ringSubstituentReadabilityFailureCount > baseAudit.ringSubstituentReadabilityFailureCount ||
+        ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+      ) {
+        continue;
+      }
+      const candidate = {
+        coords: candidateCoords,
+        audit: candidateAudit,
+        movedAtomIds: descriptor.movedAtomIds,
+        movedHeavyAtomCount: descriptor.movedHeavyAtomCount,
+        rotationMagnitude: Math.abs(rotation)
+      };
+      if (!bestCandidate || metalBranchFanCandidateScore(candidate) < metalBranchFanCandidateScore(bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return {
+      changed: false,
+      coords,
+      movedAtomIds: [],
+      severeOverlapCountBefore: baseAudit.severeOverlapCount,
+      severeOverlapCountAfter: baseAudit.severeOverlapCount,
+      visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
+      visibleHeavyBondCrossingCountAfter: baseAudit.visibleHeavyBondCrossingCount
+    };
+  }
+
+  return {
+    changed: true,
+    coords: bestCandidate.coords,
+    movedAtomIds: bestCandidate.movedAtomIds,
+    severeOverlapCountBefore: baseAudit.severeOverlapCount,
+    severeOverlapCountAfter: bestCandidate.audit.severeOverlapCount,
+    visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
+    visibleHeavyBondCrossingCountAfter: bestCandidate.audit.visibleHeavyBondCrossingCount
+  };
 }
 
 function coordinateRingAtomOverlapAuditDoesNotRegress(candidateAudit, baseAudit, bondLength) {
@@ -784,6 +1175,10 @@ function auditDoesNotRegress(candidateAudit, baseAudit, bondLength) {
     candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
     candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount &&
     candidateAudit.collapsedMacrocycleCount <= baseAudit.collapsedMacrocycleCount &&
+    candidateAudit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount &&
+    candidateAudit.labelOverlapCount <= baseAudit.labelOverlapCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount &&
+    !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false)) &&
     candidateAudit.maxBondLengthDeviation <= baseAudit.maxBondLengthDeviation + bondLength * RING_RETOUCH_BOND_DEVIATION_SLACK_FACTOR
   );
 }

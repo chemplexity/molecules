@@ -1145,6 +1145,24 @@ function createHydroxyThiazoleCyclopropylPentacycleCoreTemplate() {
 }
 
 /**
+ * Creates the compact dimethyl amino hydroxy fused cage scaffold graph found in
+ * pentacyclic dodecene systems such as `CC12CC3=C4C1C1(N)C5C2C(C3)C4(C)C15O`.
+ * @returns {Molecule} Amino hydroxy dimethyl fused cage scaffold template molecule.
+ */
+function createAminoHydroxyDimethylFusedCageCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('amino-hydroxy-dimethyl-fused-cage-core', 'CC12CC3=C4C1C1(N)C5C2C(C3)C4(C)C15O');
+}
+
+/**
+ * Creates the compact dimethyl diaza cyclopropane-fused cage scaffold graph
+ * found in pentacyclic aza cages like `CC12C3C1N1C4CNC5(C)C=C(C=C24)C3C15`.
+ * @returns {Molecule} Dimethyl diaza fused cyclopropane cage scaffold template molecule.
+ */
+function createDimethylDiazaFusedCyclopropaneCageCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('dimethyl-diaza-fused-cyclopropane-cage-core', 'CC12C3C1N1C4CNC5(C)C=C(C=C24)C3C15');
+}
+
+/**
  * Creates the compact sulfonyl aza cycloheptene cyclopropane scaffold graph
  * found in alkene-bearing fused sulfone cages like
  * `CCC12C3C4=CCCC(CN1S4(=O)=O)C23OC`.
@@ -3235,6 +3253,55 @@ function createHydroxyThiazoleCyclopropylPentacycleCoreGeometry() {
 }
 
 /**
+ * Creates a separated bridgehead projection for compact dimethyl amino hydroxy
+ * fused cages. The two central quaternary carbons are pulled into opposite
+ * lanes so the pentacyclic core does not collapse into a severe C-C overlap.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAminoHydroxyDimethylFusedCageCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C12', { x: 1.381934, y: -0.658676 }],
+    ['C3', { x: 0.793344, y: -0.28909 }],
+    ['C4', { x: 1.394331, y: 0.412431 }],
+    ['C5', { x: 0.613948, y: 1.121539 }],
+    ['C11', { x: 0.313327, y: -0.807012 }],
+    ['C6', { x: -0.348269, y: 0.760231 }],
+    ['C10', { x: -0.727204, y: -1.03845 }],
+    ['C9', { x: -1.494635, y: -0.333184 }],
+    ['C2', { x: -0.147993, y: -0.278786 }],
+    ['C13', { x: 0.331862, y: 0.229781 }],
+    ['C7', { x: -1.42476, y: 0.718918 }],
+    ['C15', { x: -0.685885, y: 0.162298 }]
+  ]);
+}
+
+/**
+ * Creates a separated-lane projection for dimethyl diaza fused cyclopropane
+ * cages. The cyclopropane cap stays on one face, the diene edge spans the
+ * opposite face, and the two nitrogen bridge atoms are pulled into their own
+ * lane so the cage does not fold into C13/C6, C12/N5, or C11/N8 overlaps.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createDimethylDiazaFusedCyclopropaneCageCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C13', { x: -0.314536, y: -0.709352 }],
+    ['C11', { x: 1.141338, y: -1.472125 }],
+    ['C7', { x: -1.261294, y: -0.307558 }],
+    ['C12', { x: 0.717155, y: -0.634257 }],
+    ['C14', { x: -0.556923, y: 0.149579 }],
+    ['C6', { x: -1.354254, y: 0.727576 }],
+    ['C15', { x: 0.99669, y: 0.333427 }],
+    ['C3', { x: 1.074291, y: 1.31197 }],
+    ['C16', { x: 0.085063, y: -0.139739 }],
+    ['C4', { x: 0.128375, y: 1.652916 }],
+    ['C9', { x: 0.195982, y: -1.162733 }],
+    ['C2', { x: 0.324041, y: 0.660415 }],
+    ['N8', { x: -0.81687, y: -1.211536 }],
+    ['N5', { x: -0.35906, y: 0.801416 }]
+  ]);
+}
+
+/**
  * Creates a three-lane projection for sulfonyl aza cycloheptene cyclopropane
  * cages. The alkene seven-ring spans below the cyclopropane cap while the
  * sulfone and aza five-rings occupy the upper lanes without crossing the
@@ -4873,6 +4940,38 @@ export function buildTemplateLibrary() {
             { templateAtomId: 'C2', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C7', element: 'O', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C14', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'amino-hydroxy-dimethyl-fused-cage-core',
+      'fused',
+      53.85515,
+      createAminoHydroxyDimethylFusedCageCoreTemplate(),
+      geometrySpec('normalized-xy', createAminoHydroxyDimethylFusedCageCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C7', element: 'N', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C13', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C15', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'dimethyl-diaza-fused-cyclopropane-cage-core',
+      'fused',
+      53.85512,
+      createDimethylDiazaFusedCyclopropaneCageCoreTemplate(),
+      geometrySpec('normalized-xy', createDimethylDiazaFusedCyclopropaneCageCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C9', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }
