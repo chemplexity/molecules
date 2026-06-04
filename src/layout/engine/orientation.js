@@ -43,10 +43,7 @@ function collectBondIdsAlongPath(molecule, atomIds) {
 }
 
 function ringAtomIdsForMolecule(molecule) {
-  if (
-    molecule._layoutOrientationRingAtomIds instanceof Set &&
-    molecule._layoutOrientationRingAtomIdsVersion === molecule._topologyVersion
-  ) {
+  if (molecule._layoutOrientationRingAtomIds instanceof Set && molecule._layoutOrientationRingAtomIdsVersion === molecule._topologyVersion) {
     return molecule._layoutOrientationRingAtomIds;
   }
   const ringAtomIds = new Set(molecule.getRings().flat());
@@ -56,16 +53,10 @@ function ringAtomIdsForMolecule(molecule) {
 }
 
 function ringSystemsForMolecule(molecule) {
-  if (
-    Array.isArray(molecule._layoutOrientationRingSystems) &&
-    molecule._layoutOrientationRingSystemsVersion === molecule._topologyVersion
-  ) {
+  if (Array.isArray(molecule._layoutOrientationRingSystems) && molecule._layoutOrientationRingSystemsVersion === molecule._topologyVersion) {
     return molecule._layoutOrientationRingSystems;
   }
-  if (
-    Array.isArray(molecule._layoutGraphRingSystems) &&
-    molecule._layoutGraphRingSystemsVersion === molecule._topologyVersion
-  ) {
+  if (Array.isArray(molecule._layoutGraphRingSystems) && molecule._layoutGraphRingSystemsVersion === molecule._topologyVersion) {
     molecule._layoutOrientationRingSystems = molecule._layoutGraphRingSystems;
     molecule._layoutOrientationRingSystemsVersion = molecule._topologyVersion;
     return molecule._layoutOrientationRingSystems;

@@ -66,7 +66,9 @@ describe('layout/engine/templates/library', () => {
       'imino-oxa-azatricyclo-ketone-core',
       'cyclopropyl-lactam-pentacycle-core',
       'hydroxy-thiazole-cyclopropyl-pentacycle-core',
+      'amino-hydroxy-dimethyl-fused-cage-core',
       'ammonium-benzocyclobutane-core',
+      'dimethyl-diaza-fused-cyclopropane-cage-core',
       'sulfonyl-aza-cycloheptene-cyclopropane-core',
       'sulfonyl-aromatic-bridged-heterocycle-core',
       'hydroxy-dimethyl-oxatricyclo-cage-core',
@@ -303,7 +305,10 @@ describe('layout/engine/templates/library', () => {
         ['C15', 'O', 2]
       ]
     );
-    assert.deepEqual(methoxyAmmoniumOxazabicyclicLactam.matchContext?.mappedAtoms?.map(atom => [atom.templateAtomId, atom.element, atom.charge]), [['N10', 'N', 1]]);
+    assert.deepEqual(
+      methoxyAmmoniumOxazabicyclicLactam.matchContext?.mappedAtoms?.map(atom => [atom.templateAtomId, atom.element, atom.charge]),
+      [['N10', 'N', 1]]
+    );
 
     const oxazabicyclicLactam = getTemplateById('oxazabicyclic-lactam-core');
     assert.equal(oxazabicyclicLactam.family, 'bridged');

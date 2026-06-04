@@ -51,6 +51,9 @@ describe('layout/engine/geometry/atom-grid', () => {
 
     assert.equal(found, true);
     assert.deepEqual(visitedAtomIds, ['a0', 'a1']);
-    assert.equal(atomGrid.someRadius({ x: 5, y: 5 }, 0.5, () => true), false);
+    assert.equal(
+      atomGrid.someRadius({ x: 5, y: 5 }, 0.5, () => true),
+      false
+    );
   });
 });

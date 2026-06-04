@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { Molecule } from '../../../../src/core/index.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { atomLabelText, estimateLabelHalfSize, findLabelOverlaps } from '../../../../src/layout/engine/geometry/label-box.js';
+import { atomLabelText, collectLabelBoxes, estimateLabelHalfSize, findLabelOverlaps, hasAnyLabelOverlap } from '../../../../src/layout/engine/geometry/label-box.js';
 
 describe('layout/engine/geometry/label-box', () => {
   it('estimates wider boxes for multi-character labels', () => {
@@ -33,5 +34,31 @@ describe('layout/engine/geometry/label-box', () => {
 
     assert.equal(overlaps.length, 1);
     assert.deepEqual([overlaps[0].firstAtomId, overlaps[0].secondAtomId].sort(), ['Br2', 'Cl1']);
+  });
+
+  it('preserves label collection order for overlaps found by geometric sweep', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('br', 'Br');
+    molecule.addAtom('cl', 'Cl');
+    molecule.addAtom('o', 'O');
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const coords = new Map([
+      ['br', { x: 1, y: 0 }],
+      ['cl', { x: 0, y: 0 }],
+      ['o', { x: 0.45, y: 0 }]
+    ]);
+
+    const overlaps = findLabelOverlaps(graph, coords, graph.options.bondLength);
+    const labelBoxes = collectLabelBoxes(graph, coords, graph.options.bondLength);
+
+    assert.equal(hasAnyLabelOverlap(labelBoxes, graph.options.bondLength * 0.08), true);
+    assert.deepEqual(
+      overlaps.map(overlap => [overlap.firstAtomId, overlap.secondAtomId]),
+      [
+        ['br', 'cl'],
+        ['br', 'o'],
+        ['cl', 'o']
+      ]
+    );
   });
 });

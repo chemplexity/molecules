@@ -216,19 +216,11 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
   const bridgedRingConnectionCount = layoutGraph?.traits?.bridgedRingConnectionCount ?? 0;
   const fusedRingConnectionCount = layoutGraph?.traits?.fusedRingConnectionCount ?? 0;
   const spiroRingConnectionCount = layoutGraph?.traits?.spiroRingConnectionCount ?? 0;
-  const denseBridgedMultiSystem =
-    participantCount >= 36 &&
-    ringSystemCount >= 3 &&
-    bridgedRingConnectionCount >= 6;
+  const denseBridgedMultiSystem = participantCount >= 36 && ringSystemCount >= 3 && bridgedRingConnectionCount >= 6;
   if (denseBridgedMultiSystem && (maxSubtreeSize >= 6 || totalSubtreeSize >= 12 || primaryNeighborIds.length >= 3)) {
     return true;
   }
-  const denseIsolatedMultiRingSystem =
-    participantCount >= 36 &&
-    ringSystemCount >= 3 &&
-    bridgedRingConnectionCount === 0 &&
-    fusedRingConnectionCount === 0 &&
-    spiroRingConnectionCount === 0;
+  const denseIsolatedMultiRingSystem = participantCount >= 36 && ringSystemCount >= 3 && bridgedRingConnectionCount === 0 && fusedRingConnectionCount === 0 && spiroRingConnectionCount === 0;
   if (denseIsolatedMultiRingSystem && primaryNeighborIds.length >= 3 && (maxSubtreeSize >= 8 || totalSubtreeSize >= 18)) {
     return true;
   }
@@ -1257,16 +1249,17 @@ function evaluateAnglePermutations(
 
       const directlyPlacedAtomIds = assignedPlacements.map(placement => placement.childAtomId).filter(atomId => !coords.has(atomId));
       const candidateAtomGrid = buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, tempCoords, directlyPlacedAtomIds);
-      const candidatePlacementContext = placementContext || candidateAtomGrid
-        ? {
-            ...(placementContext ?? {}),
-            coords: tempCoords,
-            placementState: tempPlacementState,
-            atomGrid: candidateAtomGrid,
-            ringPolygonsByAnchor: new Map(),
-            needsResync: false
-          }
-        : null;
+      const candidatePlacementContext =
+        placementContext || candidateAtomGrid
+          ? {
+              ...(placementContext ?? {}),
+              coords: tempCoords,
+              placementState: tempPlacementState,
+              atomGrid: candidateAtomGrid,
+              ringPolygonsByAnchor: new Map(),
+              needsResync: false
+            }
+          : null;
       const recursionOrder = [...assignedPlacements].sort((firstPlacement, secondPlacement) => {
         if (secondPlacement.subtreeSize !== firstPlacement.subtreeSize) {
           return secondPlacement.subtreeSize - firstPlacement.subtreeSize;
@@ -1291,7 +1284,17 @@ function evaluateAnglePermutations(
       }
 
       const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords, atomIdsToPlace);
-      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidatePlacementContext?.atomGrid ?? candidateAtomGrid, adjacency, atomIdsToPlace, branchConstraints);
+      const cost = arrangementCost(
+        layoutGraph,
+        tempCoords,
+        bondLength,
+        anchorAtomId,
+        newlyPlacedAtomIds,
+        candidatePlacementContext?.atomGrid ?? candidateAtomGrid,
+        adjacency,
+        atomIdsToPlace,
+        branchConstraints
+      );
       if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
         bestPlacement = {
           cost,

@@ -1151,10 +1151,7 @@ test('reaction preview bends aryl nitrile hydrogenation imine products onto a tr
 
   const angle = angleDeg(anchor, imineCarbon, imineNitrogen);
   assert.ok(angle > 105 && angle < 135, `expected nitrile-hydrogenation imine C9-C10-N11 angle to stay trigonal, got ${angle.toFixed(1)}°`);
-  assert.ok(
-    Math.abs(distance(imineCarbon, imineNitrogen) - 1.29) < 1e-6,
-    `expected imine C=N bond to stay short, got ${distance(imineCarbon, imineNitrogen).toFixed(3)} Å`
-  );
+  assert.ok(Math.abs(distance(imineCarbon, imineNitrogen) - 1.29) < 1e-6, `expected imine C=N bond to stay short, got ${distance(imineCarbon, imineNitrogen).toFixed(3)} Å`);
 });
 
 test('reaction preview keeps all nitrile-to-imine mappings compact', () => {

@@ -12,18 +12,27 @@ describe('layout/engine/geometry/coord-overlay', () => {
 
     assert.equal(overlay.size, 2);
     assert.deepEqual([...overlay.keys()], ['a', 'b']);
-    assert.deepEqual([...overlay.values()], [
-      { x: 0, y: 0 },
-      { x: 2, y: 3 }
-    ]);
-    assert.deepEqual([...overlay.entries()], [
-      ['a', { x: 0, y: 0 }],
-      ['b', { x: 2, y: 3 }]
-    ]);
-    assert.deepEqual(overlay.toMap(), new Map([
-      ['a', { x: 0, y: 0 }],
-      ['b', { x: 2, y: 3 }]
-    ]));
+    assert.deepEqual(
+      [...overlay.values()],
+      [
+        { x: 0, y: 0 },
+        { x: 2, y: 3 }
+      ]
+    );
+    assert.deepEqual(
+      [...overlay.entries()],
+      [
+        ['a', { x: 0, y: 0 }],
+        ['b', { x: 2, y: 3 }]
+      ]
+    );
+    assert.deepEqual(
+      overlay.toMap(),
+      new Map([
+        ['a', { x: 0, y: 0 }],
+        ['b', { x: 2, y: 3 }]
+      ])
+    );
   });
 
   it('appends override-only atoms after base keys', () => {
@@ -38,10 +47,13 @@ describe('layout/engine/geometry/coord-overlay', () => {
 
     assert.equal(overlay.size, 2);
     assert.deepEqual([...overlay.keys()], ['a', 'b']);
-    assert.deepEqual([...overlay.entries()], [
-      ['a', { x: 2, y: 0 }],
-      ['b', { x: 1, y: 0 }]
-    ]);
+    assert.deepEqual(
+      [...overlay.entries()],
+      [
+        ['a', { x: 2, y: 0 }],
+        ['b', { x: 1, y: 0 }]
+      ]
+    );
   });
 
   it('flattens nested overlays while preserving the latest override', () => {
@@ -60,10 +72,13 @@ describe('layout/engine/geometry/coord-overlay', () => {
 
     assert.equal(secondOverlay.size, 3);
     assert.deepEqual([...secondOverlay.keys()], ['a', 'b', 'c']);
-    assert.deepEqual([...secondOverlay.entries()], [
-      ['a', { x: 3, y: 0 }],
-      ['b', { x: 1, y: 0 }],
-      ['c', { x: 4, y: 0 }]
-    ]);
+    assert.deepEqual(
+      [...secondOverlay.entries()],
+      [
+        ['a', { x: 3, y: 0 }],
+        ['b', { x: 1, y: 0 }],
+        ['c', { x: 4, y: 0 }]
+      ]
+    );
   });
 });

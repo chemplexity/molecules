@@ -83,11 +83,7 @@ export function isBetterBridgedRescueForFusedSystem(candidateAudit, incumbentAud
   if (!candidateAudit || !incumbentAudit) {
     return false;
   }
-  if (
-    incumbentAudit.bondLengthFailureCount === 0 &&
-    incumbentAudit.severeOverlapCount === 0 &&
-    candidateAudit.severeOverlapCount > 0
-  ) {
+  if (incumbentAudit.bondLengthFailureCount === 0 && incumbentAudit.severeOverlapCount === 0 && candidateAudit.severeOverlapCount > 0) {
     return false;
   }
   if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount + FUSED_RESCUE_LIMITS.maxRescueOverlapPenalty) {

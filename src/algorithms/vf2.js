@@ -342,7 +342,15 @@ function* _vf2(state, depth) {
  * @yields {Map<string, string>}
  */
 export function* findSubgraphMappings(target, query, options = {}) {
-  const { atomMatch = defaultAtomMatch, bondMatch = defaultBondMatch, limit = Infinity, skipElementFilter = false, targetIndex = null, queryIndex = null, queryOrder: cachedQueryOrder = null } = options;
+  const {
+    atomMatch = defaultAtomMatch,
+    bondMatch = defaultBondMatch,
+    limit = Infinity,
+    skipElementFilter = false,
+    targetIndex = null,
+    queryIndex = null,
+    queryOrder: cachedQueryOrder = null
+  } = options;
 
   // Trivial case: empty query matches everything once.
   if (query.atoms.size === 0) {

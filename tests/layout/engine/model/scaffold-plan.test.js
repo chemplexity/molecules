@@ -602,10 +602,7 @@ describe('layout/engine/model/scaffold-plan', () => {
   });
 
   it('preselects a terminal branch-hub root for aromatic isolated-ring clusters', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('CC(O)C(=O)N(CC1CN(CC1F)C(=O)OCC1=CC=CC=C1)C(C1=C(CC2=CC=CC=C2)OC(=N1)C1=CC(F)=CC=C1F)C(C)(C)C'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('CC(O)C(=O)N(CC1CN(CC1F)C(=O)OCC1=CC=CC=C1)C(C1=C(CC2=CC=CC=C2)OC(=N1)C1=CC(F)=CC=C1F)C(C)(C)C'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootSelectionMode, 'terminal-ring-chain');
     assert.equal(plan.rootScaffold.id, 'ring-system:2');

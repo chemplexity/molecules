@@ -1026,8 +1026,8 @@ export class Molecule {
     const bondByPair = new Map();
     for (const [bId, bond] of this.bonds) {
       const [a, b] = bond.atoms;
-      bondByPair.set(`${a  }\0${  b}`, bId);
-      bondByPair.set(`${b  }\0${  a}`, bId);
+      bondByPair.set(`${a}\0${b}`, bId);
+      bondByPair.set(`${b}\0${a}`, bId);
     }
     const bondIdsList = [...this.bonds.keys()];
     const bondIndexMap = new Map(bondIdsList.map((id, i) => [id, i]));
@@ -1035,10 +1035,14 @@ export class Molecule {
     const toBondSet = ({ ring, closingBond }) => {
       const s = new Set();
       const ci = bondIndexMap.get(closingBond);
-      if (ci !== undefined) {s.add(ci);}
+      if (ci !== undefined) {
+        s.add(ci);
+      }
       for (let i = 0; i < ring.length - 1; i++) {
-        const bId = bondByPair.get(`${ring[i]  }\0${  ring[i + 1]}`);
-        if (bId !== undefined) {s.add(bondIndexMap.get(bId));}
+        const bId = bondByPair.get(`${ring[i]}\0${ring[i + 1]}`);
+        if (bId !== undefined) {
+          s.add(bondIndexMap.get(bId));
+        }
       }
       return s;
     };
@@ -1057,16 +1061,28 @@ export class Molecule {
       for (const col of sortedCols) {
         if (bv.has(col)) {
           for (const x of pivotMap.get(col)) {
-            if (bv.has(x)) {bv.delete(x);} else {bv.add(x);}
+            if (bv.has(x)) {
+              bv.delete(x);
+            } else {
+              bv.add(x);
+            }
           }
         }
       }
-      if (bv.size === 0) {continue;} // linearly dependent — skip
+      if (bv.size === 0) {
+        continue;
+      } // linearly dependent — skip
       let pivot = Infinity;
-      for (const x of bv) {if (x < pivot) {pivot = x;}}
+      for (const x of bv) {
+        if (x < pivot) {
+          pivot = x;
+        }
+      }
       pivotMap.set(pivot, bv);
       result.push(entry.ring);
-      if (result.length === ringCount) {break;}
+      if (result.length === ringCount) {
+        break;
+      }
     }
 
     this._ringsCache = result;

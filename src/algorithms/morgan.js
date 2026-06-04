@@ -161,7 +161,7 @@ export function morganRanks(mol) {
   // symmetric).  We break ties deterministically by preferring chirality-based
   // separation first (canonical across molecules), then falling back to atom
   // insertion order (arbitrary but consistent within one molecule).
-  const chiralityOrd = ch => ch === 'R' ? 0 : ch === 'S' ? 1 : 2;
+  const chiralityOrd = ch => (ch === 'R' ? 0 : ch === 'S' ? 1 : 2);
   while (unique < n) {
     // Tally rank counts across all atoms.
     const counts = new Map();
@@ -178,7 +178,9 @@ export function morganRanks(mol) {
     const fractional = rank.map(r => [r]);
     let appliedChiralBreak = false;
     for (const [tiedRank, count] of counts) {
-      if (count <= 1) {continue;}
+      if (count <= 1) {
+        continue;
+      }
       const tiedIndices = rank.map((r, i) => (r === tiedRank ? i : -1)).filter(i => i >= 0);
       const ords = tiedIndices.map(i => chiralityOrd(atoms[i].properties.chirality));
       const minOrd = Math.min(...ords);
@@ -197,7 +199,9 @@ export function morganRanks(mol) {
       ({ rank, unique } = assignRanks(fractional));
       for (;;) {
         const next = extendRanks(rank);
-        if (next.unique <= unique) {break;}
+        if (next.unique <= unique) {
+          break;
+        }
         rank = next.rank;
         unique = next.unique;
       }
@@ -230,7 +234,9 @@ export function morganRanks(mol) {
 
     for (;;) {
       const next = extendRanks(rank);
-      if (next.unique <= unique) {break;}
+      if (next.unique <= unique) {
+        break;
+      }
       rank = next.rank;
       unique = next.unique;
     }

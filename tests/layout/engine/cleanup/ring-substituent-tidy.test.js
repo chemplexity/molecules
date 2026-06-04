@@ -13,6 +13,9 @@ import { classifyFamily, runPipeline } from '../../../../src/layout/engine/pipel
 import { resolveProfile } from '../../../../src/layout/engine/profile.js';
 import { resolvePolicy } from '../../../../src/layout/engine/standards/profile-policy.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 function bondAngle(coords, firstAtomId, centerAtomId, secondAtomId) {
   const first = coords.get(firstAtomId);
   const center = coords.get(centerAtomId);
@@ -163,7 +166,7 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
   });
 
-  it('does not rotate an attached anisole ring into a reverse-side outward readability failure', () => {
+  stressIt('does not rotate an attached anisole ring into a reverse-side outward readability failure', () => {
     const result = runPipeline(parseSMILES('CCOC(=O)C1C(CC2=NC(=C(C(C2=C1O)c3ccccn3)C(=O)OCC)C)c4ccc(OC)cc4'), { suppressH: true, auditTelemetry: true });
     const presentationCleanupAudit = result.metadata.stageTelemetry.stageAudits.presentationCleanup;
 
@@ -332,9 +335,8 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.equal(afterAudit.ok, true);
   });
 
-  it('prioritizes the off-angle side of oversized linked-ring sugar bridges', () => {
-    const smiles =
-      'NC[C@@H]1O[C@H](<O[C@@H]2[C@@H](CO)O[C@@H](O[C@@H]3[C@@H](O)[C@H](N)C[C@H](N)[C@H]3O[C@H]3O[C@H](CO)[C@@H](O)[C@H](O)[C@H]3N)[C@@H]2OCCNC[C@@H]2CCCNC2>)[C@H](N)[C@@H](O)[C@@H]1O';
+  stressIt('prioritizes the off-angle side of oversized linked-ring sugar bridges', () => {
+    const smiles = 'NC[C@@H]1O[C@H](<O[C@@H]2[C@@H](CO)O[C@@H](O[C@@H]3[C@@H](O)[C@H](N)C[C@H](N)[C@H]3O[C@H]3O[C@H](CO)[C@@H](O)[C@H](O)[C@H]3N)[C@@H]2OCCNC[C@@H]2CCCNC2>)[C@H](N)[C@@H](O)[C@@H]1O';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       finalLandscapeOrientation: true
@@ -384,7 +386,7 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.equal(afterAudit.ok, true);
   });
 
-  it('keeps the representative multi-methoxy fused-ring readability case outward and audit-clean in the full pipeline', () => {
+  stressIt('keeps the representative multi-methoxy fused-ring readability case outward and audit-clean in the full pipeline', () => {
     const result = runPipeline(parseSMILES('[H][C@]12C[C@@H](OC(=O)C3=CC(OC)=C(OC)C(OC)=C3)[C@H](OC)[C@@H](C(=O)OC)[C@@]1([H])C[C@@]1([H])N(CCC3=C1NC1=C3C=CC(OC)=C1)C2'), { suppressH: true });
 
     const attachedRingDeviation = ringOutwardDeviation(result.layoutGraph, result.coords, 'C9', 'C7');

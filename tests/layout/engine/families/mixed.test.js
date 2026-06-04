@@ -481,7 +481,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS, `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`);
   });
 
-  it('lays out the stress-test peptide outlier without stalling sibling permutation scoring', () => {
+  stressIt('lays out the stress-test peptide outlier without stalling sibling permutation scoring', () => {
     const graph = createLayoutGraph(
       parseSMILES('CNCC(=O)N[C@@H](CCCN=C(N)N)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](Cc1ccc(S)cc1)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](Cc2c[nH]cn2)C(=O)N3CCC[C@@H]3C(=O)N[C@@H](Cc4ccccc4)C(=O)O'),
       { suppressH: true }
@@ -747,7 +747,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(checkedAnchors.length, 2, `expected two sulfur-ring methyl anchors, checked ${checkedAnchors.length}`);
   });
 
-  it('keeps the reported morphinan middle cyclohexane exact while preserving the bridgehead methyl slot', () => {
+  stressIt('keeps the reported morphinan middle cyclohexane exact while preserving the bridgehead methyl slot', () => {
     const smiles = 'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCN2C.CS(=O)(=O)O';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components.find(candidateComponent => candidateComponent.atomIds.includes('C20'));
@@ -823,7 +823,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(pipelineResult.metadata.audit.ok, true);
   });
 
-  it('keeps the one-carbon morphinan bridge variant from deforming the fused cyclohexane core', () => {
+  stressIt('keeps the one-carbon morphinan bridge variant from deforming the fused cyclohexane core', () => {
     const smiles = 'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCCN2C';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1181,7 +1181,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(pipelineResult.metadata.audit.ok, true);
   });
 
-  it('moves larger late-grown cyclobutane branches onto the exact exterior slot when they crowd an aryl ring', () => {
+  stressIt('moves larger late-grown cyclobutane branches onto the exact exterior slot when they crowd an aryl ring', () => {
     const smiles = 'NC1=NC=C(C=N1)C1=CC=C(C=C1)C1(CCC1)C(=N)N=C(O)C1=CC=C(N=C1)N1CC[NH2+]CC1';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1396,7 +1396,7 @@ describe('layout/engine/families/mixed', () => {
     assertC15Fan(pipelineResult.coords, 'pipeline layout');
   });
 
-  it('balances crowded directly attached polyaryl ring exits without reintroducing overlap', () => {
+  stressIt('balances crowded directly attached polyaryl ring exits without reintroducing overlap', () => {
     const smiles = 'O(C1=CC=CC=C1)C1=CC=C2C(=C1)C(C1=CC=C3C=CC=CC3=C1)=C1C=CC=CC1=C2C1=CC=CC=C1C1=CC=C(C=C1)C1=CC=CC=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -1477,7 +1477,7 @@ describe('layout/engine/families/mixed', () => {
     assertExactArylExits(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
   });
 
-  it('keeps triaryl sulfoxide indole exits trigonal and overlap-free', () => {
+  stressIt('keeps triaryl sulfoxide indole exits trigonal and overlap-free', () => {
     const smiles = 'C[S+]([O-])c1ccc(cc1)c2cc(c3ccncc3C)c([nH]2)c4ccc(F)cc4';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1494,7 +1494,7 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
-  it('keeps imide-attached phenyl roots trigonal by rotating compact acyclic sidechains away', () => {
+  stressIt('keeps imide-attached phenyl roots trigonal by rotating compact acyclic sidechains away', () => {
     const smiles = 'CSc1ccccc1C2C(C(=O)C(C)C)C(=O)C(=O)N2c3ccc(cc3)c4csc(C)c4';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1750,7 +1750,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(separations[0] > 1.3, `expected C18 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
-  it('keeps direct-attached aryl branches on five-member saturated-ring exterior slots beside CF3 tripods', () => {
+  stressIt('keeps direct-attached aryl branches on five-member saturated-ring exterior slots beside CF3 tripods', () => {
     const smiles = 'FC(F)(F)CNC(=O)C1CN(C1)C1=CC=C(C=C1)C1=NOC(C1)(C1=CC(Cl)=C(Cl)C(Cl)=C1)C(F)(F)F';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1782,7 +1782,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(distance(result.coords.get('C32'), result.coords.get('F34')) > graph.options.bondLength * 0.7, 'expected the relieved CF3 fluorine to clear the exact chlorophenyl root');
   });
 
-  it('keeps sibling direct-attached aryl branches on five-member saturated-ring exterior slots', () => {
+  stressIt('keeps sibling direct-attached aryl branches on five-member saturated-ring exterior slots', () => {
     const smiles = '[O-]C(=O)C1=CC=CC=C1OC1=CC=C(C=C1)C1(C2=CC=CC=C2C2=CC=CC=C12)C1=CC=C(OC2=CC=CC=C2N(=O)=O)C=C1';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
@@ -1835,7 +1835,7 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
-  it('rotates saturated six-member ring blocks so diaryl quaternary anchors keep open exterior angles', () => {
+  stressIt('rotates saturated six-member ring blocks so diaryl quaternary anchors keep open exterior angles', () => {
     const smiles = 'ClC1=CC=C(C=C1)C1(CCNCC1)C1=CC=C(C=C1)C1=C2N=CNC2=NC=N1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -2000,7 +2000,7 @@ describe('layout/engine/families/mixed', () => {
     assert.deepEqual(inwardRingSubstituents(secondGraph, secondResult.coords), []);
   });
 
-  it('keeps safe fused-junction substituents on the exact continuation of the shared junction bond', () => {
+  stressIt('keeps safe fused-junction substituents on the exact continuation of the shared junction bond', () => {
     const graph = createLayoutGraph(parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'), { suppressH: true });
     const component = graph.components[0];
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
@@ -2275,7 +2275,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(rightAttachmentAngle - (2 * Math.PI) / 3) < 1e-6, `expected C9 to stay exact, got ${((rightAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
-  it('keeps an exocyclic alkene exit centered between the two ring bonds when a pending attached ring would otherwise skew it to one side', () => {
+  stressIt('keeps an exocyclic alkene exit centered between the two ring bonds when a pending attached ring would otherwise skew it to one side', () => {
     const smiles = 'CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -2426,7 +2426,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.max(...carbonylAngles) <= 165 + 1e-6, `expected C31 benzoyl fan not to over-open beyond the accepted local relief, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
-  it('keeps fused lactone systems joined through a methylene linker on a standard bend', () => {
+  stressIt('keeps fused lactone systems joined through a methylene linker on a standard bend', () => {
     const smiles = 'OC1=C(CC2=C(O)C3=C(OC2=O)C=CC=C3)C(=O)OC2=C1C=CC=C2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -2695,7 +2695,7 @@ describe('layout/engine/families/mixed', () => {
     assertHeteroarylRoot(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
   });
 
-  it('flips the dimethoxybenzyl ring while balancing the C3 ester and C5 anchor', () => {
+  stressIt('flips the dimethoxybenzyl ring while balancing the C3 ester and C5 anchor', () => {
     const smiles = 'COC(=O)C1N(CC2=CC=CC(OC)=C2OC)C(=NC(O)=C1[O-])C1=CSC=C1NC(=O)[N-]S(=O)(=O)C1=CC=CC=C1Cl';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -2909,10 +2909,7 @@ describe('layout/engine/families/mixed', () => {
         bondAngleAtAtom(coords, centerAtomId, secondNeighborAtomId, thirdNeighborAtomId)
       ];
       const maxDeviation = Math.max(...angles.map(angle => Math.abs(angle - (2 * Math.PI) / 3)));
-      assert.ok(
-        maxDeviation <= Math.PI / 3 + 1e-6,
-        `expected ${label} ${centerAtomId} carbonyl fan to remain bounded, got ${angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
-      );
+      assert.ok(maxDeviation <= Math.PI / 3 + 1e-6, `expected ${label} ${centerAtomId} carbonyl fan to remain bounded, got ${angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
     };
 
     assert.equal(mixedResult.supported, true);
@@ -2925,7 +2922,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(pipelineResult.metadata.audit.ok, true);
   });
 
-  it('clears terminal amide carbonyl leaves from neighboring aryl rings while preserving saturated-ring fans', () => {
+  stressIt('clears terminal amide carbonyl leaves from neighboring aryl rings while preserving saturated-ring fans', () => {
     const smiles = 'CC1=CC=C2C=C(CC3=CC=C(O)C=C3)C=C(C2=C1)[N+]1(NCC(=O)N2CC(=O)NCC12)C(=O)NCC1=CC=CC=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -3069,7 +3066,7 @@ describe('layout/engine/families/mixed', () => {
     assertTrigonalCenter(pipelineResult.coords, 'pipeline layout');
   });
 
-  it('keeps non-ring sugar sidechain hidden-h centers exact while clearing downstream aryl rings', () => {
+  stressIt('keeps non-ring sugar sidechain hidden-h centers exact while clearing downstream aryl rings', () => {
     const smiles = 'CO[C@H]1[C@H](O[C@@H]2OC(C)(C)O[C@H]12)[C@H](CC(=O)N)N(Cc3ccccc3O)C(=O)Nc4ccc(C)c(Cl)c4';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -3494,7 +3491,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(closestScaffoldDistance > graph.options.bondLength * 0.75, `expected ortho fluorine label to clear the neighboring scaffold, got ${closestScaffoldDistance.toFixed(3)}`);
   });
 
-  it('keeps crowded terminal aryl fluorine leaves on the exact local ring-outward axis', () => {
+  stressIt('keeps crowded terminal aryl fluorine leaves on the exact local ring-outward axis', () => {
     const smiles = 'FC1=CC=CC(=C1)C1=CC(=CC=C1C1=CC(=CC(=C1)C(F)(F)F)C(F)(F)F)C(=O)N1CCC(C1)C1=CC=CN=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -3557,7 +3554,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(distance(result.coords.get('O32'), result.coords.get('C21')) > bondLength * 0.65, 'expected the terminal ring carbonyl oxygen to keep readable clearance from the adjacent ring atom');
   });
 
-  it('keeps terminal chlorophenyl C29 angles exact on fused tricyclic scaffolds', () => {
+  stressIt('keeps terminal chlorophenyl C29 angles exact on fused tricyclic scaffolds', () => {
     const smiles = 'COc1ccc(cc1)C2CC3=C(C(Nc4cc(C)ccc4N3)c5c(F)cccc5Cl)C(=O)C2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -3749,7 +3746,7 @@ describe('layout/engine/families/mixed', () => {
     assertProjectedC3(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
   });
 
-  it('defers terminal methyl leaves on planar nitrogens until pending rings can claim trigonal slots', () => {
+  stressIt('defers terminal methyl leaves on planar nitrogens until pending rings can claim trigonal slots', () => {
     const smiles = 'COc1cc2ccccc2cc1C(=O)OCC(=O)N(C)C3=C(N)N(Cc4ccccc4)C(=O)NC3=O';
     const result = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
     const graph = result.layoutGraph;
@@ -3787,7 +3784,7 @@ describe('layout/engine/families/mixed', () => {
     assertProjectedCenter(pipelineResult.coords, pipelineResult.layoutGraph, 'pipeline layout');
   });
 
-  it('keeps parent-side mirrored subtrees fixed during direct-attached ring refinement', () => {
+  stressIt('keeps parent-side mirrored subtrees fixed during direct-attached ring refinement', () => {
     const smiles = 'CCCCP(=O)(C(=O)C1=C(CC)C=C(CC)C=C1CC)C(=O)C1=C(CC)C=C(CC)C=C1CC';
     const result = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
     const targetBondLength = result.layoutGraph.options.bondLength;
@@ -3937,19 +3934,15 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
-  it('keeps bridgehead terminal methyl leaves outside incident fused ring faces after cleanup', () => {
+  stressIt('keeps bridgehead terminal methyl leaves outside incident fused ring faces after cleanup', () => {
     const smiles = 'CC(=C)[C@@H]1CC[C@@]2(CC[C@]3(C)[C@H](<CC[C@@H]4[C@@]5(C)CC=C(c6ccc(cc6)C7(CC7)C(=O)O)C(C)(C)[C@@H]5CC[C@@]34C>)[C@@H]12)C(=O)O';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       auditTelemetry: true
     });
     const insideIncidentRings = (anchorAtomId, leafAtomId) =>
-      (result.layoutGraph.atomToRings.get(anchorAtomId) ?? []).filter(ring =>
-        pointInPolygon(
-          result.coords.get(leafAtomId),
-          ring.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean)
-        )
-      ).length;
+      (result.layoutGraph.atomToRings.get(anchorAtomId) ?? []).filter(ring => pointInPolygon(result.coords.get(leafAtomId), ring.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean)))
+        .length;
 
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length, 0);

@@ -1,6 +1,6 @@
 {
   "name": "molecules",
-  "version": "2026.5.18",
+  "version": "2026.6.2",
   "description": "JavaScript cheminformatics toolkit for molecular graphs, SMILES/InChI, SMARTS/SMIRKS, 2D layout, and molecular descriptors",
   "type": "module",
   "sideEffects": false,
@@ -60,7 +60,7 @@
     "prebuild": "npm run clean",
     "test": "node --test 'tests/**/*.test.js'",
     "test:layout:browser": "RUN_BROWSER_LAYOUT_TESTS=1 node --test tests/layout/engine/browser-determinism.test.js",
-    "test:layout:stress": "RUN_LAYOUT_STRESS=1 node --test tests/layout/engine/browser-determinism.test.js tests/layout/engine/families/mixed.test.js",
+    "test:layout:stress": "RUN_LAYOUT_STRESS=1 node --test 'tests/layout/engine/**/*.test.js'",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:watch": "node --test --watch 'tests/**/*.test.js'",

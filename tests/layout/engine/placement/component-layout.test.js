@@ -18,6 +18,9 @@ import {
   makeUnmatchedBridgedCage
 } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 describe('layout/engine/placement/component-layout', () => {
   it('lays out supported components including ring scaffolds with substituents', () => {
     const graph = createLayoutGraph(makeMethylbenzene());
@@ -133,7 +136,7 @@ describe('layout/engine/placement/component-layout', () => {
     assert.deepEqual(result.cleanupRigidSubtreesByAtomId.get('n2')?.[0]?.subtreeAtomIds, ['n2', 'c2']);
   });
 
-  it('rescues large cobalt corrins through the fused ring-system path when mixed placement is bond-dirty', () => {
+  stressIt('keeps large cobalt corrins clean through the best large-component path', () => {
     const graph = createLayoutGraph(
       parseSMILES(
         '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C)=C3)C=C(C(C)=C4)C'
@@ -146,10 +149,11 @@ describe('layout/engine/placement/component-layout', () => {
       bondValidationClasses: result.bondValidationClasses
     });
 
-    assert.deepEqual(result.placedFamilies, ['fused']);
-    assert.ok(audit.severeOverlapCount <= 10);
-    assert.ok(audit.bondLengthFailureCount <= 2);
-    assert.ok(audit.maxBondLengthDeviation < 3.5);
+    assert.deepEqual(result.placedFamilies, ['large-molecule']);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < 0.6);
   });
 
   it('lays out a large organic component through block partitioning and stitching', () => {

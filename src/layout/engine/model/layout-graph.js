@@ -105,9 +105,13 @@ function buildRingConnectionsByRingSystemIdIndex(ringSystems, ringConnections) {
     }
   }
   for (const connection of ringConnections) {
-    const ringSystemIds = new Set([ringSystemIdByRingId.get(connection.firstRingId), ringSystemIdByRingId.get(connection.secondRingId)].filter(ringSystemId => ringSystemId != null));
-    for (const ringSystemId of ringSystemIds) {
-      ringConnectionsByRingSystemId.get(ringSystemId)?.push(connection);
+    const firstRingSystemId = ringSystemIdByRingId.get(connection.firstRingId);
+    const secondRingSystemId = ringSystemIdByRingId.get(connection.secondRingId);
+    if (firstRingSystemId != null) {
+      ringConnectionsByRingSystemId.get(firstRingSystemId)?.push(connection);
+    }
+    if (secondRingSystemId != null && secondRingSystemId !== firstRingSystemId) {
+      ringConnectionsByRingSystemId.get(secondRingSystemId)?.push(connection);
     }
   }
   return ringConnectionsByRingSystemId;

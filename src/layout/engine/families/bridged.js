@@ -1518,7 +1518,9 @@ function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bond
   }
 
   const ringAtomIds = new Set(atomIds);
-  const component = atomIds.map(atomId => layoutGraph.componentByAtomId?.get(atomId)).find(Boolean) ?? layoutGraph.components.find(candidateComponent => atomIds.some(atomId => candidateComponent.atomIds.includes(atomId)));
+  const component =
+    atomIds.map(atomId => layoutGraph.componentByAtomId?.get(atomId)).find(Boolean) ??
+    layoutGraph.components.find(candidateComponent => atomIds.some(atomId => candidateComponent.atomIds.includes(atomId)));
   if (!component) {
     return 0;
   }
@@ -4142,8 +4144,7 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
   selectedCoords = spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = retouchCollapsedSaturatedThreeAtomBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   const selectedAudit = selectedCoords === coords ? baseAudit : auditBridgedPlacementCandidate(layoutGraph, atomIds, selectedCoords, bondLength);
-  const canRetouchMarginalStretch =
-    atomIds.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_ATOMS && rings.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_RINGS;
+  const canRetouchMarginalStretch = atomIds.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_ATOMS && rings.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_RINGS;
   if (canRetouchMarginalStretch && compareBridgedProjectionAudits(selectedAudit, baseAudit) > 0) {
     return retouchMarginalStretchedBridgedRingBonds(layoutGraph, atomIds, coords, bondLength, baseAudit);
   }
@@ -4180,9 +4181,7 @@ function compactSaturatedSpiroLaneFirstBridgedAtomIds(layoutGraph, rings, fallba
   }
 
   const ringSizes = rings.map(ring => ring.atomIds.length).sort((firstSize, secondSize) => firstSize - secondSize);
-  const supportedRingSizeSet =
-    (ringSizes[0] === 3 && ringSizes[1] === 5 && ringSizes[2] === 6) ||
-    (ringSizes[0] === 5 && ringSizes[1] === 6 && ringSizes[2] === 7);
+  const supportedRingSizeSet = (ringSizes[0] === 3 && ringSizes[1] === 5 && ringSizes[2] === 6) || (ringSizes[0] === 5 && ringSizes[1] === 6 && ringSizes[2] === 7);
   if (!supportedRingSizeSet) {
     return null;
   }
@@ -4606,11 +4605,7 @@ function aromaticCappedFiveFiveFourBridgedOrder(layoutGraph, rings) {
         continue;
       }
       const orderedFiveRing = rotateRingAtomIdsStartingWith(bridgedFiveRing, firstAtomId, secondAtomId);
-      if (
-        !orderedFiveRing ||
-        !orderedFiveRing.slice(0, 3).every(atomId => bridgePathAtomIdSet.has(atomId)) ||
-        !orderedFiveRing.slice(3, 5).every(atomId => fusedAtomIdSet.has(atomId))
-      ) {
+      if (!orderedFiveRing || !orderedFiveRing.slice(0, 3).every(atomId => bridgePathAtomIdSet.has(atomId)) || !orderedFiveRing.slice(3, 5).every(atomId => fusedAtomIdSet.has(atomId))) {
         continue;
       }
 
@@ -4773,8 +4768,7 @@ function circularBridgeLaneTargets(firstPoint, secondPoint, internalAtomCount, s
   };
   const startAngle = angleOf(sub(firstPoint, center));
   const endAngle = angleOf(sub(secondPoint, center));
-  const sweep =
-    side > 0 ? (endAngle - startAngle + 2 * Math.PI) % (2 * Math.PI) : -((startAngle - endAngle + 2 * Math.PI) % (2 * Math.PI));
+  const sweep = side > 0 ? (endAngle - startAngle + 2 * Math.PI) % (2 * Math.PI) : -((startAngle - endAngle + 2 * Math.PI) % (2 * Math.PI));
 
   return Array.from({ length: internalAtomCount }, (_, index) => {
     const angle = startAngle + sweep * ((index + 1) / segmentCount);
@@ -4895,8 +4889,7 @@ function buildAromaticCappedFusedSquareBridgeCoords(layoutGraph, rings, atomIds,
     baseCoords.set(order.baseRingAtomIds[index], baseRingCoords[index]);
   }
   const baseCenter = centroid(order.baseRingAtomIds.map(atomId => baseCoords.get(atomId)));
-  const aromaticSide =
-    -edgeSideTowardPoint(baseCoords.get(order.aromaticEdgeAtomIds[0]), baseCoords.get(order.aromaticEdgeAtomIds[1]), baseCenter);
+  const aromaticSide = -edgeSideTowardPoint(baseCoords.get(order.aromaticEdgeAtomIds[0]), baseCoords.get(order.aromaticEdgeAtomIds[1]), baseCenter);
   const squareSide = -edgeSideTowardPoint(baseCoords.get(order.squareEdgeAtomIds[0]), baseCoords.get(order.squareEdgeAtomIds[1]), baseCenter);
 
   const aromaticCoords = placeRegularRingOnEdge(baseCoords, order.aromaticRingAtomIds, order.aromaticEdgeAtomIds[0], order.aromaticEdgeAtomIds[1], aromaticSide, bondLength);
@@ -4915,13 +4908,7 @@ function buildAromaticCappedFusedSquareBridgeCoords(layoutGraph, rings, atomIds,
   const internalBridgeAtomIds = bridgeTailAtomIds.slice(0, -1);
   for (const stretchFactor of AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_STRETCH_FACTORS) {
     for (const side of [-1, 1]) {
-      const targets = circularBridgeLaneTargets(
-        fusedCoords.get(firstBridgeAtomId),
-        fusedCoords.get(secondBridgeAtomId),
-        internalBridgeAtomIds.length,
-        side,
-        bondLength * stretchFactor
-      );
+      const targets = circularBridgeLaneTargets(fusedCoords.get(firstBridgeAtomId), fusedCoords.get(secondBridgeAtomId), internalBridgeAtomIds.length, side, bondLength * stretchFactor);
       if (!targets) {
         continue;
       }

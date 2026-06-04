@@ -454,9 +454,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   let baseLayoutState = null;
 
   while (passes < maxPasses) {
-    const baseOverlapState =
-      baseLayoutState ??
-      evaluationContext.measureOverlapState();
+    const baseOverlapState = baseLayoutState ?? evaluationContext.measureOverlapState();
     const baseOverlapCount = baseOverlapState.overlapCount;
     let bestPrescoredCandidate = null;
 

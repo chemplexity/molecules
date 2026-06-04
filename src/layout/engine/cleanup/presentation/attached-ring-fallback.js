@@ -1524,10 +1524,7 @@ function terminalRingLeafIntrusionTargetAngles(layoutGraph, coords, descriptor, 
     if (targetInsideCount > 0) {
       continue;
     }
-    if (
-      ringNeighborAngles.length > 0 &&
-      Math.min(...ringNeighborAngles.map(ringAngle => angularDifference(candidateAngle, ringAngle))) < TERMINAL_RING_LEAF_INTRUSION_MIN_RING_SEPARATION - 1e-6
-    ) {
+    if (ringNeighborAngles.length > 0 && Math.min(...ringNeighborAngles.map(ringAngle => angularDifference(candidateAngle, ringAngle))) < TERMINAL_RING_LEAF_INTRUSION_MIN_RING_SEPARATION - 1e-6) {
       continue;
     }
     candidateAngles.push(candidateAngle);
@@ -4514,10 +4511,19 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           localPoseKey: attachedRingLocalPoseKey(layoutGraph, candidateCoords, descriptor)
         };
       };
+      const materializeCandidateScoreCoords = score => {
+        if (score?.coords && typeof score.coords.toMap === 'function') {
+          return {
+            ...score,
+            coords: score.coords.toMap()
+          };
+        }
+        return score;
+      };
       const scoreCandidate = (seedCandidateCoords, overridePositions) => {
         let bestScore = buildCandidateScore(seedCandidateCoords, 1, overridePositions);
         if (bestScore && isExactCleanAttachedRingCandidate(bestScore)) {
-          return bestScore;
+          return materializeCandidateScoreCoords(bestScore);
         }
         const directUnifiedCleanup = runUnifiedCleanup(layoutGraph, seedCandidateCoords, {
           maxPasses: 1,
@@ -4534,7 +4540,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           if (directUnifiedScore && isBetterAttachedRingCandidate(directUnifiedScore, bestScore)) {
             bestScore = directUnifiedScore;
             if (isExactCleanAttachedRingCandidate(bestScore)) {
-              return bestScore;
+              return materializeCandidateScoreCoords(bestScore);
             }
           }
         }
@@ -4563,7 +4569,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         if (localScore && isBetterAttachedRingCandidate(localScore, bestScore)) {
           bestScore = localScore;
           if (isExactCleanAttachedRingCandidate(bestScore)) {
-            return bestScore;
+            return materializeCandidateScoreCoords(bestScore);
           }
         }
         const unifiedCleanup = runUnifiedCleanup(layoutGraph, ringSubstituentTouchup.coords, {
@@ -4582,7 +4588,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
             bestScore = unifiedScore;
           }
         }
-        return bestScore;
+        return materializeCandidateScoreCoords(bestScore);
       };
       if (needsPeripheralFocusClearanceRescue) {
         const reflectedCoords = reflectSubtreeAcrossBond(currentCoords, descriptor.subtreeAtomIds, descriptor.anchorAtomId, descriptor.rootAtomId, new Set([descriptor.rootAtomId]));
@@ -4609,6 +4615,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       }
       const attachedCarbonylRingChildren = collectAttachedCarbonylRingChildDescriptors(layoutGraph, currentCoords, descriptor);
       const attachedRingSearch = visitPresentationDescriptorCandidates(layoutGraph, currentCoords, descriptor, {
+        useSparseCandidateOverlay: true,
         context: {
           focusAtomIds,
           attachedCarbonylRingChildren,

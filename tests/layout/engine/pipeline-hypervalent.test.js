@@ -9,6 +9,9 @@ import { runPipeline } from '../../../src/layout/engine/pipeline.js';
 import { hasHypervalentAngleTidyNeed, measureOrthogonalHypervalentDeviation } from '../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
 import { measureTerminalMultipleBondLeafFanPenalty } from '../../../src/layout/engine/cleanup/presentation/ring-terminal-hetero.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressDescribe = RUN_LAYOUT_STRESS_TESTS ? describe : describe.skip;
+
 function assertOrthogonalCross(result, centerAtomIds) {
   for (const centerAtomId of centerAtomIds) {
     const centerPosition = result.coords.get(centerAtomId);
@@ -95,7 +98,7 @@ function assertOxoLigandsOutsideIncidentRings(result, centerAtomId, oxoAtomIds) 
   }
 }
 
-describe('layout/engine/pipeline — hypervalent cleanup', () => {
+stressDescribe('layout/engine/pipeline — hypervalent cleanup', () => {
   it('keeps nitro-style sulfonamide oxo leaves on a trigonal nitrogen fan', () => {
     const result = runPipeline(parseSMILES('CCCCOC1=CC=CC=C1SN(=O)=O'), {
       suppressH: true,

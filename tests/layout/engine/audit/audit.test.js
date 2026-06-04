@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
-import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
+import { auditCandidateSafety, auditLayout } from '../../../../src/layout/engine/audit/audit.js';
+import { buildAtomGrid } from '../../../../src/layout/engine/audit/invariants.js';
 import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { add, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeEAlkene, makeEthane, makeMacrocycle } from '../support/molecules.js';
@@ -141,6 +142,49 @@ describe('layout/engine/audit/audit', () => {
     assert.equal(okOnlyAudit.ok, fullAudit.ok);
   });
 
+  it('returns identical audit results when severe-overlap scratch is reused', () => {
+    const graph = createLayoutGraph(parseSMILES('CC.CC'), { suppressH: true, bondLength: 1.5 });
+    const atomIds = [...graph.atoms.keys()];
+    const coords = new Map([
+      [atomIds[0], { x: 0, y: 0 }],
+      [atomIds[1], { x: 1.5, y: 0 }],
+      [atomIds[2], { x: 0.2, y: 0 }],
+      [atomIds[3], { x: 1.7, y: 0 }]
+    ]);
+    const visibleHeavyAtomIds = atomIds.filter(atomId => graph.atoms.get(atomId)?.element !== 'H' && coords.has(atomId));
+    const atomGrid = buildAtomGrid(graph, coords, graph.options.bondLength, {
+      visibleAtomIds: visibleHeavyAtomIds
+    });
+
+    const directAudit = auditLayout(graph, coords);
+    const reusedScratchAudit = auditLayout(graph, coords, {
+      atomGrid,
+      visibleHeavyAtomIds,
+      visibleAtomIdsMatchGrid: true
+    });
+
+    assert.deepEqual(reusedScratchAudit, directAudit);
+  });
+
+  it('matches full audit safety fields for candidate probes', () => {
+    const graph = createLayoutGraph(makeMacrocycle());
+    const coords = new Map(graph.rings[0].atomIds.map(atomId => [atomId, { x: 0, y: 0 }]));
+
+    const fullAudit = auditLayout(graph, coords);
+    const safetyAudit = auditCandidateSafety(graph, coords);
+    const safetyAuditWithFallback = auditCandidateSafety(graph, coords, {
+      includeFallback: true
+    });
+
+    assert.equal(safetyAudit.ok, fullAudit.ok);
+    assert.equal(safetyAudit.severeOverlapCount, fullAudit.severeOverlapCount);
+    assert.equal(safetyAudit.worstOverlapDeficit, fullAudit.worstOverlapDeficit);
+    assert.equal(safetyAudit.bondLengthFailureCount, fullAudit.bondLengthFailureCount);
+    assert.equal(safetyAudit.collapsedMacrocycleCount, fullAudit.collapsedMacrocycleCount);
+    assert.equal(safetyAudit.ringSubstituentReadabilityFailureCount, fullAudit.ringSubstituentReadabilityFailureCount);
+    assert.deepEqual(safetyAuditWithFallback.fallback, fullAudit.fallback);
+  });
+
   it('does not flag a clean anisole substituent as a ring-substituent readability failure', () => {
     const smiles = 'COc1ccccc1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -201,9 +245,12 @@ describe('layout/engine/audit/audit', () => {
     }
 
     const audit = auditLayout(graph, coords);
+    const safetyAudit = auditCandidateSafety(graph, coords);
 
     assert.equal(audit.ok, false);
+    assert.equal(safetyAudit.ok, audit.ok);
     assert.ok(audit.ringSubstituentReadabilityFailureCount > 0);
+    assert.equal(safetyAudit.ringSubstituentReadabilityFailureCount, audit.ringSubstituentReadabilityFailureCount);
     assert.ok(audit.outwardAxisRingSubstituentFailureCount > 0);
     assert.ok(audit.fallback.reasons.includes('ring-substituent-readability'));
   });

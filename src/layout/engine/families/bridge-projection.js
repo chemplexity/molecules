@@ -188,7 +188,10 @@ function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtom
   const defaultPaths = enumerateBridgePaths(layoutGraph, atomIds, defaultBridgeheadAtomIds, {
     maxPathCount: BRIDGE_PROJECTION_FACTORS.maxProjectedPathCount + 1
   });
-  if (isExactThetaProjectionPathSet(defaultPaths) || ((isBalancedLongThetaPathSet(defaultPaths) || shortestBridgePathSegmentCount(defaultPaths) >= 3) && bridgePathsHaveDistinctInternalAtoms(defaultPaths))) {
+  if (
+    isExactThetaProjectionPathSet(defaultPaths) ||
+    ((isBalancedLongThetaPathSet(defaultPaths) || shortestBridgePathSegmentCount(defaultPaths) >= 3) && bridgePathsHaveDistinctInternalAtoms(defaultPaths))
+  ) {
     return defaultBridgeheadAtomIds;
   }
 

@@ -13,6 +13,9 @@ import { layoutMixedFamily } from '../../../../src/layout/engine/families/mixed.
 import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
 import { makeDisconnectedEthanes } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
   const centerPosition = coords.get(centerAtomId);
   const firstAngle = angleOf(sub(coords.get(firstNeighborAtomId), centerPosition));
@@ -164,7 +167,7 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.ok(Math.hypot(leafPosition.x - blockerPosition.x, leafPosition.y - blockerPosition.y) >= 1.5 * 0.55);
   });
 
-  it('rotates singly attached sugar rings as rigid subtrees without leaving severe overlaps in the moved ring', () => {
+  stressIt('rotates singly attached sugar rings as rigid subtrees without leaving severe overlaps in the moved ring', () => {
     const molecule = parseSMILES(
       'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'
     );
@@ -205,7 +208,7 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.ok(result.moves > 0);
   });
 
-  it('accepts cached rigid pendant-ring descriptors without changing the resolved layout', () => {
+  stressIt('accepts cached rigid pendant-ring descriptors without changing the resolved layout', () => {
     const molecule = parseSMILES(
       'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'
     );

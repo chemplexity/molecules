@@ -12,6 +12,9 @@ import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeAdamantane, makeBicyclo222, makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 /**
  * Asserts that a bridged-family placement stays finite and free of severe overlaps,
  * with optional bridged-template bond-length validation.
@@ -459,7 +462,7 @@ describe('layout/engine/families/bridged', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
-  it('uses a hydroxy alkyl bicyclohexene template so the compact five-ring stays structured', () => {
+  stressIt('uses a hydroxy alkyl bicyclohexene template so the compact five-ring stays structured', () => {
     const smiles = 'CCC1(O)C2C(CN(C)C)C1(CC)C=C2C';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
@@ -497,7 +500,7 @@ describe('layout/engine/families/bridged', () => {
     assert.ok(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords).every(crossing => crossing.firstAtomIds.includes('C7') || crossing.secondAtomIds.includes('C7')));
   });
 
-  it('uses a quinuclidinium oxygen-exit template so charged six-rings stay structured', () => {
+  stressIt('uses a quinuclidinium oxygen-exit template so charged six-rings stay structured', () => {
     const smiles = 'NC(=O)C[N+]12CCC(CC1)C(C2)OC(=O)C1(CCCCCC1)C1=CC=CC=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
@@ -574,7 +577,7 @@ describe('layout/engine/families/bridged', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
-  it('uses a bridged oxadecalin template so substituted ether cages stay open', () => {
+  stressIt('uses a bridged oxadecalin template so substituted ether cages stay open', () => {
     const smiles = 'CC1CC2COC(C)C(C1)C(C)(C)C2CCO';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);

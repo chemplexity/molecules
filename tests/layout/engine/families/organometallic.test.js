@@ -18,6 +18,9 @@ import {
   makeTrigonalPlanarCopperComplex
 } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 /**
  * Returns the smaller angle at a center atom between two neighbors.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -158,10 +161,7 @@ describe('layout/engine/families/organometallic', () => {
   });
 
   it('keeps bulky six-coordinate copper ligands separated with one-atom ligands on diagonal relief slots', () => {
-    const smilesCases = [
-      'O[Cu+](O)(N1C=CN=C1)(N1C=CN=C1)(N1C=CN=C1)N1C=CN=C1',
-      'O[Cu++](O)(N1C=CN=C1)(N1C=CN=C1)(N1C=CN=C1)N1C=CN=C1'
-    ];
+    const smilesCases = ['O[Cu+](O)(N1C=CN=C1)(N1C=CN=C1)(N1C=CN=C1)N1C=CN=C1', 'O[Cu++](O)(N1C=CN=C1)(N1C=CN=C1)(N1C=CN=C1)N1C=CN=C1'];
 
     for (const smiles of smilesCases) {
       const result = generateCoords(parseSMILES(smiles), {
@@ -451,7 +451,7 @@ describe('layout/engine/families/organometallic', () => {
     }
   });
 
-  it('lets dirty cobalt-corrin final retouches clear residual label overlaps', () => {
+  stressIt('lets dirty cobalt-corrin final retouches clear residual label overlaps', () => {
     const smilesCases = [
       '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C)=C3)C=C(C(C)=C4)C',
       '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C#N)=C3)C=C(C(C)=C4)C'

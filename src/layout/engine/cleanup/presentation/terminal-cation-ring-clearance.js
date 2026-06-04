@@ -1,6 +1,6 @@
 /** @module cleanup/presentation/terminal-cation-ring-clearance */
 
-import { auditLayout } from '../../audit/audit.js';
+import { auditCandidateSafety } from '../../audit/audit.js';
 import { findSevereOverlaps } from '../../audit/invariants.js';
 import { add, rotate, sub } from '../../geometry/vec2.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -287,8 +287,7 @@ function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bo
             if (candidateOverlaps.length > allowedOverlapCount) {
               continue;
             }
-            const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-            if (candidateAudit.ok !== true) {
+            if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
               continue;
             }
             const terminalRingDistance = minimumDistanceToAtomSet(candidateCoords, descriptor.terminalAtomId, descriptor.ringAtomIds);
@@ -319,8 +318,7 @@ function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bo
           if (candidateOverlaps.length > allowedOverlapCount) {
             continue;
           }
-          const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-          if (candidateAudit.ok !== true) {
+          if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
             continue;
           }
           const terminalRingDistance = minimumDistanceToAtomSet(candidateCoords, descriptor.terminalAtomId, descriptor.ringAtomIds);

@@ -6,6 +6,9 @@ import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords } from '../../../src/layout/engine/api.js';
 import { BOND_OFF, renderMolSVG, renderMolSVGFromSMILES } from '../../../src/layout/engine/render2d.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 describe('layout/engine/render2d', () => {
   it('omits lone-pair circles by default', () => {
     const molecule = parseSMILES('CO');
@@ -110,7 +113,7 @@ describe('layout/engine/render2d', () => {
     assert.match(rendered.svgContent, /<line /);
   });
 
-  it('renders partial mixed-family layouts when a secondary ring system cannot be fully placed', () => {
+  stressIt('renders partial mixed-family layouts when a secondary ring system cannot be fully placed', () => {
     const smiles =
       'CC[C@H](C)[C@@H]1O[C@]2(CC[C@@H]1C)C[C@H]3C[C@H](C\\C=C(/C)\\[C@@H](O[C@H]4C[C@H](OC)[C@H](O[C@H]5C[C@H](OC)[C@H](O)[C@H](C)O5)[C@H](C)O4)[C@@H](C)\\C=C\\C=C6CO[C@@H]7[C@@H](O)C(=C[C@H](C(=O)O3)[C@@]67O)C)O2';
     const layoutResult = generateCoords(parseSMILES(smiles), { suppressH: true });

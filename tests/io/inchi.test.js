@@ -235,7 +235,10 @@ describe('parseINCHI — guanidine mobile hydrogens localize one imine', () => {
       .filter(Boolean)
       .filter(bond => (bond.properties.order ?? 1) === 2);
     assert.equal(doubleBonds.length, 1);
-    assert.equal(nitrogens.some(atom => (atom.properties.charge ?? 0) !== 0), false);
+    assert.equal(
+      nitrogens.some(atom => (atom.properties.charge ?? 0) !== 0),
+      false
+    );
   });
 });
 

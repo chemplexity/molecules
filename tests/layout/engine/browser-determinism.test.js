@@ -356,10 +356,8 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
           bridgedAlkaloidO38Angle: typeof bridgedAlkaloidO38Angle === 'number' && Number.isFinite(bridgedAlkaloidO38Angle) ? bridgedAlkaloidO38Angle : null,
           bridgedAlkaloidC49C54Distance: typeof bridgedAlkaloidC49C54Distance === 'number' && Number.isFinite(bridgedAlkaloidC49C54Distance) ? bridgedAlkaloidC49C54Distance : null,
           bridgedAlkaloidC27O37Distance: typeof bridgedAlkaloidC27O37Distance === 'number' && Number.isFinite(bridgedAlkaloidC27O37Distance) ? bridgedAlkaloidC27O37Distance : null,
-          largeNucleotideC85Angles:
-            largeNucleotideC85Angles.every(value => typeof value === 'number' && Number.isFinite(value)) ? largeNucleotideC85Angles : null,
-          largeNucleotideC507Angles:
-            largeNucleotideC507Angles.every(value => typeof value === 'number' && Number.isFinite(value)) ? largeNucleotideC507Angles : null,
+          largeNucleotideC85Angles: largeNucleotideC85Angles.every(value => typeof value === 'number' && Number.isFinite(value)) ? largeNucleotideC85Angles : null,
+          largeNucleotideC507Angles: largeNucleotideC507Angles.every(value => typeof value === 'number' && Number.isFinite(value)) ? largeNucleotideC507Angles : null,
           largeNucleotideO265Angle: typeof largeNucleotideO265Angle === 'number' && Number.isFinite(largeNucleotideO265Angle) ? largeNucleotideO265Angle : null,
           audit: {
             ok: pipeline.metadata?.audit?.ok ?? null,
@@ -528,8 +526,14 @@ if (!RUN_BROWSER_LAYOUT_TESTS) {
         assert.ok(Math.abs(spread - 120) < 1e-6, `expected ${browserName} C28 spread near 120 degrees, got ${spread.toFixed(2)}`);
       }
       assert.ok(signature.c13Angles, `expected ${browserName} to report C13 angles`);
-      assert.ok(signature.c13Angles.branch >= 90 - 1e-6 && signature.c13Angles.branch <= 150 + 1e-6, `expected ${browserName} C5-C13-C16 to stay in the bounded ring-exit range, got ${signature.c13Angles.branch.toFixed(2)}`);
-      assert.ok(signature.c13Angles.geminalFluoro >= 90 - 1e-6 && signature.c13Angles.geminalFluoro <= 180 + 1e-6, `expected ${browserName} F14-C13-F15 to stay bounded, got ${signature.c13Angles.geminalFluoro.toFixed(2)}`);
+      assert.ok(
+        signature.c13Angles.branch >= 90 - 1e-6 && signature.c13Angles.branch <= 150 + 1e-6,
+        `expected ${browserName} C5-C13-C16 to stay in the bounded ring-exit range, got ${signature.c13Angles.branch.toFixed(2)}`
+      );
+      assert.ok(
+        signature.c13Angles.geminalFluoro >= 90 - 1e-6 && signature.c13Angles.geminalFluoro <= 180 + 1e-6,
+        `expected ${browserName} F14-C13-F15 to stay bounded, got ${signature.c13Angles.geminalFluoro.toFixed(2)}`
+      );
     }
     assert.equal(chromiumSignature.audit.ok, true);
     assert.equal(chromiumSignature.audit.severeOverlapCount, 0);
@@ -582,10 +586,7 @@ if (!RUN_BROWSER_LAYOUT_TESTS) {
         assert.ok(Math.abs(angle - 120) < 1e-6, `expected webkit ${label} carbonyl fan near 120 degrees, got ${angle.toFixed(2)}`);
       }
     }
-    assert.ok(
-      Math.abs(webkitSignature.largeNucleotideO265Angle - 120) < 1e-6,
-      `expected webkit O265 ether continuation near 120 degrees, got ${webkitSignature.largeNucleotideO265Angle?.toFixed(2)}`
-    );
+    assert.ok(Math.abs(webkitSignature.largeNucleotideO265Angle - 120) < 1e-6, `expected webkit O265 ether continuation near 120 degrees, got ${webkitSignature.largeNucleotideO265Angle?.toFixed(2)}`);
   });
 
   test('browser layout keeps crowded omitted-h thiophene and piperazine hubs bounded and overlap-free in webkit', { timeout: 120_000 }, async t => {

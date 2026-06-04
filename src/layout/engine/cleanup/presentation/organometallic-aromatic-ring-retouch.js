@@ -24,11 +24,7 @@ const METAL_BRANCH_FAN_ROTATIONS = Object.freeze([10, 15, 20, 30, 40, 45, 50, 55
 const RING_SIDECHAIN_FAN_MAX_LAYOUT_HEAVY_ATOMS = 120;
 const RING_SIDECHAIN_FAN_MAX_MOVED_HEAVY_ATOMS = 12;
 const RING_SIDECHAIN_FAN_MAX_PATH_ATOMS = 7;
-const RING_SIDECHAIN_FAN_ROTATIONS = Object.freeze(
-  [15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180]
-    .map(degrees => (degrees * Math.PI) / 180)
-    .flatMap(rotation => [rotation, -rotation])
-);
+const RING_SIDECHAIN_FAN_ROTATIONS = Object.freeze([15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -1013,11 +1009,7 @@ export function runOrganometallicCoordinateLigandOutwardRetouch(layoutGraph, coo
     bondValidationClasses: options.bondValidationClasses
   });
   const initialAudit = currentAudit;
-  if (
-    layoutHeavyAtomCount > COORDINATE_LIGAND_MAX_LAYOUT_HEAVY_ATOMS ||
-    currentAudit.ok ||
-    (currentAudit.severeOverlapCount === 0 && currentAudit.visibleHeavyBondCrossingCount === 0)
-  ) {
+  if (layoutHeavyAtomCount > COORDINATE_LIGAND_MAX_LAYOUT_HEAVY_ATOMS || currentAudit.ok || (currentAudit.severeOverlapCount === 0 && currentAudit.visibleHeavyBondCrossingCount === 0)) {
     return {
       changed: false,
       coords,

@@ -1,7 +1,7 @@
 /** @module cleanup/presentation/ring-terminal-hetero */
 
 import { buildAtomGrid } from '../../audit/invariants.js';
-import { auditLayout } from '../../audit/audit.js';
+import { auditCandidateSafety, auditLayout } from '../../audit/audit.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
 import { incidentRingPolygonsForAtom } from '../../geometry/ring-polygons.js';
 import { reflectAcrossLine } from '../../geometry/transforms.js';
@@ -485,7 +485,7 @@ function terminalMultipleBondLeafBackoffVariants(layoutGraph, coords, descriptor
     }
     for (const rotation of TERMINAL_MULTIPLE_BOND_LEAF_BACKOFF_ROTATIONS) {
       const candidateCoords = rotateAtomIdsAroundPivot(coords, leafAtomIds, descriptor.centerAtomId, rotation);
-      if (!candidateCoords || auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true) {
+      if (!candidateCoords || auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
         continue;
       }
       variants.push(candidateCoords);
@@ -979,7 +979,7 @@ function terminalMultipleBondBalancedSupportReliefCoords(layoutGraph, coords, de
           continue;
         }
         const variantCoords = [relievedCoords];
-        if (auditLayout(layoutGraph, relievedCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok !== true) {
+        if (auditCandidateSafety(layoutGraph, relievedCoords, { bondLength }).ok !== true) {
           const cleanup = runUnifiedCleanup(layoutGraph, relievedCoords, {
             maxPasses: 2,
             epsilon: bondLength * 0.001,
@@ -1069,8 +1069,7 @@ function terminalMultipleBondExactSupportReliefCoords(layoutGraph, coords, descr
     }
 
     const acyclicSupportAtomIds = movableTerminalMultipleBondAcyclicSupportAtomIds(layoutGraph, coords, descriptor.centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds);
-    const supportAtomIds =
-      acyclicSupportAtomIds ?? movableTerminalMultipleBondLargeSupportAtomIds(layoutGraph, coords, descriptor.centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds);
+    const supportAtomIds = acyclicSupportAtomIds ?? movableTerminalMultipleBondLargeSupportAtomIds(layoutGraph, coords, descriptor.centerAtomId, supportAtomId, protectedAtomIds, frozenAtomIds);
     if (!supportAtomIds) {
       continue;
     }
@@ -1663,7 +1662,7 @@ function compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, 
       for (const [candidateAtomId, candidateTargetPosition] of candidatePositions) {
         candidateCoords.set(candidateAtomId, candidateTargetPosition);
       }
-      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+      const candidateAudit = auditCandidateSafety(layoutGraph, candidateCoords, {
         bondLength,
         bondValidationClasses: options.bondValidationClasses
       });
@@ -1742,8 +1741,7 @@ function terminalMultipleBondLeafFanBlockerReliefScore(layoutGraph, coords, desc
   for (const [atomId, position] of overridePositions) {
     candidateCoords.set(atomId, position);
   }
-  const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-  if (candidateAudit.ok !== true) {
+  if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
     return null;
   }
   const fanPenalty = terminalMultipleBondLeafFanPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
@@ -2229,7 +2227,7 @@ function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coor
     const candidatePosition = add(centerPosition, fromAngle(currentAngle + rotation * fraction, radius));
     const candidateCoords = new Map(coords);
     candidateCoords.set(leafAtomId, candidatePosition);
-    if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses, includeVisibleHeavyBondCrossings: false }).ok !== true) {
+    if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
       continue;
     }
     const penalty = terminalMultipleBondLeafFanPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
@@ -2334,9 +2332,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
   const threshold = bondLength * 0.55;
   const hasExplicitCandidateCenterIds = Array.isArray(options.candidateCenterIds);
   const hasExplicitHiddenHydrogenCandidateCenterIds = Array.isArray(options.hiddenHydrogenCandidateCenterIds);
-  const candidateCenterIds = hasExplicitCandidateCenterIds
-    ? [...new Set(options.candidateCenterIds)].filter(centerAtomId => inputCoords.has(centerAtomId))
-    : [];
+  const candidateCenterIds = hasExplicitCandidateCenterIds ? [...new Set(options.candidateCenterIds)].filter(centerAtomId => inputCoords.has(centerAtomId)) : [];
   const hiddenHydrogenCandidateCenterIds = hasExplicitHiddenHydrogenCandidateCenterIds
     ? [...new Set(options.hiddenHydrogenCandidateCenterIds)].filter(centerAtomId => inputCoords.has(centerAtomId))
     : [];
@@ -2382,9 +2378,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
     }
 
     const exactSupportReliefCoords =
-      descriptor.movesTerminalSingleHeteroLeaf === true
-        ? null
-        : terminalMultipleBondExactSupportReliefCoords(layoutGraph, coords, descriptor, bondLength, frozenAtomIds, bondValidationClasses);
+      descriptor.movesTerminalSingleHeteroLeaf === true ? null : terminalMultipleBondExactSupportReliefCoords(layoutGraph, coords, descriptor, bondLength, frozenAtomIds, bondValidationClasses);
     if (exactSupportReliefCoords) {
       for (const [atomId, nextPosition] of exactSupportReliefCoords) {
         const previousPosition = coords.get(atomId);
@@ -2584,7 +2578,7 @@ function pairedTerminalHeteroLeafCompressedTargetPositions(layoutGraph, coords, 
     exactCandidateCoords.set(leafAtomId, targetPosition);
   }
   if (
-    auditLayout(layoutGraph, exactCandidateCoords, { bondLength, bondValidationClasses, includeVisibleHeavyBondCrossings: false }).ok === true &&
+    auditCandidateSafety(layoutGraph, exactCandidateCoords, { bondLength, bondValidationClasses }).ok === true &&
     terminalMultipleBondLeafFanPenalty(exactCandidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds) < descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
   ) {
     return exactTargetPositions;
@@ -2615,7 +2609,7 @@ function pairedTerminalHeteroLeafCompressedTargetPositions(layoutGraph, coords, 
       for (const [leafAtomId, targetPosition] of targetPositions) {
         candidateCoords.set(leafAtomId, targetPosition);
       }
-      if (auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses, includeVisibleHeavyBondCrossings: false }).ok !== true) {
+      if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength, bondValidationClasses }).ok !== true) {
         continue;
       }
 
@@ -2660,9 +2654,7 @@ export function runPairedTerminalHeteroLeafFanTidy(layoutGraph, inputCoords, opt
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const bondValidationClasses = options.bondValidationClasses ?? null;
   const candidateCenterIds = [];
-  const structuralCenterIds = Array.isArray(options.candidateCenterIds)
-    ? [...new Set(options.candidateCenterIds)]
-    : terminalMultipleBondFanStructuralCenterIds(layoutGraph);
+  const structuralCenterIds = Array.isArray(options.candidateCenterIds) ? [...new Set(options.candidateCenterIds)] : terminalMultipleBondFanStructuralCenterIds(layoutGraph);
   for (const centerAtomId of structuralCenterIds) {
     if (!inputCoords.has(centerAtomId)) {
       continue;
@@ -3119,8 +3111,7 @@ function boundTerminalMultipleBondSupportFans(layoutGraph, coords, bondLength, c
         ) {
           continue;
         }
-        const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-        if (candidateAudit.ok !== true) {
+        if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
           continue;
         }
         const candidate = {

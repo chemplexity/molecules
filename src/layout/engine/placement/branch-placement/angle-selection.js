@@ -495,10 +495,13 @@ function isHeteroAromaticRingAtom(layoutGraph, atomId) {
     return false;
   }
   for (const ring of layoutGraph.atomToRings.get(atomId) ?? []) {
-    if (ring.aromatic === true && ring.atomIds.some(ringAtomId => {
-      const ringAtom = layoutGraph.atoms.get(ringAtomId);
-      return ringAtom && ringAtom.element !== 'C' && ringAtom.element !== 'H';
-    })) {
+    if (
+      ring.aromatic === true &&
+      ring.atomIds.some(ringAtomId => {
+        const ringAtom = layoutGraph.atoms.get(ringAtomId);
+        return ringAtom && ringAtom.element !== 'C' && ringAtom.element !== 'H';
+      })
+    ) {
       return true;
     }
   }
@@ -2385,15 +2388,14 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
     return false;
   }
 
-  const supported = (
+  const supported =
     isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, atomId) ||
     presentationCriticalLeafCount >= 2 ||
     (attachedRingRootCount >= 2 && terminalHeavyLeafCount >= 1) ||
     (attachedRingRootCount >= 2 && hasConjugatedTrigonalNeighbor) ||
     attachedRingRootCount >= 3 ||
     hasLinearNeighbor ||
-    (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0)
-  );
+    (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0);
   cache.set(atomId, supported);
   return supported;
 }
@@ -2690,9 +2692,10 @@ export function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId,
     }
   }
 
-  const compact = (
-    terminalHeavyLeafCount >= 2 || (atom.element === 'C' && terminalHeavyLeafCount === 1 && terminalHalogenLeafCount === 1) || (['O', 'S', 'Se'].includes(atom.element) && terminalHeavyLeafCount === 1)
-  );
+  const compact =
+    terminalHeavyLeafCount >= 2 ||
+    (atom.element === 'C' && terminalHeavyLeafCount === 1 && terminalHalogenLeafCount === 1) ||
+    (['O', 'S', 'Se'].includes(atom.element) && terminalHeavyLeafCount === 1);
   cache.set(cacheKey, compact);
   return compact;
 }
@@ -3457,9 +3460,7 @@ function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighbo
   if ((descriptor.ringSize ?? 0) < 5) {
     return [];
   }
-  const priorityNeighborIds = descriptor.exocyclicNeighborIds.filter(neighborAtomId =>
-    isPriorityExteriorRingSubstituent(layoutGraph, descriptor.anchorAtomId, neighborAtomId)
-  );
+  const priorityNeighborIds = descriptor.exocyclicNeighborIds.filter(neighborAtomId => isPriorityExteriorRingSubstituent(layoutGraph, descriptor.anchorAtomId, neighborAtomId));
   if (priorityNeighborIds.length !== 1 || !exocyclicNeighborIds.includes(priorityNeighborIds[0])) {
     return [];
   }
@@ -3477,9 +3478,7 @@ function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighbo
   const centerAngle = normalizeSignedAngle(exteriorGap.startAngle + exteriorGap.size / 2);
   const sideOffset = Math.min(DEG60, exteriorGap.size / 4);
   const sideAngles = [normalizeSignedAngle(centerAngle - sideOffset), normalizeSignedAngle(centerAngle + sideOffset)];
-  return sideAngles.map(sideAngle =>
-    exocyclicNeighborIds.map(neighborAtomId => (neighborAtomId === priorityAtomId ? centerAngle : sideAngle))
-  );
+  return sideAngles.map(sideAngle => exocyclicNeighborIds.map(neighborAtomId => (neighborAtomId === priorityAtomId ? centerAngle : sideAngle)));
 }
 
 /**

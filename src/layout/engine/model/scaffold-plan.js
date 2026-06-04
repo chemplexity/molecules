@@ -112,9 +112,7 @@ export function classifyRingSystemFamily(layoutGraph, ringSystem, context = null
   const connections = ringSystemConnectionsFromContext(layoutGraph, ringSystem, context);
   const ringById = context?.ringById ?? layoutGraph.ringById ?? null;
   const ringIdSet = ringById ? null : new Set(ringSystem.ringIds);
-  const hasMacrocycleRing = ringById
-    ? ringSystem.ringIds.some(ringId => (ringById.get(ringId)?.size ?? 0) >= 12)
-    : layoutGraph.rings.some(ring => ringIdSet.has(ring.id) && ring.size >= 12);
+  const hasMacrocycleRing = ringById ? ringSystem.ringIds.some(ringId => (ringById.get(ringId)?.size ?? 0) >= 12) : layoutGraph.rings.some(ring => ringIdSet.has(ring.id) && ring.size >= 12);
   if (hasMacrocycleRing) {
     return 'macrocycle';
   }

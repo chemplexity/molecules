@@ -1,6 +1,6 @@
 /** @module cleanup/presentation/projected-tetrahedral-clearance */
 
-import { auditLayout } from '../../audit/audit.js';
+import { auditCandidateSafety, auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps } from '../../audit/invariants.js';
 import { CLEANUP_EPSILON, DISTANCE_EPSILON, PRESENTATION_METRIC_EPSILON } from '../../constants.js';
 import { angleOf, angularDifference, sub, wrapAngle } from '../../geometry/vec2.js';
@@ -540,14 +540,7 @@ function collectSiloxaneArylClearanceDescriptors(layoutGraph, coords, frozenAtom
       }
       const centerAtom = layoutGraph.atoms.get(centerAtomId);
       const remoteAtom = layoutGraph.atoms.get(remoteSiliconAtomId);
-      if (
-        !centerAtom ||
-        !remoteAtom ||
-        centerAtom.aromatic ||
-        remoteAtom.aromatic ||
-        layoutGraph.ringAtomIdSet.has(centerAtomId) ||
-        layoutGraph.ringAtomIdSet.has(remoteSiliconAtomId)
-      ) {
+      if (!centerAtom || !remoteAtom || centerAtom.aromatic || remoteAtom.aromatic || layoutGraph.ringAtomIdSet.has(centerAtomId) || layoutGraph.ringAtomIdSet.has(remoteSiliconAtomId)) {
         continue;
       }
       const arylLigandIds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId)
@@ -649,7 +642,7 @@ export function runSiloxaneArylBranchClearance(layoutGraph, inputCoords, options
         if (!candidateCoords) {
           continue;
         }
-        const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        const candidateAudit = auditCandidateSafety(layoutGraph, candidateCoords, {
           bondLength,
           bondValidationClasses: options.bondValidationClasses
         });
@@ -658,7 +651,6 @@ export function runSiloxaneArylBranchClearance(layoutGraph, inputCoords, options
         }
         const candidate = {
           coords: candidateCoords,
-          audit: candidateAudit,
           descriptor,
           rotations: [arylRotation, bridgeRotation],
           totalRotation: Math.abs(arylRotation) + Math.abs(bridgeRotation),

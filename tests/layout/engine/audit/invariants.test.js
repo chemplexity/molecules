@@ -88,7 +88,9 @@ describe('layout/engine/audit/invariants', () => {
       movedCoords.set(atomId, position);
     }
 
-    assert.equal(countSevereOverlapsWithOverrides(graph, coords, overridePositions, 1.5).count, findSevereOverlaps(graph, movedCoords, 1.5).length);
+    const overrideOverlapState = countSevereOverlapsWithOverrides(graph, coords, overridePositions, 1.5);
+    assert.equal(overrideOverlapState.count, findSevereOverlaps(graph, movedCoords, 1.5).length);
+    assert.equal(overrideOverlapState.minDistance, 0.2);
   });
 
   it('returns the same subtree overlap cost when backed by a spatial atom grid', () => {
@@ -358,10 +360,7 @@ describe('layout/engine/audit/invariants', () => {
     const baseCrossingCount = countVisibleHeavyBondCrossings(graph, baseCoords);
 
     assert.equal(baseCrossingCount, 1);
-    assert.equal(
-      countVisibleHeavyBondCrossingsAfterFocusedMove(graph, baseCoords, candidateCoords, ['a2', 'a3'], baseCrossingCount),
-      countVisibleHeavyBondCrossings(graph, candidateCoords)
-    );
+    assert.equal(countVisibleHeavyBondCrossingsAfterFocusedMove(graph, baseCoords, candidateCoords, ['a2', 'a3'], baseCrossingCount), countVisibleHeavyBondCrossings(graph, candidateCoords));
   });
 
   it('returns a combined layout state consistent with separate overlap and cost measurements', () => {

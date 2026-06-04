@@ -306,10 +306,7 @@ function escapeCurrentRootSubtreeInwardReadability(layoutGraph, coords, descript
     ) {
       continue;
     }
-    const rotation = angularDifference(
-      targetAngle,
-      angleOf(sub(coords.get(descriptor.rootAtomId), coords.get(descriptor.centerAtomId)))
-    );
+    const rotation = angularDifference(targetAngle, angleOf(sub(coords.get(descriptor.rootAtomId), coords.get(descriptor.centerAtomId))));
     const score = auditPenalty(candidateAudit) + rootDeviation(candidateCoords, descriptor) * 10_000 + rotation * 100;
     if (!best || score < best.score - CLEANUP_EPSILON) {
       best = {

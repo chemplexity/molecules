@@ -606,9 +606,7 @@ function restoreMappedReaction2dRetainedScaffoldCoords(mol, componentAtomIds) {
     const isMappedRingScaffold = reactantAtom.isInRing(mol) && productAtom.isInRing(mol);
     const distanceToEdited = reaction2dMinHeavyDistanceToEdited(mol, productId, componentAtomIds);
     const isRetainedScaffoldAtom =
-      !mol.__reactionPreview.editedProductAtomIds.has(productId) &&
-      distanceToEdited > 1 &&
-      mappedAtomReaction2dScaffoldCompatible(reactantAtom, productAtom, mol, componentAtomIds);
+      !mol.__reactionPreview.editedProductAtomIds.has(productId) && distanceToEdited > 1 && mappedAtomReaction2dScaffoldCompatible(reactantAtom, productAtom, mol, componentAtomIds);
     if (!isMappedRingScaffold && !isRetainedScaffoldAtom) {
       continue;
     }
@@ -1043,13 +1041,11 @@ function restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomId
 
     const currentPlacements = [{ atom: center, x: center.x, y: center.y }, ...terminalCarbonLeaves.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y }))];
     const currentScore =
-      reaction2dCandidateLayoutScore(mol, componentAtomIds, currentPlacements, bondLength) +
-      oppositionWeight * reaction2dFourNeighborOppositionPenalty(center, infos, currentPlacements);
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, currentPlacements, bondLength) + oppositionWeight * reaction2dFourNeighborOppositionPenalty(center, infos, currentPlacements);
     let best = null;
     for (const candidatePlacements of candidatePlacementsList) {
       const candidateScore =
-        reaction2dCandidateLayoutScore(mol, componentAtomIds, candidatePlacements, bondLength) +
-        oppositionWeight * reaction2dFourNeighborOppositionPenalty(center, infos, candidatePlacements);
+        reaction2dCandidateLayoutScore(mol, componentAtomIds, candidatePlacements, bondLength) + oppositionWeight * reaction2dFourNeighborOppositionPenalty(center, infos, candidatePlacements);
       if (!best || candidateScore < best.score) {
         best = { score: candidateScore, placements: candidatePlacements };
       }
@@ -1153,14 +1149,15 @@ function isReaction2dCompactBridgedCage(graph, ringSystem, componentAtomIds) {
   if (rings.length !== 2 || rings.some(ring => ring.aromatic || ring.atomIds.length < 4 || ring.atomIds.length > 5)) {
     return false;
   }
-  const ringSizes = rings.map(ring => ring.atomIds.length).sort((a, b) => a - b).join(',');
+  const ringSizes = rings
+    .map(ring => ring.atomIds.length)
+    .sort((a, b) => a - b)
+    .join(',');
   if (ringSizes !== '4,5') {
     return false;
   }
   const connection = graph.ringConnections?.find(
-    entry =>
-      (entry.firstRingId === rings[0].id && entry.secondRingId === rings[1].id) ||
-      (entry.firstRingId === rings[1].id && entry.secondRingId === rings[0].id)
+    entry => (entry.firstRingId === rings[0].id && entry.secondRingId === rings[1].id) || (entry.firstRingId === rings[1].id && entry.secondRingId === rings[0].id)
   );
   if (connection?.kind !== 'bridged') {
     return false;
@@ -1467,8 +1464,7 @@ function idealizeReaction2dTerminalAlkyneContinuations(mol, componentAtomIds, bo
       y: descriptor.internal.y + Math.sin(outerAngle + Math.PI) * targetLength
     };
     const currentScore =
-      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: descriptor.terminal.x, y: descriptor.terminal.y }], bondLength) +
-      100 * (currentAngle - Math.PI) ** 2;
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: descriptor.terminal.x, y: descriptor.terminal.y }], bondLength) + 100 * (currentAngle - Math.PI) ** 2;
     const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: candidate.x, y: candidate.y }], bondLength);
     if (candidateScore <= currentScore) {
       descriptor.terminal.x = candidate.x;
@@ -1532,8 +1528,7 @@ function idealizeReaction2dTerminalAlkylContinuations(mol, componentAtomIds, bon
     const targetLength = scaledReaction2dBondLength(atomBondOrder, bondLength);
     const baseAngle = Math.atan2(editedNeighbor.y - parent.y, editedNeighbor.x - parent.x);
     const idealAngle = (2 * Math.PI) / 3;
-    const currentScore =
-      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength) + 150 * (currentAngle - idealAngle) ** 2;
+    const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength) + 150 * (currentAngle - idealAngle) ** 2;
     let best = { score: currentScore, x: atom.x, y: atom.y };
     for (const angle of [baseAngle + idealAngle, baseAngle - idealAngle]) {
       const candidate = {
@@ -1592,9 +1587,7 @@ function idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAto
     if (!mol.__reactionPreview.editedProductAtomIds.has(carbonylCenter.id) || carbonylCenter.name !== 'C') {
       continue;
     }
-    const hasCarbonylOxygen = carbonylCenter
-      .getNeighbors(mol)
-      .some(nb => componentAtomIds.has(nb.id) && nb.name === 'O' && (mol.getBond(carbonylCenter.id, nb.id)?.properties.order ?? 1) >= 2);
+    const hasCarbonylOxygen = carbonylCenter.getNeighbors(mol).some(nb => componentAtomIds.has(nb.id) && nb.name === 'O' && (mol.getBond(carbonylCenter.id, nb.id)?.properties.order ?? 1) >= 2);
     if (!hasCarbonylOxygen) {
       continue;
     }
@@ -1607,8 +1600,7 @@ function idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAto
     const targetLength = scaledReaction2dBondLength(atomBond?.properties.order ?? 1, bondLength);
     const baseAngle = Math.atan2(carbonylCenter.y - hetero.y, carbonylCenter.x - hetero.x);
     const idealAngle = (2 * Math.PI) / 3;
-    const currentScore =
-      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength) + 100 * (currentAngle - idealAngle) ** 2;
+    const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength) + 100 * (currentAngle - idealAngle) ** 2;
     let best = { score: currentScore, x: atom.x, y: atom.y };
     for (const angle of [baseAngle + idealAngle, baseAngle - idealAngle]) {
       const candidate = {
@@ -2134,7 +2126,8 @@ function idealizeReaction2dEditedSaturatedHalogenFans(mol, componentAtomIds, bon
             componentAtomIds,
             moving.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y })),
             bondLength
-          ) + 40 * reaction2dTrigonalSpreadPenalty(center, neighborInfo),
+          ) +
+          40 * reaction2dTrigonalSpreadPenalty(center, neighborInfo),
         placements: moving.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y }))
       };
       for (const angles of candidateLayouts) {
@@ -2534,10 +2527,7 @@ function idealizeReaction2dEditedSaturatedRingAnchorFans(mol, componentAtomIds, 
         }));
         const placements = [{ atom: center, x: centerCandidate.x, y: centerCandidate.y }, ...placed.map(({ info, x, y }) => ({ atom: info.atom, x, y }))];
         const movePenalty = 0.1 * ((centerCandidate.x - center.x) ** 2 + (centerCandidate.y - center.y) ** 2);
-        const reactantPenalty =
-          reactantCenter?.x != null && reactantCenter?.y != null
-            ? 0.15 * ((centerCandidate.x - reactantCenter.x) ** 2 + (centerCandidate.y - reactantCenter.y) ** 2)
-            : 0;
+        const reactantPenalty = reactantCenter?.x != null && reactantCenter?.y != null ? 0.15 * ((centerCandidate.x - reactantCenter.x) ** 2 + (centerCandidate.y - reactantCenter.y) ** 2) : 0;
         const movingReactantPenalty = placed.reduce((sum, placement) => {
           if (placement.info.reactant?.x == null || placement.info.reactant?.y == null) {
             return sum;
@@ -2684,9 +2674,7 @@ function idealizeReaction2dEditedTwoHeavyImineCenters(mol, componentAtomIds, bon
         x: center.x + Math.cos(targetAngle) * targetLength,
         y: center.y + Math.sin(targetAngle) * targetLength
       };
-      const score =
-        reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: imineInfo.atom, x: candidate.x, y: candidate.y }], bondLength) +
-        angleWeight * anglePenalty(candidate);
+      const score = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: imineInfo.atom, x: candidate.x, y: candidate.y }], bondLength) + angleWeight * anglePenalty(candidate);
       if (score < best.score) {
         best = { score, x: candidate.x, y: candidate.y };
       }
@@ -2875,7 +2863,8 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
                 componentAtomIds,
                 [{ atom: center, x: center.x, y: center.y }, ...movingInfos.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y }))],
                 bondLength
-              ) + 20 * reaction2dTrigonalSpreadPenalty(center, neighborInfo),
+              ) +
+              20 * reaction2dTrigonalSpreadPenalty(center, neighborInfo),
             centerCandidate: { x: center.x, y: center.y },
             placed: movingInfos.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y }))
           };

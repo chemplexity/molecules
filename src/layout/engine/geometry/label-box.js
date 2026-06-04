@@ -92,6 +92,44 @@ export function labelBoxesOverlap(firstBox, secondBox, padding) {
   return Math.abs(firstBox.x - secondBox.x) < firstBox.halfWidth + secondBox.halfWidth + padding && Math.abs(firstBox.y - secondBox.y) < firstBox.halfHeight + secondBox.halfHeight + padding;
 }
 
+function labelBoxesByMinX(labelBoxes) {
+  return labelBoxes
+    .map((box, index) => ({
+      box,
+      index,
+      minX: box.x - box.halfWidth,
+      maxX: box.x + box.halfWidth
+    }))
+    .sort((first, second) => first.minX - second.minX || first.index - second.index);
+}
+
+/**
+ * Returns whether any collected label boxes overlap after padding is applied.
+ * @param {Array<{x: number, y: number, halfWidth: number, halfHeight: number}>} labelBoxes - Collected label boxes.
+ * @param {number} padding - Extra overlap padding.
+ * @returns {boolean} True when at least one label pair overlaps.
+ */
+export function hasAnyLabelOverlap(labelBoxes, padding) {
+  if (labelBoxes.length < 2) {
+    return false;
+  }
+
+  const indexedBoxes = labelBoxesByMinX(labelBoxes);
+  for (let firstIndex = 0; firstIndex < indexedBoxes.length; firstIndex++) {
+    const first = indexedBoxes[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < indexedBoxes.length; secondIndex++) {
+      const second = indexedBoxes[secondIndex];
+      if (second.minX >= first.maxX + padding) {
+        break;
+      }
+      if (labelBoxesOverlap(first.box, second.box, padding)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Finds overlapping estimated label boxes in the current coordinate set.
  * @param {object} layoutGraph - Layout graph shell.
@@ -110,23 +148,43 @@ export function findLabelOverlaps(layoutGraph, coords, bondLength, options = {})
     collectLabelBoxes(layoutGraph, coords, bondLength, {
       labelMetrics: options.labelMetrics
     });
+  if (labelBoxes.length < 2) {
+    return [];
+  }
+
+  const indexedBoxes = labelBoxesByMinX(labelBoxes);
   const overlaps = [];
 
-  for (let firstIndex = 0; firstIndex < labelBoxes.length; firstIndex++) {
-    for (let secondIndex = firstIndex + 1; secondIndex < labelBoxes.length; secondIndex++) {
-      const firstBox = labelBoxes[firstIndex];
-      const secondBox = labelBoxes[secondIndex];
+  for (let firstIndex = 0; firstIndex < indexedBoxes.length; firstIndex++) {
+    const first = indexedBoxes[firstIndex];
+    const firstBox = first.box;
+    for (let secondIndex = firstIndex + 1; secondIndex < indexedBoxes.length; secondIndex++) {
+      const second = indexedBoxes[secondIndex];
+      if (second.minX >= first.maxX + padding) {
+        break;
+      }
+      const secondBox = second.box;
       if (!labelBoxesOverlap(firstBox, secondBox, padding)) {
         continue;
       }
+      const originalFirst = first.index < second.index ? first : second;
+      const originalSecond = first.index < second.index ? second : first;
       overlaps.push({
-        firstAtomId: firstBox.atomId,
-        secondAtomId: secondBox.atomId,
-        overlapX: firstBox.halfWidth + secondBox.halfWidth + padding - Math.abs(firstBox.x - secondBox.x),
-        overlapY: firstBox.halfHeight + secondBox.halfHeight + padding - Math.abs(firstBox.y - secondBox.y)
+        firstIndex: originalFirst.index,
+        secondIndex: originalSecond.index,
+        firstAtomId: originalFirst.box.atomId,
+        secondAtomId: originalSecond.box.atomId,
+        overlapX: originalFirst.box.halfWidth + originalSecond.box.halfWidth + padding - Math.abs(originalFirst.box.x - originalSecond.box.x),
+        overlapY: originalFirst.box.halfHeight + originalSecond.box.halfHeight + padding - Math.abs(originalFirst.box.y - originalSecond.box.y)
       });
     }
   }
 
-  return overlaps;
+  overlaps.sort((first, second) => first.firstIndex - second.firstIndex || first.secondIndex - second.secondIndex);
+  return overlaps.map(overlap => ({
+    firstAtomId: overlap.firstAtomId,
+    secondAtomId: overlap.secondAtomId,
+    overlapX: overlap.overlapX,
+    overlapY: overlap.overlapY
+  }));
 }

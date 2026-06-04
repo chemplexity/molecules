@@ -15,6 +15,8 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   rootRetryOverlapFloor: 4,
   rootRetryBlockCountFloor: 6,
   rootRetryRepulsionMoveCeiling: 64,
+  rootRetryDenseBlockCountFloor: 24,
+  rootRetryDenseOverlapFloor: 6,
   maxAlternateRootCandidates: 1,
   densePartitionRetryOverlapFloor: 4,
   densePartitionRetryBlockCountCeiling: 4,
@@ -86,7 +88,24 @@ function countRingSystems(layoutGraph, atomIds) {
  */
 function countContainedRings(layoutGraph, atomIds) {
   const atomIdSet = new Set(atomIds);
-  return (layoutGraph.rings ?? []).filter(ring => ring.atomIds.every(atomId => atomIdSet.has(atomId))).length;
+  const ringSystemIds = new Set();
+  for (const atomId of atomIdSet) {
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(atomId);
+    if (ringSystemId != null) {
+      ringSystemIds.add(ringSystemId);
+    }
+  }
+  let count = 0;
+  for (const ringSystemId of ringSystemIds) {
+    const ringSystem = layoutGraph.ringSystemById.get(ringSystemId);
+    for (const ringId of ringSystem?.ringIds ?? []) {
+      const ring = layoutGraph.ringById.get(ringId);
+      if (ring?.atomIds.every(atomId => atomIdSet.has(atomId))) {
+        count++;
+      }
+    }
+  }
+  return count;
 }
 
 /**
@@ -312,11 +331,10 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
   const atomIdSet = new Set(atomIds);
   const splitAdjacency = buildBlockSplitAdjacency(layoutGraph, atomIds, atomIdSet);
   const heavyAtomIds = atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H');
-  const participantAtomIds =
-    atomIds.filter(atomId => {
-      const atom = layoutGraph.atoms.get(atomId);
-      return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
-    });
+  const participantAtomIds = atomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
+  });
   const blockRingSystems = containedRingSystems(layoutGraph, atomIdSet);
   const blockHeavyCount = heavyAtomIds.length;
   const blockParticipantCount = participantAtomIds.length;
@@ -1090,9 +1108,12 @@ function shouldRetryWithAlternateRoot(placement, placementAudit, rankedRootBlock
   }
   return (
     placement.blockCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryBlockCountFloor &&
-    placement.repulsionMoveCount <= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryRepulsionMoveCeiling &&
     placementAudit.bondLengthFailureCount === 0 &&
-    placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryOverlapFloor
+    placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryOverlapFloor &&
+    (placement.repulsionMoveCount <= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryRepulsionMoveCeiling ||
+      (placement.initialDensePartitionUsed === true &&
+        placement.blockCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryDenseBlockCountFloor &&
+        placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryDenseOverlapFloor))
   );
 }
 
@@ -1117,8 +1138,7 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
     return null;
   }
   const pathLikeIsolatedRingChain = describePathLikeIsolatedRingChain(layoutGraph, component);
-  const singleLinkerPathLikeIsolatedRingChain =
-    pathLikeIsolatedRingChain && (pathLikeIsolatedRingChain.edges ?? []).every(edge => (edge.linkerAtomIds?.length ?? 0) === 1);
+  const singleLinkerPathLikeIsolatedRingChain = pathLikeIsolatedRingChain && (pathLikeIsolatedRingChain.edges ?? []).every(edge => (edge.linkerAtomIds?.length ?? 0) === 1);
   const componentHeavyAtomCount = countHeavyAtoms(layoutGraph, component.atomIds);
   const ringCount = countContainedRings(layoutGraph, component.atomIds);
   const simpleIsolatedRingSystemCount = countSimpleIsolatedRingSystems(layoutGraph, component.atomIds);
@@ -1129,12 +1149,10 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
     simpleIsolatedRingSystemCount >= ringSystemCount * LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionSimpleRingRatio &&
     hypervalentConnectorCount >= Math.max(4, Math.floor(ringSystemCount * 0.25));
   const useFineDensePartition =
-    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap &&
-    ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryRingFloor;
-  const denseHeavyAtomCap =
-    hypervalentRingChain
-      ? LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomCap
-      : useFineDensePartition
+    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap && ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryRingFloor;
+  const denseHeavyAtomCap = hypervalentRingChain
+    ? LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomCap
+    : useFineDensePartition
       ? LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryHeavyAtomCap
       : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {
@@ -1325,10 +1343,10 @@ function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, chil
 
           for (const rotationStep of orderedOverlapRotationSteps(movableBounds, fixedBounds, anchorPosition)) {
             const candidateFirstBounds = subtreeBlockIdSet.has(firstBlockId)
-              ? rotatedBoundsForBlock(packingState.coords, blockAtomIdsById.get(firstBlockId) ?? [], anchorPosition, rotationStep) ?? firstBounds
+              ? (rotatedBoundsForBlock(packingState.coords, blockAtomIdsById.get(firstBlockId) ?? [], anchorPosition, rotationStep) ?? firstBounds)
               : firstBounds;
             const candidateSecondBounds = subtreeBlockIdSet.has(secondBlockId)
-              ? rotatedBoundsForBlock(packingState.coords, blockAtomIdsById.get(secondBlockId) ?? [], anchorPosition, rotationStep) ?? secondBounds
+              ? (rotatedBoundsForBlock(packingState.coords, blockAtomIdsById.get(secondBlockId) ?? [], anchorPosition, rotationStep) ?? secondBounds)
               : secondBounds;
             const { overlapX: candidateOverlapX, overlapY: candidateOverlapY } = measureBlockOverlap(candidateFirstBounds, candidateSecondBounds);
             const candidatePairOverlap = candidateOverlapX > 0 && candidateOverlapY > 0 ? candidateOverlapX * candidateOverlapY : 0;
@@ -1385,7 +1403,9 @@ function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, chil
  */
 export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, options = {}) {
   const baseThreshold = options.partitionThreshold ?? layoutGraph.options.largeMoleculeThreshold;
-  const threshold = initialDensePartitionThreshold(layoutGraph, component, baseThreshold, options) ?? baseThreshold;
+  const initialDenseThreshold = initialDensePartitionThreshold(layoutGraph, component, baseThreshold, options);
+  const threshold = initialDenseThreshold ?? baseThreshold;
+  const initialDensePartitionUsed = initialDenseThreshold != null;
   const { blocks, cutBonds } = partitionBlocks(layoutGraph, component, threshold);
   if (blocks.length <= 1) {
     return null;
@@ -1424,6 +1444,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       rootRetryUsed: false,
       densePartitionRetryAttemptCount: 0,
       densePartitionRetryUsed: false,
+      initialDensePartitionUsed,
       bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar'),
       cleanupRigidSubtreesByAtomId: new Map()
     };
@@ -1514,6 +1535,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     rootRetryUsed: false,
     densePartitionRetryAttemptCount: 0,
     densePartitionRetryUsed: false,
+    initialDensePartitionUsed,
     extremeLargeFallbackFastPathUsed: useExtremeLargeFallbackFastPath,
     bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false }),
     cleanupRigidSubtreesByAtomId

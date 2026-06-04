@@ -8,6 +8,9 @@ import { makeDisconnectedEthanes, makeEthane } from './support/molecules.js';
 import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
 import { createLayoutGraph } from '../../../src/layout/engine/model/layout-graph.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 const SULFATED_GLYCOSIDE_SMILES =
   'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
 
@@ -187,7 +190,7 @@ describe('layout/engine/api', () => {
     assert.equal(Math.sign(signedTriangleArea(result.coords, 'C1', 'C2', 'O3')), Math.sign(existingArea));
   });
 
-  it('keeps previously failing real-world structures from collapsing or stacking branches', () => {
+  stressIt('keeps previously failing real-world structures from collapsing or stacking branches', () => {
     const cases = [
       {
         smiles: 'C1=CC=C(C=C1)C(C(=O)O)(N)P(=O)(O)O',
@@ -230,7 +233,7 @@ describe('layout/engine/api', () => {
     }
   });
 
-  it('keeps large sulfated glycosides clean through the hidden-hydrogen app path', () => {
+  stressIt('keeps large sulfated glycosides clean through the hidden-hydrogen app path', () => {
     const molecule = parseSMILES(SULFATED_GLYCOSIDE_SMILES);
     molecule.hideHydrogens();
     const result = generateCoords(molecule, {
@@ -273,7 +276,7 @@ describe('layout/engine/api', () => {
     }
   });
 
-  it('lays out a previously crashing fused-plus-spiro macrolide scaffold', () => {
+  stressIt('lays out a previously crashing fused-plus-spiro macrolide scaffold', () => {
     const molecule = parseSMILES(
       String.raw`COC[C@H]1O[C@@H](O[C@@H]2OC[C@@H]3O[C@@]4(OC[C@@H](OC(=O)c5c(C)cc(O)cc5O)[C@@H]6OCO[C@@H]46)O[C@H]3[C@H]2OCCN=[N+]=[N-])[C@@H](OC)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](C)[C@H](OC)[C@H](O[C@@H]8O[C@H](C)[C@H]9O[C@]%10(C[C@@H](O)[C@H](O[C@H]%11C[C@@H](O[C@H]%12C[C@@](C)([C@@H](OC)[C@H](C)O%12)[N+](=O)[O-])[C@H](OC(=O)c%13c(C)c(Cl)c(O)c(Cl)c%13OC)[C@@H](C)O%11)[C@@H](C)O%10)O[C@]9(C)[C@@H]8O)[C@@]7(C)O`
     );

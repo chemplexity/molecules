@@ -809,8 +809,7 @@ function sharedBackboneAttachmentByRingSystemId(ringChain) {
   const attachmentsByRingSystemId = new Map();
   for (let index = 0; index < orderedRingSystemIds.length; index++) {
     const ringSystemId = orderedRingSystemIds[index];
-    const previousEdge =
-      index > 0 ? orderedEdgeAttachment(edgeBetween(ringChain, orderedRingSystemIds[index - 1], ringSystemId), orderedRingSystemIds[index - 1], ringSystemId) : null;
+    const previousEdge = index > 0 ? orderedEdgeAttachment(edgeBetween(ringChain, orderedRingSystemIds[index - 1], ringSystemId), orderedRingSystemIds[index - 1], ringSystemId) : null;
     const nextEdge =
       index < orderedRingSystemIds.length - 1 ? orderedEdgeAttachment(edgeBetween(ringChain, ringSystemId, orderedRingSystemIds[index + 1]), ringSystemId, orderedRingSystemIds[index + 1]) : null;
     const previousAttachmentAtomId = previousEdge?.nextAttachmentAtomId ?? null;

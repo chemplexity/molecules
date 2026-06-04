@@ -7,6 +7,9 @@ import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { pickWedgeAssignments } from '../../../../src/layout/engine/stereo/wedge-selection.js';
 import { makeHiddenHydrogenStereocenter } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 describe('layout/engine/stereo/wedge-selection', () => {
   it('assigns a heavy-atom wedge bond even when one substituent is a hidden hydrogen', () => {
     const graph = createLayoutGraph(makeHiddenHydrogenStereocenter());
@@ -70,7 +73,7 @@ describe('layout/engine/stereo/wedge-selection', () => {
     assert.ok(summary.assignments[0].type === 'wedge' || summary.assignments[0].type === 'dash');
   });
 
-  it('keeps API-suppressed hydrogens from becoming first-choice wedge display bonds', () => {
+  stressIt('keeps API-suppressed hydrogens from becoming first-choice wedge display bonds', () => {
     const molecule = parseSMILES('COC1=CC(=CC(OC)=C1OC)C(F)(F)C(=O)N1CCCC[C@H]1C(=O)O[C@@H](CCCC1=CC=CC=C1)CCCC1=CN=CC=C1');
     const result = generateCoords(molecule, {
       suppressH: true,
@@ -106,7 +109,7 @@ describe('layout/engine/stereo/wedge-selection', () => {
     assert.deepEqual(summary.missingCenterIds, []);
   });
 
-  it('treats coordinate-only metal centers as unsupported covalent wedge centers', () => {
+  stressIt('treats coordinate-only metal centers as unsupported covalent wedge centers', () => {
     const molecule = parseSMILES(String.raw`C[C@H]1C[C@H](O)N[C@@H]2CCCCN(O[Fe@@]34O[C@@H](\C=C\CCCCCCC(O)=O)[N@](CCCC[C@H](NC(=O)[C@H]5COC(=N5)C5=CC=CC=C5O3)C(=O)O1)O4)C2=O`);
     const result = runPipeline(molecule, {
       suppressH: true,

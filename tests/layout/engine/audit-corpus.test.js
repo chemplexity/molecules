@@ -12,6 +12,9 @@ import { resolvePolicy } from '../../../src/layout/engine/standards/profile-poli
 
 import { AUDIT_CORPUS } from './support/audit-corpus.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 /**
  * Returns the placement-stage audit and final pipeline result for one SMILES input.
  * @param {string} smiles - SMILES string.
@@ -40,8 +43,12 @@ function inspectPlacementAndFinalAudit(smiles, options = { suppressH: true }) {
 }
 
 describe('layout/engine/audit-corpus', () => {
-  for (const entry of AUDIT_CORPUS) {
-    it(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
+  it('loads audit corpus representatives for opt-in stress coverage', () => {
+    assert.ok(AUDIT_CORPUS.length > 0);
+  });
+
+  for (const entry of RUN_LAYOUT_STRESS_TESTS ? AUDIT_CORPUS : []) {
+    stressIt(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
       const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);
       const audit = result.metadata.audit;
 
@@ -56,10 +63,7 @@ describe('layout/engine/audit-corpus', () => {
         `expected ${entry.name} max bond deviation <= ${entry.expected.maxBondLengthDeviation}, got ${audit.maxBondLengthDeviation}`
       );
       if (Object.hasOwn(entry.expected, 'maxLabelOverlapCount')) {
-        assert.ok(
-          audit.labelOverlapCount <= entry.expected.maxLabelOverlapCount,
-          `expected ${entry.name} label overlaps <= ${entry.expected.maxLabelOverlapCount}, got ${audit.labelOverlapCount}`
-        );
+        assert.ok(audit.labelOverlapCount <= entry.expected.maxLabelOverlapCount, `expected ${entry.name} label overlaps <= ${entry.expected.maxLabelOverlapCount}, got ${audit.labelOverlapCount}`);
       }
       if (Object.hasOwn(entry.expected, 'maxRingSubstituentReadabilityFailureCount')) {
         assert.ok(

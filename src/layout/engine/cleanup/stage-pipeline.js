@@ -560,17 +560,10 @@ export function buildCleanupStageGraph(context) {
     (audit.inwardRingSubstituentCount ?? 0) === 0 &&
     (audit.outwardAxisRingSubstituentFailureCount ?? 0) === 0;
   const shouldSkipCleanSpiroPresentationCleanup = stageResult =>
-    familySummary.primaryFamily === 'spiro' &&
-    familySummary.mixedMode === true &&
-    hasOnlyRingSubstituentCleanupHook &&
-    hasCleanAuditWithoutReadabilityFailures(stageResult?.audit);
+    familySummary.primaryFamily === 'spiro' && familySummary.mixedMode === true && hasOnlyRingSubstituentCleanupHook && hasCleanAuditWithoutReadabilityFailures(stageResult?.audit);
   const shouldSkipCleanSmallAttachedRingFallback = stageResult => {
     const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
-    return (
-      heavyAtomCount <= 24 &&
-      hasCleanAuditWithoutReadabilityFailures(stageResult?.audit) &&
-      !hasAromaticMovableAttachedRing(stageResult?.coords)
-    );
+    return heavyAtomCount <= 24 && hasCleanAuditWithoutReadabilityFailures(stageResult?.audit) && !hasAromaticMovableAttachedRing(stageResult?.coords);
   };
   const isDirtyUltraLargeHardResidualStage = stageResult => {
     const audit = stageResult?.audit ?? null;
@@ -794,11 +787,7 @@ export function buildCleanupStageGraph(context) {
         const stereoInputCoords = presentationProjectedBranchClearance.nudges > 0 ? presentationProjectedBranchClearance.coords : presentationResult.coords;
 
         const presentationChanged =
-          labelClearance.nudges > 0 ||
-          symmetryTidy.snappedCount > 0 ||
-          symmetryTidy.junctionSnapCount > 0 ||
-          (presentationResult.nudges ?? 0) > 0 ||
-          presentationProjectedBranchClearance.nudges > 0;
+          labelClearance.nudges > 0 || symmetryTidy.snappedCount > 0 || symmetryTidy.junctionSnapCount > 0 || (presentationResult.nudges ?? 0) > 0 || presentationProjectedBranchClearance.nudges > 0;
         const shouldRunStereoCleanup = presentationChanged || incumbent?.audit?.stereoContradiction === true;
         const stereoCleanup = shouldRunStereoCleanup
           ? enforceAcyclicEZStereo(layoutGraph, stereoInputCoords, {

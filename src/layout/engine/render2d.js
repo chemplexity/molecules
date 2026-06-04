@@ -274,25 +274,9 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, hCo
     if (hasTerminalAtom) {
       const halfOx = (nx * BOND_OFF) / 2;
       const halfOy = (ny * BOND_OFF) / 2;
-      const positive = shortenBondLineWithLabelClearance(
-        firstAtom,
-        secondAtom,
-        { x: start.x + halfOx, y: start.y + halfOy },
-        { x: end.x + halfOx, y: end.y + halfOy },
-        molecule,
-        toSVG,
-        hCounts
-      );
+      const positive = shortenBondLineWithLabelClearance(firstAtom, secondAtom, { x: start.x + halfOx, y: start.y + halfOy }, { x: end.x + halfOx, y: end.y + halfOy }, molecule, toSVG, hCounts);
       output.push(lineElement(positive.x1, positive.y1, positive.x2, positive.y2, false));
-      const negative = shortenBondLineWithLabelClearance(
-        firstAtom,
-        secondAtom,
-        { x: start.x - halfOx, y: start.y - halfOy },
-        { x: end.x - halfOx, y: end.y - halfOy },
-        molecule,
-        toSVG,
-        hCounts
-      );
+      const negative = shortenBondLineWithLabelClearance(firstAtom, secondAtom, { x: start.x - halfOx, y: start.y - halfOy }, { x: end.x - halfOx, y: end.y - halfOy }, molecule, toSVG, hCounts);
       output.push(lineElement(negative.x1, negative.y1, negative.x2, negative.y2, false));
     } else {
       const direction = secondaryDir(firstAtom, secondAtom, molecule, toSVG);

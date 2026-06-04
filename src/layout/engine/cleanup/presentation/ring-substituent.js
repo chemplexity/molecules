@@ -1,6 +1,6 @@
 /** @module cleanup/presentation/ring-substituent */
 
-import { auditLayout } from '../../audit/audit.js';
+import { auditCandidateSafety, auditLayout } from '../../audit/audit.js';
 import {
   buildAtomGrid,
   buildSubtreeOverlapContext,
@@ -728,8 +728,7 @@ function repairBlockingTerminalRingCarbonylLeaves(layoutGraph, coords, overrideP
       const candidateOverrides = new Map(repairedOverrides);
       candidateOverrides.set(descriptor.leafAtomId, targetPosition);
       const candidateCoords = coordsWithOverrides(coords, candidateOverrides);
-      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false });
-      if (candidateAudit.ok === true) {
+      if (auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok === true) {
         bestOverrides = candidateOverrides;
         break;
       }
@@ -741,7 +740,7 @@ function repairBlockingTerminalRingCarbonylLeaves(layoutGraph, coords, overrideP
     repairedCoords = coordsWithOverrides(coords, repairedOverrides);
   }
 
-  return auditLayout(layoutGraph, repairedCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok === true ? repairedOverrides : null;
+  return auditCandidateSafety(layoutGraph, repairedCoords, { bondLength }).ok === true ? repairedOverrides : null;
 }
 
 /**
@@ -1220,8 +1219,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
       const forwardLinkedRingOutwardDeviation = linkedRingRepresentative ? bestOutwardDeviation(anchorPosition, rootPosition, outwardAngles) : null;
       const reverseLinkedRingOutwardDeviation = linkedRingRepresentative ? bestOutwardDeviation(reverseAnchorPosition, rootPosition, reverseOutwardAngles) : null;
       const exactLinkedRingOutwardDeviation =
-        (Number.isFinite(forwardLinkedRingOutwardDeviation) ? forwardLinkedRingOutwardDeviation : 0) +
-        (Number.isFinite(reverseLinkedRingOutwardDeviation) ? reverseLinkedRingOutwardDeviation : 0);
+        (Number.isFinite(forwardLinkedRingOutwardDeviation) ? forwardLinkedRingOutwardDeviation : 0) + (Number.isFinite(reverseLinkedRingOutwardDeviation) ? reverseLinkedRingOutwardDeviation : 0);
       const exceedsStandardSubtreeBudget = subtreeAtomIds.length > maxSubtreeAtomCount || subtreeHeavyAtomCount > maxSubtreeHeavyAtomCount;
       const largeExactLinkedRingOnly =
         exceedsStandardSubtreeBudget &&
@@ -2680,7 +2678,7 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
               candidateCoords.set(atomId, position);
             }
             overlapCount =
-              auditLayout(layoutGraph, candidateCoords, { bondLength, includeVisibleHeavyBondCrossings: false }).ok === true
+              auditCandidateSafety(layoutGraph, candidateCoords, { bondLength }).ok === true
                 ? baseOverlapCount
                 : countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
           }
@@ -2816,13 +2814,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       const baseFailsReadability = baseCandidate.insideRingCount > 0 || baseCandidate.outwardFailureCount > 0;
       const needsIdealOutwardGeometry = dynamicDescriptor.prefersIdealOutwardGeometry && !isRootAnchoredSubtreeDescriptor(dynamicDescriptor) && baseCandidate.outwardDeviation > TIDY_ANGLE_EPSILON;
       const needsRootAnchoredOverlapRepair = dynamicDescriptor.supportsRootAnchoredOverlapRepair && dynamicDescriptor.rootRotatingAtomIds.length > 0 && baseCandidate.overlapCost > TIDY_ATOM_EPSILON;
-      if (
-        !baseFailsReadability &&
-        !dynamicDescriptor.isRingSystemSubstituent &&
-        !needsIdealOutwardGeometry &&
-        !needsRootAnchoredOverlapRepair &&
-        !compressibleTerminalLeafDescriptor
-      ) {
+      if (!baseFailsReadability && !dynamicDescriptor.isRingSystemSubstituent && !needsIdealOutwardGeometry && !needsRootAnchoredOverlapRepair && !compressibleTerminalLeafDescriptor) {
         continue;
       }
       let bestCandidate = null;

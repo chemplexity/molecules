@@ -82,26 +82,32 @@ export class LayoutEvaluationContext {
   }
 
   findSevereOverlaps(options = {}) {
+    const atomGrid = options.atomGrid ?? this.atomGrid();
     return findSevereOverlaps(this.layoutGraph, this.coords, this.bondLength, {
       ...options,
-      atomGrid: options.atomGrid ?? this.atomGrid(),
-      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this.visibleHeavyAtomIds()
+      atomGrid,
+      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this.visibleHeavyAtomIds(),
+      visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid ?? atomGrid === this._atomGrid
     });
   }
 
   measureOverlapState(options = {}) {
+    const atomGrid = options.atomGrid ?? this.atomGrid();
     return measureOverlapState(this.layoutGraph, this.coords, this.bondLength, {
       ...options,
-      atomGrid: options.atomGrid ?? this.atomGrid(),
-      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this.visibleHeavyAtomIds()
+      atomGrid,
+      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this.visibleHeavyAtomIds(),
+      visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid ?? atomGrid === this._atomGrid
     });
   }
 
   measureLayoutState(options = {}) {
+    const atomGrid = options.atomGrid ?? this.atomGrid();
     return measureLayoutState(this.layoutGraph, this.coords, this.bondLength, {
       ...options,
-      atomGrid: options.atomGrid ?? this.atomGrid(),
-      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this.visibleHeavyAtomIds()
+      atomGrid,
+      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this.visibleHeavyAtomIds(),
+      visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid ?? atomGrid === this._atomGrid
     });
   }
 

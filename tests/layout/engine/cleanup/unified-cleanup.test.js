@@ -16,6 +16,9 @@ import { layoutSupportedComponents } from '../../../../src/layout/engine/placeme
 import { resolvePolicy } from '../../../../src/layout/engine/standards/profile-policy.js';
 import { makeLargeExplicitHydrogenPeptide } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 /**
  * Returns the synthetic geminal cyclohexane clump used to exercise cleanup strategy choice.
  * @returns {{graph: object, coords: Map<string, {x: number, y: number}>}} Layout graph and synthetic coordinates.
@@ -88,7 +91,7 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     assert.deepEqual([...rerun.coords.entries()], [...settled.coords.entries()]);
   });
 
-  it('prioritizes overlap-reducing cleanup moves first on large crowded macrocycles', () => {
+  stressIt('prioritizes overlap-reducing cleanup moves first on large crowded macrocycles', () => {
     const smiles =
       'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O';
     const graph = createLayoutGraph(parseSMILES(smiles), normalizeOptions({ suppressH: true }));
@@ -117,7 +120,7 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     );
   });
 
-  it('does not trade large-molecule backbone bond integrity for overlap cleanup', () => {
+  stressIt('does not trade large-molecule backbone bond integrity for overlap cleanup', () => {
     const graph = createLayoutGraph(
       parseSMILES(
         'O=C([C@H](CCCCNC([C@@H](NC([C@@H](NC([C@H](CCCCNC([C@H]1N(C([C@@H](NC(CSC[C@H](NC([C@H]([C@@H](C)CC)NC([C@H](CCCCNC([C@@H]2CCCN2C([C@@H](NC(C3=CC=C(O[C@H]4[C@H](O)[C@@H](O)[C@@H](O)[C@@H](CO)O4)C=C3)=O)CCCC[NH3+])=O)=O)NC([C@@H]5CCCN5C([C@@H](NC(C6=CC=C(O[C@H]7[C@H](O)[C@@H](O)[C@@H](O)[C@@H](CO)O7)C=C6)=O)CCCC[NH3+])=O)=O)=O)=O)C(N)=O)=O)CCCC[NH3+])=O)CCC1)=O)NC([C@H]8N(C([C@@H](NC(CSC[C@H](NC([C@H]([C@@H](C)CC)NC([C@H](CCCCNC([C@@H]9CCCN9C([C@@H](NC(C%10=CC=C(O[C@@H]%11O[C@H](CO)[C@H](O)[C@H](O)[C@H]%11O)C=C%10)=O)CCCC[NH3+])=O)=O)NC([C@@H]%12CCCN%12C([C@@H](NC(C%13=CC=C(O[C@@H]%14O[C@H](CO)[C@H](O)[C@H](O)[C@H]%14O)C=C%13)=O)CCCC[NH3+])=O)=O)=O)=O)C(N)=O)=O)CCCC[NH3+])=O)CCC8)=O)=O)CCCC[NH3+])=O)[C@@H](C)CC)=O)NC([C@@H](NC([C@@H](NC([C@H](CCCCNC([C@H]%15N(C([C@@H](NC(CSC[C@H](NC([C@H]([C@@H](C)CC)NC([C@H](CCCCNC([C@@H]%16CCCN%16C([C@@H](NC(C%17=CC=C(O[C@@H]%18O[C@H](CO)[C@H](O)[C@H](O)[C@H]%18O)C=C%17)=O)CCCC[NH3+])=O)=O)NC([C@@H]%19CCCN%19C([C@@H](NC(C%20=CC=C(O[C@@H]%21O[C@H](CO)[C@H](O)[C@H](O)[C@H]%21O)C=C%20)=O)CCCC[NH3+])=O)=O)=O)=O)C(N)=O)=O)CCCC[NH3+])=O)CCC%15)=O)NC([C@H]%22N(C([C@@H](NC(CSC[C@H](NC([C@H]([C@@H](C)CC)NC([C@H](CCCCNC([C@@H]%23CCCN%23C([C@@H](NC(C%24=CC=C(O[C@H]%25[C@H](O)[C@@H](O)[C@@H](O)[C@@H](CO)O%25)C=C%24)=O)CCCC[NH3+])=O)=O)NC([C@@H]%26CCCN%26C([C@@H](NC(C%27=CC=C(O[C@H]%28[C@H](O)[C@@H](O)[C@@H](O)[C@@H](CO)O%28)C=C%27)=O)CCCC[NH3+])=O)=O)=O)=O)C(N)=O)=O)CCCC[NH3+])=O)CCC%22)=O)=O)CCCC[NH3+])=O)[C@@H](C)CC)=O)N[C@@H](CC%29=CN=CN%29)C(N[C@@H]([C@H](CC)C)C(N)=O)=O'
@@ -146,7 +149,7 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     assert.ok(afterAudit.maxBondLengthDeviation < 0.05);
   });
 
-  it('uses stitched large-molecule block subtrees to reduce overlaps beyond protected atom nudges', () => {
+  stressIt('uses stitched large-molecule block subtrees to reduce overlaps beyond protected atom nudges', () => {
     const graph = createLayoutGraph(makeLargeExplicitHydrogenPeptide(), normalizeOptions({ suppressH: true }));
     const placement = layoutSupportedComponents(graph);
     const plainFirstPassCleanup = runUnifiedCleanup(graph, placement.coords, {

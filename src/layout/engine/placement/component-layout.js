@@ -406,6 +406,15 @@ function isClearlyWorsePlacementPreScore(candidateScore, incumbentScore) {
   return candidateScore.pre.overlapState.bondDeviation.maxDeviation > incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35;
 }
 
+function hasHapticValidation(placement) {
+  for (const validationClass of placement?.bondValidationClasses?.values?.() ?? []) {
+    if (validationClass === 'haptic') {
+      return true;
+    }
+  }
+  return false;
+}
+
 function isMacrocyclePreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
   if (!candidateScore) {
     return false;
@@ -440,6 +449,12 @@ function isOrganometallicPreferredPlacement(layoutGraph, candidateScore, incumbe
   }
   if (!incumbentScore) {
     return true;
+  }
+  if (candidateScore.placement.family === 'organometallic' && incumbentScore.placement.family !== 'organometallic' && hasHapticValidation(candidateScore.placement)) {
+    ensurePlacementAudit(layoutGraph, candidateScore);
+    if (candidateScore.audit.ok === true && candidateScore.audit.bondLengthFailureCount === 0 && candidateScore.audit.severeOverlapCount === 0) {
+      return true;
+    }
   }
   const preScoreComparison = comparePlacementPreScore(candidateScore, incumbentScore);
   if (preScoreComparison > 0 && isClearlyWorsePlacementPreScore(candidateScore, incumbentScore)) {

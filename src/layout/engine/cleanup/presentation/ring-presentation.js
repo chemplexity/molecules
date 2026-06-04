@@ -874,13 +874,11 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   const terminalRingCarbonylLeafContactPenalty = scoreMetricOr('terminalRingCarbonylLeafContactPenalty', () => measureTerminalRingCarbonylLeafContactPenalty(layoutGraph, coords, { bondLength }));
   let omittedHydrogenDirectRingHubCollateralRootPenalty = null;
   const omittedHydrogenDirectRingHubCollateralRootMaxPenalty = scoreMetricOr('omittedHydrogenDirectRingHubCollateralRootMaxPenalty', () => {
-    omittedHydrogenDirectRingHubCollateralRootPenalty =
-      omittedHydrogenDirectRingHubCollateralRootPenalty ?? measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
+    omittedHydrogenDirectRingHubCollateralRootPenalty = omittedHydrogenDirectRingHubCollateralRootPenalty ?? measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
     return omittedHydrogenDirectRingHubCollateralRootPenalty.maxDeviation;
   });
   const omittedHydrogenDirectRingHubCollateralRootTotalPenalty = scoreMetricOr('omittedHydrogenDirectRingHubCollateralRootPenalty', () => {
-    omittedHydrogenDirectRingHubCollateralRootPenalty =
-      omittedHydrogenDirectRingHubCollateralRootPenalty ?? measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
+    omittedHydrogenDirectRingHubCollateralRootPenalty = omittedHydrogenDirectRingHubCollateralRootPenalty ?? measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
     return omittedHydrogenDirectRingHubCollateralRootPenalty.totalDeviation;
   });
   const visibleBondCrossingCount = Number.isFinite(scoreFromOptions.audit?.visibleHeavyBondCrossingCount)
@@ -1129,11 +1127,8 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     (state.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0) > PRESENTATION_NEED_EPSILON ||
     (state.omittedHydrogenDirectRingHubCollateralRootPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
   const hasSmallRingExteriorFanExactNeed = state =>
-    (state.smallRingExteriorFanExactMaxPenalty ?? 0) > PRESENTATION_NEED_EPSILON ||
-    (state.smallRingExteriorFanExactPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
-  const hasDirectAttachedRingRootNeed = state =>
-    (state.attachedRingRootOutwardPenalty ?? 0) > PRESENTATION_NEED_EPSILON ||
-    (state.attachedRingPeripheralPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
+    (state.smallRingExteriorFanExactMaxPenalty ?? 0) > PRESENTATION_NEED_EPSILON || (state.smallRingExteriorFanExactPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
+  const hasDirectAttachedRingRootNeed = state => (state.attachedRingRootOutwardPenalty ?? 0) > PRESENTATION_NEED_EPSILON || (state.attachedRingPeripheralPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
   const hasTerminalRingCarbonylLeafNeed = state => (state.terminalRingCarbonylLeafContactPenalty ?? 0) > PRESENTATION_NEED_EPSILON;
   const hasCleanLowValueAttachedRingFallbackNeed = state =>
     state.score?.audit?.ok === true &&
@@ -1287,11 +1282,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
   }
 
   const descriptorSummary = options.includeAttachedRingFallback === true ? collectPresentationDescriptorSummary(layoutGraph, currentState.coords, options) : null;
-  if (
-    descriptorSummary?.attachedRingDescriptorCount > 0 &&
-    hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, currentState) &&
-    !hasCleanLowValueAttachedRingFallbackNeed(currentState)
-  ) {
+  if (descriptorSummary?.attachedRingDescriptorCount > 0 && hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, currentState) && !hasCleanLowValueAttachedRingFallbackNeed(currentState)) {
     const previousStepCount = currentState.steps.length;
     currentState = evaluatePresentationStep(
       layoutGraph,

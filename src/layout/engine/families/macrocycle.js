@@ -591,9 +591,7 @@ function macrocycleHasBridgedRingConnection(layoutGraph, rings) {
     return false;
   }
   const ringIds = new Set(rings.map(ring => ring.id));
-  return layoutGraph.ringConnections.some(
-    connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
-  );
+  return layoutGraph.ringConnections.some(connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
 }
 
 function isBetterRingCompletionCandidate(candidate, incumbent, options = {}) {

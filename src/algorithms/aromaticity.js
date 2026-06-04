@@ -286,9 +286,7 @@ function _canSatisfyHuckelWithAmbiguousN(ring, ringAtomSet, piTotal, mol) {
         !ringBonds.some(_isSourceAromaticBond) &&
         ringBonds.filter(b => b.properties.order === 2).length === 1
       ) {
-        const singleBondNeighbor = mol.atoms.get(
-          ringBonds.find(b => b.properties.order !== 2)?.getOtherAtom(atomId)
-        );
+        const singleBondNeighbor = mol.atoms.get(ringBonds.find(b => b.properties.order !== 2)?.getOtherAtom(atomId));
         if (singleBondNeighbor) {
           const neighborHasRingPi = singleBondNeighbor.bonds.some(bId => {
             const nb = mol.bonds.get(bId);
@@ -593,24 +591,36 @@ function _isSourceAromaticBond(bond) {
  * @returns {number|null} 2 when the lone-pair heuristic applies, null otherwise.
  */
 function _piElectronsKekuleN(atom, ringAtomSet, mol) {
-  if (!atom || atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0) { return null; }
+  if (!atom || atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0) {
+    return null;
+  }
   const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId)).filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
-  if (ringBonds.some(_hasPiOrder)) { return null; }
+  if (ringBonds.some(_hasPiOrder)) {
+    return null;
+  }
   const hasH = atom.bonds.some(bId => {
     const b = mol.bonds.get(bId);
     return b && mol.atoms.get(b.getOtherAtom(atom.id))?.name === 'H';
   });
-  if (hasH) { return null; }
+  if (hasH) {
+    return null;
+  }
   const hasExocyclic = atom.bonds.some(bId => {
     const b = mol.bonds.get(bId);
-    if (!b) { return false; }
+    if (!b) {
+      return false;
+    }
     const other = mol.atoms.get(b.getOtherAtom(atom.id));
     return other && other.name !== 'H' && !ringAtomSet.has(other.id);
   });
-  if (!hasExocyclic) { return null; }
+  if (!hasExocyclic) {
+    return null;
+  }
   const hasRingNeighborPi = ringBonds.some(rb => {
     const neighbor = mol.atoms.get(rb.getOtherAtom(atom.id));
-    if (!neighbor) { return false; }
+    if (!neighbor) {
+      return false;
+    }
     return neighbor.bonds.some(nbId => {
       const nb = mol.bonds.get(nbId);
       return nb && nb.id !== rb.id && _hasPiOrder(nb) && ringAtomSet.has(nb.getOtherAtom(neighbor.id));
@@ -631,41 +641,62 @@ function _piElectronsKekuleN(atom, ringAtomSet, mol) {
  * @returns {number|null} 1 when the atom should contribute 1 π electron, null otherwise.
  */
 function _piElectronsKekuleC(atom, ringAtomSet, mol) {
-  if (!atom || atom.name !== 'C' || (atom.properties.charge ?? 0) !== 0) { return null; }
-  const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId))
-    .filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
-  if (ringBonds.some(_hasPiOrder)) { return null; } // already has ring pi
-  if (ringBonds.length < 2) { return null; }
+  if (!atom || atom.name !== 'C' || (atom.properties.charge ?? 0) !== 0) {
+    return null;
+  }
+  const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId)).filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
+  if (ringBonds.some(_hasPiOrder)) {
+    return null;
+  } // already has ring pi
+  if (ringBonds.length < 2) {
+    return null;
+  }
   // Must have at least one exocyclic non-H substituent (not sp3 bridge CH2).
   const hasExo = atom.bonds.some(bId => {
     const b = mol.bonds.get(bId);
-    if (!b) { return false; }
+    if (!b) {
+      return false;
+    }
     const other = mol.atoms.get(b.getOtherAtom(atom.id));
     return other && other.name !== 'H' && !ringAtomSet.has(other.id);
   });
-  if (!hasExo) { return null; }
+  if (!hasExo) {
+    return null;
+  }
   // Every ring-internal neighbour must carry a pi bond to another ring atom.
   const allNeighborsHavePi = ringBonds.every(rb => {
     const neighbor = mol.atoms.get(rb.getOtherAtom(atom.id));
-    if (!neighbor) { return false; }
+    if (!neighbor) {
+      return false;
+    }
     return neighbor.bonds.some(nbId => {
       const nb = mol.bonds.get(nbId);
       return nb && nb.id !== rb.id && _hasPiOrder(nb) && ringAtomSet.has(nb.getOtherAtom(neighbor.id));
     });
   });
-  if (!allNeighborsHavePi) { return null; }
+  if (!allNeighborsHavePi) {
+    return null;
+  }
   // At least one neighbour must have a non-source-aromatic Kekulé pi bond (order 2,
   // not 1.5 and not aromatic-flagged) to another ring atom.  This guards against
   // carbonyl carbons bonded only to existing aromatic atoms, which would be
   // incorrectly promoted to sp2 in the aromatic ring.
   const hasNeighborWithKekule = ringBonds.some(rb => {
     const neighbor = mol.atoms.get(rb.getOtherAtom(atom.id));
-    if (!neighbor) { return false; }
+    if (!neighbor) {
+      return false;
+    }
     return neighbor.bonds.some(nbId => {
       const nb = mol.bonds.get(nbId);
-      if (!nb || nb.id === rb.id) { return false; }
-      if (!_hasPiOrder(nb)) { return false; }
-      if (!ringAtomSet.has(nb.getOtherAtom(neighbor.id))) { return false; }
+      if (!nb || nb.id === rb.id) {
+        return false;
+      }
+      if (!_hasPiOrder(nb)) {
+        return false;
+      }
+      if (!ringAtomSet.has(nb.getOtherAtom(neighbor.id))) {
+        return false;
+      }
       // Must be a Kekulé double bond (order=2), not a source-aromatic bond.
       return nb.properties.order === 2 && !nb.properties.aromatic;
     });
@@ -691,29 +722,43 @@ function _piElectronsKekuleC(atom, ringAtomSet, mol) {
  */
 function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
   for (const component of _fusedRingComponents(rings)) {
-    if (component.length <= 1) { continue; }
+    if (component.length <= 1) {
+      continue;
+    }
 
     const atomIds = new Set();
     const ringBondIds = new Set();
     for (const ringIndex of component) {
-      for (const atomId of rings[ringIndex]) { atomIds.add(atomId); }
-      for (const bondId of _ringBondIds(mol, rings[ringIndex])) { ringBondIds.add(bondId); }
+      for (const atomId of rings[ringIndex]) {
+        atomIds.add(atomId);
+      }
+      for (const bondId of _ringBondIds(mol, rings[ringIndex])) {
+        ringBondIds.add(bondId);
+      }
     }
 
     const ringBonds = [...ringBondIds].map(bondId => mol.bonds.get(bondId)).filter(Boolean);
 
     // Nothing left to do if every bond is already confirmed aromatic.
-    if (ringBonds.every(bond => aromaticBondIds.has(bond.id))) { continue; }
+    if (ringBonds.every(bond => aromaticBondIds.has(bond.id))) {
+      continue;
+    }
 
     // If any source-aromatic bond in the component has not yet been confirmed,
     // leave it to _promoteFusedSmilesAromaticSystems (already ran) — skip.
-    if (ringBonds.some(bond => _isSourceAromaticBond(bond) && !aromaticBondIds.has(bond.id))) { continue; }
+    if (ringBonds.some(bond => _isSourceAromaticBond(bond) && !aromaticBondIds.has(bond.id))) {
+      continue;
+    }
 
     // There must be at least one Kekulé bond not yet in aromaticBondIds.
-    if (!ringBonds.some(bond => !aromaticBondIds.has(bond.id) && !_isSourceAromaticBond(bond))) { continue; }
+    if (!ringBonds.some(bond => !aromaticBondIds.has(bond.id) && !_isSourceAromaticBond(bond))) {
+      continue;
+    }
 
     // Exocyclic multiple bonds disqualify the component (same as SMILES variant).
-    if (_hasExocyclicMultipleBond(mol, atomIds, ringBondIds)) { continue; }
+    if (_hasExocyclicMultipleBond(mol, atomIds, ringBondIds)) {
+      continue;
+    }
 
     let piTotal = 0;
     let valid = true;
@@ -724,8 +769,12 @@ function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
       // whose neighbour carries the ring π bond) — use lone-pair heuristic.  This was
       // previously restricted to bridgehead atoms (≥2 rings) but the same pattern
       // occurs for non-bridgehead N atoms in fused diazine/pyrazine rings.
-      if (pi === null) { pi = _piElectronsKekuleN(atom, atomIds, mol); }
-      if (pi === null) { pi = _piElectronsKekuleC(atom, atomIds, mol); }
+      if (pi === null) {
+        pi = _piElectronsKekuleN(atom, atomIds, mol);
+      }
+      if (pi === null) {
+        pi = _piElectronsKekuleC(atom, atomIds, mol);
+      }
       if (pi === null) {
         valid = false;
         break;
@@ -733,9 +782,13 @@ function _promoteFusedKekuleAromaticSystems(mol, rings, aromaticBondIds) {
       piTotal += pi;
     }
 
-    if (!valid || (!_isHuckel(piTotal) && !_canSatisfyFusedHuckelWithAmbiguousN(atomIds, piTotal, mol))) { continue; }
+    if (!valid || (!_isHuckel(piTotal) && !_canSatisfyFusedHuckelWithAmbiguousN(atomIds, piTotal, mol))) {
+      continue;
+    }
 
-    for (const atomId of atomIds) { mol.atoms.get(atomId).properties.aromatic = true; }
+    for (const atomId of atomIds) {
+      mol.atoms.get(atomId).properties.aromatic = true;
+    }
     for (const bond of ringBonds) {
       if (!aromaticBondIds.has(bond.id)) {
         bond.setAromatic(true);
@@ -773,12 +826,7 @@ function _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds) {
     }
 
     const ringBonds = [...ringBondIds].map(bondId => mol.bonds.get(bondId)).filter(Boolean);
-    if (
-      ringBonds.length === 0 ||
-      ringBonds.every(bond => aromaticBondIds.has(bond.id)) ||
-      !ringBonds.every(_isSourceAromaticBond) ||
-      _hasExocyclicMultipleBond(mol, atomIds, ringBondIds)
-    ) {
+    if (ringBonds.length === 0 || ringBonds.every(bond => aromaticBondIds.has(bond.id)) || !ringBonds.every(_isSourceAromaticBond) || _hasExocyclicMultipleBond(mol, atomIds, ringBondIds)) {
       continue;
     }
 

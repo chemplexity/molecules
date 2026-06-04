@@ -16,7 +16,10 @@ function compareStrings(firstValue, secondValue) {
 }
 
 function atomIdsCacheKey(atomIds) {
-  return [...atomIds].map(atomId => String(atomId)).sort(compareStrings).join('\u0001');
+  return [...atomIds]
+    .map(atomId => String(atomId))
+    .sort(compareStrings)
+    .join('\u0001');
 }
 
 function candidateAtomIdsCacheKey(candidate) {

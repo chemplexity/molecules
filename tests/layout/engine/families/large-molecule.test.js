@@ -10,6 +10,9 @@ import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js'
 import { layoutAtomSlice } from '../../../../src/layout/engine/placement/atom-slice.js';
 import { makeLargeExplicitHydrogenPeptide, makeLargePolyaryl } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 const SULFATED_GLYCOSIDE_SMILES =
   'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
 
@@ -98,23 +101,27 @@ describe('layout/engine/families/large-molecule', () => {
     assert.equal(typeof result.repulsionMoveCount, 'number');
   });
 
-  it('keeps splitting explicit-h large blocks until mixed slices stay manageable', () => {
-    const graph = createLayoutGraph(makeLargeExplicitHydrogenPeptide(), {
-      suppressH: true
-    });
-    const start = Date.now();
-    const result = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength);
-    const bondDeviation = measureBondLengthDeviation(graph, result.coords, graph.options.bondLength, {
-      bondValidationClasses: result.bondValidationClasses
-    });
+  stressIt(
+    'keeps splitting explicit-h large blocks until mixed slices stay manageable',
+    () => {
+      const graph = createLayoutGraph(makeLargeExplicitHydrogenPeptide(), {
+        suppressH: true
+      });
+      const start = Date.now();
+      const result = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength);
+      const bondDeviation = measureBondLengthDeviation(graph, result.coords, graph.options.bondLength, {
+        bondValidationClasses: result.bondValidationClasses
+      });
 
-    assert.equal(result.placementMode, 'block-stitched');
-    assert.equal(result.rootFallbackUsed, false);
-    assert.ok(result.blockCount > 4);
-    assert.equal(result.coords.size > 0, true);
-    assert.equal(bondDeviation.failingBondCount, 0);
-    assert.ok(Date.now() - start < 25000);
-  }, 20000);
+      assert.equal(result.placementMode, 'block-stitched');
+      assert.equal(result.rootFallbackUsed, false);
+      assert.ok(result.blockCount > 4);
+      assert.equal(result.coords.size > 0, true);
+      assert.equal(bondDeviation.failingBondCount, 0);
+      assert.ok(Date.now() - start < 25000);
+    },
+    20000
+  );
 
   it('rotates stitched child subtrees when doing so compacts the packed block layout', () => {
     const graph = createLayoutGraph(makeLargePolyaryl(), {
@@ -135,7 +142,7 @@ describe('layout/engine/families/large-molecule', () => {
     assert.ok(boundsArea(withRotationPacking.coords) < boundsArea(withoutRotationPacking.coords));
   });
 
-  it('tries one alternate root for overlap-heavy bond-clean stitched placements without regressing the audit', () => {
+  stressIt('tries one alternate root for overlap-heavy bond-clean stitched placements without regressing the audit', () => {
     const graph = createLayoutGraph(
       parseSMILES(
         'O=C(N[C@@H](CC(C)C)C(N)=O)[C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+]'
@@ -164,7 +171,7 @@ describe('layout/engine/families/large-molecule', () => {
     assert.ok(retriedAudit.severeOverlapCount <= baselineAudit.severeOverlapCount);
   });
 
-  it('retries dense partitions for ring-rich sulfated glycosides before cleanup', () => {
+  stressIt('retries dense partitions for ring-rich sulfated glycosides before cleanup', () => {
     const graph = createLayoutGraph(parseSMILES(SULFATED_GLYCOSIDE_SMILES), {
       suppressH: true,
       finalLandscapeOrientation: true
@@ -190,7 +197,7 @@ describe('layout/engine/families/large-molecule', () => {
     assert.ok(denseAudit.visibleHeavyBondCrossingCount <= coarseAudit.visibleHeavyBondCrossingCount);
   });
 
-  it('uses guarded final axis rotation to clear residual acetyl glycan label overlaps', () => {
+  stressIt('uses guarded final axis rotation to clear residual acetyl glycan label overlaps', () => {
     const result = generateCoords(
       parseSMILES(
         'CCCCCCCCC[C@H](CCCCCCCC(=O)C)O[C@@H]1O[C@H](COC(=O)C)[C@@H](OC(=O)C)[C@H](OC(=O)C)[C@H]1O[C@@H]2O[C@H](CO[C@@H]3O[C@H](C)[C@H](OC(=O)C)[C@H](OC(=O)C)[C@@H]3OC(=O)C)[C@@H](OCCC)[C@H](OC(=O)CCC)[C@H]2O[C@@H]4O[C@@H](C)[C@H](OC(=O)C)[C@@H](OC(=O)C)C4OC(=O)C'

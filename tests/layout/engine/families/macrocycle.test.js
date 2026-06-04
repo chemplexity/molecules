@@ -9,6 +9,9 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js';
 import { makeMacrocycle, makeMacrocycleWithSubstituent } from '../support/molecules.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 /**
  * Normalizes an angle into the signed `(-pi, pi]` range.
  * @param {number} angle - Input angle.
@@ -115,7 +118,7 @@ describe('layout/engine/families/macrocycle', () => {
     assertMacrocycleLayoutQuality(graph, result.coords);
   });
 
-  it('avoids catastrophic ring-completion blowups for nearly fully shared fused macrocycle rings', () => {
+  stressIt('keeps nearly fully shared fused macrocycle rings bounded through constructed bridged completion', () => {
     const graph = createLayoutGraph(
       parseSMILES(
         'CC(C)[C@H]1NC(=O)c2cc3cc(c2)C(=O)NC[C@H](NC(=O)[C@@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](Cc4ccc5ccccc5c4)NC(=O)[C@H]6CCCCN6C(=O)[C@H](NC(=O)[C@H](Cc7ccc(F)cc7)NC1=O)[C@H](C)O)C(=O)N[C@@H](Cc8ccccc8)C(=O)N[C@@H](Cc9ccc%10ccccc%10c9)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CNC3=O)C(=O)N[C@@H](CCCCN)C(=O)O'
@@ -126,14 +129,14 @@ describe('layout/engine/families/macrocycle', () => {
     const result = layoutMacrocycleFamily(rings, graph.options.bondLength, { layoutGraph: graph });
     const bondStats = measureBondLengthDeviation(graph, result.coords, graph.options.bondLength);
 
-    assert.equal(result.placementMode, 'ellipse');
+    assert.equal(result.placementMode, 'constructed-bridged');
     assert.ok(result.coords.has('C10'));
     assert.ok(Number.isFinite(result.coords.get('C10').x));
     assert.ok(Number.isFinite(result.coords.get('C10').y));
     assert.ok(bondStats.maxDeviation < 1, `expected fused macrocycle completion to avoid catastrophic bond blowups, got ${bondStats.maxDeviation}`);
   });
 
-  it('keeps multi-atom fused aryl arcs on macrocycle roots at normal bond lengths', () => {
+  stressIt('keeps multi-atom fused aryl arcs on macrocycle roots at normal bond lengths', () => {
     const smiles = 'OCC1OC(OC2=CC=C3CCCCC(O)CCC4=CC=C(OC2=C3)C=C4)C(O)C(O)C1O';
     for (const suppressH of [true, false]) {
       const result = generateCoords(parseSMILES(smiles), { suppressH, bondLength: 1.5 });

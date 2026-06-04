@@ -224,5 +224,4 @@ describe('createInputControls', () => {
       Math.random = originalRandom;
     }
   });
-
 });

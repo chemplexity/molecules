@@ -302,7 +302,10 @@ describe('layout/engine/cleanup/local-rotation', () => {
 
     if (initialOverlaps.length === 0) {
       assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
-      assert.ok(n2Angles.every(angle => angle >= 85 && angle <= 155), `expected N2 fan to stay bounded, got ${n2Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(
+        n2Angles.every(angle => angle >= 85 && angle <= 155),
+        `expected N2 fan to stay bounded, got ${n2Angles.map(angle => angle.toFixed(2)).join(', ')}`
+      );
       return;
     }
 

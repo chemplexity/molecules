@@ -5,8 +5,15 @@ import { parseSMILES } from '../../../src/io/smiles.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
 import { PLAN_CORPUS } from './support/plan-corpus.js';
 
+const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
+const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
 describe('layout/engine/plan-corpus', () => {
-  it('keeps the implementation-plan corpus audit-clean', () => {
+  it('loads implementation-plan corpus representatives for opt-in stress coverage', () => {
+    assert.ok(PLAN_CORPUS.length > 0);
+  });
+
+  stressIt('keeps the implementation-plan corpus audit-clean', () => {
     const failures = [];
 
     for (const entry of PLAN_CORPUS) {

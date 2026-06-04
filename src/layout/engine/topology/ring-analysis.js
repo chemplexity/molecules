@@ -27,17 +27,6 @@ function moleculeTopologyVersion(molecule) {
   return Number.isInteger(molecule?._topologyVersion) ? molecule._topologyVersion : null;
 }
 
-function cloneRingAtomIdsList(ringAtomIdsList) {
-  return ringAtomIdsList.map(ringAtomIds => [...ringAtomIds]);
-}
-
-function cloneSupplementalRingEntries(entries) {
-  return entries.map(entry => ({
-    rawIndex: entry.rawIndex,
-    supplemental: entry.supplemental === true,
-    atomIds: [...entry.atomIds]
-  }));
-}
 
 /**
  * Finds the shortest cycle containing a bond by removing the bond and finding
@@ -180,17 +169,13 @@ export function detectRingSystems(ringAtomIdsList) {
  */
 export function getRingAtomIds(molecule) {
   const topologyVersion = moleculeTopologyVersion(molecule);
-  if (
-    topologyVersion != null &&
-    Array.isArray(molecule._layoutRingAtomIdsCache) &&
-    molecule._layoutRingAtomIdsCacheVersion === topologyVersion
-  ) {
-    return cloneRingAtomIdsList(molecule._layoutRingAtomIdsCache);
+  if (topologyVersion != null && Array.isArray(molecule._layoutRingAtomIdsCache) && molecule._layoutRingAtomIdsCacheVersion === topologyVersion) {
+    return molecule._layoutRingAtomIdsCache;
   }
 
   const ringAtomIdsList = molecule.getRings().map(ringAtomIds => [...ringAtomIds]);
   if (topologyVersion != null) {
-    molecule._layoutRingAtomIdsCache = cloneRingAtomIdsList(ringAtomIdsList);
+    molecule._layoutRingAtomIdsCache = ringAtomIdsList;
     molecule._layoutRingAtomIdsCacheVersion = topologyVersion;
   }
   return ringAtomIdsList;
@@ -198,12 +183,8 @@ export function getRingAtomIds(molecule) {
 
 function supplementalRingAtomEntries(molecule) {
   const topologyVersion = moleculeTopologyVersion(molecule);
-  if (
-    topologyVersion != null &&
-    Array.isArray(molecule._layoutSupplementalRingEntriesCache) &&
-    molecule._layoutSupplementalRingEntriesCacheVersion === topologyVersion
-  ) {
-    return cloneSupplementalRingEntries(molecule._layoutSupplementalRingEntriesCache);
+  if (topologyVersion != null && Array.isArray(molecule._layoutSupplementalRingEntriesCache) && molecule._layoutSupplementalRingEntriesCacheVersion === topologyVersion) {
+    return molecule._layoutSupplementalRingEntriesCache;
   }
 
   const entries = getRingAtomIds(molecule).map((atomIds, rawIndex) => ({
@@ -211,7 +192,10 @@ function supplementalRingAtomEntries(molecule) {
     rawIndex,
     supplemental: false
   }));
-  const seenRingKeys = new Set(entries.map(entry => ringKey(entry.atomIds)));
+  const seenRingKeys = new Set();
+  for (const entry of entries) {
+    seenRingKeys.add(ringKey(entry.atomIds));
+  }
   const coveredRingBondKeys = new Set();
   for (const entry of entries) {
     for (const key of ringBondKeys(entry.atomIds)) {
@@ -252,7 +236,7 @@ function supplementalRingAtomEntries(molecule) {
   }
 
   if (topologyVersion != null) {
-    molecule._layoutSupplementalRingEntriesCache = cloneSupplementalRingEntries(entries);
+    molecule._layoutSupplementalRingEntriesCache = entries;
     molecule._layoutSupplementalRingEntriesCacheVersion = topologyVersion;
   }
   return entries;

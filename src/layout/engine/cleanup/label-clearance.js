@@ -1,7 +1,7 @@
 /** @module cleanup/label-clearance */
 
 import { atomPairKey, CLEANUP_EPSILON, LABEL_CLEARANCE_NUDGE_FACTOR, LABEL_CLEARANCE_PADDING_FACTOR, SEVERE_OVERLAP_FACTOR } from '../constants.js';
-import { collectLabelBoxes, labelBoxesOverlap } from '../geometry/label-box.js';
+import { collectLabelBoxes, hasAnyLabelOverlap, labelBoxesOverlap } from '../geometry/label-box.js';
 import { buildAtomGrid } from '../audit/invariants.js';
 import { centroid } from '../geometry/vec2.js';
 
@@ -91,23 +91,6 @@ function terminalRotatableLabelAnchorAtomId(layoutGraph, coords, atomId, options
     anchorAtomId = neighborAtomId;
   }
   return anchorAtomId;
-}
-
-/**
- * Returns whether any collected label boxes currently overlap.
- * @param {Array<{x: number, y: number, halfWidth: number, halfHeight: number}>} labels - Collected label boxes.
- * @param {number} padding - Extra label padding.
- * @returns {boolean} True when at least one pair of labels overlaps.
- */
-function hasAnyLabelOverlap(labels, padding) {
-  for (let firstIndex = 0; firstIndex < labels.length; firstIndex++) {
-    for (let secondIndex = firstIndex + 1; secondIndex < labels.length; secondIndex++) {
-      if (labelBoxesOverlap(labels[firstIndex], labels[secondIndex], padding)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 /**
