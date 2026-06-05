@@ -5,6 +5,9 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import {
   buildAtomGrid,
+  collectSevereOverlapAtomIds,
+  countSevereOverlaps,
+  countSevereOverlapsMatching,
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   countVisibleHeavyBondCrossingsAfterFocusedMove,
@@ -12,7 +15,10 @@ import {
   computeSubtreeOverlapCost,
   detectCollapsedMacrocycles,
   findSevereOverlaps,
+  findSevereOverlapsMatching,
   findVisibleHeavyBondCrossings,
+  hasSevereOverlapMatching,
+  hasSevereOverlaps,
   measureBondLengthDeviation,
   measureDirectAttachedRingJunctionContinuationDistortion,
   measureFocusedPlacementCost,
@@ -43,9 +49,24 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(overlaps.length, 1);
     assert.equal(overlaps[0].firstAtomId, 'a0');
     assert.equal(overlaps[0].secondAtomId, 'a2');
+    assert.deepEqual([...collectSevereOverlapAtomIds(graph, coords, 1.5)], ['a0', 'a2']);
+    assert.equal(countSevereOverlaps(graph, coords, 1.5), overlaps.length);
+    assert.equal(countSevereOverlapsMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'), 1);
+    assert.deepEqual(
+      findSevereOverlapsMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'),
+      overlaps
+    );
+    assert.equal(hasSevereOverlapMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'), true);
+    assert.equal(hasSevereOverlapMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a1' || secondAtomId === 'a1'), false);
+    assert.equal(hasSevereOverlaps(graph, coords, 1.5), true);
+
+    const cleanCoords = new Map(coords);
+    cleanCoords.set('a2', { x: 3.5, y: 0 });
+    assert.equal(countSevereOverlaps(graph, cleanCoords, 1.5), 0);
+    assert.equal(hasSevereOverlaps(graph, cleanCoords, 1.5), false);
   });
 
-  it('returns the same severe overlaps when backed by a spatial atom grid', () => {
+  it('returns the same severe overlap results when backed by a spatial atom grid', () => {
     const molecule = new Molecule();
     molecule.addAtom('a0', 'C');
     molecule.addAtom('a1', 'C');
@@ -61,11 +82,14 @@ describe('layout/engine/audit/invariants', () => {
     ]);
 
     const direct = findSevereOverlaps(graph, coords, 1.5);
+    const atomGrid = buildAtomGrid(graph, coords, 1.5);
     const viaGrid = findSevereOverlaps(graph, coords, 1.5, {
-      atomGrid: buildAtomGrid(graph, coords, 1.5)
+      atomGrid
     });
 
     assert.deepEqual(viaGrid, direct);
+    assert.equal(countSevereOverlaps(graph, coords, 1.5, { atomGrid }), direct.length);
+    assert.equal(hasSevereOverlaps(graph, coords, 1.5, { atomGrid }), true);
   });
 
   it('counts severe overlaps from overridden positions like the equivalent moved coordinate set', () => {

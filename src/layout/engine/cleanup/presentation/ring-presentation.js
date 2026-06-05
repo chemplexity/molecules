@@ -2,7 +2,7 @@
 
 import { collectAttachedCarbonylPresentationDescriptors } from './attached-carbonyl.js';
 import { auditLayout } from '../../audit/audit.js';
-import { countVisibleHeavyBondCrossings, findSevereOverlaps, measureTrigonalDistortion, measureThreeHeavyContinuationDistortion } from '../../audit/invariants.js';
+import { countVisibleHeavyBondCrossings, hasSevereOverlapMatching, measureTrigonalDistortion, measureThreeHeavyContinuationDistortion } from '../../audit/invariants.js';
 import { atomPairKey } from '../../constants.js';
 import { add, angleOf, angularDifference, distance, rotate, sub } from '../../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
@@ -97,8 +97,11 @@ function maxRegressionFromExactTrigonalCenters(layoutGraph, incumbentCoords, can
 }
 
 function hasTerminalMultipleBondLeafSevereOverlap(layoutGraph, coords, bondLength) {
-  return findSevereOverlaps(layoutGraph, coords, bondLength).some(
-    overlap => isTerminalMultipleBondLeaf(layoutGraph, overlap.firstAtomId) || isTerminalMultipleBondLeaf(layoutGraph, overlap.secondAtomId)
+  return hasSevereOverlapMatching(
+    layoutGraph,
+    coords,
+    bondLength,
+    (firstAtomId, secondAtomId) => isTerminalMultipleBondLeaf(layoutGraph, firstAtomId) || isTerminalMultipleBondLeaf(layoutGraph, secondAtomId)
   );
 }
 

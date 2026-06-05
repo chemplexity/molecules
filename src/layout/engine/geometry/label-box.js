@@ -130,6 +130,56 @@ export function hasAnyLabelOverlap(labelBoxes, padding) {
   return false;
 }
 
+function labelOverlapMetrics(firstBox, secondBox, padding) {
+  return {
+    overlapX: firstBox.halfWidth + secondBox.halfWidth + padding - Math.abs(firstBox.x - secondBox.x),
+    overlapY: firstBox.halfHeight + secondBox.halfHeight + padding - Math.abs(firstBox.y - secondBox.y)
+  };
+}
+
+/**
+ * Summarizes overlapping collected label boxes without materializing pair records.
+ * @param {Array<{x: number, y: number, halfWidth: number, halfHeight: number}>} labelBoxes - Collected label boxes.
+ * @param {number} padding - Extra overlap padding.
+ * @returns {{pairCount: number, totalPenalty: number, maxPenalty: number}} Label-overlap statistics.
+ */
+export function summarizeLabelOverlaps(labelBoxes, padding) {
+  if (labelBoxes.length < 2) {
+    return {
+      pairCount: 0,
+      totalPenalty: 0,
+      maxPenalty: 0
+    };
+  }
+
+  const indexedBoxes = labelBoxesByMinX(labelBoxes);
+  let pairCount = 0;
+  let totalPenalty = 0;
+  let maxPenalty = 0;
+  for (let firstIndex = 0; firstIndex < indexedBoxes.length; firstIndex++) {
+    const first = indexedBoxes[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < indexedBoxes.length; secondIndex++) {
+      const second = indexedBoxes[secondIndex];
+      if (second.minX >= first.maxX + padding) {
+        break;
+      }
+      if (!labelBoxesOverlap(first.box, second.box, padding)) {
+        continue;
+      }
+      const { overlapX, overlapY } = labelOverlapMetrics(first.box, second.box, padding);
+      const penalty = overlapX + overlapY;
+      pairCount++;
+      totalPenalty += penalty;
+      maxPenalty = Math.max(maxPenalty, penalty);
+    }
+  }
+  return {
+    pairCount,
+    totalPenalty,
+    maxPenalty
+  };
+}
+
 /**
  * Finds overlapping estimated label boxes in the current coordinate set.
  * @param {object} layoutGraph - Layout graph shell.
@@ -169,13 +219,14 @@ export function findLabelOverlaps(layoutGraph, coords, bondLength, options = {})
       }
       const originalFirst = first.index < second.index ? first : second;
       const originalSecond = first.index < second.index ? second : first;
+      const { overlapX, overlapY } = labelOverlapMetrics(originalFirst.box, originalSecond.box, padding);
       overlaps.push({
         firstIndex: originalFirst.index,
         secondIndex: originalSecond.index,
         firstAtomId: originalFirst.box.atomId,
         secondAtomId: originalSecond.box.atomId,
-        overlapX: originalFirst.box.halfWidth + originalSecond.box.halfWidth + padding - Math.abs(originalFirst.box.x - originalSecond.box.x),
-        overlapY: originalFirst.box.halfHeight + originalSecond.box.halfHeight + padding - Math.abs(originalFirst.box.y - originalSecond.box.y)
+        overlapX,
+        overlapY
       });
     }
   }

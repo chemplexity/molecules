@@ -6,7 +6,14 @@ import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js'
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { incidentRingPolygonsForAtom } from '../geometry/ring-polygons.js';
-import { countSevereOverlapsWithOverrides, findSevereOverlaps, measureBondLengthDeviation } from '../audit/invariants.js';
+import {
+  countSevereOverlaps,
+  countSevereOverlapsMatching,
+  countSevereOverlapsWithOverrides,
+  findSevereOverlaps,
+  findSevereOverlapsMatching,
+  measureBondLengthDeviation
+} from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { runLocalCleanup } from './local-rotation.js';
 import { resolveOverlaps } from './overlap-resolution.js';
@@ -2918,7 +2925,7 @@ function severeOverlapsTouchingDirectLigands(layoutGraph, coords, centerAtomId) 
   if (ligandAtomIds.size === 0) {
     return [];
   }
-  return findSevereOverlaps(layoutGraph, coords, layoutGraph.options?.bondLength ?? 1.5).filter(overlap => ligandAtomIds.has(overlap.firstAtomId) || ligandAtomIds.has(overlap.secondAtomId));
+  return findSevereOverlapsMatching(layoutGraph, coords, layoutGraph.options?.bondLength ?? 1.5, (firstAtomId, secondAtomId) => ligandAtomIds.has(firstAtomId) || ligandAtomIds.has(secondAtomId));
 }
 
 /**
@@ -2928,7 +2935,13 @@ function severeOverlapsTouchingDirectLigands(layoutGraph, coords, centerAtomId) 
  * @returns {number} Number of overlaps involving a direct ligand.
  */
 function countDirectLigandSevereOverlaps(overlaps, directLigandAtomIds) {
-  return overlaps.filter(overlap => directLigandAtomIds.has(overlap.firstAtomId) || directLigandAtomIds.has(overlap.secondAtomId)).length;
+  let count = 0;
+  for (const overlap of overlaps) {
+    if (directLigandAtomIds.has(overlap.firstAtomId) || directLigandAtomIds.has(overlap.secondAtomId)) {
+      count++;
+    }
+  }
+  return count;
 }
 
 function directTerminalMultipleLigandIds(layoutGraph, centerAtomId, coords) {
@@ -3484,7 +3497,7 @@ function relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords
         if (!candidateCoords) {
           continue;
         }
-        const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(findSevereOverlaps(layoutGraph, candidateCoords, bondLength), directLigandIds);
+        const candidateDirectOverlapCount = countSevereOverlapsMatching(layoutGraph, candidateCoords, bondLength, (firstAtomId, secondAtomId) => directLigandIds.has(firstAtomId) || directLigandIds.has(secondAtomId));
         if (candidateOverlapState.count >= currentOverlaps.length || candidateDirectOverlapCount >= currentDirectOverlapCount) {
           continue;
         }
@@ -3572,7 +3585,7 @@ function relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, cent
         if (!candidateCoords) {
           continue;
         }
-        const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(findSevereOverlaps(layoutGraph, candidateCoords, bondLength), directLigandIds);
+        const candidateDirectOverlapCount = countSevereOverlapsMatching(layoutGraph, candidateCoords, bondLength, (firstAtomId, secondAtomId) => directLigandIds.has(firstAtomId) || directLigandIds.has(secondAtomId));
         if (candidateDirectOverlapCount >= currentDirectOverlapCount) {
           continue;
         }
@@ -3630,7 +3643,7 @@ function relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, center
   }
 
   const bondLength = layoutGraph.options?.bondLength ?? 1.5;
-  const currentSevereOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
+  const currentSevereOverlapCount = countSevereOverlaps(layoutGraph, coords, bondLength);
   const currentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, coords, {
     focusAtomIds: new Set([centerAtomId])
   });
@@ -3646,7 +3659,7 @@ function relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, center
   }
 
   const candidateDirectOverlapCount = severeOverlapsTouchingDirectLigands(layoutGraph, cleanup.coords, centerAtomId).length;
-  const candidateSevereOverlapCount = findSevereOverlaps(layoutGraph, cleanup.coords, bondLength).length;
+  const candidateSevereOverlapCount = countSevereOverlaps(layoutGraph, cleanup.coords, bondLength);
   const candidateDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, cleanup.coords, {
     focusAtomIds: new Set([centerAtomId])
   });
@@ -3676,7 +3689,7 @@ function relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, center
   }
 
   const bondLength = layoutGraph.options?.bondLength ?? 1.5;
-  const currentSevereOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
+  const currentSevereOverlapCount = countSevereOverlaps(layoutGraph, coords, bondLength);
   const currentBondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
   const currentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, coords, {
     focusAtomIds: new Set([centerAtomId])
@@ -3690,7 +3703,7 @@ function relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, center
   }
 
   const candidateDirectOverlapCount = severeOverlapsTouchingDirectLigands(layoutGraph, cleanup.coords, centerAtomId).length;
-  const candidateSevereOverlapCount = findSevereOverlaps(layoutGraph, cleanup.coords, bondLength).length;
+  const candidateSevereOverlapCount = countSevereOverlaps(layoutGraph, cleanup.coords, bondLength);
   const candidateBondDeviation = measureBondLengthDeviation(layoutGraph, cleanup.coords, bondLength);
   const candidateDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, cleanup.coords, {
     focusAtomIds: new Set([centerAtomId])

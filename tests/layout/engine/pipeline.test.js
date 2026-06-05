@@ -6355,6 +6355,170 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(elapsed < 10000, `expected the peptide timeout regression to finish far below the 30s stress-test timeout, got ${elapsed}ms`);
   });
 
+  stressIt('keeps late large-molecule residual glycan retouch below the timeout budget', { timeout: 20000 }, () => {
+    let lateResidualMetrics = null;
+    const result = runPipeline(
+      parseSMILES(
+        'NC(=O)CCN(CCO[C@H]1O[C@H](CO)[C@@H](O)[C@H](O)[C@@H]1O)C(=O)CN(CCO[C@H]2O[C@H](CO)[C@@H](O)[C@H](O)[C@@H]2O)C(=O)CN(CCO[C@H]3O[C@H](CO)[C@@H](O)[C@H](O)[C@@H]3O)C(=O)CN(CCO[C@H]4O[C@H](CO)[C@@H](O)[C@H](O)[C@@H]4O)C(=O)CN(CCO[C@H]5O[C@H](CO)[C@@H](O)[C@H](O)[C@@H]5O)C(=O)CN(CCO[C@H]6O[C@H](CO)[C@@H](O)[C@H](O)[C@@H]6O)C(=O)CNC(=O)CCCCC7SC[C@@H]8NC(=O)N[C@H]78'
+      ),
+      {
+        suppressH: true,
+        maxCleanupPasses: 6,
+        timing: true,
+        auditTelemetry: true,
+        debug: {
+          onStep(label, _description, _coords, metrics) {
+            if (label === 'Late Large Molecule Residual Retouch') {
+              lateResidualMetrics = metrics;
+            }
+          }
+        }
+      }
+    );
+    const lateResidualMs = result.metadata.timing.finalRetouchBreakdownMs.lateLargeMoleculeResidualRetouch ?? 0;
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok((result.metadata.audit.visibleHeavyBondCrossingCount ?? 0) <= 1);
+    assert.equal(lateResidualMetrics?.severeOverlapCountBefore, 2);
+    assert.equal(lateResidualMetrics?.severeOverlapCountAfter, 0);
+    assert.ok(lateResidualMs < 5000, `expected late residual retouch to stay bounded, got ${lateResidualMs}ms`);
+  });
+
+  stressIt('keeps dirty large residual cleanup from falling into expensive angle polish', { timeout: 12000 }, () => {
+    let residualMetrics = null;
+    const result = runPipeline(
+      parseSMILES(
+        'CCOC(=O)CCC(NC(=O)OCc1ccccc1)C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)NC(Cc2ccc(cc2)[N+](=O)[O-])C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)NC(CCC(=O)OCC)C(=O)OCC'
+      ),
+      {
+        suppressH: true,
+        maxCleanupPasses: 6,
+        timing: true,
+        auditTelemetry: true,
+        debug: {
+          onStep(label, _description, _coords, metrics) {
+            if (label === 'Large Molecule Residual Retouch') {
+              residualMetrics = metrics;
+            }
+          }
+        }
+      }
+    );
+    const residualMs = result.metadata.timing.finalRetouchBreakdownMs.largeMoleculeResidualRetouch ?? 0;
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(residualMetrics?.angleReliefPasses, 0);
+    assert.equal(residualMetrics?.finalAnglePolishPasses, 0);
+    assert.ok(residualMs < 2000, `expected residual cleanup to avoid angle-polish timeout path, got ${residualMs}ms`);
+  });
+
+  stressIt('keeps ultra-large residual peptide cleanup under the timeout budget', { timeout: 16000 }, () => {
+    let residualMetrics = null;
+    let lateResidualMetrics = null;
+    const result = runPipeline(
+      parseSMILES(
+        'CC[C@H](C)[C@H](NC(=O)[C@H](CCC(N)=O)NC(=O)[C@H](C)NC(=O)[C@H](CCC(N)=O)NC(=O)[C@H](CCC(O)=O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](C)NC(=O)[C@@H](NC(=O)[C@@H](NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCC(N)=O)NC(=O)[C@H](CCC(O)=O)NC(=O)[C@H](CC1=CNC2=CC=CC=C12)NC(=O)[C@H](CCC(O)=O)NC(=O)[C@H](CCC(N)=O)NC(=O)[C@H](CC1=CNC2=CC=CC=C12)NC(C)=O)[C@@H](C)CC)[C@@H](C)O)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CCC(O)=O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CC(N)=O)C(=O)N[C@@H](CCC(O)=O)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](CCC(O)=O)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC(O)=O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)N[C@@H](C)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)N[C@@H](CCC(O)=O)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)N[C@@H](CC1=CC=CC=C1)C(N)=O'
+      ),
+      {
+        suppressH: true,
+        maxCleanupPasses: 6,
+        timing: true,
+        auditTelemetry: true,
+        debug: {
+          onStep(label, _description, _coords, metrics) {
+            if (label === 'Large Molecule Residual Retouch') {
+              residualMetrics = metrics;
+            } else if (label === 'Late Large Molecule Residual Retouch') {
+              lateResidualMetrics = metrics;
+            }
+          }
+        }
+      }
+    );
+    const retouchBreakdown = result.metadata.timing.finalRetouchBreakdownMs ?? {};
+    const residualMs = retouchBreakdown.largeMoleculeResidualRetouch ?? 0;
+    const lateResidualMs = retouchBreakdown.lateLargeMoleculeResidualRetouch ?? 0;
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.ok((residualMetrics?.severeOverlapCountAfter ?? 0) <= 3);
+    assert.equal(lateResidualMetrics?.severeOverlapCountAfter, 0);
+    assert.ok(residualMs < 3000, `expected compact residual search to bound the first pass, got ${residualMs}ms`);
+    assert.ok(residualMs + lateResidualMs < 9000, `expected combined residual cleanup under budget, got ${residualMs + lateResidualMs}ms`);
+  });
+
+  stressIt('keeps focused attached-ring residual retouch below the timeout budget', { timeout: 20000 }, () => {
+    const result = runPipeline(
+      parseSMILES(
+        'OC1=CC(=CC(O)=C1O)C(=O)OC[C@H]1O[C@@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H]1OC(=O)C1=CC(O)=C(O)C(O)=C1'
+      ),
+      {
+        suppressH: true,
+        maxCleanupPasses: 6,
+        timing: true,
+        auditTelemetry: true
+      }
+    );
+    const retouchBreakdown = result.metadata.timing.finalRetouchBreakdownMs ?? {};
+    const attachedRingRetouchMs = (retouchBreakdown.residualAttachedRingRetouch ?? 0) + (retouchBreakdown.isolatedSiloxaneAttachedRingRetouch ?? 0);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.ok(attachedRingRetouchMs < 8000, `expected focused attached-ring retouch to stay bounded, got ${attachedRingRetouchMs}ms`);
+  });
+
+  stressIt('keeps compact bridged mixed placement under the timeout budget', { timeout: 12000 }, () => {
+    const result = runPipeline(parseSMILES('CCC1C2OCC1(CO)C(C)(CO2)C1CC1'), {
+      suppressH: true,
+      maxCleanupPasses: 6,
+      timing: true,
+      auditTelemetry: true
+    });
+    const scoring = result.metadata.timing.mixedAttachedBlockScoring;
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok((result.metadata.audit.visibleHeavyBondCrossingCount ?? 0) <= 1);
+    assert.ok((scoring?.maxBudgetLimit ?? Infinity) <= 24);
+    assert.ok((scoring?.fullScoreCount ?? Infinity) <= 64);
+    assert.ok(result.metadata.timing.placementMs < 10000, `expected compact bridged placement to stay bounded, got ${result.metadata.timing.placementMs}ms`);
+  });
+
+  stressIt('skips low-value mixed macrocycle root KK replay for cleanup-recoverable bond defects', { timeout: 15000 }, () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`CO[C@H]1\C=C\O[C@@]2(C)OC3=C(C2=O)C2=C(O)C(\C=N\N4CCN(C)CC4)=C(NC(=O)\C(C)=C/C=C/[C@H](C)[C@H](O)[C@@H](C)[C@@H](O)[C@@H](C)[C@H](OC(C)=O)[C@@H]1C)C(O)=C2C(O)=C3C`),
+      {
+        suppressH: true,
+        maxCleanupPasses: 6,
+        timing: true,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok((result.metadata.audit.visibleHeavyBondCrossingCount ?? 0) <= 1);
+    assert.ok(result.metadata.timing.placementMs < 7000, `expected cleanup-recoverable macrocycle placement to skip expensive KK replay, got ${result.metadata.timing.placementMs}ms`);
+  });
+
   it('expands compact direct phenyl attachments in peptide-like mixed layouts to clear carbonyl overlaps', () => {
     const result = runPipeline(
       parseSMILES('CC[C@H](C)[C@H](<NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](NC(=O)C)C(c1ccccc1)c2ccccc2>)C(=O)N[C@@H](<C(C)C>)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)O'),

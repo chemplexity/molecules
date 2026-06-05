@@ -7,8 +7,10 @@ import {
   collectReadableRingSubstituentChildren,
   computeAtomDistortionCost,
   computeSubtreeOverlapCost,
+  countSevereOverlaps,
   countSevereOverlapsWithOverrides,
   findSevereOverlaps,
+  hasSevereOverlaps,
   measureDirectAttachedRingJunctionContinuationDistortion,
   measureRingSubstituentReadability,
   measureTrigonalDistortion,
@@ -451,7 +453,7 @@ function terminalLeafBlockersNearPosition(layoutGraph, coords, rootAtomId, targe
 }
 
 function sharedJunctionCandidateIsClean(layoutGraph, coords, bondLength, movedLeafPairs) {
-  if (findSevereOverlaps(layoutGraph, coords, bondLength).length > 0) {
+  if (hasSevereOverlaps(layoutGraph, coords, bondLength)) {
     return false;
   }
   const readability = measureRingSubstituentReadability(layoutGraph, coords);
@@ -2539,7 +2541,7 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
   let nudges = 0;
 
   const baseReadability = measureRingSubstituentReadability(layoutGraph, coords);
-  const baseOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
+  const baseOverlapCount = countSevereOverlaps(layoutGraph, coords, bondLength);
   let bestCandidate = null;
 
   for (const anchorAtomId of coords.keys()) {

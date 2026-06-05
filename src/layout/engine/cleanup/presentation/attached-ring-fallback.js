@@ -2,6 +2,7 @@
 
 import {
   buildAtomGrid,
+  countSevereOverlaps,
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   findSevereOverlaps,
@@ -3101,6 +3102,40 @@ export function collectMovableAttachedRingDescriptors(layoutGraph, coords, froze
   return [...uniqueDescriptors.values()];
 }
 
+function descriptorTouchesAnyAtomId(descriptor, atomIds) {
+  if (!(atomIds instanceof Set) || atomIds.size === 0) {
+    return true;
+  }
+  if (atomIds.has(descriptor.anchorAtomId) || atomIds.has(descriptor.rootAtomId)) {
+    return true;
+  }
+  return descriptor.subtreeAtomIds.some(atomId => atomIds.has(atomId));
+}
+
+function focusedAttachedRingDescriptors(descriptors, atomIds) {
+  if (!(atomIds instanceof Set) || atomIds.size === 0) {
+    return descriptors;
+  }
+  const focusedDescriptors = descriptors.filter(descriptor => descriptorTouchesAnyAtomId(descriptor, atomIds));
+  return focusedDescriptors.length > 0 ? focusedDescriptors : descriptors;
+}
+
+function severeOverlapAtomIdSet(overlaps) {
+  if (!Array.isArray(overlaps) || overlaps.length === 0) {
+    return null;
+  }
+  const atomIds = new Set();
+  for (const overlap of overlaps) {
+    if (overlap?.firstAtomId) {
+      atomIds.add(overlap.firstAtomId);
+    }
+    if (overlap?.secondAtomId) {
+      atomIds.add(overlap.secondAtomId);
+    }
+  }
+  return atomIds.size > 0 ? atomIds : null;
+}
+
 /**
  * Measures how strongly attached-ring layouts still crowd an anchor-side focus
  * with a peripheral tail that could be cleared by a root-anchored rescue.
@@ -4216,7 +4251,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
   let totalNudges = 0;
 
   for (let pass = 0; pass < maxPasses; pass++) {
-    const descriptors = collectMovableAttachedRingDescriptors(layoutGraph, currentCoords, frozenAtomIds);
+    let descriptors = collectMovableAttachedRingDescriptors(layoutGraph, currentCoords, frozenAtomIds);
     const baseAtomGrid = buildAtomGrid(layoutGraph, currentCoords, bondLength);
     if (descriptors.length === 0) {
       break;
@@ -4224,6 +4259,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
 
     const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, currentCoords);
     const baseSevereOverlaps = findSevereOverlaps(layoutGraph, currentCoords, bondLength, { atomGrid: baseAtomGrid });
+    if (options.focusSevereOverlaps === true && baseSevereOverlaps.length > 0) {
+      descriptors = focusedAttachedRingDescriptors(descriptors, severeOverlapAtomIdSet(baseSevereOverlaps));
+    }
     const baseOverlapCount = baseSevereOverlaps.length;
     const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, currentCoords);
     let bestCandidate =
@@ -4276,7 +4314,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       const needsTerminalMultipleBondRootReflection = hasDistortedTerminalMultipleBondRootInAttachedRing(layoutGraph, currentCoords, descriptor);
       const countCandidateSevereOverlaps = (candidateCoords, overridePositions = null) => {
         if (!(overridePositions instanceof Map) || overridePositions.size === 0 || overridePositions.size > ATTACHED_RING_SPARSE_OVERLAP_MAX_OVERRIDE_ATOMS) {
-          return findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+          return countSevereOverlaps(layoutGraph, candidateCoords, bondLength);
         }
         const overrideAtomIds = new Set(overridePositions.keys());
         let baseMovedOverlapCount = 0;
@@ -4426,7 +4464,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         if (!needsPeripheralFocusClearanceRescue) {
           return null;
         }
-        const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+        const overlapCount = countSevereOverlaps(layoutGraph, candidateCoords, bondLength);
         if (overlapCount > baseOverlapCount) {
           return null;
         }

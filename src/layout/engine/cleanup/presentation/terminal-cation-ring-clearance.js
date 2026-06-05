@@ -1,7 +1,7 @@
 /** @module cleanup/presentation/terminal-cation-ring-clearance */
 
 import { auditCandidateSafety } from '../../audit/audit.js';
-import { findSevereOverlaps } from '../../audit/invariants.js';
+import { countSevereOverlaps, findSevereOverlaps } from '../../audit/invariants.js';
 import { add, rotate, sub } from '../../geometry/vec2.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 
@@ -377,7 +377,7 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
 
     let movedThisPass = false;
     for (const descriptor of descriptors) {
-      const baseOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
+      const baseOverlapCount = countSevereOverlaps(layoutGraph, coords, bondLength);
       const minimumImprovement = bondLength * MIN_CLEARANCE_IMPROVEMENT_FACTOR;
       let bestCandidate = null;
 

@@ -1,6 +1,6 @@
 /** @module cleanup/presentation/ring-terminal-root-clearance */
 
-import { auditLayout } from '../../audit/audit.js';
+import { auditCandidateSafety, auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
 import { CLEANUP_EPSILON, PRESENTATION_METRIC_EPSILON, atomPairKey } from '../../constants.js';
 import { add, angleOf, angularDifference, fromAngle, sub, wrapAngle } from '../../geometry/vec2.js';
@@ -782,7 +782,7 @@ function relieveCompactOverlaps(layoutGraph, coords, targetDescriptor, options) 
           if (rootDeviation(candidateCoords, targetDescriptor) > PRESENTATION_METRIC_EPSILON) {
             continue;
           }
-          const audit = auditLayout(layoutGraph, candidateCoords, {
+          const audit = auditCandidateSafety(layoutGraph, candidateCoords, {
             bondLength,
             bondValidationClasses: options.bondValidationClasses
           });

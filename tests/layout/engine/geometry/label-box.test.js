@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Molecule } from '../../../../src/core/index.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { atomLabelText, collectLabelBoxes, estimateLabelHalfSize, findLabelOverlaps, hasAnyLabelOverlap } from '../../../../src/layout/engine/geometry/label-box.js';
+import { atomLabelText, collectLabelBoxes, estimateLabelHalfSize, findLabelOverlaps, hasAnyLabelOverlap, summarizeLabelOverlaps } from '../../../../src/layout/engine/geometry/label-box.js';
 
 describe('layout/engine/geometry/label-box', () => {
   it('estimates wider boxes for multi-character labels', () => {
@@ -50,8 +50,14 @@ describe('layout/engine/geometry/label-box', () => {
 
     const overlaps = findLabelOverlaps(graph, coords, graph.options.bondLength);
     const labelBoxes = collectLabelBoxes(graph, coords, graph.options.bondLength);
+    const summary = summarizeLabelOverlaps(labelBoxes, graph.options.bondLength * 0.08);
 
     assert.equal(hasAnyLabelOverlap(labelBoxes, graph.options.bondLength * 0.08), true);
+    assert.deepEqual(summary, {
+      pairCount: overlaps.length,
+      totalPenalty: overlaps.reduce((sum, overlap) => sum + overlap.overlapX + overlap.overlapY, 0),
+      maxPenalty: Math.max(...overlaps.map(overlap => overlap.overlapX + overlap.overlapY))
+    });
     assert.deepEqual(
       overlaps.map(overlap => [overlap.firstAtomId, overlap.secondAtomId]),
       [

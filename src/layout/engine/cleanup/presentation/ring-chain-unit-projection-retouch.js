@@ -1,7 +1,7 @@
 /** @module cleanup/presentation/ring-chain-unit-projection-retouch */
 
 import { auditLayout } from '../../audit/audit.js';
-import { findSevereOverlaps } from '../../audit/invariants.js';
+import { findSevereOverlapsMatching } from '../../audit/invariants.js';
 import { centroidForAtomIds } from '../../geometry/vec2.js';
 import { describePathLikeIsolatedRingChain } from '../../topology/isolated-ring-chain.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -540,7 +540,7 @@ function nearestRingSideBranchCut(layoutGraph, coords, atomId, blockedAtomIds) {
 function bestNeighboringSideBranchReliefCoords(layoutGraph, inputCoords, rootAtomId, anchorAtomId, baseAudit, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const activeAtomIds = new Set([rootAtomId, ...sideBranchDescendantAtomIds(layoutGraph, inputCoords, rootAtomId, anchorAtomId)]);
-  const overlaps = findSevereOverlaps(layoutGraph, inputCoords, bondLength).filter(overlap => activeAtomIds.has(overlap.firstAtomId) !== activeAtomIds.has(overlap.secondAtomId));
+  const overlaps = findSevereOverlapsMatching(layoutGraph, inputCoords, bondLength, (firstAtomId, secondAtomId) => activeAtomIds.has(firstAtomId) !== activeAtomIds.has(secondAtomId));
   let best = null;
   for (const overlap of overlaps) {
     const externalAtomId = activeAtomIds.has(overlap.firstAtomId) ? overlap.secondAtomId : overlap.firstAtomId;

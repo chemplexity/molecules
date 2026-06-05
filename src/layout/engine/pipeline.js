@@ -52,15 +52,19 @@ import { buildCleanupTelemetry, buildStageTelemetryFromCleanupTelemetry, createE
 import { runSiloxaneArylBranchClearance } from './cleanup/presentation/projected-tetrahedral-clearance.js';
 import { auditLayout } from './audit/audit.js';
 import {
+  collectSevereOverlapAtomIds,
   collectReadableRingSubstituentChildren,
+  countVisibleHeavyBondCrossings,
   findSevereOverlaps,
+  findSevereOverlapsMatching,
   findVisibleHeavyBondCrossings,
+  hasSevereOverlaps,
   measureDivalentContinuationDistortion,
   measureLabelOverlap,
   measureThreeHeavyContinuationDistortion,
   measureTrigonalDistortion
 } from './audit/invariants.js';
-import { collectLabelBoxes, findLabelOverlaps, labelBoxesOverlap } from './geometry/label-box.js';
+import { collectLabelBoxes, findLabelOverlaps, labelBoxesOverlap, summarizeLabelOverlaps } from './geometry/label-box.js';
 import { auditCleanupStage, measureCleanupStagePresentationPenalty } from './audit/stage-metrics.js';
 import { createQualityReport } from './model/quality-report.js';
 import { computeIncidentRingOutwardAngles } from './geometry/ring-direction.js';
@@ -4884,6 +4888,11 @@ function finalConnectorCandidateLabelBox(baseLabelBox, candidateCoords) {
   };
 }
 
+function countEstimatedLabelOverlaps(layoutGraph, coords, bondLength, labelMetrics) {
+  const labelBoxes = collectLabelBoxes(layoutGraph, coords, bondLength, { labelMetrics });
+  return summarizeLabelOverlaps(labelBoxes, bondLength * 0.08).pairCount;
+}
+
 /**
  * Clears stubborn residual label-box overlaps by trying tiny rotations of a
  * connector-side subtree, accepting only audited non-worsening candidates.
@@ -4926,7 +4935,7 @@ function maybeApplyGuardedConnectorLabelClearance(molecule, layoutGraph, coords,
           if (firstCandidateBox && secondCandidateBox && labelBoxesOverlap(firstCandidateBox, secondCandidateBox, labelPadding)) {
             continue;
           }
-          const candidateLabelOverlapCount = findLabelOverlaps(layoutGraph, candidateCoords, bondLength, { labelMetrics }).length;
+          const candidateLabelOverlapCount = countEstimatedLabelOverlaps(layoutGraph, candidateCoords, bondLength, labelMetrics);
           if (candidateLabelOverlapCount >= (currentAudit.labelOverlapCount ?? 0)) {
             continue;
           }
@@ -5054,7 +5063,7 @@ function maybeApplyGuardedTerminalLabelLeafClearance(molecule, layoutGraph, coor
         }
         for (const rotation of FINAL_TERMINAL_LABEL_LEAF_ROTATIONS) {
           const candidateCoords = rotateTerminalLabelLeaf(currentCoords, descriptor, rotation);
-          const candidateLabelOverlapCount = findLabelOverlaps(layoutGraph, candidateCoords, bondLength, { labelMetrics }).length;
+          const candidateLabelOverlapCount = countEstimatedLabelOverlaps(layoutGraph, candidateCoords, bondLength, labelMetrics);
           if (candidateLabelOverlapCount >= (currentAudit.labelOverlapCount ?? 0)) {
             continue;
           }
@@ -5144,7 +5153,7 @@ function maybeApplyGuardedFinalLabelAxisRotation(molecule, layoutGraph, coords, 
   let bestCandidate = null;
   for (const rotation of FINAL_LABEL_AXIS_ROTATIONS) {
     const candidateCoords = rotateFinalLabelAxisCoords(coords, origin, rotation);
-    const candidateLabelOverlapCount = findLabelOverlaps(layoutGraph, candidateCoords, bondLength, { labelMetrics }).length;
+    const candidateLabelOverlapCount = countEstimatedLabelOverlaps(layoutGraph, candidateCoords, bondLength, labelMetrics);
     if (candidateLabelOverlapCount >= (currentAudit.labelOverlapCount ?? 0)) {
       continue;
     }
@@ -8647,14 +8656,18 @@ function hasCompactFusedCageRingSystem(layoutGraph, ringSystem) {
 }
 
 function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength) {
-  if (findSevereOverlaps(layoutGraph, coords, bondLength).length === 0 && findVisibleHeavyBondCrossings(layoutGraph, coords).length === 0) {
+  if (!hasSevereOverlaps(layoutGraph, coords, bondLength) && countVisibleHeavyBondCrossings(layoutGraph, coords) === 0) {
     return [];
   }
 
   const descriptors = [];
   const seenDescriptors = new Set();
-  const crossingBondIds = new Set(findVisibleHeavyBondCrossings(layoutGraph, coords).flatMap(crossing => [crossing.firstBondId, crossing.secondBondId]));
-  const overlapAtomIds = new Set(findSevereOverlaps(layoutGraph, coords, bondLength).flatMap(overlap => [overlap.firstAtomId, overlap.secondAtomId]));
+  const crossingBondIds = new Set();
+  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords)) {
+    crossingBondIds.add(crossing.firstBondId);
+    crossingBondIds.add(crossing.secondBondId);
+  }
+  const overlapAtomIds = collectSevereOverlapAtomIds(layoutGraph, coords, bondLength);
   for (const ring of layoutGraph.rings ?? []) {
     if (ring.aromatic || ring.atomIds.length < 5 || ring.atomIds.length > 6 || !ring.atomIds.every(atomId => coords.has(atomId))) {
       continue;
@@ -9959,7 +9972,7 @@ function exactBridgedTerminalMultipleBondCenterOverlapDescriptors(layoutGraph, c
     return [];
   }
 
-  const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength).filter(overlap => !layoutGraph.bondedPairSet.has(atomPairKey(overlap.firstAtomId, overlap.secondAtomId)));
+  const overlaps = findSevereOverlapsMatching(layoutGraph, coords, bondLength, (firstAtomId, secondAtomId) => !layoutGraph.bondedPairSet.has(atomPairKey(firstAtomId, secondAtomId)));
   if (overlaps.length !== 1 || (overlaps[0].distance ?? Number.POSITIVE_INFINITY) > bondLength * FINAL_COMPACT_BRIDGED_HETERO_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR) {
     return [];
   }
@@ -10335,7 +10348,7 @@ function bridgedSingleOverlapRelaxationDescriptors(layoutGraph, coords, bondLeng
     return [];
   }
 
-  const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength).filter(overlap => !layoutGraph.bondedPairSet.has(atomPairKey(overlap.firstAtomId, overlap.secondAtomId)));
+  const overlaps = findSevereOverlapsMatching(layoutGraph, coords, bondLength, (firstAtomId, secondAtomId) => !layoutGraph.bondedPairSet.has(atomPairKey(firstAtomId, secondAtomId)));
   if (overlaps.length !== 1 || (overlaps[0].distance ?? Number.POSITIVE_INFINITY) > bondLength * FINAL_COMPACT_BRIDGED_HETERO_NONBONDED_RING_OVERLAP_DISTANCE_FACTOR) {
     return [];
   }
@@ -12934,7 +12947,8 @@ export function runPipeline(molecule, options = {}) {
         bondValidationClasses: placement.bondValidationClasses,
         frozenAtomIds: placement.frozenAtomIds,
         maxHeavyAtomCount: 90,
-        maxPasses: 2
+        maxPasses: 2,
+        focusSevereOverlaps: true
       })
     );
     if ((residualAttachedRingRetouch.nudges ?? 0) > 0) {
@@ -12972,7 +12986,8 @@ export function runPipeline(molecule, options = {}) {
         bondValidationClasses: placement.bondValidationClasses,
         frozenAtomIds: placement.frozenAtomIds,
         maxHeavyAtomCount: 90,
-        maxPasses: 2
+        maxPasses: 2,
+        focusSevereOverlaps: true
       })
     );
     if ((isolatedAttachedRingRetouch.nudges ?? 0) > 0) {
@@ -14327,7 +14342,8 @@ export function runPipeline(molecule, options = {}) {
     if ((lateLargeMoleculeResidualAudit.severeOverlapCount ?? 0) > 0) {
       const lateLargeMoleculeResidualRetouch = timeFinalRetouch('lateLargeMoleculeResidualRetouch', () =>
         runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
-          bondLength: normalizedOptions.bondLength
+          bondLength: normalizedOptions.bondLength,
+          residualOnly: true
         })
       );
       if (lateLargeMoleculeResidualRetouch.changed) {

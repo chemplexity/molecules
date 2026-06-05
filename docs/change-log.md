@@ -1,7 +1,26 @@
 # Change Log
 
+## 2026-06-04
+
+- Move canonical SMILES generation and molecule equality into `src/io/canonical-smiles.js`, extract shared component serialization into `src/io/smiles-serializer.js`, and keep `src/io/smiles.js` plus `src/io/index.js` re-exporting `toCanonicalSMILES`/`sameMolecule` for compatibility.
+- Rename the canonical SMILES unit suite to `tests/io/canonical-smiles.test.js` and extend it to cover the new module owner plus legacy/public export paths.
+- Add no-allocation severe-overlap count and boolean helpers in `layout/engine`, then route count-only cleanup, mixed/large-molecule placement, and pipeline probes through them to avoid materializing full overlap-pair records in hot candidate loops.
+- Extend the severe-overlap fast path with matching and atom-id collection helpers, replace post-collection `filter`/`flatMap` overlap processing in layout cleanup and pipeline probes, and remove redundant heavy-atom overlap recounts from audit summaries.
+
 ## 2026-06-03
 
+- Add lightweight `auditCandidateSafety` support and reuse severe-overlap scratch inputs so ok-only layout candidate probes can skip label/crossing/fallback metadata while preserving full-audit safety parity.
+- Convert ok-only presentation cleanup and mixed-layout candidate gates to `auditCandidateSafety`, including large-molecule residual retouch, ring terminal/substituent cleanup, projected tetrahedral clearance, terminal cation/root clearance, and mixed-family branch relief probes.
+- Reuse precomputed visible-heavy atom sets and atom grids in large-molecule residual scoring and layout evaluation contexts, reducing repeated visibility scans during inner-loop audit checks.
+- Add sparse candidate-overlay scoring for attached-ring fallback candidates so rejected sparse probes avoid materializing full coordinate maps.
+- Add squared-distance prefilters for severe-overlap override counting, focused placement cost, and subtree overlap cost, delaying square roots until a pair is inside the active threshold.
+- Rework focused visible heavy-bond crossing scans to reuse sorted segment records and bounding-box early exits instead of recomputing bond endpoints inside nested loops.
+- Optimize label-overlap detection with an X-sweep, add count/sum-only label-overlap summaries, and route audit/pipeline count-only label checks through the summary path without allocating full overlap-pair records.
+- Keep late large-molecule residual retouch in residual-only mode after final retouches leave severe contacts, and enable residual candidate prefiltering for medium/large layouts so the latest timeout rows stay under the stress-test budget.
+- Focus residual attached-ring retouch descriptors around the current severe-overlap atoms for late mixed/isolated-ring cleanup, reducing the latest attached-ring timeout row while preserving full final-audit acceptance.
+- Keep dirty non-landscape large-molecule residual cleanup residual-only once enough contacts/crossings are present, and use compact residual angle sweeps for ultra-large layouts so peptide/ester timeout rows avoid expensive post-contact angle-polish churn.
+- Add a compact bridged mixed-placement full-score budget for 16-24 heavy-atom, three-ring small bridged layouts, keeping the compact bridged timeout row under budget without weakening smaller cyclopropyl exterior-slot placement.
+- Skip mixed macrocycle root Kamada-Kawai replay for cleanup-recoverable mild bond defects, and cap exact-slot attached-ring placement touchups at the exact-attachment search size so the remaining latest timeout row avoids placement-phase touchup churn while preserving the final audit.
 - Use pre-built `layoutGraph.ringById` index in `parallelBridgedRingPathOverlapDescriptors` and `singleAtomBridgedRingPathOverlapDescriptors` (`src/layout/engine/pipeline.js`) instead of rebuilding a ring-by-id Map from the full rings array on each call.
 - Rewrite `countContainedRings` (`src/layout/engine/families/large-molecule.js`) to use the `atomToRingSystemId`, `ringSystemById`, and `ringById` indexes instead of scanning all rings with `.every()` + `.has()`, skipping ring systems with no atoms in the component entirely.
 - Remove all redundant defensive clones on both read and write paths in `getRingAtomIds` and `supplementalRingAtomEntries` (`src/layout/engine/topology/ring-analysis.js`): return and store cached arrays directly since all callers use read-only operations, eliminating O(rings × atoms) allocations per cache hit and per cache population; also remove the intermediate array in the `seenRingKeys` Set construction.

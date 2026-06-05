@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSMILES, toCanonicalSMILES, sameMolecule } from '../../src/io/smiles.js';
+import { toCanonicalSMILES, sameMolecule } from '../../src/io/canonical-smiles.js';
+import { toCanonicalSMILES as canonicalFromIndex } from '../../src/io/index.js';
+import { parseSMILES, toCanonicalSMILES as canonicalFromSmilesModule } from '../../src/io/smiles.js';
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -174,5 +176,18 @@ describe('sameMolecule', () => {
 
   it('returns true for a multi-component salt written in both component orders', () => {
     assert.equal(sameMolecule(parseSMILES('[Na+].[Cl-]'), parseSMILES('[Cl-].[Na+]')), true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compatibility exports
+// ---------------------------------------------------------------------------
+
+describe('toCanonicalSMILES — compatibility exports', () => {
+  it('stays available from the public barrel and legacy smiles module', () => {
+    const expected = toCanonicalSMILES(parseSMILES('OCC'));
+
+    assert.equal(canonicalFromIndex(parseSMILES('OCC')), expected);
+    assert.equal(canonicalFromSmilesModule(parseSMILES('OCC')), expected);
   });
 });

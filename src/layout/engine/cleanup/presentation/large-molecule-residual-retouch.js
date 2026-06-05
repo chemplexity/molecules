@@ -57,6 +57,10 @@ const FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT = 0.2;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT = 0.05;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS = 100;
 const FINAL_ANGLE_POLISH_ULTRA_LARGE_HEAVY_ATOM_LIMIT = 400;
+const DIRTY_LARGE_RESIDUAL_ONLY_HEAVY_ATOM_MIN = 100;
+const DIRTY_LARGE_RESIDUAL_ONLY_MIN_RESIDUAL_COUNT = 6;
+const RESIDUAL_PREFILTER_HEAVY_ATOM_MIN = 140;
+const COMPACT_RESIDUAL_ANGLES_HEAVY_ATOM_MIN = 320;
 const SHARED_CENTER_TRANSLATION_TARGET_MARGIN_FACTOR = 0.01;
 const SHARED_CENTER_TRANSLATION_MAX_STEP_FACTOR = 0.15;
 const SHARED_CENTER_TRANSLATION_MAX_TOTAL_ATOMS = 220;
@@ -123,6 +127,15 @@ const ROTATION_STEPS = [
   (-7 * Math.PI) / 9,
   (5 * Math.PI) / 6,
   (-5 * Math.PI) / 6,
+  Math.PI
+];
+const COMPACT_RESIDUAL_ROTATION_STEPS = [
+  Math.PI / 6,
+  -Math.PI / 6,
+  Math.PI / 3,
+  -Math.PI / 3,
+  Math.PI / 2,
+  -Math.PI / 2,
   Math.PI
 ];
 
@@ -333,6 +346,10 @@ function repairScoreIsBetter(candidateScore, incumbentScore) {
   }
 
   return angleCandidateIsBetter(candidateScore, incumbentScore);
+}
+
+function residualScoreIsClean(score) {
+  return (score?.severeOverlapCount ?? 0) === 0 && (score?.visibleHeavyBondCrossingCount ?? 0) === 0;
 }
 
 function candidateIsAllowed(descriptor, candidateScore, currentScore) {
@@ -1136,8 +1153,9 @@ function candidateResidualReliefSteps(coords, descriptor, currentScore) {
   return steps;
 }
 
-function candidateAnglesForDescriptor(layoutGraph, coords, descriptor, angleRelief = false, currentScore = null) {
-  const angles = angleRelief ? [] : [...ROTATION_STEPS];
+function candidateAnglesForDescriptor(layoutGraph, coords, descriptor, angleRelief = false, currentScore = null, options = {}) {
+  const baseRotationSteps = options.compactResidualAngles === true ? COMPACT_RESIDUAL_ROTATION_STEPS : ROTATION_STEPS;
+  const angles = angleRelief ? [] : [...baseRotationSteps];
   if (!angleRelief) {
     const seenAngles = new Set(angles.map(angle => wrapAngle(angle).toFixed(8)));
     for (const angle of candidateResidualReliefSteps(coords, descriptor, currentScore)) {
@@ -1625,6 +1643,8 @@ function repairCandidateResiduals(layoutGraph, inputCoords, inputScore, bondLeng
 
   while (passes < maxRepairPasses && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)) {
     const shouldPrefilterResidualCandidates = options.prefilterResidualCandidates === true;
+    const stopOnCleanResidualCandidate = options.stopOnCleanResidualCandidate === true;
+    const compactResidualAngles = options.compactResidualAngles === true;
     const includeCrossingsInPrefilter = shouldPrefilterResidualCandidates && currentScore.visibleHeavyBondCrossingCount > 0;
     const atomGrid = shouldPrefilterResidualCandidates ? buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds: visibleHeavyAtomIds }) : null;
     const localScoreCache = shouldPrefilterResidualCandidates ? new Map() : null;
@@ -1645,7 +1665,7 @@ function repairCandidateResiduals(layoutGraph, inputCoords, inputScore, bondLeng
             return localScoreCache.get(cacheKey);
           })()
         : null;
-      for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
+      for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore, { compactResidualAngles })) {
         if (shouldPrefilterResidualCandidates && !localResidualCandidateCanImprove(layoutGraph, coords, descriptor, angle, currentLocalScore, bondLength, atomGrid, includeCrossingsInPrefilter)) {
           continue;
         }
@@ -1661,6 +1681,13 @@ function repairCandidateResiduals(layoutGraph, inputCoords, inputScore, bondLeng
             score: candidateScore,
             descriptor
           };
+          if (stopOnCleanResidualCandidate && residualScoreIsClean(candidateScore)) {
+            return {
+              coords: bestCandidate.coords,
+              score: bestCandidate.score,
+              movedAtomIds: new Set([...movedAtomIds, ...bestCandidate.descriptor.subtreeAtomIds])
+            };
+          }
         }
       }
     }
@@ -2799,6 +2826,8 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
   const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, descriptorOptions);
   let bestCandidate = null;
   const shouldPrefilterResidualCandidates = descriptorOptions.prefilterResidualCandidates === true;
+  const stopOnCleanResidualCandidate = descriptorOptions.stopOnCleanResidualCandidate === true;
+  const compactResidualAngles = descriptorOptions.compactResidualAngles === true;
   const includeCrossingsInPrefilter = shouldPrefilterResidualCandidates && currentScore.visibleHeavyBondCrossingCount > 0;
   const atomGrid = shouldPrefilterResidualCandidates ? buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds: visibleHeavyAtomIds }) : null;
   const localScoreCache = shouldPrefilterResidualCandidates ? new Map() : null;
@@ -2813,7 +2842,7 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
           return localScoreCache.get(cacheKey);
         })()
       : null;
-    for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore)) {
+    for (const angle of candidateAnglesForDescriptor(layoutGraph, coords, descriptor, false, currentScore, { compactResidualAngles })) {
       if (shouldPrefilterResidualCandidates && !localResidualCandidateCanImprove(layoutGraph, coords, descriptor, angle, currentLocalScore, bondLength, atomGrid, includeCrossingsInPrefilter)) {
         continue;
       }
@@ -2835,7 +2864,9 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
           largeSwingOverlapLimit: descriptorOptions.largeSwingOverlapLimit,
           maxPasses: LARGE_SWING_REPAIR_PASSES,
           descriptorCache: descriptorOptions.descriptorCache ?? null,
-          prefilterResidualCandidates: shouldPrefilterResidualCandidates
+          prefilterResidualCandidates: shouldPrefilterResidualCandidates,
+          stopOnCleanResidualCandidate,
+          compactResidualAngles
         });
         if (scoreIsBetter(repairedCandidate.score, currentScore)) {
           selectedCandidate = {
@@ -2851,7 +2882,9 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
           includeNearbyContainingEndpointDescriptors: true,
           maxPasses: SMALL_EXACT_OVERLAP_REPAIR_PASSES,
           descriptorCache: descriptorOptions.descriptorCache ?? null,
-          prefilterResidualCandidates: shouldPrefilterResidualCandidates
+          prefilterResidualCandidates: shouldPrefilterResidualCandidates,
+          stopOnCleanResidualCandidate,
+          compactResidualAngles
         });
         if (scoreIsBetter(repairedCandidate.score, currentScore) && auditCandidateSafety(layoutGraph, repairedCandidate.coords, { bondLength }).ok === true) {
           selectedCandidate = {
@@ -2867,6 +2900,9 @@ function selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, 
       }
       if (!bestCandidate || scoreIsBetter(selectedCandidate.score, bestCandidate.score)) {
         bestCandidate = selectedCandidate;
+        if (stopOnCleanResidualCandidate && residualScoreIsClean(selectedCandidate.score)) {
+          return bestCandidate;
+        }
       }
     }
   }
@@ -3087,11 +3123,13 @@ function selectBestExactSharedCenterFoldbackRepairCandidate(layoutGraph, coords,
  * @param {object} [options] - Retouch options.
  * @param {number} [options.bondLength] - Target depiction bond length.
  * @param {Set<string>|null} [options.frozenAtomIds] - Atom ids the retouch must not move.
+ * @param {boolean} [options.residualOnly] - Whether to skip post-residual angle polishing after contact/crossing cleanup.
  * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], passes: number, angleReliefPasses: number, finalAnglePolishPasses: number, severeOverlapCountBefore: number, severeOverlapCountAfter: number, visibleHeavyBondCrossingCountBefore: number, visibleHeavyBondCrossingCountAfter: number}} Retouch result and before/after residual counts.
  */
 export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  const residualOnly = options.residualOnly === true;
   let coords = cloneCoords(inputCoords);
   const visibleAtomIds = collectVisibleAtomIds(layoutGraph, coords);
   const visibleHeavyAtomIds = visibleAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
@@ -3101,6 +3139,13 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
   const initialScore = currentScore;
   const visibleHeavyCount = visibleHeavyAtomIds.length;
   const allowUltraLargeResidualRepair = visibleHeavyCount > FINAL_ANGLE_POLISH_ULTRA_LARGE_HEAVY_ATOM_LIMIT;
+  const shouldPrefilterResidualCandidates = allowUltraLargeResidualRepair || visibleHeavyCount >= RESIDUAL_PREFILTER_HEAVY_ATOM_MIN;
+  const shouldUseCompactResidualAngles = visibleHeavyCount >= COMPACT_RESIDUAL_ANGLES_HEAVY_ATOM_MIN;
+  const shouldStayResidualOnlyForDirtyLargeMolecule =
+    layoutGraph.options?.finalLandscapeOrientation !== true &&
+    visibleHeavyCount >= DIRTY_LARGE_RESIDUAL_ONLY_HEAVY_ATOM_MIN &&
+    initialScore.severeOverlapCount + initialScore.visibleHeavyBondCrossingCount >= DIRTY_LARGE_RESIDUAL_ONLY_MIN_RESIDUAL_COUNT &&
+    (initialScore.severeOverlapCount > 0 || initialScore.visibleHeavyBondCrossingCount > 0);
   const mostlyAcyclicMediumLargeMolecule =
     visibleHeavyCount >= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MIN &&
     visibleHeavyCount <= MEDIUM_ACYCLIC_ANGLE_RETOUCH_HEAVY_ATOM_MAX &&
@@ -3108,8 +3153,16 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
   const shouldSkipLargeLowRingAnglePolish = visibleHeavyCount >= LARGE_LOW_RING_ANGLE_POLISH_HEAVY_ATOM_MIN && (layoutGraph.ringSystems?.length ?? 0) <= LARGE_LOW_RING_ANGLE_POLISH_RING_SYSTEM_MAX;
   const shouldPreserveLargeLowRingFinalAnglePolish =
     shouldSkipLargeLowRingAnglePolish && layoutGraph.options?.finalLandscapeOrientation === true && visibleHeavyCount >= 300 && (layoutGraph.ringSystems?.length ?? 0) <= 5;
-  const maxAngleRetouchPasses = mostlyAcyclicMediumLargeMolecule || (shouldSkipLargeLowRingAnglePolish && !shouldPreserveLargeLowRingFinalAnglePolish) ? 0 : MAX_ANGLE_RETOUCH_PASSES;
-  const shouldRunFinalAnglePolish = !mostlyAcyclicMediumLargeMolecule && !allowUltraLargeResidualRepair && (!shouldSkipLargeLowRingAnglePolish || shouldPreserveLargeLowRingFinalAnglePolish);
+  const maxAngleRetouchPasses =
+    residualOnly || shouldStayResidualOnlyForDirtyLargeMolecule || mostlyAcyclicMediumLargeMolecule || (shouldSkipLargeLowRingAnglePolish && !shouldPreserveLargeLowRingFinalAnglePolish)
+      ? 0
+      : MAX_ANGLE_RETOUCH_PASSES;
+  const shouldRunFinalAnglePolish =
+    !residualOnly &&
+    !shouldStayResidualOnlyForDirtyLargeMolecule &&
+    !mostlyAcyclicMediumLargeMolecule &&
+    !allowUltraLargeResidualRepair &&
+    (!shouldSkipLargeLowRingAnglePolish || shouldPreserveLargeLowRingFinalAnglePolish);
   const movedAtomIds = new Set();
   let passes = 0;
   let angleReliefPasses = 0;
@@ -3140,7 +3193,9 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
   while (passes < MAX_RETOUCH_PASSES && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)) {
     let bestCandidate = selectBestResidualRotationCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleHeavyAtomIds, frozenAtomIds, {
       descriptorCache,
-      prefilterResidualCandidates: allowUltraLargeResidualRepair
+      prefilterResidualCandidates: shouldPrefilterResidualCandidates,
+      stopOnCleanResidualCandidate: shouldPrefilterResidualCandidates,
+      compactResidualAngles: shouldUseCompactResidualAngles
     });
     if (!bestCandidate && currentScore.severeOverlapCount > 0) {
       bestCandidate = selectBestExactSharedCenterFoldbackRepairCandidate(layoutGraph, coords, currentScore, bondLength, trackedAngularContexts, visibleHeavyAtomIds, frozenAtomIds, descriptorCache);
@@ -3152,7 +3207,9 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
         allowCandidateRepair: allowUltraLargeResidualRepair,
         allowSmallExactOverlapCandidateRepair: true,
         descriptorCache,
-        prefilterResidualCandidates: allowUltraLargeResidualRepair
+        prefilterResidualCandidates: shouldPrefilterResidualCandidates,
+        stopOnCleanResidualCandidate: shouldPrefilterResidualCandidates,
+        compactResidualAngles: shouldUseCompactResidualAngles
       });
     }
     if (!bestCandidate && currentScore.severeOverlapCount === 1) {

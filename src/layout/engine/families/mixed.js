@@ -34,12 +34,16 @@ import { assignBondValidationClass, resolvePlacementValidationClass } from '../p
 import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeRemainingBranches, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
 import {
   buildAtomGrid,
+  collectSevereOverlapAtomIds,
+  countSevereOverlaps,
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   countVisibleHeavyBondCrossingsAfterFocusedMove,
   collectReadableRingSubstituentChildren,
   findVisibleHeavyBondCrossings,
   findSevereOverlaps,
+  hasSevereOverlapMatching,
+  hasSevereOverlaps,
   measureFocusedPlacementCost,
   measureDivalentContinuationDistortion,
   measureLayoutCost,
@@ -392,6 +396,8 @@ const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_FLAT_ANGLE = (8 * Math.PI) / 9;
 const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_MIN_ANGLE = (5 * Math.PI) / 9;
 const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_IMPROVEMENT = Math.PI / 18;
 const MACROCYCLE_AROMATIC_LINKER_STRUCTURE_AMPLITUDE_FACTORS = Object.freeze([1, 0.75, 0.5]);
+const MACROCYCLE_MIXED_ROOT_KK_CLEANUP_RECOVERABLE_HEAVY_ATOM_MIN = 52;
+const MACROCYCLE_MIXED_ROOT_KK_CLEANUP_RECOVERABLE_MAX_BOND_FAILURES = 1;
 
 function mixedRootRetryHeavyAtomLimit(layoutGraph) {
   const ringSystems = layoutGraph.ringSystems ?? [];
@@ -1014,6 +1020,7 @@ function snapExactTerminalCarbonRingLeavesWithAttachedRingClearance(layoutGraph,
         const touchup = runAttachedRingRotationTouchup(layoutGraph, snappedCoords, {
           bondLength,
           maxPasses: 1,
+          maxHeavyAtomCount: EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT,
           includeOmittedHydrogenFan: false
         });
         if ((touchup?.nudges ?? 0) > 0) {
@@ -2949,7 +2956,8 @@ function snapExactTerminalHeteroRingLeavesWithAttachedRingClearance(layoutGraph,
         const touchup = runAttachedRingRotationTouchup(layoutGraph, snappedCoords, {
           bondLength,
           frozenAtomIds: new Set([anchorAtomId, leafAtomId]),
-          maxPasses: 3
+          maxPasses: 3,
+          maxHeavyAtomCount: EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT
         });
         if ((touchup?.nudges ?? 0) > 0) {
           candidateCoordSets.push(touchup.coords);
@@ -5598,11 +5606,36 @@ function shouldTryMacrocycleMixedRootKamadaKawaiRescue(layoutGraph, scaffoldPlan
   if (!rootRingSystem) {
     return false;
   }
+  if (isCleanupRecoverableMixedMacrocycleRootKamadaKawaiDefect(layoutGraph, audit)) {
+    return false;
+  }
   return (
     rootRingSystem.atomIds.length >= 24 &&
     rootRingSystem.atomIds.length <= 64 &&
     rootRingSystem.ringIds.length >= 4 &&
     ((audit.bondLengthFailureCount ?? 0) > 0 || audit.fallback?.mode === 'generic-scaffold')
+  );
+}
+
+function isCleanupRecoverableMixedMacrocycleRootKamadaKawaiDefect(layoutGraph, audit) {
+  const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? layoutGraph.atoms.size;
+  if (heavyAtomCount < MACROCYCLE_MIXED_ROOT_KK_CLEANUP_RECOVERABLE_HEAVY_ATOM_MIN) {
+    return false;
+  }
+  const fallbackReasons = audit.fallback?.reasons ?? [];
+  const hasOnlyBondFallback = fallbackReasons.length === 0 || fallbackReasons.every(reason => reason === 'bond-length-failures');
+  return (
+    hasOnlyBondFallback &&
+    (audit.bondLengthFailureCount ?? 0) <= MACROCYCLE_MIXED_ROOT_KK_CLEANUP_RECOVERABLE_MAX_BOND_FAILURES &&
+    (audit.severeBondLengthFailureCount ?? 0) === 0 &&
+    (audit.severeOverlapCount ?? 0) === 0 &&
+    (audit.labelOverlapCount ?? 0) === 0 &&
+    (audit.visibleHeavyBondCrossingCount ?? 0) <= 1 &&
+    (audit.collapsedMacrocycleCount ?? 0) === 0 &&
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) === 0 &&
+    (audit.inwardRingSubstituentCount ?? 0) === 0 &&
+    (audit.outwardAxisRingSubstituentFailureCount ?? 0) === 0 &&
+    !(audit.stereoContradiction ?? false)
   );
 }
 
@@ -8406,7 +8439,7 @@ function buildDirectAttachedChildTerminalLeafReliefCandidates(layoutGraph, coord
     return [];
   }
 
-  const overlapAtomIds = new Set(findSevereOverlaps(layoutGraph, coords, bondLength).flatMap(overlap => [overlap.firstAtomId, overlap.secondAtomId]));
+  const overlapAtomIds = collectSevereOverlapAtomIds(layoutGraph, coords, bondLength);
   if (overlapAtomIds.size === 0) {
     return [];
   }
@@ -11010,7 +11043,7 @@ function buildLocalResnapGeometryScore(layoutGraph, coords, bondLength, focusAto
     exactRingExitPenalty: measureMixedRootExactRingExitPenalty(layoutGraph, coords, focusAtomIds).totalDeviation,
     omittedHydrogenPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
     trigonalPenalty: measureTrigonalDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
-    overlapCount: findSevereOverlaps(layoutGraph, coords, bondLength).length,
+    overlapCount: countSevereOverlaps(layoutGraph, coords, bondLength),
     focusedPlacementCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds)
   };
 }
@@ -11581,7 +11614,11 @@ function buildSuppressedHydrogenRingJunctionClearanceCandidates(layoutGraph, can
     return [candidateCoords];
   }
 
-  const overlapAtomIds = new Set(overlaps.flatMap(overlap => [overlap.firstAtomId, overlap.secondAtomId]));
+  const overlapAtomIds = new Set();
+  for (const overlap of overlaps) {
+    overlapAtomIds.add(overlap.firstAtomId);
+    overlapAtomIds.add(overlap.secondAtomId);
+  }
   const candidates = [];
   const seenSignatures = new Set();
   const attachedRingDescriptors = [];
@@ -12076,6 +12113,7 @@ function dedupeAttachedBlockCandidatesByMeta(candidates) {
 }
 
 const ATTACHED_BLOCK_FULL_SCORE_BUDGETS = Object.freeze({
+  smallCompactBridged: 24,
   small: 512,
   compactMultiRing: 192,
   mediumMultiRing: 192,
@@ -12109,6 +12147,10 @@ function attachedBlockFullScoreBudgetLimit(layoutGraph, options = {}) {
   }
   const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? layoutGraph.atoms.size;
   const ringSystemCount = layoutGraph.ringSystems?.length ?? 0;
+  const ringCount = layoutGraph.traits.ringCount ?? layoutGraph.rings?.length ?? 0;
+  if (heavyAtomCount >= 16 && heavyAtomCount <= 24 && ringSystemCount >= 2 && ringCount >= 3) {
+    return ATTACHED_BLOCK_FULL_SCORE_BUDGETS.smallCompactBridged;
+  }
   if (heavyAtomCount >= 52 || (heavyAtomCount >= 48 && ringSystemCount >= 4)) {
     return ATTACHED_BLOCK_FULL_SCORE_BUDGETS.heavyMultiRing;
   }
@@ -12771,7 +12813,7 @@ function selectedNonRingSuppressedHydrogenFanRingDescriptors(layoutGraph, coords
  * @returns {Map<string, {x: number, y: number}>[]} Candidate coordinate maps.
  */
 function buildNonRingSuppressedHydrogenFanClearanceCandidates(layoutGraph, coords, protectedAtomIds, bondLength) {
-  if (findSevereOverlaps(layoutGraph, coords, bondLength).length === 0) {
+  if (!hasSevereOverlaps(layoutGraph, coords, bondLength)) {
     return [coords];
   }
 
@@ -14209,7 +14251,8 @@ function runTerminalHeteroRingSubstituentAttachedRingTouchup(layoutGraph, coords
   const touchup = runAttachedRingRotationTouchup(layoutGraph, coords, {
     bondLength,
     frozenAtomIds: new Set([anchorAtomId, childAtomId]),
-    maxPasses: 1
+    maxPasses: 1,
+    maxHeavyAtomCount: EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT
   });
   if ((touchup?.nudges ?? 0) <= 0) {
     return null;
@@ -15898,7 +15941,7 @@ function measureLinkedRingSideBalanceScore(layoutGraph, coords, bondLength, desc
     secondDeviation,
     endpointSquaredDeviation: firstDeviation ** 2 + secondDeviation ** 2,
     endpointMaxDeviation: Math.max(firstDeviation, secondDeviation),
-    overlapCount: findSevereOverlaps(layoutGraph, coords, bondLength).length,
+    overlapCount: countSevereOverlaps(layoutGraph, coords, bondLength),
     readability,
     trigonalPenalty: measureTrigonalDistortion(layoutGraph, coords).totalDeviation,
     exactTerminalMultipleSlotPenalty: changedAtomIds.length > 0 ? measureExactTerminalMultipleSlotPenalty(layoutGraph, coords, bondLength, changedAtomIds) : 0
@@ -16031,7 +16074,7 @@ function measureLinkedMethyleneHydrogenScore(layoutGraph, coords, bondLength, li
   }
   return {
     ...angularScore,
-    overlapCount: findSevereOverlaps(layoutGraph, coords, bondLength).length
+    overlapCount: countSevereOverlaps(layoutGraph, coords, bondLength)
   };
 }
 
@@ -16475,7 +16518,7 @@ function countBaseSevereOverlapsTouchingAtoms(baseSevereOverlaps, atomIdSet) {
 
 function measureAttachedBlockSevereOverlapCount(layoutGraph, baseCoords, candidateCoords, bondLength, changedAtomIds, changedAtomPositions, coreScoreContext = null) {
   if (!attachedBlockCoreScoreContextMatches(coreScoreContext, layoutGraph, baseCoords, bondLength)) {
-    return findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+    return countSevereOverlaps(layoutGraph, candidateCoords, bondLength);
   }
   if (changedAtomIds.length === 0) {
     return coreScoreContext.baseSevereOverlaps.length;
@@ -20206,7 +20249,7 @@ function mixedAcylBranchContactDescriptors(layoutGraph, coords) {
 
 function mixedAcylBranchDescriptorHasContact(layoutGraph, coords, descriptor, bondLength) {
   const movedAtomIds = new Set(descriptor.movedAtomIds);
-  if (findSevereOverlaps(layoutGraph, coords, bondLength).some(overlap => movedAtomIds.has(overlap.firstAtomId) || movedAtomIds.has(overlap.secondAtomId))) {
+  if (hasSevereOverlapMatching(layoutGraph, coords, bondLength, (firstAtomId, secondAtomId) => movedAtomIds.has(firstAtomId) || movedAtomIds.has(secondAtomId))) {
     return true;
   }
   return (

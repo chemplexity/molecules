@@ -4,10 +4,6 @@ import { recommendFallback } from './fallback.js';
 import { detectCollapsedMacrocycles, findSevereOverlaps, countVisibleHeavyBondCrossings, measureBondLengthDeviation, measureLabelOverlap, measureRingSubstituentReadability } from './invariants.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
-function isHeavyAtomOverlap(layoutGraph, overlap) {
-  return layoutGraph.atoms.get(overlap.firstAtomId)?.element !== 'H' && layoutGraph.atoms.get(overlap.secondAtomId)?.element !== 'H';
-}
-
 function summarizeSevereOverlaps(overlaps, severeOverlapThreshold) {
   const minSevereOverlapDistance = overlaps.length > 0 ? overlaps.reduce((minimumDistance, overlap) => Math.min(minimumDistance, overlap.distance), Number.POSITIVE_INFINITY) : null;
   const worstOverlapDeficit = minSevereOverlapDistance == null ? 0 : Math.max(0, severeOverlapThreshold - minSevereOverlapDistance);
@@ -50,7 +46,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
       visibleAtomIdsMatchGrid: options.visibleAtomIdsMatchGrid
     });
   const severeOverlapThreshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  const heavyAtomOverlapCount = overlaps.filter(overlap => isHeavyAtomOverlap(layoutGraph, overlap)).length;
+  const heavyAtomOverlapCount = overlaps.length;
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
     labelMetrics: layoutGraph.options.labelMetrics
   });
@@ -148,7 +144,7 @@ export function auditCandidateSafety(layoutGraph, coords, options = {}) {
     options.includeFallback === true
       ? recommendFallback({
           bondLengthFailureCount: bondDeviation.failingBondCount,
-          severeOverlapCount: overlaps.filter(overlap => isHeavyAtomOverlap(layoutGraph, overlap)).length,
+          severeOverlapCount: overlaps.length,
           collapsedMacrocycleCount: collapsedMacrocycles.length,
           stereoContradiction,
           bridgedReadabilityFailure,

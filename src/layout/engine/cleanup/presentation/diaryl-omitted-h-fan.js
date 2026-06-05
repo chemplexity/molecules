@@ -1,6 +1,6 @@
 /** @module cleanup/presentation/diaryl-omitted-h-fan */
 
-import { findSevereOverlaps, measureDivalentContinuationDistortion } from '../../audit/invariants.js';
+import { countSevereOverlaps, hasSevereOverlaps, measureDivalentContinuationDistortion } from '../../audit/invariants.js';
 import { cloneCoords } from '../../geometry/transforms.js';
 import { add, angleOf, angularDifference, rotate, sub } from '../../geometry/vec2.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -172,8 +172,7 @@ function maxCovalentBondLengthDeviation(layoutGraph, coords, bondLength) {
 
 function cleanupCandidateOverlaps(layoutGraph, coords, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
-  if (overlaps.length === 0) {
+  if (!hasSevereOverlaps(layoutGraph, coords, bondLength)) {
     return { coords, cleanupPasses: 0, cleanupMoves: 0 };
   }
   const cleanup = runUnifiedCleanup(layoutGraph, coords, {
@@ -192,7 +191,7 @@ function cleanupCandidateOverlaps(layoutGraph, coords, options) {
 
 function scoreCandidate(layoutGraph, coords, descriptor, baseMetrics, rotation, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const severeOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
+  const severeOverlapCount = countSevereOverlaps(layoutGraph, coords, bondLength);
   if (severeOverlapCount > baseMetrics.severeOverlapCount) {
     return null;
   }
@@ -260,7 +259,7 @@ export function runDiarylOmittedHydrogenFanTidy(layoutGraph, inputCoords, option
 
   for (const descriptor of collectDiarylFanDescriptors(layoutGraph, coords)) {
     const baseMetrics = {
-      severeOverlapCount: findSevereOverlaps(layoutGraph, coords, bondLength).length,
+      severeOverlapCount: countSevereOverlaps(layoutGraph, coords, bondLength),
       terminalCationRingProximityPenalty: measureTerminalCationRingProximityPenalty(layoutGraph, coords, {
         bondLength
       })
