@@ -307,6 +307,10 @@ describe('layout/engine/templates/match', () => {
     const phenolicOxazaMorphinanMatch = findTemplateMatch(phenolicOxazaMorphinanGraph, buildRingCandidate(phenolicOxazaMorphinanGraph, phenolicOxazaMorphinanGraph.ringSystems[0], 'bridged'));
     assert.equal(phenolicOxazaMorphinanMatch.id, 'phenolic-oxaza-morphinan-core');
 
+    const pyridylPhenolicOxazaMorphinanGraph = createLayoutGraph(parseSMILES('Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7'), { suppressH: true });
+    const pyridylPhenolicOxazaMorphinanMatch = findTemplateMatch(pyridylPhenolicOxazaMorphinanGraph, buildRingCandidate(pyridylPhenolicOxazaMorphinanGraph, pyridylPhenolicOxazaMorphinanGraph.ringSystems[0], 'bridged'));
+    assert.equal(pyridylPhenolicOxazaMorphinanMatch.id, 'pyridyl-phenolic-oxaza-morphinan-core');
+
     const cagedHydroxyLactoneGraph = createLayoutGraph(parseSMILES('[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O'), { suppressH: true });
     const cagedHydroxyLactoneMatch = findTemplateMatch(cagedHydroxyLactoneGraph, buildRingCandidate(cagedHydroxyLactoneGraph, cagedHydroxyLactoneGraph.ringSystems[0], 'bridged'));
     assert.equal(cagedHydroxyLactoneMatch.id, 'caged-hydroxy-lactone-core');
@@ -654,6 +658,12 @@ describe('layout/engine/templates/match', () => {
     const graph = createLayoutGraph(parseSMILES('CC1COCCCC23CCCC12CCC3'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'shared-edge-tricyclic-ether-core');
+  });
+
+  it('matches the dioxatricyclodiene ether scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('CCOCC1=C2CC(C1)COC1OC2C=C1'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'dioxatricyclodiene-ether-core');
   });
 
   it('matches the substituted bicyclo[2.1.1]hexane scaffold', () => {

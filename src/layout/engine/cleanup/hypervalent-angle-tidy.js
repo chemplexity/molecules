@@ -124,6 +124,23 @@ const THREE_SLOT_PERMUTATIONS = Object.freeze([
   [2, 1, 0]
 ]);
 
+function hasOrthogonalHypervalentCandidate(layoutGraph) {
+  if (!layoutGraph?.atoms?.values) {
+    return false;
+  }
+  if (layoutGraph._hasOrthogonalHypervalentCandidate !== undefined) {
+    return layoutGraph._hasOrthogonalHypervalentCandidate;
+  }
+  for (const atom of layoutGraph.atoms.values()) {
+    if (ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element) || ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element)) {
+      layoutGraph._hasOrthogonalHypervalentCandidate = true;
+      return true;
+    }
+  }
+  layoutGraph._hasOrthogonalHypervalentCandidate = false;
+  return false;
+}
+
 /**
  * Returns whether an atom participates in visible overlap checks for the
  * current layout options.
@@ -2881,13 +2898,14 @@ function orthogonalizeOrganosiliconCenter(layoutGraph, coords, centerAtomId, des
  * @returns {number} Total squared angular deviation across supported centers.
  */
 export function measureOrthogonalHypervalentDeviation(layoutGraph, coords, options = {}) {
+  if (!hasOrthogonalHypervalentCandidate(layoutGraph)) {
+    return 0;
+  }
   const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
   let totalDeviation = 0;
+  const atomIds = focusAtomIds ?? coords.keys();
 
-  for (const atomId of coords.keys()) {
-    if (focusAtomIds && !focusAtomIds.has(atomId)) {
-      continue;
-    }
+  for (const atomId of atomIds) {
     const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords);
     if (!descriptor) {
       continue;

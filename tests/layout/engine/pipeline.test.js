@@ -12,6 +12,7 @@ import {
   measureTrigonalDistortion
 } from '../../../src/layout/engine/audit/invariants.js';
 import { measureOrthogonalHypervalentDeviation, measureRingAnchoredHypervalentBranchDeviation } from '../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
+import { measureTerminalMultipleBondLeafFanPenalty } from '../../../src/layout/engine/cleanup/presentation/ring-terminal-hetero.js';
 import { pointInPolygon } from '../../../src/layout/engine/geometry/polygon.js';
 import { angleOf, angularDifference, centroid, distance, sub } from '../../../src/layout/engine/geometry/vec2.js';
 import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
@@ -1084,6 +1085,40 @@ stressDescribe('layout/engine/pipeline', () => {
       assert.ok(Math.min(...angles) > 85, `expected ${ring.join('-')} to stay open, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       assert.ok(Math.max(...angles) < 165, `expected ${ring.join('-')} to avoid over-flattening, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
       assert.ok(Math.max(...lengths) < result.layoutGraph.options.bondLength * 1.4, `expected ${ring.join('-')} bonds to stay compact, got ${lengths.map(length => length.toFixed(3)).join(', ')}`);
+    }
+  });
+
+  it('uses the dioxatricyclodiene ether template so fused ether paths stay open', () => {
+    const smiles = 'CCOCC1=C2CC(C1)COC1OC2C=C1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const ringAtomIds = [
+      ['C14', 'O13', 'C12', 'O11', 'C10', 'C8', 'C7', 'C6'],
+      ['C16', 'C15', 'C14', 'O13', 'C12'],
+      ['C9', 'C8', 'C7', 'C6', 'C5']
+    ];
+
+    assert.ok(bugMolecules.includes(smiles), 'expected dioxatricyclodiene ether regression molecule to stay registered');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    for (const [ringIndex, ring] of ringAtomIds.entries()) {
+      const angles = ringAngles(result.coords, ring);
+      const lengths = ring.map((atomId, index) => distance(result.coords.get(atomId), result.coords.get(ring[(index + 1) % ring.length])));
+      const minAngle = ringIndex === 0 ? 100 : 70;
+      const maxAngle = ringIndex === 0 ? 160 : 155;
+      assert.ok(Math.min(...angles) > minAngle, `expected ${ring.join('-')} to stay open, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.max(...angles) < maxAngle, `expected ${ring.join('-')} to avoid over-flattening, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.min(...lengths) >= result.layoutGraph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor - 1e-6);
+      assert.ok(Math.max(...lengths) <= result.layoutGraph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor + 1e-6);
     }
   });
 
@@ -2834,6 +2869,51 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(Math.min(...azaBridgeAngles) > 45);
     assert.ok(Math.max(...azaBridgeAngles) < 140);
     assert.ok(Math.min(...etherBridgeAngles) > 88);
+    assert.ok(Math.max(...etherBridgeAngles) < 125);
+  });
+
+  it('uses the pyridyl phenolic oxaza morphinan template so both fused sidewalls stay regular', () => {
+    const smiles = 'Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const crossingCount = findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length;
+    const regularSixRings = [
+      ['C28', 'C15', 'C20', 'C5', 'C6', 'C7'],
+      ['C19', 'C20', 'C5', 'C4', 'C3', 'C2'],
+      ['C25', 'C26', 'C21', 'N22', 'C23', 'C24']
+    ];
+    const azaBridgeAngles = ringAngles(result.coords, ['C13', 'C14', 'C15', 'C28', 'C7', 'N9']);
+    const pyridylBridgeAngles = ringAngles(result.coords, ['C21', 'C26', 'C27', 'C28', 'C15', 'C16']);
+    const etherBridgeAngles = ringAngles(result.coords, ['C20', 'C19', 'O18', 'C16', 'C15']);
+    const regularBondTolerance = result.layoutGraph.options.bondLength * 0.015;
+
+    assert.equal(bugMolecules.includes(smiles), true);
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.34);
+    assert.equal(crossingCount, 0);
+    for (const ring of regularSixRings) {
+      for (const angle of ringAngles(result.coords, ring)) {
+        assert.ok(Math.abs(angle - 120) < 1e-4);
+      }
+      for (let index = 0; index < ring.length; index++) {
+        const atomId = ring[index];
+        const nextAtomId = ring[(index + 1) % ring.length];
+        assert.ok(Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - result.layoutGraph.options.bondLength) < regularBondTolerance);
+      }
+    }
+    assert.ok(Math.min(...azaBridgeAngles) > 65);
+    assert.ok(Math.max(...azaBridgeAngles) < 130);
+    assert.ok(Math.min(...pyridylBridgeAngles) > 75);
+    assert.ok(Math.max(...pyridylBridgeAngles) < 155);
+    assert.ok(Math.min(...etherBridgeAngles) > 95);
     assert.ok(Math.max(...etherBridgeAngles) < 125);
   });
 
@@ -6583,6 +6663,7 @@ stressDescribe('layout/engine/pipeline', () => {
     const alphaFanAngles = [bondAngleAtAtom(result.coords, 'C56', 'C58', 'C65'), bondAngleAtAtom(result.coords, 'C56', 'C58', 'N55'), bondAngleAtAtom(result.coords, 'C56', 'C65', 'N55')];
     const carbonylFanAngles = [bondAngleAtAtom(result.coords, 'C65', 'C56', 'O66'), bondAngleAtAtom(result.coords, 'C65', 'C56', 'N67'), bondAngleAtAtom(result.coords, 'C65', 'O66', 'N67')];
     const sidechainFanAngles = [bondAngleAtAtom(result.coords, 'C68', 'C70', 'C81'), bondAngleAtAtom(result.coords, 'C68', 'C70', 'N67'), bondAngleAtAtom(result.coords, 'C68', 'C81', 'N67')];
+    const terminalMultipleBondFanPenalty = measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords);
 
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
@@ -6593,6 +6674,7 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(maxAngleDeviation(alphaFanAngles, 120) < 1e-6, `expected the peptide alpha fan to stay trigonal, got ${alphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(maxAngleDeviation(carbonylFanAngles, 120) < 35, `expected the adjacent amide fan to remain readable, got ${carbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(maxAngleDeviation(sidechainFanAngles, 120) < 1e-6, `expected the protected peptide sidechain fan to stay trigonal, got ${sidechainFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(terminalMultipleBondFanPenalty.totalDeviation < 7.4, `expected post-relief amide fan polish to stay bounded, got ${terminalMultipleBondFanPenalty.totalDeviation}`);
     assert.ok(result.metadata.timing.totalMs < 20000, `expected finer dense partition retry to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 

@@ -42,6 +42,7 @@ describe('layout/engine/templates/library', () => {
       'ammonium-cyclobutyl-pyrrolidine-core',
       'azabicyclo-pyrrolidine-core',
       'shared-edge-tricyclic-ether-core',
+      'dioxatricyclodiene-ether-core',
       'n-methyl-amino-diaza-tricyclo-core',
       'aminomethyl-oxabicyclobutane-core',
       'cyclopropane-azabicyclic-enone-core',
@@ -96,6 +97,7 @@ describe('layout/engine/templates/library', () => {
       'aza-annulene-cyclohexadiene-core',
       'bridged-cyclopropyl-decalin-core',
       'oxaza-morphinan-core',
+      'pyridyl-phenolic-oxaza-morphinan-core',
       'phenolic-oxaza-morphinan-core',
       'oripavine-core',
       'saturated-morphinan-core',
@@ -825,6 +827,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(oxazaMorphinan.atomCount, 18);
     assert.equal(oxazaMorphinan.bondCount, 22);
     assert.equal(oxazaMorphinan.ringCount, 5);
+
+    const pyridylPhenolicOxazaMorphinan = getTemplateById('pyridyl-phenolic-oxaza-morphinan-core');
+    assert.equal(pyridylPhenolicOxazaMorphinan.family, 'bridged');
+    assert.equal(pyridylPhenolicOxazaMorphinan.atomCount, 22);
+    assert.equal(pyridylPhenolicOxazaMorphinan.bondCount, 27);
+    assert.equal(pyridylPhenolicOxazaMorphinan.ringCount, 6);
 
     const phenolicOxazaMorphinan = getTemplateById('phenolic-oxaza-morphinan-core');
     assert.equal(phenolicOxazaMorphinan.family, 'bridged');

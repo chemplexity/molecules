@@ -1197,6 +1197,37 @@ describe('layout/engine/templates/placement', () => {
     }
   });
 
+  it('places dioxatricyclodiene ether cages with open fused paths', () => {
+    const graph = createLayoutGraph(parseSMILES('CCOCC1=C2CC(C1)COC1OC2C=C1'), { suppressH: true });
+    const rootRingSystem = graph.ringSystems[0];
+    const coords = placeTemplateCoords(graph, 'dioxatricyclodiene-ether-core', rootRingSystem.atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, rootRingSystem.atomIds, 'bridged')
+    });
+    const ringAtomIds = [
+      ['C14', 'O13', 'C12', 'O11', 'C10', 'C8', 'C7', 'C6'],
+      ['C16', 'C15', 'C14', 'O13', 'C12'],
+      ['C9', 'C8', 'C7', 'C6', 'C5']
+    ];
+
+    assert.equal(coords.size, 12);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    for (const [ringIndex, ring] of ringAtomIds.entries()) {
+      const angles = ringAngles(coords, ring);
+      const lengths = ring.map((atomId, index) => distance(coords.get(atomId), coords.get(ring[(index + 1) % ring.length])));
+      const minAngle = ringIndex === 0 ? 100 : 70;
+      const maxAngle = ringIndex === 0 ? 160 : 155;
+      assert.ok(Math.min(...angles) > minAngle, `expected ${ring.join('-')} to stay open, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.max(...angles) < maxAngle, `expected ${ring.join('-')} to avoid over-flattening, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.min(...lengths) >= graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor - 1e-6);
+      assert.ok(Math.max(...lengths) <= graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor + 1e-6);
+    }
+  });
+
   it('places N-methyl amino diaza tricyclo cages with separated ring lanes', () => {
     const graph = createLayoutGraph(parseSMILES('CN1CC2CC(C)(N)CC11CNC21'), { suppressH: true });
     const rootRingSystem = graph.ringSystems[0];
@@ -1689,6 +1720,49 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.max(...etherBridgeAngles) < 125);
     assert.ok(coords.get('N21').y > coords.get('C18').y);
     assert.ok(coords.get('O29').y < coords.get('C18').y);
+  });
+
+  it('places the pyridyl phenolic oxaza morphinan core with regular fused sidewalls', () => {
+    const graph = createLayoutGraph(parseSMILES('Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7'), { suppressH: true });
+    const rootRingSystem = graph.ringSystems[0];
+    const coords = placeTemplateCoords(graph, 'pyridyl-phenolic-oxaza-morphinan-core', rootRingSystem.atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, rootRingSystem.atomIds, 'bridged')
+    });
+    const regularSixRings = [
+      ['C28', 'C15', 'C20', 'C5', 'C6', 'C7'],
+      ['C19', 'C20', 'C5', 'C4', 'C3', 'C2'],
+      ['C25', 'C26', 'C21', 'N22', 'C23', 'C24']
+    ];
+    const azaBridgeAngles = ringAngles(coords, ['C13', 'C14', 'C15', 'C28', 'C7', 'N9']);
+    const pyridylBridgeAngles = ringAngles(coords, ['C21', 'C26', 'C27', 'C28', 'C15', 'C16']);
+    const etherBridgeAngles = ringAngles(coords, ['C20', 'C19', 'O18', 'C16', 'C15']);
+    const regularBondTolerance = graph.options.bondLength * 0.015;
+
+    assert.equal(coords.size, 22);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.34);
+    for (const ring of regularSixRings) {
+      for (let index = 0; index < ring.length; index++) {
+        const atomId = ring[index];
+        const nextAtomId = ring[(index + 1) % ring.length];
+        assert.ok(Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength) < regularBondTolerance);
+      }
+      for (const angle of ringAngles(coords, ring)) {
+        assert.ok(Math.abs(angle - 120) < 1e-5);
+      }
+    }
+    assert.ok(Math.min(...azaBridgeAngles) > 65);
+    assert.ok(Math.max(...azaBridgeAngles) < 130);
+    assert.ok(Math.min(...pyridylBridgeAngles) > 75);
+    assert.ok(Math.max(...pyridylBridgeAngles) < 155);
+    assert.ok(Math.min(...etherBridgeAngles) > 95);
+    assert.ok(Math.max(...etherBridgeAngles) < 125);
+    assert.ok(coords.get('N9').y > coords.get('C15').y);
+    assert.ok(coords.get('O18').y < coords.get('C15').y);
   });
 
   it('places the larger bicyclo and adamantane cage templates too', () => {

@@ -926,6 +926,16 @@ function createSharedEdgeTricyclicEtherCoreTemplate() {
 }
 
 /**
+ * Creates the dioxatricyclodiene ether scaffold found in compact fused ether
+ * systems where two five-member lanes share three-atom paths with a larger
+ * oxacycle.
+ * @returns {Molecule} Dioxatricyclodiene ether scaffold template molecule.
+ */
+function createDioxatricyclodieneEtherCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('dioxatricyclodiene-ether-core', 'CCOCC1=C2CC(C1)COC1OC2C=C1');
+}
+
+/**
  * Creates the N-methyl amino diaza tricyclic cage scaffold found in compact
  * saturated aminal cores with a shared bridge path.
  * @returns {Molecule} N-methyl amino diaza tricyclic scaffold template molecule.
@@ -1452,6 +1462,16 @@ function createOxazaMorphinanCoreTemplate() {
  */
 function createPhenolicOxazaMorphinanCoreTemplate() {
   return createRingSystemTemplateFromSmiles('phenolic-oxaza-morphinan-core', 'O[C@H]1CC[C@@]2(O)[C@H]3CC4=CC=C(O)C5=C4[C@@]2(CCN3CC2CCC2)[C@H]1O5');
+}
+
+/**
+ * Creates the pyridyl phenolic oxygen-bridged aza-morphinan core found in
+ * opioid-like cages where the saturated sidewall is replaced by a fused
+ * pyridine ring next to the ether bridge.
+ * @returns {Molecule} Pyridyl phenolic oxygen-bridged aza-morphinan ring-system template molecule.
+ */
+function createPyridylPhenolicOxazaMorphinanCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('pyridyl-phenolic-oxaza-morphinan-core', 'Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7');
 }
 
 /**
@@ -2714,6 +2734,29 @@ function createSharedEdgeTricyclicEtherCoreGeometry() {
     ['C13', { x: 1.25, y: 0.95 }],
     ['C14', { x: 2.05, y: 0.0 }],
     ['C15', { x: 1.25, y: -0.95 }]
+  ]);
+}
+
+/**
+ * Creates an open fused-path projection for dioxatricyclodiene ether cages.
+ * The central oxacycle spans the top lane while each five-member cap remains
+ * visibly bent instead of collapsing the shared three-atom paths into lines.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createDioxatricyclodieneEtherCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C5', { x: -1.584637, y: 0.102244 }],
+    ['C6', { x: -0.6, y: 0.0 }],
+    ['C7', { x: -0.699817, y: 0.696984 }],
+    ['C8', { x: -0.437729, y: 1.351821 }],
+    ['C9', { x: -1.420053, y: 1.485272 }],
+    ['C10', { x: 0.490236, y: 1.726465 }],
+    ['O11', { x: 1.399814, y: 1.308181 }],
+    ['C12', { x: 1.721508, y: 0.350126 }],
+    ['O13', { x: 1.364587, y: -0.557811 }],
+    ['C14', { x: 0.39203, y: -0.68722 }],
+    ['C15', { x: 0.04755, y: 0.257395 }],
+    ['C16', { x: 0.848443, y: 0.894517 }]
   ]);
 }
 
@@ -4045,6 +4088,39 @@ function createPhenolicOxazaMorphinanCoreGeometry() {
 }
 
 /**
+ * Creates a pyridyl phenolic oxaza morphinan projection with exact phenol,
+ * pyridine, and central cyclohexane lanes while the aza and ether bridges
+ * sit on separate readable arcs outside the fused core.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createPyridylPhenolicOxazaMorphinanCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C20', { x: 0, y: 0 }],
+    ['C5', { x: -0.5, y: 0.8660254037844386 }],
+    ['C4', { x: -1.5, y: 0.8660254037844386 }],
+    ['C3', { x: -2, y: 0 }],
+    ['C2', { x: -1.5, y: -0.8660254037844386 }],
+    ['C19', { x: -0.5, y: -0.8660254037844386 }],
+    ['C6', { x: 0, y: 1.7320508075688772 }],
+    ['C7', { x: 1, y: 1.7320508075688772 }],
+    ['C28', { x: 1.5, y: 0.8660254037844386 }],
+    ['C15', { x: 1, y: 0 }],
+    ['N9', { x: 2.16, y: 1.84 }],
+    ['C13', { x: 2.65, y: 0.6 }],
+    ['C14', { x: 2.05, y: -0.4 }],
+    ['O18', { x: 0.3, y: -1.55 }],
+    ['C16', { x: 1.15, y: -0.9 }],
+    ['C21', { x: 1.9, y: -1.4 }],
+    ['C26', { x: 2.75, y: -0.9 }],
+    ['C27', { x: 2.35, y: 0.1 }],
+    ['N22', { x: 1.9080127018922188, y: -2.3861215932167728 }],
+    ['C23', { x: 2.766025403784438, y: -2.872243186433546 }],
+    ['C24', { x: 3.616025403784438, y: -2.372243186433546 }],
+    ['C25', { x: 3.6080127018922195, y: -1.386121593216773 }]
+  ]);
+}
+
+/**
  * Creates a fused indolocarbazole-like projection with regular aromatic
  * sidewalls, open five-member lactam/indole lanes, and the oxygen bridge
  * carried outside the central fused hexagon.
@@ -4601,6 +4677,13 @@ export function buildTemplateLibrary() {
       53.8706504,
       createSharedEdgeTricyclicEtherCoreTemplate(),
       geometrySpec('normalized-xy', createSharedEdgeTricyclicEtherCoreGeometry(), BRIDGED_VALIDATION)
+    ),
+    createTemplate(
+      'dioxatricyclodiene-ether-core',
+      'bridged',
+      53.87065038,
+      createDioxatricyclodieneEtherCoreTemplate(),
+      geometrySpec('normalized-xy', createDioxatricyclodieneEtherCoreGeometry(), BRIDGED_VALIDATION)
     ),
     createTemplate(
       'n-methyl-amino-diaza-tricyclo-core',
@@ -5281,6 +5364,13 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createBridgedCyclopropylDecalinCoreGeometry(), BRIDGED_VALIDATION)
     ),
     createTemplate('oxaza-morphinan-core', 'bridged', 52.75, createOxazaMorphinanCoreTemplate(), geometrySpec('normalized-xy', createOxazaMorphinanCoreGeometry(), BRIDGED_VALIDATION)),
+    createTemplate(
+      'pyridyl-phenolic-oxaza-morphinan-core',
+      'bridged',
+      52.72,
+      createPyridylPhenolicOxazaMorphinanCoreTemplate(),
+      geometrySpec('normalized-xy', createPyridylPhenolicOxazaMorphinanCoreGeometry(), BRIDGED_VALIDATION)
+    ),
     createTemplate(
       'phenolic-oxaza-morphinan-core',
       'bridged',

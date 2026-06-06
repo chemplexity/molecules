@@ -11289,6 +11289,71 @@ function maybeRetouchFinalTerminalMultipleBondLeafFans(layoutGraph, finalCoords,
   };
 }
 
+function maybeRetouchFinalTerminalMultipleBondLeafFansCenterwise(layoutGraph, finalCoords, placement, bondLength) {
+  const retouchPlan = collectTerminalMultipleBondLeafFanRetouchCenters(layoutGraph, finalCoords, {
+    frozenAtomIds: placement.frozenAtomIds
+  });
+  const basePenalty = {
+    totalDeviation: retouchPlan.totalDeviation,
+    maxDeviation: retouchPlan.maxDeviation
+  };
+  if ((basePenalty.maxDeviation ?? 0) <= PRESENTATION_METRIC_EPSILON || retouchPlan.candidateCenterIds.length === 0) {
+    return { coords: finalCoords, changed: false, nudges: 0, maxDeviationBefore: basePenalty.maxDeviation, maxDeviationAfter: basePenalty.maxDeviation };
+  }
+
+  let currentCoords = finalCoords;
+  let currentPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, currentCoords);
+  let currentAudit = auditLayout(layoutGraph, currentCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  let nudges = 0;
+
+  for (const centerAtomId of retouchPlan.candidateCenterIds) {
+    const retouch = runTerminalMultipleBondLeafFanTidy(layoutGraph, currentCoords, {
+      bondLength,
+      bondValidationClasses: placement.bondValidationClasses,
+      frozenAtomIds: placement.frozenAtomIds,
+      candidateCenterIds: [centerAtomId],
+      hiddenHydrogenCandidateCenterIds: []
+    });
+    if ((retouch.nudges ?? 0) <= 0) {
+      continue;
+    }
+
+    const candidatePenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, retouch.coords);
+    if (
+      (candidatePenalty.maxDeviation ?? Number.POSITIVE_INFINITY) >= (currentPenalty.maxDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON &&
+      (candidatePenalty.totalDeviation ?? Number.POSITIVE_INFINITY) >= (currentPenalty.totalDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+    ) {
+      continue;
+    }
+
+    const candidateAudit = auditLayout(layoutGraph, retouch.coords, {
+      bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+      continue;
+    }
+
+    currentCoords = retouch.coords;
+    currentPenalty = candidatePenalty;
+    currentAudit = candidateAudit;
+    nudges += retouch.nudges ?? 0;
+  }
+
+  return {
+    coords: currentCoords,
+    changed: nudges > 0,
+    nudges,
+    maxDeviationBefore: basePenalty.maxDeviation,
+    maxDeviationAfter: currentPenalty.maxDeviation,
+    totalDeviationBefore: basePenalty.totalDeviation,
+    totalDeviationAfter: currentPenalty.totalDeviation
+  };
+}
+
 function isPreferredFinalHypervalentRetouch(candidateAudit, candidateDeviation, candidateRingBranchDeviation, incumbentAudit, incumbentDeviation, incumbentRingBranchDeviation) {
   for (const key of ['severeOverlapCount', 'visibleHeavyBondCrossingCount', 'bondLengthFailureCount', 'labelOverlapCount']) {
     const candidateValue = candidateAudit[key] ?? 0;
@@ -13629,6 +13694,20 @@ export function runPipeline(molecule, options = {}) {
         maxDeviationAfter: finalLargeMoleculeAngleRelief.scoreAfter.maxDeviation,
         totalDeviationBefore: finalLargeMoleculeAngleRelief.scoreBefore.totalDeviation,
         totalDeviationAfter: finalLargeMoleculeAngleRelief.scoreAfter.totalDeviation
+      });
+    }
+    const postLargeMoleculeTerminalMultipleBondFanRetouch = timeFinalRetouch('postLargeMoleculeTerminalMultipleBondFanRetouch', () =>
+      maybeRetouchFinalTerminalMultipleBondLeafFansCenterwise(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+    );
+    if (postLargeMoleculeTerminalMultipleBondFanRetouch.changed) {
+      finalCoords = postLargeMoleculeTerminalMultipleBondFanRetouch.coords;
+      finalCoordsModified = true;
+      onStep?.('Post Large-Molecule Terminal Multiple-Bond Fan Retouch', 'Audit-clean terminal multiple-bond fans re-polished after large-molecule angle relief.', cloneCoords(finalCoords), {
+        nudges: postLargeMoleculeTerminalMultipleBondFanRetouch.nudges,
+        maxDeviationBefore: postLargeMoleculeTerminalMultipleBondFanRetouch.maxDeviationBefore,
+        maxDeviationAfter: postLargeMoleculeTerminalMultipleBondFanRetouch.maxDeviationAfter,
+        totalDeviationBefore: postLargeMoleculeTerminalMultipleBondFanRetouch.totalDeviationBefore,
+        totalDeviationAfter: postLargeMoleculeTerminalMultipleBondFanRetouch.totalDeviationAfter
       });
     }
   }

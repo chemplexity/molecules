@@ -507,6 +507,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the pyridyl phenolic oxaza morphinan template for fused pyridine sidewall cages', () => {
+    const graph = createLayoutGraph(parseSMILES('Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'pyridyl-phenolic-oxaza-morphinan-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('prefers the larger cage template when the bridged scaffold itself is larger', () => {
     const graph = createLayoutGraph(makeAdamantane());
     const plan = buildScaffoldPlan(graph, graph.components[0]);

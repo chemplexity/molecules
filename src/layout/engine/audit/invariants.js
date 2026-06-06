@@ -189,27 +189,22 @@ function collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, opti
   return visibleBonds;
 }
 
-function collectFocusedVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet) {
-  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
-  return {
-    visibleBonds,
-    focusedBonds: visibleBonds.filter(segment => segment.touchesFocus)
-  };
-}
-
 function findFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet) {
   if (!focusAtomSet || focusAtomSet.size === 0) {
     return [];
   }
-  const { visibleBonds, focusedBonds } = collectFocusedVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet);
+  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
   const crossings = [];
 
-  for (const focused of focusedBonds) {
+  for (const focused of visibleBonds) {
+    if (!focused.touchesFocus) {
+      continue;
+    }
     for (const other of visibleBonds) {
       if (other.minX > focused.maxX) {
         break;
       }
-      if (other.index === focused.index || (other.touchesFocus && other.index < focused.index)) {
+      if (other.index === focused.index || other.maxX < focused.minX || (other.touchesFocus && other.index < focused.index)) {
         continue;
       }
       if (!visibleHeavyBondSegmentsCanCross(focused, other, focusAtomSet)) {
@@ -239,15 +234,18 @@ function countFocusedVisibleHeavyBondCrossings(layoutGraph, coords, focusAtomSet
   if (!focusAtomSet || focusAtomSet.size === 0) {
     return 0;
   }
-  const { visibleBonds, focusedBonds } = collectFocusedVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet);
+  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
   let crossingCount = 0;
 
-  for (const focused of focusedBonds) {
+  for (const focused of visibleBonds) {
+    if (!focused.touchesFocus) {
+      continue;
+    }
     for (const other of visibleBonds) {
       if (other.minX > focused.maxX) {
         break;
       }
-      if (other.index === focused.index || (other.touchesFocus && other.index < focused.index)) {
+      if (other.index === focused.index || other.maxX < focused.minX || (other.touchesFocus && other.index < focused.index)) {
         continue;
       }
       if (!visibleHeavyBondSegmentsCanCross(focused, other, focusAtomSet)) {
@@ -2874,9 +2872,11 @@ function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomId
   const focusSet = new Set(focusAtomIds);
   let penalty = 0;
   const visibleBonds = collectCompactArylCrossingBondSegments(crossingBonds.entries, coords, focusSet);
-  const focusedBonds = visibleBonds.filter(segment => segment.touchesFocus);
 
-  for (const focused of focusedBonds) {
+  for (const focused of visibleBonds) {
+    if (!focused.touchesFocus) {
+      continue;
+    }
     for (const other of visibleBonds) {
       if (focused === other) {
         continue;

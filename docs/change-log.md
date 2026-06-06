@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-06-05
+
+- Re-polish audit-clean terminal multiple-bond amide fans after large-molecule angle relief so ring-decorated peptide chains keep fewer residual carbonyl angle kinks.
+- Add a pyridyl phenolic oxaza morphinan template and refine its N9 bridge arc to keep fused opioid-like ring systems regular.
+- Add a bridged dioxatricyclodiene ether template to keep compact fused ether rings open.
+- Trim layout cleanup scoring allocations by scanning focused visible-heavy bond segments in place and caching hypervalent-center detection without materializing atom arrays.
+- Cache the graph-level hypervalent-center eligibility check and restrict focused hypervalent deviation scoring to the requested atom set, skipping whole-coordinate scans for ordinary organic layout cleanup tie-breaks.
+
 ## 2026-06-04
 
 - Move canonical SMILES generation and molecule equality into `src/io/canonical-smiles.js`, extract shared component serialization into `src/io/smiles-serializer.js`, and keep `src/io/smiles.js` plus `src/io/index.js` re-exporting `toCanonicalSMILES`/`sameMolecule` for compatibility.

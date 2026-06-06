@@ -24,8 +24,14 @@ function hasOrthogonalHypervalentAtom(layoutGraph) {
   if (layoutGraph._hasOrthogonalHypervalentAtom !== undefined) {
     return layoutGraph._hasOrthogonalHypervalentAtom;
   }
-  layoutGraph._hasOrthogonalHypervalentAtom = [...layoutGraph.atoms.values()].some(atom => ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element));
-  return layoutGraph._hasOrthogonalHypervalentAtom;
+  for (const atom of layoutGraph.atoms.values()) {
+    if (ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)) {
+      layoutGraph._hasOrthogonalHypervalentAtom = true;
+      return true;
+    }
+  }
+  layoutGraph._hasOrthogonalHypervalentAtom = false;
+  return false;
 }
 
 function shouldScoreHypervalentDeviation(layoutGraph, options = {}) {
