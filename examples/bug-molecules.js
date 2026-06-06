@@ -596,5 +596,8 @@ export const bugMolecules = [
   'CO[C@H]1O[C@@H]([C@@H](N=[N+]=[N-])C(=O)OCc2ccccc2)[C@@H](OCc3ccccc3)[C@@]4(OCc5ccccc5)[C@H](CO[C@@H]14)OCc6ccccc6',
   '[H][C@@]12CCCN1C(=O)[C@H](CC(C)C)NC(=O)[C@@H](C)C(=O)[C@@H](OC(=O)C[C@H](O)[C@]([H])(NC(=O)[C@@H](NC(=O)[C@@H](CC(C)C)N(C)C(=O)[C@@H]1CCCN1C(=O)C(C)=O)[C@@H](C)OC(=O)[C@H](CC1=CC=C(OC)C=C1)N(C)C2=O)[C@@H](C)CC)C(C)C',
   'CCOCC1=C2CC(C1)COC1OC2C=C1',
-  'Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7'
+  'Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7',
+  'CC1=C(O)[C@](C)(SC1=O)\\C=C\\C=C',
+  'CCC1CC2(CC1CC2CC)C(C)(C)[NH3+]',
+  '[H][N]([H])([H])[Pt]1(OCC(=O)O1)[N]([H])([H])[H]'
 ];

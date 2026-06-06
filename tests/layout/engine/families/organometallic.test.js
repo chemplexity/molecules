@@ -34,6 +34,25 @@ function bondAngleAt(coords, centerAtomId, firstAtomId, secondAtomId) {
 }
 
 /**
+ * Returns ordered angular separations around a metal center.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} metalAtomId - Metal atom ID.
+ * @param {string[]} ligandAtomIds - Direct ligand atom IDs.
+ * @returns {number[]} Clockwise angular separations in radians.
+ */
+function metalLigandSeparations(coords, metalAtomId, ligandAtomIds) {
+  const metalPosition = coords.get(metalAtomId);
+  const twoPi = 2 * Math.PI;
+  const angles = ligandAtomIds
+    .map(atomId => {
+      const angle = angleOf(sub(coords.get(atomId), metalPosition)) % twoPi;
+      return angle < 0 ? angle + twoPi : angle;
+    })
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  return angles.map((angle, index) => (angles[(index + 1) % angles.length] - angle + twoPi) % twoPi);
+}
+
+/**
  * Asserts that an ordered regular ring keeps its target side lengths and angles.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string[]} atomIds - Ordered ring atom IDs.
@@ -90,6 +109,23 @@ describe('layout/engine/families/organometallic', () => {
     const chlorideDot = vectors[2].x * vectors[3].x + vectors[2].y * vectors[3].y;
     assert.ok(Math.abs(ammineDot) < 1e-6);
     assert.ok(Math.abs(chlorideDot) < 1e-6);
+  });
+
+  it('spreads terminal ligands across square-planar platinum chelate pockets', () => {
+    const result = generateCoords(parseSMILES('[H][N]([H])([H])[Pt]1(OCC(=O)O1)[N]([H])([H])[H]'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const separations = metalLigandSeparations(result.coords, 'Pt5', ['N2', 'O10', 'O6', 'N11']);
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(Math.min(...separations) > (80 * Math.PI) / 180, `expected Pt ligands to avoid acute chelate-pocket angles, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...separations) < (115 * Math.PI) / 180, `expected Pt ligands to stay balanced around the chelate pocket, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
   });
 
   it('keeps generic four-coordinate metals on a neutral diamond fallback', () => {

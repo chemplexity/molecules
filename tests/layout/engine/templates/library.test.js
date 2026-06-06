@@ -103,6 +103,7 @@ describe('layout/engine/templates/library', () => {
       'saturated-morphinan-core',
       'morphinan-core',
       'amino-acyl-aryl-norbornane-core',
+      'quaternary-exit-norbornane-core',
       'norbornene',
       'norbornane',
       'quinoline',
@@ -867,6 +868,14 @@ describe('layout/engine/templates/library', () => {
     assert.equal(aminoAcylArylNorbornane.matchContext?.exocyclicNeighbors?.[0]?.element, 'N');
     assert.equal(aminoAcylArylNorbornane.matchContext?.exocyclicNeighbors?.[3]?.templateAtomId, 'C7');
     assert.equal(aminoAcylArylNorbornane.matchContext?.exocyclicNeighbors?.[3]?.minCount, 2);
+
+    const quaternaryExitNorbornane = getTemplateById('quaternary-exit-norbornane-core');
+    assert.equal(quaternaryExitNorbornane.family, 'bridged');
+    assert.equal(quaternaryExitNorbornane.atomCount, 7);
+    assert.equal(quaternaryExitNorbornane.bondCount, 8);
+    assert.equal(quaternaryExitNorbornane.ringCount, 2);
+    assert.equal(quaternaryExitNorbornane.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'a1');
+    assert.equal(quaternaryExitNorbornane.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 4);
 
     const norbornane = getTemplateById('norbornane');
     assert.equal(norbornane.family, 'bridged');

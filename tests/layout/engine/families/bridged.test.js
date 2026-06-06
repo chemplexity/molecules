@@ -128,6 +128,29 @@ describe('layout/engine/families/bridged', () => {
     assertBridgedLayoutQuality(graph, result.coords);
   });
 
+  it('keeps quaternary ammonium norbornane exits on near-orthogonal bridgehead slots', () => {
+    const result = runPipeline(parseSMILES('CCC1CC2(CC1CC2CC)C(C)(C)[NH3+]'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const c12Angles = ['C5', 'C13', 'C14', 'N15']
+      .map(atomId => ((angleOf(sub(result.coords.get(atomId), result.coords.get('C12'))) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2))
+      .sort((first, second) => first - second);
+    const c12Separations = c12Angles.map((angle, index) => (c12Angles[(index + 1) % c12Angles.length] - angle + Math.PI * 2) % (Math.PI * 2));
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(
+      Math.max(...c12Separations.map(angle => Math.abs(angle - Math.PI / 2))) < Math.PI / 180,
+      `expected C12 branch slots near 90 degrees, got ${c12Separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
+    );
+  });
+
   it('falls back to Kamada-Kawai when no bridged template match is provided', () => {
     const graph = createLayoutGraph(makeUnmatchedBridgedCage());
     const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, { layoutGraph: graph, templateId: null });

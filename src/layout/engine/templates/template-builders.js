@@ -2123,6 +2123,24 @@ function createNorbornaneGeometry() {
 }
 
 /**
+ * Creates a less pinched norbornane projection for bridgeheads that carry a
+ * crowded tetravalent carbon exit. The one-atom bridge stays open enough that
+ * the exterior branch fan can use roughly orthogonal slots around the exit.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createQuaternaryExitNorbornaneGeometry() {
+  return createCenteredFrozenGeometry([
+    ['a0', { x: -0.928786, y: 0 }],
+    ['a1', { x: 0.928786, y: 0 }],
+    ['a2', { x: -0.364959, y: -0.514945 }],
+    ['a3', { x: 0.415913, y: -0.762258 }],
+    ['a4', { x: -0.15, y: -1.15 }],
+    ['a5', { x: 1.182899, y: -0.883778 }],
+    ['a6', { x: 0.002969, y: 0.443839 }]
+  ]);
+}
+
+/**
  * Creates a non-crossing norbornane projection for amino acyl aryl substituted
  * stereochemical cages. The bridgehead paths are separated into upper and lower
  * arcs so the displayed bridgehead hydrogen can project into the outside face.
@@ -5398,6 +5416,11 @@ export function buildTemplateLibrary() {
         }
       }
     ),
+    createTemplate('quaternary-exit-norbornane-core', 'bridged', 50.6, createNorbornaneTemplate(), geometrySpec('normalized-xy', createQuaternaryExitNorbornaneGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [{ templateAtomId: 'a1', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 }]
+      }
+    }),
     createTemplate('norbornene', 'bridged', 50.5, createNorborneneTemplate(), geometrySpec('normalized-xy', createNorborneneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('norbornane', 'bridged', 50, createNorbornaneTemplate(), geometrySpec('normalized-xy', createNorbornaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('quinoline', 'fused', 49, createQuinolineTemplate(), geometrySpec('normalized-xy', createQuinolineGeometry(), PLANAR_VALIDATION)),

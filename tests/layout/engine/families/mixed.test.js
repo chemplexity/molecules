@@ -1590,6 +1590,34 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('fans saturated-ring hydrocarbon diene and methyl exits across five-member exterior slots', () => {
+    const result = runPipeline(parseSMILES('CC1=C(O)[C@](C)(SC1=O)\\C=C\\C=C'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const anchorAtomId = 'C5';
+    const anchorPosition = result.coords.get(anchorAtomId);
+    const ringNeighborAngles = ['C3', 'S7'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
+    const exocyclicAngles = ['C6', 'C10'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const alignedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1]));
+    const swappedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0]));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, anchorAtomId, graph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      separations[0] > (4 * Math.PI) / 9,
+      `expected the five-member saturated-ring exterior branches to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      Math.min(alignedDeviation, swappedDeviation) < 1e-6,
+      `expected the diene and methyl exits to occupy the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the saturated-ring exterior fan penalty to be clean');
+  });
+
   it('centers geminal carbonyl roots on saturated ring exterior exits', () => {
     const smiles = 'CC1(C(=O)OC)CCCCC1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

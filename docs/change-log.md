@@ -1,7 +1,19 @@
 # Change Log
 
+## 2026-06-06
+
+- Restore pinched edited product rings from isolated reaction-preview layouts after final geometry cleanup so ring sulfoxides and intramolecular esterification lactones keep compact bonds and open angles.
+- Add reaction-preview regressions for ring sulfoxide scaffold snapping and intramolecular esterification lactone ring formation.
+- Keep ester-cleavage tert-butyl alcohol preview products open by restoring edited tertiary alcohol fans from the isolated product layout after scaffold snapping.
+- Split terminal ligands across open square-planar chelate pockets to avoid acute metal-center fans.
+- Add a quaternary-exit norbornane template so crowded ammonium bridgehead branches keep near-orthogonal C12 slots.
+- Spread hydrocarbon diene/methyl exits on saturated small rings across balanced exterior slots.
+
 ## 2026-06-05
 
+- Keep WebKit-rendered ring-rich peptide layouts broad by letting large-molecule angle relief finish its bounded local repairs and regression-testing the browser-visible C40 alpha fan.
+- Spread snake-like ring-rich peptide backbones with guarded final cut-subtree rotations and defer whole-molecule landscape leveling for those large-molecule layouts.
+- Let bounded final large-molecule angle relief run enough accepted passes for ring-decorated peptide chains, tightening the peptide regression around whole-molecule trigonal, divalent, and omitted-h angle distortion.
 - Re-polish audit-clean terminal multiple-bond amide fans after large-molecule angle relief so ring-decorated peptide chains keep fewer residual carbonyl angle kinks.
 - Add a pyridyl phenolic oxaza morphinan template and refine its N9 bridge arc to keep fused opioid-like ring systems regular.
 - Add a bridged dioxatricyclodiene ether template to keep compact fused ether rings open.

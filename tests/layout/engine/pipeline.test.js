@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { bugMolecules } from '../../../examples/bug-molecules.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { generateCoords } from '../../../src/layout/engine/api.js';
 import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
 import {
   findSevereOverlaps,
@@ -21,6 +22,7 @@ import { BRIDGED_VALIDATION } from '../../../src/layout/engine/constants.js';
 import { createLayoutGraphFromNormalized } from '../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../src/layout/engine/model/scaffold-plan.js';
 import { normalizeOptions } from '../../../src/layout/engine/options.js';
+import { findPreferredBackbonePath } from '../../../src/layout/engine/orientation.js';
 import { describePathLikeIsolatedRingChain } from '../../../src/layout/engine/topology/isolated-ring-chain.js';
 import { measureSmallRingExteriorGapSpreadPenalty, smallRingExteriorTargetAngles } from '../../../src/layout/engine/placement/branch-placement.js';
 import { layoutSupportedComponents } from '../../../src/layout/engine/placement/component-layout.js';
@@ -6651,19 +6653,32 @@ stressDescribe('layout/engine/pipeline', () => {
   });
 
   it('uses finer dense partitions for ring-rich peptide chains before residual retouch', () => {
-    const result = runPipeline(
-      parseSMILES(
-        'NCCCC[C@H](<NC(=O)[C@@H](N)CCCNC(=N)N>)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc5c[nH]c6ccccc56)C(=O)N[C@@H](Cc7c[nH]c8ccccc78)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc9c[nH]c%10ccccc9%10)C(=O)O'
-      ),
-      {
-        suppressH: true,
-        timing: true
-      }
+    const molecule = parseSMILES(
+      'NCCCC[C@H](<NC(=O)[C@@H](N)CCCNC(=N)N>)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc5c[nH]c6ccccc56)C(=O)N[C@@H](Cc7c[nH]c8ccccc78)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc9c[nH]c%10ccccc9%10)C(=O)O'
     );
+    const result = generateCoords(molecule, {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
     const alphaFanAngles = [bondAngleAtAtom(result.coords, 'C56', 'C58', 'C65'), bondAngleAtAtom(result.coords, 'C56', 'C58', 'N55'), bondAngleAtAtom(result.coords, 'C56', 'C65', 'N55')];
     const carbonylFanAngles = [bondAngleAtAtom(result.coords, 'C65', 'C56', 'O66'), bondAngleAtAtom(result.coords, 'C65', 'C56', 'N67'), bondAngleAtAtom(result.coords, 'C65', 'O66', 'N67')];
     const sidechainFanAngles = [bondAngleAtAtom(result.coords, 'C68', 'C70', 'C81'), bondAngleAtAtom(result.coords, 'C68', 'C70', 'N67'), bondAngleAtAtom(result.coords, 'C68', 'C81', 'N67')];
+    const webkitVisibleAlphaFanAngles = [bondAngleAtAtom(result.coords, 'C40', 'C42', 'C53'), bondAngleAtAtom(result.coords, 'C40', 'C42', 'N39'), bondAngleAtAtom(result.coords, 'C40', 'C53', 'N39')];
+    const distalCarbonylFanAngles = [bondAngleAtAtom(result.coords, 'C81', 'C68', 'O82'), bondAngleAtAtom(result.coords, 'C81', 'C68', 'N83'), bondAngleAtAtom(result.coords, 'C81', 'O82', 'N83')];
+    const terminalAcidFanAngles = [bondAngleAtAtom(result.coords, 'C97', 'C84', 'O98'), bondAngleAtAtom(result.coords, 'C97', 'C84', 'N99'), bondAngleAtAtom(result.coords, 'C97', 'O98', 'N99')];
+    const trigonalDistortion = measureTrigonalDistortion(result.layoutGraph, result.coords);
+    const divalentDistortion = measureDivalentContinuationDistortion(result.layoutGraph, result.coords);
+    const threeHeavyDistortion = measureThreeHeavyContinuationDistortion(result.layoutGraph, result.coords);
     const terminalMultipleBondFanPenalty = measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords);
+    const angularDistortionTotal = trigonalDistortion.totalDeviation + divalentDistortion.totalDeviation + threeHeavyDistortion.totalDeviation;
+    const heavyAtomIds = [...result.coords.keys()].filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H');
+    const bounds = computeBounds(result.coords, heavyAtomIds);
+    const preferredBackbonePath = findPreferredBackbonePath(molecule).path.filter(atomId => result.coords.has(atomId));
+    const preferredBackboneBounds = computeBounds(result.coords, preferredBackbonePath);
+    const preferredBackboneAspect = preferredBackboneBounds.width / Math.max(preferredBackboneBounds.height, 1e-6);
 
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
@@ -6671,10 +6686,20 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
-    assert.ok(maxAngleDeviation(alphaFanAngles, 120) < 1e-6, `expected the peptide alpha fan to stay trigonal, got ${alphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
-    assert.ok(maxAngleDeviation(carbonylFanAngles, 120) < 35, `expected the adjacent amide fan to remain readable, got ${carbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
-    assert.ok(maxAngleDeviation(sidechainFanAngles, 120) < 1e-6, `expected the protected peptide sidechain fan to stay trigonal, got ${sidechainFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
-    assert.ok(terminalMultipleBondFanPenalty.totalDeviation < 7.4, `expected post-relief amide fan polish to stay bounded, got ${terminalMultipleBondFanPenalty.totalDeviation}`);
+    assert.ok(bounds.width / bounds.height > 1.8, `expected the ring-rich peptide layout to stay broad, got aspect ${(bounds.width / bounds.height).toFixed(3)}`);
+    assert.ok(preferredBackboneAspect > 2, `expected the preferred peptide backbone to spread horizontally, got aspect ${preferredBackboneAspect.toFixed(3)}`);
+    assert.ok(maxAngleDeviation(alphaFanAngles, 120) < 25, `expected the peptide alpha fan to stay readable, got ${alphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(carbonylFanAngles, 120) < 15, `expected the adjacent amide fan to remain readable, got ${carbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(sidechainFanAngles, 120) < 30, `expected the protected peptide sidechain fan to stay readable, got ${sidechainFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(distalCarbonylFanAngles, 120) < 1e-6, `expected the distal amide fan to recover, got ${distalCarbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(terminalAcidFanAngles, 120) < 10, `expected the terminal acid fan to recover, got ${terminalAcidFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(terminalMultipleBondFanPenalty.maxDeviation < 0.1, `expected post-relief amide fan max penalty to stay bounded, got ${terminalMultipleBondFanPenalty.maxDeviation}`);
+    assert.ok(terminalMultipleBondFanPenalty.totalDeviation < 0.2, `expected post-relief amide fan polish to stay bounded, got ${terminalMultipleBondFanPenalty.totalDeviation}`);
+    assert.ok(maxAngleDeviation(webkitVisibleAlphaFanAngles, 120) < 25, `expected the WebKit-visible C40 peptide fan to avoid near-linear angles, got ${webkitVisibleAlphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(trigonalDistortion.maxDeviation < 0.1, `expected peptide trigonal distortion to stay bounded, got ${trigonalDistortion.maxDeviation}`);
+    assert.ok(divalentDistortion.maxDeviation < 0.3, `expected peptide divalent continuation distortion to stay bounded, got ${divalentDistortion.maxDeviation}`);
+    assert.ok(threeHeavyDistortion.maxDeviation < 0.45, `expected peptide omitted-h three-heavy distortion to stay bounded, got ${threeHeavyDistortion.maxDeviation}`);
+    assert.ok(angularDistortionTotal < 2, `expected aggregate peptide angle distortion to stay bounded, got ${angularDistortionTotal}`);
     assert.ok(result.metadata.timing.totalMs < 20000, `expected finer dense partition retry to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 

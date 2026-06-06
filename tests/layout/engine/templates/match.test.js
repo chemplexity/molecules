@@ -237,6 +237,10 @@ describe('layout/engine/templates/match', () => {
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'norbornane');
 
+    const quaternaryExitGraph = createLayoutGraph(parseSMILES('CCC1CC2(CC1CC2CC)C(C)(C)[NH3+]'), { suppressH: true });
+    const quaternaryExitMatch = findTemplateMatch(quaternaryExitGraph, buildRingCandidate(quaternaryExitGraph, quaternaryExitGraph.ringSystems[0], 'bridged'));
+    assert.equal(quaternaryExitMatch.id, 'quaternary-exit-norbornane-core');
+
     const norborneneGraph = createLayoutGraph(parseSMILES('C1C2CC(C=C2)C1'));
     const norborneneMatch = findTemplateMatch(norborneneGraph, buildRingCandidate(norborneneGraph, norborneneGraph.ringSystems[0], 'bridged'));
     assert.equal(norborneneMatch.id, 'norbornene');

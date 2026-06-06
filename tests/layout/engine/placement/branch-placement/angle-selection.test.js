@@ -7,9 +7,10 @@ import {
   isExactRingOutwardEligibleSubstituent,
   isExactSimpleAcyclicContinuationEligible,
   isExactVisibleTrigonalBisectorEligible,
-  preferredBranchAngles
+  preferredBranchAngles,
+  smallRingExteriorTargetAngleSets
 } from '../../../../../src/layout/engine/placement/branch-placement/angle-selection.js';
-import { angularDifference, fromAngle } from '../../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, angularDifference, fromAngle, sub } from '../../../../../src/layout/engine/geometry/vec2.js';
 
 function degrees(value) {
   return (value * Math.PI) / 180;
@@ -53,6 +54,26 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     const graph = createLayoutGraph(parseSMILES('CCOC1=CSC2=C1NC(OC2=O)=NCCO'), { suppressH: true });
 
     assert.equal(isExactSimpleAcyclicContinuationEligible(graph, 'O3', 'C4', 'C2'), true);
+  });
+
+  it('keeps hydrocarbon alkene roots on balanced saturated-ring exterior slots', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1=C(O)[C@](C)(SC1=O)\\C=C\\C=C'), { suppressH: true });
+    const coords = new Map([
+      ['C5', { x: 0, y: 0 }],
+      ['C3', fromAngle(degrees(0), 1)],
+      ['S7', fromAngle(degrees(108), 1)]
+    ]);
+    const ringNeighborAngles = ['C3', 'S7'].map(atomId => angleOf(sub(coords.get(atomId), coords.get('C5'))));
+    const targetAngleSets = smallRingExteriorTargetAngleSets(graph, 'C5', ringNeighborAngles, ['C6', 'C10'], 5);
+    const expectedBalancedAngles = [degrees(192), degrees(276)];
+
+    assert.equal(targetAngleSets.length, 2);
+    for (const targetAngleSet of targetAngleSets) {
+      assert.ok(
+        targetAngleSet.every(targetAngle => expectedBalancedAngles.some(expectedAngle => angularDifference(targetAngle, expectedAngle) < 1e-6)),
+        `expected hydrocarbon alkene roots to use balanced exterior targets, got ${targetAngleSet.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+      );
+    }
   });
 
   it('treats visible non-ring trigonal carbons as exact bisector candidates for their last single-bond branch', () => {

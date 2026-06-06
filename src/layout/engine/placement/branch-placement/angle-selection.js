@@ -3406,7 +3406,7 @@ function isPriorityExteriorRingSubstituent(layoutGraph, anchorAtomId, neighborAt
     }
     const downstreamAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
     const downstreamAtom = layoutGraph.atoms.get(downstreamAtomId);
-    if (downstreamAtom && downstreamAtom.element !== 'H' && !layoutGraph.ringAtomIdSet.has(downstreamAtomId)) {
+    if (downstreamAtom && downstreamAtom.element !== 'H' && downstreamAtom.element !== 'C' && !layoutGraph.ringAtomIdSet.has(downstreamAtomId)) {
       return true;
     }
   }
@@ -3414,9 +3414,9 @@ function isPriorityExteriorRingSubstituent(layoutGraph, anchorAtomId, neighborAt
 }
 
 /**
- * Returns whether a non-priority sibling is simple enough that a carbonyl or
- * alkene-like branch may claim the exact exterior axis without making the
- * local fan look pinched.
+ * Returns whether a non-priority sibling is simple enough that a carbonyl-like
+ * branch may claim the exact exterior axis without making the local fan look
+ * pinched.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Ring anchor atom ID.
  * @param {string} neighborAtomId - Exocyclic neighbor atom ID.

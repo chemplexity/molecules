@@ -386,6 +386,9 @@ function trimTerminalPeripheralHeteroEndpoints(path, molecule) {
     return path;
   }
 
+  const rings = molecule.getRings();
+  const enableLargeRingChainTailTrim = rings.length >= 4 && heavyAtomCount(molecule) >= 40;
+  const ringAtomIds = enableLargeRingChainTailTrim ? ringAtomIdsForMolecule(molecule) : new Set();
   let startIndex = 0;
   let endIndex = path.length - 1;
   const isTerminalPeripheralHetero = atomId => {
@@ -396,11 +399,41 @@ function trimTerminalPeripheralHeteroEndpoints(path, molecule) {
     const heavyDegree = atom.getNeighbors(molecule).filter(neighbor => neighbor.name !== 'H').length;
     return heavyDegree <= 1;
   };
+  /**
+   * Returns whether an endpoint belongs to a terminal acyclic sidechain that
+   * should not define the whole-molecule landscape axis for ring-decorated
+   * peptide-scale layouts.
+   * @param {string} atomId - Endpoint atom ID.
+   * @returns {boolean} True when the endpoint is a trimmable sidechain atom.
+   */
+  const isTerminalAcyclicSidechainAtom = atomId => {
+    if (!enableLargeRingChainTailTrim || ringAtomIds.has(atomId)) {
+      return false;
+    }
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || atom.name === 'H') {
+      return false;
+    }
+    const heavyNeighbors = atom.getNeighbors(molecule).filter(neighbor => neighbor.name !== 'H');
+    if (atom.name === 'C') {
+      const hasCarbonylOxygen = heavyNeighbors.some(neighbor => {
+        const bond = molecule.getBond(atomId, neighbor.id);
+        return neighbor.name === 'O' && (bond?.properties.order ?? 1) >= 2;
+      });
+      if (hasCarbonylOxygen) {
+        return false;
+      }
+      const nitrogenNeighborCount = heavyNeighbors.reduce((count, neighbor) => count + (neighbor.name === 'N' ? 1 : 0), 0);
+      return heavyNeighbors.length <= 2 || nitrogenNeighborCount >= 2;
+    }
+    return heavyNeighbors.length <= 2;
+  };
+  const isTrimmableEndpoint = atomId => isTerminalPeripheralHetero(atomId) || isTerminalAcyclicSidechainAtom(atomId);
 
-  while (endIndex - startIndex + 1 >= 3 && isTerminalPeripheralHetero(path[startIndex])) {
+  while (endIndex - startIndex + 1 >= 3 && isTrimmableEndpoint(path[startIndex])) {
     startIndex++;
   }
-  while (endIndex - startIndex + 1 >= 3 && isTerminalPeripheralHetero(path[endIndex])) {
+  while (endIndex - startIndex + 1 >= 3 && isTrimmableEndpoint(path[endIndex])) {
     endIndex--;
   }
   return path.slice(startIndex, endIndex + 1);

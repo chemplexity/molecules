@@ -1,6 +1,6 @@
 /** @module cleanup/ligand-angle-tidy */
 
-import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub, wrapAngleUnsigned } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { organometallicArrangementSpecs, organometallicGeometryKind } from '../families/organometallic-geometry.js';
 
@@ -8,6 +8,7 @@ const ANGLE_THRESHOLD = Math.PI / 18;
 const CENTER_RECENTER_MIN_IMPROVEMENT = Math.PI / 9;
 const CENTER_RECENTER_MAX_MOVE_FACTOR = 0.75;
 const CENTER_RECENTER_MIN_LIGAND_DISTANCE_FACTOR = 0.4;
+const CHELATE_TERMINAL_MIN_OPEN_GAP = Math.PI + ANGLE_THRESHOLD;
 
 /**
  * Returns whether the requested atom is a supported visible metal center.
@@ -134,6 +135,64 @@ function ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords) {
 }
 
 /**
+ * Returns terminal-ligand target angles for a square-planar metal with one
+ * fixed two-anchor chelate pocket and two movable simple ligands.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} metalAtomId - Metal atom ID.
+ * @param {string[]} ligandAtomIds - Direct ligand atom IDs.
+ * @param {{x: number, y: number}} metalPosition - Metal coordinate.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} [minOpenGap] - Minimum larger chelate gap before the rule applies.
+ * @returns {Map<string, number>|null} Target angle by terminal ligand atom ID.
+ */
+function chelatedTerminalLigandTargets(layoutGraph, metalAtomId, ligandAtomIds, metalPosition, coords, minOpenGap = CHELATE_TERMINAL_MIN_OPEN_GAP) {
+  const element = layoutGraph.sourceMolecule.atoms.get(metalAtomId)?.name ?? '';
+  if (ligandAtomIds.length !== 4 || organometallicGeometryKind(element, ligandAtomIds.length) !== 'square-planar') {
+    return null;
+  }
+
+  const fixedLigandAtomIds = ligandAtomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && (atom.heavyDegree ?? 0) > 1;
+  });
+  const terminalLigandAtomIds = ligandAtomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && (atom.heavyDegree ?? 0) <= 1;
+  });
+  if (fixedLigandAtomIds.length !== 2 || terminalLigandAtomIds.length !== 2) {
+    return null;
+  }
+
+  const fixedAngles = fixedLigandAtomIds
+    .map(atomId => ({
+      atomId,
+      angle: wrapAngleUnsigned(angleOf(sub(coords.get(atomId), metalPosition)))
+    }))
+    .sort((firstEntry, secondEntry) => firstEntry.angle - secondEntry.angle);
+  if (fixedAngles.some(entry => !Number.isFinite(entry.angle))) {
+    return null;
+  }
+
+  const gaps = [
+    { start: fixedAngles[0].angle, size: fixedAngles[1].angle - fixedAngles[0].angle },
+    { start: fixedAngles[1].angle, size: fixedAngles[0].angle + 2 * Math.PI - fixedAngles[1].angle }
+  ].sort((firstGap, secondGap) => secondGap.size - firstGap.size);
+  const openGap = gaps[0];
+  if (openGap.size <= minOpenGap) {
+    return null;
+  }
+
+  const targetAngles = [openGap.start + openGap.size / 3, openGap.start + (2 * openGap.size) / 3];
+  const currentAngles = terminalLigandAtomIds.map(atomId => angleOf(sub(coords.get(atomId), metalPosition)));
+  const assignment = assignIdealAngles(currentAngles, targetAngles);
+  const targetsByAtomId = new Map();
+  for (let index = 0; index < terminalLigandAtomIds.length; index++) {
+    targetsByAtomId.set(terminalLigandAtomIds[index], targetAngles[assignment[index]]);
+  }
+  return targetsByAtomId;
+}
+
+/**
  * Returns whether the direct ligands are ring-like or chelating enough that the
  * metal should move to them, instead of dragging ligand subtrees around.
  * @param {object} layoutGraph - Layout graph shell.
@@ -241,6 +300,15 @@ export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
     if (centerCandidate) {
       return true;
     }
+    const chelatedTargets = chelatedTerminalLigandTargets(layoutGraph, metalAtomId, ligandAtomIds, metalPosition, coords, Math.PI + angleThreshold);
+    if (chelatedTargets) {
+      for (const [ligandAtomId, targetAngle] of chelatedTargets) {
+        const currentAngle = angleOf(sub(coords.get(ligandAtomId), metalPosition));
+        if (angularDifference(currentAngle, targetAngle) > angleThreshold) {
+          return true;
+        }
+      }
+    }
     if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
       continue;
     }
@@ -292,6 +360,20 @@ export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
         metalPosition = centerCandidate.position;
         nudges++;
         moved = true;
+      }
+      const chelatedTargets = chelatedTerminalLigandTargets(layoutGraph, metalAtomId, ligandAtomIds, metalPosition, coords, Math.PI + angleThreshold);
+      if (chelatedTargets) {
+        for (const [ligandAtomId, targetAngle] of chelatedTargets) {
+          const currentAngle = angleOf(sub(coords.get(ligandAtomId), metalPosition));
+          if (angularDifference(currentAngle, targetAngle) <= angleThreshold) {
+            continue;
+          }
+          const ligandDistance = distance(metalPosition, coords.get(ligandAtomId));
+          coords.set(ligandAtomId, add(metalPosition, fromAngle(targetAngle, ligandDistance)));
+          nudges++;
+          moved = true;
+        }
+        continue;
       }
       if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
         continue;

@@ -672,6 +672,34 @@ test('loading and cleaning the sulfated glycoside bug molecule keeps browser-ren
   await expect.poll(async () => await renderedHeavyLayoutAspect(page), { timeout: 60_000 }).toBeGreaterThan(1);
 });
 
+test('loading the ring-rich peptide keeps the WebKit-visible backbone broad and alpha fans bounded', { timeout: 120_000 }, async ({ page }) => {
+  await page.goto('/index.html');
+
+  const ringRichPeptideSmiles =
+    'NCCCC[C@H](<NC(=O)[C@@H](N)CCCNC(=N)N>)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc5c[nH]c6ccccc56)C(=O)N[C@@H](Cc7c[nH]c8ccccc78)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc9c[nH]c%10ccccc9%10)C(=O)O';
+  const cleanAudit = {
+    ok: true,
+    severeOverlapCount: 0,
+    visibleHeavyBondCrossingCount: 0,
+    bondLengthFailureCount: 0
+  };
+
+  await loadSmiles(page, ringRichPeptideSmiles);
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const c40FanDeviation = async () => {
+    const angles = await Promise.all([atomBondAngleDegrees(page, 'C40', 'C42', 'C53'), atomBondAngleDegrees(page, 'C40', 'C42', 'N39'), atomBondAngleDegrees(page, 'C40', 'C53', 'N39')]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+
+  await expect.poll(async () => await renderedHeavyLayoutAudit(page, ringRichPeptideSmiles), { timeout: 60_000 }).toEqual(cleanAudit);
+  await expect.poll(async () => await renderedHeavyLayoutAspect(page), { timeout: 60_000 }).toBeGreaterThan(1.9);
+  await expect.poll(c40FanDeviation, { timeout: 60_000 }).toBeLessThan(25);
+});
+
 test('loading the benzylic amino-alcohol bug molecule keeps the visible trigonal centers and attached phenyl exit exact', async ({ page }) => {
   await page.goto('/index.html');
 

@@ -78,7 +78,7 @@ import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
 import { assignBondValidationClass } from './placement/bond-validation.js';
-import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
+import { ensureLandscapeOrientation, findPreferredBackbonePath, levelCoords, normalizeOrientation } from './orientation.js';
 import { computeBounds } from './geometry/bounds.js';
 import { layoutKamadaKawai } from './geometry/kk-layout.js';
 import { cloneCoords, rotateAround } from './geometry/transforms.js';
@@ -331,9 +331,17 @@ const FINAL_TERMINAL_LABEL_LEAF_ROTATIONS = Object.freeze(
   [-180, -150, -120, -90, -75, -60, -45, -30, -20, -15, -10, -5, 5, 10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180].map(degrees => (degrees * Math.PI) / 180)
 );
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze([5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
-const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 4;
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 40;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_ROTATIONS = Object.freeze([30, -30, 45, -45, 60, -60].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MAX_PASSES = 2;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_PATH_LENGTH = 18;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_RING_COUNT = 8;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_RING_SYSTEM_COUNT = 4;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_TARGET_ASPECT = 2;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_ASPECT_GAIN = 0.15;
+const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MAX_TOTAL_DEVIATION = 0.75;
 const FINAL_LABEL_AXIS_ROTATIONS = Object.freeze([-8, 8, -10, 10, -12, 12, -15, 15, -20, 20, -25, 25, -30, 30, -45, 45, -60, 60, -90, 90].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_COMPRESSED_PAIRED_TERMINAL_HETERO_COMPRESSION_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
 const FINAL_CONNECTOR_LABEL_MAX_SUBTREE_ATOMS = 700;
@@ -4439,6 +4447,20 @@ function finalThreeHeavyFanCandidateAssignments(neighbors, fixedNeighbor, direct
   ];
 }
 
+/**
+ * Scores one suppressed-hydrogen three-heavy fan descriptor so the worst local
+ * fans claim shared movable subtrees before lower-priority centers.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {{centerAtomId: string}} descriptor - Three-heavy fan descriptor.
+ * @returns {number} Focused max deviation for the descriptor center.
+ */
+function finalThreeHeavyFanDescriptorPenalty(layoutGraph, coords, descriptor) {
+  return measureThreeHeavyContinuationDistortion(layoutGraph, coords, {
+    focusAtomIds: new Set([descriptor.centerAtomId])
+  }).maxDeviation;
+}
+
 function maybeRetouchFinalThreeHeavyContinuationFans(molecule, layoutGraph, finalCoords, placement, bondLength) {
   let currentCoords = finalCoords;
   let currentPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, currentCoords);
@@ -4448,7 +4470,11 @@ function maybeRetouchFinalThreeHeavyContinuationFans(molecule, layoutGraph, fina
   let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
   const movedAtomIds = new Set();
   let changed = false;
-  for (const descriptor of finalThreeHeavyFanDescriptors(layoutGraph, currentCoords)) {
+  const descriptors = finalThreeHeavyFanDescriptors(layoutGraph, currentCoords).sort(
+    (firstDescriptor, secondDescriptor) =>
+      finalThreeHeavyFanDescriptorPenalty(layoutGraph, currentCoords, secondDescriptor) - finalThreeHeavyFanDescriptorPenalty(layoutGraph, currentCoords, firstDescriptor)
+  );
+  for (const descriptor of descriptors) {
     let bestCandidate = null;
     for (const fixedNeighbor of descriptor.neighbors) {
       for (const direction of [1, -1]) {
@@ -4664,6 +4690,172 @@ function finalLargeMoleculeAngleReliefDescriptors(layoutGraph, coords) {
 function shouldRunFinalLargeMoleculeAngleRelief(layoutGraph, familySummary) {
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
   return familySummary.primaryFamily === 'large-molecule' && heavyAtomCount <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS;
+}
+
+/**
+ * Returns whether a ring-rich peptide-scale large molecule should prefer a
+ * final backbone-spread retouch instead of whole-molecule landscape leveling.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{primaryFamily: string}} familySummary - Family classification.
+ * @returns {boolean} True when the layout is in the guarded backbone-spread scope.
+ */
+function shouldPreferFinalLargeMoleculeBackboneSpread(layoutGraph, familySummary) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  const ringCount = layoutGraph.traits?.ringCount ?? layoutGraph.rings?.length ?? 0;
+  const ringSystemCount = layoutGraph.traits?.ringSystemCount ?? layoutGraph.ringSystems?.length ?? 0;
+  return (
+    familySummary.primaryFamily === 'large-molecule' &&
+    heavyAtomCount <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS &&
+    ringCount >= FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_RING_COUNT &&
+    ringSystemCount >= FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_RING_SYSTEM_COUNT
+  );
+}
+
+/**
+ * Returns the preferred heavy-atom path used to score final large-molecule
+ * backbone spread.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @returns {string[]} Path atom IDs present in the coordinate map.
+ */
+function finalLargeMoleculeBackboneSpreadPath(molecule, coords) {
+  const preferredBackbone = findPreferredBackbonePath(molecule);
+  return (preferredBackbone?.path ?? []).filter(atomId => coords.has(atomId));
+}
+
+/**
+ * Scores how horizontally spread the preferred large-molecule path is.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string[]} pathAtomIds - Preferred path atom IDs.
+ * @returns {{aspect: number, width: number, height: number}} Path spread score.
+ */
+function finalLargeMoleculeBackboneSpreadScore(coords, pathAtomIds) {
+  const bounds = computeBounds(coords, pathAtomIds);
+  if (!bounds) {
+    return { aspect: 0, width: 0, height: 0 };
+  }
+  return {
+    aspect: bounds.width / Math.max(bounds.height, NUMERIC_EPSILON),
+    width: bounds.width,
+    height: bounds.height
+  };
+}
+
+/**
+ * Builds cut-subtree rotations along a preferred large-molecule backbone path.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {string[]} pathAtomIds - Preferred path atom IDs.
+ * @returns {Array<{centerAtomId: string, rootAtomId: string}>} Rotation descriptors.
+ */
+function finalLargeMoleculeBackboneSpreadDescriptors(molecule, pathAtomIds) {
+  const descriptors = [];
+  for (let index = 0; index < pathAtomIds.length - 1; index++) {
+    const firstAtomId = pathAtomIds[index];
+    const secondAtomId = pathAtomIds[index + 1];
+    const bond = molecule.getBond(firstAtomId, secondAtomId);
+    if (!bond || bond.properties.aromatic || (bond.properties.order ?? 1) !== 1) {
+      continue;
+    }
+    descriptors.push({ centerAtomId: firstAtomId, rootAtomId: secondAtomId });
+    descriptors.push({ centerAtomId: secondAtomId, rootAtomId: firstAtomId });
+  }
+  return descriptors;
+}
+
+/**
+ * Applies a guarded final retouch that spreads snake-like peptide backbones
+ * before whole-molecule orientation can make the path look vertically curled.
+ * The move budget is intentionally tiny and every candidate must keep the
+ * audit clean while staying below the same max-angle threshold used by final
+ * large-molecule angle relief.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], spreadBefore: object, spreadAfter: object, scoreBefore: object, scoreAfter: object, audit: object}} Spread result.
+ */
+function maybeSpreadFinalLargeMoleculeBackbone(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  const pathAtomIds = finalLargeMoleculeBackboneSpreadPath(molecule, finalCoords);
+  const spreadBefore = finalLargeMoleculeBackboneSpreadScore(finalCoords, pathAtomIds);
+  let currentSpread = spreadBefore;
+  let currentScore = finalLargeMoleculeAngularReliefScore(layoutGraph, finalCoords);
+  const scoreBefore = currentScore;
+  if (pathAtomIds.length < FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_PATH_LENGTH || currentSpread.aspect >= FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_TARGET_ASPECT) {
+    const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
+    return { changed: false, coords: finalCoords, movedAtomIds: [], spreadBefore, spreadAfter: currentSpread, scoreBefore, scoreAfter: currentScore, audit: currentAudit };
+  }
+
+  let currentCoords = finalCoords;
+  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
+  const descriptors = finalLargeMoleculeBackboneSpreadDescriptors(molecule, pathAtomIds);
+  const movedAtomIds = new Set();
+  let changed = false;
+
+  for (let passIndex = 0; passIndex < FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MAX_PASSES; passIndex++) {
+    let bestCandidate = null;
+    for (const descriptor of descriptors) {
+      for (const rotation of FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_ROTATIONS) {
+        const candidate = rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, currentCoords, descriptor.centerAtomId, descriptor.rootAtomId, rotation);
+        if (!candidate) {
+          continue;
+        }
+        const candidateSpread = finalLargeMoleculeBackboneSpreadScore(candidate.coords, pathAtomIds);
+        if (candidateSpread.aspect < currentSpread.aspect + FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_ASPECT_GAIN) {
+          continue;
+        }
+        const candidateScore = finalLargeMoleculeAngularReliefScore(layoutGraph, candidate.coords);
+        if (
+          candidateScore.maxDeviation > FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION + PRESENTATION_METRIC_EPSILON ||
+          candidateScore.totalDeviation > FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MAX_TOTAL_DEVIATION + PRESENTATION_METRIC_EPSILON
+        ) {
+          continue;
+        }
+        const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+        if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+          continue;
+        }
+        if (
+          !bestCandidate ||
+          candidateSpread.aspect > bestCandidate.spread.aspect + PRESENTATION_METRIC_EPSILON ||
+          (Math.abs(candidateSpread.aspect - bestCandidate.spread.aspect) <= PRESENTATION_METRIC_EPSILON &&
+            finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, bestCandidate.score))
+        ) {
+          bestCandidate = {
+            ...candidate,
+            audit: candidateAudit,
+            score: candidateScore,
+            spread: candidateSpread
+          };
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    currentScore = bestCandidate.score;
+    currentSpread = bestCandidate.spread;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    changed = true;
+    if (currentSpread.aspect >= FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_TARGET_ASPECT) {
+      break;
+    }
+  }
+
+  return {
+    changed,
+    coords: currentCoords,
+    movedAtomIds: [...movedAtomIds],
+    spreadBefore,
+    spreadAfter: currentSpread,
+    scoreBefore,
+    scoreAfter: currentScore,
+    audit: currentAudit
+  };
 }
 
 /**
@@ -12633,7 +12825,11 @@ export function runPipeline(molecule, options = {}) {
     finalCoordsModified = true;
     orientationApplied = true;
   }
-  if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) || shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions, policy, cleanup)) {
+  const deferLandscapeForBackboneSpread = shouldPreferFinalLargeMoleculeBackboneSpread(layoutGraph, familySummary);
+  if (
+    (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) && !deferLandscapeForBackboneSpread) ||
+    shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions, policy, cleanup)
+  ) {
     const landscapeCoords = cloneCoords(finalCoords);
     landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
     if (landscapeApplied) {
@@ -13710,6 +13906,24 @@ export function runPipeline(molecule, options = {}) {
         totalDeviationAfter: postLargeMoleculeTerminalMultipleBondFanRetouch.totalDeviationAfter
       });
     }
+    if (shouldPreferFinalLargeMoleculeBackboneSpread(layoutGraph, familySummary)) {
+      const finalLargeMoleculeBackboneSpread = timeFinalRetouch('finalLargeMoleculeBackboneSpread', () =>
+        maybeSpreadFinalLargeMoleculeBackbone(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+      );
+      if (finalLargeMoleculeBackboneSpread.changed) {
+        finalCoords = finalLargeMoleculeBackboneSpread.coords;
+        finalCoordsModified = true;
+        onStep?.('Final Large Molecule Backbone Spread', 'Snake-like large-molecule peptide backbones spread with guarded cut-subtree rotations after angle relief.', cloneCoords(finalCoords), {
+          movedAtomCount: finalLargeMoleculeBackboneSpread.movedAtomIds.length,
+          pathAspectBefore: finalLargeMoleculeBackboneSpread.spreadBefore.aspect,
+          pathAspectAfter: finalLargeMoleculeBackboneSpread.spreadAfter.aspect,
+          maxDeviationBefore: finalLargeMoleculeBackboneSpread.scoreBefore.maxDeviation,
+          maxDeviationAfter: finalLargeMoleculeBackboneSpread.scoreAfter.maxDeviation,
+          totalDeviationBefore: finalLargeMoleculeBackboneSpread.scoreBefore.totalDeviation,
+          totalDeviationAfter: finalLargeMoleculeBackboneSpread.scoreAfter.totalDeviation
+        });
+      }
+    }
   }
   const finalSmallRingSnap = timeFinalRetouch('finalSmallRingSnap', () => {
     return maybeSnapFinalSmallFourRings(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
@@ -14163,7 +14377,11 @@ export function runPipeline(molecule, options = {}) {
       }
     );
   }
-  if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) && shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, finalCoords)) {
+  if (
+    shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) &&
+    !shouldPreferFinalLargeMoleculeBackboneSpread(layoutGraph, familySummary) &&
+    shouldReapplyLandscapeAfterFinalRetouches(layoutGraph, finalCoords)
+  ) {
     const landscapeCoords = cloneCoords(finalCoords);
     const landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
     const forcedLandscapeApplied = familySummary.primaryFamily === 'large-molecule' && forceLandscapeBoundsIfPortrait(layoutGraph, landscapeCoords);

@@ -716,6 +716,77 @@ test('reaction preview keeps ester cleavage alcohol centers locally trigonal aft
   }
 });
 
+test('reaction preview keeps tert-butyl alcohol products open after ester cleavage', () => {
+  const smiles = 'CC(=O)OC(C)(C)C';
+  for (const template of [reactionTemplates.esterHydrolysis, reactionTemplates.saponification]) {
+    const preview = preparePreview(smiles, template.smirks);
+    const center = preview.mol.atoms.get('__rxn_product__0:C5');
+    const neighbors = ['__rxn_product__0:C6', '__rxn_product__0:C7', '__rxn_product__0:C8', '__rxn_product__0:0'].map(id => preview.mol.atoms.get(id));
+    assert.ok(center && neighbors.every(Boolean), `expected ${template.name} tert-butyl alcohol product`);
+
+    for (const neighbor of neighbors) {
+      const bondLength = distance(center, neighbor);
+      assert.ok(bondLength > 1.25 && bondLength < 1.75, `expected ${template.name} tert-butyl C5-${neighbor.name} bond to stay compact, got ${bondLength.toFixed(3)} Å`);
+    }
+
+    for (let firstIndex = 0; firstIndex < neighbors.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < neighbors.length; secondIndex++) {
+        const localAngle = angleDeg(neighbors[firstIndex], center, neighbors[secondIndex]);
+        assert.ok(localAngle > 70, `expected ${template.name} tert-butyl fan angles to stay open, got ${localAngle.toFixed(1)}°`);
+      }
+    }
+  }
+});
+
+test('reaction preview keeps ring sulfoxide products open after scaffold snapping', () => {
+  const smiles = 'O=C(N1CCOCC1)\\C(=C\\2/SC=C(N2c3ccccc3)c4ccccc4)\\C#N';
+  const sourceMol = parseSMILES(smiles);
+  const mappings = [...findSMARTSRaw(sourceMol, reactionTemplates.sulfideOxidationToSulfoxide.smirks.split('>>')[0])];
+  assert.equal(mappings.length, 2, 'expected two equivalent sulfide-oxidation mappings');
+
+  for (const mapping of mappings) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.sulfideOxidationToSulfoxide.smirks, mapping);
+    const sulfur = preview.mol.atoms.get('__rxn_product__0:S11');
+    const leftRingCarbon = preview.mol.atoms.get('__rxn_product__0:C10');
+    const rightRingCarbon = preview.mol.atoms.get('__rxn_product__0:C12');
+    const oxo = preview.mol.atoms.get('__rxn_product__0:0');
+    assert.ok(sulfur && leftRingCarbon && rightRingCarbon && oxo, 'expected ring sulfoxide preview atoms');
+
+    for (const neighbor of [leftRingCarbon, rightRingCarbon, oxo]) {
+      const bondLength = distance(sulfur, neighbor);
+      assert.ok(bondLength > 1.2 && bondLength < 1.85, `expected ring sulfoxide S-${neighbor.name} bond to stay compact, got ${bondLength.toFixed(3)} Å`);
+    }
+    for (const [first, second] of [
+      [leftRingCarbon, rightRingCarbon],
+      [leftRingCarbon, oxo],
+      [rightRingCarbon, oxo]
+    ]) {
+      const localAngle = angleDeg(first, sulfur, second);
+      assert.ok(localAngle > 75, `expected ring sulfoxide fan angles to stay open, got ${localAngle.toFixed(1)}°`);
+    }
+  }
+});
+
+test('reaction preview keeps intramolecular esterification lactone rings compact', () => {
+  const preview = preparePreview('N[C@@H](CO)C(=O)O', reactionTemplates.esterification.smirks);
+  const ringAtoms = ['__rxn_product__0:C2', '__rxn_product__0:C4', '__rxn_product__0:O5', '__rxn_product__0:C6'].map(id => preview.mol.atoms.get(id));
+  assert.ok(ringAtoms.every(Boolean), 'expected esterification lactone product ring');
+
+  for (let index = 0; index < ringAtoms.length; index++) {
+    const atom = ringAtoms[index];
+    const next = ringAtoms[(index + 1) % ringAtoms.length];
+    assert.ok(distance(atom, next) < 1.85, `expected lactone ring bond to stay compact, got ${distance(atom, next).toFixed(3)} Å`);
+  }
+
+  for (let index = 0; index < ringAtoms.length; index++) {
+    const previous = ringAtoms[(index + ringAtoms.length - 1) % ringAtoms.length];
+    const atom = ringAtoms[index];
+    const next = ringAtoms[(index + 1) % ringAtoms.length];
+    const localAngle = angleDeg(previous, atom, next);
+    assert.ok(localAngle > 75, `expected lactone ring angles to stay open, got ${localAngle.toFixed(1)}°`);
+  }
+});
+
 test('reaction preview keeps saponification alcohol products on retained lactone ring exits', () => {
   const smiles = 'CC(OC(N)=O)C1=CC=C(C)C(=O)O1';
   const sourceMol = parseSMILES(smiles);

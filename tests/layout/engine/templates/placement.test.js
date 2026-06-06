@@ -341,6 +341,18 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('a4').x > coords.get('a0').x);
   });
 
+  it('places crowded quaternary norbornane exits with an open bridgehead fan', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1CC2(CC1CC2CC)C(C)(C)[NH3+]'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'quaternary-exit-norbornane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const firstRingAngles = ringAngles(coords, ['C9', 'C8', 'C7', 'C6', 'C5']);
+    const secondRingAngles = ringAngles(coords, ['C7', 'C6', 'C5', 'C4', 'C3']);
+    const quaternaryExitBridgeAngle = bondAngleAtAtom(coords, 'C5', 'C6', 'C4');
+
+    assert.equal(coords.size, 7);
+    assert.ok(Math.min(...firstRingAngles, ...secondRingAngles) > 60);
+    assert.ok(quaternaryExitBridgeAngle > 75, `expected quaternary bridgehead exit to stay open, got ${quaternaryExitBridgeAngle.toFixed(2)}`);
+  });
+
   it('places a norbornene scaffold without flattening the one-atom bridge', () => {
     const graph = createLayoutGraph(parseSMILES('C1C2CC(C=C2)C1'));
     const coords = placeTemplateCoords(graph, 'norbornene', graph.ringSystems[0].atomIds, graph.options.bondLength);

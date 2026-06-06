@@ -923,9 +923,10 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
 
 /**
  * Restores retained tert-butyl-like fans from the isolated product layout after
- * reaction preview scaffold snapping. This keeps unchanged BOC groups from
- * inheriting square 90/180-degree reactant fans while preserving the retained
- * anchor and rejecting moves that worsen local spacing.
+ * reaction preview scaffold snapping. This keeps unchanged BOC groups and
+ * edited tertiary alcohol products from inheriting square 90/180-degree
+ * reactant fans while preserving the retained anchor and rejecting moves that
+ * worsen local spacing.
  * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
  * @param {Set<string>} componentAtomIds - Product component atom IDs.
  * @param {Map<string, {x: number, y: number}>} isolatedSnapshot - Product coordinates before scaffold restoration.
@@ -939,9 +940,7 @@ function restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomId
 
   const oppositionWeight = 1000;
   for (const centerId of componentAtomIds) {
-    if (mol.__reactionPreview.editedProductAtomIds.has(centerId)) {
-      continue;
-    }
+    const centerEdited = mol.__reactionPreview.editedProductAtomIds.has(centerId);
     const center = mol.atoms.get(centerId);
     if (!center || center.name !== 'C' || center.x == null || center.y == null || center.isInRing(mol)) {
       continue;
@@ -979,6 +978,12 @@ function restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomId
       continue;
     }
     const anchor = anchors[0];
+    if (centerEdited) {
+      const anchorHeavyNeighborCount = anchor.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H').length;
+      if (!_TERMINAL_HETEROATOMS.has(anchor.atom.name) || anchorHeavyNeighborCount !== 1 || terminalCarbonLeaves.some(leaf => mol.__reactionPreview.editedProductAtomIds.has(leaf.atom.id))) {
+        continue;
+      }
+    }
     const anchorIsolated = isolatedSnapshot.get(anchor.atom.id);
     if (!anchorIsolated) {
       continue;
@@ -1251,6 +1256,188 @@ function restoreReaction2dCompactBridgedCagesFromIsolated(mol, componentAtomIds,
       !(restoredShape.score < currentShape.score * 0.85) ||
       restoredStats.maxBond > maxAllowedBond ||
       (Number.isFinite(restoredStats.minNonbonded) && restoredStats.minNonbonded < minAllowedNonbonded)
+    ) {
+      restoreReaction2dCoords(mol, beforeSnapshot);
+    }
+  }
+}
+
+/**
+ * Restores edited product ring systems from the fitted isolated product layout
+ * when reaction alignment or scaffold snapping stretches a newly formed ring.
+ * This is intentionally gated by ring-shape improvement so normal retained
+ * scaffold preservation still wins for readable rings.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {Map<string, {x: number, y: number}>} isolatedSnapshot - Fitted isolated-product coords.
+ * @param {number} bondLength - Target bond length.
+ * @param {object|null} [layoutGraph] - Optional cached layout graph for this preview topology.
+ * @returns {void}
+ */
+function restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, isolatedSnapshot, bondLength = 1.5, layoutGraph = null) {
+  if (!mol || !componentAtomIds?.size || !isolatedSnapshot?.size) {
+    return;
+  }
+
+  const graph = layoutGraph ?? createLayoutGraph(mol, { suppressH: true, bondLength });
+  const mappedProductIds = new Set((mol.__reactionPreview.mappedAtomPairs ?? []).map(([, productId]) => productId));
+  for (const ringSystem of graph.ringSystems ?? []) {
+    if (!ringSystem?.atomIds?.length || !ringSystem.atomIds.every(atomId => componentAtomIds.has(atomId))) {
+      continue;
+    }
+    const editedRingSystem = ringSystem.atomIds.some(atomId => mol.__reactionPreview.editedProductAtomIds.has(atomId) || !mappedProductIds.has(atomId));
+    if (!editedRingSystem) {
+      continue;
+    }
+    const rings = ringSystem.ringIds.map(ringId => graph.ringById.get(ringId)).filter(Boolean);
+    if (rings.length === 0) {
+      continue;
+    }
+
+    const currentShape = reaction2dRingSystemShapeScore(mol, rings, null, bondLength);
+    const isolatedShape = reaction2dRingSystemShapeScore(mol, rings, isolatedSnapshot, bondLength);
+    const currentHasPinch = currentShape.minAngle < (66 * Math.PI) / 180 || currentShape.maxBondDeviation > bondLength * 0.3 || currentShape.maxAngle > (162 * Math.PI) / 180;
+    const isolatedIsReadable = isolatedShape.minAngle > (64 * Math.PI) / 180 && isolatedShape.maxAngle < (158 * Math.PI) / 180 && isolatedShape.maxBondDeviation < bondLength * 0.24;
+    if (!currentHasPinch || !isolatedIsReadable || !(isolatedShape.score < currentShape.score * 0.8 || isolatedShape.maxBondDeviation < currentShape.maxBondDeviation * 0.5)) {
+      continue;
+    }
+
+    const restoreAtomIds = new Set([...componentAtomIds].filter(atomId => isolatedSnapshot.has(atomId)));
+    const beforeSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
+    const currentStats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
+    for (const atomId of restoreAtomIds) {
+      const atom = mol.atoms.get(atomId);
+      const coords = isolatedSnapshot.get(atomId);
+      if (!atom || !coords) {
+        continue;
+      }
+      atom.x = coords.x;
+      atom.y = coords.y;
+    }
+
+    const restoredShape = reaction2dRingSystemShapeScore(mol, rings, null, bondLength);
+    const restoredStats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
+    const minAllowedNonbonded = Number.isFinite(currentStats.minNonbonded) ? Math.min(currentStats.minNonbonded, bondLength * 0.48) - bondLength * 0.04 : bondLength * 0.42;
+    const restoredWorsensMaxBond = restoredStats.maxBond > Math.max(currentStats.maxBond + bondLength * 0.05, bondLength * 2.05);
+    const restoredCreatesOverlap = Number.isFinite(restoredStats.minNonbonded) && restoredStats.minNonbonded < minAllowedNonbonded;
+    if (
+      !(restoredShape.score < currentShape.score || restoredShape.maxBondDeviation < currentShape.maxBondDeviation * 0.5) ||
+      restoredShape.maxBondDeviation > bondLength * 0.24 ||
+      restoredWorsensMaxBond ||
+      restoredCreatesOverlap
+    ) {
+      restoreReaction2dCoords(mol, beforeSnapshot);
+    }
+  }
+}
+
+function reaction2dMaxCenterBondDeviation(mol, center, infos, snapshot, bondLength = 1.5) {
+  const centerPosition = reaction2dPositionFromSnapshot(mol, snapshot, center?.id);
+  if (!centerPosition || !infos?.length) {
+    return Infinity;
+  }
+
+  let maxDeviation = 0;
+  for (const info of infos) {
+    const position = reaction2dPositionFromSnapshot(mol, snapshot, info.atom.id);
+    if (!position) {
+      return Infinity;
+    }
+    const distance = Math.hypot(position.x - centerPosition.x, position.y - centerPosition.y);
+    maxDeviation = Math.max(maxDeviation, Math.abs(distance - scaledReaction2dBondLength(info.order, bondLength)));
+  }
+  return maxDeviation;
+}
+
+/**
+ * Restores edited ring-embedded sulfoxide centers from the isolated product
+ * layout when retained-scaffold snapping collapses the sulfur ring corner or
+ * stretches the newly added oxo ligand.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {Map<string, {x: number, y: number}>} isolatedSnapshot - Fitted isolated-product coords.
+ * @param {number} bondLength - Target bond length.
+ * @param {object|null} [layoutGraph] - Optional cached layout graph for this preview topology.
+ * @returns {void}
+ */
+function restoreReaction2dEditedRingSulfoxidesFromIsolated(mol, componentAtomIds, isolatedSnapshot, bondLength = 1.5, layoutGraph = null) {
+  if (!mol || !componentAtomIds?.size || !isolatedSnapshot?.size) {
+    return;
+  }
+
+  const graph = layoutGraph ?? createLayoutGraph(mol, { suppressH: true, bondLength });
+  for (const centerId of componentAtomIds) {
+    if (!mol.__reactionPreview.editedProductAtomIds.has(centerId)) {
+      continue;
+    }
+    const center = mol.atoms.get(centerId);
+    if (!center || center.name !== 'S' || !center.isInRing(mol) || center.x == null || center.y == null) {
+      continue;
+    }
+
+    const infos = center
+      .getNeighbors(mol)
+      .filter(atom => componentAtomIds.has(atom.id) && atom.name !== 'H' && atom.x != null && atom.y != null)
+      .map(atom => ({
+        atom,
+        order: mol.getBond(center.id, atom.id)?.properties.order ?? 1
+      }));
+    const ringNeighbors = infos.filter(info => info.order === 1 && info.atom.isInRing(mol));
+    const terminalOxos = infos.filter(info => info.order >= 2 && info.atom.name === 'O' && info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H').length === 1);
+    if (infos.length !== 3 || ringNeighbors.length !== 2 || terminalOxos.length !== 1) {
+      continue;
+    }
+
+    const ringSystemId = graph.atomToRingSystemId?.get(center.id);
+    const ringSystem = ringSystemId ? graph.ringSystemById?.get(ringSystemId) : null;
+    if (!ringSystem || !ringSystem.atomIds?.every(atomId => componentAtomIds.has(atomId))) {
+      continue;
+    }
+    const rings = ringSystem.ringIds.map(ringId => graph.ringById.get(ringId)).filter(Boolean);
+    if (rings.length === 0) {
+      continue;
+    }
+
+    const currentShape = reaction2dRingSystemShapeScore(mol, rings, null, bondLength);
+    const isolatedShape = reaction2dRingSystemShapeScore(mol, rings, isolatedSnapshot, bondLength);
+    const currentLocalDeviation = reaction2dMaxCenterBondDeviation(mol, center, infos, null, bondLength);
+    const isolatedLocalDeviation = reaction2dMaxCenterBondDeviation(mol, center, infos, isolatedSnapshot, bondLength);
+    const currentHasPinch = currentShape.minAngle < (70 * Math.PI) / 180 || currentShape.maxBondDeviation > bondLength * 0.28 || currentLocalDeviation > bondLength * 0.35;
+    const isolatedIsReadable =
+      isolatedShape.minAngle > (68 * Math.PI) / 180 &&
+      isolatedShape.maxAngle < (155 * Math.PI) / 180 &&
+      isolatedShape.maxBondDeviation < bondLength * 0.35 &&
+      isolatedLocalDeviation < bondLength * 0.35;
+    if (!currentHasPinch || !isolatedIsReadable || !(isolatedShape.score < currentShape.score * 0.85 || isolatedLocalDeviation < currentLocalDeviation * 0.5)) {
+      continue;
+    }
+
+    const restoreAtomIds = new Set([...componentAtomIds].filter(atomId => isolatedSnapshot.has(atomId)));
+
+    const beforeSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
+    const currentStats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
+    for (const atomId of restoreAtomIds) {
+      const atom = mol.atoms.get(atomId);
+      const coords = isolatedSnapshot.get(atomId);
+      if (!atom || !coords) {
+        continue;
+      }
+      atom.x = coords.x;
+      atom.y = coords.y;
+    }
+
+    const restoredShape = reaction2dRingSystemShapeScore(mol, rings, null, bondLength);
+    const restoredLocalDeviation = reaction2dMaxCenterBondDeviation(mol, center, infos, null, bondLength);
+    const restoredStats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
+    const minAllowedNonbonded = Number.isFinite(currentStats.minNonbonded) ? Math.min(currentStats.minNonbonded, bondLength * 0.48) - bondLength * 0.04 : bondLength * 0.42;
+    const restoredWorsensMaxBond = restoredStats.maxBond > Math.max(currentStats.maxBond + bondLength * 0.05, bondLength * 2.05);
+    const restoredCreatesOverlap = Number.isFinite(restoredStats.minNonbonded) && restoredStats.minNonbonded < minAllowedNonbonded;
+    if (
+      !(restoredShape.score < currentShape.score || restoredLocalDeviation < currentLocalDeviation * 0.5) ||
+      restoredLocalDeviation >= currentLocalDeviation - 1e-6 ||
+      restoredLocalDeviation > bondLength * 0.35 ||
+      restoredWorsensMaxBond ||
+      restoredCreatesOverlap
     ) {
       restoreReaction2dCoords(mol, beforeSnapshot);
     }
@@ -3865,6 +4052,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
       restoreMappedReaction2dRetainedScaffoldCoords(mol, componentAtomIds);
       restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength);
       restoreReaction2dCompactBridgedCagesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
+      restoreReaction2dEditedRingSulfoxidesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
       idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bondLength);
       idealizeReaction2dEditedSaturatedRingAnchorFans(mol, componentAtomIds, bondLength);
     }
@@ -3873,6 +4061,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
       idealizeReaction2dEditedTwoHeavyImineCenters(mol, componentAtomIds, bondLength);
       idealizeReaction2dTerminalAlkylContinuations(mol, componentAtomIds, bondLength);
     }
+    restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     idealizeReaction2dEditedSaturatedHalogenFans(mol, componentAtomIds, bondLength);
     finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
     finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
@@ -3880,9 +4069,12 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAtomIds, bondLength);
     restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength);
     restoreReaction2dCompactBridgedCagesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
+    restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
+    restoreReaction2dEditedRingSulfoxidesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
     finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAtomIds, bondLength);
+    restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
     reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
 
