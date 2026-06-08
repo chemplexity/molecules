@@ -81,7 +81,10 @@ describe('layout/engine/cleanup/ligand-angle-tidy', () => {
     const separations = metalLigandSeparations(corrected.coords, 'Pt5', ['O6', 'N11', 'N2', 'O10']);
 
     assert.ok(corrected.nudges >= 1);
-    assert.ok(Math.min(...separations) > (80 * Math.PI) / 180, `expected terminal ligands to clear the acute chelate fan, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
+    assert.ok(
+      Math.min(...separations) > (80 * Math.PI) / 180,
+      `expected terminal ligands to clear the acute chelate fan, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
+    );
     assert.ok(Math.max(...separations) < (115 * Math.PI) / 180, `expected chelate fan to stay balanced, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
     assert.ok(Math.abs(distance(corrected.coords.get('Pt5'), corrected.coords.get('N2')) - graph.options.bondLength) < 1e-9);
     assert.ok(Math.abs(distance(corrected.coords.get('Pt5'), corrected.coords.get('N11')) - graph.options.bondLength) < 1e-9);

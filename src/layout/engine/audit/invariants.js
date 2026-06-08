@@ -2475,15 +2475,15 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
   const visibleAtomIds = options.visibleAtomIds ?? null;
   const queryRadiusSquared = queryRadius > 0 ? queryRadius * queryRadius : null;
   if (atomGrid) {
-    const visibleAtomIdList = visibleAtomIds ? (Array.isArray(visibleAtomIds) ? visibleAtomIds : [...visibleAtomIds]) : null;
-    const canUseGridOrder = atomGrid.atomOrderById instanceof Map && (!visibleAtomIdList || options.visibleAtomIdsMatchGrid === true);
+    const canUseGridOrder = atomGrid.atomOrderById instanceof Map && (!visibleAtomIds || options.visibleAtomIdsMatchGrid === true);
+    const visibleAtomIdList = visibleAtomIds && !canUseGridOrder ? (Array.isArray(visibleAtomIds) ? visibleAtomIds : [...visibleAtomIds]) : null;
     const atomOrderById = canUseGridOrder ? atomGrid.atomOrderById : visibleAtomOrderById(layoutGraph, coords, visibleAtomIdList);
     const pairs = [];
 
-    const firstAtomEntries = visibleAtomIdList ?? coords;
+    const firstAtomEntries = canUseGridOrder ? atomGrid.atomOrderById.keys() : (visibleAtomIdList ?? coords);
     for (const entry of firstAtomEntries) {
-      const firstAtomId = visibleAtomIdList ? entry : entry[0];
-      const firstPosition = visibleAtomIdList ? coords.get(firstAtomId) : entry[1];
+      const firstAtomId = canUseGridOrder || visibleAtomIdList ? entry : entry[0];
+      const firstPosition = canUseGridOrder || visibleAtomIdList ? coords.get(firstAtomId) : entry[1];
       const firstOrder = atomOrderById.get(firstAtomId);
       if (!firstPosition || firstOrder == null) {
         continue;
@@ -2553,13 +2553,13 @@ function visitNonbondedPairs(layoutGraph, coords, visitPair, atomGrid = null, qu
   const visibleAtomIds = options.visibleAtomIds ?? null;
   const queryRadiusSquared = queryRadius > 0 ? queryRadius * queryRadius : null;
   if (atomGrid) {
-    const visibleAtomIdList = visibleAtomIds ? (Array.isArray(visibleAtomIds) ? visibleAtomIds : [...visibleAtomIds]) : null;
-    const canUseGridOrder = atomGrid.atomOrderById instanceof Map && (!visibleAtomIdList || options.visibleAtomIdsMatchGrid === true);
+    const canUseGridOrder = atomGrid.atomOrderById instanceof Map && (!visibleAtomIds || options.visibleAtomIdsMatchGrid === true);
+    const visibleAtomIdList = visibleAtomIds && !canUseGridOrder ? (Array.isArray(visibleAtomIds) ? visibleAtomIds : [...visibleAtomIds]) : null;
     const atomOrderById = canUseGridOrder ? atomGrid.atomOrderById : visibleAtomOrderById(layoutGraph, coords, visibleAtomIdList);
-    const firstAtomEntries = visibleAtomIdList ?? coords;
+    const firstAtomEntries = canUseGridOrder ? atomGrid.atomOrderById.keys() : (visibleAtomIdList ?? coords);
     for (const entry of firstAtomEntries) {
-      const firstAtomId = visibleAtomIdList ? entry : entry[0];
-      const firstPosition = visibleAtomIdList ? coords.get(firstAtomId) : entry[1];
+      const firstAtomId = canUseGridOrder || visibleAtomIdList ? entry : entry[0];
+      const firstPosition = canUseGridOrder || visibleAtomIdList ? coords.get(firstAtomId) : entry[1];
       const firstOrder = atomOrderById.get(firstAtomId);
       if (!firstPosition || firstOrder == null) {
         continue;
@@ -4905,8 +4905,7 @@ export function countSevereOverlapsMatching(layoutGraph, coords, bondLength, mat
   return countNonbondedPairs(
     layoutGraph,
     coords,
-    (firstAtomId, secondAtomId, distance) =>
-      isSevereOverlapPair(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength, threshold) && matchPair(firstAtomId, secondAtomId, distance),
+    (firstAtomId, secondAtomId, distance) => isSevereOverlapPair(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength, threshold) && matchPair(firstAtomId, secondAtomId, distance),
     atomGrid,
     threshold,
     {
@@ -4980,8 +4979,7 @@ export function hasSevereOverlapMatching(layoutGraph, coords, bondLength, matchP
   return someNonbondedPair(
     layoutGraph,
     coords,
-    (firstAtomId, secondAtomId, distance) =>
-      isSevereOverlapPair(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength, threshold) && matchPair(firstAtomId, secondAtomId, distance),
+    (firstAtomId, secondAtomId, distance) => isSevereOverlapPair(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength, threshold) && matchPair(firstAtomId, secondAtomId, distance),
     atomGrid,
     threshold,
     {
@@ -5014,8 +5012,7 @@ export function findSevereOverlapsMatching(layoutGraph, coords, bondLength, matc
   return collectNonbondedPairs(
     layoutGraph,
     coords,
-    (firstAtomId, secondAtomId, distance) =>
-      isSevereOverlapPair(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength, threshold) && matchPair(firstAtomId, secondAtomId, distance),
+    (firstAtomId, secondAtomId, distance) => isSevereOverlapPair(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength, threshold) && matchPair(firstAtomId, secondAtomId, distance),
     atomGrid,
     threshold,
     {

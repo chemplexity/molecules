@@ -129,15 +129,7 @@ const ROTATION_STEPS = [
   (-5 * Math.PI) / 6,
   Math.PI
 ];
-const COMPACT_RESIDUAL_ROTATION_STEPS = [
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2,
-  Math.PI
-];
+const COMPACT_RESIDUAL_ROTATION_STEPS = [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, Math.PI];
 
 function visibleHeavyAtomCount(layoutGraph, atomIds) {
   let count = 0;
@@ -903,18 +895,24 @@ function descriptorCanResolveCurrentCrossings(currentScore, descriptor) {
   return currentScore.crossings.every(crossing => crossingTouchesDescriptor(crossing, descriptor));
 }
 
-function localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid) {
+function visitLocalSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid, visit) {
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  const overlaps = [];
   const seenPairs = new Set();
+  let found = false;
 
   for (const atomId of descriptor.subtreeAtomIds) {
+    if (found) {
+      return true;
+    }
     const atom = layoutGraph.atoms.get(atomId);
     const atomPosition = coords.get(atomId);
     if (!atomPosition || atom?.element === 'H') {
       continue;
     }
     atomGrid.forEachRadius(atomPosition, threshold, otherAtomId => {
+      if (found) {
+        return;
+      }
       if (descriptor.subtreeAtomIdSet.has(otherAtomId)) {
         return;
       }
@@ -930,28 +928,32 @@ function localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondL
       seenPairs.add(pairKey);
       const atomDistance = Math.hypot(otherPosition.x - atomPosition.x, otherPosition.y - atomPosition.y);
       if (atomDistance < threshold) {
-        overlaps.push({ firstAtomId: atomId, secondAtomId: otherAtomId, distance: atomDistance });
+        if (visit(atomId, otherAtomId, atomDistance) === true) {
+          found = true;
+        }
       }
     });
   }
 
-  return overlaps;
+  return found;
 }
 
 function localSevereOverlapScoreForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid) {
-  const overlaps = localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid);
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  let severeOverlapCount = 0;
   let penalty = 0;
   let minDistance = Number.POSITIVE_INFINITY;
-  for (const overlap of overlaps) {
-    const deficit = Math.max(0, threshold - overlap.distance);
+  visitLocalSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid, (_firstAtomId, _secondAtomId, distance) => {
+    severeOverlapCount++;
+    const deficit = Math.max(0, threshold - distance);
     penalty += deficit * deficit;
-    minDistance = Math.min(minDistance, overlap.distance);
-  }
+    minDistance = Math.min(minDistance, distance);
+    return false;
+  });
   return {
-    severeOverlapCount: overlaps.length,
+    severeOverlapCount,
     severeOverlapPenalty: penalty,
-    minSevereOverlapDistance: overlaps.length > 0 ? minDistance : null
+    minSevereOverlapDistance: severeOverlapCount > 0 ? minDistance : null
   };
 }
 
@@ -1004,7 +1006,7 @@ function localCandidateHasNoResiduals(layoutGraph, coords, descriptor, currentSc
   if (!descriptorCanResolveCurrentCrossings(currentScore, descriptor)) {
     return false;
   }
-  if (localSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid).length > 0) {
+  if (visitLocalSevereOverlapsForDescriptor(layoutGraph, coords, descriptor, bondLength, atomGrid, () => true)) {
     return false;
   }
   return countVisibleHeavyBondCrossings(layoutGraph, coords, { focusAtomIds: descriptor.subtreeAtomIdSet }) === 0;

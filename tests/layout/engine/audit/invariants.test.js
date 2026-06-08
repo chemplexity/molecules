@@ -51,13 +51,22 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(overlaps[0].secondAtomId, 'a2');
     assert.deepEqual([...collectSevereOverlapAtomIds(graph, coords, 1.5)], ['a0', 'a2']);
     assert.equal(countSevereOverlaps(graph, coords, 1.5), overlaps.length);
-    assert.equal(countSevereOverlapsMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'), 1);
+    assert.equal(
+      countSevereOverlapsMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'),
+      1
+    );
     assert.deepEqual(
       findSevereOverlapsMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'),
       overlaps
     );
-    assert.equal(hasSevereOverlapMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'), true);
-    assert.equal(hasSevereOverlapMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a1' || secondAtomId === 'a1'), false);
+    assert.equal(
+      hasSevereOverlapMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a0' && secondAtomId === 'a2'),
+      true
+    );
+    assert.equal(
+      hasSevereOverlapMatching(graph, coords, 1.5, (firstAtomId, secondAtomId) => firstAtomId === 'a1' || secondAtomId === 'a1'),
+      false
+    );
     assert.equal(hasSevereOverlaps(graph, coords, 1.5), true);
 
     const cleanCoords = new Map(coords);

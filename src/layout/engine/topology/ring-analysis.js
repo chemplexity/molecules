@@ -27,7 +27,6 @@ function moleculeTopologyVersion(molecule) {
   return Number.isInteger(molecule?._topologyVersion) ? molecule._topologyVersion : null;
 }
 
-
 /**
  * Finds the shortest cycle containing a bond by removing the bond and finding
  * the shortest path between its endpoints.

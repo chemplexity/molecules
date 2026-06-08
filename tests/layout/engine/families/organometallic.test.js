@@ -124,8 +124,14 @@ describe('layout/engine/families/organometallic', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
-    assert.ok(Math.min(...separations) > (80 * Math.PI) / 180, `expected Pt ligands to avoid acute chelate-pocket angles, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
-    assert.ok(Math.max(...separations) < (115 * Math.PI) / 180, `expected Pt ligands to stay balanced around the chelate pocket, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
+    assert.ok(
+      Math.min(...separations) > (80 * Math.PI) / 180,
+      `expected Pt ligands to avoid acute chelate-pocket angles, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      Math.max(...separations) < (115 * Math.PI) / 180,
+      `expected Pt ligands to stay balanced around the chelate pocket, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
+    );
   });
 
   it('keeps generic four-coordinate metals on a neutral diamond fallback', () => {

@@ -1,7 +1,15 @@
 # Change Log
 
+## 2026-06-07
+
+- Open remaining peptide divalent kinks with a bounded side-branch lane adjustment after large-molecule terminal fan polish.
+- Keep oxime/methyl substituents on saturated five-member ring anchors in balanced exterior slots instead of treating oxime roots like centered carbonyl exits, fixing a pinched C4 fan.
+- Stream descriptor-local severe-overlap scoring in large-molecule residual retouch and use count-only visible-heavy guards in final layout retouches to avoid temporary arrays in hot candidate paths.
+- Let grid-backed nonbonded overlap scans iterate the grid's cached atom order when the visible-atom scope matches, avoiding repeated visible-id normalization during cleanup/audit scoring.
+
 ## 2026-06-06
 
+- Bump package metadata to 2026.6.6 and refresh allowed dev dependency patch/minor lockfile updates during daily maintenance.
 - Restore pinched edited product rings from isolated reaction-preview layouts after final geometry cleanup so ring sulfoxides and intramolecular esterification lactones keep compact bonds and open angles.
 - Add reaction-preview regressions for ring sulfoxide scaffold snapping and intramolecular esterification lactone ring formation.
 - Keep ester-cleavage tert-butyl alcohol preview products open by restoring edited tertiary alcohol fans from the isolated product layout after scaffold snapping.

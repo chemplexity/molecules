@@ -574,4 +574,3 @@ export function serializeComponent(mol, sortFn = null) {
 
   return emit(startId);
 }
-

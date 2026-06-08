@@ -5202,7 +5202,7 @@ function shouldTryMetalChelateMacrocycleBridgedRescue(layoutGraph, ringSystem, r
     return false;
   }
 
-  const chelateConnections = layoutGraph.ringConnectionsByRingSystemId?.get(ringSystem.id) ?? (layoutGraph.ringConnections ?? []);
+  const chelateConnections = layoutGraph.ringConnectionsByRingSystemId?.get(ringSystem.id) ?? layoutGraph.ringConnections ?? [];
   const bridgedChelateConnectionCount = chelateConnections.filter(connection => connection.kind === 'bridged').length;
   const metalChelateRingCount = rings.filter(ring => ring.atomIds.some(atomId => isChelateMacrocycleCenterAtom(layoutGraph.atoms.get(atomId)))).length;
   return bridgedChelateConnectionCount >= 3 && metalChelateRingCount >= 3;

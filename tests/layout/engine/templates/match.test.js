@@ -312,7 +312,10 @@ describe('layout/engine/templates/match', () => {
     assert.equal(phenolicOxazaMorphinanMatch.id, 'phenolic-oxaza-morphinan-core');
 
     const pyridylPhenolicOxazaMorphinanGraph = createLayoutGraph(parseSMILES('Oc1ccc2C[C@H]3N(CC=C)CC[C@@]45[C@@H](Oc1c24)c6ncc(cc6C[C@@]35O)c7ccc(Cl)cc7'), { suppressH: true });
-    const pyridylPhenolicOxazaMorphinanMatch = findTemplateMatch(pyridylPhenolicOxazaMorphinanGraph, buildRingCandidate(pyridylPhenolicOxazaMorphinanGraph, pyridylPhenolicOxazaMorphinanGraph.ringSystems[0], 'bridged'));
+    const pyridylPhenolicOxazaMorphinanMatch = findTemplateMatch(
+      pyridylPhenolicOxazaMorphinanGraph,
+      buildRingCandidate(pyridylPhenolicOxazaMorphinanGraph, pyridylPhenolicOxazaMorphinanGraph.ringSystems[0], 'bridged')
+    );
     assert.equal(pyridylPhenolicOxazaMorphinanMatch.id, 'pyridyl-phenolic-oxaza-morphinan-core');
 
     const cagedHydroxyLactoneGraph = createLayoutGraph(parseSMILES('[H][C@@]12C[C@@]3(CC1=C)[C@@]([H])(CC2)[C@@]12CC[C@]([H])(O)[C@@](C)(C(=O)O1)[C@@]2([H])[C@]3([H])C(O)=O'), { suppressH: true });

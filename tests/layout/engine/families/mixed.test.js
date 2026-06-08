@@ -1618,6 +1618,36 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the saturated-ring exterior fan penalty to be clean');
   });
 
+  it('fans saturated-ring oxime and methyl exits across five-member exterior slots', () => {
+    const result = runPipeline(parseSMILES('CC1CC(C)(C=NO)C(C2CCC2)C1C#C'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const anchorAtomId = 'C4';
+    const anchorPosition = result.coords.get(anchorAtomId);
+    const ringNeighborAngles = ['C9', 'C3'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
+    const exocyclicAngles = ['C5', 'C6'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const alignedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1]));
+    const swappedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0]));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, anchorAtomId, graph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      separations[0] > (4 * Math.PI) / 9,
+      `expected the C4 oxime/methyl fan to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      Math.min(alignedDeviation, swappedDeviation) < 1e-6,
+      `expected the oxime and methyl exits to occupy the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C6', 'C4', 'N7') - (2 * Math.PI) / 3) < 1e-6, 'expected the oxime root bend to stay trigonal');
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'N7', 'C6', 'O8') - (2 * Math.PI) / 3) < 1e-6, 'expected the oxime hydroxyl bend to stay trigonal');
+    assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the saturated-ring exterior fan penalty to be clean');
+  });
+
   it('centers geminal carbonyl roots on saturated ring exterior exits', () => {
     const smiles = 'CC1(C(=O)OC)CCCCC1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

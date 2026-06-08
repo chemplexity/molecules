@@ -334,6 +334,11 @@ const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze([5, 8, 10, 12,
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 40;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
+const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_MAX_DEVIATION = 0.06;
+const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MAX_TOTAL_INCREASE = 0.08;
+const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_DEVIATION_GAIN = 0.04;
+const FINAL_LARGE_MOLECULE_DIVALENT_LANE_MAX_MOVED_HEAVY_ATOMS = 40;
+const FINAL_LARGE_MOLECULE_DIVALENT_LANE_BRANCH_ROTATIONS = Object.freeze([5, 8, 10, 12, 15, 20, 25, 30].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_ROTATIONS = Object.freeze([30, -30, 45, -45, 60, -60].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MAX_PASSES = 2;
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_PATH_LENGTH = 18;
@@ -2995,7 +3000,7 @@ function finalSulfonylOxatricycloLactoneDescriptor(layoutGraph, coords, baseAudi
     (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_SULFONYL_OXATRICYCLO_LACTONE_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_SULFONYL_OXATRICYCLO_LACTONE_MAX_HEAVY_ATOMS
   ) {
     return null;
   }
@@ -3377,7 +3382,7 @@ function compactBridgedRemoteTwoAtomPathDescriptors(layoutGraph, coords, placeme
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
     (baseAudit.visibleHeavyBondCrossingCount ?? 0) > FINAL_COMPACT_BRIDGED_REMOTE_TWO_ATOM_PATH_MAX_CROSSINGS ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_COMPACT_BRIDGED_REMOTE_TWO_ATOM_PATH_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_COMPACT_BRIDGED_REMOTE_TWO_ATOM_PATH_MAX_HEAVY_ATOMS
   ) {
     return [];
   }
@@ -3626,7 +3631,7 @@ function pairedBridgedHingeBondFailures(layoutGraph, coords, placement, bondLeng
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
     (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 3 ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_PAIRED_BRIDGED_HINGE_BOND_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_PAIRED_BRIDGED_HINGE_BOND_MAX_HEAVY_ATOMS
   ) {
     return [];
   }
@@ -3830,7 +3835,7 @@ function pairedStretchedBridgedRingBondDescriptors(layoutGraph, coords, placemen
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
     (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 3 ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_PAIRED_STRETCHED_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_PAIRED_STRETCHED_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
   ) {
     return [];
   }
@@ -3977,7 +3982,7 @@ function stretchedBridgedRingBondDescriptors(layoutGraph, coords, placement, bon
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
     (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 3 ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_STRETCHED_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_STRETCHED_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
   ) {
     return [];
   }
@@ -4213,7 +4218,7 @@ function organometallicMildBridgedRingBondDescriptors(layoutGraph, coords, place
     (baseAudit.visibleHeavyBondCrossingCount ?? 0) !== 0 ||
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_ORGANOMETALLIC_MILD_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_ORGANOMETALLIC_MILD_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
   ) {
     return [];
   }
@@ -4605,6 +4610,24 @@ function finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, incumbentS
 }
 
 /**
+ * Returns whether an angle-relief candidate beats the incumbent candidate,
+ * using score first and total movement as the stable tie-breaker.
+ * @param {{totalMove: number}} candidate - Candidate move summary.
+ * @param {{totalDeviation: number, maxDeviation: number}} candidateScore - Candidate angle score.
+ * @param {{totalMove: number, score: {totalDeviation: number, maxDeviation: number}}|null} incumbentCandidate - Current best candidate.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function finalLargeMoleculeAngleReliefCandidateIsBetter(candidate, candidateScore, incumbentCandidate) {
+  return (
+    !incumbentCandidate ||
+    finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, incumbentCandidate.score) ||
+    (Math.abs(candidateScore.maxDeviation - incumbentCandidate.score.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+      Math.abs(candidateScore.totalDeviation - incumbentCandidate.score.totalDeviation) <= PRESENTATION_METRIC_EPSILON &&
+      candidate.totalMove < incumbentCandidate.totalMove - PRESENTATION_METRIC_EPSILON)
+  );
+}
+
+/**
  * Returns whether one atom has enough focused angle distortion to search.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
@@ -4660,6 +4683,61 @@ function rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, coords, cent
 }
 
 /**
+ * Builds a nested divalent-lane candidate by bending one side of a divalent
+ * center, then rotating one child branch of that side away from the crowded lane.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} centerAtomId - Divalent center atom ID.
+ * @param {string} rootAtomId - Neighbor root moved around the divalent center.
+ * @param {string} branchRootAtomId - Child branch root moved around the neighbor root.
+ * @param {number} centerRotation - Rotation around the divalent center in radians.
+ * @param {number} branchRotation - Secondary branch rotation in radians.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], totalMove: number, rotationMagnitude: number}|null} Candidate or null.
+ */
+function nestedRotatedFinalLargeMoleculeDivalentLaneCandidate(layoutGraph, coords, centerAtomId, rootAtomId, branchRootAtomId, centerRotation, branchRotation) {
+  const primaryCandidate = rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, coords, centerAtomId, rootAtomId, centerRotation);
+  if (!primaryCandidate || rootAtomId === branchRootAtomId || Math.abs(branchRotation) <= PRESENTATION_METRIC_EPSILON) {
+    return primaryCandidate;
+  }
+
+  const rootPosition = primaryCandidate.coords.get(rootAtomId);
+  if (!rootPosition) {
+    return null;
+  }
+  const branchSubtreeAtomIds = [...collectCutSubtree(layoutGraph, branchRootAtomId, rootAtomId)].filter(atomId => primaryCandidate.coords.has(atomId));
+  if (branchSubtreeAtomIds.length === 0 || branchSubtreeAtomIds.includes(rootAtomId) || branchSubtreeAtomIds.includes(centerAtomId)) {
+    return null;
+  }
+  for (const atomId of branchSubtreeAtomIds) {
+    if (layoutGraph.fixedCoords?.has(atomId)) {
+      return null;
+    }
+  }
+
+  const candidateCoords = cloneCoords(primaryCandidate.coords);
+  const movedAtomIds = new Set(primaryCandidate.movedAtomIds);
+  for (const atomId of branchSubtreeAtomIds) {
+    const position = primaryCandidate.coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, add(rootPosition, rotate(sub(position, rootPosition), branchRotation)));
+    movedAtomIds.add(atomId);
+  }
+
+  let totalMove = 0;
+  for (const atomId of movedAtomIds) {
+    const before = coords.get(atomId);
+    const after = candidateCoords.get(atomId);
+    if (before && after) {
+      totalMove += Math.hypot(after.x - before.x, after.y - before.y);
+    }
+  }
+
+  return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, movedAtomIds: [...movedAtomIds], totalMove, rotationMagnitude: Math.abs(centerRotation) + Math.abs(branchRotation) } : null;
+}
+
+/**
  * Builds small-rotation descriptors for distorted large-molecule angle centers.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
@@ -4679,6 +4757,95 @@ function finalLargeMoleculeAngleReliefDescriptors(layoutGraph, coords) {
     }
   }
   return descriptors;
+}
+
+/**
+ * Retouches a remaining divalent peptide lane by pairing a small center bend
+ * with a child-branch swing on the moved side.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} currentAudit - Current final audit summary.
+ * @param {{totalDeviation: number, maxDeviation: number}} currentScore - Current angle score.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object, score: object}} Retouch result.
+ */
+function maybeRetouchFinalLargeMoleculeDivalentLaneRelief(molecule, layoutGraph, coords, currentAudit, currentScore, placement, bondLength) {
+  let bestCandidate = null;
+  for (const atomId of coords.keys()) {
+    const focusAtomIds = new Set([atomId]);
+    const baseFocusedDivalent = measureDivalentContinuationDistortion(layoutGraph, coords, { focusAtomIds });
+    if (baseFocusedDivalent.maxDeviation <= FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_MAX_DEVIATION) {
+      continue;
+    }
+    const centerBonds = visibleHeavyCovalentBonds(layoutGraph, coords, atomId).filter(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1);
+    if (centerBonds.length !== 2) {
+      continue;
+    }
+    for (const { neighborAtomId: rootAtomId } of centerBonds) {
+      const branchBonds = visibleHeavyCovalentBonds(layoutGraph, coords, rootAtomId).filter(({ bond, neighborAtomId }) => neighborAtomId !== atomId && !bond.aromatic && (bond.order ?? 1) === 1);
+      for (const { neighborAtomId: branchRootAtomId } of branchBonds) {
+        for (const centerRotation of FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS) {
+          for (const branchRotation of FINAL_LARGE_MOLECULE_DIVALENT_LANE_BRANCH_ROTATIONS) {
+            const candidate = nestedRotatedFinalLargeMoleculeDivalentLaneCandidate(layoutGraph, coords, atomId, rootAtomId, branchRootAtomId, centerRotation, branchRotation);
+            if (!candidate) {
+              continue;
+            }
+            const movedHeavyAtomCount = candidate.movedAtomIds.reduce((count, movedAtomId) => count + (layoutGraph.atoms.get(movedAtomId)?.element === 'H' ? 0 : 1), 0);
+            if (movedHeavyAtomCount > FINAL_LARGE_MOLECULE_DIVALENT_LANE_MAX_MOVED_HEAVY_ATOMS) {
+              continue;
+            }
+            const candidateFocusedDivalent = measureDivalentContinuationDistortion(layoutGraph, candidate.coords, { focusAtomIds });
+            if (candidateFocusedDivalent.maxDeviation > baseFocusedDivalent.maxDeviation - FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_DEVIATION_GAIN) {
+              continue;
+            }
+            const candidateScore = finalLargeMoleculeAngularReliefScore(layoutGraph, candidate.coords);
+            if (
+              candidateScore.maxDeviation > currentScore.maxDeviation + PRESENTATION_METRIC_EPSILON ||
+              candidateScore.totalDeviation > currentScore.totalDeviation + FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MAX_TOTAL_INCREASE + PRESENTATION_METRIC_EPSILON
+            ) {
+              continue;
+            }
+            const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+            if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+              continue;
+            }
+            const candidateWithFocus = {
+              ...candidate,
+              focusedDivalent: candidateFocusedDivalent,
+              audit: candidateAudit,
+              score: candidateScore
+            };
+            if (
+              !bestCandidate ||
+              candidateFocusedDivalent.maxDeviation < bestCandidate.focusedDivalent.maxDeviation - PRESENTATION_METRIC_EPSILON ||
+              (Math.abs(candidateFocusedDivalent.maxDeviation - bestCandidate.focusedDivalent.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+                finalLargeMoleculeAngleReliefCandidateIsBetter(candidate, candidateScore, bestCandidate))
+            ) {
+              bestCandidate = candidateWithFocus;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return bestCandidate
+    ? {
+        changed: true,
+        coords: bestCandidate.coords,
+        movedAtomIds: bestCandidate.movedAtomIds,
+        audit: bestCandidate.audit,
+        score: bestCandidate.score
+      }
+    : {
+        changed: false,
+        coords,
+        movedAtomIds: [],
+        audit: currentAudit,
+        score: currentScore
+      };
 }
 
 /**
@@ -4818,8 +4985,7 @@ function maybeSpreadFinalLargeMoleculeBackbone(molecule, layoutGraph, finalCoord
         if (
           !bestCandidate ||
           candidateSpread.aspect > bestCandidate.spread.aspect + PRESENTATION_METRIC_EPSILON ||
-          (Math.abs(candidateSpread.aspect - bestCandidate.spread.aspect) <= PRESENTATION_METRIC_EPSILON &&
-            finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, bestCandidate.score))
+          (Math.abs(candidateSpread.aspect - bestCandidate.spread.aspect) <= PRESENTATION_METRIC_EPSILON && finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, bestCandidate.score))
         ) {
           bestCandidate = {
             ...candidate,
@@ -4884,33 +5050,30 @@ function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords
   let changed = false;
   for (let passIndex = 0; passIndex < FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES; passIndex++) {
     let bestCandidate = null;
+    const tryCandidate = candidate => {
+      if (!candidate) {
+        return;
+      }
+      const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+      if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+        return;
+      }
+      const candidateScore = finalLargeMoleculeAngularReliefScore(layoutGraph, candidate.coords);
+      if (!finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, currentScore)) {
+        return;
+      }
+      if (!finalLargeMoleculeAngleReliefCandidateIsBetter(candidate, candidateScore, bestCandidate)) {
+        return;
+      }
+      bestCandidate = {
+        ...candidate,
+        audit: candidateAudit,
+        score: candidateScore
+      };
+    };
     for (const descriptor of finalLargeMoleculeAngleReliefDescriptors(layoutGraph, currentCoords)) {
       for (const rotation of FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS) {
-        const candidate = rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, currentCoords, descriptor.centerAtomId, descriptor.rootAtomId, rotation);
-        if (!candidate) {
-          continue;
-        }
-        const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
-        if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
-          continue;
-        }
-        const candidateScore = finalLargeMoleculeAngularReliefScore(layoutGraph, candidate.coords);
-        if (!finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, currentScore)) {
-          continue;
-        }
-        if (
-          !bestCandidate ||
-          finalLargeMoleculeAngularReliefScoreIsBetter(candidateScore, bestCandidate.score) ||
-          (Math.abs(candidateScore.maxDeviation - bestCandidate.score.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
-            Math.abs(candidateScore.totalDeviation - bestCandidate.score.totalDeviation) <= PRESENTATION_METRIC_EPSILON &&
-            candidate.totalMove < bestCandidate.totalMove - PRESENTATION_METRIC_EPSILON)
-        ) {
-          bestCandidate = {
-            ...candidate,
-            audit: candidateAudit,
-            score: candidateScore
-          };
-        }
+        tryCandidate(rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, currentCoords, descriptor.centerAtomId, descriptor.rootAtomId, rotation));
       }
     }
     if (!bestCandidate) {
@@ -10152,6 +10315,17 @@ function visibleHeavyAtomIdsForCoords(layoutGraph, coords) {
   });
 }
 
+function visibleHeavyAtomCountForCoords(layoutGraph, coords) {
+  let count = 0;
+  for (const atomId of coords.keys()) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (atom && atom.element !== 'H' && atom.visible !== false) {
+      count++;
+    }
+  }
+  return count;
+}
+
 function exactBridgedTerminalMultipleBondCenterOverlapDescriptors(layoutGraph, coords, bondLength, baseAudit) {
   if (
     (baseAudit?.severeOverlapCount ?? 0) !== 1 ||
@@ -10159,7 +10333,7 @@ function exactBridgedTerminalMultipleBondCenterOverlapDescriptors(layoutGraph, c
     (baseAudit.bondLengthFailureCount ?? 0) !== 0 ||
     (baseAudit.labelOverlapCount ?? 0) !== 0 ||
     (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
-    visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_MAX_HEAVY_ATOMS
+    visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_MAX_HEAVY_ATOMS
   ) {
     return [];
   }
@@ -10546,7 +10720,7 @@ function bridgedSingleOverlapRelaxationDescriptors(layoutGraph, coords, bondLeng
   }
   const aromaticCoreRingSystem = aromaticCoreBridgedSingleOverlapRingSystem(layoutGraph, overlaps[0]);
   const heavyAtomLimit = aromaticCoreRingSystem ? FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_AROMATIC_CORE_MAX_HEAVY_ATOMS : FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_MAX_HEAVY_ATOMS;
-  if (visibleHeavyAtomIdsForCoords(layoutGraph, coords).length > heavyAtomLimit) {
+  if (visibleHeavyAtomCountForCoords(layoutGraph, coords) > heavyAtomLimit) {
     return [];
   }
 
@@ -12826,10 +13000,7 @@ export function runPipeline(molecule, options = {}) {
     orientationApplied = true;
   }
   const deferLandscapeForBackboneSpread = shouldPreferFinalLargeMoleculeBackboneSpread(layoutGraph, familySummary);
-  if (
-    (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) && !deferLandscapeForBackboneSpread) ||
-    shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions, policy, cleanup)
-  ) {
+  if ((shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) && !deferLandscapeForBackboneSpread) || shouldAutoLandscapeLargeDirtyLabelLayout(layoutGraph, normalizedOptions, policy, cleanup)) {
     const landscapeCoords = cloneCoords(finalCoords);
     landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
     if (landscapeApplied) {
@@ -13904,6 +14075,30 @@ export function runPipeline(molecule, options = {}) {
         maxDeviationAfter: postLargeMoleculeTerminalMultipleBondFanRetouch.maxDeviationAfter,
         totalDeviationBefore: postLargeMoleculeTerminalMultipleBondFanRetouch.totalDeviationBefore,
         totalDeviationAfter: postLargeMoleculeTerminalMultipleBondFanRetouch.totalDeviationAfter
+      });
+    }
+    const finalLargeMoleculeDivalentLaneReliefAudit = auditFinalRetouchCoords(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
+    const finalLargeMoleculeDivalentLaneReliefScore = finalLargeMoleculeAngularReliefScore(layoutGraph, finalCoords);
+    const finalLargeMoleculeDivalentLaneRelief = timeFinalRetouch('finalLargeMoleculeDivalentLaneRelief', () =>
+      maybeRetouchFinalLargeMoleculeDivalentLaneRelief(
+        workingMolecule,
+        layoutGraph,
+        finalCoords,
+        finalLargeMoleculeDivalentLaneReliefAudit,
+        finalLargeMoleculeDivalentLaneReliefScore,
+        placement,
+        normalizedOptions.bondLength
+      )
+    );
+    if (finalLargeMoleculeDivalentLaneRelief.changed) {
+      finalCoords = finalLargeMoleculeDivalentLaneRelief.coords;
+      finalCoordsModified = true;
+      onStep?.('Final Large Molecule Divalent Lane Relief', 'Remaining peptide divalent kinks opened with a paired side-branch lane adjustment.', cloneCoords(finalCoords), {
+        movedAtomCount: finalLargeMoleculeDivalentLaneRelief.movedAtomIds.length,
+        maxDeviationBefore: finalLargeMoleculeDivalentLaneReliefScore.maxDeviation,
+        maxDeviationAfter: finalLargeMoleculeDivalentLaneRelief.score.maxDeviation,
+        totalDeviationBefore: finalLargeMoleculeDivalentLaneReliefScore.totalDeviation,
+        totalDeviationAfter: finalLargeMoleculeDivalentLaneRelief.score.totalDeviation
       });
     }
     if (shouldPreferFinalLargeMoleculeBackboneSpread(layoutGraph, familySummary)) {

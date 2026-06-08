@@ -76,6 +76,21 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     }
   });
 
+  it('keeps oxime roots on balanced saturated-ring exterior slots', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC(C)(C=NO)C(C2CCC2)C1C#C'), { suppressH: true });
+    const ringNeighborAngles = [degrees(0), degrees(108)];
+    const targetAngleSets = smallRingExteriorTargetAngleSets(graph, 'C4', ringNeighborAngles, ['C5', 'C6'], 5);
+    const expectedBalancedAngles = [degrees(192), degrees(276)];
+
+    assert.equal(targetAngleSets.length, 2);
+    for (const targetAngleSet of targetAngleSets) {
+      assert.ok(
+        targetAngleSet.every(targetAngle => expectedBalancedAngles.some(expectedAngle => angularDifference(targetAngle, expectedAngle) < 1e-6)),
+        `expected oxime roots to use balanced exterior targets, got ${targetAngleSet.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+      );
+    }
+  });
+
   it('treats visible non-ring trigonal carbons as exact bisector candidates for their last single-bond branch', () => {
     const graph = createLayoutGraph(parseSMILES('CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N'), { suppressH: true });
 

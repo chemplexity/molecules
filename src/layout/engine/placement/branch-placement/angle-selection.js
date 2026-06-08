@@ -26,6 +26,7 @@ import {
 } from './shared.js';
 
 const CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+const PRIORITY_EXTERIOR_MULTIPLE_BOND_ELEMENTS = new Set(['O', 'S', 'Se']);
 const TERMINAL_HALOGEN_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
 const TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR = 0.72;
 const TERMINAL_LEAF_SHARED_JUNCTION_CLEARANCE = Math.PI / 4;
@@ -3374,9 +3375,10 @@ function largerAngularGap(ringNeighborAngles) {
 
 /**
  * Returns whether an exocyclic saturated-ring branch should win the center of
- * the exterior fan over a simple sibling leaf. Carbonyl and alkene-like roots
+ * the exterior fan over a simple sibling leaf. Carbonyl-like chalcogen roots
  * read as directional substituents, so placing them on the exact outward axis
- * is more important than keeping a generic geminal split.
+ * is more important than keeping a generic geminal split. Imine and oxime roots
+ * still use the balanced two-slot fan so their sibling branch does not pinch.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Ring anchor atom ID.
  * @param {string} neighborAtomId - Exocyclic neighbor atom ID.
@@ -3406,7 +3408,7 @@ function isPriorityExteriorRingSubstituent(layoutGraph, anchorAtomId, neighborAt
     }
     const downstreamAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
     const downstreamAtom = layoutGraph.atoms.get(downstreamAtomId);
-    if (downstreamAtom && downstreamAtom.element !== 'H' && downstreamAtom.element !== 'C' && !layoutGraph.ringAtomIdSet.has(downstreamAtomId)) {
+    if (downstreamAtom && PRIORITY_EXTERIOR_MULTIPLE_BOND_ELEMENTS.has(downstreamAtom.element) && !layoutGraph.ringAtomIdSet.has(downstreamAtomId)) {
       return true;
     }
   }

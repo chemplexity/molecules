@@ -6539,9 +6539,7 @@ stressDescribe('layout/engine/pipeline', () => {
 
   stressIt('keeps focused attached-ring residual retouch below the timeout budget', { timeout: 20000 }, () => {
     const result = runPipeline(
-      parseSMILES(
-        'OC1=CC(=CC(O)=C1O)C(=O)OC[C@H]1O[C@@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H]1OC(=O)C1=CC(O)=C(O)C(O)=C1'
-      ),
+      parseSMILES('OC1=CC(=CC(O)=C1O)C(=O)OC[C@H]1O[C@@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H](OC(=O)C2=CC(O)=C(O)C(O)=C2)[C@H]1OC(=O)C1=CC(O)=C(O)C(O)=C1'),
       {
         suppressH: true,
         maxCleanupPasses: 6,
@@ -6669,6 +6667,7 @@ stressDescribe('layout/engine/pipeline', () => {
     const webkitVisibleAlphaFanAngles = [bondAngleAtAtom(result.coords, 'C40', 'C42', 'C53'), bondAngleAtAtom(result.coords, 'C40', 'C42', 'N39'), bondAngleAtAtom(result.coords, 'C40', 'C53', 'N39')];
     const distalCarbonylFanAngles = [bondAngleAtAtom(result.coords, 'C81', 'C68', 'O82'), bondAngleAtAtom(result.coords, 'C81', 'C68', 'N83'), bondAngleAtAtom(result.coords, 'C81', 'O82', 'N83')];
     const terminalAcidFanAngles = [bondAngleAtAtom(result.coords, 'C97', 'C84', 'O98'), bondAngleAtAtom(result.coords, 'C97', 'C84', 'N99'), bondAngleAtAtom(result.coords, 'C97', 'O98', 'N99')];
+    const terminalAmideContinuationAngle = bondAngleAtAtom(result.coords, 'N111', 'C109', 'C112');
     const trigonalDistortion = measureTrigonalDistortion(result.layoutGraph, result.coords);
     const divalentDistortion = measureDivalentContinuationDistortion(result.layoutGraph, result.coords);
     const threeHeavyDistortion = measureThreeHeavyContinuationDistortion(result.layoutGraph, result.coords);
@@ -6693,9 +6692,16 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(maxAngleDeviation(sidechainFanAngles, 120) < 30, `expected the protected peptide sidechain fan to stay readable, got ${sidechainFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(maxAngleDeviation(distalCarbonylFanAngles, 120) < 1e-6, `expected the distal amide fan to recover, got ${distalCarbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(maxAngleDeviation(terminalAcidFanAngles, 120) < 10, `expected the terminal acid fan to recover, got ${terminalAcidFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(
+      Math.abs(terminalAmideContinuationAngle - 120) < 15,
+      `expected the terminal peptide amide continuation to stay open, got ${terminalAmideContinuationAngle.toFixed(2)}`
+    );
     assert.ok(terminalMultipleBondFanPenalty.maxDeviation < 0.1, `expected post-relief amide fan max penalty to stay bounded, got ${terminalMultipleBondFanPenalty.maxDeviation}`);
     assert.ok(terminalMultipleBondFanPenalty.totalDeviation < 0.2, `expected post-relief amide fan polish to stay bounded, got ${terminalMultipleBondFanPenalty.totalDeviation}`);
-    assert.ok(maxAngleDeviation(webkitVisibleAlphaFanAngles, 120) < 25, `expected the WebKit-visible C40 peptide fan to avoid near-linear angles, got ${webkitVisibleAlphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(
+      maxAngleDeviation(webkitVisibleAlphaFanAngles, 120) < 25,
+      `expected the WebKit-visible C40 peptide fan to avoid near-linear angles, got ${webkitVisibleAlphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
     assert.ok(trigonalDistortion.maxDeviation < 0.1, `expected peptide trigonal distortion to stay bounded, got ${trigonalDistortion.maxDeviation}`);
     assert.ok(divalentDistortion.maxDeviation < 0.3, `expected peptide divalent continuation distortion to stay bounded, got ${divalentDistortion.maxDeviation}`);
     assert.ok(threeHeavyDistortion.maxDeviation < 0.45, `expected peptide omitted-h three-heavy distortion to stay bounded, got ${threeHeavyDistortion.maxDeviation}`);

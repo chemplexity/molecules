@@ -6,14 +6,7 @@ import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js'
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { incidentRingPolygonsForAtom } from '../geometry/ring-polygons.js';
-import {
-  countSevereOverlaps,
-  countSevereOverlapsMatching,
-  countSevereOverlapsWithOverrides,
-  findSevereOverlaps,
-  findSevereOverlapsMatching,
-  measureBondLengthDeviation
-} from '../audit/invariants.js';
+import { countSevereOverlaps, countSevereOverlapsMatching, countSevereOverlapsWithOverrides, findSevereOverlaps, findSevereOverlapsMatching, measureBondLengthDeviation } from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { runLocalCleanup } from './local-rotation.js';
 import { resolveOverlaps } from './overlap-resolution.js';
@@ -3515,7 +3508,12 @@ function relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords
         if (!candidateCoords) {
           continue;
         }
-        const candidateDirectOverlapCount = countSevereOverlapsMatching(layoutGraph, candidateCoords, bondLength, (firstAtomId, secondAtomId) => directLigandIds.has(firstAtomId) || directLigandIds.has(secondAtomId));
+        const candidateDirectOverlapCount = countSevereOverlapsMatching(
+          layoutGraph,
+          candidateCoords,
+          bondLength,
+          (firstAtomId, secondAtomId) => directLigandIds.has(firstAtomId) || directLigandIds.has(secondAtomId)
+        );
         if (candidateOverlapState.count >= currentOverlaps.length || candidateDirectOverlapCount >= currentDirectOverlapCount) {
           continue;
         }
@@ -3603,7 +3601,12 @@ function relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, cent
         if (!candidateCoords) {
           continue;
         }
-        const candidateDirectOverlapCount = countSevereOverlapsMatching(layoutGraph, candidateCoords, bondLength, (firstAtomId, secondAtomId) => directLigandIds.has(firstAtomId) || directLigandIds.has(secondAtomId));
+        const candidateDirectOverlapCount = countSevereOverlapsMatching(
+          layoutGraph,
+          candidateCoords,
+          bondLength,
+          (firstAtomId, secondAtomId) => directLigandIds.has(firstAtomId) || directLigandIds.has(secondAtomId)
+        );
         if (candidateDirectOverlapCount >= currentDirectOverlapCount) {
           continue;
         }
