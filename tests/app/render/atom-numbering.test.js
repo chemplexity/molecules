@@ -1,7 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { atomNumberingLabelDistance, multipleBondSideBlockerAngle, pickAtomAnnotationAngle, pickAtomAnnotationPlacement } from '../../../src/app/render/atom-numbering.js';
+import {
+  atomNumberingLabelDistance,
+  multipleBondAnnotationBlockerAngles,
+  multipleBondSideBlockerAngle,
+  pickAtomAnnotationAngle,
+  pickAtomAnnotationPlacement
+} from '../../../src/app/render/atom-numbering.js';
 
 function boxesOverlap(a, b, padding = 3) {
   return Math.abs(a.cx - b.cx) < a.hw + b.hw + padding && Math.abs(a.cy - b.cy) < a.hh + b.hh + padding;
@@ -42,7 +48,24 @@ describe('pickAtomAnnotationPlacement', () => {
 
     assert.ok(baselinePlacement.cy > options.center.y, 'expected the unconstrained hydrogen number to prefer the outward side opposite the bond');
     assert.equal(boxesOverlap(avoidedPlacement, overlayBox), false);
-    assert.notEqual(avoidedPlacement.angle, baselinePlacement.angle);
+    assert.ok(
+      avoidedPlacement.angle !== baselinePlacement.angle ||
+        Math.hypot(avoidedPlacement.cx - options.center.x, avoidedPlacement.cy - options.center.y) > Math.hypot(baselinePlacement.cx - options.center.x, baselinePlacement.cy - options.center.y)
+    );
+  });
+
+  it('steps outward when an atom label box surrounds the default annotation radius', () => {
+    const center = { x: 100, y: 100 };
+    const atomLabelBox = { cx: 96, cy: 100, hw: 18, hh: 12 };
+    const placement = pickAtomAnnotationPlacement({
+      center,
+      label: '9',
+      fontSize: 10,
+      placedBoxes: [atomLabelBox]
+    });
+
+    assert.equal(boxesOverlap(placement, atomLabelBox), false);
+    assert.ok(Math.hypot(placement.cx - center.x, placement.cy - center.y) > atomNumberingLabelDistance(10, '9'));
   });
 });
 
@@ -52,5 +75,20 @@ describe('multipleBondSideBlockerAngle', () => {
     const lower = multipleBondSideBlockerAngle({ x: 0, y: 0 }, { x: 10, y: 0 }, -1);
     assert.ok(upper > 0 && upper < Math.PI / 2);
     assert.ok(lower < 0 && lower > -Math.PI / 2);
+  });
+});
+
+describe('multipleBondAnnotationBlockerAngles', () => {
+  it('blocks both side lanes for terminal triple bonds and terminal double bonds', () => {
+    const tripleAngles = multipleBondAnnotationBlockerAngles({ x: 0, y: 0 }, { x: 10, y: 0 }, { order: 3 });
+    const terminalDoubleAngles = multipleBondAnnotationBlockerAngles({ x: 0, y: 0 }, { x: 10, y: 0 }, { order: 2, terminal: true });
+    const internalDoubleAngles = multipleBondAnnotationBlockerAngles({ x: 0, y: 0 }, { x: 10, y: 0 }, { order: 2, side: -1 });
+
+    assert.equal(tripleAngles.length, 2);
+    assert.ok(tripleAngles.some(angle => angle > 0) && tripleAngles.some(angle => angle < 0));
+    assert.equal(terminalDoubleAngles.length, 2);
+    assert.ok(terminalDoubleAngles.some(angle => angle > 0) && terminalDoubleAngles.some(angle => angle < 0));
+    assert.equal(internalDoubleAngles.length, 1);
+    assert.ok(internalDoubleAngles[0] < 0);
   });
 });

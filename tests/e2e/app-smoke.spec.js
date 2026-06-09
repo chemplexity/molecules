@@ -1547,6 +1547,97 @@ test('2D atom numbering follows projected stereochemical hydrogens away from par
   }
 });
 
+test('2D atom numbering clears prefix ammonium atom labels', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC1N=C(NC1=O)C1([NH3+])CC1');
+  await page.locator('button.smarts-tab[data-tab="other"]').click();
+  await page.locator('#atom-numbering-body tr').filter({ hasText: 'Atom Numbering' }).click();
+
+  await expect(page.locator('g.atom-numbering-overlay text.atom-num[data-atom-id="N9"]')).toHaveCount(1);
+
+  const geometry = await page.evaluate(() => {
+    const numberLabel = document.querySelector('g.atom-numbering-overlay text.atom-num[data-atom-id="N9"]');
+    const atomLabel = document.querySelector('g.atom-labels g[data-atom-id="N9"] text.atom-label');
+    const rectFor = node => {
+      if (!node) {
+        return null;
+      }
+      const rect = node.getBoundingClientRect();
+      return {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        text: node.textContent ?? ''
+      };
+    };
+    const numberRect = rectFor(numberLabel);
+    const atomRect = rectFor(atomLabel);
+    const overlaps = (first, second, padding = 1) =>
+      !!first && !!second && first.left < second.right + padding && first.right > second.left - padding && first.top < second.bottom + padding && first.bottom > second.top - padding;
+    return {
+      atomLabelText: atomRect?.text ?? '',
+      numberText: numberRect?.text ?? '',
+      overlapsLabel: overlaps(numberRect, atomRect)
+    };
+  });
+
+  expect(geometry.atomLabelText).toBe('H3N');
+  expect(geometry.numberText).toBe('9');
+  expect(geometry.overlapsLabel).toBe(false);
+});
+
+test('2D atom numbering clears terminal imine and nitrile multiple-bond strokes', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'ClC1=CC=CC(Cl)=C1CC(=N)NC(=S)NC1=CC=C(C=C1)C#N');
+  await page.locator('button.smarts-tab[data-tab="other"]').click();
+  await page.locator('#atom-numbering-body tr').filter({ hasText: 'Atom Numbering' }).click();
+
+  await expect(page.locator('g.atom-numbering-overlay text.atom-num[data-atom-id="N11"]')).toHaveCount(1);
+  await expect(page.locator('g.atom-numbering-overlay text.atom-num[data-atom-id="N23"]')).toHaveCount(1);
+
+  const geometry = await page.evaluate(() => {
+    const numberPoint = atomId => {
+      const label = document.querySelector(`g.atom-numbering-overlay text.atom-num[data-atom-id="${atomId}"]`);
+      return label
+        ? {
+            text: label.textContent ?? '',
+            x: Number(label.getAttribute('x')),
+            y: Number(label.getAttribute('y'))
+          }
+        : null;
+    };
+    const bondLines = bondId =>
+      Array.from(document.querySelectorAll(`g.bonds g[data-bond-id="${bondId}"] line:not(.bond-hit)`)).map(line => ({
+        start: { x: Number(line.getAttribute('x1')), y: Number(line.getAttribute('y1')) },
+        end: { x: Number(line.getAttribute('x2')), y: Number(line.getAttribute('y2')) }
+      }));
+    const distanceToSegment = (point, start, end) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSquared = dx * dx + dy * dy;
+      const t = lengthSquared > 0 ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)) : 0;
+      return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+    };
+    const nearestLineDistance = (point, lines) => Math.min(...lines.map(line => distanceToSegment(point, line.start, line.end)));
+    const n11 = numberPoint('N11');
+    const n23 = numberPoint('N23');
+    return {
+      n11Text: n11?.text ?? '',
+      n23Text: n23?.text ?? '',
+      n11DoubleBondDistance: nearestLineDistance(n11, bondLines('5')),
+      n23TripleBondDistance: nearestLineDistance(n23, bondLines('15'))
+    };
+  });
+
+  expect(geometry.n11Text).toBe('11');
+  expect(geometry.n23Text).toBe('23');
+  expect(geometry.n11DoubleBondDistance).toBeGreaterThan(10);
+  expect(geometry.n23TripleBondDistance).toBeGreaterThan(10);
+});
+
 test('dragging a projected stereo hydrogen follows the mouse in real time', async ({ page }) => {
   await page.goto('/index.html');
 

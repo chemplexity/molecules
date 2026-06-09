@@ -29,6 +29,33 @@ function readPlacedCoords(molecule, { suppressH = false } = {}) {
 }
 
 /**
+ * Builds fixed-coordinate anchors for refinement from explicit fixed coords
+ * plus the current ring atom positions when ring freezing is requested.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph to inspect.
+ * @param {Map<string, {x: number, y: number}>} existingCoords - Current placed coordinates.
+ * @param {object} [options] - Refinement options.
+ * @param {Map<string, {x: number, y: number}>} [options.fixedCoords] - Explicit fixed coordinates.
+ * @param {boolean} [options.freezeRings] - Whether ring atom coordinates should be protected during refinement.
+ * @returns {Map<string, {x: number, y: number}>} Fixed-coordinate anchors for the engine.
+ */
+function buildRefinementFixedCoords(molecule, existingCoords, options = {}) {
+  const fixedCoords = options.fixedCoords instanceof Map ? new Map(options.fixedCoords) : new Map();
+  if (options.freezeRings !== true || typeof molecule?.getRings !== 'function') {
+    return fixedCoords;
+  }
+
+  for (const ring of molecule.getRings()) {
+    for (const atomId of ring) {
+      const position = existingCoords.get(atomId);
+      if (position && !fixedCoords.has(atomId)) {
+        fixedCoords.set(atomId, { ...position });
+      }
+    }
+  }
+  return fixedCoords;
+}
+
+/**
  * Generate coordinates with the engine and write them back onto the molecule.
  * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph to lay out.
  * @param {object} [options] - Layout options forwarded through the public layout API.
@@ -68,6 +95,8 @@ export function generateCoords(molecule, options = {}) {
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
  * @param {number} [options.maxPasses] - Legacy alias for `maxCleanupPasses`.
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
+ * @param {Map<string, {x: number, y: number}>} [options.fixedCoords] - Atom coordinates that should stay fixed during refinement.
+ * @param {boolean} [options.freezeRings] - Whether current ring atom coordinates should stay fixed during refinement.
  * @param {Set<number>} [options.touchedAtoms] - Atom ids that should be treated as locally edited during refinement.
  * @param {Set<number>} [options.touchedBonds] - Bond ids that should be treated as locally edited during refinement.
  * @returns {Map<number, {x: number, y: number}>} The placed coordinates keyed by atom id.
@@ -84,9 +113,11 @@ export function refineExistingCoords(molecule, options = {}) {
   if (existingCoords.size === 0) {
     return existingCoords;
   }
+  const fixedCoords = buildRefinementFixedCoords(molecule, existingCoords, options);
   const result = refineEngineCoords(molecule, {
     ...engineOptions,
     existingCoords,
+    fixedCoords,
     touchedAtoms: options.touchedAtoms,
     touchedBonds: options.touchedBonds
   });

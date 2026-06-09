@@ -10,6 +10,8 @@ const templateQueryPlanCache = new WeakMap();
 const candidateAtomIdsKeyCache = new WeakMap();
 const candidateElementSignatureCache = new WeakMap();
 const templateContextGroupsCache = new WeakMap();
+const GEOMETRY_MAPPING_LIMIT = 64;
+const GEOMETRY_MAPPING_SCORE_EPSILON = 1e-9;
 
 function compareStrings(firstValue, secondValue) {
   return String(firstValue).localeCompare(String(secondValue), 'en', { numeric: true });
@@ -241,6 +243,82 @@ function templateContextGroups(template) {
 
 function templateHasLateMatchContext(template) {
   return templateContextGroups(template).mappedBonds.length > 0;
+}
+
+function distanceBetween(firstPosition, secondPosition) {
+  return Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
+}
+
+function angleBetween(previousPosition, currentPosition, nextPosition) {
+  const firstVector = {
+    x: previousPosition.x - currentPosition.x,
+    y: previousPosition.y - currentPosition.y
+  };
+  const secondVector = {
+    x: nextPosition.x - currentPosition.x,
+    y: nextPosition.y - currentPosition.y
+  };
+  const firstMagnitude = Math.hypot(firstVector.x, firstVector.y);
+  const secondMagnitude = Math.hypot(secondVector.x, secondVector.y);
+  if (firstMagnitude <= 1e-12 || secondMagnitude <= 1e-12) {
+    return 0;
+  }
+  const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / (firstMagnitude * secondMagnitude)));
+  return Math.acos(cosine) * (180 / Math.PI);
+}
+
+function mappedTemplateCoords(template, mapping) {
+  if (!Array.isArray(template.normalizedCoords)) {
+    return null;
+  }
+  const coords = new Map();
+  for (const [templateAtomId, position] of template.normalizedCoords) {
+    const targetAtomId = mapping.get(templateAtomId);
+    if (!targetAtomId) {
+      return null;
+    }
+    coords.set(targetAtomId, position);
+  }
+  return coords;
+}
+
+/**
+ * Scores one automorphic template mapping against the target ring basis.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Set<string>} candidateAtomIdSet - Candidate ring-system atom IDs.
+ * @param {object} template - Template descriptor with normalized geometry.
+ * @param {Map<string, string>} mapping - Template atom ID to target atom ID mapping.
+ * @returns {number} Lower score for mappings whose coordinates keep target rings readable.
+ */
+function scoreTemplateMappingGeometry(layoutGraph, candidateAtomIdSet, template, mapping) {
+  const coords = mappedTemplateCoords(template, mapping);
+  if (!coords) {
+    return 0;
+  }
+
+  const minBondLengthFactor = template.geometryValidation?.minBondLengthFactor ?? 0.7;
+  const maxBondLengthFactor = template.geometryValidation?.maxBondLengthFactor ?? 1.4;
+  let score = 0;
+  let ringCount = 0;
+  for (const ring of layoutGraph.rings ?? []) {
+    if (!ring.atomIds.every(atomId => candidateAtomIdSet.has(atomId) && coords.has(atomId))) {
+      continue;
+    }
+    ringCount++;
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+      const atomId = ring.atomIds[index];
+      const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      const angle = angleBetween(coords.get(previousAtomId), coords.get(atomId), coords.get(nextAtomId));
+      const bondLength = distanceBetween(coords.get(atomId), coords.get(nextAtomId));
+      score += Math.max(0, 75 - angle) ** 2;
+      score += Math.max(0, angle - 150) ** 2;
+      score += Math.max(0, Math.abs(angle - 110) - 38);
+      score += Math.max(0, minBondLengthFactor - bondLength) * 100;
+      score += Math.max(0, bondLength - maxBondLengthFactor) * 100;
+    }
+  }
+  return ringCount > 0 ? score : 0;
 }
 
 /**
@@ -482,13 +560,27 @@ function findTemplateMappingInTarget(layoutGraph, atomIds, template, target, can
   const queryPlan = templateQueryPlan(template);
   const contextAtomIdSet = candidateAtomIdSet ?? new Set(atomIds);
   const atomMatch = createTemplateContextAtomMatch(layoutGraph, template, contextAtomIdSet);
-  const limit = templateHasLateMatchContext(template) ? Infinity : 1;
+  const rankGeometryMappings = template.rankGeometryMappings === true && Array.isArray(template.normalizedCoords);
+  const limit = templateHasLateMatchContext(template) ? Infinity : rankGeometryMappings ? GEOMETRY_MAPPING_LIMIT : 1;
   const matchOptions = atomMatch ? { limit, targetIndex, atomMatch, ...queryPlan } : { limit, targetIndex, ...queryPlan };
+  let bestMapping = null;
+  let bestScore = Infinity;
   for (const mapping of findSubgraphMappings(target, template.molecule, matchOptions)) {
     if (templateMatchesContext(layoutGraph, atomIds, template, mapping, contextAtomIdSet)) {
-      rememberTemplateMapping(layoutGraph, atomIds, template, mapping, atomIdsKey);
-      return mapping;
+      if (!rankGeometryMappings) {
+        rememberTemplateMapping(layoutGraph, atomIds, template, mapping, atomIdsKey);
+        return mapping;
+      }
+      const score = scoreTemplateMappingGeometry(layoutGraph, contextAtomIdSet, template, mapping);
+      if (!bestMapping || score < bestScore - GEOMETRY_MAPPING_SCORE_EPSILON) {
+        bestMapping = mapping;
+        bestScore = score;
+      }
     }
+  }
+  if (bestMapping) {
+    rememberTemplateMapping(layoutGraph, atomIds, template, bestMapping, atomIdsKey);
+    return bestMapping;
   }
   return null;
 }

@@ -58,7 +58,7 @@ const HOOK_STEP_META = {
   'ring-substituent-tidy': ['Ring Substituent Tidy', 'Ring substituents repositioned for better presentation.'],
   'ring-terminal-hetero-tidy': ['Ring Terminal Hetero Tidy', 'Terminal heteroatom bonds on rings reoriented.'],
   'divalent-continuation-tidy': ['Divalent Continuation Tidy', 'Compact terminal continuations snapped back to exact 120-degree slots.'],
-  'terminal-alkene-continuation-relief': ['Terminal Alkene Continuation Relief', 'Terminal alkene tails rotated away from local overlaps while keeping the alkene bend exact.'],
+  'terminal-alkene-continuation-relief': ['Terminal Multiple-Bond Continuation Relief', 'Terminal carbon multiple-bond tails rotated away from local overlaps while keeping alkene bends and alkyne continuations exact.'],
   'projected-tetrahedral-branch-clearance': ['Projected Tetrahedral Branch Clearance', 'Downstream branch pivots cleared projected-center overlaps without moving the center slots.'],
   'ring-terminal-root-exact-clearance': ['Ring Terminal Root Exact Clearance', 'Compact terminal and linked-ring exits snapped back to exact trigonal slots with local overlap relief.']
 };

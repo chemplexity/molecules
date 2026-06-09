@@ -4,13 +4,14 @@ import { getRenderOptions, atomColor, renderAtomLabel, renderLonePairDots, rende
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
-import { getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationPlacement } from './atom-numbering.js';
+import { getAtomNumberMap, multipleBondAnnotationBlockerAngles, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import {
   labelHalfW,
   labelHalfH,
   labelTextOffset,
   ringLabelOffset,
   formatChargeLabel,
+  heavyDegree,
   computeChargeBadgePlacement,
   getAtomLabel,
   computeLonePairDotPositions,
@@ -828,14 +829,14 @@ export function create2DSceneRenderer(ctx) {
       for (const nb of allNeighbors) {
         const bond = mol.getBond(atom.id, nb.id);
         const order = renderBondOrder(bond);
-        if (order !== 2 && order !== 1.5) {
+        if (order !== 2 && order !== 1.5 && order !== 3) {
           continue;
         }
         const { x: nx, y: ny } = toSVGPt(nb);
         const dir = ctx.helpers.secondaryDir(atom, nb, mol, toSVGPt);
-        const sideAngle = multipleBondSideBlockerAngle({ x, y }, { x: nx, y: ny }, dir);
-        if (sideAngle != null) {
-          blockedSectors.push({ angle: sideAngle, spread: 0.5 });
+        const terminal = order === 2 && (heavyDegree(atom, mol) === 1 || heavyDegree(nb, mol) === 1);
+        for (const sideAngle of multipleBondAnnotationBlockerAngles({ x, y }, { x: nx, y: ny }, { order, side: dir, terminal })) {
+          blockedSectors.push({ angle: sideAngle, spread: order >= 3 ? 0.56 : 0.5 });
         }
       }
       const placement = pickAtomAnnotationPlacement({

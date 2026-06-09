@@ -18,6 +18,7 @@ import {
 } from './shared.js';
 import {
   budgetPreferredAngles,
+  buildCandidateAngleSets,
   chooseAttachmentAngle,
   chooseContinuationAngle,
   chooseExactPreferredAngle,
@@ -670,6 +671,29 @@ function phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAt
 }
 
 /**
+ * Returns geometry-aware single-branch angles from the batch candidate builder.
+ * Saturated multi-ring anchors can have a clean exterior lane that only the
+ * batch generator sees; keeping that lane near the front lets bounded bridged
+ * lookahead score it before generic fallback directions are trimmed.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string} childAtomId - Outgoing child atom ID.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} branchConstraints - Optional branch-angle constraints.
+ * @returns {number[]} Single-child candidate angles in radians.
+ */
+function batchSingleBranchLookaheadAngles(adjacency, coords, anchorAtomId, parentAtomId, childAtomId, layoutGraph, branchConstraints) {
+  if (!layoutGraph || !coords.has(anchorAtomId)) {
+    return [];
+  }
+  return buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, [childAtomId], layoutGraph, branchConstraints)
+    .filter(angleSet => angleSet.length === 1)
+    .map(angleSet => angleSet[0]);
+}
+
+/**
  * Returns whether a ring-anchored outgoing branch should be placed with
  * recursive lookahead instead of a greedy first-bond choice. Compact
  * allyl-sized tails can still fold their second atom back into fused, bridged,
@@ -1132,11 +1156,17 @@ function placeNeighborSequence(
       allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) &&
       (shouldUseClassicSingleBranchLookahead || shouldUseRingAnchorLookahead);
     if (shouldUseSingleBranchLookahead) {
+      const batchLookaheadAngles = shouldUseRingAnchorLookahead
+        ? batchSingleBranchLookaheadAngles(adjacency, coords, anchorAtomId, parentAtomId, childAtomId, layoutGraph, branchConstraints)
+        : [];
       const phosphateTailLookaheadAngles = shouldUseRingAnchorLookahead
         ? phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, constrainedPreferredAngles)
         : [];
       const lookaheadCandidateAngles = shouldUseRingAnchorLookahead
-        ? mergeCandidateAngles(mergeCandidateAngles(mergeCandidateAngles([chosenAngle], constrainedPreferredAngles), phosphateTailLookaheadAngles), constrainedFallbackAngles)
+        ? mergeCandidateAngles(
+            mergeCandidateAngles(mergeCandidateAngles(mergeCandidateAngles([chosenAngle], batchLookaheadAngles), constrainedPreferredAngles), phosphateTailLookaheadAngles),
+            constrainedFallbackAngles
+          )
         : mergeCandidateAngles([chosenAngle], constrainedPreferredAngles);
       const filteredLookaheadCandidateAngles = shouldUseFirstBondCrossingRescue
         ? filterFirstBondCrossingAngles(layoutGraph, coords, anchorAtomId, childAtomId, lookaheadCandidateAngles, bondLength)

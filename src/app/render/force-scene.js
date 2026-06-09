@@ -1,11 +1,11 @@
 /** @module app/render/force-scene */
 
 import { getRenderOptions, atomColor, strokeColor, singleBondWidth, prepareAromaticBondRendering, atomRadius, xOffset, yOffset, PI_STROKE, ARO_STROKE } from './helpers.js';
-import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, secondaryDir, syncDisplayStereo } from '../../layout/mol2d-helpers.js';
+import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, heavyDegree, secondaryDir, syncDisplayStereo } from '../../layout/mol2d-helpers.js';
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
-import { getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationPlacement } from './atom-numbering.js';
+import { getAtomNumberMap, multipleBondAnnotationBlockerAngles, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
 
 /**
@@ -904,7 +904,7 @@ export function createForceSceneRenderer(ctx) {
         }
         if (atom) {
           for (const link of links) {
-            if (link.order !== 2 && link.order !== 1.5) {
+            if (link.order !== 2 && link.order !== 1.5 && link.order !== 3) {
               continue;
             }
             const otherNode = link.source.id === node.id ? link.target : link.source;
@@ -913,9 +913,9 @@ export function createForceSceneRenderer(ctx) {
               continue;
             }
             const dir = secondaryDir(atom, otherAtom, molecule, pointForForceAtom);
-            const sideAngle = multipleBondSideBlockerAngle(node, otherNode, dir);
-            if (sideAngle != null) {
-              blockedSectors.push({ angle: sideAngle, spread: 0.5 });
+            const terminal = link.order === 2 && (heavyDegree(atom, molecule) === 1 || heavyDegree(otherAtom, molecule) === 1);
+            for (const sideAngle of multipleBondAnnotationBlockerAngles(node, otherNode, { order: link.order, side: dir, terminal })) {
+              blockedSectors.push({ angle: sideAngle, spread: link.order >= 3 ? 0.56 : 0.5 });
             }
           }
         }

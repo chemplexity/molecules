@@ -1192,6 +1192,15 @@ function createSulfonylAromaticBridgedHeterocycleCoreTemplate() {
 }
 
 /**
+ * Creates the saturated oxa-aza sulfone bridge scaffold graph found in fused
+ * oxathiazocine sulfone systems.
+ * @returns {Molecule} Oxa azabicyclo sulfonyl scaffold template molecule.
+ */
+function createOxaAzabicycloSulfonylCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('oxa-azabicyclo-sulfonyl-core', 'C1OCC2CCCC1NS2(=O)=O');
+}
+
+/**
  * Creates the ammonium benzocyclobutane scaffold graph found in compact
  * aromatic cyclobutane-fused cages like `CC1=CC=CC2=C1C1([NH3+])CC2(C)C1`.
  * @returns {Molecule} Ammonium benzocyclobutane scaffold template molecule.
@@ -1511,6 +1520,15 @@ function createAdamantaneTemplate() {
   molecule.addBond('b10', 'a7', 'a8', {}, false);
   molecule.addBond('b11', 'a7', 'a9', {}, false);
   return molecule;
+}
+
+/**
+ * Creates the noradamantane-like hydrocarbon cage graph used by compact
+ * tricyclic nonane scaffolds such as `C12CC3CC1CC(C2)C3`.
+ * @returns {Molecule} Noradamantane scaffold template molecule.
+ */
+function createNoradamantaneCoreTemplate() {
+  return createHeavyTemplateFromSmiles('noradamantane-core', 'C12CC3CC1CC(C2)C3');
 }
 
 function freezeCoordEntries(entries) {
@@ -3410,6 +3428,27 @@ function createSulfonylAromaticBridgedHeterocycleCoreGeometry() {
 }
 
 /**
+ * Creates a broad two-lane projection for saturated oxathiaza sulfone bridges.
+ * The shared sulfur-nitrogen path sits below the carbon/oxygen lanes, leaving
+ * a vertical sulfur axis available for opposed terminal oxos.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createOxaAzabicycloSulfonylCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C4', { x: -1.0, y: 0.0 }],
+    ['S10', { x: 0.0, y: 0.0 }],
+    ['N9', { x: 1.0, y: 0.0 }],
+    ['C8', { x: 0.95, y: 1.12 }],
+    ['C7', { x: 0.473878, y: 1.739989 }],
+    ['C6', { x: -0.498485, y: 1.724518 }],
+    ['C5', { x: -0.811708, y: 0.834486 }],
+    ['C3', { x: -1.05, y: 1.35 }],
+    ['O2', { x: -0.15, y: 2.18 }],
+    ['C1', { x: 0.95, y: 2.2 }]
+  ]);
+}
+
+/**
  * Creates a benzene-fused cage projection for ammonium benzocyclobutanes. The
  * aromatic ring stays regular while the saturated five-ring and fused
  * cyclobutane sit below the shared aryl edge, avoiding the long bridge bond
@@ -4267,6 +4306,25 @@ function createAdamantaneGeometry() {
 }
 
 /**
+ * Creates a skewed noradamantane cage projection that keeps the three compact
+ * ring lanes open without collapsing the short bridge edge into a line.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createNoradamantaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C1', { x: 0.0, y: 0.0 }],
+    ['C2', { x: -0.75, y: 0.3 }],
+    ['C3', { x: -1.0034, y: -0.5242 }],
+    ['C4', { x: -0.7641, y: -1.4091 }],
+    ['C5', { x: 0.0076, y: -1.2472 }],
+    ['C6', { x: 0.8718, y: -1.3573 }],
+    ['C7', { x: 1.2002, y: -0.4535 }],
+    ['C8', { x: 0.8, y: 0.325 }],
+    ['C9', { x: 0.3475, y: -0.7704 }]
+  ]);
+}
+
+/**
  * Creates a standard 2D cube projection for cubane.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -4342,6 +4400,7 @@ function createTemplate(id, family, priority, molecule, geometry, options = {}) 
     hasGeometry: Array.isArray(normalizedCoords),
     normalizedCoords,
     geometryValidation: geometry?.validation ?? null,
+    rankGeometryMappings: options.rankGeometryMappings === true,
     matchContext: freezeMatchContext(options.matchContext),
     createCoords: normalizedCoords ? bondLength => scaleCoordEntries(normalizedCoords, bondLength) : null
   });
@@ -4356,6 +4415,9 @@ export const PLANAR_VALIDATION = TEMPLATE_PLANAR_VALIDATION;
 export function buildTemplateLibrary() {
   return [
     createTemplate('adamantane', 'bridged', 70, createAdamantaneTemplate(), geometrySpec('normalized-xy', createAdamantaneGeometry(), BRIDGED_VALIDATION)),
+    createTemplate('noradamantane-core', 'bridged', 65, createNoradamantaneCoreTemplate(), geometrySpec('normalized-xy', createNoradamantaneCoreGeometry(), BRIDGED_VALIDATION), {
+      rankGeometryMappings: true
+    }),
     createTemplate('bicyclo-2-2-2', 'bridged', 60, createBicyclo222Template(), geometrySpec('normalized-xy', createBicyclo222Geometry(), BRIDGED_VALIDATION)),
     createTemplate(
       'hydroxy-diformyl-bicyclooctadiene-core',
@@ -5109,6 +5171,11 @@ export function buildTemplateLibrary() {
         }
       }
     ),
+    createTemplate('oxa-azabicyclo-sulfonyl-core', 'bridged', 53.85508125, createOxaAzabicycloSulfonylCoreTemplate(), geometrySpec('normalized-xy', createOxaAzabicycloSulfonylCoreGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [{ templateAtomId: 'S10', element: 'O', bondOrder: 2, minCount: 2, maxCount: 2 }]
+      }
+    }),
     createTemplate(
       'ammonium-benzocyclobutane-core',
       'bridged',

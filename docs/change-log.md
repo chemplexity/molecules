@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-06-08
+
+- Preserve compact bridged terminal alkyne linearity during final terminal leaf retouch.
+- Add a noradamantane bridged-cage template with geometry-ranked mapping so compact tricyclic nonane bridges avoid flattened corners.
+- Let macrocycle placement regularize distorted embedded small rings while preserving reaction-preview product geometry.
+- Let compact bridged oxime branches score their exterior lane before bounded single-branch lookahead trims fallback angles.
+- Teach atom-number placement about terminal multiple-bond side lanes so imine and nitrile numbering avoids rendered double- and triple-bond strokes.
+- Let atom-number labels step outward when prefix ammonium text still occupies the default annotation radius, keeping numbering legible beside rendered hydrogen counts.
+- Keep ring-embedded saturated sulfone oxos opposed by adding an oxa-azabicyclo sulfone bridge template, preserving paired oxo crosses during ring presentation cleanup, and restoring terminal alkyne branch linearity.
+
 ## 2026-06-07
 
 - Open remaining peptide divalent kinks with a bounded side-branch lane adjustment after large-molecule terminal fan polish.

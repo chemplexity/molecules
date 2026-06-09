@@ -1811,5 +1811,12 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.abs(adamantaneCoords.get('a4').x - adamantaneCoords.get('a3').x) < 0.15);
     assert.ok(adamantaneCoords.get('a2').x > adamantaneCoords.get('a1').x);
     assert.ok(adamantaneCoords.get('a2').x < adamantaneCoords.get('a3').x);
+
+    const noradamantaneGraph = createLayoutGraph(parseSMILES('C12CC3CC1CC(C2)C3'), { suppressH: true });
+    const noradamantaneCoords = placeTemplateCoords(noradamantaneGraph, 'noradamantane-core', noradamantaneGraph.ringSystems[0].atomIds, noradamantaneGraph.options.bondLength);
+    const bridgeAngles = ringAngles(noradamantaneCoords, ['C9', 'C7', 'C8', 'C1', 'C2', 'C3']);
+    assert.equal(noradamantaneCoords.size, 9);
+    assert.ok(Math.min(...bridgeAngles) > 75, `expected the noradamantane bridge lane to stay open, got ${bridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...bridgeAngles) < 150, `expected the noradamantane bridge lane to avoid flattened corners, got ${bridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 });

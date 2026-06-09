@@ -81,6 +81,8 @@ const RING_EMBEDDED_BIS_OXO_MIN_SPREAD = Math.PI / 3;
 const RING_EMBEDDED_BIS_OXO_SPREAD_STEP = Math.PI / 18;
 const RING_EMBEDDED_BIS_OXO_CENTER_SHIFT_STEP = Math.PI / 180;
 const RING_EMBEDDED_BIS_OXO_MAX_CENTER_SHIFT = Math.PI / 3;
+const RING_EMBEDDED_BIS_OXO_CROSS_SINGLE_TOLERANCE = Math.PI / 6;
+const RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION = (5 * Math.PI) / 6;
 const RING_ANCHORED_HYPERVALENT_OVERLAP_RELIEF_STEP = Math.PI / 180;
 const RING_ANCHORED_HYPERVALENT_OVERLAP_RELIEF_MAX_ROTATION = Math.PI / 18;
 const RING_ANCHORED_HYPERVALENT_COMPROMISE_MIN_DEVIATION = Math.PI / 6;
@@ -909,6 +911,116 @@ function fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descrip
     bestFit = fitTwoLigandTargets(descriptor.multipleNeighborIds, currentAngles, targetAngles);
   }
   return bestFit;
+}
+
+/**
+ * Returns the projected single-ligand axis for a ring-embedded bis-oxo center
+ * when its two ring ligands already define an almost opposite cross axis.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Hypervalent center descriptor.
+ * @returns {number|null} Axis angle in radians, or `null` when the ring geometry needs the exterior-V fallback.
+ */
+function ringEmbeddedBisOxoAntipodalSingleAxis(layoutGraph, coords, centerAtomId, descriptor) {
+  if (!isRingEmbeddedBisOxoCenter(layoutGraph, centerAtomId, descriptor) || descriptor.singleNeighborIds.length !== 2) {
+    return null;
+  }
+
+  const centerPosition = coords.get(centerAtomId);
+  const firstPosition = coords.get(descriptor.singleNeighborIds[0]);
+  const secondPosition = coords.get(descriptor.singleNeighborIds[1]);
+  if (!centerPosition || !firstPosition || !secondPosition) {
+    return null;
+  }
+
+  const firstAngle = angleOf(sub(firstPosition, centerPosition));
+  const secondAngle = angleOf(sub(secondPosition, centerPosition));
+  if (Math.PI - angularDifference(firstAngle, secondAngle) > RING_EMBEDDED_BIS_OXO_CROSS_SINGLE_TOLERANCE) {
+    return null;
+  }
+
+  const doubledX = Math.cos(2 * firstAngle) + Math.cos(2 * secondAngle);
+  const doubledY = Math.sin(2 * firstAngle) + Math.sin(2 * secondAngle);
+  if (Math.hypot(doubledX, doubledY) <= 1e-9) {
+    return wrapAngleUnsigned(firstAngle);
+  }
+  return wrapAngleUnsigned(Math.atan2(doubledY, doubledX) / 2);
+}
+
+/**
+ * Builds an exact opposed-oxo candidate for a ring-embedded bis-oxo center
+ * whose single ligands are already close to antipodal. The candidate is only
+ * accepted when the full layout audit does not regress, allowing crowded ring
+ * sulfones to keep the safer exterior-V presentation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Hypervalent center descriptor.
+ * @returns {{coords: Map<string, {x: number, y: number}>, audit: object, deviation: number, rotationMagnitude: number}|null} Accepted candidate, or `null`.
+ */
+function ringEmbeddedBisOxoExactCrossCandidate(layoutGraph, coords, centerAtomId, descriptor) {
+  const axisAngle = ringEmbeddedBisOxoAntipodalSingleAxis(layoutGraph, coords, centerAtomId, descriptor);
+  const centerPosition = coords.get(centerAtomId);
+  if (axisAngle == null || !centerPosition || descriptor.multipleNeighborIds.length !== 2) {
+    return null;
+  }
+
+  const currentAngles = new Map(descriptor.multipleNeighborIds.map(neighborAtomId => [neighborAtomId, angleOf(sub(coords.get(neighborAtomId), centerPosition))]));
+  const fit = fitTwoLigandTargets(descriptor.multipleNeighborIds, currentAngles, [wrapAngleUnsigned(axisAngle + Math.PI / 2), wrapAngleUnsigned(axisAngle - Math.PI / 2)]);
+  if (!fit) {
+    return null;
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const incumbentAudit = auditLayout(layoutGraph, coords, { bondLength });
+  let candidateCoords = new Map(coords);
+  let rotationMagnitude = 0;
+  for (const multipleNeighborId of descriptor.multipleNeighborIds) {
+    const targetAngle = fit.targetAngles.get(multipleNeighborId);
+    if (targetAngle == null) {
+      continue;
+    }
+    candidateCoords = rotateTerminalMultipleLigandToAngle(layoutGraph, candidateCoords, centerAtomId, multipleNeighborId, targetAngle);
+    rotationMagnitude += angularDifference(currentAngles.get(multipleNeighborId), targetAngle);
+  }
+
+  const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+  if (!crossCandidateAuditDoesNotRegress(candidateAudit, incumbentAudit)) {
+    return null;
+  }
+
+  const incumbentDeviation = strictOrthogonalCenterDeviation(coords, centerAtomId, descriptor);
+  const candidate = {
+    coords: candidateCoords,
+    audit: candidateAudit,
+    deviation: strictOrthogonalCenterDeviation(candidateCoords, centerAtomId, descriptor),
+    rotationMagnitude
+  };
+  return candidate.deviation < incumbentDeviation - 1e-12 ? candidate : null;
+}
+
+/**
+ * Returns whether a ring-embedded bis-oxo center already has a readable
+ * opposed-oxo cross that should not be collapsed back to an exterior V.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Hypervalent center descriptor.
+ * @returns {boolean} True when the current oxo pair should be preserved.
+ */
+function shouldPreserveRingEmbeddedBisOxoCross(layoutGraph, coords, centerAtomId, descriptor) {
+  if (ringEmbeddedBisOxoAntipodalSingleAxis(layoutGraph, coords, centerAtomId, descriptor) == null || descriptor.multipleNeighborIds.length !== 2) {
+    return false;
+  }
+  const centerPosition = coords.get(centerAtomId);
+  const firstPosition = coords.get(descriptor.multipleNeighborIds[0]);
+  const secondPosition = coords.get(descriptor.multipleNeighborIds[1]);
+  if (!centerPosition || !firstPosition || !secondPosition) {
+    return false;
+  }
+  const oxoSeparation = angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition)));
+  return oxoSeparation >= RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION;
 }
 
 /**
@@ -3907,6 +4019,26 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
     );
     const movableNeighborIds = new Set(movableSubtreesByNeighborId.keys());
     const centerPosition = coords.get(centerAtomId);
+    const ringEmbeddedExactCrossCandidate = ringEmbeddedBisOxoExactCrossCandidate(layoutGraph, coords, centerAtomId, descriptor);
+    if (ringEmbeddedExactCrossCandidate && strictOrthogonalCenterDeviation(coords, centerAtomId, descriptor) > ANGLE_THRESHOLD ** 2) {
+      for (const [atomId, position] of ringEmbeddedExactCrossCandidate.coords) {
+        coords.set(atomId, position);
+      }
+      nudges += 1;
+      nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
+      continue;
+    }
+    if (shouldPreserveRingEmbeddedBisOxoCross(layoutGraph, coords, centerAtomId, descriptor)) {
+      nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
+      nudges += relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
+      nudges += relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords, centerAtomId);
+      nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
+      nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
+      nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
+      nudges += compromiseCrowdedRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
+      continue;
+    }
+
     const ringEmbeddedFit = fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descriptor);
 
     if (ringEmbeddedFit && centerPosition) {

@@ -7,6 +7,7 @@ describe('layout/engine/templates/library', () => {
     const templateIds = listTemplates().map(template => template.id);
     assert.deepEqual(templateIds, [
       'adamantane',
+      'noradamantane-core',
       'bicyclo-2-2-2',
       'hydroxy-diformyl-bicyclooctadiene-core',
       'alkenyl-phenyl-oxabicycloheptane-core',
@@ -72,6 +73,7 @@ describe('layout/engine/templates/library', () => {
       'dimethyl-diaza-fused-cyclopropane-cage-core',
       'sulfonyl-aza-cycloheptene-cyclopropane-core',
       'sulfonyl-aromatic-bridged-heterocycle-core',
+      'oxa-azabicyclo-sulfonyl-core',
       'hydroxy-dimethyl-oxatricyclo-cage-core',
       'hydroxy-oxatricyclo-diol-core',
       'cyclobutane-oxadecalin-core',
@@ -168,6 +170,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(adamantane.atomCount, 10);
     assert.equal(adamantane.bondCount, 12);
     assert.equal(adamantane.ringCount, 3);
+
+    const noradamantane = getTemplateById('noradamantane-core');
+    assert.equal(noradamantane.family, 'bridged');
+    assert.equal(noradamantane.atomCount, 9);
+    assert.equal(noradamantane.bondCount, 11);
+    assert.equal(noradamantane.ringCount, 3);
 
     const bicyclo222 = getTemplateById('bicyclo-2-2-2');
     assert.equal(bicyclo222.family, 'bridged');

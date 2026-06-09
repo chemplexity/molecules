@@ -382,6 +382,8 @@ const MIXED_ROOT_SMALL_RING_EXTERIOR_PRESENTATION_IMPROVEMENT = 0.1;
 const MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION = Math.PI / 6;
 const MACROCYCLE_AROMATIC_RESCUE_TARGET_ANGLE_DEVIATION = Math.PI / 18;
 const MACROCYCLE_AROMATIC_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
+const MACROCYCLE_SMALL_RING_RESCUE_TRIGGER_ANGLE_DEVIATION = Math.PI / 6;
+const MACROCYCLE_SMALL_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3]);
 const MACROCYCLE_AROMATIC_BRIDGE_EXIT_MIN_IMPROVEMENT = Math.PI / 12;
 const MACROCYCLE_AROMATIC_LINKER_RELAXATION_MIN_RING_SIZE = 12;
 const MACROCYCLE_AROMATIC_LINKER_RELAXATION_PASSES = 20;
@@ -4474,7 +4476,14 @@ function measureAromaticRingRegularity(rings, coords) {
   };
 }
 
-function fitMacrocycleAromaticRegularRingTargets(ring, coords, bondLength) {
+/**
+ * Fits a regular-polygon target to an already placed macrocycle sub-ring.
+ * @param {object} ring - Ring descriptor to regularize.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Target coordinates keyed by atom ID, or null when incomplete.
+ */
+function fitMacrocycleRegularRingTargets(ring, coords, bondLength) {
   const positions = ring.atomIds.map(atomId => coords.get(atomId));
   if (positions.some(position => !position)) {
     return null;
@@ -4518,15 +4527,20 @@ function fitMacrocycleAromaticRegularRingTargets(ring, coords, bondLength) {
   return bestTargets;
 }
 
-function buildMacrocycleAromaticRegularizedCoords(rings, coords, bondLength, blendFactor) {
+/**
+ * Blends macrocycle ring atoms toward regular-polygon targets for the selected rings.
+ * @param {object[]} targetRings - Rings to use as regularization targets.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} blendFactor - Fraction of the movement toward the fitted target to apply.
+ * @returns {Map<string, {x: number, y: number}>|null} Candidate coordinates, or null when no target applies.
+ */
+function buildMacrocycleRegularizedCoords(targetRings, coords, bondLength, blendFactor) {
   const targetSums = new Map();
   const targetCounts = new Map();
 
-  for (const ring of rings) {
-    if (!ring.aromatic || ring.atomIds.length < 5) {
-      continue;
-    }
-    const targets = fitMacrocycleAromaticRegularRingTargets(ring, coords, bondLength);
+  for (const ring of targetRings) {
+    const targets = fitMacrocycleRegularRingTargets(ring, coords, bondLength);
     if (!targets) {
       continue;
     }
@@ -4561,6 +4575,11 @@ function buildMacrocycleAromaticRegularizedCoords(rings, coords, bondLength, ble
   }
 
   return candidateCoords;
+}
+
+function buildMacrocycleAromaticRegularizedCoords(rings, coords, bondLength, blendFactor) {
+  const targetRings = rings.filter(ring => ring.aromatic && ring.atomIds.length >= 5);
+  return targetRings.length === 0 ? null : buildMacrocycleRegularizedCoords(targetRings, coords, bondLength, blendFactor);
 }
 
 /**
@@ -5063,6 +5082,76 @@ function addMacrocycleAromaticRescueCandidate(candidates, rings, coords) {
   });
 }
 
+/**
+ * Returns the publication-critical five- and six-membered rings inside a
+ * macrocycle placement.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @returns {object[]} Complete small rings eligible for regularization.
+ */
+function macrocycleRegularizableSmallRings(rings, coords) {
+  return rings.filter(ring => (ring.atomIds.length === 5 || ring.atomIds.length === 6) && ring.atomIds.every(atomId => coords.has(atomId)));
+}
+
+/**
+ * Returns whether a macrocycle placement has a visibly distorted embedded
+ * small ring worth trying to regularize.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {string|null} templateId - Matched template ID.
+ * @param {object|null} placement - Current ring-system placement.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when small-ring rescue candidates should be evaluated.
+ */
+function shouldTryMacrocycleSmallRingGeometryRescue(rings, templateId, placement, bondLength) {
+  if (templateId || !placement?.coords) {
+    return false;
+  }
+  const score = scoreBridgedSmallRingGeometry(macrocycleRegularizableSmallRings(rings, placement.coords), placement.coords, bondLength);
+  return Boolean(score && score.maxAngleDeviation > MACROCYCLE_SMALL_RING_RESCUE_TRIGGER_ANGLE_DEVIATION);
+}
+
+/**
+ * Appends a constructed macrocycle small-ring rescue candidate.
+ * @param {object[]} candidates - Mutable candidate list.
+ * @param {object[]} rings - Ring descriptors in the ring system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @returns {void}
+ */
+function addMacrocycleSmallRingRescueCandidate(candidates, rings, coords) {
+  candidates.push({
+    coords,
+    ringCenters: ringCentersForCoords(rings, coords),
+    placementMode: 'constructed-bridged'
+  });
+}
+
+/**
+ * Builds bounded regularized candidates for distorted five- and six-membered
+ * rings embedded inside a macrocycle.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {number} bondLength - Target bond length.
+ * @param {object|null} basePlacement - Current macrocycle placement.
+ * @returns {Array<{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}>} Candidate placements.
+ */
+function macrocycleSmallRingRegularizedRescueCandidates(rings, bondLength, basePlacement) {
+  if (!basePlacement?.coords) {
+    return [];
+  }
+  const smallRings = macrocycleRegularizableSmallRings(rings, basePlacement.coords);
+  if (smallRings.length === 0) {
+    return [];
+  }
+
+  const candidates = [];
+  for (const blendFactor of MACROCYCLE_SMALL_RING_REGULARIZATION_BLEND_FACTORS) {
+    const coords = buildMacrocycleRegularizedCoords(smallRings, basePlacement.coords, bondLength, blendFactor);
+    if (coords) {
+      addMacrocycleSmallRingRescueCandidate(candidates, rings, coords);
+    }
+  }
+  return candidates;
+}
+
 function macrocycleAromaticRegularizedRescueCandidates(layoutGraph, rings, bondLength, basePlacement) {
   if (!basePlacement?.coords || !rings.some(ring => ring.aromatic)) {
     return [];
@@ -5385,6 +5474,49 @@ function isBetterMacrocycleAromaticBridgePoseRescue(layoutGraph, ringSystem, can
     return true;
   }
   return false;
+}
+
+/**
+ * Returns whether a macrocycle small-ring rescue improves embedded ring shape
+ * without introducing audit regressions.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {object|null} candidatePlacement - Candidate placement.
+ * @param {object|null} incumbentPlacement - Current placement.
+ * @param {object|null} candidateAudit - Candidate audit summary.
+ * @param {object|null} incumbentAudit - Current audit summary.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the regularized macrocycle candidate should replace the incumbent.
+ */
+function isBetterMacrocycleSmallRingGeometryRescue(rings, candidatePlacement, incumbentPlacement, candidateAudit, incumbentAudit, bondLength) {
+  if (!candidatePlacement?.coords || !incumbentPlacement?.coords || !candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) > (incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > Math.max(incumbentAudit.maxBondLengthDeviation + bondLength * 0.02, bondLength * BRIDGED_SMALL_RING_GEOMETRY_MAX_BOND_DEVIATION_FACTOR)) {
+    return false;
+  }
+
+  const smallRings = macrocycleRegularizableSmallRings(rings, incumbentPlacement.coords);
+  const candidateScore = scoreBridgedSmallRingGeometry(smallRings, candidatePlacement.coords, bondLength);
+  const incumbentScore = scoreBridgedSmallRingGeometry(smallRings, incumbentPlacement.coords, bondLength);
+  return bridgedSmallRingGeometryScoreImproves(candidateScore, incumbentScore);
 }
 
 function bridgedSmallRingGeometryScoreImproves(candidateScore, incumbentScore) {
@@ -5736,6 +5868,16 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
           isBetterMacrocycleAromaticRingRescue(regularizedRescuePlacement, bestPlacement, regularizedRescueAudit, bestAudit, rings) ||
           isBetterMacrocycleAromaticBridgePoseRescue(layoutGraph, ringSystem, regularizedRescuePlacement, bestPlacement, regularizedRescueAudit, bestAudit, rings)
         ) {
+          bestPlacement = regularizedRescuePlacement;
+          bestAudit = regularizedRescueAudit;
+        }
+      }
+    }
+    if (shouldTryMacrocycleSmallRingGeometryRescue(rings, templateId, bestPlacement, bondLength)) {
+      for (const regularizedResult of macrocycleSmallRingRegularizedRescueCandidates(rings, bondLength, bestPlacement)) {
+        const regularizedRescuePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, regularizedResult, templateId);
+        const regularizedRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, regularizedRescuePlacement, bondLength);
+        if (isBetterMacrocycleSmallRingGeometryRescue(rings, regularizedRescuePlacement, bestPlacement, regularizedRescueAudit, bestAudit, bondLength)) {
           bestPlacement = regularizedRescuePlacement;
           bestAudit = regularizedRescueAudit;
         }

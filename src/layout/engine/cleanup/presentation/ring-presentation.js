@@ -31,6 +31,8 @@ const SMALL_RING_EXTERIOR_FAN_EPSILON = 1e-6;
 const TERMINAL_MULTIPLE_BOND_LEAF_PRESENTATION_CLEARANCE_FACTOR = 0.6;
 const OMITTED_H_DIRECT_RING_HUB_COLLATERAL_ROOT_FRACTIONS = [1, 0.75, 0.5, 0.25];
 const OMITTED_H_DIRECT_RING_HUB_COLLATERAL_ROOT_HEAVY_LIMIT = 16;
+const RING_EMBEDDED_BIS_OXO_CROSS_SINGLE_TOLERANCE = Math.PI / 6;
+const RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION = (5 * Math.PI) / 6;
 
 function isTerminalMultipleBondLeaf(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
@@ -548,6 +550,35 @@ function isBetterSmallRingExteriorFanScore(candidateScore, incumbentScore, epsil
   return candidateScore.totalDeviation < incumbentScore.totalDeviation - epsilon;
 }
 
+/**
+ * Returns whether a saturated ring-embedded bis-oxo center already has an
+ * opposed oxo cross that should not be retouched into a small-ring exterior V.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Candidate ring-embedded hypervalent atom id.
+ * @param {string[]} ringNeighborIds - Ring neighbors around the anchor.
+ * @param {string[]} exocyclicNeighborIds - Exocyclic neighbors around the anchor.
+ * @returns {boolean} True when the small-ring exact fan descriptor should be skipped.
+ */
+function isProtectedRingEmbeddedBisOxoExteriorFan(layoutGraph, coords, anchorAtomId, ringNeighborIds, exocyclicNeighborIds) {
+  if (ringNeighborIds.length !== 2 || exocyclicNeighborIds.length !== 2 || !exocyclicNeighborIds.every(atomId => isTerminalMultipleBondLeaf(layoutGraph, atomId))) {
+    return false;
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return false;
+  }
+
+  const ringSeparation = angularDifference(angleOf(sub(coords.get(ringNeighborIds[0]), anchorPosition)), angleOf(sub(coords.get(ringNeighborIds[1]), anchorPosition)));
+  if (Math.PI - ringSeparation > RING_EMBEDDED_BIS_OXO_CROSS_SINGLE_TOLERANCE) {
+    return false;
+  }
+
+  const oxoSeparation = angularDifference(angleOf(sub(coords.get(exocyclicNeighborIds[0]), anchorPosition)), angleOf(sub(coords.get(exocyclicNeighborIds[1]), anchorPosition)));
+  return oxoSeparation >= RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION;
+}
+
 function collectSmallRingExteriorFanDescriptors(layoutGraph, coords) {
   const descriptors = [];
   const seenKeys = new Set();
@@ -572,6 +603,9 @@ function collectSmallRingExteriorFanDescriptors(layoutGraph, coords) {
       const ringNeighborIds = neighborAtomIds.filter(neighborAtomId => ringAtomIds.has(neighborAtomId));
       const exocyclicNeighborIds = neighborAtomIds.filter(neighborAtomId => !ringAtomIds.has(neighborAtomId));
       if (ringNeighborIds.length !== 2 || exocyclicNeighborIds.length !== 2) {
+        continue;
+      }
+      if (isProtectedRingEmbeddedBisOxoExteriorFan(layoutGraph, coords, anchorAtomId, ringNeighborIds, exocyclicNeighborIds)) {
         continue;
       }
       const anchorPosition = coords.get(anchorAtomId);

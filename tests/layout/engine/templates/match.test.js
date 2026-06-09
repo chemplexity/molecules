@@ -291,6 +291,10 @@ describe('layout/engine/templates/match', () => {
     const adamantaneMatch = findTemplateMatch(adamantaneGraph, buildRingCandidate(adamantaneGraph, adamantaneGraph.ringSystems[0], 'bridged'));
     assert.equal(adamantaneMatch.id, 'adamantane');
 
+    const noradamantaneGraph = createLayoutGraph(parseSMILES('C12CC3CC1CC(C2)C3'), { suppressH: true });
+    const noradamantaneMatch = findTemplateMatch(noradamantaneGraph, buildRingCandidate(noradamantaneGraph, noradamantaneGraph.ringSystems[0], 'bridged'));
+    assert.equal(noradamantaneMatch.id, 'noradamantane-core');
+
     const morphinanGraph = createLayoutGraph(parseSMILES('C1C2Cc3ccccc3C1CCN2'));
     const morphinanMatch = findTemplateMatch(morphinanGraph, buildRingCandidate(morphinanGraph, morphinanGraph.ringSystems[0], 'bridged'));
     assert.equal(morphinanMatch.id, 'morphinan-core');

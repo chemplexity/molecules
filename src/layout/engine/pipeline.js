@@ -5629,15 +5629,16 @@ function finalTerminalCarbonLeafContactDescriptor(layoutGraph, coords, atomId, o
   if (heavyNeighborBonds.length !== 1) {
     return null;
   }
-  const anchorAtomId = heavyNeighborBonds[0].a === atomId ? heavyNeighborBonds[0].b : heavyNeighborBonds[0].a;
+  const anchorBond = heavyNeighborBonds[0];
+  const anchorAtomId = anchorBond.a === atomId ? anchorBond.b : anchorBond.a;
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   const isMultipleBondHeteroLeaf = Boolean(
-    allowsMultipleBondHeteroLeaf && (heavyNeighborBonds[0].order ?? 1) > 1 && anchorAtom && !anchorAtom.aromatic && FINAL_TERMINAL_CONTACT_MULTIPLE_BOND_HETERO_ANCHOR_ELEMENTS.has(anchorAtom.element)
+    allowsMultipleBondHeteroLeaf && (anchorBond.order ?? 1) > 1 && anchorAtom && !anchorAtom.aromatic && FINAL_TERMINAL_CONTACT_MULTIPLE_BOND_HETERO_ANCHOR_ELEMENTS.has(anchorAtom.element)
   );
-  if (isSingleBondRetouchableLeaf && !isMultipleBondHeteroLeaf && (heavyNeighborBonds[0].order ?? 1) !== 1) {
+  if (!isMultipleBondHeteroLeaf && (anchorBond.order ?? 1) !== 1) {
     return null;
   }
-  if (allowsMultipleBondHeteroLeaf && (heavyNeighborBonds[0].order ?? 1) > 1 && !isMultipleBondHeteroLeaf) {
+  if (allowsMultipleBondHeteroLeaf && (anchorBond.order ?? 1) > 1 && !isMultipleBondHeteroLeaf) {
     return null;
   }
   const movedAtomIds = collectFinalTerminalCarbonLeafSubtreeAtomIds(layoutGraph, atomId, anchorAtomId, coords);
@@ -6811,6 +6812,38 @@ function terminalSingleHeteroMultipleBondBranchLeafIdsForCenter(layoutGraph, coo
   });
 }
 
+/**
+ * Appends branch-level terminal multiple-bond retouch descriptors for one
+ * contact or crossing pair while sharing the descriptor de-duplication cap.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} leafAtomId - Candidate terminal leaf or center atom.
+ * @param {string} blockerAtomId - Opposing atom that the branch move must leave fixed.
+ * @param {Array<object>} descriptors - Mutable descriptor accumulator.
+ * @param {Set<string>} seen - Mutable descriptor identity set.
+ * @returns {boolean} True when descriptor collection reached its cap.
+ */
+function appendFinalTerminalMultipleBondBranchContactDescriptors(layoutGraph, coords, leafAtomId, blockerAtomId, descriptors, seen) {
+  const contactDescriptors = [
+    finalTerminalMultipleBondBranchContactDescriptor(layoutGraph, coords, leafAtomId, blockerAtomId),
+    ...terminalSingleHeteroMultipleBondBranchLeafIdsForCenter(layoutGraph, coords, leafAtomId).map(terminalLeafAtomId =>
+      finalTerminalMultipleBondBranchContactDescriptor(layoutGraph, coords, terminalLeafAtomId, blockerAtomId)
+    )
+  ].filter(Boolean);
+  for (const descriptor of contactDescriptors) {
+    const key = `${descriptor.pivotAtomId}:${descriptor.centerAtomId}:${descriptor.leafAtomId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    descriptors.push(descriptor);
+    if (descriptors.length >= FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_DESCRIPTORS) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function finalTerminalMultipleBondBranchContactDescriptors(layoutGraph, coords, bondLength) {
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
   if (heavyAtomCount > FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_LAYOUT_HEAVY_ATOMS) {
@@ -6824,21 +6857,21 @@ function finalTerminalMultipleBondBranchContactDescriptors(layoutGraph, coords, 
       [overlap.firstAtomId, overlap.secondAtomId],
       [overlap.secondAtomId, overlap.firstAtomId]
     ]) {
-      const contactDescriptors = [
-        finalTerminalMultipleBondBranchContactDescriptor(layoutGraph, coords, leafAtomId, blockerAtomId),
-        ...terminalSingleHeteroMultipleBondBranchLeafIdsForCenter(layoutGraph, coords, leafAtomId).map(terminalLeafAtomId =>
-          finalTerminalMultipleBondBranchContactDescriptor(layoutGraph, coords, terminalLeafAtomId, blockerAtomId)
-        )
-      ].filter(Boolean);
-      for (const descriptor of contactDescriptors) {
-        const key = `${descriptor.pivotAtomId}:${descriptor.centerAtomId}:${descriptor.leafAtomId}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        descriptors.push(descriptor);
-        if (descriptors.length >= FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_DESCRIPTORS) {
-          return descriptors;
+      if (appendFinalTerminalMultipleBondBranchContactDescriptors(layoutGraph, coords, leafAtomId, blockerAtomId, descriptors, seen)) {
+        return descriptors;
+      }
+    }
+  }
+  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords)) {
+    for (const [leafAtomIds, blockerAtomIds] of [
+      [crossing.firstAtomIds ?? [], crossing.secondAtomIds ?? []],
+      [crossing.secondAtomIds ?? [], crossing.firstAtomIds ?? []]
+    ]) {
+      for (const leafAtomId of leafAtomIds) {
+        for (const blockerAtomId of blockerAtomIds) {
+          if (appendFinalTerminalMultipleBondBranchContactDescriptors(layoutGraph, coords, leafAtomId, blockerAtomId, descriptors, seen)) {
+            return descriptors;
+          }
         }
       }
     }
@@ -6904,6 +6937,7 @@ function finalTerminalMultipleBondBranchContactAuditCanReplace(candidateAudit, b
     return false;
   }
   return (
+    (candidateAudit.visibleHeavyBondCrossingCount ?? 0) < (baseAudit.visibleHeavyBondCrossingCount ?? 0) ||
     (candidateAudit.severeOverlapCount ?? 0) < (baseAudit.severeOverlapCount ?? 0) ||
     ((candidateAudit.severeOverlapCount ?? 0) === (baseAudit.severeOverlapCount ?? 0) &&
       (candidateAudit.severeOverlapPenalty ?? 0) < (baseAudit.severeOverlapPenalty ?? 0) - PRESENTATION_METRIC_EPSILON)
@@ -6943,7 +6977,7 @@ function maybeRetouchFinalTerminalMultipleBondBranchSevereContacts(layoutGraph, 
     bondLength,
     bondValidationClasses: placement.bondValidationClasses
   });
-  if ((baseAudit.severeOverlapCount ?? 0) === 0) {
+  if ((baseAudit.severeOverlapCount ?? 0) === 0 && (baseAudit.visibleHeavyBondCrossingCount ?? 0) === 0) {
     return { coords: finalCoords, changed: false, movedAtomIds: [], audit: baseAudit };
   }
 
@@ -7000,7 +7034,7 @@ function maybeRetouchFinalTerminalMultipleBondBranchSevereContacts(layoutGraph, 
       movedAtomIds.add(atomId);
     }
     changed = true;
-    if ((baseAudit.severeOverlapCount ?? 0) === 0) {
+    if ((baseAudit.severeOverlapCount ?? 0) === 0 && (baseAudit.visibleHeavyBondCrossingCount ?? 0) === 0) {
       break;
     }
   }

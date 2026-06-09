@@ -70,6 +70,16 @@ function angleDeg(a, b, c) {
   return (Math.acos(dot) * 180) / Math.PI;
 }
 
+function ringInternalAngles(mol, atomIds) {
+  return atomIds.map((atomId, index) => {
+    const previous = mol.atoms.get(atomIds[(index - 1 + atomIds.length) % atomIds.length]);
+    const center = mol.atoms.get(atomId);
+    const next = mol.atoms.get(atomIds[(index + 1) % atomIds.length]);
+    assert.ok(previous && center && next, `expected complete ring atom set for ${atomId}`);
+    return angleDeg(previous, center, next);
+  });
+}
+
 function maxPairDistanceErrorForMappedUnedited(preview) {
   const pairs = preview.mappedAtomPairs.filter(
     ([reactantId, productId]) => !preview.editedProductAtomIds.has(productId) && preview.mol.atoms.get(reactantId)?.name !== 'H' && preview.mol.atoms.get(productId)?.name !== 'H'
@@ -1301,6 +1311,46 @@ test('reaction preview keeps lactam hydrolysis ring-opening product compact for 
   const stats = heavyGeometryStats(preview, largestProductComponent(preview));
   assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in tert-butyl lactam hydrolysis preview, got ${stats.maxBond.toFixed(3)} Å`);
   assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in tert-butyl lactam hydrolysis preview, got ${stats.minNonbonded.toFixed(3)} Å`);
+});
+
+test('reaction preview keeps amine-alkylation macrocycle products from deforming retained rings', () => {
+  const smiles = 'Cn1cc(NC(=O)c2cc(NC(=O)c3cc(NC(=O)CCCN4C=C(N(CCCl)CCCl)C(=O)NC4=O)cn3C)cn2C)cc1C(=O)NCCC(=N)N';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.amineAlkylation.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.equal(mappings.length, 4, 'expected four amine-alkylation mappings');
+
+  const retainedRings = [
+    {
+      atomIds: ['__rxn_product__0:C36', '__rxn_product__0:N35', '__rxn_product__0:C33', '__rxn_product__0:C25', '__rxn_product__0:C24', '__rxn_product__0:N23'],
+      targetAngle: 120
+    },
+    {
+      atomIds: ['__rxn_product__0:N39', '__rxn_product__0:C38', '__rxn_product__0:C16', '__rxn_product__0:C15', '__rxn_product__0:C14'],
+      targetAngle: 108
+    },
+    {
+      atomIds: ['__rxn_product__0:C45', '__rxn_product__0:C44', '__rxn_product__0:C4', '__rxn_product__0:C3', '__rxn_product__0:N2'],
+      targetAngle: 108
+    },
+    {
+      atomIds: ['__rxn_product__0:N42', '__rxn_product__0:C41', '__rxn_product__0:C10', '__rxn_product__0:C9', '__rxn_product__0:C8'],
+      targetAngle: 108
+    }
+  ];
+
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.amineAlkylation.smirks, mapping);
+    const stats = heavyGeometryStats(preview, largestProductComponent(preview));
+    assert.ok(stats.maxBond < 1.9, `expected no stretched heavy-atom bonds in amine-alkylation mapping ${index}, got ${stats.maxBond.toFixed(3)} Å`);
+    assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in amine-alkylation mapping ${index}, got ${stats.minNonbonded.toFixed(3)} Å`);
+
+    for (const { atomIds, targetAngle } of retainedRings) {
+      const angles = ringInternalAngles(preview.mol, atomIds);
+      const maxDeviation = Math.max(...angles.map(angle => Math.abs(angle - targetAngle)));
+      assert.ok(maxDeviation <= 3, `expected retained product ring to stay near ${targetAngle}°, got max deviation ${maxDeviation.toFixed(1)}° for mapping ${index}`);
+    }
+  }
 });
 
 test('reaction preview keeps remaining alkene substituent bent after dehalogenation', () => {

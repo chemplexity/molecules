@@ -12,6 +12,8 @@ const DEFAULT_NUMBERING_ANGLE_STEPS = 72;
 const DEFAULT_ANNOTATION_LABEL_WIDTH_FACTOR = 0.62;
 const DEFAULT_ANNOTATION_LABEL_HEIGHT_FACTOR = 1.2;
 const DEFAULT_ANNOTATION_BOX_PADDING = 3;
+const DEFAULT_ANNOTATION_DISTANCE_STEP = 4;
+const DEFAULT_ANNOTATION_DISTANCE_STEPS = 8;
 
 function _normalizeAngle(angle) {
   let normalized = angle;
@@ -51,6 +53,14 @@ function _countAnnotationBoxOverlaps(candidate, placedBoxes) {
   return overlapCount;
 }
 
+function _annotationCandidateDistances(baseDistance) {
+  const distances = [];
+  for (let step = 0; step <= DEFAULT_ANNOTATION_DISTANCE_STEPS; step++) {
+    distances.push(baseDistance + step * DEFAULT_ANNOTATION_DISTANCE_STEP);
+  }
+  return distances;
+}
+
 /**
  * Picks the placement angle for an atom annotation that maximizes clearance from all blocked sector angles.
  * @param {Array<{angle: number, spread: number}>} [blockedSectors] - Array of blocked angular sectors, each with a center angle and half-spread in radians.
@@ -85,8 +95,8 @@ export function pickAtomAnnotationAngle(blockedSectors = [], fallbackAngle = DEF
 
 /**
  * Picks a concrete atom-annotation label placement that still prefers the
- * clearest blocked-sector angle, but can step aside when other text labels
- * already occupy that preferred slot.
+ * clearest blocked-sector angle, but can step aside or outward when other text
+ * labels already occupy that preferred slot.
  * @param {object} options - Placement options.
  * @param {{x: number, y: number}} options.center - Atom center in screen space.
  * @param {string} options.label - Annotation text.
@@ -100,6 +110,7 @@ export function pickAtomAnnotationPlacement({ center, label, fontSize, blockedSe
   const normalizedBlockedSectors = Array.isArray(blockedSectors) ? blockedSectors : [];
   const normalizedPlacedBoxes = Array.isArray(placedBoxes) ? placedBoxes : [];
   const labelDistance = atomNumberingLabelDistance(fontSize, label);
+  const candidateDistances = _annotationCandidateDistances(labelDistance);
   const { hw, hh } = _annotationLabelMetrics(label, fontSize);
   const candidateAngles = [fallbackAngle];
   for (let step = 0; step < DEFAULT_NUMBERING_ANGLE_STEPS; step++) {
@@ -114,7 +125,8 @@ export function pickAtomAnnotationPlacement({ center, label, fontSize, blockedSe
     hh,
     overlapCount: Infinity,
     clearance: -Infinity,
-    fallbackDistance: Infinity
+    fallbackDistance: Infinity,
+    radialDistance: labelDistance
   };
 
   for (const angle of candidateAngles) {
@@ -125,25 +137,30 @@ export function pickAtomAnnotationPlacement({ center, label, fontSize, blockedSe
       clearance = Math.min(clearance, separation);
     }
     const fallbackDistance = _angularDistance(angle, fallbackAngle);
-    const candidate = {
-      angle,
-      cx: center.x + Math.cos(angle) * labelDistance,
-      cy: center.y + Math.sin(angle) * labelDistance,
-      hw,
-      hh
-    };
-    const overlapCount = _countAnnotationBoxOverlaps(candidate, normalizedPlacedBoxes);
-    if (
-      overlapCount < bestPlacement.overlapCount ||
-      (overlapCount === bestPlacement.overlapCount &&
-        (clearance > bestPlacement.clearance + 1e-6 || (Math.abs(clearance - bestPlacement.clearance) <= 1e-6 && fallbackDistance < bestPlacement.fallbackDistance)))
-    ) {
-      bestPlacement = {
-        ...candidate,
-        overlapCount,
-        clearance,
-        fallbackDistance
+    for (const radialDistance of candidateDistances) {
+      const candidate = {
+        angle,
+        cx: center.x + Math.cos(angle) * radialDistance,
+        cy: center.y + Math.sin(angle) * radialDistance,
+        hw,
+        hh
       };
+      const overlapCount = _countAnnotationBoxOverlaps(candidate, normalizedPlacedBoxes);
+      if (
+        overlapCount < bestPlacement.overlapCount ||
+        (overlapCount === bestPlacement.overlapCount &&
+          (clearance > bestPlacement.clearance + 1e-6 ||
+            (Math.abs(clearance - bestPlacement.clearance) <= 1e-6 &&
+              (fallbackDistance < bestPlacement.fallbackDistance || (Math.abs(fallbackDistance - bestPlacement.fallbackDistance) <= 1e-6 && radialDistance < bestPlacement.radialDistance)))))
+      ) {
+        bestPlacement = {
+          ...candidate,
+          overlapCount,
+          clearance,
+          fallbackDistance,
+          radialDistance
+        };
+      }
     }
   }
 
@@ -187,6 +204,29 @@ export function multipleBondSideBlockerAngle(start, end, side = 1, forwardBias =
   const perpX = (-dy / len) * (side >= 0 ? 1 : -1);
   const perpY = (dx / len) * (side >= 0 ? 1 : -1);
   return Math.atan2(uy * forwardBias + perpY, ux * forwardBias + perpX);
+}
+
+/**
+ * Computes the side-lane blocker angles needed for atom annotations near
+ * rendered multiple-bond strokes.
+ * @param {{x: number, y: number}} start - SVG coordinates of the annotated atom.
+ * @param {{x: number, y: number}} end - SVG coordinates of the bonded neighbor.
+ * @param {object} [options] - Multiple-bond blocker options.
+ * @param {number} [options.order] - Rendered bond order.
+ * @param {number} [options.side] - Preferred offset side for asymmetric double/aromatic bonds.
+ * @param {boolean} [options.terminal] - Whether a terminal double bond is rendered with symmetric side strokes.
+ * @returns {number[]} Blocker angles in radians.
+ */
+export function multipleBondAnnotationBlockerAngles(start, end, { order = 1, side = 1, terminal = false } = {}) {
+  const blockerSides = order >= 3 ? [1, -1] : order === 2 && terminal ? [1, -1] : order === 2 || order === 1.5 ? [side] : [];
+  const angles = [];
+  for (const blockerSide of blockerSides) {
+    const angle = multipleBondSideBlockerAngle(start, end, blockerSide);
+    if (angle != null) {
+      angles.push(angle);
+    }
+  }
+  return angles;
 }
 
 /**

@@ -52,6 +52,8 @@ const TERMINAL_MULTIPLE_BOND_CENTER_BRANCH_MAX_ANCHOR_DEVIATION = Math.PI / 6;
 const TERMINAL_MULTIPLE_BOND_LEAF_PARTIAL_FAN_FRACTIONS = Object.freeze([0.1, 0.15, 0.2, 0.225, 0.24, 0.245, 1 / 3, 0.5, 2 / 3, 0.75, 0.85]);
 const HIDDEN_H_MULTIPLE_BOND_VISIBLE_ANGLE = (2 * Math.PI) / 3;
 const TERMINAL_MULTIPLE_BOND_BALANCED_FAN_TOLERANCE = Math.PI / 15;
+const RING_EMBEDDED_BIS_OXO_CROSS_SINGLE_TOLERANCE = Math.PI / 6;
+const RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION = (5 * Math.PI) / 6;
 
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
   return incidentRingPolygonsForAtom(layoutGraph, coords, anchorAtomId);
@@ -2817,6 +2819,60 @@ function terminalRingHeteroStructuralPairs(layoutGraph) {
   return pairs;
 }
 
+/**
+ * Returns whether a terminal multiple-bond hetero leaf is already part of an
+ * opposed bis-oxo cross on a ring-embedded hypervalent center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Candidate hypervalent ring atom id.
+ * @param {string} leafAtomId - Candidate terminal multiple-bond hetero leaf id.
+ * @returns {boolean} True when terminal-hetero presentation tidy should leave the paired oxos alone.
+ */
+function isProtectedRingEmbeddedBisOxoCrossLeaf(layoutGraph, coords, centerAtomId, leafAtomId) {
+  if (!layoutGraph.ringAtomIdSet.has(centerAtomId) || !coords.has(centerAtomId) || !coords.has(leafAtomId)) {
+    return false;
+  }
+
+  const singleNeighborIds = [];
+  const multipleLeafIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return false;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    const bondOrder = bond.order ?? 1;
+    if (bondOrder === 1) {
+      singleNeighborIds.push(neighborAtomId);
+      continue;
+    }
+    if (bondOrder >= 2 && neighborAtom.element !== 'C' && (neighborAtom.heavyDegree ?? 0) === 1) {
+      multipleLeafIds.push(neighborAtomId);
+      continue;
+    }
+    return false;
+  }
+
+  if (singleNeighborIds.length !== 2 || multipleLeafIds.length !== 2 || !multipleLeafIds.includes(leafAtomId)) {
+    return false;
+  }
+  const incidentRings = layoutGraph.atomToRings.get(centerAtomId) ?? [];
+  if (!incidentRings.some(ring => singleNeighborIds.every(neighborAtomId => ring.atomIds.includes(neighborAtomId)))) {
+    return false;
+  }
+
+  const centerPosition = coords.get(centerAtomId);
+  const singleSeparation = angularDifference(angleOf(sub(coords.get(singleNeighborIds[0]), centerPosition)), angleOf(sub(coords.get(singleNeighborIds[1]), centerPosition)));
+  if (Math.PI - singleSeparation > RING_EMBEDDED_BIS_OXO_CROSS_SINGLE_TOLERANCE) {
+    return false;
+  }
+  const oxoSeparation = angularDifference(angleOf(sub(coords.get(multipleLeafIds[0]), centerPosition)), angleOf(sub(coords.get(multipleLeafIds[1]), centerPosition)));
+  return oxoSeparation >= RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION;
+}
+
 function terminalRingHeteros(layoutGraph, coords) {
   const descriptors = [];
   const outwardAnglesByAnchorId = new Map();
@@ -2831,6 +2887,9 @@ function terminalRingHeteros(layoutGraph, coords) {
 
   for (const { anchorAtomId, heteroAtomId, prefersOutwardGeometry } of terminalRingHeteroStructuralPairs(layoutGraph)) {
     if (!coords.has(anchorAtomId) || !coords.has(heteroAtomId)) {
+      continue;
+    }
+    if (!prefersOutwardGeometry && isProtectedRingEmbeddedBisOxoCrossLeaf(layoutGraph, coords, anchorAtomId, heteroAtomId)) {
       continue;
     }
     const smallRingExteriorAngles = smallRingExteriorTerminalHeteroAngles(layoutGraph, coords, anchorAtomId, heteroAtomId);

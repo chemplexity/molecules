@@ -546,11 +546,13 @@ function terminalAlkeneContinuationDescriptor(layoutGraph, coords, centerAtomId,
   ) {
     return null;
   }
+  const idealContinuationAngle = (leafBond.bond.order ?? 1) >= 3 ? Math.PI : IDEAL_DIVALENT_CONTINUATION_ANGLE;
   return {
     centerAtomId,
     parentAtomId,
     grandParentAtomId,
     leafAtomId,
+    idealContinuationAngle,
     parentSubtreeAtomIds,
     leafSubtreeAtomIds
   };
@@ -579,7 +581,7 @@ function terminalAlkeneAngleDeviation(coords, descriptor) {
   if (!centerPosition || !parentPosition || !leafPosition) {
     return Number.POSITIVE_INFINITY;
   }
-  return Math.abs(angularDifference(angleOf(sub(parentPosition, centerPosition)), angleOf(sub(leafPosition, centerPosition))) - IDEAL_DIVALENT_CONTINUATION_ANGLE);
+  return Math.abs(angularDifference(angleOf(sub(parentPosition, centerPosition)), angleOf(sub(leafPosition, centerPosition))) - descriptor.idealContinuationAngle);
 }
 
 function restoreTerminalAlkeneLeafAngle(coords, descriptor) {
@@ -593,7 +595,7 @@ function restoreTerminalAlkeneLeafAngle(coords, descriptor) {
   const leafAngle = angleOf(sub(leafPosition, centerPosition));
   let bestCoords = null;
   let bestRotationMagnitude = Number.POSITIVE_INFINITY;
-  for (const targetAngle of [parentAngle + IDEAL_DIVALENT_CONTINUATION_ANGLE, parentAngle - IDEAL_DIVALENT_CONTINUATION_ANGLE]) {
+  for (const targetAngle of [parentAngle + descriptor.idealContinuationAngle, parentAngle - descriptor.idealContinuationAngle]) {
     const rotation = wrapAngle(targetAngle - leafAngle);
     const candidateCoords = rotateAtomIdsAroundAtom(coords, descriptor.leafSubtreeAtomIds, descriptor.centerAtomId, rotation);
     if (!candidateCoords) {
@@ -1055,8 +1057,8 @@ export function runDivalentContinuationTidy(layoutGraph, inputCoords, options = 
 }
 
 /**
- * Rotates terminal alkene tails away from local overlaps while restoring the
- * visible alkene continuation to its exact trigonal bend.
+ * Rotates terminal carbon multiple-bond tails away from local overlaps while
+ * restoring alkenes to trigonal bends and alkynes to linear continuations.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
  * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null}} [options] - Retouch options.

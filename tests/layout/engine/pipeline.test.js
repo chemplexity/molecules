@@ -300,6 +300,24 @@ describe('layout/engine/pipeline smoke', () => {
     assert.equal(mixedResult.metadata.stage, 'coordinates-ready');
     assert.equal(mixedResult.metadata.audit.ok, true);
   });
+
+  it('keeps compact bridged terminal alkynes linear through final leaf retouch', () => {
+    const smiles = 'CN1CC2CCC(O)C(C)(CN=C1)C(N2)C#C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const alkyneSeparation = bondAngleAtAtom(result.coords, 'C16', 'C14', 'C17');
+
+    assert.ok(bugMolecules.includes(smiles), 'expected compact bridged alkyne regression molecule to be registered');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.ok(Math.abs(alkyneSeparation - 180) < 1e-6, `expected the terminal alkyne to stay linear, got ${alkyneSeparation.toFixed(2)}`);
+  });
 });
 
 stressDescribe('layout/engine/pipeline', () => {
@@ -807,6 +825,34 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.cleanupPostHookNudges, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
+
+  it('uses the noradamantane template instead of flattening compact tricyclic nonane bridges', () => {
+    const smiles = 'CCCN1C2=C(NC(=N2)C23CC4CC2CC(C3)C4)C(=O)N(CCC)C1=O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const cageRings = [
+      ['C18', 'C16', 'C17', 'C10', 'C11', 'C12'],
+      ['C11', 'C12', 'C13', 'C14', 'C10'],
+      ['C14', 'C15', 'C16', 'C17', 'C10']
+    ];
+    const cageAngles = cageRings.flatMap(ring => ringAngles(result.coords, ring));
+
+    assert.ok(bugMolecules.includes(smiles), 'expected noradamantane bridge regression molecule to be registered');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(bondAngleAtAtom(result.coords, 'C17', 'C10', 'C16') > 90, 'expected the reported bridge corner to stay open');
+    assert.ok(Math.min(...cageAngles) > 80, `expected the noradamantane cage to avoid pinched corners, got ${cageAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cageAngles) < 150, `expected the noradamantane cage to avoid flattened corners, got ${cageAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected noradamantane cage placement to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
   it('keeps five-aryl-fused bridged cyclohexane cores regular around spiro branches', () => {
@@ -6946,6 +6992,26 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.totalMs < 3000, `expected compact oxime retouch to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
+  it('scores compact bridged oxime branches through the exterior lane', () => {
+    const smiles = 'CC(=NO)C12CC(C1)CCC2O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      timing: true
+    });
+    const oximeRootAngles = [bondAngleAtAtom(result.coords, 'C2', 'N3', 'C1'), bondAngleAtAtom(result.coords, 'C2', 'N3', 'C5'), bondAngleAtAtom(result.coords, 'C2', 'C1', 'C5')];
+
+    assert.ok(bugMolecules.includes(smiles), 'expected compact bridged oxime branch regression molecule to be registered');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(maxAngleDeviation(oximeRootAngles, 120) < 1e-6, `expected the oxime branch root to stay trigonal, got ${oximeRootAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(result.metadata.timing.totalMs < 3000, `expected compact bridged oxime branch placement to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
   it('articulates terminal alcohol leaves out of compact bridged cage overlaps', () => {
     const smiles = 'CC12CCC3CC3(C[NH2+]C1)C2CO';
     const molecule = parseSMILES(smiles);
@@ -7636,6 +7702,37 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
     assertOrthogonalCross(sulfoneAngles, 'acyclic S5');
     assertOrthogonalCross(tertButylAngles, 'tert-butyl C8');
+  });
+
+  it('keeps ring-embedded oxa azabicyclo sulfone oxos opposed', () => {
+    const smiles = 'CC1OCC2CCCC1(CC#C)NS2(=O)=O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const oxoSeparation = bondAngleAtAtom(result.coords, 'S14', 'O15', 'O16');
+    const ringLigandSeparation = bondAngleAtAtom(result.coords, 'S14', 'C5', 'N13');
+    const alkyneSeparation = bondAngleAtAtom(result.coords, 'C11', 'C10', 'C12');
+    const oxoRingLigandAngles = [
+      bondAngleAtAtom(result.coords, 'S14', 'C5', 'O15'),
+      bondAngleAtAtom(result.coords, 'S14', 'C5', 'O16'),
+      bondAngleAtAtom(result.coords, 'S14', 'N13', 'O15'),
+      bondAngleAtAtom(result.coords, 'S14', 'N13', 'O16')
+    ];
+
+    assert.ok(bugMolecules.includes(smiles), 'expected sulfone bridge regression molecule to be registered');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(oxoSeparation > 175, `expected sulfone oxos to stay opposed, got ${oxoSeparation.toFixed(2)}`);
+    assert.ok(ringLigandSeparation > 150, `expected the ring sulfur ligands to keep an opposed support axis, got ${ringLigandSeparation.toFixed(2)}`);
+    assert.ok(Math.abs(alkyneSeparation - 180) < 1e-6, `expected the terminal alkyne to stay linear, got ${alkyneSeparation.toFixed(2)}`);
+    assert.ok(Math.min(...oxoRingLigandAngles) > 70, `expected opposed oxos to keep clear cross quadrants, got ${oxoRingLigandAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
   it('rotates crowded aryl sulfonic acid connector subtrees so final sulfur fans stay exact', () => {
