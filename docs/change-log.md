@@ -1,7 +1,15 @@
 # Change Log
 
+## 2026-06-09
+
+- Add a formyl acetal cyclobutane template so compact bridged acetal cages keep the four-ring lane open.
+- Add a dihydroxy oxabicyclic lactone template so compact hydroxy lactone cages keep separated ring lanes.
+
 ## 2026-06-08
 
+- Prefer wider displayed stereo-hydrogen sectors over pinched cardinal snaps when rendering hidden stereochemical hydrogens.
+- Snap mixed saturated divalent linkers to audit-clean zigzag slots before cleanup.
+- Regularize crowded mixed macrocycle aryl rings late in placement while carrying attached substituents to preserve audit-clean geometry.
 - Preserve compact bridged terminal alkyne linearity during final terminal leaf retouch.
 - Add a noradamantane bridged-cage template with geometry-ranked mapping so compact tricyclic nonane bridges avoid flattened corners.
 - Let macrocycle placement regularize distorted embedded small rings while preserving reaction-preview product geometry.

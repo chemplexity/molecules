@@ -1810,6 +1810,61 @@ function ringFanAnglePolishCenter(layoutGraph, coords, atomId) {
   return centerScore;
 }
 
+/**
+ * Returns aromatic-ring interior angle entries centered at one atom.
+ * Three-heavy aromatic junctions already have a full fan score, but the
+ * interior-only entries keep fused aryl corners from being hidden by the
+ * extra substituent direction during large macrocycle cleanup.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Center atom ID.
+ * @returns {{atomId: string, covalentBonds: {bond: object, neighborAtomId: string}[]}[]} Scorable ring-interior center entries.
+ */
+function ringFanAnglePolishAromaticInteriorEntries(layoutGraph, coords, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom?.aromatic || !coords.has(atomId)) {
+    return [];
+  }
+  const entries = [];
+  const seenNeighborPairKeys = new Set();
+
+  for (const ring of layoutGraph.atomToRings.get(atomId) ?? []) {
+    if (!ring?.aromatic || !Array.isArray(ring.atomIds) || ring.atomIds.length < 5) {
+      continue;
+    }
+    const index = ring.atomIds.indexOf(atomId);
+    if (index === -1) {
+      continue;
+    }
+    const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+    const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+    const previousAtom = layoutGraph.atoms.get(previousAtomId);
+    const nextAtom = layoutGraph.atoms.get(nextAtomId);
+    if (!previousAtom || !nextAtom || previousAtom.element === 'H' || nextAtom.element === 'H' || !coords.has(previousAtomId) || !coords.has(nextAtomId)) {
+      continue;
+    }
+    const neighborPairKey = atomPairKey(previousAtomId, nextAtomId);
+    if (seenNeighborPairKeys.has(neighborPairKey)) {
+      continue;
+    }
+    const previousBond = findBond(layoutGraph, atomId, previousAtomId);
+    const nextBond = findBond(layoutGraph, atomId, nextAtomId);
+    if (!previousBond || !nextBond || previousBond.kind !== 'covalent' || nextBond.kind !== 'covalent') {
+      continue;
+    }
+    seenNeighborPairKeys.add(neighborPairKey);
+    entries.push({
+      atomId,
+      covalentBonds: [
+        { bond: previousBond, neighborAtomId: previousAtomId },
+        { bond: nextBond, neighborAtomId: nextAtomId }
+      ]
+    });
+  }
+
+  return entries;
+}
+
 function ringFanAnglePolishStaticCenterEntries(layoutGraph, coords) {
   const entries = [];
   for (const atomId of coords.keys()) {
@@ -1821,6 +1876,7 @@ function ringFanAnglePolishStaticCenterEntries(layoutGraph, coords) {
     if (covalentBonds.length === 3) {
       entries.push({ atomId, covalentBonds });
     }
+    entries.push(...ringFanAnglePolishAromaticInteriorEntries(layoutGraph, coords, atomId));
   }
   return entries;
 }
@@ -2562,10 +2618,11 @@ function ringFanAnglePolishMovableAtomIds(layoutGraph, centers) {
 }
 
 /**
- * Polishes distorted three-bond fans embedded inside macrocycle ring systems.
+ * Polishes distorted ring fans embedded inside macrocycle ring systems.
  * Branch-rotation cleanup cannot move these centers because every ring bond is
  * still connected through an alternate cycle. This pass uses tiny individual
  * atom translations and accepts them only when the final audit stays clean.
+ * It scores both three-heavy ring junctions and aromatic ring interior corners.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
  * @param {object} [options] - Retouch options.

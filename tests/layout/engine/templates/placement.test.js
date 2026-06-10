@@ -571,6 +571,32 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.min(...hydroxyBridgeAngles) > 65);
   });
 
+  it('places dihydroxy oxabicyclic lactones as separated carbocycle and lactone lanes', () => {
+    const graph = createLayoutGraph(parseSMILES('OC1C2CC1(O)C(=O)O2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'dihydroxy-oxabicyclic-lactone-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const lactoneRingAngles = ringAngles(coords, ['O9', 'C7', 'C5', 'C2', 'C3']);
+    const carbocycleRingAngles = ringAngles(coords, ['C5', 'C4', 'C3', 'C2']);
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(coords.get('C2').y > coords.get('C3').y);
+    assert.ok(coords.get('C2').y > coords.get('C5').y);
+    assert.ok(coords.get('C4').y < coords.get('C3').y);
+    assert.ok(coords.get('O9').y < coords.get('C4').y);
+    assert.ok(coords.get('C7').y < coords.get('C4').y);
+    assert.ok(Math.min(...lactoneRingAngles) > 80);
+    assert.ok(Math.min(...carbocycleRingAngles) > 80);
+    assert.ok(Math.max(...lactoneRingAngles) < 130);
+    assert.ok(Math.max(...carbocycleRingAngles) < 110);
+  });
+
   it('places the azabicyclo ketone oxadiazole cage with separated theta lanes', () => {
     const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'azabicyclo-ketone-oxadiazole-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -664,6 +690,31 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.max(...acetalRingAngles) < 146);
     assert.ok(Math.min(...bridgeAngles) > 90);
     assert.ok(Math.max(...bridgeAngles) < 160);
+  });
+
+  it('places the formyl acetal cyclobutane core without crossing the C3 ring lane', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1C2CCC1C21COC(C)C(O1)C=O'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'formyl-acetal-cyclobutane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const cyclobutaneAngles = ringAngles(coords, ['C7', 'C8', 'C4', 'C3']);
+    const cyclopentaneAngles = ringAngles(coords, ['C5', 'C6', 'C7', 'C8', 'C4']);
+    const acetalAngles = ringAngles(coords, ['O14', 'C13', 'C11', 'O10', 'C9', 'C8']);
+
+    assert.equal(coords.size, 11);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.24);
+    assert.ok(Math.min(...cyclobutaneAngles) > 80);
+    assert.ok(Math.max(...cyclobutaneAngles) < 100);
+    assert.ok(Math.min(...cyclopentaneAngles) > 80);
+    assert.ok(Math.max(...cyclopentaneAngles) < 135);
+    assert.ok(Math.min(...acetalAngles) > 105);
+    assert.ok(Math.max(...acetalAngles) < 130);
   });
 
   it('places the aminonitrile oxabicyclobutane core without folded five-four rings', () => {

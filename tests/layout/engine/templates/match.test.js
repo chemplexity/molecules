@@ -361,6 +361,24 @@ describe('layout/engine/templates/match', () => {
     assert.notEqual(withoutCarbonylMatch?.id, 'hydroxy-oxazabicyclic-lactam-core');
   });
 
+  it('matches dihydroxy oxabicyclic lactone cages only with both alcohol exits and carbonyl context', () => {
+    const graph = createLayoutGraph(parseSMILES('OC1C2CC1(O)C(=O)O2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'dihydroxy-oxabicyclic-lactone-core');
+
+    const withoutFirstAlcoholGraph = createLayoutGraph(parseSMILES('C1C2CC1(O)C(=O)O2'), { suppressH: true });
+    const withoutFirstAlcoholMatch = findTemplateMatch(withoutFirstAlcoholGraph, buildRingCandidate(withoutFirstAlcoholGraph, withoutFirstAlcoholGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutFirstAlcoholMatch?.id, 'dihydroxy-oxabicyclic-lactone-core');
+
+    const withoutSecondAlcoholGraph = createLayoutGraph(parseSMILES('OC1C2CC1C(=O)O2'), { suppressH: true });
+    const withoutSecondAlcoholMatch = findTemplateMatch(withoutSecondAlcoholGraph, buildRingCandidate(withoutSecondAlcoholGraph, withoutSecondAlcoholGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutSecondAlcoholMatch?.id, 'dihydroxy-oxabicyclic-lactone-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('OC1C2CC1(O)CO2'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutCarbonylMatch?.id, 'dihydroxy-oxabicyclic-lactone-core');
+  });
+
   it('matches azabicyclo ketone oxadiazole cages only with carbonyl and heteroaryl exit context', () => {
     const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
@@ -413,6 +431,27 @@ describe('layout/engine/templates/match', () => {
     const withoutFormylGraph = createLayoutGraph(parseSMILES('CC1CC2CC1(C#N)C1(COC(CO2)O1)C'), { suppressH: true });
     const withoutFormylMatch = findTemplateMatch(withoutFormylGraph, buildRingCandidate(withoutFormylGraph, withoutFormylGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutFormylMatch?.id, 'cyano-formyl-acetal-bridged-core');
+  });
+
+  it('matches formyl acetal cyclobutane cores only with alkyl and formyl exits', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1C2CCC1C21COC(C)C(O1)C=O'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'formyl-acetal-cyclobutane-core');
+
+    const withoutCyclobutaneAlkylGraph = createLayoutGraph(parseSMILES('C1C2CCC1C21COC(C)C(O1)C=O'), { suppressH: true });
+    const withoutCyclobutaneAlkylMatch = findTemplateMatch(
+      withoutCyclobutaneAlkylGraph,
+      buildRingCandidate(withoutCyclobutaneAlkylGraph, withoutCyclobutaneAlkylGraph.ringSystems[0], 'bridged')
+    );
+    assert.notEqual(withoutCyclobutaneAlkylMatch?.id, 'formyl-acetal-cyclobutane-core');
+
+    const withoutAcetalMethylGraph = createLayoutGraph(parseSMILES('CCC1C2CCC1C21COCC(O1)C=O'), { suppressH: true });
+    const withoutAcetalMethylMatch = findTemplateMatch(withoutAcetalMethylGraph, buildRingCandidate(withoutAcetalMethylGraph, withoutAcetalMethylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutAcetalMethylMatch?.id, 'formyl-acetal-cyclobutane-core');
+
+    const withoutFormylGraph = createLayoutGraph(parseSMILES('CCC1C2CCC1C21COC(C)C(O1)C'), { suppressH: true });
+    const withoutFormylMatch = findTemplateMatch(withoutFormylGraph, buildRingCandidate(withoutFormylGraph, withoutFormylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutFormylMatch?.id, 'formyl-acetal-cyclobutane-core');
   });
 
   it('matches aminonitrile oxabicyclobutane cores only when both carbon exits are present', () => {

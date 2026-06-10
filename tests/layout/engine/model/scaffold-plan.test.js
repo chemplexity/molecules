@@ -219,6 +219,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the formyl acetal cyclobutane template for compact acetal cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1C2CCC1C21COC(C)C(O1)C=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'formyl-acetal-cyclobutane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the aminonitrile oxabicyclobutane template for compact ether-bridged cages', () => {
     const graph = createLayoutGraph(parseSMILES('CCC12CC(C1)(OC2C[NH3+])C(N)C#N'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);

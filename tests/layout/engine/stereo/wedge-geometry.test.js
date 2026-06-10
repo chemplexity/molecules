@@ -238,6 +238,39 @@ describe('layout/engine/stereo/wedge-geometry', () => {
     );
   });
 
+  it('keeps displayed stereo hydrogens out of pinched cardinal sectors when a readable gap exists', () => {
+    const c7Position = { x: 4.091667600161873, y: 1.092030428264275 };
+    const knownPositions = [
+      { x: 2.861004880569429, y: 0.2344353777857111 },
+      { x: 3.656341933759518, y: 2.5274716719839008 },
+      { x: 5.552459016064176, y: 0.751312892428291 }
+    ];
+    const projectedPosition = synthesizeDisplayedStereoHydrogenPosition(c7Position, knownPositions, 1.125, {
+      incidentRingPolygons: [
+        [
+          { x: 3.656341933759518, y: 2.5274716719839008 },
+          c7Position,
+          { x: 5.552459016064176, y: 0.751312892428291 },
+          { x: 6.313682091802038, y: 1.9843013291957516 },
+          { x: 5.339601548301365, y: 3.126691306174336 }
+        ],
+        [
+          { x: 3.656341933759518, y: 2.5274716719839008 },
+          c7Position,
+          { x: 2.861004880569429, y: 0.2344353777857111 },
+          { x: 1.630342160976985, y: 1.092030428264276 },
+          { x: 2.195015236714844, y: 2.868189207820872 }
+        ]
+      ],
+      cardinalAxisSectorTolerance: DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE
+    });
+
+    const projectedAngle = angleOf(sub(projectedPosition, c7Position));
+    const projectedSector = minimumSectorAngle(c7Position, projectedPosition, knownPositions);
+    assert.ok(projectedAngle > -1.45 && projectedAngle < -1.25, `expected H8 to use the wider lower-left gap, got ${((projectedAngle * 180) / Math.PI).toFixed(1)} degrees`);
+    assert.ok(projectedSector > Math.PI / 3, `expected H8 to keep a readable sector, got ${((projectedSector * 180) / Math.PI).toFixed(1)} degrees`);
+  });
+
   it('snaps display hydrogens to exact cardinal axes when that stays nearly as open', () => {
     const unit = angleDegrees => ({
       x: Math.cos((angleDegrees * Math.PI) / 180),

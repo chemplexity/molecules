@@ -9,6 +9,8 @@ const RING_VERTEX_MATCH_TOLERANCE = 1e-6;
 const ANGLE_ARC_TOLERANCE = 1e-6;
 const SHARP_RING_VERTEX_INTERIOR_LIMIT = Math.PI / 3;
 const DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR = Math.PI / 6;
+const DISPLAYED_STEREO_HYDROGEN_READABLE_SECTOR = Math.PI / 3;
+const DISPLAYED_STEREO_HYDROGEN_READABLE_SECTOR_SLACK = Math.PI / 90;
 export const DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE = Math.PI / 16;
 
 /**
@@ -246,9 +248,13 @@ function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle,
   const atomClearCandidates = ringSafeCandidates.filter(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= bestAvoidance - 1e-6);
   const bestSector = Math.max(...atomClearCandidates.map(candidate => candidate.sector));
   const nearBestSectorCandidates = atomClearCandidates.filter(candidate => candidate.sector >= bestSector - cardinalAxisSectorTolerance);
+  const readableNearBestSectorCandidates =
+    bestSector >= DISPLAYED_STEREO_HYDROGEN_READABLE_SECTOR
+      ? nearBestSectorCandidates.filter(candidate => candidate.sector >= DISPLAYED_STEREO_HYDROGEN_READABLE_SECTOR - DISPLAYED_STEREO_HYDROGEN_READABLE_SECTOR_SLACK)
+      : nearBestSectorCandidates;
 
-  let bestCandidate = nearBestSectorCandidates[0] ?? atomClearCandidates[0] ?? ringSafeCandidates[0] ?? candidates[0];
-  for (const candidate of nearBestSectorCandidates) {
+  let bestCandidate = readableNearBestSectorCandidates[0] ?? nearBestSectorCandidates[0] ?? atomClearCandidates[0] ?? ringSafeCandidates[0] ?? candidates[0];
+  for (const candidate of readableNearBestSectorCandidates) {
     if (candidate.cardinalDeviation < bestCandidate.cardinalDeviation - 1e-6) {
       bestCandidate = candidate;
       continue;

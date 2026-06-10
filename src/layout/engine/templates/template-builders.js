@@ -782,6 +782,15 @@ function createHydroxyOxazabicyclicLactamCoreTemplate() {
 }
 
 /**
+ * Creates the compact dihydroxy oxabicyclic lactone scaffold graph found in
+ * small lactone cages such as `OC1C2CC1(O)C(=O)O2`.
+ * @returns {Molecule} Dihydroxy oxabicyclic lactone scaffold template molecule.
+ */
+function createDihydroxyOxabicyclicLactoneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('dihydroxy-oxabicyclic-lactone-core', 'OC1C2CC1(O)C(=O)O2');
+}
+
+/**
  * Creates the compact azabicyclic ketone scaffold found in oxadiazole-
  * substituted ammonium cages like `O=C1C2C[NH2+]C1C2C1=NON=C1`.
  * @returns {Molecule} Azabicyclic ketone oxadiazole scaffold template molecule.
@@ -824,6 +833,15 @@ function createAminonitrileAcetalBridgedCoreTemplate() {
  */
 function createCyanoFormylAcetalBridgedCoreTemplate() {
   return createRingSystemTemplateFromSmiles('cyano-formyl-acetal-bridged-core', 'CC1CC2CC1(C#N)C1(COC(CO2)O1)C=O');
+}
+
+/**
+ * Creates the compact formyl acetal cyclobutane-cyclopentane scaffold graph
+ * found in saturated bridged cages with an acetal six-ring and alkyl exits.
+ * @returns {Molecule} Formyl acetal cyclobutane scaffold template molecule.
+ */
+function createFormylAcetalCyclobutaneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('formyl-acetal-cyclobutane-core', 'CCC1C2CCC1C21COC(C)C(O1)C=O');
 }
 
 /**
@@ -2456,6 +2474,24 @@ function createHydroxyOxazabicyclicLactamCoreGeometry() {
 }
 
 /**
+ * Creates a three-lane theta projection for compact dihydroxy oxabicyclic
+ * lactones. The hydroxy bridge stays above the bridgehead pair, while the
+ * carbocycle and lactone arcs occupy separated lower lanes so neither ring
+ * collapses into the shared path.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createDihydroxyOxabicyclicLactoneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: -0.9, y: 0.0 }],
+    ['C5', { x: 0.9, y: 0.0 }],
+    ['C2', { x: 0.0, y: 0.9 }],
+    ['C4', { x: 0.0, y: -0.7 }],
+    ['O9', { x: -0.6, y: -1.2 }],
+    ['C7', { x: 0.7, y: -1.2 }]
+  ]);
+}
+
+/**
  * Creates a compact theta-like projection for the azabicyclic ketone cage. The
  * carbonyl bridge carbon and ammonium span stay below the shared path while
  * the oxadiazole exit atom gets a clean exterior side.
@@ -2557,6 +2593,28 @@ function createCyanoFormylAcetalBridgedCoreGeometry() {
     ['O14', { x: -0.164834, y: -1.320022 }],
     ['O11', { x: 1.403531, y: 1.038351 }],
     ['O15', { x: 0.427252, y: 0.28405 }]
+  ]);
+}
+
+/**
+ * Creates a separated-lane projection for formyl acetal cyclobutane cages.
+ * The C3 cyclobutane cap stays open on the left, while the acetal six-ring
+ * uses a right-hand arc so the shared C8 bridge does not cross the carbocycle.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createFormylAcetalCyclobutaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: -2.95, y: 0.3 }],
+    ['C4', { x: -2.1, y: 0.8 }],
+    ['C5', { x: -3.25, y: 0.8 }],
+    ['C6', { x: -3.3, y: -0.2 }],
+    ['C7', { x: -2.35, y: -0.5 }],
+    ['C8', { x: -1.5, y: 0.0 }],
+    ['C9', { x: -0.85, y: 0.84 }],
+    ['O10', { x: 0.15, y: 0.84 }],
+    ['C11', { x: 0.65, y: -0.02 }],
+    ['C13', { x: 0.15, y: -0.89 }],
+    ['O14', { x: -0.85, y: -0.89 }]
   ]);
 }
 
@@ -4546,6 +4604,22 @@ export function buildTemplateLibrary() {
       }
     ),
     createTemplate(
+      'dihydroxy-oxabicyclic-lactone-core',
+      'bridged',
+      53.8785,
+      createDihydroxyOxabicyclicLactoneCoreTemplate(),
+      geometrySpec('normalized-xy', createDihydroxyOxabicyclicLactoneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C5', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C7', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'azabicyclo-ketone-oxadiazole-core',
       'bridged',
       53.875,
@@ -4610,6 +4684,22 @@ export function buildTemplateLibrary() {
           exocyclicNeighbors: [
             { templateAtomId: 'C6', element: 'C', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C9', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'formyl-acetal-cyclobutane-core',
+      'bridged',
+      53.87075,
+      createFormylAcetalCyclobutaneCoreTemplate(),
+      geometrySpec('normalized-xy', createFormylAcetalCyclobutaneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C3', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C11', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C13', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
           ]
         }
       }

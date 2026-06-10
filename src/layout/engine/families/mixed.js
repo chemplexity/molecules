@@ -92,6 +92,9 @@ const LINKED_RING_SIDE_BALANCE_ROTATION_OFFSETS = [
 const LINKED_HETERO_RING_OVERLAP_ROTATION_OFFSETS = Object.freeze(
   [5, 8, 10, 12, 15, 18, 20, 22, 24, 26, 28, 30, 35, 40, 45, 60].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180])
 );
+const MIXED_DIVALENT_CONTINUATION_SNAP_MIN_DEVIATION = Math.PI / 18;
+const MIXED_DIVALENT_CONTINUATION_MAX_MOVED_HEAVY_ATOMS = 18;
+const MIXED_DIVALENT_CONTINUATION_BOND_DEVIATION_SLACK_FACTOR = 0.04;
 const NON_RING_OMITTED_H_FAN_RESCUE_MAX_ATOMS = 10;
 const NON_RING_OMITTED_H_FAN_RESCUE_MIN_DEVIATION = Math.PI / 18;
 const BOUNDED_EXACT_RING_EXIT_RESTORE_MIN_DEVIATION = Math.PI / 7;
@@ -382,6 +385,8 @@ const MIXED_ROOT_SMALL_RING_EXTERIOR_PRESENTATION_IMPROVEMENT = 0.1;
 const MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION = Math.PI / 6;
 const MACROCYCLE_AROMATIC_RESCUE_TARGET_ANGLE_DEVIATION = Math.PI / 18;
 const MACROCYCLE_AROMATIC_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5]);
+const MIXED_ROOT_AROMATIC_RESTORE_BLEND_FACTORS = Object.freeze([0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]);
+const MIXED_ROOT_AROMATIC_RESTORE_BOND_DEVIATION_SLACK_FACTOR = 0.07;
 const MACROCYCLE_SMALL_RING_RESCUE_TRIGGER_ANGLE_DEVIATION = Math.PI / 6;
 const MACROCYCLE_SMALL_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3]);
 const MACROCYCLE_AROMATIC_BRIDGE_EXIT_MIN_IMPROVEMENT = Math.PI / 12;
@@ -5194,6 +5199,266 @@ function macrocycleAromaticRegularizedRescueCandidates(layoutGraph, rings, bondL
     addMacrocycleAromaticRescueCandidate(candidates, rings, coords);
   }
   return candidates;
+}
+
+/**
+ * Accumulates one displacement contribution for a moved aromatic-root neighbor.
+ * @param {Map<string, {x: number, y: number}>} translations - Pending translation sums by atom ID.
+ * @param {Map<string, number>} counts - Contribution counts by atom ID.
+ * @param {string} atomId - Atom receiving the displacement contribution.
+ * @param {number} dx - X displacement.
+ * @param {number} dy - Y displacement.
+ * @returns {void}
+ */
+function addMixedRootAromaticRestoreTranslation(translations, counts, atomId, dx, dy) {
+  const current = translations.get(atomId) ?? { x: 0, y: 0 };
+  current.x += dx;
+  current.y += dy;
+  translations.set(atomId, current);
+  counts.set(atomId, (counts.get(atomId) ?? 0) + 1);
+}
+
+/**
+ * Blends distorted aromatic rings in a mixed root toward local regular targets.
+ * Ring-attached side chains and terminal substituents on moved linker atoms
+ * follow the same displacement so the audit does not trade ring readability for
+ * stretched exocyclic bonds.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} rootRingSystem - Root ring-system descriptor.
+ * @param {object[]} rings - Root ring descriptors.
+ * @param {Map<string, {x: number, y: number}>} coords - Current mixed coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} blendFactor - Fraction of the fitted-ring displacement to apply.
+ * @returns {Map<string, {x: number, y: number}>|null} Candidate coordinates.
+ */
+function buildMixedRootAromaticRegularizedCoords(layoutGraph, rootRingSystem, rings, coords, bondLength, blendFactor) {
+  const rootAtomIds = new Set(rootRingSystem?.atomIds ?? []);
+  if (rootAtomIds.size === 0) {
+    return null;
+  }
+  const targetSums = new Map();
+  const targetCounts = new Map();
+  for (const ring of rings) {
+    if (!ring.aromatic || ring.atomIds.length < 5) {
+      continue;
+    }
+    const targets = fitMacrocycleRegularRingTargets(ring, coords, bondLength);
+    if (!targets) {
+      continue;
+    }
+    for (const [atomId, target] of targets) {
+      const sum = targetSums.get(atomId) ?? { x: 0, y: 0 };
+      sum.x += target.x;
+      sum.y += target.y;
+      targetSums.set(atomId, sum);
+      targetCounts.set(atomId, (targetCounts.get(atomId) ?? 0) + 1);
+    }
+  }
+  if (targetSums.size === 0) {
+    return null;
+  }
+
+  const candidateCoords = new Map(coords);
+  const anchorDisplacements = new Map();
+  for (const [atomId, sum] of targetSums) {
+    const current = coords.get(atomId);
+    const count = targetCounts.get(atomId) ?? 0;
+    if (!current || count <= 0 || layoutGraph.fixedCoords.has(atomId)) {
+      continue;
+    }
+    const target = {
+      x: sum.x / count,
+      y: sum.y / count
+    };
+    const dx = (target.x - current.x) * blendFactor;
+    const dy = (target.y - current.y) * blendFactor;
+    if (Math.hypot(dx, dy) <= 1e-9) {
+      continue;
+    }
+    candidateCoords.set(atomId, {
+      x: current.x + dx,
+      y: current.y + dy
+    });
+    anchorDisplacements.set(atomId, { dx, dy });
+  }
+  if (anchorDisplacements.size === 0) {
+    return null;
+  }
+
+  const translations = new Map();
+  const counts = new Map();
+  for (const [anchorAtomId, displacement] of anchorDisplacements) {
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (anchorDisplacements.has(neighborAtomId) || !coords.has(neighborAtomId)) {
+        continue;
+      }
+      if (rootAtomIds.has(neighborAtomId)) {
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        if (neighborAtom && neighborAtom.element !== 'H' && !neighborAtom.aromatic && !layoutGraph.fixedCoords.has(neighborAtomId)) {
+          addMixedRootAromaticRestoreTranslation(translations, counts, neighborAtomId, displacement.dx, displacement.dy);
+        }
+        continue;
+      }
+      for (const atomId of collectCovalentSubtreeAtomIds(layoutGraph, neighborAtomId, anchorAtomId)) {
+        if (!coords.has(atomId) || anchorDisplacements.has(atomId) || layoutGraph.fixedCoords.has(atomId)) {
+          continue;
+        }
+        addMixedRootAromaticRestoreTranslation(translations, counts, atomId, displacement.dx, displacement.dy);
+      }
+    }
+  }
+
+  for (const [linkerAtomId, translation] of [...translations]) {
+    if (!rootAtomIds.has(linkerAtomId)) {
+      continue;
+    }
+    const count = counts.get(linkerAtomId) ?? 1;
+    const dx = translation.x / count;
+    const dy = translation.y / count;
+    for (const bond of layoutGraph.bondsByAtomId.get(linkerAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === linkerAtomId ? bond.b : bond.a;
+      if (rootAtomIds.has(neighborAtomId) || anchorDisplacements.has(neighborAtomId) || !coords.has(neighborAtomId)) {
+        continue;
+      }
+      for (const atomId of collectCovalentSubtreeAtomIds(layoutGraph, neighborAtomId, linkerAtomId)) {
+        if (rootAtomIds.has(atomId) || anchorDisplacements.has(atomId) || !coords.has(atomId) || layoutGraph.fixedCoords.has(atomId)) {
+          continue;
+        }
+        addMixedRootAromaticRestoreTranslation(translations, counts, atomId, dx, dy);
+      }
+    }
+  }
+
+  for (const [atomId, translation] of translations) {
+    const current = candidateCoords.get(atomId);
+    const count = counts.get(atomId) ?? 1;
+    if (!current) {
+      continue;
+    }
+    candidateCoords.set(atomId, {
+      x: current.x + translation.x / count,
+      y: current.y + translation.y / count
+    });
+  }
+
+  return candidateCoords;
+}
+
+/**
+ * Checks whether a mixed-root aromatic restore candidate preserves audit health.
+ * @param {object|null} candidateAudit - Candidate audit summary.
+ * @param {object|null} incumbentAudit - Incumbent audit summary.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} Whether the candidate may replace the incumbent.
+ */
+function mixedRootAromaticRestoreAuditAllows(candidateAudit, incumbentAudit, bondLength) {
+  if (!candidateAudit || candidateAudit.ok !== true || !incumbentAudit) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) > (incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  return candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + bondLength * MIXED_ROOT_AROMATIC_RESTORE_BOND_DEVIATION_SLACK_FACTOR;
+}
+
+/**
+ * Restores an audit-clean mixed macrocycle root when late branch placement has
+ * visibly distorted embedded aromatic rings.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable mixed coordinates.
+ * @param {object|null} rootRingSystem - Root ring-system descriptor.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Bond validation class map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether a root restore candidate was accepted.
+ */
+function restoreMixedRootAromaticGeometry(layoutGraph, coords, rootRingSystem, bondValidationClasses, bondLength) {
+  if (!rootRingSystem) {
+    return { changed: false };
+  }
+  const rings = ringsForRingSystem(layoutGraph, rootRingSystem);
+  if (!rings.some(ring => ring.aromatic)) {
+    return { changed: false };
+  }
+
+  const incumbentRegularity = measureAromaticRingRegularity(rings, coords);
+  if (
+    incumbentRegularity.ringCount === 0 ||
+    incumbentRegularity.maxAngleDeviation <= MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION
+  ) {
+    return { changed: false };
+  }
+
+  const incumbentAudit = auditMixedPlacement(
+    layoutGraph,
+    {
+      coords,
+      bondValidationClasses
+    },
+    bondLength
+  );
+  let bestCandidate = null;
+  for (const blendFactor of MIXED_ROOT_AROMATIC_RESTORE_BLEND_FACTORS) {
+    const candidateCoords = buildMixedRootAromaticRegularizedCoords(layoutGraph, rootRingSystem, rings, coords, bondLength, blendFactor);
+    if (!candidateCoords) {
+      continue;
+    }
+    const candidateRegularity = measureAromaticRingRegularity(rings, candidateCoords);
+    if (
+      candidateRegularity.ringCount === 0 ||
+      candidateRegularity.maxAngleDeviation >= incumbentRegularity.maxAngleDeviation - MACROCYCLE_AROMATIC_RESCUE_TARGET_ANGLE_DEVIATION
+    ) {
+      continue;
+    }
+    const candidateAudit = auditMixedPlacement(
+      layoutGraph,
+      {
+        coords: candidateCoords,
+        bondValidationClasses
+      },
+      bondLength
+    );
+    if (!mixedRootAromaticRestoreAuditAllows(candidateAudit, incumbentAudit, bondLength)) {
+      continue;
+    }
+    const candidate = {
+      coords: candidateCoords,
+      regularity: candidateRegularity,
+      audit: candidateAudit
+    };
+    if (
+      !bestCandidate ||
+      candidate.regularity.maxAngleDeviation < bestCandidate.regularity.maxAngleDeviation - IMPROVEMENT_EPSILON ||
+      (Math.abs(candidate.regularity.maxAngleDeviation - bestCandidate.regularity.maxAngleDeviation) <= IMPROVEMENT_EPSILON &&
+        candidate.regularity.totalAngleDeviation < bestCandidate.regularity.totalAngleDeviation - IMPROVEMENT_EPSILON)
+    ) {
+      bestCandidate = candidate;
+    }
+  }
+
+  if (!bestCandidate) {
+    return { changed: false };
+  }
+  overwriteCoordMap(coords, bestCandidate.coords);
+  return { changed: true };
 }
 
 function aromaticRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
@@ -14198,6 +14463,296 @@ function snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantA
 }
 
 /**
+ * Returns visible heavy single-bond neighbors for an exact divalent linker.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Candidate divalent center atom ID.
+ * @returns {Array<{bond: object, neighborAtomId: string}>} Visible heavy single-bond neighbors.
+ */
+function mixedDivalentContinuationSingleBondNeighbors(layoutGraph, coords, centerAtomId) {
+  const neighbors = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    neighbors.push({ bond, neighborAtomId });
+  }
+  return neighbors;
+}
+
+/**
+ * Builds one-side rotation candidates for a distorted exact divalent linker.
+ * This is intentionally scoped to mixed placement: it can rotate a bounded
+ * attached ring block, but only around a non-ring divalent center whose two
+ * heavy bonds are both eligible for exact acyclic continuation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Candidate divalent center atom ID.
+ * @returns {Array<{coords: Map<string, {x: number, y: number}>, movedAtomIds: Set<string>, totalRotationMagnitude: number, rootAtomId: string}>} Candidate coordinate maps.
+ */
+function buildMixedDivalentContinuationSnapCandidates(layoutGraph, coords, centerAtomId) {
+  const centerAtom = layoutGraph.atoms.get(centerAtomId);
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerAtom || !centerPosition || centerAtom.element === 'H' || centerAtom.aromatic || layoutGraph.ringAtomIdSet.has(centerAtomId) || centerAtom.heavyDegree !== 2) {
+    return [];
+  }
+
+  const heavyBonds = mixedDivalentContinuationSingleBondNeighbors(layoutGraph, coords, centerAtomId);
+  if (heavyBonds.length !== 2) {
+    return [];
+  }
+
+  const currentAngle = angularDifference(angleOf(sub(coords.get(heavyBonds[0].neighborAtomId), centerPosition)), angleOf(sub(coords.get(heavyBonds[1].neighborAtomId), centerPosition)));
+  if (Math.abs(currentAngle - EXACT_TRIGONAL_CONTINUATION_ANGLE) <= MIXED_DIVALENT_CONTINUATION_SNAP_MIN_DEVIATION) {
+    return [];
+  }
+
+  const candidates = [];
+  const seenSignatures = new Set();
+  for (const [parent, root] of [
+    [heavyBonds[0], heavyBonds[1]],
+    [heavyBonds[1], heavyBonds[0]]
+  ]) {
+    if (!isExactSimpleAcyclicContinuationEligible(layoutGraph, centerAtomId, parent.neighborAtomId, root.neighborAtomId)) {
+      continue;
+    }
+    const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, root.neighborAtomId, centerAtomId).filter(atomId => atomId !== centerAtomId && coords.has(atomId));
+    if (movedAtomIds.length === 0 || movedAtomIds.includes(parent.neighborAtomId) || movedAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+      continue;
+    }
+    const movedHeavyAtomCount = movedAtomIds.reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+    if (movedHeavyAtomCount === 0 || movedHeavyAtomCount > MIXED_DIVALENT_CONTINUATION_MAX_MOVED_HEAVY_ATOMS) {
+      continue;
+    }
+
+    const parentAngle = angleOf(sub(coords.get(parent.neighborAtomId), centerPosition));
+    const rootAngle = angleOf(sub(coords.get(root.neighborAtomId), centerPosition));
+    for (const targetRootAngle of exactContinuationAngles(parentAngle, EXACT_TRIGONAL_CONTINUATION_ANGLE)) {
+      const rotationAngle = normalizeSignedAngle(targetRootAngle - rootAngle);
+      if (Math.abs(rotationAngle) <= 1e-9) {
+        continue;
+      }
+      const signature = `${root.neighborAtomId}:${normalizeSignedAngle(targetRootAngle).toFixed(9)}`;
+      if (seenSignatures.has(signature)) {
+        continue;
+      }
+      seenSignatures.add(signature);
+
+      const candidateCoords = new Map(coords);
+      for (const atomId of movedAtomIds) {
+        const currentPosition = coords.get(atomId);
+        if (!currentPosition) {
+          continue;
+        }
+        candidateCoords.set(atomId, add(centerPosition, rotate(sub(currentPosition, centerPosition), rotationAngle)));
+      }
+      candidates.push({
+        coords: candidateCoords,
+        movedAtomIds: new Set(movedAtomIds),
+        totalRotationMagnitude: Math.abs(rotationAngle),
+        rootAtomId: root.neighborAtomId
+      });
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Scores a mixed divalent-continuation snap candidate with local presentation
+ * and whole-placement audit metrics.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Bond validation class map.
+ * @param {number} bondLength - Target bond length.
+ * @param {Set<string>} focusAtomIds - Local focus atoms for presentation metrics.
+ * @returns {{audit: object, divalent: object, trigonal: object, threeHeavy: object, readability: object, exactRingExitPenalty: number, focusedPlacementCost: number}} Candidate score.
+ */
+function scoreMixedDivalentContinuationSnap(layoutGraph, coords, bondValidationClasses, bondLength, focusAtomIds) {
+  return {
+    audit: auditMixedPlacement(
+      layoutGraph,
+      {
+        coords,
+        bondValidationClasses
+      },
+      bondLength
+    ),
+    divalent: measureDivalentContinuationDistortion(layoutGraph, coords),
+    trigonal: measureTrigonalDistortion(layoutGraph, coords, { focusAtomIds }),
+    threeHeavy: measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }),
+    readability: measureRingSubstituentReadability(layoutGraph, coords, { focusAtomIds }),
+    exactRingExitPenalty: measureMixedRootExactRingExitPenalty(layoutGraph, coords, focusAtomIds).totalDeviation,
+    focusedPlacementCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds)
+  };
+}
+
+/**
+ * Returns whether a divalent snap candidate preserves mixed placement health.
+ * @param {object} candidateScore - Candidate score.
+ * @param {object} baseScore - Incumbent score.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the candidate is safe to accept.
+ */
+function mixedDivalentContinuationSnapScoreIsAcceptable(candidateScore, baseScore, bondLength) {
+  const candidateAudit = candidateScore.audit;
+  const baseAudit = baseScore.audit;
+  if (!candidateAudit || !baseAudit || (baseAudit.ok === true && candidateAudit.ok !== true)) {
+    return false;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount',
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (baseAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  if ((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > baseAudit.maxBondLengthDeviation + bondLength * MIXED_DIVALENT_CONTINUATION_BOND_DEVIATION_SLACK_FACTOR) {
+    return false;
+  }
+  if (candidateScore.readability.failingSubstituentCount > baseScore.readability.failingSubstituentCount) {
+    return false;
+  }
+  if (candidateScore.readability.inwardSubstituentCount > baseScore.readability.inwardSubstituentCount) {
+    return false;
+  }
+  if (candidateScore.readability.outwardAxisFailureCount > baseScore.readability.outwardAxisFailureCount) {
+    return false;
+  }
+  if (candidateScore.exactRingExitPenalty > baseScore.exactRingExitPenalty + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidateScore.trigonal.totalDeviation > baseScore.trigonal.totalDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidateScore.threeHeavy.totalDeviation > baseScore.threeHeavy.totalDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  return candidateScore.divalent.totalDeviation < baseScore.divalent.totalDeviation - IMPROVEMENT_EPSILON;
+}
+
+/**
+ * Compares safe divalent snap candidates by corrected angle quality, then
+ * audit and movement cost.
+ * @param {object} candidate - Candidate snapshot.
+ * @param {object|null} incumbent - Current best candidate.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @returns {number} Negative when candidate is better.
+ */
+function compareMixedDivalentContinuationSnapCandidates(candidate, incumbent, layoutGraph) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (Math.abs(candidate.focusDivalent.maxDeviation - incumbent.focusDivalent.maxDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.focusDivalent.maxDeviation - incumbent.focusDivalent.maxDeviation;
+  }
+  if (Math.abs(candidate.score.divalent.totalDeviation - incumbent.score.divalent.totalDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.score.divalent.totalDeviation - incumbent.score.divalent.totalDeviation;
+  }
+  if ((candidate.score.audit.severeOverlapCount ?? 0) !== (incumbent.score.audit.severeOverlapCount ?? 0)) {
+    return (candidate.score.audit.severeOverlapCount ?? 0) - (incumbent.score.audit.severeOverlapCount ?? 0);
+  }
+  if ((candidate.score.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.score.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidate.score.audit.visibleHeavyBondCrossingCount ?? 0) - (incumbent.score.audit.visibleHeavyBondCrossingCount ?? 0);
+  }
+  if (Math.abs(candidate.score.focusedPlacementCost - incumbent.score.focusedPlacementCost) > IMPROVEMENT_EPSILON) {
+    return candidate.score.focusedPlacementCost - incumbent.score.focusedPlacementCost;
+  }
+  if (Math.abs(candidate.totalRotationMagnitude - incumbent.totalRotationMagnitude) > IMPROVEMENT_EPSILON) {
+    return candidate.totalRotationMagnitude - incumbent.totalRotationMagnitude;
+  }
+  return compareCoordMapsDeterministically(candidate.coords, incumbent.coords, layoutGraph.canonicalAtomRank);
+}
+
+/**
+ * Snaps distorted saturated divalent linkers in mixed placement back to the
+ * standard 120-degree zigzag, allowing a bounded attached-ring side to move
+ * when the whole mixed placement remains audit-clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {Set<string>} participantAtomIds - Mixed placement participant atom IDs.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Bond validation class map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, movedAtomIds: Set<string>}} Snap result.
+ */
+function snapExactMixedDivalentContinuations(layoutGraph, coords, participantAtomIds, bondValidationClasses, bondLength) {
+  const movedAtomIds = new Set();
+  const centerAtomIds = [...participantAtomIds].filter(atomId => coords.has(atomId)).sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+
+  for (const centerAtomId of centerAtomIds) {
+    const focusDivalent = measureDivalentContinuationDistortion(layoutGraph, coords, {
+      focusAtomIds: new Set([centerAtomId])
+    });
+    if (focusDivalent.maxDeviation <= MIXED_DIVALENT_CONTINUATION_SNAP_MIN_DEVIATION ** 2) {
+      continue;
+    }
+
+    const candidates = buildMixedDivalentContinuationSnapCandidates(layoutGraph, coords, centerAtomId);
+    if (candidates.length === 0) {
+      continue;
+    }
+    const focusSeedAtomIds = new Set([centerAtomId]);
+    for (const candidate of candidates) {
+      for (const atomId of candidate.movedAtomIds) {
+        focusSeedAtomIds.add(atomId);
+      }
+    }
+    const focusAtomIds = expandScoringFocusAtomIds(layoutGraph, focusSeedAtomIds, 1);
+    const baseScore = scoreMixedDivalentContinuationSnap(layoutGraph, coords, bondValidationClasses, bondLength, focusAtomIds);
+    let bestCandidate = null;
+
+    for (const candidate of candidates) {
+      const candidateFocusDivalent = measureDivalentContinuationDistortion(layoutGraph, candidate.coords, {
+        focusAtomIds: new Set([centerAtomId])
+      });
+      if (candidateFocusDivalent.maxDeviation >= focusDivalent.maxDeviation - IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      const candidateScore = scoreMixedDivalentContinuationSnap(layoutGraph, candidate.coords, bondValidationClasses, bondLength, focusAtomIds);
+      if (!mixedDivalentContinuationSnapScoreIsAcceptable(candidateScore, baseScore, bondLength)) {
+        continue;
+      }
+      const candidateSnapshot = {
+        ...candidate,
+        focusDivalent: candidateFocusDivalent,
+        score: candidateScore
+      };
+      if (compareMixedDivalentContinuationSnapCandidates(candidateSnapshot, bestCandidate, layoutGraph) < 0) {
+        bestCandidate = candidateSnapshot;
+      }
+    }
+
+    if (bestCandidate) {
+      overwriteCoordMap(coords, bestCandidate.coords);
+      for (const atomId of bestCandidate.movedAtomIds) {
+        movedAtomIds.add(atomId);
+      }
+    }
+  }
+
+  return {
+    changed: movedAtomIds.size > 0,
+    movedAtomIds
+  };
+}
+
+/**
  * Returns whether a non-aromatic ring carbon owns a compact carbonyl-style
  * substituent that should stay on the local ring-outward slot.
  * @param {object} layoutGraph - Layout graph shell.
@@ -18084,6 +18639,7 @@ function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan,
       pendingRingAttachmentResnapAtomIds: new Set(),
       branchPlacementContext: {},
       attachedBlockScoreCache: new Map(),
+      rootRingSystem,
       mixedOptions: options ?? null
     }
   };
@@ -22664,6 +23220,10 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantAtomIds, bondLength);
   markMixedBranchPlacementContextDirty(state);
+  const divalentContinuationSnap = snapExactMixedDivalentContinuations(layoutGraph, coords, participantAtomIds, bondValidationClasses, bondLength);
+  if (divalentContinuationSnap.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
   snapExactSharedJunctionTerminalLeaves(layoutGraph, coords, bondLength);
   markMixedBranchPlacementContextDirty(state);
   const linkedRingSideBalance = balanceLinkedRingSideExits(layoutGraph, coords, bondLength);
@@ -22822,6 +23382,10 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   const finalExactRingAnchorSubstituentSnap = snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAtomIds, bondLength);
   if (finalExactRingAnchorSubstituentSnap.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const rootAromaticGeometryRestore = restoreMixedRootAromaticGeometry(layoutGraph, coords, state.rootRingSystem ?? null, bondValidationClasses, bondLength);
+  if (rootAromaticGeometryRestore.changed) {
     markMixedBranchPlacementContextDirty(state);
   }
   for (const atomId of nonRingAtomIds) {

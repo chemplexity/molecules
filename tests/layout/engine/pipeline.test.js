@@ -47,6 +47,8 @@ const stressDescribe = RUN_LAYOUT_STRESS_TESTS ? describe : describe.skip;
 
 const GLYCOPEPTIDE_MACROCYCLE_SMILES =
   'C[NH2+][C@@H](CC(C)C)C(=O)N[C@@H]1[C@H](O)C2=CC=C(OC3=CC4=CC(OC5=CC=C(C=C5Cl)[C@@H](O[C@H]5C[C@@](C)([NH3+])[C@H](O)[C@@H](C)O5)[C@H]5NC(=O)[C@H](NC(=O)[C@H]4NC(=O)[C@@H](CC(N)=O)NC1=O)C1=CC=C(O)C(=C1)C1=C(O)C=C(O)C=C1[C@@H](NC5=O)C(O)=O)=C3O[C@H]1O[C@@H](CO)[C@H](O)[C@@H](O)[C@@H]1O[C@@H]1C[C@](C)([NH3+])[C@@H](O)[C@H](C)O1)C(Cl)=C2';
+const GLYCOPEPTIDE_DISTORTED_ARYL_MACROCYCLE_SMILES =
+  'CCCCCCCCCCSSCCNC1(C)CC(OC2C(O)C(O)C(O)OC2Oc3c4Oc5ccc(cc5Cl)[C@@H](O)[C@@H](<NC(=O)[C@@H](CC(C)C)NC>)C(=O)N[C@@H](<CC(=O)N>)C(=O)N[C@H]6C(=O)N[C@H]7C(=O)N[C@@H](<[C@H](O)c8ccc(Oc3cc6c4)c(Cl)c8>)C(=O)N[C@H](<C(=O)O>)c9cc(O)cc(O)c9c%10cc7ccc%10O)OC(C)C1O';
 const LARGE_PHOSPHATE_RING_CHAIN_SMILES =
   'CO[C@@H]1[C@H](<OP(=O)(O)OC[C@H]2O[C@H]([C@H](OC)[C@@H]2OP(=O)(O)OC[C@H]3O[C@H]([C@H](OC)[C@@H]3OP(=O)(O)OC[C@H]4O[C@H]([C@H](OC)[C@@H]4OP(=O)(O)OC[C@H]5O[C@H]([C@H](OC)[C@@H]5OP(=O)(O)O)N6C=CC(=NC6=O)N)n7cnc8C(=O)NC(=Nc78)N)n9cnc%10C(=O)NC(=Nc9%10)N)N%11C=CC(=NC%11=O)N>)[C@@H](<COP(=O)(O)O[C@@H]%12[C@@H](COP(=O)(O)O[C@@H]%13[C@@H](COP(=O)(O)O[C@@H]%14[C@@H](COP(=O)(O)O[C@@H]%15[C@@H](COP(=O)(O)O[C@@H]%16[C@@H](COP(=O)(O)O[C@@H]%17[C@@H](COP(=O)(O)O[C@@H]%18[C@@H](COP(=O)(O)OP(=O)(O)O[C@@H]%19[C@@H](COP(=O)(O)O[C@@H]%20[C@@H](COP(=O)(O)O[C@@H]%21[C@@H](COP(=O)(O)O[C@@H]%22[C@@H](COP(=O)(O)O[C@@H]%23[C@@H](COP(=O)(O)O[C@H]%24C[C@@H](O[C@@H]%24CN%25NNC(=C%25)CO[C@H]%26CC[C@]%27(C)[C@H]%28CC[C@]%29(C)[C@H](CC[C@H]%29[C@@H]%28CC=C%27C%26)[C@H](C)CCCC(C)C)N%30C=C(C)C(=O)NC%30=O)O[C@H]([C@@H]%23OC)n%31cnc%32c(N)ncnc%31%32)O[C@H]([C@@H]%22OC)N%33C=CC(=NC%33=O)N)O[C@H]([C@@H]%21OC)N%34C=CC(=NC%34=O)N)O[C@H]([C@@H]%20OC)N%35C=CC(=NC%35=O)N)O[C@H]([C@@H]%19OC)n%36cnc%37c(N)ncnc%36%37)O[C@H]([C@@H]%18OC)n%38cnc%39c(N)ncnc%38%39)O[C@H]([C@@H]%17OC)N%40C=CC(=NC%40=O)N)O[C@H]([C@@H]%16OC)n%41cnc%42c(N)ncnc%41%42)O[C@H]([C@@H]%15OC)N%43C=CC(=NC%43=O)N)O[C@H]([C@@H]%14OC)N%44C=CC(=O)NC%44=O)O[C@H]([C@@H]%13OC)n%45cnc%46c(N)ncnc%45%46)O[C@H]([C@@H]%12OC)N%47C=CC(=NC%47=O)N>)O[C@H]1N%48C=CC(=O)NC%48=O';
 const GALLIUM_CHELATE_MACROCYCLE_SMILES = 'CC1=[O][Ga]2345ON1CCC[C@H]1NC(=O)CNC(=O)[C@H](CO)NC(=O)CNC(=O)[C@H](CCCN(O2)C(C)=[O]3)NC(=O)C(CCCN(O4)C(C)=[O]5)NC1=O';
@@ -141,6 +143,37 @@ function pathLikeRingChainAspect(layoutGraph, coords) {
 
 function maxAngleDeviation(angles, targetAngle) {
   return Math.max(...angles.map(angle => Math.abs(angle - targetAngle)));
+}
+
+/**
+ * Measures interior-angle regularity across complete aromatic rings.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {{maxDeviation: number, totalDeviation: number, worstRingAngles: number[]}} Aromatic angle regularity in degrees.
+ */
+function aromaticRingAngleRegularity(layoutGraph, coords) {
+  let maxDeviation = 0;
+  let totalDeviation = 0;
+  let worstRingAngles = [];
+  for (const ring of layoutGraph.rings) {
+    if (!ring.aromatic || !ring.atomIds.every(atomId => coords.has(atomId))) {
+      continue;
+    }
+    const targetAngle = 180 - 360 / ring.atomIds.length;
+    const angles = ringAngles(coords, ring.atomIds);
+    const ringMaxDeviation = maxAngleDeviation(angles, targetAngle);
+    const ringTotalDeviation = angles.reduce((sum, angle) => sum + Math.abs(angle - targetAngle), 0);
+    if (ringMaxDeviation > maxDeviation) {
+      maxDeviation = ringMaxDeviation;
+      worstRingAngles = angles;
+    }
+    totalDeviation += ringTotalDeviation;
+  }
+  return {
+    maxDeviation,
+    totalDeviation,
+    worstRingAngles
+  };
 }
 
 function assertOrthogonalCross(angles, label) {
@@ -1483,6 +1516,32 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(Math.min(...hydroxyBridgeAngles) > 65, `expected the hydroxy bridge to stay open, got ${hydroxyBridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
+  it('uses the dihydroxy oxabicyclic lactone template so the compact cage keeps clear ring lanes', () => {
+    const smiles = bugMolecules.find(candidate => candidate === 'OC1C2CC1(O)C(=O)O2');
+    assert.ok(smiles, 'expected the compact hydroxy lactone regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const lactoneRingAngles = ringAngles(result.coords, ['O9', 'C7', 'C5', 'C2', 'C3']);
+    const carbocycleRingAngles = ringAngles(result.coords, ['C5', 'C4', 'C3', 'C2']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(Math.min(...lactoneRingAngles) > 80, `expected the lactone ring to stay open, got ${lactoneRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...carbocycleRingAngles) > 75, `expected the carbocycle ring to stay open, got ${carbocycleRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...lactoneRingAngles) < 140, `expected the lactone ring to avoid flattening, got ${lactoneRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...carbocycleRingAngles) < 130, `expected the carbocycle ring to avoid flattening, got ${carbocycleRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
   it('uses the acetal amino decalin template so bridged six-member rings do not flatten', () => {
     const result = runPipeline(parseSMILES('COC(OC)[C@@]12CC[C@@H]3CCCC3(C1)[C@@H](N[C@@H]2C(=O)OC)C(=O)OC'), {
       suppressH: true,
@@ -1615,6 +1674,32 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(Math.max(...cyclopentaneAngles) < 118, `expected the compact five-ring to avoid flattened fallback geometry, got ${cyclopentaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(Math.min(...cyclobutaneAngles) > 60, `expected the compact four-ring to avoid pinching, got ${cyclobutaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(Math.max(...cyclobutaneAngles) < 140, `expected the compact four-ring to avoid flattened fallback geometry, got ${cyclobutaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
+  it('uses the formyl acetal cyclobutane template instead of pinching the C3 ring', () => {
+    const result = runPipeline(parseSMILES('CCC1C2CCC1C21COC(C)C(O1)C=O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const cyclobutaneAngles = ringAngles(result.coords, ['C7', 'C8', 'C4', 'C3']);
+    const cyclopentaneAngles = ringAngles(result.coords, ['C5', 'C6', 'C7', 'C8', 'C4']);
+    const acetalAngles = ringAngles(result.coords, ['O14', 'C13', 'C11', 'O10', 'C9', 'C8']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 1);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.16);
+    assert.ok(Math.min(...cyclobutaneAngles) > 80, `expected the C3 four-ring to stay open, got ${cyclobutaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cyclobutaneAngles) < 100, `expected the C3 four-ring to avoid flattened fallback geometry, got ${cyclobutaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...cyclopentaneAngles) > 80, `expected the compact five-ring to stay open, got ${cyclopentaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cyclopentaneAngles) < 135, `expected the compact five-ring to avoid flattened fallback geometry, got ${cyclopentaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...acetalAngles) > 105, `expected the acetal ring to stay open, got ${acetalAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...acetalAngles) < 130, `expected the acetal ring to avoid flattened fallback geometry, got ${acetalAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
   it('uses the aminomethyl oxabicyclobutane template instead of crossing the ammonium sidechain', () => {
@@ -7423,6 +7508,33 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  stressIt('keeps embedded aryl rings readable in a crowded glycopeptide macrocycle', { timeout: 15000 }, () => {
+    const result = runPipeline(parseSMILES(GLYCOPEPTIDE_DISTORTED_ARYL_MACROCYCLE_SMILES), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true,
+      timing: true
+    });
+    const aromaticRegularity = aromaticRingAngleRegularity(result.layoutGraph, result.coords);
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(bugMolecules.includes(GLYCOPEPTIDE_DISTORTED_ARYL_MACROCYCLE_SMILES));
+    assert.ok(
+      aromaticRegularity.maxDeviation < 45,
+      `expected embedded aryl rings to avoid pinched corners, got ${aromaticRegularity.worstRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(aromaticRegularity.totalDeviation < 600, `expected aggregate aryl ring distortion to stay bounded, got ${aromaticRegularity.totalDeviation.toFixed(2)}`);
+    assert.ok(result.metadata.timing.totalMs < 15000, `expected crowded glycopeptide layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
   stressIt('keeps audit-clean macrocycle core cleanup over dirtier protected placement', { timeout: 12000 }, () => {

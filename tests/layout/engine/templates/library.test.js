@@ -27,11 +27,13 @@ describe('layout/engine/templates/library', () => {
       'methoxy-ammonium-oxazabicyclic-lactam-core',
       'oxazabicyclic-lactam-core',
       'hydroxy-oxazabicyclic-lactam-core',
+      'dihydroxy-oxabicyclic-lactone-core',
       'azabicyclo-ketone-oxadiazole-core',
       'hydroxy-keto-oxadiazole-bridged-core',
       'cyanoacyl-azabicyclo-core',
       'aminonitrile-acetal-bridged-core',
       'cyano-formyl-acetal-bridged-core',
+      'formyl-acetal-cyclobutane-core',
       'aminonitrile-oxabicyclobutane-core',
       'alkynyl-dicyano-oxabicyclobutane-core',
       'alkyl-oxabicyclobutane-core',
@@ -341,6 +343,20 @@ describe('layout/engine/templates/library', () => {
     assert.equal(hydroxyOxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C6');
     assert.equal(hydroxyOxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[1]?.bondOrder, 2);
 
+    const dihydroxyOxabicyclicLactone = getTemplateById('dihydroxy-oxabicyclic-lactone-core');
+    assert.equal(dihydroxyOxabicyclicLactone.family, 'bridged');
+    assert.equal(dihydroxyOxabicyclicLactone.atomCount, 6);
+    assert.equal(dihydroxyOxabicyclicLactone.bondCount, 7);
+    assert.equal(dihydroxyOxabicyclicLactone.ringCount, 2);
+    assert.deepEqual(
+      dihydroxyOxabicyclicLactone.matchContext?.exocyclicNeighbors?.map(neighbor => [neighbor.templateAtomId, neighbor.element, neighbor.bondOrder]),
+      [
+        ['C2', 'O', 1],
+        ['C5', 'O', 1],
+        ['C7', 'O', 2]
+      ]
+    );
+
     const azabicycloKetoneOxadiazole = getTemplateById('azabicyclo-ketone-oxadiazole-core');
     assert.equal(azabicycloKetoneOxadiazole.family, 'bridged');
     assert.equal(azabicycloKetoneOxadiazole.atomCount, 6);
@@ -388,6 +404,16 @@ describe('layout/engine/templates/library', () => {
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 2);
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C9');
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[1]?.neighborDegree, 3);
+
+    const formylAcetalCyclobutane = getTemplateById('formyl-acetal-cyclobutane-core');
+    assert.equal(formylAcetalCyclobutane.family, 'bridged');
+    assert.equal(formylAcetalCyclobutane.atomCount, 11);
+    assert.equal(formylAcetalCyclobutane.bondCount, 13);
+    assert.equal(formylAcetalCyclobutane.ringCount, 3);
+    assert.equal(formylAcetalCyclobutane.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C3');
+    assert.equal(formylAcetalCyclobutane.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 4);
+    assert.equal(formylAcetalCyclobutane.matchContext?.exocyclicNeighbors?.[2]?.templateAtomId, 'C13');
+    assert.equal(formylAcetalCyclobutane.matchContext?.exocyclicNeighbors?.[2]?.neighborDegree, 3);
 
     const aminonitrileOxabicyclobutane = getTemplateById('aminonitrile-oxabicyclobutane-core');
     assert.equal(aminonitrileOxabicyclobutane.family, 'bridged');

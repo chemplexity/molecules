@@ -2617,6 +2617,27 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(ringAttachmentAngle - (2 * Math.PI) / 3) < 0.05, `expected aromatic attachment angle near 120 degrees, got ${((ringAttachmentAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
+  it('keeps saturated divalent linkers to attached bridged rings on the standard 120-degree zigzag', () => {
+    const smiles = 'COC1=CC=CC(=C1)C(=O)N1CCC2=C(C1)N=CN=C2NCC(O)C12CC3CC(CC(C3)C1)C2';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertLinkerGeometry = (coords, label) => {
+      const linkerAngle = bondAngleAtAtom(coords, 'C22', 'N21', 'C23');
+      assert.ok(Math.abs(linkerAngle - (2 * Math.PI) / 3) < 1e-6, `expected ${label} N21-C22-C23 to stay at 120 degrees, got ${((linkerAngle * 180) / Math.PI).toFixed(2)}`);
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertLinkerGeometry(mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertLinkerGeometry(pipelineResult.coords, 'pipeline layout');
+  });
+
   it('keeps fused imide N16 benzyl exits exact and outward', () => {
     const smiles = 'CONC(=O)NC1=CC=C(C=C1)C1=CN2N(CC3=CC=CC=C3F)C(=O)N(C(=O)C2=C1C[NH+](C)C)C1=CC=C(OC)N=N1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
