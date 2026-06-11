@@ -1,6 +1,7 @@
 /** @module app/render/helpers */
 
 import { atomColor as baseAtomColor, kekulize } from '../../layout/mol2d-helpers.js';
+import { styleColor, styleOpacity } from '../../core/style.js';
 
 // ---------------------------------------------------------------------------
 // Bond rendering constants
@@ -171,6 +172,25 @@ export function atomColor(sym, layout = '2d') {
 }
 
 /**
+ * Returns the display color for an atom object, honoring explicit visual style.
+ * @param {object} atom - Atom-like object with `name` and optional `properties.style`.
+ * @param {string} [layout] - Layout mode: `'2d'` or `'force'`.
+ * @returns {string} CSS color string.
+ */
+export function atomDisplayColor(atom, layout = '2d') {
+  return styleColor(atom?.properties?.style) ?? atomColor(atom?.name ?? 'C', layout);
+}
+
+/**
+ * Returns the display opacity for an atom object.
+ * @param {object} atom - Atom-like object with optional `properties.style`.
+ * @returns {number} Opacity in [0, 1].
+ */
+export function atomDisplayOpacity(atom) {
+  return styleOpacity(atom?.properties?.style, 1);
+}
+
+/**
  * Returns the color for one half of a bond connected to the given atom, respecting the current 2D color-style setting.
  * When color style is 'color-atoms-bonds', returns the atom's CPK color; otherwise returns the standard bond color (#111).
  * @param {string} sym - Element symbol (e.g. `'C'`, `'N'`).
@@ -183,6 +203,24 @@ export function bondAtomColor(sym) {
     return color === '#111111' || color === '#333333' || sym === 'C' ? '#111' : color;
   }
   return '#111';
+}
+
+/**
+ * Returns the explicit display color for a bond, or null when default bond coloring should apply.
+ * @param {object} bond - Bond-like object with optional `properties.style`.
+ * @returns {string|null} CSS color string or null.
+ */
+export function bondDisplayColor(bond) {
+  return styleColor(bond?.properties?.style);
+}
+
+/**
+ * Returns the display opacity for a bond.
+ * @param {object} bond - Bond-like object with optional `properties.style`.
+ * @returns {number} Opacity in [0, 1].
+ */
+export function bondDisplayOpacity(bond) {
+  return styleOpacity(bond?.properties?.style, 1);
 }
 
 /**
@@ -368,6 +406,7 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d'
  * @param {number} [xOffset] - Horizontal offset from the atom center in pixels.
  * @param {number} [yOffset] - Vertical offset from the atom center in pixels.
  * @param {number} [fontSize] - Font size in pixels.
+ * @returns {object} D3 selection of the appended text element.
  */
 export function renderAtomLabel(group, label, color, xOffset = 0, yOffset = 0, fontSize = DEFAULT_RENDER_OPTIONS.twoDAtomFontSize) {
   const textEl = group
@@ -401,6 +440,7 @@ export function renderAtomLabel(group, label, color, xOffset = 0, yOffset = 0, f
       }
     }
   }
+  return textEl;
 }
 
 /**

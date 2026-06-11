@@ -1,6 +1,6 @@
 /** @module app/render/scene-2d */
 
-import { getRenderOptions, atomColor, renderAtomLabel, renderLonePairDots, renderBondOrder, prepareAromaticBondRendering } from './helpers.js';
+import { getRenderOptions, atomDisplayColor, atomDisplayOpacity, renderAtomLabel, renderLonePairDots, renderBondOrder, prepareAromaticBondRendering } from './helpers.js';
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
@@ -282,8 +282,47 @@ export function create2DSceneRenderer(ctx) {
         if (dots.length === 0) {
           continue;
         }
-        const atomGroup = lonePairLayer.append('g').attr('class', 'atom-lone-pairs').attr('data-atom-id', atom.id);
+        const atomGroup = lonePairLayer.append('g').attr('class', 'atom-lone-pairs').attr('data-atom-id', atom.id).attr('opacity', atomDisplayOpacity(atom));
         renderLonePairDots(atomGroup, dots, { radius: 1.45, fill: '#111111' });
+      }
+    }
+
+    function _draw2dRingFills() {
+      const ringFills = typeof mol.getRingFills === 'function' ? mol.getRingFills() : (mol.properties?.style?.ringFills ?? []);
+      if (ringFills.length === 0) {
+        return;
+      }
+      const ringByKey = new Map();
+      for (const ringAtomIds of mol.getRings()) {
+        ringByKey.set([...ringAtomIds].sort().join('\0'), ringAtomIds);
+      }
+      const ringFillLayer = ctx.g.append('g').attr('class', 'ring-fills').style('pointer-events', 'none');
+      for (const fill of ringFills) {
+        const ringAtomIds = ringByKey.get([...(fill.atomIds ?? [])].sort().join('\0'));
+        if (!ringAtomIds) {
+          continue;
+        }
+        const points = [];
+        for (const atomId of ringAtomIds) {
+          const atom = mol.atoms.get(atomId);
+          if (!atom || atom.visible === false || atom.x == null || atom.y == null) {
+            points.length = 0;
+            break;
+          }
+          const point = toSVGPt(atom);
+          points.push(`${point.x},${point.y}`);
+        }
+        if (points.length < 3) {
+          continue;
+        }
+        ringFillLayer
+          .append('polygon')
+          .attr('class', 'ring-fill')
+          .attr('data-ring-fill-id', fill.id)
+          .attr('points', points.join(' '))
+          .attr('fill', fill.color)
+          .attr('fill-opacity', fill.opacity ?? 0.25)
+          .attr('stroke', 'none');
       }
     }
 
@@ -585,6 +624,8 @@ export function create2DSceneRenderer(ctx) {
     ctx.helpers.redrawSelection();
     _redraw2dValenceWarnings();
 
+    _draw2dRingFills();
+
     bondLayer = ctx.g.append('g').attr('class', 'bonds');
     for (const bi of bondInfos) {
       const bg = bondLayer.append('g').attr('data-bond-id', bi.bond.id);
@@ -689,8 +730,22 @@ export function create2DSceneRenderer(ctx) {
         .style('cursor', 'grab');
       _bind2dAtomEvents(atomHit, atom);
 
+      const styledAtomColor = atomDisplayColor(atom, '2d');
+      const styledAtomOpacity = atomDisplayOpacity(atom);
+
+      if (!label && atom.properties?.style) {
+        hitGroup
+          .append('circle')
+          .attr('class', 'atom-style-marker')
+          .attr('r', 2.4)
+          .attr('fill', styledAtomColor)
+          .attr('fill-opacity', styledAtomOpacity)
+          .attr('stroke', 'none')
+          .attr('pointer-events', 'none');
+      }
+
       if (label) {
-        renderAtomLabel(hitGroup, label, symbol === 'H' ? '#333333' : atomColor(symbol, '2d'), labelDx, labelDy, fontSize);
+        renderAtomLabel(hitGroup, label, atom.properties?.style ? styledAtomColor : symbol === 'H' ? '#333333' : styledAtomColor, labelDx, labelDy, fontSize).attr('opacity', styledAtomOpacity);
         if (charge !== 0) {
           const sign = formatChargeLabel(charge);
           const lonePairDots = _get2dLonePairDots(atom, label);
@@ -710,8 +765,9 @@ export function create2DSceneRenderer(ctx) {
               .attr('r', placement.radius)
               .attr('pointer-events', 'none')
               .attr('fill', 'white')
-              .attr('stroke', '#111')
-              .attr('stroke-width', 0.9);
+              .attr('stroke', styledAtomColor)
+              .attr('stroke-width', 0.9)
+              .attr('opacity', styledAtomOpacity);
             hitGroup
               .append('text')
               .attr('class', 'atom-charge-text')
@@ -719,7 +775,8 @@ export function create2DSceneRenderer(ctx) {
               .attr('y', placement.y - y)
               .style('font-size', `${placement.fontSize}px`)
               .attr('pointer-events', 'none')
-              .attr('fill', '#111')
+              .attr('fill', styledAtomColor)
+              .attr('opacity', styledAtomOpacity)
               .attr('text-anchor', 'middle')
               .attr('dominant-baseline', 'central')
               .text(sign);

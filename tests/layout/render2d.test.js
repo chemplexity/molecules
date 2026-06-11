@@ -117,6 +117,32 @@ test('renderMolSVG wraps charge labels in a thin outlined circle', () => {
   assert.match(rendered.svgContent, />\+<\/text>/);
 });
 
+test('renderMolSVG renders custom atom, bond, and ring fill styles', () => {
+  const mol = parseSMILES('c1ccccc1');
+  mol.atoms.get('C1').setStyle({ color: '#3366ff', opacity: 0.7 });
+  const [bond] = mol.bonds.values();
+  bond.setStyle({ color: '#ff6633', opacity: 0.4 });
+  mol.setRingFill(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'], { color: '#ffe66d', opacity: 0.3 });
+
+  const rendered = renderMolSVG(mol);
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.match(rendered.svgContent, /class="ring-fill"[^>]+fill="#ffe66d"[^>]+fill-opacity="0.3"/);
+  assert.match(rendered.svgContent, /stroke="#ff6633" stroke-opacity="0.4"/);
+  assert.match(rendered.svgContent, /class="atom-style-marker"[^>]+fill="#3366ff"[^>]+fill-opacity="0.7"/);
+  assert.ok(rendered.svgContent.indexOf('class="ring-fill"') < rendered.svgContent.indexOf('<line '), 'expected ring fill to render before bonds');
+});
+
+test('renderMolSVG renders custom atom label opacity', () => {
+  const mol = parseSMILES('CO');
+  mol.atoms.get('O2').setStyle({ color: '#3366ff', opacity: 0.55 });
+
+  const rendered = renderMolSVG(mol);
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.match(rendered.svgContent, /<text [^>]*fill="#3366ff" opacity="0.55"[^>]*><tspan>(?:OH|HO)<\/tspan><\/text>/);
+});
+
 test('atomColor uses a subdued metallic palette for selected metals', () => {
   assert.equal(atomColor('Mg'), '#5E636B');
   assert.equal(atomColor('Ag'), '#C0C0C0');

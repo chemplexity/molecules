@@ -44,6 +44,32 @@ describe('layout/engine/render2d', () => {
     assert.match(rendered.svgContent, />\+<\/text>/);
   });
 
+  it('renders custom atom, bond, and ring fill styles', () => {
+    const molecule = parseSMILES('c1ccccc1');
+    molecule.atoms.get('C1').setStyle({ color: '#3366ff', opacity: 0.7 });
+    const [bond] = molecule.bonds.values();
+    bond.setStyle({ color: '#ff6633', opacity: 0.4 });
+    molecule.setRingFill(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'], { color: '#ffe66d', opacity: 0.3 });
+
+    const rendered = renderMolSVG(molecule);
+
+    assert.ok(rendered, 'expected SVG render output');
+    assert.match(rendered.svgContent, /class="ring-fill"[^>]+fill="#ffe66d"[^>]+fill-opacity="0.3"/);
+    assert.match(rendered.svgContent, /stroke="#ff6633" stroke-opacity="0.4"/);
+    assert.match(rendered.svgContent, /class="atom-style-marker"[^>]+fill="#3366ff"[^>]+fill-opacity="0.7"/);
+    assert.ok(rendered.svgContent.indexOf('class="ring-fill"') < rendered.svgContent.indexOf('<line '), 'expected ring fill to render before bonds');
+  });
+
+  it('renders custom atom label opacity', () => {
+    const molecule = parseSMILES('CO');
+    molecule.atoms.get('O2').setStyle({ color: '#3366ff', opacity: 0.55 });
+
+    const rendered = renderMolSVG(molecule);
+
+    assert.ok(rendered, 'expected SVG render output');
+    assert.match(rendered.svgContent, /<text [^>]*fill="#3366ff" opacity="0.55"[^>]*><tspan>(?:OH|HO)<\/tspan><\/text>/);
+  });
+
   it('accepts a precomputed layout result', () => {
     const molecule = parseSMILES('c1ccccc1');
     const layoutResult = generateCoords(molecule);

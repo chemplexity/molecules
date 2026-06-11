@@ -1,6 +1,6 @@
 /** @module app/render/2d-helpers */
 
-import { renderBondOrder, addLine, bondAtomColor } from './helpers.js';
+import { renderBondOrder, addLine, bondAtomColor, bondDisplayColor, bondDisplayOpacity } from './helpers.js';
 import { labelHalfW, labelHalfH, ringLabelOffset, getAtomLabel, heavyDegree } from '../../layout/mol2d-helpers.js';
 
 /**
@@ -162,6 +162,8 @@ export function create2DRenderHelpers(ctx) {
   }
 
   function drawBond(container, bond, atom1, atom2, mol, toSVGPt, stereoType = null) {
+    const explicitBondColor = bondDisplayColor(bond);
+    const bondOpacity = bondDisplayOpacity(bond);
     if (stereoType === 'wedge' || stereoType === 'dash') {
       const startOriginal = toSVGPt(atom1);
       const endOriginal = toSVGPt(atom2);
@@ -193,7 +195,8 @@ export function create2DRenderHelpers(ctx) {
               `${end.x - nx * ctx.constants.wedgeHalfWidth},${end.y - ny * ctx.constants.wedgeHalfWidth} ` +
               `${end.x + nx * ctx.constants.wedgeHalfWidth},${end.y + ny * ctx.constants.wedgeHalfWidth}`
           )
-          .style('fill', '#111')
+          .style('fill', explicitBondColor ?? '#111')
+          .style('fill-opacity', bondOpacity)
           .style('stroke', 'none');
       } else {
         for (let i = 1; i <= ctx.constants.wedgeDashes; i++) {
@@ -208,7 +211,8 @@ export function create2DRenderHelpers(ctx) {
             .attr('y1', py - ny * hw)
             .attr('x2', px + nx * hw)
             .attr('y2', py + ny * hw)
-            .style('stroke', '#111')
+            .style('stroke', explicitBondColor ?? '#111')
+            .style('stroke-opacity', bondOpacity)
             .style('stroke-width', '1.2px')
             .style('stroke-linecap', 'round');
         }
@@ -228,8 +232,8 @@ export function create2DRenderHelpers(ctx) {
     // segment. This means a labeled atom (N, O…) contributes a visually shorter
     // colored section (~30–40% of the visible bond) because label clearance trims
     // only its end, matching what RDKit renders.
-    const colorA = bondAtomColor(atom1.name);
-    const colorB = bondAtomColor(atom2.name);
+    const colorA = explicitBondColor ?? bondAtomColor(atom1.name);
+    const colorB = explicitBondColor ?? bondAtomColor(atom2.name);
     const needsHalfColor = colorA !== colorB;
 
     // Midpoint of the full atom-center-to-atom-center bond in SVG space.
@@ -238,7 +242,7 @@ export function create2DRenderHelpers(ctx) {
 
     function addColoredLine(group, x1, y1, x2, y2, extraClass) {
       if (!needsHalfColor) {
-        return addLine(group, x1, y1, x2, y2, extraClass).style('stroke', colorA);
+        return addLine(group, x1, y1, x2, y2, extraClass).style('stroke', colorA).style('stroke-opacity', bondOpacity);
       }
       // Project the geometric midpoint onto this (possibly offset) segment by
       // finding the closest point along the segment direction, then clamp it
@@ -249,8 +253,8 @@ export function create2DRenderHelpers(ctx) {
       const t = Math.max(0, Math.min(1, ((geomMidX - x1) * segDx + (geomMidY - y1) * segDy) / segLen2));
       const mx = x1 + t * segDx;
       const my = y1 + t * segDy;
-      addLine(group, x1, y1, mx, my, extraClass).style('stroke', colorA);
-      addLine(group, mx, my, x2, y2, extraClass).style('stroke', colorB);
+      addLine(group, x1, y1, mx, my, extraClass).style('stroke', colorA).style('stroke-opacity', bondOpacity);
+      addLine(group, mx, my, x2, y2, extraClass).style('stroke', colorB).style('stroke-opacity', bondOpacity);
     }
 
     if (order === 1) {

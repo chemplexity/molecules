@@ -15,6 +15,7 @@
 
 import { parseSMILES } from '../io/smiles.js';
 import { parseINCHI } from '../io/inchi.js';
+import { styleColor, styleOpacity } from '../core/style.js';
 import { generateAndRefine2dCoords } from './index.js';
 import {
   atomColor,
@@ -145,6 +146,22 @@ function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function atomDisplayColor(atom) {
+  return styleColor(atom?.properties?.style) ?? atomColor(atom?.name ?? 'C');
+}
+
+function atomDisplayOpacity(atom) {
+  return styleOpacity(atom?.properties?.style, 1);
+}
+
+function bondDisplayColor(bond) {
+  return styleColor(bond?.properties?.style);
+}
+
+function bondDisplayOpacity(bond) {
+  return styleOpacity(bond?.properties?.style, 1);
+}
+
 function labelClearance(atom, otherSVGPt, mol, toSVG, hCounts) {
   const label = getAtomLabel(atom, hCounts, toSVG, mol);
   if (!label) {
@@ -200,6 +217,8 @@ function shortenBondLineWithLabelClearance(atom1, atom2, start, end, mol, toSVG,
 // ---------------------------------------------------------------------------
 function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode = AROMATIC_RENDER_MODE) {
   const out = [];
+  const explicitBondColor = bondDisplayColor(bond);
+  const bondOpacity = bondDisplayOpacity(bond);
 
   if (stereoType === 'wedge' || stereoType === 'dash') {
     const s1Raw = toSVG(a1),
@@ -218,7 +237,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
         `${tip.x.toFixed(2)},${tip.y.toFixed(2)} ` +
         `${(s2.x - nx * WEDGE_HALF_W).toFixed(2)},${(s2.y - ny * WEDGE_HALF_W).toFixed(2)} ` +
         `${(s2.x + nx * WEDGE_HALF_W).toFixed(2)},${(s2.y + ny * WEDGE_HALF_W).toFixed(2)}`;
-      out.push(`<polygon points="${pts}" fill="#111" stroke="none"/>`);
+      out.push(`<polygon points="${pts}" fill="${explicitBondColor ?? '#111'}" fill-opacity="${bondOpacity}" stroke="none"/>`);
     } else {
       for (let i = 1; i <= WEDGE_DASHES; i++) {
         const t = i / (WEDGE_DASHES + 1);
@@ -228,7 +247,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
         out.push(
           `<line x1="${(px - nx * hw).toFixed(2)}" y1="${(py - ny * hw).toFixed(2)}"` +
             ` x2="${(px + nx * hw).toFixed(2)}" y2="${(py + ny * hw).toFixed(2)}"` +
-            ' stroke="#111" stroke-width="1.2" stroke-linecap="round"/>'
+            ` stroke="${explicitBondColor ?? '#111'}" stroke-opacity="${bondOpacity}" stroke-width="1.2" stroke-linecap="round"/>`
         );
       }
     }
@@ -242,8 +261,10 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
     dy = s2.y - s1.y;
   const { nx, ny } = perpUnit(dx, dy);
 
+  const stroke = explicitBondColor ?? '#222';
   const lineEl = (x1, y1, x2, y2, dash) =>
-    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` + ` stroke="#222" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
+    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` +
+    ` stroke="${stroke}" stroke-opacity="${bondOpacity}" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
 
   if (order === 1) {
     const line = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
@@ -360,6 +381,36 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     };
   };
 
+  const ringFillEls = [];
+  const ringFills = typeof mol.getRingFills === 'function' ? mol.getRingFills() : (mol.properties?.style?.ringFills ?? []);
+  if (ringFills.length > 0) {
+    const ringByKey = new Map();
+    for (const ringAtomIds of mol.getRings()) {
+      ringByKey.set([...ringAtomIds].sort().join('\0'), ringAtomIds);
+    }
+    for (const fill of ringFills) {
+      const ringAtomIds = ringByKey.get([...(fill.atomIds ?? [])].sort().join('\0'));
+      if (!ringAtomIds) {
+        continue;
+      }
+      const points = [];
+      for (const atomId of ringAtomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom || atom.visible === false || !renderPosition(atom, projectedCoords, mol)) {
+          points.length = 0;
+          break;
+        }
+        const point = toSVG(atom);
+        points.push(`${point.x.toFixed(2)},${point.y.toFixed(2)}`);
+      }
+      if (points.length >= 3) {
+        ringFillEls.push(
+          `<polygon class="ring-fill" data-ring-fill-id="${escapeXml(String(fill.id ?? ''))}" points="${points.join(' ')}" fill="${fill.color}" fill-opacity="${fill.opacity ?? 0.25}" stroke="none"/>`
+        );
+      }
+    }
+  }
+
   const lines = [];
 
   // Bonds — skip hidden-H bonds unless they carry a stereo bond.
@@ -424,15 +475,22 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
       lonePairDotsByAtomId.set(atom.id, lonePairDots);
     }
     if (!label) {
+      if (atom.properties?.style) {
+        const { x, y } = toSVG(atom);
+        labelEls.push(
+          `<circle class="atom-style-marker" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.4" fill="${atomDisplayColor(atom)}" fill-opacity="${atomDisplayOpacity(atom)}" stroke="none"/>`
+        );
+      }
       if (showLonePairs) {
         for (const dot of lonePairDots) {
-          lonePairEls.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111"/>`);
+          lonePairEls.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111" opacity="${atomDisplayOpacity(atom)}"/>`);
         }
       }
       continue;
     }
     const { x, y } = toSVG(atom);
-    const color = atomColor(atom.name);
+    const color = atomDisplayColor(atom);
+    const opacity = atomDisplayOpacity(atom);
     const hw = labelHalfW(label, FONT_SIZE);
     const hh = labelHalfH(label, FONT_SIZE);
     const { dx, dy } = ringLabelOffset(atom, mol, toSVG, label, FONT_SIZE);
@@ -471,18 +529,18 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
       });
       if (placement) {
         chargeSup =
-          `<circle class="atom-charge-ring" cx="${placement.x.toFixed(2)}" cy="${placement.y.toFixed(2)}" r="${placement.radius.toFixed(2)}" fill="white" stroke="#111" stroke-width="0.9"/>` +
-          `<text class="atom-charge-text" x="${placement.x.toFixed(2)}" y="${placement.y.toFixed(2)}" font-family="sans-serif" font-size="${placement.fontSize.toFixed(1)}" font-weight="700" fill="#111" text-anchor="middle" dominant-baseline="central">${escapeXml(sign)}</text>`;
+          `<circle class="atom-charge-ring" cx="${placement.x.toFixed(2)}" cy="${placement.y.toFixed(2)}" r="${placement.radius.toFixed(2)}" fill="white" stroke="${color}" stroke-width="0.9" opacity="${opacity}"/>` +
+          `<text class="atom-charge-text" x="${placement.x.toFixed(2)}" y="${placement.y.toFixed(2)}" font-family="sans-serif" font-size="${placement.fontSize.toFixed(1)}" font-weight="700" fill="${color}" opacity="${opacity}" text-anchor="middle" dominant-baseline="central">${escapeXml(sign)}</text>`;
       }
     }
 
     labelEls.push(
-      `<text x="${(x + dx).toFixed(2)}" y="${(y + dy).toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
+      `<text x="${(x + dx).toFixed(2)}" y="${(y + dy).toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" opacity="${opacity}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
     );
 
     if (showLonePairs) {
       for (const dot of lonePairDots) {
-        lonePairEls.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111"/>`);
+        lonePairEls.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111" opacity="${opacity}"/>`);
       }
     }
   }
@@ -501,7 +559,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     }
   }
 
-  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...lines, ...labelEls, ...lonePairEls, ...chiralEls].join('\n');
+  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...ringFillEls, ...lines, ...labelEls, ...lonePairEls, ...chiralEls].join('\n');
 
   return { svgContent, cellW, cellH };
 }

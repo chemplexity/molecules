@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { Molecule } from '../../../src/core/Molecule.js';
 import { createSessionUiStateBridge } from '../../../src/app/core/session-ui-state.js';
 
 function makeClassList(initial = []) {
@@ -88,6 +89,28 @@ function makeSessionUiStateBridge(overrides = {}) {
 }
 
 describe('createSessionUiStateBridge', () => {
+  it('serializes atom, bond, and molecule visual style metadata for undo snapshots', () => {
+    const mol = new Molecule();
+    mol.addAtom('a1', 'C', { style: { color: '#3366ff', opacity: 0.8 } });
+    mol.addAtom('a2', 'O');
+    mol.addBond('b1', 'a1', 'a2', { style: { color: '#ff6633', opacity: 0.4 } }, false);
+    mol.setRingFill(['a1', 'a2', 'a3'], { color: '#ffe66d', opacity: 0.25 });
+
+    const bridge = makeSessionUiStateBridge();
+    const snapshotMol = bridge.serializeSnapshotMol(mol);
+
+    assert.deepEqual(snapshotMol.atoms.find(atom => atom.id === 'a1').properties.style, { color: '#3366ff', opacity: 0.8 });
+    assert.deepEqual(snapshotMol.bonds.find(bond => bond.id === 'b1').properties.style, { color: '#ff6633', opacity: 0.4 });
+    assert.deepEqual(snapshotMol.moleculeProperties.style.ringFills, [
+      {
+        id: 'ring-fill:a1\u0000a2\u0000a3',
+        atomIds: ['a1', 'a2', 'a3'],
+        color: '#ffe66d',
+        opacity: 0.25
+      }
+    ]);
+  });
+
   it('captures and restores panel tab state', () => {
     const descButtons = [
       { dataset: { tab: 'general' }, classList: makeClassList(['active']) },

@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { Atom, getImplicitHydrogenChargeAdjustment } from './Atom.js';
 import { Bond } from './Bond.js';
+import { normalizeRingAtomIds, normalizeRingFillStyle, ringAtomKey } from './style.js';
 import elements from '../data/elements.js';
 import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
 import { validateValence } from '../validation/index.js';
@@ -1264,6 +1265,76 @@ export class Molecule {
       ..._clonePropertyBag(this.properties)
     };
     return copy;
+  }
+
+  /**
+   * Returns the stored renderer-facing ring fill entries.
+   * @returns {Array<{id: string, atomIds: string[], color: string, opacity: number}>} Ring fill entries.
+   */
+  getRingFills() {
+    return (this.properties.style?.ringFills ?? []).map(entry => ({
+      id: entry.id,
+      atomIds: [...entry.atomIds],
+      color: entry.color,
+      opacity: entry.opacity
+    }));
+  }
+
+  /**
+   * Sets or replaces a renderer-facing ring fill entry identified by its atom set.
+   * @param {Iterable<string>} atomIds - Ring atom ids.
+   * @param {{id?: string, color?: string, opacity?: number}|null|undefined} style - Ring fill style.
+   * @returns {this} The molecule instance, for chaining.
+   */
+  setRingFill(atomIds, style) {
+    if (style == null) {
+      return this.clearRingFill(atomIds);
+    }
+
+    const normalizedAtomIds = normalizeRingAtomIds(atomIds);
+    const key = ringAtomKey(normalizedAtomIds);
+    const ringFills = this.properties.style?.ringFills ?? [];
+    const existing = ringFills.find(entry => ringAtomKey(entry.atomIds ?? []) === key || (style.id != null && entry.id === String(style.id))) ?? null;
+    const normalizedEntry = normalizeRingFillStyle({
+      ...(existing ?? {}),
+      ...style,
+      atomIds: normalizedAtomIds
+    });
+
+    const nextRingFills = ringFills.filter(entry => entry.id !== normalizedEntry.id && ringAtomKey(entry.atomIds ?? []) !== key);
+    nextRingFills.push(normalizedEntry);
+    this.properties.style ??= {};
+    this.properties.style.ringFills = nextRingFills;
+    return this;
+  }
+
+  /**
+   * Clears one ring fill by id or atom set. Pass null to clear all ring fills.
+   * @param {string|Iterable<string>|null|undefined} atomIdsOrId - Ring fill id or atom ids.
+   * @returns {this} The molecule instance, for chaining.
+   */
+  clearRingFill(atomIdsOrId = null) {
+    const ringFills = this.properties.style?.ringFills;
+    if (!Array.isArray(ringFills) || ringFills.length === 0) {
+      return this;
+    }
+
+    if (atomIdsOrId == null) {
+      delete this.properties.style.ringFills;
+    } else if (typeof atomIdsOrId === 'string') {
+      this.properties.style.ringFills = ringFills.filter(entry => entry.id !== atomIdsOrId);
+    } else {
+      const key = ringAtomKey(normalizeRingAtomIds(atomIdsOrId));
+      this.properties.style.ringFills = ringFills.filter(entry => ringAtomKey(entry.atomIds ?? []) !== key);
+    }
+
+    if (this.properties.style.ringFills?.length === 0) {
+      delete this.properties.style.ringFills;
+    }
+    if (this.properties.style && Object.keys(this.properties.style).length === 0) {
+      delete this.properties.style;
+    }
+    return this;
   }
 
   /**

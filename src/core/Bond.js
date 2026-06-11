@@ -1,6 +1,7 @@
 /** @module core/Bond */
 
 import { randomUUID } from 'node:crypto';
+import { cloneVisualStyle, normalizeBondStyle } from './style.js';
 
 /** @typedef {'covalent'|'dative'|'coordinate'|'ionic'|'haptic'|'unknown'} BondKind */
 
@@ -44,10 +45,12 @@ export class Bond {
    *   `'/'` means traversal src→tgt goes upward; `'\\'` means downward. E/Z designation is
    *   derived by `Molecule.getEZStereo()`, not stored here directly.
    * @param {{as?: 'wedge'|'dash', centerId?: string, manual?: boolean}|undefined} [properties.display] - The properties.display value.
+   * @param {{color?: string, opacity?: number}|undefined} [properties.style] - Optional renderer-facing visual style override.
    *   Optional renderer-facing display override metadata. Used by the 2D renderer to persist
    *   which bond should be drawn as a wedge or dash for a surviving stereocenter.
    */
-  constructor(id, atoms, { order = 1, aromatic = false, kind = 'covalent', stereo = null, display = undefined } = {}) {
+  constructor(id, atoms, { order = 1, aromatic = false, kind = 'covalent', stereo = null, display = undefined, style = undefined } = {}) {
+    const normalizedStyle = normalizeBondStyle(style);
     /** @type {string} */
     this.id = id ?? `${++Bond._nextId}`;
     /** @type {string} Universally unique identifier, auto-generated on construction. */
@@ -56,8 +59,15 @@ export class Bond {
     this.atoms = atoms;
     /** @type {Array} Arbitrary tags for application use. */
     this.tags = [];
-    /** @type {{order: number, aromatic: boolean, kind: BondKind, stereo: string|null, display?: {as?: 'wedge'|'dash', centerId?: string, manual?: boolean}}} */
-    this.properties = { order, aromatic, kind: Bond._normalizeKind(kind), stereo, ...(display !== undefined ? { display } : {}) };
+    /** @type {{order: number, aromatic: boolean, kind: BondKind, stereo: string|null, display?: {as?: 'wedge'|'dash', centerId?: string, manual?: boolean}, style?: {color?: string, opacity?: number}}} */
+    this.properties = {
+      order,
+      aromatic,
+      kind: Bond._normalizeKind(kind),
+      stereo,
+      ...(display !== undefined ? { display } : {}),
+      ...(normalizedStyle ? { style: normalizedStyle } : {})
+    };
   }
 
   /**
@@ -262,6 +272,38 @@ export class Bond {
       throw new RangeError(`stereo must be '/', '\\\\', or null, got ${JSON.stringify(value)}`);
     }
     this.properties.stereo = value;
+    return this;
+  }
+
+  /**
+   * Returns a defensive copy of the optional renderer-facing visual style.
+   * @returns {{color?: string, opacity?: number}|null} The stored style, or null.
+   */
+  getStyle() {
+    return cloneVisualStyle(this.properties.style);
+  }
+
+  /**
+   * Sets or clears the renderer-facing visual style.
+   * @param {{color?: string, opacity?: number}|null|undefined} style - New visual style.
+   * @returns {this} The bond instance, for chaining.
+   */
+  setStyle(style) {
+    const normalizedStyle = normalizeBondStyle(style);
+    if (normalizedStyle) {
+      this.properties.style = normalizedStyle;
+    } else {
+      delete this.properties.style;
+    }
+    return this;
+  }
+
+  /**
+   * Clears the renderer-facing visual style.
+   * @returns {this} The bond instance, for chaining.
+   */
+  clearStyle() {
+    delete this.properties.style;
     return this;
   }
 

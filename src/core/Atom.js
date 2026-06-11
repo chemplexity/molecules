@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 import elements from '../data/elements.js';
+import { cloneVisualStyle, normalizeAtomStyle } from './style.js';
 
 /**
  * Returns the implicit-hydrogen valence adjustment for a charged main-group atom.
@@ -52,12 +53,14 @@ export class Atom {
    * @param {number}                [properties.radical]       - Count of unpaired electrons stored explicitly on the atom.
    * @param {'R'|'S'|null}          [properties.chirality]  - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if unannotated or indeterminate.
    * @param {{atomMap?: number|null}|undefined} [properties.reaction] - Reaction/template metadata used by SMIRKS or atom-mapped SMARTS.
+   * @param {{color?: string, opacity?: number}|undefined} [properties.style] - Optional renderer-facing visual style override.
    */
   constructor(
     id,
     name,
-    { charge = 0, aromatic = false, protons = undefined, neutrons = undefined, electrons = undefined, group = 0, period = 0, radical = 0, chirality = null, reaction = undefined } = {}
+    { charge = 0, aromatic = false, protons = undefined, neutrons = undefined, electrons = undefined, group = 0, period = 0, radical = 0, chirality = null, reaction = undefined, style = undefined } = {}
   ) {
+    const normalizedStyle = normalizeAtomStyle(style);
     /** @type {string} Unique identifier for this atom. */
     this.id = id ?? `${++Atom._nextId}`;
     /** @type {string} Universally unique identifier, auto-generated on construction. */
@@ -76,7 +79,7 @@ export class Atom {
     this.z = null;
     /** @type {boolean} Whether the atom participates in 2D layout and rendering. `false` suppresses the atom from coordinate generation and drawing (e.g. implicit H atoms); has no effect in force-graph mode. */
     this.visible = true;
-    /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, radical: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null, reaction: {atomMap: number|null}}} Chemistry-specific element data. */
+    /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, radical: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null, reaction: {atomMap: number|null}, style?: {color?: string, opacity?: number}}} Chemistry-specific element data and optional visual style. */
     this.properties = {
       charge,
       aromatic,
@@ -88,7 +91,8 @@ export class Atom {
       radical: Atom._normalizeRadical(radical),
       chirality,
       hybridization: null,
-      reaction: { ...(reaction ?? {}), atomMap: Atom._normalizeAtomMap(reaction?.atomMap ?? null) }
+      reaction: { ...(reaction ?? {}), atomMap: Atom._normalizeAtomMap(reaction?.atomMap ?? null) },
+      ...(normalizedStyle ? { style: normalizedStyle } : {})
     };
   }
 
@@ -226,6 +230,38 @@ export class Atom {
   setAtomMap(atomMap) {
     this.properties.reaction ??= { atomMap: null };
     this.properties.reaction.atomMap = Atom._normalizeAtomMap(atomMap);
+    return this;
+  }
+
+  /**
+   * Returns a defensive copy of the optional renderer-facing visual style.
+   * @returns {{color?: string, opacity?: number}|null} The stored style, or null.
+   */
+  getStyle() {
+    return cloneVisualStyle(this.properties.style);
+  }
+
+  /**
+   * Sets or clears the renderer-facing visual style.
+   * @param {{color?: string, opacity?: number}|null|undefined} style - New visual style.
+   * @returns {this} The atom instance, for chaining.
+   */
+  setStyle(style) {
+    const normalizedStyle = normalizeAtomStyle(style);
+    if (normalizedStyle) {
+      this.properties.style = normalizedStyle;
+    } else {
+      delete this.properties.style;
+    }
+    return this;
+  }
+
+  /**
+   * Clears the renderer-facing visual style.
+   * @returns {this} The atom instance, for chaining.
+   */
+  clearStyle() {
+    delete this.properties.style;
     return this;
   }
 

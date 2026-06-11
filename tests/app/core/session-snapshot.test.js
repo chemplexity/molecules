@@ -380,6 +380,66 @@ describe('createSessionSnapshotManager', () => {
     assert.equal(restore2dCall?.[3]?.[0]?.properties?.localizedOrder, 2);
   });
 
+  it('restores atom, bond, and molecule visual style metadata from undo snapshots', () => {
+    const { deps, calls } = makeDeps();
+    deps.restore2dState = displayMol => {
+      calls.push(['restore2dState', displayMol]);
+    };
+    deps.syncInputField = mol => {
+      calls.push(['syncInputField', mol]);
+    };
+    const manager = createSessionSnapshotManager(deps);
+
+    manager.restore({
+      mode: '2d',
+      atoms: [
+        { id: 'A1', name: 'C', properties: { style: { color: '#3366ff', opacity: 0.8 } }, x: 0, y: 0 },
+        { id: 'A2', name: 'O', properties: {}, x: 1, y: 0 }
+      ],
+      bonds: [
+        {
+          id: 'B1',
+          atoms: ['A1', 'A2'],
+          properties: { order: 1, style: { color: '#ff6633', opacity: 0.4 } }
+        }
+      ],
+      moleculeProperties: {
+        style: {
+          ringFills: [{ id: 'rf1', atomIds: ['A1', 'A2', 'A3'], color: '#ffe66d', opacity: 0.25 }]
+        }
+      },
+      currentSmiles: null,
+      currentInchi: null,
+      inputMode: null,
+      inputValue: null,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null,
+      zoomTransform: null,
+      rotationDeg: 0,
+      flipH: false,
+      flipV: false,
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0,
+      highlightState: null,
+      panelState: null,
+      reactionPreview: null,
+      resonanceView: null
+    });
+
+    const restoredMol = calls.find(call => call[0] === 'restore2dState')?.[1];
+
+    assert.deepEqual(restoredMol.atoms.get('A1').properties.style, { color: '#3366ff', opacity: 0.8 });
+    assert.deepEqual(restoredMol.bonds.get('B1').properties.style, { color: '#ff6633', opacity: 0.4 });
+    assert.deepEqual(restoredMol.properties.style.ringFills, [{ id: 'rf1', atomIds: ['A1', 'A2', 'A3'], color: '#ffe66d', opacity: 0.25 }]);
+  });
+
   it('preserves the selected bond draw type when restoring an app snapshot', () => {
     const { deps, calls } = makeDeps();
     const manager = createSessionSnapshotManager(deps);

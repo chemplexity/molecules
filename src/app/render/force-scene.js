@@ -1,6 +1,20 @@
 /** @module app/render/force-scene */
 
-import { getRenderOptions, atomColor, strokeColor, singleBondWidth, prepareAromaticBondRendering, atomRadius, xOffset, yOffset, PI_STROKE, ARO_STROKE } from './helpers.js';
+import {
+  getRenderOptions,
+  atomDisplayColor,
+  atomDisplayOpacity,
+  bondDisplayColor,
+  bondDisplayOpacity,
+  strokeColor,
+  singleBondWidth,
+  prepareAromaticBondRendering,
+  atomRadius,
+  xOffset,
+  yOffset,
+  PI_STROKE,
+  ARO_STROKE
+} from './helpers.js';
 import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, heavyDegree, secondaryDir, syncDisplayStereo } from '../../layout/mol2d-helpers.js';
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
@@ -273,6 +287,8 @@ export function createForceSceneRenderer(ctx) {
     ctx.state.setPreserveSelectionOnNextRender(false);
 
     const graph = ctx.helpers.convertMolecule(molecule);
+    const atomForNode = node => molecule.atoms.get(node?.id) ?? node;
+    const bondForLink = link => molecule.bonds.get(link?.id) ?? link;
     ctx.g.selectAll('*').remove();
     ctx.cache.reset();
 
@@ -305,7 +321,9 @@ export function createForceSceneRenderer(ctx) {
       .filter(d => d.order === 1 || d.order === 2 || d.order === 3)
       .attr('class', 'link')
       .attr('data-bond-id', d => d.id)
-      .style('stroke-width', d => singleBondWidth(d.order));
+      .style('stroke-width', d => singleBondWidth(d.order))
+      .style('stroke', d => bondDisplayColor(bondForLink(d)))
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
 
     const doubleSep = bondEnter
       .append('line')
@@ -313,7 +331,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('class', 'separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
-      .style('stroke-width', PI_STROKE.width);
+      .style('stroke-width', PI_STROKE.width)
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
 
     const aroBond1 = bondEnter
       .append('line')
@@ -321,7 +340,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('class', 'link separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', ARO_STROKE.stroke)
-      .style('stroke-width', ARO_STROKE.width);
+      .style('stroke-width', ARO_STROKE.width)
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
 
     const aroBond2 = bondEnter
       .append('line')
@@ -330,7 +350,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('data-bond-id', d => d.id)
       .style('stroke', ARO_STROKE.stroke)
       .style('stroke-width', ARO_STROKE.width)
-      .style('stroke-dasharray', ARO_STROKE.dashArray);
+      .style('stroke-dasharray', ARO_STROKE.dashArray)
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
 
     const tripleSep1 = bondEnter
       .append('line')
@@ -338,7 +359,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('class', 'separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
-      .style('stroke-width', PI_STROKE.width);
+      .style('stroke-width', PI_STROKE.width)
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
 
     const tripleSep2 = bondEnter
       .append('line')
@@ -346,7 +368,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('class', 'separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
-      .style('stroke-width', PI_STROKE.width);
+      .style('stroke-width', PI_STROKE.width)
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
 
     const bondHoverTarget = bondEnter
       .append('line')
@@ -388,13 +411,23 @@ export function createForceSceneRenderer(ctx) {
         continue;
       }
       const centerId = bond.properties.display?.centerId ?? link.source.id;
+      const stereoColor = bondDisplayColor(bond) ?? '#111';
+      const stereoOpacity = bondDisplayOpacity(bond);
       if (displayAs === 'wedge') {
-        const poly = stereoBondLayer.append('polygon').attr('fill', '#111').attr('pointer-events', 'none');
+        const poly = stereoBondLayer.append('polygon').attr('fill', stereoColor).attr('fill-opacity', stereoOpacity).attr('pointer-events', 'none');
         forceStereoBondInfo.push({ type: 'wedge', element: poly, centerId, link });
       } else {
         const lines = [];
         for (let i = 0; i < FORCE_DASH_COUNT; i++) {
-          lines.push(stereoBondLayer.append('line').attr('stroke', '#111').attr('stroke-width', FORCE_DASH_STROKE).attr('stroke-linecap', 'round').attr('pointer-events', 'none'));
+          lines.push(
+            stereoBondLayer
+              .append('line')
+              .attr('stroke', stereoColor)
+              .attr('stroke-opacity', stereoOpacity)
+              .attr('stroke-width', FORCE_DASH_STROKE)
+              .attr('stroke-linecap', 'round')
+              .attr('pointer-events', 'none')
+          );
         }
         forceStereoBondInfo.push({ type: 'dash', elements: lines, centerId, link });
       }
@@ -437,8 +470,10 @@ export function createForceSceneRenderer(ctx) {
       .append('circle')
       .attr('class', 'node')
       .attr('r', d => atomRadius(d.protons))
-      .attr('fill', d => atomColor(d.name, 'force'))
+      .attr('fill', d => atomDisplayColor(atomForNode(d), 'force'))
+      .attr('fill-opacity', d => atomDisplayOpacity(atomForNode(d)))
       .attr('stroke', d => strokeColor(d.name))
+      .attr('stroke-opacity', d => atomDisplayOpacity(atomForNode(d)))
       .attr('stroke-width', 1)
       .call(ctx.drag.createForceAtomDrag(ctx.simulation))
       .on('mousedown.drawbond', (event, d) => {
@@ -474,15 +509,17 @@ export function createForceSceneRenderer(ctx) {
       .attr('font-weight', 'bold')
       .attr('font-size', d => (d.name.length > 1 ? '7px' : '9px'))
       .attr('fill', d => {
-        if (d.name === 'H') {
+        const atom = atomForNode(d);
+        if (d.name === 'H' && !atom.properties?.style) {
           return '#111';
         }
-        const hex = atomColor(d.name, 'force');
+        const hex = atomDisplayColor(atom, 'force');
         const cr = parseInt(hex.slice(1, 3), 16);
         const cg = parseInt(hex.slice(3, 5), 16);
         const cb = parseInt(hex.slice(5, 7), 16);
         return cr * 0.299 + cg * 0.587 + cb * 0.114 > 140 ? '#333' : '#fff';
       })
+      .attr('opacity', d => atomDisplayOpacity(atomForNode(d)))
       .text(d => d.name);
 
     const forceLonePairLayer = showLonePairs ? ctx.g.append('g').attr('class', 'force-lone-pairs').style('pointer-events', 'none') : null;
@@ -503,15 +540,17 @@ export function createForceSceneRenderer(ctx) {
       .attr('class', 'charge-label-ring')
       .attr('r', d => chargeBadgeMetrics(formatChargeLabel(d.charge), forceChargeFontSize).radius)
       .attr('fill', 'white')
-      .attr('stroke', '#111')
-      .attr('stroke-width', 0.9);
+      .attr('stroke', d => atomDisplayColor(atomForNode(d), 'force'))
+      .attr('stroke-width', 0.9)
+      .attr('opacity', d => atomDisplayOpacity(atomForNode(d)));
     chargeLabel
       .append('text')
       .attr('class', 'charge-label-text')
       .attr('font-family', 'Arial, Helvetica, sans-serif')
       .attr('font-size', d => `${chargeBadgeMetrics(formatChargeLabel(d.charge), forceChargeFontSize).fontSize}px`)
       .attr('font-weight', '700')
-      .attr('fill', '#111')
+      .attr('fill', d => atomDisplayColor(atomForNode(d), 'force'))
+      .attr('opacity', d => atomDisplayOpacity(atomForNode(d)))
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .text(d => formatChargeLabel(d.charge));
@@ -584,7 +623,7 @@ export function createForceSceneRenderer(ctx) {
       for (const atom of molecule.atoms.values()) {
         const atomDots = _forceLonePairDotsForAtom(atom);
         for (let i = 0; i < atomDots.length; i++) {
-          dots.push({ id: `${atom.id}:${i}`, ...atomDots[i] });
+          dots.push({ id: `${atom.id}:${i}`, atomId: atom.id, ...atomDots[i] });
         }
       }
 
@@ -598,6 +637,7 @@ export function createForceSceneRenderer(ctx) {
         .attr('stroke', '#111111')
         .attr('stroke-width', 0.7)
         .merge(lonePairDots)
+        .attr('opacity', d => atomDisplayOpacity(molecule.atoms.get(d.atomId)))
         .attr('cx', d => d.x)
         .attr('cy', d => d.y);
       lonePairDots.exit().remove();

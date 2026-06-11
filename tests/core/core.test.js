@@ -179,6 +179,29 @@ describe('Atom', () => {
     assert.throws(() => a.setAtomMap(1.5), RangeError);
   });
 
+  it('setStyle stores normalized visual style and returns the atom', () => {
+    const a = new Atom('a0', 'C');
+    const ret = a.setStyle({ color: '#3af', opacity: 1.5 });
+
+    assert.equal(ret, a);
+    assert.deepEqual(a.properties.style, { color: '#33aaff', opacity: 1 });
+    assert.deepEqual(a.getStyle(), { color: '#33aaff', opacity: 1 });
+  });
+
+  it('setStyle clears empty atom visual styles', () => {
+    const a = new Atom('a0', 'C', { style: { color: '#3366ff' } });
+    a.setStyle({});
+
+    assert.equal(a.properties.style, undefined);
+  });
+
+  it('setStyle rejects unsupported atom visual styles', () => {
+    const a = new Atom('a0', 'C');
+
+    assert.throws(() => a.setStyle({ color: 'blue' }), RangeError);
+    assert.throws(() => a.setStyle({ opacity: Number.NaN }), RangeError);
+  });
+
   it('resolveElement sets group, period, protons, neutrons, electrons from symbol', () => {
     const a = new Atom('a0', 'C');
     assert.equal(a.properties.group, 0); // not yet resolved
@@ -385,6 +408,23 @@ describe('Bond', () => {
   it('getKind returns the semantic bond kind', () => {
     assert.equal(new Bond('b0', ['a0', 'a1']).getKind(), 'covalent');
     assert.equal(new Bond('b1', ['a0', 'a1'], { kind: 'coordinate' }).getKind(), 'coordinate');
+  });
+
+  it('setStyle stores normalized visual style and returns the bond', () => {
+    const b = new Bond('b0', ['a', 'b']);
+    const ret = b.setStyle({ color: '#ABCDEF', opacity: -0.25 });
+
+    assert.equal(ret, b);
+    assert.deepEqual(b.properties.style, { color: '#abcdef', opacity: 0 });
+    assert.deepEqual(b.getStyle(), { color: '#abcdef', opacity: 0 });
+  });
+
+  it('clearStyle removes bond visual style', () => {
+    const b = new Bond('b0', ['a', 'b'], { style: { color: '#abcdef' } });
+
+    b.clearStyle();
+
+    assert.equal(b.properties.style, undefined);
   });
 });
 
@@ -653,6 +693,41 @@ describe('Molecule', () => {
     const mol = new Molecule();
     mol.addAtom('a0', 'C');
     assert.throws(() => mol.addBond('b0', 'a0', 'a99'));
+  });
+
+  it('sets, replaces, and clears molecule-level ring fill styles', () => {
+    const mol = parseSMILES('c1ccccc1');
+    const ring = ['C6', 'C5', 'C4', 'C3', 'C2', 'C1'];
+
+    mol.setRingFill(ring, { color: '#abc' });
+    assert.deepEqual(mol.getRingFills(), [
+      {
+        id: 'ring-fill:C1\u0000C2\u0000C3\u0000C4\u0000C5\u0000C6',
+        atomIds: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'],
+        color: '#aabbcc',
+        opacity: 0.25
+      }
+    ]);
+
+    mol.setRingFill(ring, { opacity: 0.5 });
+    assert.deepEqual(mol.getRingFills()[0], {
+      id: 'ring-fill:C1\u0000C2\u0000C3\u0000C4\u0000C5\u0000C6',
+      atomIds: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'],
+      color: '#aabbcc',
+      opacity: 0.5
+    });
+
+    mol.clearRingFill(ring);
+    assert.deepEqual(mol.getRingFills(), []);
+    assert.equal(mol.properties.style, undefined);
+  });
+
+  it('rejects invalid molecule-level ring fill styles', () => {
+    const mol = new Molecule();
+
+    assert.throws(() => mol.setRingFill(['a', 'b'], { color: '#abcdef' }), RangeError);
+    assert.throws(() => mol.setRingFill(['a', 'b', 'c'], { opacity: 0.5 }), RangeError);
+    assert.throws(() => mol.setRingFill(['a', 'b', 'c'], { color: 'gold' }), RangeError);
   });
 
   it('getNeighbors returns adjacent atom IDs', () => {
@@ -1560,6 +1635,27 @@ describe('Molecule#clone', () => {
 
     const copy = mol.clone();
     assert.throws(() => copy.addBond('b1', 'a0', 'a1', {}, false), /already exists/);
+  });
+
+  it('preserves atom, bond, and ring visual styles', () => {
+    const mol = parseSMILES('c1ccccc1');
+    mol.atoms.get('C1').setStyle({ color: '#123', opacity: 0.4 });
+    const [bond] = mol.bonds.values();
+    bond.setStyle({ color: '#456789', opacity: 0.6 });
+    mol.setRingFill(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'], { color: '#fc0', opacity: 0.2 });
+
+    const copy = mol.clone();
+
+    assert.deepEqual(copy.atoms.get('C1').properties.style, { color: '#112233', opacity: 0.4 });
+    assert.deepEqual(copy.bonds.get(bond.id).properties.style, { color: '#456789', opacity: 0.6 });
+    assert.deepEqual(copy.getRingFills(), [
+      {
+        id: 'ring-fill:C1\u0000C2\u0000C3\u0000C4\u0000C5\u0000C6',
+        atomIds: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'],
+        color: '#ffcc00',
+        opacity: 0.2
+      }
+    ]);
   });
 });
 

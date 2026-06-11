@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-06-11
+
+- Add core atom and bond visual style metadata for color/opacity plus molecule-level ring fill styling, with 2D/force/static renderer support and undo snapshot coverage.
+
 ## 2026-06-09
 
 - Add a formyl acetal cyclobutane template so compact bridged acetal cages keep the four-ring lane open.

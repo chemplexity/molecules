@@ -328,6 +328,34 @@ describe('create2DRenderHelpers', () => {
     assert.equal(doubleRecords.filter(([kind, tag]) => kind === 'append' && tag === 'line').length >= 2, true);
   });
 
+  it('renders explicit bond visual style through the draw helper', () => {
+    const records = [];
+    const container = new FakeSelection(records);
+    const atomA = makeAtom('a1', 'C', 0, 0);
+    const atomB = makeAtom('a2', 'C', 1, 0);
+    atomA._neighbors = [atomB];
+    atomB._neighbors = [atomA];
+    const mol = {
+      id: 'mol-styled-bond',
+      atoms: new Map([
+        [atomA.id, atomA],
+        [atomB.id, atomB]
+      ]),
+      getBond() {
+        return null;
+      }
+    };
+    const { helpers, state } = makeHelpersContext({ mol });
+    state.mol = mol;
+    state.hCounts = new Map();
+    const toSVGPt = atom => ({ x: atom.x * 60, y: atom.y * 60 });
+
+    helpers.drawBond(container, { properties: { order: 1, style: { color: '#ff6633', opacity: 0.4 } } }, atomA, atomB, mol, toSVGPt, null);
+
+    assert.ok(records.some(([kind, name, value]) => kind === 'style' && name === 'stroke' && value === '#ff6633'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'style' && name === 'stroke-opacity' && value === 0.4));
+  });
+
   it('moves the wedge tip clear of a labeled source atom', () => {
     const unlabeledRecords = [];
     const unlabeledContainer = new FakeSelection(unlabeledRecords);
