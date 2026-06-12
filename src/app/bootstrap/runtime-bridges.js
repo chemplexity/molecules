@@ -66,6 +66,22 @@ export function initializeRuntimeBridges(deps) {
       setEraseMode: value => {
         deps.runtimeState.eraseMode = value;
       },
+      getPaintMode: () => deps.runtimeState.paintMode,
+      setPaintMode: value => {
+        deps.runtimeState.paintMode = value;
+      },
+      getPaintTool: () => deps.runtimeState.paintTool,
+      setPaintTool: value => {
+        deps.runtimeState.paintTool = value;
+      },
+      getPaintColor: () => deps.runtimeState.paintColor,
+      setPaintColor: value => {
+        deps.runtimeState.paintColor = value;
+      },
+      getPaintOpacity: () => deps.runtimeState.paintOpacity,
+      setPaintOpacity: value => {
+        deps.runtimeState.paintOpacity = value;
+      },
       getChargeTool: () => deps.runtimeState.chargeTool ?? null,
       setChargeTool: value => {
         deps.runtimeState.chargeTool = value ?? null;

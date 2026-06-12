@@ -7,6 +7,10 @@
  * and `create2dAtomDrag`.
  */
 export function createDragGestureActions(context) {
+  function isPaintModeActive() {
+    return context.state.getPaintMode?.() ?? false;
+  }
+
   function takePendingSnapshot(state) {
     if (!state || state._snapped) {
       return;
@@ -21,9 +25,9 @@ export function createDragGestureActions(context) {
   function createForceAtomDrag(simulation) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !context.state.getEraseMode() && !context.state.getChargeTool?.())
+      .filter(_event => !context.state.getDrawBondMode() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
       .on('start', (event, datum) => {
-        if (context.state.getDrawBondMode()) {
+        if (context.state.getDrawBondMode() || isPaintModeActive()) {
           return;
         }
         if (!event.active) {
@@ -95,9 +99,9 @@ export function createDragGestureActions(context) {
   function createForceBondDrag(simulation, molecule) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !context.state.getChargeTool?.())
+      .filter(_event => !context.state.getDrawBondMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
       .on('start', function startForceBondDrag(event, datum) {
-        if (context.state.getDrawBondMode()) {
+        if (context.state.getDrawBondMode() || isPaintModeActive()) {
           return;
         }
         const selectedDragAtomIds = context.selection.getSelectedDragAtomIds(molecule, [], [datum.id]);
@@ -195,9 +199,9 @@ export function createDragGestureActions(context) {
   function create2dBondDrag(molecule, bondId, options) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !context.state.getEraseMode() && !context.state.getChargeTool?.())
+      .filter(_event => !context.state.getDrawBondMode() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
       .on('start', function start2dBondDrag(event) {
-        if (context.state.getDrawBondMode()) {
+        if (context.state.getDrawBondMode() || isPaintModeActive()) {
           return;
         }
         event.sourceEvent.stopPropagation();
@@ -233,9 +237,9 @@ export function createDragGestureActions(context) {
   function create2dAtomDrag(molecule, atomId, options = {}) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !context.state.getEraseMode() && !context.state.getChargeTool?.())
+      .filter(_event => !context.state.getDrawBondMode() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
       .on('start', function start2dAtomDrag(event) {
-        if (context.state.getDrawBondMode()) {
+        if (context.state.getDrawBondMode() || isPaintModeActive()) {
           return;
         }
         event.sourceEvent.stopPropagation();

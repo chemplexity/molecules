@@ -5,8 +5,17 @@ import { createSelectionActions } from '../../../src/app/interactions/selection.
 
 function makeButton() {
   const classes = new Set();
+  const styleProperties = new Map();
   return {
     innerHTML: '',
+    style: {
+      setProperty(name, value) {
+        styleProperties.set(name, value);
+      },
+      getPropertyValue(name) {
+        return styleProperties.get(name) ?? '';
+      }
+    },
     classList: {
       add(token) {
         classes.add(token);
@@ -34,6 +43,34 @@ function makeButton() {
       }
     }
   };
+}
+
+function makeColorInput(value = '#3366ff') {
+  const listeners = new Map();
+  const properties = new Map();
+  return {
+    value,
+    style: {
+      backgroundColor: '',
+      setProperty(name, nextValue) {
+        properties.set(name, nextValue);
+      },
+      getPropertyValue(name) {
+        return properties.get(name) ?? '';
+      }
+    },
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    dispatchInput(nextValue) {
+      this.value = nextValue;
+      listeners.get('input')?.();
+    }
+  };
+}
+
+function makeRangeInput(value = '1') {
+  return makeColorInput(value);
 }
 
 describe('createSelectionActions', () => {
@@ -307,6 +344,200 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.pan.classList.contains('active'), true);
     assert.equal(buttons.draw.classList.contains('active'), false);
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
+  });
+
+  it('togglePaintMode toggles active paint buttons and the plot cursor class', () => {
+    let selectMode = true;
+    let drawBondMode = false;
+    let eraseMode = true;
+    let paintMode = false;
+    let paintTool = 'brush';
+    let paintColor = '#3366ff';
+    let paintOpacity = 1;
+    let chargeTool = 'positive';
+    const calls = [];
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      erase: makeButton(),
+      paint2d: makeButton(),
+      paintForce: makeButton(),
+      brush2d: makeButton(),
+      brushForce: makeButton(),
+      bucket2d: makeButton(),
+      bucketForce: makeButton(),
+      color2d: makeColorInput(),
+      colorForce: makeColorInput(),
+      opacity2d: makeRangeInput(),
+      opacityForce: makeRangeInput(),
+      positive: makeButton()
+    };
+    buttons.brush2d.innerHTML = '<svg>brush</svg>';
+    buttons.bucket2d.innerHTML = '<svg>bucket</svg>';
+    const plotElement = makeButton();
+
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => selectMode,
+          setSelectMode: value => {
+            selectMode = value;
+          },
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getEraseMode: () => eraseMode,
+          setEraseMode: value => {
+            eraseMode = value;
+          },
+          getPaintMode: () => paintMode,
+          setPaintMode: value => {
+            paintMode = value;
+          },
+          getPaintTool: () => paintTool,
+          setPaintTool: value => {
+            paintTool = value;
+          },
+          getPaintColor: () => paintColor,
+          setPaintColor: value => {
+            paintColor = value;
+          },
+          getPaintOpacity: () => paintOpacity,
+          setPaintOpacity: value => {
+            paintOpacity = value;
+          },
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting(value) {
+            calls.push(['setErasePainting', value]);
+          }
+        }
+      },
+      renderers: {
+        draw2d() {
+          calls.push('draw2d');
+        },
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {
+          calls.push('clearPrimitiveHover');
+        }
+      },
+      drawBond: {
+        cancelDrawBond() {
+          calls.push('cancelDrawBond');
+        }
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        drawTools: makeButton(),
+        eraseButton: buttons.erase,
+        plotElement,
+        getStyleBrushButtons: () => [buttons.paint2d, buttons.paintForce],
+        getPaintColorSelectors: () => [buttons.color2d, buttons.colorForce],
+        getPaintOpacitySelectors: () => [buttons.opacity2d, buttons.opacityForce],
+        getPaintToolButtons: tool => {
+          if (tool === 'brush') {
+            return [buttons.brush2d, buttons.brushForce];
+          }
+          if (tool === 'bucket') {
+            return [buttons.bucket2d, buttons.bucketForce];
+          }
+          return [];
+        },
+        getChargeToolButton: tool => buttons[tool] ?? null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.togglePaintMode();
+
+    assert.equal(paintMode, true);
+    assert.equal(buttons.paint2d.innerHTML, '<svg>brush</svg>');
+    assert.equal(buttons.paintForce.innerHTML, '<svg>brush</svg>');
+    assert.equal(selectMode, false);
+    assert.equal(drawBondMode, false);
+    assert.equal(eraseMode, false);
+    assert.equal(chargeTool, null);
+    assert.equal(buttons.paint2d.classList.contains('active'), true);
+    assert.equal(buttons.paintForce.classList.contains('active'), true);
+    assert.equal(buttons.brush2d.classList.contains('active'), true);
+    assert.equal(buttons.brushForce.classList.contains('active'), true);
+    assert.equal(buttons.bucket2d.classList.contains('active'), false);
+    assert.equal(buttons.bucketForce.classList.contains('active'), false);
+    assert.equal(buttons.color2d.value, '#3366ff');
+    assert.equal(buttons.colorForce.style.backgroundColor, '#3366ff');
+    assert.equal(buttons.color2d.style.getPropertyValue('--paint-color'), '#3366ff');
+    assert.equal(buttons.opacity2d.value, '1');
+    assert.equal(buttons.opacityForce.value, '1');
+    assert.equal(buttons.opacity2d.style.getPropertyValue('--paint-opacity'), '1');
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /%233366ff/);
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /fill-opacity='1'/);
+    assert.equal(plotElement.classList.contains('paint-mode-cursor'), true);
+    assert.equal(buttons.pan.classList.contains('active'), false);
+
+    buttons.color2d.dispatchInput('#ff6633');
+
+    assert.equal(paintColor, '#ff6633');
+    assert.equal(buttons.color2d.value, '#ff6633');
+    assert.equal(buttons.colorForce.value, '#ff6633');
+    assert.equal(buttons.colorForce.style.backgroundColor, '#ff6633');
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /%23ff6633/);
+
+    buttons.opacity2d.dispatchInput('0.4');
+
+    assert.equal(paintOpacity, 0.4);
+    assert.equal(buttons.opacity2d.value, '0.4');
+    assert.equal(buttons.opacityForce.value, '0.4');
+    assert.equal(buttons.opacityForce.style.getPropertyValue('--paint-opacity'), '0.4');
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /fill-opacity='0.4'/);
+
+    actions.setPaintTool('bucket');
+
+    assert.equal(paintTool, 'bucket');
+    assert.equal(buttons.paint2d.innerHTML, '<svg>bucket</svg>');
+    assert.equal(buttons.paintForce.innerHTML, '<svg>bucket</svg>');
+    assert.equal(buttons.brush2d.classList.contains('active'), false);
+    assert.equal(buttons.brushForce.classList.contains('active'), false);
+    assert.equal(buttons.bucket2d.classList.contains('active'), true);
+    assert.equal(buttons.bucketForce.classList.contains('active'), true);
+
+    actions.togglePaintMode();
+
+    assert.equal(paintMode, false);
+    assert.equal(buttons.paint2d.classList.contains('active'), false);
+    assert.equal(buttons.paintForce.classList.contains('active'), false);
+    assert.equal(buttons.paint2d.innerHTML, '<svg>bucket</svg>');
+    assert.equal(buttons.paintForce.innerHTML, '<svg>bucket</svg>');
+    assert.equal(buttons.brush2d.classList.contains('active'), false);
+    assert.equal(buttons.brushForce.classList.contains('active'), false);
+    assert.equal(buttons.bucket2d.classList.contains('active'), false);
+    assert.equal(buttons.bucketForce.classList.contains('active'), false);
+    assert.equal(plotElement.classList.contains('paint-mode-cursor'), false);
+    assert.equal(buttons.pan.classList.contains('active'), true);
   });
 
   it('setDrawElement activates draw-bond mode when needed', () => {

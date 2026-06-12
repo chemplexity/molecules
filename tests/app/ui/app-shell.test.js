@@ -91,6 +91,18 @@ describe('initAppShell', () => {
         toggleSelectMode: () => {
           records.push(['toggleSelectMode']);
         },
+        togglePaintMode: () => {
+          records.push(['togglePaintMode']);
+        },
+        setPaintTool: tool => {
+          records.push(['setPaintTool', tool]);
+        },
+        setPaintColor: color => {
+          records.push(['setPaintColor', color]);
+        },
+        setPaintOpacity: opacity => {
+          records.push(['setPaintOpacity', opacity]);
+        },
         toggleDrawBondMode: () => {
           records.push(['toggleDrawBondMode']);
         },
@@ -184,6 +196,10 @@ describe('initAppShell', () => {
     win.cleanLayoutForce();
     win.togglePanMode();
     win.toggleSelectMode();
+    win.togglePaintMode();
+    win.setPaintTool('bucket');
+    win.setPaintColor('#ff6633');
+    win.setPaintOpacity(0.45);
     win.toggleDrawBondMode();
     win.handleDrawBondButtonClick();
     win.openDrawBondDrawer();
@@ -223,6 +239,10 @@ describe('initAppShell', () => {
       ['cleanLayoutForce'],
       ['togglePanMode'],
       ['toggleSelectMode'],
+      ['togglePaintMode'],
+      ['setPaintTool', 'bucket'],
+      ['setPaintColor', '#ff6633'],
+      ['setPaintOpacity', 0.45],
       ['toggleDrawBondMode'],
       ['handleDrawBondButtonClick'],
       ['openDrawBondDrawer'],
@@ -271,6 +291,10 @@ describe('initAppShell', () => {
       selection: {
         togglePanMode() {},
         toggleSelectMode() {},
+        togglePaintMode() {},
+        setPaintTool() {},
+        setPaintColor() {},
+        setPaintOpacity() {},
         toggleDrawBondMode() {},
         handleDrawBondButtonClick() {},
         openDrawBondDrawer() {},
@@ -339,6 +363,10 @@ describe('initAppShell', () => {
       selection: {
         togglePanMode() {},
         toggleSelectMode() {},
+        togglePaintMode() {},
+        setPaintTool() {},
+        setPaintColor() {},
+        setPaintOpacity() {},
         toggleDrawBondMode() {},
         handleDrawBondButtonClick() {},
         openDrawBondDrawer() {},

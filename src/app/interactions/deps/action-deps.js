@@ -99,6 +99,11 @@ export function createSelectionActionDeps(ctx) {
       drawBondButton: ctx.drawBondButton,
       drawTools: ctx.drawTools,
       eraseButton: ctx.eraseButton,
+      plotElement: ctx.plotEl ?? null,
+      getStyleBrushButtons: () => ctx.getStyleBrushButtons?.() ?? [],
+      getPaintColorSelectors: () => ctx.getPaintColorSelectors?.() ?? [],
+      getPaintOpacitySelectors: () => ctx.getPaintOpacitySelectors?.() ?? [],
+      getPaintToolButtons: tool => ctx.getPaintToolButtons?.(tool) ?? [],
       getChargeToolButton: tool => ctx.getChargeToolButton(tool),
       getElementButton: element => ctx.getElementButton(element),
       getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type)
@@ -174,6 +179,7 @@ export function createDragGestureActionDeps(ctx) {
     state: {
       getDrawBondMode: () => ctx.getDrawBondMode(),
       getEraseMode: () => ctx.getEraseMode(),
+      getPaintMode: () => ctx.getPaintMode?.() ?? false,
       getChargeTool: () => ctx.getChargeTool?.() ?? null
     },
     history: {
@@ -406,6 +412,7 @@ export function createPrimitiveEventHandlerDeps(ctx) {
       promoteBondOrder: (bondId, options = {}) => ctx.promoteBondOrder(bondId, options),
       eraseItem: (atomIds, bondIds) => ctx.eraseItem(atomIds, bondIds),
       changeAtomCharge: (atomId, options = {}) => ctx.changeAtomCharge(atomId, options),
+      paintStyleTargets: (atomIds, bondIds, style, options = {}) => ctx.paintStyleTargets(atomIds, bondIds, style, options),
       replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol),
       autoPlaceBond: (atomId, ox, oy) => ctx.autoPlaceBond(atomId, ox, oy)
     },

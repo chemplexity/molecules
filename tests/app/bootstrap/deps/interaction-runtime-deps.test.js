@@ -79,6 +79,7 @@ describe('interaction-runtime dependency builder', () => {
       createDrag() {},
       getDrawBondMode: () => false,
       getEraseMode: () => false,
+      getPaintMode: () => true,
       captureSnapshot() {},
       getSelectedDragAtomIds() {
         return new Set([1]);

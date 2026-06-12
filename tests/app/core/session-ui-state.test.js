@@ -56,6 +56,8 @@ function makeSessionUiStateBridge(overrides = {}) {
     getSelectMode: () => false,
     getDrawBondMode: () => false,
     getEraseMode: () => false,
+    getPaintMode: () => false,
+    getPaintTool: () => 'brush',
     getChargeTool: () => null,
     getDrawBondElement: () => 'C',
     getDrawBondType: () => 'single',
@@ -71,11 +73,13 @@ function makeSessionUiStateBridge(overrides = {}) {
     setDrawBondHoverSuppressed() {},
     setErasePainting() {},
     setChargeTool() {},
+    setPaintTool() {},
     setDrawBondElement() {},
     setDrawBondType() {},
     setSelectMode() {},
     setDrawBondMode() {},
     setEraseMode() {},
+    setPaintMode() {},
     setForceAutoFitEnabled() {},
     setForceKeepInView() {},
     setForceKeepInViewTicks() {},
@@ -237,6 +241,10 @@ describe('createSessionUiStateBridge', () => {
     let selectMode = true;
     let drawBondMode = false;
     let eraseMode = false;
+    let paintMode = false;
+    let paintTool = 'brush';
+    let paintColor = '#3366ff';
+    let paintOpacity = 1;
     let chargeTool = 'positive';
     let drawBondElement = 'N';
     let drawBondType = 'double';
@@ -251,6 +259,10 @@ describe('createSessionUiStateBridge', () => {
       getSelectMode: () => selectMode,
       getDrawBondMode: () => drawBondMode,
       getEraseMode: () => eraseMode,
+      getPaintMode: () => paintMode,
+      getPaintTool: () => paintTool,
+      getPaintColor: () => paintColor,
+      getPaintOpacity: () => paintOpacity,
       getChargeTool: () => chargeTool,
       getDrawBondElement: () => drawBondElement,
       getDrawBondType: () => drawBondType,
@@ -299,6 +311,18 @@ describe('createSessionUiStateBridge', () => {
       setEraseMode(value) {
         eraseMode = value;
       },
+      setPaintMode(value) {
+        paintMode = value;
+      },
+      setPaintTool(value) {
+        paintTool = value;
+      },
+      setPaintColor(value) {
+        paintColor = value;
+      },
+      setPaintOpacity(value) {
+        paintOpacity = value;
+      },
       setForceAutoFitEnabled(value) {
         forceAutoFitEnabled = value;
       },
@@ -330,6 +354,9 @@ describe('createSessionUiStateBridge', () => {
       selectedBondIds: ['b1'],
       toolMode: 'select',
       chargeTool: 'positive',
+      paintTool: 'brush',
+      paintColor: '#3366ff',
+      paintOpacity: 1,
       drawBondElement: 'N',
       drawBondType: 'double',
       forceAutoFitEnabled: false,
@@ -342,6 +369,9 @@ describe('createSessionUiStateBridge', () => {
       selectedBondIds: ['b2'],
       toolMode: 'charge-negative',
       chargeTool: 'negative',
+      paintTool: 'bucket',
+      paintColor: '#ff6633',
+      paintOpacity: 0.45,
       drawBondElement: 'O',
       drawBondType: 'dash',
       forceAutoFitEnabled: true,
@@ -354,6 +384,10 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(selectMode, false);
     assert.equal(drawBondMode, false);
     assert.equal(eraseMode, false);
+    assert.equal(paintMode, false);
+    assert.equal(paintTool, 'bucket');
+    assert.equal(paintColor, '#ff6633');
+    assert.equal(paintOpacity, 0.45);
     assert.equal(chargeTool, 'negative');
     assert.equal(drawBondElement, 'O');
     assert.equal(drawBondType, 'dash');
@@ -373,5 +407,26 @@ describe('createSessionUiStateBridge', () => {
       'syncToolButtonsFromState',
       'refreshSelectionOverlay'
     ]);
+
+    calls.length = 0;
+    paintMode = true;
+    paintTool = 'bucket';
+    selectMode = false;
+    chargeTool = null;
+    assert.equal(bridge.captureInteractionState().toolMode, 'paint');
+
+    bridge.restoreInteractionState({
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'paint'
+    });
+    assert.equal(paintMode, true);
+    assert.equal(paintTool, 'brush');
+    assert.equal(paintColor, '#3366ff');
+    assert.equal(paintOpacity, 1);
+    assert.equal(selectMode, false);
+    assert.equal(drawBondMode, false);
+    assert.equal(eraseMode, false);
+    assert.equal(calls.includes('syncToolButtonsFromState'), true);
   });
 });

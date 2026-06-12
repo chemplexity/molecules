@@ -9,6 +9,10 @@ function makeContext(overrides = {}) {
   let erasePainting = false;
   let selectMode = false;
   let chargeTool = null;
+  let paintMode = false;
+  let paintTool = 'brush';
+  let paintColor = '#3366ff';
+  let paintOpacity = 1;
   let mode = 'force';
   let selectionValenceTooltipAtomId = null;
   let primitiveHoverSuppressed = false;
@@ -30,6 +34,10 @@ function makeContext(overrides = {}) {
         getEraseMode: () => eraseMode,
         getErasePainting: () => erasePainting,
         getSelectMode: () => selectMode,
+        getPaintMode: () => paintMode,
+        getPaintTool: () => paintTool,
+        getPaintColor: () => paintColor,
+        getPaintOpacity: () => paintOpacity,
         getChargeTool: () => chargeTool,
         getHoveredAtomIds: () => hoveredAtomIds,
         getHoveredBondIds: () => hoveredBondIds
@@ -72,6 +80,9 @@ function makeContext(overrides = {}) {
       },
       changeAtomCharge(...args) {
         calls.push(['changeAtomCharge', ...args]);
+      },
+      paintStyleTargets(...args) {
+        calls.push(['paintStyleTargets', ...args]);
       },
       replaceForceHydrogenAtom(...args) {
         calls.push(['replaceForceHydrogenAtom', ...args]);
@@ -147,6 +158,18 @@ function makeContext(overrides = {}) {
     setChargeTool: value => {
       chargeTool = value;
     },
+    setPaintMode: value => {
+      paintMode = value;
+    },
+    setPaintTool: value => {
+      paintTool = value;
+    },
+    setPaintColor: value => {
+      paintColor = value;
+    },
+    setPaintOpacity: value => {
+      paintOpacity = value;
+    },
     setMode: value => {
       mode = value;
     },
@@ -157,6 +180,44 @@ function makeContext(overrides = {}) {
 }
 
 describe('createPrimitiveEventHandlers', () => {
+  it('routes 2D atom and bond clicks to paint styling in brush mode', () => {
+    const { context, calls, setMode, setPaintMode, setPaintColor, setPaintOpacity } = makeContext();
+    setMode('2d');
+    setPaintMode(true);
+    setPaintColor('#ff6633');
+    setPaintOpacity(0.45);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dAtomClick({}, 'a1');
+    handlers.handle2dBondClick({}, 'b1');
+
+    assert.deepEqual(calls, [
+      ['paintStyleTargets', ['a1'], [], { color: '#ff6633', opacity: 0.45 }],
+      ['paintStyleTargets', [], ['b1'], { color: '#ff6633', opacity: 0.45 }]
+    ]);
+  });
+
+  it('routes force atom and bond clicks to paint styling only for the brush tool', () => {
+    const { context, calls, setPaintMode, setPaintTool } = makeContext();
+    const handlers = createPrimitiveEventHandlers(context);
+    const molecule = {
+      atoms: new Map([['a1', { id: 'a1', name: 'C' }]]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]])
+    };
+
+    setPaintMode(true);
+    handlers.handleForceAtomClick({}, { id: 'a1', name: 'C' }, molecule);
+    handlers.handleForceBondClick({}, 'b1', molecule);
+    setPaintTool('bucket');
+    handlers.handleForceAtomClick({}, { id: 'a2', name: 'C' }, molecule);
+
+    assert.deepEqual(calls, [
+      ['paintStyleTargets', ['a1'], [], { color: '#3366ff', opacity: 1 }],
+      ['paintStyleTargets', [], ['b1'], { color: '#3366ff', opacity: 1 }],
+      ['handleForcePrimitiveClick', {}, ['a2'], []]
+    ]);
+  });
+
   it('routes force bond click to bond promotion in draw-bond mode', () => {
     const { context, calls, setDrawBondMode } = makeContext();
     setDrawBondMode(true);

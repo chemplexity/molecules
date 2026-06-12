@@ -28,6 +28,12 @@ describe('dom-elements bootstrap helpers', () => {
     const inputLabel = createElement();
     const examplesList = createElement();
     const svgPlot = createElement();
+    const paintToolButtons = [
+      createElement({ dataset: { paintTool: 'brush' } }),
+      createElement({ dataset: { paintTool: 'bucket' } }),
+      createElement({ dataset: { paintTool: 'brush' } }),
+      createElement({ dataset: { paintTool: 'bucket' } })
+    ];
     const elements = {
       'toggle-btn': createElement(),
       'rotate-controls': createElement(),
@@ -39,6 +45,12 @@ describe('dom-elements bootstrap helpers', () => {
       'pan-mode-btn': createElement(),
       'select-mode-btn': createElement(),
       'draw-bond-btn': createElement(),
+      'style-brush-btn': createElement(),
+      'force-style-brush-btn': createElement(),
+      'paint-color-selector': createElement(),
+      'force-paint-color-selector': createElement(),
+      'paint-opacity-selector': createElement(),
+      'force-paint-opacity-selector': createElement(),
       'charge-positive-btn': createElement(),
       'charge-negative-btn': createElement(),
       'erase-btn': createElement(),
@@ -74,7 +86,10 @@ describe('dom-elements bootstrap helpers', () => {
       querySelector(selector) {
         return selector === '.svg-plot' ? svgPlot : null;
       },
-      querySelectorAll() {
+      querySelectorAll(selector) {
+        if (selector === '[data-paint-tool]') {
+          return paintToolButtons;
+        }
         return [];
       }
     };
@@ -99,6 +114,11 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(dom.getElementButtonElement('C'), elements['elem-btn-C']);
     assert.equal(dom.getPositiveChargeButtonElement(), elements['charge-positive-btn']);
     assert.equal(dom.getNegativeChargeButtonElement(), elements['charge-negative-btn']);
+    assert.deepEqual(dom.getStyleBrushButtonElements(), [elements['style-brush-btn'], elements['force-style-brush-btn']]);
+    assert.deepEqual(dom.getPaintColorSelectorElements(), [elements['paint-color-selector'], elements['force-paint-color-selector']]);
+    assert.deepEqual(dom.getPaintOpacitySelectorElements(), [elements['paint-opacity-selector'], elements['force-paint-opacity-selector']]);
+    assert.deepEqual(dom.getPaintToolButtonElements('brush'), [paintToolButtons[0], paintToolButtons[2]]);
+    assert.deepEqual(dom.getPaintToolButtonElements('bucket'), [paintToolButtons[1], paintToolButtons[3]]);
   });
 
   it('clears the summary fields through shared helpers', () => {
@@ -120,6 +140,12 @@ describe('dom-elements bootstrap helpers', () => {
       'pan-mode-btn': createElement(),
       'select-mode-btn': createElement(),
       'draw-bond-btn': createElement(),
+      'style-brush-btn': createElement(),
+      'force-style-brush-btn': createElement(),
+      'paint-color-selector': createElement(),
+      'force-paint-color-selector': createElement(),
+      'paint-opacity-selector': createElement(),
+      'force-paint-opacity-selector': createElement(),
       'charge-positive-btn': createElement(),
       'charge-negative-btn': createElement(),
       'erase-btn': createElement(),

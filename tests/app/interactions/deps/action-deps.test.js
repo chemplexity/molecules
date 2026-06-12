@@ -141,6 +141,7 @@ describe('interaction action deps builders', () => {
       createDrag: () => ({ type: 'drag' }),
       getDrawBondMode: () => true,
       getEraseMode: () => false,
+      getPaintMode: () => true,
       captureSnapshot: () => records.push(['capture']),
       takeSnapshot: options => records.push(['take', options]),
       getSelectedDragAtomIds: () => [1, 2],
@@ -239,6 +240,7 @@ describe('interaction action deps builders', () => {
     ]);
     assert.equal(editingDeps.force.getSimulation().id, 'sim');
     assert.equal(dragDeps.selection.getSelectedDragAtomIds().length, 2);
+    assert.equal(dragDeps.state.getPaintMode(), true);
     assert.deepEqual(previewDeps.helpers.toSelectionSVGPt2d({ id: 7 }), { x: 7, y: 0 });
     assert.equal(previewDeps.constants.forceBondLength, 30);
     assert.equal(commitDeps.constants.forceScale, 25);
@@ -256,6 +258,7 @@ describe('interaction action deps builders', () => {
       getDrawBondElement: () => 'O',
       promoteBondOrder: bondId => records.push(['promote', bondId]),
       eraseItem: (atomIds, bondIds) => records.push(['erase', atomIds, bondIds]),
+      paintStyleTargets: (atomIds, bondIds, style) => records.push(['paint', atomIds, bondIds, style]),
       replaceForceHydrogenAtom: (atomId, mol) => records.push(['replaceH', atomId, mol]),
       showPrimitiveHover: (atomIds, bondIds) => records.push(['showHover', atomIds, bondIds]),
       clearPrimitiveHover: () => records.push(['clearHover']),
@@ -277,6 +280,7 @@ describe('interaction action deps builders', () => {
     });
 
     deps.drawBond.start(4, 5, 6);
+    deps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' });
     deps.tooltip.showImmediate('hello', { clientX: 1 });
     deps.tooltipState.setSelectionValenceTooltipAtomId(99);
 
@@ -287,6 +291,7 @@ describe('interaction action deps builders', () => {
     assert.deepEqual(deps.pointer({ x: 7 }, { y: 8 }), [7, 8]);
     assert.deepEqual(records, [
       ['start', 4, 5, 6],
+      ['paint', ['a1'], ['b1'], { color: '#3366ff' }],
       ['immediateTooltip', 'hello', { clientX: 1 }],
       ['setTooltipAtom', 99]
     ]);

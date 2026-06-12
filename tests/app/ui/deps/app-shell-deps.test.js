@@ -32,6 +32,10 @@ describe('createAppShellDeps', () => {
       selection: {
         togglePanMode: () => 'togglePanMode',
         toggleSelectMode: () => 'toggleSelectMode',
+        togglePaintMode: () => 'togglePaintMode',
+        setPaintTool: value => `setPaintTool:${value}`,
+        setPaintColor: value => `setPaintColor:${value}`,
+        setPaintOpacity: value => `setPaintOpacity:${value}`,
         toggleDrawBondMode: () => 'toggleDrawBondMode',
         handleDrawBondButtonClick: () => 'handleDrawBondButtonClick',
         openDrawBondDrawer: () => 'openDrawBondDrawer',
@@ -77,6 +81,10 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.exportActions.copyForceSvg(), 'copyForceSvg');
     assert.equal(deps.options.open(), 'open');
     assert.equal(deps.navigation.toggleMode(), 'toggleMode');
+    assert.equal(deps.selection.togglePaintMode(), 'togglePaintMode');
+    assert.equal(deps.selection.setPaintTool('bucket'), 'setPaintTool:bucket');
+    assert.equal(deps.selection.setPaintColor('#ff6633'), 'setPaintColor:#ff6633');
+    assert.equal(deps.selection.setPaintOpacity(0.45), 'setPaintOpacity:0.45');
     assert.equal(deps.selection.setChargeTool('positive'), 'setChargeTool:positive');
     assert.equal(deps.selection.setDrawElement('N'), 'setDrawElement:N');
     assert.equal(deps.selection.setDrawBondType('dash'), 'setDrawBondType:dash');

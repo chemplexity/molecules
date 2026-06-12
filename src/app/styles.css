@@ -979,6 +979,7 @@ div.tooltip td:first-child {
   right: 10px;
   display: flex;
   gap: 4px;
+  align-items: flex-end;
   z-index: 10;
 }
 
@@ -989,11 +990,94 @@ div.tooltip td:first-child {
   display: none;
   z-index: 10;
   gap: 4px;
+  align-items: flex-end;
+}
+
+.export-png-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.paint-tool {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.paint-style-controls {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 5px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateY(4px) scale(0.92);
+  transform-origin: right bottom;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    visibility 0.15s ease;
+  z-index: 2;
+}
+
+.style-brush-btn.active ~ .paint-style-controls {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+.paint-color-selector {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--paint-color, #3366ff);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.paint-color-selector::-webkit-color-swatch-wrapper {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.paint-color-selector::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+.paint-color-selector::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+.paint-opacity-selector {
+  width: 72px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--paint-color, #3366ff);
 }
 
 #label-toggle,
 #copy-force-svg-btn,
-#copy-force-png-btn {
+#copy-force-png-btn,
+#force-style-brush-btn {
   height: 32px;
   padding: 0 12px;
   border: 1px solid #ccc;
@@ -1007,7 +1091,8 @@ div.tooltip td:first-child {
 
 #label-toggle:hover,
 #copy-force-svg-btn:hover,
-#copy-force-png-btn:hover {
+#copy-force-png-btn:hover,
+#force-style-brush-btn:hover {
   background: #f0f0f0;
 }
 
@@ -1059,6 +1144,103 @@ div.tooltip td:first-child {
 #rotate-controls #save-png-btn {
   font-size: 9px;
   font-weight: bold;
+}
+
+.style-brush-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.paint-tool-drawer {
+  position: absolute;
+  right: 32px;
+  top: -10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 10px 10px;
+  pointer-events: none;
+}
+
+.paint-tool-drawer::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  pointer-events: none;
+}
+
+.paint-tool:hover .paint-tool-drawer,
+.paint-tool:focus-within .paint-tool-drawer,
+.paint-tool:hover .paint-tool-drawer::before,
+.paint-tool:focus-within .paint-tool-drawer::before {
+  pointer-events: auto;
+}
+
+#rotate-controls .paint-tool-drawer button,
+#force-controls .paint-tool-drawer button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.98);
+  cursor: pointer;
+  color: #555;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(10px) scale(0.92);
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
+  padding: 0;
+  position: relative;
+  z-index: 1;
+}
+
+#rotate-controls .paint-tool:hover .paint-tool-drawer button,
+#force-controls .paint-tool:hover .paint-tool-drawer button,
+#rotate-controls .paint-tool:focus-within .paint-tool-drawer button,
+#force-controls .paint-tool:focus-within .paint-tool-drawer button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+}
+
+#rotate-controls .paint-tool-drawer button:hover,
+#force-controls .paint-tool-drawer button:hover,
+#rotate-controls .paint-tool-drawer button.active,
+#force-controls .paint-tool-drawer button.active {
+  box-shadow: 0 4px 12px rgba(48, 96, 192, 0.18);
+}
+
+#rotate-controls .paint-tool-drawer button.active,
+#force-controls .paint-tool-drawer button.active {
+  background: #5090f0;
+  color: #fff;
+  border-color: #3060c0;
+}
+
+.paint-drawer-icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+
+#plot.paint-mode-cursor {
+  --paint-mode-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='13' fill='%233366ff' fill-opacity='1' stroke='black' stroke-width='2'/%3E%3C/svg%3E") 14 14, crosshair;
+}
+
+#plot.paint-mode-cursor,
+#plot.paint-mode-cursor * {
+  cursor: var(--paint-mode-cursor) !important;
 }
 
 #clean-controls {
@@ -1251,7 +1433,8 @@ div.tooltip td:first-child {
 }
 
 #force-controls #copy-force-svg-btn,
-#force-controls #copy-force-png-btn {
+#force-controls #copy-force-png-btn,
+#force-controls #force-style-brush-btn {
   width: 32px;
   height: 32px;
   padding: 0;
@@ -1267,8 +1450,22 @@ div.tooltip td:first-child {
 }
 
 #force-controls #copy-force-svg-btn:hover,
-#force-controls #copy-force-png-btn:hover {
+#force-controls #copy-force-png-btn:hover,
+#force-controls #force-style-brush-btn:hover {
   color: #333;
+}
+
+#rotate-controls .style-brush-btn.active,
+#force-controls #force-style-brush-btn.active {
+  background: #5090f0;
+  color: #fff;
+  border-color: #3060c0;
+}
+
+#rotate-controls .style-brush-btn.active:hover,
+#force-controls #force-style-brush-btn.active:hover {
+  background: #4080e0;
+  color: #fff;
 }
 
 /* ── Format toggle (SMILES / InChI) ─────────────────────────────────── */

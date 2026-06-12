@@ -20,9 +20,21 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const panButton = document.getElementById('pan-mode-btn');
   const selectButton = document.getElementById('select-mode-btn');
   const drawBondButton = document.getElementById('draw-bond-btn');
+  const styleBrushButton = document.getElementById('style-brush-btn');
+  const forceStyleBrushButton = document.getElementById('force-style-brush-btn');
+  const paintColorSelector = document.getElementById('paint-color-selector');
+  const forcePaintColorSelector = document.getElementById('force-paint-color-selector');
+  const paintOpacitySelector = document.getElementById('paint-opacity-selector');
+  const forcePaintOpacitySelector = document.getElementById('force-paint-opacity-selector');
   const positiveChargeButton = document.getElementById('charge-positive-btn');
   const negativeChargeButton = document.getElementById('charge-negative-btn');
   const bondDrawTypeButtons = new Map([...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button]));
+  const paintToolButtons = new Map();
+  for (const button of document.querySelectorAll('[data-paint-tool]')) {
+    const list = paintToolButtons.get(button.dataset.paintTool) ?? [];
+    list.push(button);
+    paintToolButtons.set(button.dataset.paintTool, list);
+  }
   const eraseButton = document.getElementById('erase-btn');
   const molecularFormula = document.getElementById('molecularFormula');
   const molecularWeight = document.getElementById('molecularWeight');
@@ -88,6 +100,12 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getPanButtonElement: () => panButton,
     getSelectButtonElement: () => selectButton,
     getDrawBondButtonElement: () => drawBondButton,
+    getStyleBrushButtonElement: () => styleBrushButton,
+    getForceStyleBrushButtonElement: () => forceStyleBrushButton,
+    getStyleBrushButtonElements: () => [styleBrushButton, forceStyleBrushButton].filter(Boolean),
+    getPaintColorSelectorElements: () => [paintColorSelector, forcePaintColorSelector].filter(Boolean),
+    getPaintOpacitySelectorElements: () => [paintOpacitySelector, forcePaintOpacitySelector].filter(Boolean),
+    getPaintToolButtonElements: tool => paintToolButtons.get(tool) ?? [],
     getPositiveChargeButtonElement: () => positiveChargeButton,
     getNegativeChargeButtonElement: () => negativeChargeButton,
     getBondDrawTypeButtonElement: type => bondDrawTypeButtons.get(type) ?? null,

@@ -206,6 +206,7 @@ describe('interaction runtime bootstrap', () => {
         updateForce() {},
         clearSelection() {},
         changeAtomElements() {},
+        paintStyleTargets() {},
         promoteBondOrder() {},
         isAdditiveSelectionEvent: () => false,
         hasVisibleStereoBond: () => false,
@@ -238,6 +239,7 @@ describe('interaction runtime bootstrap', () => {
     assert.equal(runtime.drawBondCommitActions.deps.cancelPreview(), 'cancelled');
     assert.equal(runtime.primitiveEventHandlers.deps.resetDrawBondHover(), 'reset');
     assert.equal(runtime.primitiveEventHandlers.deps.eraseItem([], []), undefined);
+    assert.equal(typeof runtime.primitiveEventHandlers.deps.paintStyleTargets, 'function');
     assert.equal(runtime.navigationActions.kind, 'navigation');
   });
 });

@@ -10,6 +10,17 @@ export function createPrimitiveEventHandlers(context) {
     return context.state.overlayState.getChargeTool?.() ?? null;
   }
 
+  function getPaintStyle() {
+    return {
+      color: context.state.overlayState.getPaintColor?.() ?? '#3366ff',
+      opacity: context.state.overlayState.getPaintOpacity?.() ?? 1
+    };
+  }
+
+  function isPaintBrushMode() {
+    return (context.state.overlayState.getPaintMode?.() ?? false) && (context.state.overlayState.getPaintTool?.() ?? 'brush') === 'brush';
+  }
+
   function showPrimitiveHover(atomIds = [], bondIds = []) {
     if (context.view.isPrimitiveHoverSuppressed?.()) {
       context.view.setPrimitiveHoverSuppressed?.(false);
@@ -42,6 +53,10 @@ export function createPrimitiveEventHandlers(context) {
   function handle2dBondClick(event, bondId) {
     if (context.state.overlayState.getDrawBondMode()) {
       context.actions.promoteBondOrder(bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
+      return;
+    }
+    if (isPaintBrushMode()) {
+      context.actions.paintStyleTargets([], [bondId], getPaintStyle());
       return;
     }
     if (context.state.overlayState.getEraseMode()) {
@@ -97,6 +112,10 @@ export function createPrimitiveEventHandlers(context) {
 
   function handle2dAtomClick(event, atomId) {
     if (context.state.overlayState.getDrawBondMode()) {
+      return;
+    }
+    if (isPaintBrushMode()) {
+      context.actions.paintStyleTargets([atomId], [], getPaintStyle());
       return;
     }
     const chargeTool = getChargeTool();
@@ -173,6 +192,10 @@ export function createPrimitiveEventHandlers(context) {
   function handleForceBondClick(event, bondId, molecule) {
     if (context.state.overlayState.getDrawBondMode()) {
       context.actions.promoteBondOrder(bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
+      return;
+    }
+    if (isPaintBrushMode()) {
+      context.actions.paintStyleTargets([], [bondId], getPaintStyle());
       return;
     }
     if (context.state.overlayState.getEraseMode()) {
@@ -269,6 +292,10 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     const chargeTool = getChargeTool();
+    if (isPaintBrushMode()) {
+      context.actions.paintStyleTargets([atom.id], [], getPaintStyle());
+      return;
+    }
     if (chargeTool) {
       if (atom.name === 'H') {
         return;

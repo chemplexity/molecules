@@ -34,6 +34,10 @@ export function createAppShellDeps(deps) {
     selection: {
       togglePanMode: deps.selection.togglePanMode,
       toggleSelectMode: deps.selection.toggleSelectMode,
+      togglePaintMode: deps.selection.togglePaintMode,
+      setPaintTool: deps.selection.setPaintTool,
+      setPaintColor: deps.selection.setPaintColor,
+      setPaintOpacity: deps.selection.setPaintOpacity,
       toggleDrawBondMode: deps.selection.toggleDrawBondMode,
       handleDrawBondButtonClick: deps.selection.handleDrawBondButtonClick,
       openDrawBondDrawer: deps.selection.openDrawBondDrawer,

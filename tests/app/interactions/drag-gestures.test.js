@@ -22,6 +22,7 @@ function createDragStub() {
 function makeContext(overrides = {}) {
   let drawBondMode = false;
   let eraseMode = false;
+  let paintMode = false;
   const calls = [];
   const dragStubs = [];
 
@@ -35,7 +36,8 @@ function makeContext(overrides = {}) {
     },
     state: {
       getDrawBondMode: () => drawBondMode,
-      getEraseMode: () => eraseMode
+      getEraseMode: () => eraseMode,
+      getPaintMode: () => paintMode
     },
     history: {
       captureSnapshot: () => ({ id: 'snapshot-1' }),
@@ -85,11 +87,46 @@ function makeContext(overrides = {}) {
     },
     setEraseMode: value => {
       eraseMode = value;
+    },
+    setPaintMode: value => {
+      paintMode = value;
     }
   };
 }
 
 describe('createDragGestureActions', () => {
+  it('blocks atom and bond drag gestures while paint mode is active', () => {
+    const simulation = {
+      nodes: () => [],
+      alphaTarget() {
+        return simulation;
+      },
+      restart() {
+        return simulation;
+      }
+    };
+    const { actions, setPaintMode } = makeContext();
+    const dragOptions = {
+      captureDragState: () => null,
+      redrawDragTargets() {},
+      pointer: () => [0, 0],
+      scale: 1,
+      draw() {}
+    };
+
+    setPaintMode(true);
+    assert.equal(actions.createForceAtomDrag(simulation).filterFn({}), false);
+    assert.equal(actions.createForceBondDrag(simulation, { id: 'mol' }).filterFn({}), false);
+    assert.equal(actions.create2dAtomDrag({ atoms: new Map() }, 'a1', dragOptions).filterFn({}), false);
+    assert.equal(actions.create2dBondDrag({ atoms: new Map() }, 'b1', dragOptions).filterFn({}), false);
+
+    setPaintMode(false);
+    assert.equal(actions.createForceAtomDrag(simulation).filterFn({}), true);
+    assert.equal(actions.createForceBondDrag(simulation, { id: 'mol' }).filterFn({}), true);
+    assert.equal(actions.create2dAtomDrag({ atoms: new Map() }, 'a1', dragOptions).filterFn({}), true);
+    assert.equal(actions.create2dBondDrag({ atoms: new Map() }, 'b1', dragOptions).filterFn({}), true);
+  });
+
   it('takes a force-atom drag snapshot only on first movement', () => {
     const simCalls = [];
     const node = { id: 'a1', x: 4, y: 6 };

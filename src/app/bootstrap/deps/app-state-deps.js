@@ -101,6 +101,22 @@ export function createAppStateBridgeDeps(ctx) {
       setEraseMode: value => {
         ctx.setEraseMode(value);
       },
+      getPaintMode: () => ctx.getPaintMode?.() ?? false,
+      setPaintMode: value => {
+        ctx.setPaintMode?.(value);
+      },
+      getPaintTool: () => ctx.getPaintTool?.() ?? 'brush',
+      setPaintTool: value => {
+        ctx.setPaintTool?.(value);
+      },
+      getPaintColor: () => ctx.getPaintColor?.() ?? '#3366ff',
+      setPaintColor: value => {
+        ctx.setPaintColor?.(value);
+      },
+      getPaintOpacity: () => ctx.getPaintOpacity?.() ?? 1,
+      setPaintOpacity: value => {
+        ctx.setPaintOpacity?.(value);
+      },
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
       setChargeTool: value => {
         ctx.setChargeTool?.(value ?? null);

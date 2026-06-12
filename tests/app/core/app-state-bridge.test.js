@@ -132,6 +132,22 @@ describe('createAppStateBridge', () => {
         setEraseMode: value => {
           records.push(['setEraseMode', value]);
         },
+        getPaintMode: () => true,
+        setPaintMode: value => {
+          records.push(['setPaintMode', value]);
+        },
+        getPaintTool: () => 'bucket',
+        setPaintTool: value => {
+          records.push(['setPaintTool', value]);
+        },
+        getPaintColor: () => '#ff6633',
+        setPaintColor: value => {
+          records.push(['setPaintColor', value]);
+        },
+        getPaintOpacity: () => 0.4,
+        setPaintOpacity: value => {
+          records.push(['setPaintOpacity', value]);
+        },
         getChargeTool: () => 'positive',
         setChargeTool: value => {
           records.push(['setChargeTool', value]);
@@ -154,11 +170,19 @@ describe('createAppStateBridge', () => {
     assert.equal(bridge.viewState.getMode(), '2d');
     assert.deepEqual(bridge.viewState.captureZoomTransform(), { x: 1, y: 2, k: 3 });
     assert.equal(bridge.overlayState.getChargeTool(), 'positive');
+    assert.equal(bridge.overlayState.getPaintMode(), true);
+    assert.equal(bridge.overlayState.getPaintTool(), 'bucket');
+    assert.equal(bridge.overlayState.getPaintColor(), '#ff6633');
+    assert.equal(bridge.overlayState.getPaintOpacity(), 0.4);
     assert.equal(bridge.overlayState.getDrawBondElement(), 'N');
     assert.equal(bridge.overlayState.getDrawBondType(), 'double');
     bridge.viewState.restoreZoomTransformSnapshot({ x: 7, y: 8, k: 0.5 });
     bridge.viewState.restore2dEditViewport('zoom', { zoomToFit: true });
     bridge.overlayState.setChargeTool('negative');
+    bridge.overlayState.setPaintMode(false);
+    bridge.overlayState.setPaintTool('brush');
+    bridge.overlayState.setPaintColor('#3366ff');
+    bridge.overlayState.setPaintOpacity(0.75);
     bridge.overlayState.setDrawBondElement('O');
     bridge.overlayState.setDrawBondType('triple');
 
@@ -166,6 +190,10 @@ describe('createAppStateBridge', () => {
       ['restoreZoomTransformSnapshot', { x: 7, y: 8, k: 0.5 }],
       ['restore2dEditViewport', 'zoom', { zoomToFit: true }],
       ['setChargeTool', 'negative'],
+      ['setPaintMode', false],
+      ['setPaintTool', 'brush'],
+      ['setPaintColor', '#3366ff'],
+      ['setPaintOpacity', 0.75],
       ['setDrawBondElement', 'O'],
       ['setDrawBondType', 'triple']
     ]);

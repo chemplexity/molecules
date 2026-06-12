@@ -92,6 +92,9 @@ export function createSessionUiStateBridge(deps) {
     if (deps.getEraseMode()) {
       return 'erase';
     }
+    if (deps.getPaintMode?.()) {
+      return 'paint';
+    }
     if (deps.getSelectMode()) {
       return 'select';
     }
@@ -110,6 +113,9 @@ export function createSessionUiStateBridge(deps) {
       selectedBondIds: [...deps.getSelectedBondIds()],
       toolMode: _resolveToolMode(),
       chargeTool: deps.getChargeTool?.() ?? null,
+      paintTool: deps.getPaintTool?.() ?? 'brush',
+      paintColor: deps.getPaintColor?.() ?? '#3366ff',
+      paintOpacity: deps.getPaintOpacity?.() ?? 1,
       drawBondElement: deps.getDrawBondElement(),
       drawBondType: deps.getDrawBondType?.() ?? 'single',
       forceAutoFitEnabled: deps.getForceAutoFitEnabled(),
@@ -132,11 +138,15 @@ export function createSessionUiStateBridge(deps) {
     deps.setDrawBondHoverSuppressed(false);
     deps.setErasePainting(false);
     deps.setChargeTool?.(restoredChargeTool);
+    deps.setPaintTool?.(snapshot.paintTool ?? 'brush');
+    deps.setPaintColor?.(snapshot.paintColor ?? '#3366ff');
+    deps.setPaintOpacity?.(snapshot.paintOpacity ?? 1);
     deps.setDrawBondElement(snapshot.drawBondElement ?? 'C');
     deps.setDrawBondType?.(snapshot.drawBondType ?? 'single');
     deps.setSelectMode(snapshot.toolMode === 'select');
     deps.setDrawBondMode(snapshot.toolMode === 'draw-bond');
     deps.setEraseMode(snapshot.toolMode === 'erase');
+    deps.setPaintMode?.(snapshot.toolMode === 'paint');
   }
 
   function _restoreForceState(snapshot) {

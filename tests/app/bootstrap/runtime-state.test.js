@@ -17,6 +17,7 @@ describe('runtime-state bootstrap helpers', () => {
     assert.deepEqual([...runtimeState.selectedAtomIds], []);
     assert.deepEqual([...runtimeState.selectedBondIds], []);
     assert.equal(runtimeState.selectMode, false);
+    assert.equal(runtimeState.paintOpacity, 1);
     assert.equal(runtimeState.drawBondElement, 'C');
     assert.equal(runtimeState.drawBondType, 'single');
     assert.equal(runtimeState.forceAutoFitEnabled, true);

@@ -4,6 +4,7 @@ import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy 
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
+import { normalizeVisualStyle } from '../../core/style.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 const DEFAULT_2D_BOND_LENGTH = 1.5;
@@ -278,6 +279,25 @@ function resolveChargeToolNextValue(currentCharge, chargeTool, explicitNextCharg
   }
   const signedStep = chargeTool === 'positive' ? 1 : -1;
   return currentCharge + (decrement ? -signedStep : signedStep);
+}
+
+function normalizeStyleOrNull(style) {
+  try {
+    return normalizeVisualStyle(style);
+  } catch {
+    return null;
+  }
+}
+
+function stylesMatch(currentStyle, nextStyle) {
+  const normalizedCurrent = normalizeStyleOrNull(currentStyle);
+  if (normalizedCurrent === null && nextStyle === null) {
+    return true;
+  }
+  if (normalizedCurrent === null || nextStyle === null) {
+    return false;
+  }
+  return normalizedCurrent.color === nextStyle.color && normalizedCurrent.opacity === nextStyle.opacity;
 }
 
 /**
@@ -702,6 +722,97 @@ export function createStructuralEditActions(context) {
     );
   }
 
+  function paintStyleTargets(atomIds = [], bondIds = [], style = {}, options = {}) {
+    const {
+      zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null,
+      overlayPolicy = ReactionPreviewPolicy.preserve,
+      reactionPreviewPayload = null,
+      reactionEdit = null
+    } = options;
+    let normalizedStyle;
+
+    try {
+      normalizedStyle = normalizeVisualStyle(style);
+    } catch {
+      return { performed: false, cancelled: true };
+    }
+
+    if (!normalizedStyle || (atomIds.length === 0 && bondIds.length === 0)) {
+      return { performed: false, cancelled: true };
+    }
+
+    return context.controller.performStructuralEdit(
+      'paint-style-targets',
+      {
+        overlayPolicy,
+        reactionPreviewPayload,
+        reactionEdit,
+        resonancePolicy: ResonancePolicy.preserve,
+        snapshotPolicy: SnapshotPolicy.take,
+        viewportPolicy: ViewportPolicy.restoreEdit,
+        zoomSnapshot,
+        preflight: ({ mol }) => {
+          for (const atomId of atomIds) {
+            const atom = mol.atoms.get(atomId);
+            if (atom && !stylesMatch(atom.properties?.style, normalizedStyle)) {
+              return true;
+            }
+          }
+          for (const bondId of bondIds) {
+            const bond = mol.bonds.get(bondId);
+            if (bond && !stylesMatch(bond.properties?.style, normalizedStyle)) {
+              return true;
+            }
+          }
+          return false;
+        }
+      },
+      ({ mol, mode }) => {
+        const paintedAtomIds = [];
+        const paintedBondIds = [];
+
+        for (const atomId of atomIds) {
+          const atom = mol.atoms.get(atomId);
+          if (!atom || stylesMatch(atom.properties?.style, normalizedStyle)) {
+            continue;
+          }
+          atom.setStyle(normalizedStyle);
+          paintedAtomIds.push(atomId);
+        }
+
+        for (const bondId of bondIds) {
+          const bond = mol.bonds.get(bondId);
+          if (!bond || stylesMatch(bond.properties?.style, normalizedStyle)) {
+            continue;
+          }
+          bond.setStyle(normalizedStyle);
+          paintedBondIds.push(bondId);
+        }
+
+        if (paintedAtomIds.length === 0 && paintedBondIds.length === 0) {
+          return { cancelled: true };
+        }
+
+        return {
+          syncInput: false,
+          updateAnalysis: false,
+          clearPrimitiveHover: true,
+          suppressPrimitiveHover: true,
+          restorePrimitiveHover: {
+            atomIds: paintedAtomIds,
+            bondIds: paintedBondIds
+          },
+          force:
+            mode === 'force'
+              ? {
+                  options: { preservePositions: true, preserveView: true }
+                }
+              : null
+        };
+      }
+    );
+  }
+
   function replaceForceHydrogenWithDrawElement(atomId, mol = context.molecule.getCurrentForceMol()) {
     if (!mol) {
       return;
@@ -783,6 +894,7 @@ export function createStructuralEditActions(context) {
     promoteBondOrder,
     changeAtomElements,
     changeAtomCharge,
+    paintStyleTargets,
     replaceForceHydrogenWithDrawElement
   };
 }

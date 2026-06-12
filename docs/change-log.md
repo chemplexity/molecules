@@ -2,6 +2,10 @@
 
 ## 2026-06-11
 
+- Add paint-brush style buttons above the app PNG export buttons, including paint-mode toggle state, active styling, an erase-preview-sized circular cursor filled by the selected paint color and opacity, brush/bucket hover drawer options that match the line drawer spacing and timing while mirroring the selected paint tool icon, active-mode color/opacity controls above the paint icons that stay inside the viewport edge, paint-mode gesture blocking so mouse holds do not pan or drag the molecule view, and brush-click styling for atoms and bonds with undo-aware color/opacity edits.
+
+## 2026-06-10
+
 - Add core atom and bond visual style metadata for color/opacity plus molecule-level ring fill styling, with 2D/force/static renderer support and undo snapshot coverage.
 
 ## 2026-06-09

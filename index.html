@@ -80,7 +80,38 @@
             <button id="force-flip-h" title="Flip horizontal">&#x2194;</button>
             <button id="force-flip-v" title="Flip vertical">&#x2195;</button>
             <button id="copy-force-svg-btn" title="Copy as SVG" onclick="copyForceSvg()">SVG</button>
-            <button id="copy-force-png-btn" title="Copy as PNG" onclick="copyForcePng()">PNG</button>
+            <div class="export-png-stack">
+              <div class="paint-tool">
+                <button id="force-style-brush-btn" type="button" class="style-brush-btn" title="Paint mode - style colors and opacity" aria-label="Paint mode - style colors and opacity" onclick="togglePaintMode()">
+                  <svg class="style-brush-icon" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M10.8 2.4a1.9 1.9 0 0 1 2.7 0l1.3 1.3a1.9 1.9 0 0 1 0 2.7l-5 5-4-4 5-5Z" fill="#9a6a34" />
+                    <path d="M4.9 8.5 9.3 13l-2.1 2.1c-.7.7-1.8.7-2.5 0l-1.9-1.9c-.7-.7-.7-1.8 0-2.5l2.1-2.2Z" fill="#42464d" />
+                    <path d="M2.7 13.1c-.8.8-1.2 1.9-1.1 3.3 1.4.1 2.5-.3 3.3-1.1" fill="#2b2f35" />
+                  </svg>
+                </button>
+                <div class="paint-style-controls" aria-label="Paint style controls">
+                  <input id="force-paint-color-selector" class="paint-color-selector" type="color" value="#3366ff" title="Paint color" aria-label="Paint color" />
+                  <input id="force-paint-opacity-selector" class="paint-opacity-selector" type="range" min="0" max="1" step="0.05" value="1" title="Paint opacity" aria-label="Paint opacity" />
+                </div>
+                <div class="paint-tool-drawer" aria-label="Paint mode options">
+                  <button type="button" data-paint-tool="brush" title="Paint brush" aria-label="Paint brush" onclick="setPaintTool('brush')">
+                    <svg class="paint-drawer-icon" viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M10.8 2.4a1.9 1.9 0 0 1 2.7 0l1.3 1.3a1.9 1.9 0 0 1 0 2.7l-5 5-4-4 5-5Z" fill="#9a6a34" />
+                      <path d="M4.9 8.5 9.3 13l-2.1 2.1c-.7.7-1.8.7-2.5 0l-1.9-1.9c-.7-.7-.7-1.8 0-2.5l2.1-2.2Z" fill="#42464d" />
+                      <path d="M2.7 13.1c-.8.8-1.2 1.9-1.1 3.3 1.4.1 2.5-.3 3.3-1.1" fill="#2b2f35" />
+                    </svg>
+                  </button>
+                  <button type="button" data-paint-tool="bucket" title="Paint bucket" aria-label="Paint bucket" onclick="setPaintTool('bucket')">
+                    <svg class="paint-drawer-icon" viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M4.2 8.5 9 3.7l6 6-4.9 4.9a1.9 1.9 0 0 1-2.7 0L4.2 11.3a1.9 1.9 0 0 1 0-2.8Z" fill="#4f8ef7" />
+                      <path d="M6.2 6.5 3.7 4" stroke="#2f5fad" stroke-width="1.5" stroke-linecap="round" />
+                      <path d="M13.9 13.7c1.1 1.1 1.7 2 1.7 2.7a1.7 1.7 0 0 1-3.4 0c0-.7.6-1.6 1.7-2.7Z" fill="#f4a62a" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <button id="copy-force-png-btn" title="Copy as PNG" onclick="copyForcePng()">PNG</button>
+            </div>
           </div>
           <div id="rotate-controls">
             <button id="rotate-ccw" title="Rotate counter-clockwise">&#x21BA;</button>
@@ -88,7 +119,38 @@
             <button id="flip-h" title="Flip horizontal">&#x2194;</button>
             <button id="flip-v" title="Flip vertical">&#x2195;</button>
             <button id="copy-svg-btn" title="Copy 2D structure as SVG to clipboard" onclick="copySvg2d()">SVG</button>
-            <button id="save-png-btn" title="Copy 2D structure as PNG to clipboard" onclick="savePng2d()">PNG</button>
+            <div class="export-png-stack">
+              <div class="paint-tool">
+                <button id="style-brush-btn" type="button" class="style-brush-btn" title="Paint mode - style colors and opacity" aria-label="Paint mode - style colors and opacity" onclick="togglePaintMode()">
+                  <svg class="style-brush-icon" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M10.8 2.4a1.9 1.9 0 0 1 2.7 0l1.3 1.3a1.9 1.9 0 0 1 0 2.7l-5 5-4-4 5-5Z" fill="#9a6a34" />
+                    <path d="M4.9 8.5 9.3 13l-2.1 2.1c-.7.7-1.8.7-2.5 0l-1.9-1.9c-.7-.7-.7-1.8 0-2.5l2.1-2.2Z" fill="#42464d" />
+                    <path d="M2.7 13.1c-.8.8-1.2 1.9-1.1 3.3 1.4.1 2.5-.3 3.3-1.1" fill="#2b2f35" />
+                  </svg>
+                </button>
+                <div class="paint-style-controls" aria-label="Paint style controls">
+                  <input id="paint-color-selector" class="paint-color-selector" type="color" value="#3366ff" title="Paint color" aria-label="Paint color" />
+                  <input id="paint-opacity-selector" class="paint-opacity-selector" type="range" min="0" max="1" step="0.05" value="1" title="Paint opacity" aria-label="Paint opacity" />
+                </div>
+                <div class="paint-tool-drawer" aria-label="Paint mode options">
+                  <button type="button" data-paint-tool="brush" title="Paint brush" aria-label="Paint brush" onclick="setPaintTool('brush')">
+                    <svg class="paint-drawer-icon" viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M10.8 2.4a1.9 1.9 0 0 1 2.7 0l1.3 1.3a1.9 1.9 0 0 1 0 2.7l-5 5-4-4 5-5Z" fill="#9a6a34" />
+                      <path d="M4.9 8.5 9.3 13l-2.1 2.1c-.7.7-1.8.7-2.5 0l-1.9-1.9c-.7-.7-.7-1.8 0-2.5l2.1-2.2Z" fill="#42464d" />
+                      <path d="M2.7 13.1c-.8.8-1.2 1.9-1.1 3.3 1.4.1 2.5-.3 3.3-1.1" fill="#2b2f35" />
+                    </svg>
+                  </button>
+                  <button type="button" data-paint-tool="bucket" title="Paint bucket" aria-label="Paint bucket" onclick="setPaintTool('bucket')">
+                    <svg class="paint-drawer-icon" viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M4.2 8.5 9 3.7l6 6-4.9 4.9a1.9 1.9 0 0 1-2.7 0L4.2 11.3a1.9 1.9 0 0 1 0-2.8Z" fill="#4f8ef7" />
+                      <path d="M6.2 6.5 3.7 4" stroke="#2f5fad" stroke-width="1.5" stroke-linecap="round" />
+                      <path d="M13.9 13.7c1.1 1.1 1.7 2 1.7 2.7a1.7 1.7 0 0 1-3.4 0c0-.7.6-1.6 1.7-2.7Z" fill="#f4a62a" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <button id="save-png-btn" title="Copy 2D structure as PNG to clipboard" onclick="savePng2d()">PNG</button>
+            </div>
           </div>
           <div id="clean-controls">
             <button id="pan-mode-btn" class="active" title="Pan / zoom mode" onclick="togglePanMode()">🤚</button>

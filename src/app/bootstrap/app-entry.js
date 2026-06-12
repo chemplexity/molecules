@@ -224,7 +224,7 @@ const { plotEl, tooltip, inputEl, collectionSelectEl, svg, g, zoom } = initPlotB
   d3,
   document,
   getInteractionModeActive: event =>
-    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.eraseMode || runtimeState.chargeTool != null) &&
+    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.eraseMode || runtimeState.paintMode || runtimeState.chargeTool != null) &&
     (runtimeState.mode === '2d' || runtimeState.mode === 'force') &&
     (event.type === 'mousedown' || event.type === 'dblclick') &&
     event.button === 0,
@@ -638,6 +638,7 @@ let _prepareResonanceStructuralEdit;
 let _promoteBondOrder;
 let _changeAtomElements;
 let _changeAtomCharge;
+let _paintStyleTargets;
 let _replaceForceHydrogenWithDrawElement;
 let _startDrawBond;
 let _updateDrawBondPreview;
@@ -731,6 +732,10 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       drawBondButton: domElements.getDrawBondButtonElement(),
       drawTools: domElements.getDrawToolsElement(),
       eraseButton: domElements.getEraseButtonElement(),
+      getStyleBrushButtons: () => domElements.getStyleBrushButtonElements(),
+      getPaintColorSelectors: () => domElements.getPaintColorSelectorElements(),
+      getPaintOpacitySelectors: () => domElements.getPaintOpacitySelectorElements(),
+      getPaintToolButtons: tool => domElements.getPaintToolButtonElements(tool),
       getChargeToolButton: tool => (tool === 'positive' ? domElements.getPositiveChargeButtonElement() : tool === 'negative' ? domElements.getNegativeChargeButtonElement() : null),
       getElementButton: element => domElements.getElementButtonElement(element),
       getBondDrawTypeButton: type => domElements.getBondDrawTypeButtonElement(type),
@@ -759,6 +764,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       createDrag: () => d3.drag(),
       getDrawBondMode: () => runtimeState.drawBondMode,
       getEraseMode: () => runtimeState.eraseMode,
+      getPaintMode: () => runtimeState.paintMode,
       getChargeTool: () => runtimeState.chargeTool,
       captureSnapshot: () => _captureAppSnapshot(),
       getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
@@ -829,6 +835,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       clearSelection: () => runtimeState.clearSelection(),
       changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
       changeAtomCharge: (atomId, options = {}) => _changeAtomCharge(atomId, options),
+      paintStyleTargets: (atomIds, bondIds, style, options = {}) => _paintStyleTargets(atomIds, bondIds, style, options),
       promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
       isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
       hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
@@ -903,6 +910,22 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     getEraseMode: () => runtimeState.eraseMode,
     setEraseMode: value => {
       runtimeState.eraseMode = value;
+    },
+    getPaintMode: () => runtimeState.paintMode,
+    setPaintMode: value => {
+      runtimeState.paintMode = value;
+    },
+    getPaintTool: () => runtimeState.paintTool,
+    setPaintTool: value => {
+      runtimeState.paintTool = value;
+    },
+    getPaintColor: () => runtimeState.paintColor,
+    setPaintColor: value => {
+      runtimeState.paintColor = value;
+    },
+    getPaintOpacity: () => runtimeState.paintOpacity,
+    setPaintOpacity: value => {
+      runtimeState.paintOpacity = value;
     },
     getChargeTool: () => runtimeState.chargeTool,
     setChargeTool: value => {
@@ -1053,6 +1076,7 @@ finalizeAppBootstrap(
         promoteBondOrder: _promoteBondOrder,
         changeAtomElements: _changeAtomElements,
         changeAtomCharge: _changeAtomCharge,
+        paintStyleTargets: _paintStyleTargets,
         replaceForceHydrogenWithDrawElement: _replaceForceHydrogenWithDrawElement,
         startDrawBond: _startDrawBond,
         updateDrawBondPreview: _updateDrawBondPreview,

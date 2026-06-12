@@ -991,6 +991,57 @@ describe('createStructuralEditActions', () => {
     );
   });
 
+  it('paints atom and bond styles through the structural edit action', () => {
+    const atom = {
+      id: 'a1',
+      name: 'C',
+      properties: {},
+      setStyle(style) {
+        this.properties.style = { ...style };
+      }
+    };
+    const bond = {
+      id: 'b1',
+      atoms: ['a1', 'a2'],
+      properties: {},
+      setStyle(style) {
+        this.properties.style = { ...style };
+      }
+    };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      bonds: new Map([['b1', bond]])
+    };
+
+    let captured = null;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            assert.equal(options.preflight({ mol }), true);
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.paintStyleTargets(['a1'], ['b1'], { color: '#ff6633', opacity: 0.45 }, { zoomSnapshot: 'zoom-snapshot' });
+
+    assert.equal(captured.kind, 'paint-style-targets');
+    assert.equal(captured.options.overlayPolicy, ReactionPreviewPolicy.preserve);
+    assert.equal(captured.options.resonancePolicy, ResonancePolicy.preserve);
+    assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.take);
+    assert.equal(captured.options.viewportPolicy, ViewportPolicy.restoreEdit);
+    assert.deepEqual(atom.properties.style, { color: '#ff6633', opacity: 0.45 });
+    assert.deepEqual(bond.properties.style, { color: '#ff6633', opacity: 0.45 });
+    assert.equal(result.syncInput, false);
+    assert.equal(result.updateAnalysis, false);
+    assert.deepEqual(result.restorePrimitiveHover, { atomIds: ['a1'], bondIds: ['b1'] });
+    assert.deepEqual(result.force.options, { preservePositions: true, preserveView: true });
+  });
+
   it('applies charge-tool edits as signed one-step deltas', () => {
     const atom = {
       id: 'a1',
