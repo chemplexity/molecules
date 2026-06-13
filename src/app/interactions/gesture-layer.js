@@ -1,5 +1,7 @@
 /** @module app/interactions/gesture-layer */
 
+import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
+
 /**
  * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
  * @param {MouseEvent} event - The mouse event to test.
@@ -34,6 +36,31 @@ export function initGestureInteractions(context) {
   let selectionBaseBondIds = new Set();
   let suppressForceSelectionClearClick = false;
   let lastEraseHitElement = null;
+  let paintPainting = false;
+  let paintStrokeHasSnapshot = false;
+  let paintStrokeTargetKeys = new Set();
+  let paintBucketPreview = null;
+  let paintBucketPreviewHiddenFills = [];
+  let paintBucketPreviewHiddenRingKey = null;
+  let paintBucketPainting = false;
+  let paintBucketStrokeHasSnapshot = false;
+  let paintBucketStrokeTargetKeys = new Set();
+  let paintBrushPreviewStyles = new Map();
+
+  const PAINT_R = 12;
+  const ERASE_R = 14;
+  const PAINT_BUCKET_PREVIEW_BEFORE_SELECTOR = [
+    ':scope > g.atom-highlights',
+    ':scope > g.fg-highlight-layer',
+    ':scope > g.bonds',
+    ':scope > g.valence-warning-layer',
+    ':scope > line.link',
+    ':scope > line.separator',
+    ':scope > line.bond-hover-target',
+    ':scope > circle.node',
+    ':scope > g.atom-bgs',
+    ':scope > g.atom-labels'
+  ].join(', ');
 
   function selectionEventPoint(event, clampToPlot = false) {
     const rect = svg.node().getBoundingClientRect();
@@ -236,6 +263,498 @@ export function initGestureInteractions(context) {
     return true;
   }
 
+  function svgPtToScreen(svgEl, x, y) {
+    const root = svgEl.ownerSVGElement;
+    if (!root) {
+      return null;
+    }
+    const point = root.createSVGPoint();
+    point.x = x;
+    point.y = y;
+    const ctm = svgEl.getScreenCTM();
+    return ctm ? point.matrixTransform(ctm) : null;
+  }
+
+  function distToSegment(px, py, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-10) {
+      return Math.hypot(px - ax, py - ay);
+    }
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  }
+
+  function isPaintBrushMode() {
+    return (context.state.overlayState.getPaintMode?.() ?? false) && (context.state.overlayState.getPaintTool?.() ?? 'brush') === 'brush';
+  }
+
+  function isPaintBucketMode() {
+    return (context.state.overlayState.getPaintMode?.() ?? false) && context.state.overlayState.getPaintTool?.() === 'bucket';
+  }
+
+  function getPaintStyle() {
+    return {
+      color: context.state.overlayState.getPaintColor?.() ?? '#3366ff',
+      opacity: context.state.overlayState.getPaintOpacity?.() ?? 1
+    };
+  }
+
+  function elementClassContains(element, className) {
+    return element?.classList?.contains?.(className) ?? String(element?.getAttribute?.('class') ?? '').split(/\s+/).includes(className);
+  }
+
+  function elementTagName(element) {
+    return String(element?.tagName ?? '').toLowerCase();
+  }
+
+  function getStyleProperty(element, name) {
+    return element?.style?.getPropertyValue?.(name) ?? element?.style?.[name] ?? '';
+  }
+
+  function setStyleProperty(element, name, value) {
+    if (element?.style?.setProperty) {
+      element.style.setProperty(name, value);
+      return;
+    }
+    if (element?.style) {
+      element.style[name] = value;
+    }
+  }
+
+  function restorePaintBrushPreview() {
+    for (const [element, properties] of paintBrushPreviewStyles) {
+      if (element?.isConnected === false) {
+        continue;
+      }
+      for (const [name, value] of properties) {
+        setStyleProperty(element, name, value);
+      }
+    }
+    paintBrushPreviewStyles = new Map();
+  }
+
+  function applyPaintBrushPreviewStyle(element, styleProperties) {
+    if (!element || element.isConnected === false) {
+      return;
+    }
+    let restore = paintBrushPreviewStyles.get(element);
+    if (!restore) {
+      restore = new Map();
+      paintBrushPreviewStyles.set(element, restore);
+    }
+    for (const [name, value] of Object.entries(styleProperties)) {
+      if (!restore.has(name)) {
+        restore.set(name, getStyleProperty(element, name));
+      }
+      setStyleProperty(element, name, value);
+    }
+  }
+
+  function elementsWithDataAttribute(root, name, value) {
+    return [...(root?.querySelectorAll?.(`[${name}]`) ?? [])].filter(element => element.getAttribute?.(name) === value);
+  }
+
+  function previewPaintBrushAtom(atomId, mode, style) {
+    const root = g.node?.();
+    if (!root) {
+      return;
+    }
+    const opacity = String(style.opacity);
+    if (mode === 'force') {
+      for (const element of [...(root.querySelectorAll?.('circle.node, text.atom-symbol, g.charge-label') ?? [])]) {
+        const datum = element.__data__;
+        if (datum?.id !== atomId) {
+          continue;
+        }
+        if (elementClassContains(element, 'node')) {
+          applyPaintBrushPreviewStyle(element, {
+            fill: style.color,
+            'fill-opacity': opacity,
+            'stroke-opacity': opacity
+          });
+        } else {
+          applyPaintBrushPreviewStyle(element, { opacity });
+        }
+      }
+      return;
+    }
+
+    for (const element of elementsWithDataAttribute(root, 'data-atom-id', atomId)) {
+      if (elementTagName(element) !== 'g') {
+        continue;
+      }
+      for (const label of element.querySelectorAll?.('.atom-label, .atom-charge-text') ?? []) {
+        applyPaintBrushPreviewStyle(label, { fill: style.color, opacity });
+      }
+      for (const ring of element.querySelectorAll?.('.atom-charge-ring') ?? []) {
+        applyPaintBrushPreviewStyle(ring, { stroke: style.color, opacity });
+      }
+      if (elementClassContains(element, 'atom-lone-pairs')) {
+        applyPaintBrushPreviewStyle(element, { opacity });
+        for (const dot of element.querySelectorAll?.('circle') ?? []) {
+          applyPaintBrushPreviewStyle(dot, { fill: style.color });
+        }
+      }
+    }
+  }
+
+  function previewPaintBrushBond(bondId, mode, style) {
+    const root = g.node?.();
+    if (!root) {
+      return;
+    }
+    const opacity = String(style.opacity);
+    const bondElements =
+      mode === 'force'
+        ? elementsWithDataAttribute(root, 'data-bond-id', bondId).filter(element => !elementClassContains(element, 'bond-hover-target'))
+        : elementsWithDataAttribute(root, 'data-bond-id', bondId).flatMap(element => [...(element.querySelectorAll?.('.bond') ?? [])]);
+    for (const element of bondElements) {
+      const tagName = elementTagName(element);
+      if (tagName === 'polygon' || tagName === 'path') {
+        applyPaintBrushPreviewStyle(element, { fill: style.color, 'fill-opacity': opacity });
+      } else {
+        applyPaintBrushPreviewStyle(element, { stroke: style.color, 'stroke-opacity': opacity });
+      }
+    }
+  }
+
+  function isPaintHitElement(element) {
+    return (
+      element?.classList?.contains?.('atom-hit') ||
+      element?.classList?.contains?.('bond-hit') ||
+      element?.classList?.contains?.('node') ||
+      element?.classList?.contains?.('bond-hover-target')
+    );
+  }
+
+  function resolvePaintHitElement(element) {
+    if (element.classList.contains('node')) {
+      const datum = context.helpers.getDatum(element);
+      return datum?.id ? { atomIds: [datum.id], bondIds: [], keys: [`atom:${datum.id}`] } : null;
+    }
+    if (element.classList.contains('bond-hover-target')) {
+      const datum = context.helpers.getDatum(element);
+      return datum?.id ? { atomIds: [], bondIds: [datum.id], keys: [`bond:${datum.id}`] } : null;
+    }
+    if (element.classList.contains('atom-hit')) {
+      const group = element.closest('[data-atom-id]');
+      const atomId = group?.getAttribute?.('data-atom-id');
+      return atomId ? { atomIds: [atomId], bondIds: [], keys: [`atom:${atomId}`] } : null;
+    }
+    if (element.classList.contains('bond-hit')) {
+      const group = element.closest('[data-bond-id]');
+      const bondId = group?.getAttribute?.('data-bond-id');
+      return bondId ? { atomIds: [], bondIds: [bondId], keys: [`bond:${bondId}`] } : null;
+    }
+    return null;
+  }
+
+  function polygonArea(polygon) {
+    let area = 0;
+    for (let index = 0; index < polygon.length; index++) {
+      const point = polygon[index];
+      const next = polygon[(index + 1) % polygon.length];
+      area += point.x * next.y - next.x * point.y;
+    }
+    return Math.abs(area) / 2;
+  }
+
+  function paintBucketRingKey(atomIds) {
+    return [...atomIds].sort().join('\0');
+  }
+
+  function restorePaintBucketPreviewHiddenFills() {
+    for (const { element, display } of paintBucketPreviewHiddenFills) {
+      if (element?.isConnected !== false) {
+        element.style.display = display;
+      }
+    }
+    paintBucketPreviewHiddenFills = [];
+    paintBucketPreviewHiddenRingKey = null;
+  }
+
+  function hidePermanentRingFillForPreview(atomIds) {
+    const key = paintBucketRingKey(atomIds);
+    if (paintBucketPreviewHiddenRingKey === key && paintBucketPreviewHiddenFills.some(({ element }) => element?.isConnected !== false)) {
+      return;
+    }
+    restorePaintBucketPreviewHiddenFills();
+
+    const ringFillId = `ring-fill:${key}`;
+    const root = g.node?.();
+    const fills = root?.querySelectorAll?.('.ring-fill:not(.paint-bucket-ring-preview)') ?? [];
+    for (const element of fills) {
+      if (element.getAttribute?.('data-ring-fill-id') !== ringFillId) {
+        continue;
+      }
+      paintBucketPreviewHiddenFills.push({ element, display: element.style.display });
+      element.style.display = 'none';
+    }
+    paintBucketPreviewHiddenRingKey = paintBucketPreviewHiddenFills.length > 0 ? key : null;
+  }
+
+  function ensurePaintBucketPreview() {
+    const previewNode = paintBucketPreview?.node?.();
+    if (paintBucketPreview && previewNode?.isConnected !== false) {
+      return paintBucketPreview;
+    }
+    const insertPreview = typeof g.insert === 'function' ? g.insert.bind(g) : g.append.bind(g);
+    paintBucketPreview = insertPreview('polygon', PAINT_BUCKET_PREVIEW_BEFORE_SELECTOR)
+      .attr('class', 'ring-fill paint-bucket-ring-preview')
+      .attr('pointer-events', 'none')
+      .attr('stroke', 'none')
+      .style('display', 'none');
+    return paintBucketPreview;
+  }
+
+  function hidePaintBucketPreview() {
+    paintBucketPreview?.style('display', 'none');
+    restorePaintBucketPreviewHiddenFills();
+  }
+
+  function findPaintBucketRing(event) {
+    const mode = context.state.viewState.getMode();
+    if (mode !== '2d' && mode !== 'force') {
+      return null;
+    }
+    const mol = mode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    if (!mol?.getRings) {
+      return null;
+    }
+
+    const [x, y] = context.pointer(event, g.node());
+    const point = { x, y };
+    let best = null;
+    const forceNodeById =
+      mode === 'force' && typeof context.simulation.nodes === 'function'
+        ? new Map(context.simulation.nodes().map(node => [node.id, node]))
+        : null;
+
+    for (const ringAtomIds of mol.getRings()) {
+      const polygon = [];
+      let valid = true;
+      for (const atomId of ringAtomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom || atom.visible === false) {
+          valid = false;
+          break;
+        }
+        const svgPoint = forceNodeById ? forceNodeById.get(atomId) : context.helpers.toSVGPt2d(atom);
+        if (!Number.isFinite(svgPoint?.x) || !Number.isFinite(svgPoint?.y)) {
+          valid = false;
+          break;
+        }
+        polygon.push(svgPoint);
+      }
+      if (!valid || polygon.length < 3 || !pointInPolygon(point, polygon)) {
+        continue;
+      }
+
+      const area = polygonArea(polygon);
+      if (!best || area < best.area) {
+        best = {
+          area,
+          atomIds: [...ringAtomIds],
+          points: polygon.map(({ x, y }) => ({ x, y }))
+        };
+      }
+    }
+
+    return best;
+  }
+
+  function updatePaintBucketPreview(event) {
+    if (!isPaintBucketMode()) {
+      hidePaintBucketPreview();
+      return;
+    }
+    restorePaintBrushPreview();
+    if (event.buttons) {
+      hidePaintBucketPreview();
+      return;
+    }
+    if (event.target?.closest?.('.atom-hit, .bond-hit, .node, .bond-hover-target')) {
+      hidePaintBucketPreview();
+      return;
+    }
+
+    const ring = findPaintBucketRing(event);
+    if (!ring) {
+      hidePaintBucketPreview();
+      return;
+    }
+
+    const style = getPaintStyle();
+    hidePermanentRingFillForPreview(ring.atomIds);
+    ensurePaintBucketPreview()
+      .attr('points', ring.points.map(point => `${point.x},${point.y}`).join(' '))
+      .attr('fill', style.color)
+      .attr('fill-opacity', style.opacity)
+      .attr('data-ring-fill-preview-atom-ids', ring.atomIds.join(' '))
+      .style('display', null);
+  }
+
+  function applyPaintBucketStroke(event) {
+    if (!isPaintBucketMode() || !paintBucketPainting) {
+      return;
+    }
+    restorePaintBrushPreview();
+    const ring = findPaintBucketRing(event);
+    if (!ring) {
+      return;
+    }
+
+    const key = paintBucketRingKey(ring.atomIds);
+    if (paintBucketStrokeTargetKeys.has(key)) {
+      return;
+    }
+    paintBucketStrokeTargetKeys.add(key);
+    hidePaintBucketPreview();
+    const result = context.actions.paintRingFill?.(ring.atomIds, getPaintStyle(), {
+      skipSnapshot: paintBucketStrokeHasSnapshot
+    });
+    if (result?.performed) {
+      paintBucketStrokeHasSnapshot = true;
+      paintBucketPreview = null;
+    }
+  }
+
+  function collectPaintHitElements(cx, cy) {
+    const seen = new Set();
+    const candidates = [];
+    const addIfTarget = element => {
+      if (!isPaintHitElement(element) || seen.has(element)) {
+        return;
+      }
+      seen.add(element);
+      candidates.push(element);
+    };
+
+    const perimeterAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+    for (const element of doc.elementsFromPoint(cx, cy)) {
+      addIfTarget(element);
+    }
+    for (const angle of perimeterAngles) {
+      const rad = (angle * Math.PI) / 180;
+      const px = cx + PAINT_R * Math.cos(rad);
+      const py = cy + PAINT_R * Math.sin(rad);
+      for (const element of doc.elementsFromPoint(px, py)) {
+        addIfTarget(element);
+      }
+    }
+
+    for (const element of context.dom.plotEl.querySelectorAll('.atom-hit, .node')) {
+      if (seen.has(element)) {
+        continue;
+      }
+      const box = element.getBoundingClientRect();
+      const acx = (box.left + box.right) / 2;
+      const acy = (box.top + box.bottom) / 2;
+      if (Math.hypot(cx - acx, cy - acy) <= PAINT_R) {
+        addIfTarget(element);
+      }
+    }
+
+    for (const element of context.dom.plotEl.querySelectorAll('.bond-hit, .bond-hover-target')) {
+      if (seen.has(element)) {
+        continue;
+      }
+      const p1 = svgPtToScreen(element, parseFloat(element.getAttribute('x1')), parseFloat(element.getAttribute('y1')));
+      const p2 = svgPtToScreen(element, parseFloat(element.getAttribute('x2')), parseFloat(element.getAttribute('y2')));
+      if (!p1 || !p2) {
+        continue;
+      }
+      if (distToSegment(cx, cy, p1.x, p1.y, p2.x, p2.y) <= PAINT_R) {
+        addIfTarget(element);
+      }
+    }
+
+    return candidates;
+  }
+
+  function applyPaintStroke(event) {
+    if (!isPaintBrushMode() || !paintPainting) {
+      return;
+    }
+    restorePaintBrushPreview();
+
+    const atomIds = [];
+    const bondIds = [];
+    const keys = [];
+    const addResolved = resolved => {
+      if (!resolved) {
+        return;
+      }
+      for (const key of resolved.keys) {
+        if (paintStrokeTargetKeys.has(key) || keys.includes(key)) {
+          continue;
+        }
+        keys.push(key);
+      }
+      for (const atomId of resolved.atomIds) {
+        if (!paintStrokeTargetKeys.has(`atom:${atomId}`) && !atomIds.includes(atomId)) {
+          atomIds.push(atomId);
+        }
+      }
+      for (const bondId of resolved.bondIds) {
+        if (!paintStrokeTargetKeys.has(`bond:${bondId}`) && !bondIds.includes(bondId)) {
+          bondIds.push(bondId);
+        }
+      }
+    };
+
+    for (const element of collectPaintHitElements(event.clientX, event.clientY)) {
+      addResolved(resolvePaintHitElement(element));
+    }
+    if (atomIds.length === 0 && bondIds.length === 0) {
+      return;
+    }
+
+    const result = context.actions.paintStyleTargets?.(atomIds, bondIds, getPaintStyle(), {
+      skipSnapshot: paintStrokeHasSnapshot
+    });
+    for (const key of keys) {
+      paintStrokeTargetKeys.add(key);
+    }
+    if (result?.performed) {
+      paintStrokeHasSnapshot = true;
+    }
+  }
+
+  function updatePaintBrushPreview(event) {
+    if (!isPaintBrushMode() || paintPainting || event.buttons) {
+      restorePaintBrushPreview();
+      return;
+    }
+    const atomIds = new Set();
+    const bondIds = new Set();
+    for (const element of collectPaintHitElements(event.clientX, event.clientY)) {
+      const resolved = resolvePaintHitElement(element);
+      for (const atomId of resolved?.atomIds ?? []) {
+        atomIds.add(atomId);
+      }
+      for (const bondId of resolved?.bondIds ?? []) {
+        bondIds.add(bondId);
+      }
+    }
+
+    restorePaintBrushPreview();
+    if (atomIds.size === 0 && bondIds.size === 0) {
+      return;
+    }
+
+    const mode = context.state.viewState.getMode();
+    const style = getPaintStyle();
+    for (const atomId of atomIds) {
+      previewPaintBrushAtom(atomId, mode, style);
+    }
+    for (const bondId of bondIds) {
+      previewPaintBrushBond(bondId, mode, style);
+    }
+  }
+
   function finishSelectionDrag(event) {
     if (!selectionDragging) {
       return;
@@ -299,7 +818,6 @@ export function initGestureInteractions(context) {
       return;
     }
 
-    const ERASE_R = 14;
     const cx = event.clientX;
     const cy = event.clientY;
     const seen = new Set();
@@ -327,28 +845,6 @@ export function initGestureInteractions(context) {
         }
       }
     }
-
-    const svgPtToScreen = (svgEl, x, y) => {
-      const root = svgEl.ownerSVGElement;
-      if (!root) {
-        return null;
-      }
-      const point = root.createSVGPoint();
-      point.x = x;
-      point.y = y;
-      const ctm = svgEl.getScreenCTM();
-      return ctm ? point.matrixTransform(ctm) : null;
-    };
-    const distToSegment = (px, py, ax, ay, bx, by) => {
-      const dx = bx - ax;
-      const dy = by - ay;
-      const lenSq = dx * dx + dy * dy;
-      if (lenSq < 1e-10) {
-        return Math.hypot(px - ax, py - ay);
-      }
-      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
-      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-    };
 
     for (const element of context.dom.plotEl.querySelectorAll('.atom-hit')) {
       if (seen.has(element)) {
@@ -526,8 +1022,44 @@ export function initGestureInteractions(context) {
     cursor.style.display = 'block';
   });
 
+  svg.on('mousedown.paint', event => {
+    if (!isPaintBrushMode() || event.button !== 0) {
+      return;
+    }
+    restorePaintBrushPreview();
+    paintPainting = true;
+    paintStrokeHasSnapshot = false;
+    paintStrokeTargetKeys = new Set();
+    event.preventDefault();
+    event.stopPropagation();
+    applyPaintStroke(event);
+  });
+
+  svg.on('mousedown.paint-bucket', event => {
+    if (!isPaintBucketMode() || (event.button != null && event.button !== 0)) {
+      return;
+    }
+    restorePaintBrushPreview();
+    paintBucketPainting = true;
+    paintBucketStrokeHasSnapshot = false;
+    paintBucketStrokeTargetKeys = new Set();
+    hidePaintBucketPreview();
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.target?.closest?.('.atom-hit, .bond-hit, .node, .bond-hover-target')) {
+      return;
+    }
+    applyPaintBucketStroke(event);
+  });
+
   svg.on('dblclick.select-all', event => {
-    if (context.state.overlayState.getDrawBondMode() || context.drawBond.hasDrawBondState() || context.state.overlayState.getEraseMode() || context.state.overlayState.getChargeTool?.()) {
+    if (
+      context.state.overlayState.getDrawBondMode() ||
+      context.drawBond.hasDrawBondState() ||
+      context.state.overlayState.getEraseMode() ||
+      (context.state.overlayState.getPaintMode?.() ?? false) ||
+      context.state.overlayState.getChargeTool?.()
+    ) {
       return;
     }
     const mol = context.state.viewState.getMode() === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
@@ -584,12 +1116,24 @@ export function initGestureInteractions(context) {
   });
 
   doc.addEventListener('mousemove', handleErasePaintMove);
+  doc.addEventListener('mousemove', applyPaintStroke);
+  doc.addEventListener('mousemove', updatePaintBrushPreview);
+  doc.addEventListener('mousemove', applyPaintBucketStroke);
+  doc.addEventListener('mousemove', updatePaintBucketPreview);
 
   doc.addEventListener('mouseup', event => {
     if (event.button === 0) {
       context.state.overlayState.setErasePainting(false);
       lastEraseHitElement = null;
       context.dom.getEraseCursorElement().style.display = 'none';
+      paintPainting = false;
+      paintStrokeHasSnapshot = false;
+      paintStrokeTargetKeys.clear();
+      updatePaintBrushPreview(event);
+      paintBucketPainting = false;
+      paintBucketStrokeHasSnapshot = false;
+      paintBucketStrokeTargetKeys.clear();
+      updatePaintBucketPreview(event);
     }
     if (context.drawBond.hasDrawBondState()) {
       if (event.button === 0) {

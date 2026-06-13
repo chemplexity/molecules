@@ -187,6 +187,7 @@ export function createAppRuntimeDeps(ctx) {
       clearReactionPreviewState: () => ctx.clearReactionPreviewState(),
       reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
       hasReactionPreview: () => ctx.hasReactionPreview(),
+      paintReactionPreviewReactantSource: payload => ctx.paintReactionPreviewReactantSource?.(payload) ?? null,
       getReactionPreviewMappedAtomPairs: () => ctx.getReactionPreviewMappedAtomPairs(),
       getReactionPreviewReactantAtomIds: () => ctx.getReactionPreviewReactantAtomIds(),
       prepareReactionPreviewBondEditTarget: bondId => ctx.prepareReactionPreviewBondEditTarget(bondId),

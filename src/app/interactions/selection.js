@@ -6,6 +6,9 @@ const CHARGE_TOOLS = ['positive', 'negative'];
 const PAINT_TOOLS = ['brush', 'bucket'];
 const DEFAULT_PAINT_COLOR = '#3366ff';
 const DEFAULT_PAINT_OPACITY = 1;
+const PAINT_CURSOR_SIZE = 24;
+const PAINT_CURSOR_CENTER = PAINT_CURSOR_SIZE / 2;
+const PAINT_CURSOR_RADIUS = 11;
 const PAINT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
 function normalizePaintColor(value) {
@@ -22,7 +25,7 @@ function normalizePaintOpacity(value) {
 
 function paintCursorValue(color, opacity = DEFAULT_PAINT_OPACITY) {
   const encodedColor = encodeURIComponent(normalizePaintColor(color));
-  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='13' fill='${encodedColor}' fill-opacity='${normalizePaintOpacity(opacity)}' stroke='black' stroke-width='2'/%3E%3C/svg%3E") 14 14, crosshair`;
+  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${PAINT_CURSOR_SIZE}' height='${PAINT_CURSOR_SIZE}' viewBox='0 0 ${PAINT_CURSOR_SIZE} ${PAINT_CURSOR_SIZE}'%3E%3Ccircle cx='${PAINT_CURSOR_CENTER}' cy='${PAINT_CURSOR_CENTER}' r='${PAINT_CURSOR_RADIUS}' fill='${encodedColor}' fill-opacity='${normalizePaintOpacity(opacity)}' stroke='black' stroke-width='2'/%3E%3C/svg%3E") ${PAINT_CURSOR_CENTER} ${PAINT_CURSOR_CENTER}, crosshair`;
 }
 
 /**

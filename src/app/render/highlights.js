@@ -6,6 +6,32 @@ import { createNavButton } from './panel-row.js';
 
 let ctx = {};
 
+const TWO_D_HIGHLIGHT_BEFORE_SELECTOR = [
+  ':scope > g.bonds',
+  ':scope > g.atom-bgs',
+  ':scope > g.atom-labels',
+  ':scope > g.lone-pairs',
+  ':scope > g.atom-numbering-overlay',
+  ':scope > g.valence-warning-layer',
+  ':scope > g.bond-en-overlay',
+  ':scope > g.bond-lengths-overlay'
+].join(', ');
+
+const FORCE_HIGHLIGHT_BEFORE_SELECTOR = [
+  ':scope > g.valence-warning-layer',
+  ':scope > line.link',
+  ':scope > line.separator',
+  ':scope > line.bond-hover-target',
+  ':scope > g.force-stereo-bonds',
+  ':scope > circle.node',
+  ':scope > text.atom-symbol',
+  ':scope > g.force-lone-pairs',
+  ':scope > g.charge-label',
+  ':scope > g.force-bond-en',
+  ':scope > g.force-bond-lengths',
+  ':scope > g.force-atom-numbering'
+].join(', ');
+
 /**
  * Initializes the highlights module with the shared app context needed for redrawing after highlight changes.
  * @param {object} context - Context object providing `mode`, `_mol2d`, `draw2d`, and `applyForceHighlights`.
@@ -75,7 +101,7 @@ export function create2DHighlightRenderer(context) {
     const atoms = [...mol.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
     const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
     const outlinePadding = 2;
-    const highlightLayer = graphSelection.insert('g', ':first-child').attr('class', 'atom-highlights').attr('opacity', 0.45);
+    const highlightLayer = graphSelection.insert('g', TWO_D_HIGHLIGHT_BEFORE_SELECTOR).attr('class', 'atom-highlights').attr('opacity', 0.45);
 
     for (const atomSet of getHighlightedAtomSets()) {
       const matchedBonds = [];
@@ -162,7 +188,7 @@ export function createForceHighlightRenderer(context) {
     const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
     const highlightRadius = context.constants.getHighlightRadius();
     const outlineWidth = context.constants.getOutlineWidth();
-    const highlightLayer = graphSelection.insert('g', ':first-child').attr('class', 'fg-highlight-layer').attr('opacity', 0.45);
+    const highlightLayer = graphSelection.insert('g', FORCE_HIGHLIGHT_BEFORE_SELECTOR).attr('class', 'fg-highlight-layer').attr('opacity', 0.45);
 
     const nodeMap = new Map(context.force.getNodes().map(node => [node.id, node]));
     const allLinks = context.force.getLinks();

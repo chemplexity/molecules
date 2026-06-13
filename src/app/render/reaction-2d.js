@@ -13,6 +13,7 @@ import { atomRadius } from './helpers.js';
 import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
 import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
+import { ringAtomKey } from '../../core/style.js';
 
 let ctx = {};
 
@@ -314,6 +315,66 @@ export function _getReactionPreviewReactantAtomIds() {
  */
 export function _getReactionPreviewMappedAtomPairs() {
   return _reactionPreviewMappedAtomPairs ?? [];
+}
+
+/**
+ * Mirrors successful reactant-side paint edits into the stored reaction
+ * preview source molecule so they persist after leaving or regenerating the
+ * preview.
+ * @param {object} [options] - Paint payload to persist.
+ * @param {string[]} [options.atomIds] - Reactant atom ids to style.
+ * @param {string[]} [options.bondIds] - Reactant bond ids to style.
+ * @param {object|null} [options.style] - Atom/bond style.
+ * @param {string[]} [options.ringAtomIds] - Reactant ring atom ids to fill.
+ * @param {object|null} [options.ringFillStyle] - Ring-fill style.
+ * @returns {{atomIds: string[], bondIds: string[], ringAtomIds: string[]}|null} Persisted target ids, or null when no preview source is active.
+ */
+export function _paintReactionPreviewReactantSource({ atomIds = [], bondIds = [], style = null, ringAtomIds = [], ringFillStyle = null } = {}) {
+  if (!_hasReactionPreview() || !_reactionPreviewSourceMol) {
+    return null;
+  }
+
+  const reactantAtomIds = _reactionPreviewReactantAtomIds ?? new Set();
+  const persistedAtomIds = [];
+  const persistedBondIds = [];
+  const persistedRingAtomIds = [];
+
+  for (const atomId of atomIds) {
+    if (!reactantAtomIds.has(atomId)) {
+      continue;
+    }
+    const atom = _reactionPreviewSourceMol.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    atom.setStyle?.(style);
+    persistedAtomIds.push(atomId);
+  }
+
+  for (const bondId of bondIds) {
+    const bond = _reactionPreviewSourceMol.bonds.get(bondId);
+    if (!bond || !bond.atoms.every(atomId => reactantAtomIds.has(atomId))) {
+      continue;
+    }
+    bond.setStyle?.(style);
+    persistedBondIds.push(bondId);
+  }
+
+  const normalizedRingAtomIds = [...new Set(ringAtomIds)].filter(atomId => reactantAtomIds.has(atomId) && _reactionPreviewSourceMol.atoms.has(atomId));
+  if (normalizedRingAtomIds.length >= 3 && ringFillStyle && typeof _reactionPreviewSourceMol.setRingFill === 'function') {
+    const key = ringAtomKey(normalizedRingAtomIds);
+    const hasSourceRing = _reactionPreviewSourceMol.getRings?.().some(ringIds => ringAtomKey(ringIds) === key);
+    if (hasSourceRing) {
+      _reactionPreviewSourceMol.setRingFill(normalizedRingAtomIds, ringFillStyle);
+      persistedRingAtomIds.push(...normalizedRingAtomIds);
+    }
+  }
+
+  return {
+    atomIds: persistedAtomIds,
+    bondIds: persistedBondIds,
+    ringAtomIds: persistedRingAtomIds
+  };
 }
 
 function _getReactionTemplateSourceMol() {

@@ -247,7 +247,9 @@ export function finalizeAppBootstrap(ctx) {
       commit: () => commitDrawBond()
     },
     actions: {
-      eraseItem: (atomIds, bondIds) => ctx.actions.editingActions.eraseItem(atomIds, bondIds)
+      eraseItem: (atomIds, bondIds) => ctx.actions.editingActions.eraseItem(atomIds, bondIds),
+      paintStyleTargets: (atomIds, bondIds, style, options = {}) => appDelegates.paintStyleTargets(atomIds, bondIds, style, options),
+      paintRingFill: (atomIds, style, options = {}) => appDelegates.paintRingFill(atomIds, style, options)
     },
     view: {
       getZoomTransform: () => ctx.view.getZoomTransform(),

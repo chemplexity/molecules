@@ -495,6 +495,8 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.opacityForce.value, '1');
     assert.equal(buttons.opacity2d.style.getPropertyValue('--paint-opacity'), '1');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /%233366ff/);
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /width='24' height='24'/);
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /r='11'/);
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /fill-opacity='1'/);
     assert.equal(plotElement.classList.contains('paint-mode-cursor'), true);
     assert.equal(buttons.pan.classList.contains('active'), false);

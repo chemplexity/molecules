@@ -138,9 +138,6 @@ export function createSessionUiStateBridge(deps) {
     deps.setDrawBondHoverSuppressed(false);
     deps.setErasePainting(false);
     deps.setChargeTool?.(restoredChargeTool);
-    deps.setPaintTool?.(snapshot.paintTool ?? 'brush');
-    deps.setPaintColor?.(snapshot.paintColor ?? '#3366ff');
-    deps.setPaintOpacity?.(snapshot.paintOpacity ?? 1);
     deps.setDrawBondElement(snapshot.drawBondElement ?? 'C');
     deps.setDrawBondType?.(snapshot.drawBondType ?? 'single');
     deps.setSelectMode(snapshot.toolMode === 'select');

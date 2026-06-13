@@ -34,19 +34,23 @@ class FakeSelection {
     return this;
   }
 
-  append() {
+  append(tag) {
+    this.records.push(['append', tag]);
     return new FakeSelection(this.records, this.nodeRef);
   }
 
-  insert() {
+  insert(tag, before) {
+    this.records.push(['insert', tag, before]);
     return new FakeSelection(this.records, this.nodeRef);
   }
 
-  attr() {
+  attr(name, value) {
+    this.records.push(['attr', name, value]);
     return this;
   }
 
-  style() {
+  style(name, value) {
+    this.records.push(['style', name, value]);
     return this;
   }
 
@@ -385,6 +389,41 @@ describe('create2DSceneRenderer', () => {
         ['updateDescriptors', 'mol-2d']
       ]
     );
+  });
+
+  it('draws 2D ring fills before functional group highlights', () => {
+    const { renderer, records } = makeRenderer();
+    const atoms = new Map([
+      ['a1', makeAtom('a1', 0, 0)],
+      ['a2', makeAtom('a2', 1, 0)],
+      ['a3', makeAtom('a3', 1, 1)],
+      ['a4', makeAtom('a4', 0, 1)]
+    ]);
+    const ringAtomIds = ['a1', 'a2', 'a3', 'a4'];
+    const mol = {
+      id: 'mol-ring-fill-highlight-order',
+      atoms,
+      bonds: new Map(),
+      hideHydrogens() {},
+      getChiralCenters() {
+        return [];
+      },
+      getRings() {
+        return [ringAtomIds];
+      },
+      getRingFills() {
+        return [{ id: 'ring-fill:a1\0a2\0a3\0a4', atomIds: ringAtomIds, color: '#ffe66d', opacity: 0.3 }];
+      }
+    };
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const ringFillIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'ring-fills');
+    const highlightIndex = records.findIndex(entry => entry[0] === 'redrawHighlights');
+
+    assert.ok(ringFillIndex >= 0);
+    assert.ok(highlightIndex >= 0);
+    assert.ok(ringFillIndex < highlightIndex);
   });
 
   it('syncs selection and can refit the current 2D view', () => {

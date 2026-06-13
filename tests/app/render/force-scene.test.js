@@ -5,9 +5,10 @@ import { parseSMILES } from '../../../src/io/smiles.js';
 import { createForceSceneRenderer } from '../../../src/app/render/force-scene.js';
 
 class FakeSelection {
-  constructor(records, nodeRef = {}) {
+  constructor(records, nodeRef = {}, dataValue = []) {
     this.records = records;
     this.nodeRef = nodeRef;
+    this.dataValue = dataValue;
   }
 
   node() {
@@ -15,10 +16,13 @@ class FakeSelection {
   }
 
   selectAll() {
-    return new FakeSelection(this.records, this.nodeRef);
+    return new FakeSelection(this.records, this.nodeRef, this.dataValue);
   }
 
-  data() {
+  data(value) {
+    if (Array.isArray(value)) {
+      this.dataValue = value;
+    }
     return this;
   }
 
@@ -26,19 +30,25 @@ class FakeSelection {
     return this;
   }
 
-  append() {
-    return new FakeSelection(this.records, this.nodeRef);
+  append(tagName) {
+    this.records.push(['append', tagName]);
+    return new FakeSelection(this.records, this.nodeRef, this.dataValue);
   }
 
-  insert() {
-    return new FakeSelection(this.records, this.nodeRef);
+  insert(tagName) {
+    this.records.push(['insert', tagName]);
+    return new FakeSelection(this.records, this.nodeRef, this.dataValue);
   }
 
   filter() {
     return this;
   }
 
-  attr() {
+  attr(name, value) {
+    if (['class', 'data-ring-fill-id', 'fill', 'fill-opacity', 'points'].includes(name)) {
+      const resolved = typeof value === 'function' && this.dataValue.length > 0 ? this.dataValue.map(d => value(d)) : value;
+      this.records.push(['attr', name, resolved]);
+    }
     return this;
   }
 
@@ -159,7 +169,8 @@ function makeRenderer({
   hasSelection = false,
   preserveView = false,
   generate2dCoords = () => {},
-  alignReaction2dProductOrientation = () => {}
+  alignReaction2dProductOrientation = () => {},
+  convertMolecule = () => ({ nodes: [], links: [] })
 } = {}) {
   const records = [];
   const nodeRef = { id: 'svg-node' };
@@ -245,7 +256,7 @@ function makeRenderer({
         records.push(['buildForceAnchorLayout']);
         return null;
       },
-      convertMolecule: () => ({ nodes: [], links: [] }),
+      convertMolecule,
       seedForceNodePositions: (_graph, _molecule, anchorLayout) => {
         records.push(['seedForceNodePositions', anchorLayout]);
       },
@@ -400,6 +411,44 @@ describe('createForceSceneRenderer', () => {
       }),
       [['setForceAutoFitEnabled', true], ['disableKeepInView'], ['syncSelectionToMolecule', 'mol-sync'], ['setPreserveSelectionOnNextRender', false], ['call', 'zoomTransform', { kind: 'identity' }]]
     );
+  });
+
+  it('renders force ring fills behind force bonds', () => {
+    const molecule = parseSMILES('C1CCCCC1');
+    const ring = molecule.getRings()[0];
+    molecule.setRingFill(ring, { color: '#ffe66d', opacity: 0.3 });
+    const nodePositions = [
+      { x: 10, y: 0 },
+      { x: 20, y: 10 },
+      { x: 20, y: 20 },
+      { x: 10, y: 30 },
+      { x: 0, y: 20 },
+      { x: 0, y: 10 }
+    ];
+    const graphNodes = ring.map((id, index) => ({
+      id,
+      name: 'C',
+      protons: 6,
+      charge: 0,
+      ...nodePositions[index]
+    }));
+    const { renderer, records } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => ({ nodes: graphNodes, links: [] })
+    });
+
+    renderer.updateForce(molecule, { preserveView: true });
+
+    const fillClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'ring-fill force-ring-fill');
+    const bondClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'link');
+    const pointsRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'points' && Array.isArray(entry[2]));
+
+    assert.ok(fillClassIndex >= 0);
+    assert.ok(bondClassIndex >= 0);
+    assert.ok(fillClassIndex < bondClassIndex);
+    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2]?.[0] === '#ffe66d'), true);
+    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill-opacity' && entry[2]?.[0] === 0.3), true);
+    assert.equal(pointsRecord[2][0], '10,0 20,10 20,20 10,30 0,20 0,10');
   });
 
   it('applies initial force patches before the first restarted tick', () => {

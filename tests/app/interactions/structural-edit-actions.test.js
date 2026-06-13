@@ -1014,6 +1014,7 @@ describe('createStructuralEditActions', () => {
     };
 
     let captured = null;
+    const persisted = [];
     const { context } = makeBaseContext({
       context: {
         controller: {
@@ -1021,6 +1022,11 @@ describe('createStructuralEditActions', () => {
             captured = { kind, options };
             assert.equal(options.preflight({ mol }), true);
             return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        },
+        overlays: {
+          paintReactionPreviewReactantSource(payload) {
+            persisted.push(payload);
           }
         }
       }
@@ -1033,13 +1039,210 @@ describe('createStructuralEditActions', () => {
     assert.equal(captured.options.overlayPolicy, ReactionPreviewPolicy.preserve);
     assert.equal(captured.options.resonancePolicy, ResonancePolicy.preserve);
     assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.take);
+    assert.deepEqual(captured.options.snapshotOptions, { clearReactionPreview: false });
     assert.equal(captured.options.viewportPolicy, ViewportPolicy.restoreEdit);
     assert.deepEqual(atom.properties.style, { color: '#ff6633', opacity: 0.45 });
     assert.deepEqual(bond.properties.style, { color: '#ff6633', opacity: 0.45 });
+    assert.deepEqual(persisted, [
+      {
+        atomIds: ['a1'],
+        bondIds: ['b1'],
+        style: { color: '#ff6633', opacity: 0.45 }
+      }
+    ]);
     assert.equal(result.syncInput, false);
     assert.equal(result.updateAnalysis, false);
     assert.deepEqual(result.restorePrimitiveHover, { atomIds: ['a1'], bondIds: ['b1'] });
     assert.deepEqual(result.force.options, { preservePositions: true, preserveView: true });
+  });
+
+  it('can skip extra snapshots for continued paint-stroke style edits', () => {
+    const atom = {
+      id: 'a1',
+      name: 'C',
+      properties: {},
+      setStyle(style) {
+        this.properties.style = { ...style };
+      }
+    };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      bonds: new Map()
+    };
+
+    let captured = null;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            assert.equal(options.preflight({ mol }), true);
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.paintStyleTargets(['a1'], [], { color: '#3366ff', opacity: 0.5 }, { skipSnapshot: true });
+
+    assert.equal(captured.kind, 'paint-style-targets');
+    assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.skip);
+    assert.deepEqual(atom.properties.style, { color: '#3366ff', opacity: 0.5 });
+  });
+
+  it('paints a ring fill through the structural edit action', () => {
+    const ringFills = [];
+    const mol = {
+      atoms: new Map([
+        ['a1', {}],
+        ['a2', {}],
+        ['a3', {}],
+        ['a4', {}]
+      ]),
+      bonds: new Map(),
+      getRings() {
+        return [['a1', 'a2', 'a3', 'a4']];
+      },
+      getRingFills() {
+        return ringFills.map(entry => ({ ...entry, atomIds: [...entry.atomIds] }));
+      },
+      setRingFill(atomIds, style) {
+        ringFills.splice(0, ringFills.length, { ...style, atomIds: [...atomIds] });
+      }
+    };
+
+    let captured = null;
+    const persisted = [];
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            assert.equal(options.preflight({ mol }), true);
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        },
+        overlays: {
+          paintReactionPreviewReactantSource(payload) {
+            persisted.push(payload);
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.paintRingFill(['a1', 'a2', 'a3', 'a4'], { color: '#ffcc00', opacity: 0.35 }, { zoomSnapshot: 'zoom-snapshot' });
+
+    assert.equal(captured.kind, 'paint-ring-fill');
+    assert.equal(captured.options.overlayPolicy, ReactionPreviewPolicy.preserve);
+    assert.equal(captured.options.resonancePolicy, ResonancePolicy.preserve);
+    assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.take);
+    assert.deepEqual(captured.options.snapshotOptions, { clearReactionPreview: false });
+    assert.equal(captured.options.viewportPolicy, ViewportPolicy.restoreEdit);
+    assert.deepEqual(ringFills, [
+      {
+        id: 'ring-fill:a1\0a2\0a3\0a4',
+        atomIds: ['a1', 'a2', 'a3', 'a4'],
+        color: '#ffcc00',
+        opacity: 0.35
+      }
+    ]);
+    assert.deepEqual(persisted, [
+      {
+        ringAtomIds: ['a1', 'a2', 'a3', 'a4'],
+        ringFillStyle: {
+          id: 'ring-fill:a1\0a2\0a3\0a4',
+          atomIds: ['a1', 'a2', 'a3', 'a4'],
+          color: '#ffcc00',
+          opacity: 0.35
+        }
+      }
+    ]);
+    assert.equal(result.syncInput, false);
+    assert.equal(result.updateAnalysis, false);
+    assert.equal(result.clearPrimitiveHover, true);
+  });
+
+  it('paints a force-mode ring fill while preserving force positions and view', () => {
+    const ringFills = [];
+    const mol = {
+      atoms: new Map([
+        ['a1', {}],
+        ['a2', {}],
+        ['a3', {}]
+      ]),
+      bonds: new Map(),
+      getRings() {
+        return [['a1', 'a2', 'a3']];
+      },
+      getRingFills() {
+        return ringFills.map(entry => ({ ...entry, atomIds: [...entry.atomIds] }));
+      },
+      setRingFill(atomIds, style) {
+        ringFills.splice(0, ringFills.length, { ...style, atomIds: [...atomIds] });
+      }
+    };
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.paintRingFill(['a1', 'a2', 'a3'], { color: '#66ccff', opacity: 0.55 });
+
+    assert.deepEqual(ringFills[0], {
+      id: 'ring-fill:a1\0a2\0a3',
+      atomIds: ['a1', 'a2', 'a3'],
+      color: '#66ccff',
+      opacity: 0.55
+    });
+    assert.deepEqual(result.force.options, { preservePositions: true, preserveView: true });
+  });
+
+  it('can skip the undo snapshot when painting a ring fill as part of a bucket stroke', () => {
+    const ringFills = [];
+    const mol = {
+      atoms: new Map([
+        ['a1', {}],
+        ['a2', {}],
+        ['a3', {}]
+      ]),
+      bonds: new Map(),
+      getRings() {
+        return [['a1', 'a2', 'a3']];
+      },
+      getRingFills() {
+        return ringFills.map(entry => ({ ...entry, atomIds: [...entry.atomIds] }));
+      },
+      setRingFill(atomIds, style) {
+        ringFills.splice(0, ringFills.length, { ...style, atomIds: [...atomIds] });
+      }
+    };
+
+    let captured = null;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.paintRingFill(['a1', 'a2', 'a3'], { color: '#66ccff', opacity: 0.55 }, { skipSnapshot: true });
+
+    assert.equal(captured.kind, 'paint-ring-fill');
+    assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.skip);
   });
 
   it('applies charge-tool edits as signed one-step deltas', () => {

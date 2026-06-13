@@ -21,6 +21,7 @@ import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydr
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
 import { getAtomNumberMap, multipleBondAnnotationBlockerAngles, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
+import { ringAtomKey } from '../../core/style.js';
 
 /**
  * Removes an automatically assigned display hint from a bond while preserving
@@ -158,6 +159,20 @@ function hasIncompleteProjectedOrganometallicDisplay(molecule) {
   return false;
 }
 
+function forceRingFillData(molecule) {
+  const ringFills = typeof molecule.getRingFills === 'function' ? molecule.getRingFills() : (molecule.properties?.style?.ringFills ?? []);
+  if (ringFills.length === 0 || typeof molecule.getRings !== 'function') {
+    return [];
+  }
+  const ringByKey = new Map(molecule.getRings().map(ringAtomIds => [ringAtomKey(ringAtomIds), ringAtomIds]));
+  return ringFills
+    .map(fill => {
+      const ringAtomIds = ringByKey.get(ringAtomKey(fill.atomIds ?? []));
+      return ringAtomIds ? { ...fill, atomIds: ringAtomIds } : null;
+    })
+    .filter(Boolean);
+}
+
 /**
  * Repositions hidden hydrogens on a seeded clone so tetrahedral stereo syncing
  * can use a real local direction instead of coincident parent coordinates.
@@ -289,11 +304,45 @@ export function createForceSceneRenderer(ctx) {
     const graph = ctx.helpers.convertMolecule(molecule);
     const atomForNode = node => molecule.atoms.get(node?.id) ?? node;
     const bondForLink = link => molecule.bonds.get(link?.id) ?? link;
+    const forceNodeById = new Map(graph.nodes.map(node => [node.id, node]));
     ctx.g.selectAll('*').remove();
     ctx.cache.reset();
 
     if (!preserveView) {
       ctx.svg.call(ctx.zoom.transform, ctx.d3.zoomIdentity);
+    }
+
+    const forceRingFills = forceRingFillData(molecule);
+    let forceRingFillPolygons = null;
+    if (forceRingFills.length > 0) {
+      forceRingFillPolygons = ctx.g
+        .append('g')
+        .attr('class', 'force-ring-fills')
+        .style('pointer-events', 'none')
+        .selectAll('polygon.force-ring-fill')
+        .data(forceRingFills, fill => fill.id)
+        .enter()
+        .append('polygon')
+        .attr('class', 'ring-fill force-ring-fill')
+        .attr('data-ring-fill-id', fill => fill.id)
+        .attr('fill', fill => fill.color)
+        .attr('fill-opacity', fill => fill.opacity ?? 0.25)
+        .attr('stroke', 'none');
+    }
+
+    function _updateForceRingFills() {
+      if (!forceRingFillPolygons) {
+        return;
+      }
+      forceRingFillPolygons.attr('points', fill =>
+        fill.atomIds
+          .map(atomId => {
+            const node = forceNodeById.get(atomId);
+            return node && Number.isFinite(node.x) && Number.isFinite(node.y) ? `${node.x},${node.y}` : null;
+          })
+          .filter(Boolean)
+          .join(' ')
+      );
     }
 
     const bondEnter = ctx.g
@@ -414,7 +463,7 @@ export function createForceSceneRenderer(ctx) {
       const stereoColor = bondDisplayColor(bond) ?? '#111';
       const stereoOpacity = bondDisplayOpacity(bond);
       if (displayAs === 'wedge') {
-        const poly = stereoBondLayer.append('polygon').attr('fill', stereoColor).attr('fill-opacity', stereoOpacity).attr('pointer-events', 'none');
+        const poly = stereoBondLayer.append('polygon').attr('data-bond-id', link.id).attr('fill', stereoColor).attr('fill-opacity', stereoOpacity).attr('pointer-events', 'none');
         forceStereoBondInfo.push({ type: 'wedge', element: poly, centerId, link });
       } else {
         const lines = [];
@@ -422,6 +471,7 @@ export function createForceSceneRenderer(ctx) {
           lines.push(
             stereoBondLayer
               .append('line')
+              .attr('data-bond-id', link.id)
               .attr('stroke', stereoColor)
               .attr('stroke-opacity', stereoOpacity)
               .attr('stroke-width', FORCE_DASH_STROKE)
@@ -555,7 +605,6 @@ export function createForceSceneRenderer(ctx) {
       .attr('dominant-baseline', 'central')
       .text(d => formatChargeLabel(d.charge));
 
-    const forceNodeById = new Map(graph.nodes.map(node => [node.id, node]));
     const forceLonePairDotsByAtomId = new Map();
     const forceChargeAngleByAtomId = new Map();
     const pointForForceAtom = atom => {
@@ -694,6 +743,7 @@ export function createForceSceneRenderer(ctx) {
       ctx.helpers.reseatHydrogensAroundPatched(initialPatchPos, { resetVelocity: true });
     }
     ctx.simulation.alpha(preservePositions ? 0.2 : 1).restart();
+    _updateForceRingFills();
     _updateForceLonePairs();
     _updateForceChargeLabels();
     _updateForceStereoDisplay();
@@ -885,7 +935,7 @@ export function createForceSceneRenderer(ctx) {
     _updateForceBondLengthLabels();
 
     const forceNumberMap = getAtomNumberMap(molecule);
-    const forceNodeById2 = new Map(graph.nodes.map(node => [node.id, node]));
+    const forceNodeById2 = forceNodeById;
     let forceAtomNumberLabels = null;
     if (forceNumberMap) {
       const nodeNeighbors = new Map(graph.nodes.map(n => [n.id, []]));
@@ -1019,6 +1069,7 @@ export function createForceSceneRenderer(ctx) {
 
       atom.attr('cx', d => d.x).attr('cy', d => d.y);
       atomSymbol.attr('x', d => d.x).attr('y', d => d.y);
+      _updateForceRingFills();
 
       const forceValenceWarningCircles = ctx.cache.getValenceWarningCircles();
       if (forceValenceWarningCircles) {

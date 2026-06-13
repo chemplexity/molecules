@@ -384,6 +384,9 @@ export function createAppRuntime(deps) {
     resonance: {
       prepareResonanceStateForStructuralEdit: deps.resonance.prepareResonanceStateForStructuralEdit
     },
+    overlays: {
+      paintReactionPreviewReactantSource: payload => deps.overlays.paintReactionPreviewReactantSource?.(payload) ?? null
+    },
     chemistry: deps.chemistry,
     force: deps.force.structuralEdit,
     constants: deps.constants

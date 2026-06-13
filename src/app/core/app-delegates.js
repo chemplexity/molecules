@@ -60,6 +60,9 @@ export function createAppDelegates(deps) {
     paintStyleTargets(atomIds = [], bondIds = [], style = {}, options = {}) {
       return deps.structuralEditActions.paintStyleTargets(atomIds, bondIds, style, options);
     },
+    paintRingFill(atomIds = [], style = {}, options = {}) {
+      return deps.structuralEditActions.paintRingFill(atomIds, style, options);
+    },
     replaceForceHydrogenWithDrawElement(atomId, mol = deps.state.getCurrentMol()) {
       return deps.structuralEditActions.replaceForceHydrogenWithDrawElement(atomId, mol);
     },

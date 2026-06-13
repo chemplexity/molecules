@@ -242,6 +242,19 @@ function findProductCarbonylCenters(preview, predicate) {
   });
 }
 
+test('reaction preview preserves reactant ring fills from the source molecule', () => {
+  const sourceMol = parseSMILES('OCc1ccccc1');
+  const ringAtomIds = sourceMol.getRings()[0];
+  sourceMol.setRingFill(ringAtomIds, { color: '#ffcc00', opacity: 0.35 });
+  const reactantSmarts = reactionTemplates.alcoholOxidation.smirks.split('>>')[0];
+  const mapping = [...findSMARTSRaw(sourceMol, reactantSmarts)][0];
+  assert.ok(mapping, 'expected alcohol-oxidation mapping for benzyl alcohol');
+
+  const preview = buildReaction2dMol(sourceMol, reactionTemplates.alcoholOxidation.smirks, mapping);
+
+  assert.deepEqual(preview.mol.getRingFills(), sourceMol.getRingFills());
+});
+
 test('force reaction arrow shifts to a clearer parallel lane when atoms block the centerline', () => {
   const reactant = { minX: -22, maxX: -6, minY: -8, maxY: 8, cx: -14, cy: 0 };
   const product = { minX: 6, maxX: 22, minY: -8, maxY: 8, cx: 14, cy: 0 };

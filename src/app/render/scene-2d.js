@@ -620,11 +620,11 @@ export function create2DSceneRenderer(ctx) {
         });
     }
 
+    _draw2dRingFills();
+
     ctx.helpers.redrawHighlights();
     ctx.helpers.redrawSelection();
     _redraw2dValenceWarnings();
-
-    _draw2dRingFills();
 
     bondLayer = ctx.g.append('g').attr('class', 'bonds');
     for (const bi of bondInfos) {
@@ -732,17 +732,6 @@ export function create2DSceneRenderer(ctx) {
 
       const styledAtomColor = atomDisplayColor(atom, '2d');
       const styledAtomOpacity = atomDisplayOpacity(atom);
-
-      if (!label && atom.properties?.style) {
-        hitGroup
-          .append('circle')
-          .attr('class', 'atom-style-marker')
-          .attr('r', 2.4)
-          .attr('fill', styledAtomColor)
-          .attr('fill-opacity', styledAtomOpacity)
-          .attr('stroke', 'none')
-          .attr('pointer-events', 'none');
-      }
 
       if (label) {
         renderAtomLabel(hitGroup, label, atom.properties?.style ? styledAtomColor : symbol === 'H' ? '#333333' : styledAtomColor, labelDx, labelDy, fontSize).attr('opacity', styledAtomOpacity);

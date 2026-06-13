@@ -1,8 +1,31 @@
 # Change Log
 
+## 2026-06-12
+
+- Preview paint-bucket ring fills on hover without committing the selected color and opacity until mouse down.
+- Keep paint-bucket hover previews behind rendered bond strokes so double-bond details remain visible.
+- Let paint-bucket drag strokes fill each ring entered while held as a single undo step.
+- Hide an existing ring fill while previewing a different paint-bucket color so hover previews show the replacement color instead of blending.
+- Keep functional-group highlight overlays above saved and previewed ring-fill layers in 2D and force render modes.
+- Preview brush paint color and opacity on hovered atoms and bonds before committing the style on mouse down.
+- Preserve active reaction previews when brush painting atoms/bonds or bucket filling rings.
+- Persist reactant-side brush paint and ring-fill styles from reaction previews back to the stored source molecule.
+- Keep pre-existing reactant ring fills visible when entering reaction preview.
+
 ## 2026-06-11
 
-- Add paint-brush style buttons above the app PNG export buttons, including paint-mode toggle state, active styling, an erase-preview-sized circular cursor filled by the selected paint color and opacity, brush/bucket hover drawer options that match the line drawer spacing and timing while mirroring the selected paint tool icon, active-mode color/opacity controls above the paint icons that stay inside the viewport edge, paint-mode gesture blocking so mouse holds do not pan or drag the molecule view, and brush-click styling for atoms and bonds with undo-aware color/opacity edits.
+- Add paint-brush style buttons above the app PNG export buttons, with paint-mode toggle state and active styling.
+- Add a compact circular paint cursor filled by the selected paint color and opacity.
+- Add brush/bucket hover drawer options that match the line drawer spacing and timing.
+- Replace the paint bucket glyph with a tilted pouring-bucket icon, and keep the main paint button mirrored to the selected paint tool.
+- Add active-mode color and opacity controls above the paint icons, keeping the controls inside the viewport edge.
+- Block paint-mode mouse holds and blank-space double-clicks from panning, dragging, or selecting the molecule view.
+- Add undo-aware brush-click styling for atoms and bonds.
+- Add brush drag-strokes that paint atoms and bonds while held as a single undo step.
+- Let paint bucket mode fill the clicked 2D ring interior with the selected color and opacity.
+- Preserve the active paint tool, color, and opacity while undoing or redoing molecule edits.
+- Let paint bucket mode fill force-layout ring interiors and render those ring fills behind force bonds.
+- In 2D line mode, color only explicit atom labels instead of drawing tiny markers on implicit carbons.
 
 ## 2026-06-10
 

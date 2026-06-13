@@ -4,7 +4,7 @@ import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy 
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
-import { normalizeVisualStyle } from '../../core/style.js';
+import { normalizeRingFillStyle, normalizeVisualStyle, ringAtomKey } from '../../core/style.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 const DEFAULT_2D_BOND_LENGTH = 1.5;
@@ -298,6 +298,23 @@ function stylesMatch(currentStyle, nextStyle) {
     return false;
   }
   return normalizedCurrent.color === nextStyle.color && normalizedCurrent.opacity === nextStyle.opacity;
+}
+
+function ringFillMatches(entry, nextEntry) {
+  return (
+    entry &&
+    ringAtomKey(entry.atomIds ?? []) === ringAtomKey(nextEntry.atomIds) &&
+    entry.color === nextEntry.color &&
+    entry.opacity === nextEntry.opacity
+  );
+}
+
+function moleculeHasRingAtomSet(mol, atomIds) {
+  if (!mol?.getRings) {
+    return false;
+  }
+  const key = ringAtomKey(atomIds);
+  return mol.getRings().some(ringAtomIds => ringAtomKey(ringAtomIds) === key);
 }
 
 /**
@@ -727,7 +744,8 @@ export function createStructuralEditActions(context) {
       zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null,
       overlayPolicy = ReactionPreviewPolicy.preserve,
       reactionPreviewPayload = null,
-      reactionEdit = null
+      reactionEdit = null,
+      skipSnapshot = false
     } = options;
     let normalizedStyle;
 
@@ -748,7 +766,8 @@ export function createStructuralEditActions(context) {
         reactionPreviewPayload,
         reactionEdit,
         resonancePolicy: ResonancePolicy.preserve,
-        snapshotPolicy: SnapshotPolicy.take,
+        snapshotPolicy: skipSnapshot ? SnapshotPolicy.skip : SnapshotPolicy.take,
+        snapshotOptions: { clearReactionPreview: false },
         viewportPolicy: ViewportPolicy.restoreEdit,
         zoomSnapshot,
         preflight: ({ mol }) => {
@@ -793,6 +812,12 @@ export function createStructuralEditActions(context) {
           return { cancelled: true };
         }
 
+        context.overlays?.paintReactionPreviewReactantSource?.({
+          atomIds: paintedAtomIds,
+          bondIds: paintedBondIds,
+          style: normalizedStyle
+        });
+
         return {
           syncInput: false,
           updateAnalysis: false,
@@ -802,6 +827,73 @@ export function createStructuralEditActions(context) {
             atomIds: paintedAtomIds,
             bondIds: paintedBondIds
           },
+          force:
+            mode === 'force'
+              ? {
+                  options: { preservePositions: true, preserveView: true }
+                }
+              : null
+        };
+      }
+    );
+  }
+
+  function paintRingFill(atomIds = [], style = {}, options = {}) {
+    const {
+      zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null,
+      overlayPolicy = ReactionPreviewPolicy.preserve,
+      reactionPreviewPayload = null,
+      reactionEdit = null,
+      skipSnapshot = false
+    } = options;
+    let normalizedEntry;
+
+    try {
+      normalizedEntry = normalizeRingFillStyle({ ...style, atomIds });
+    } catch {
+      return { performed: false, cancelled: true };
+    }
+
+    return context.controller.performStructuralEdit(
+      'paint-ring-fill',
+      {
+        overlayPolicy,
+        reactionPreviewPayload,
+        reactionEdit,
+        resonancePolicy: ResonancePolicy.preserve,
+        snapshotPolicy: skipSnapshot ? SnapshotPolicy.skip : SnapshotPolicy.take,
+        snapshotOptions: { clearReactionPreview: false },
+        viewportPolicy: ViewportPolicy.restoreEdit,
+        zoomSnapshot,
+        preflight: ({ mol }) => {
+          if (!moleculeHasRingAtomSet(mol, normalizedEntry.atomIds)) {
+            return false;
+          }
+          const currentEntry = mol.getRingFills?.().find(entry => ringAtomKey(entry.atomIds ?? []) === ringAtomKey(normalizedEntry.atomIds));
+          return !ringFillMatches(currentEntry, normalizedEntry);
+        }
+      },
+      ({ mol, mode }) => {
+        if ((mode !== '2d' && mode !== 'force') || !moleculeHasRingAtomSet(mol, normalizedEntry.atomIds)) {
+          return { cancelled: true };
+        }
+
+        const currentEntry = mol.getRingFills?.().find(entry => ringAtomKey(entry.atomIds ?? []) === ringAtomKey(normalizedEntry.atomIds));
+        if (ringFillMatches(currentEntry, normalizedEntry)) {
+          return { cancelled: true };
+        }
+
+        mol.setRingFill(normalizedEntry.atomIds, normalizedEntry);
+        context.overlays?.paintReactionPreviewReactantSource?.({
+          ringAtomIds: normalizedEntry.atomIds,
+          ringFillStyle: normalizedEntry
+        });
+
+        return {
+          syncInput: false,
+          updateAnalysis: false,
+          clearPrimitiveHover: true,
+          suppressPrimitiveHover: true,
           force:
             mode === 'force'
               ? {
@@ -895,6 +987,7 @@ export function createStructuralEditActions(context) {
     changeAtomElements,
     changeAtomCharge,
     paintStyleTargets,
+    paintRingFill,
     replaceForceHydrogenWithDrawElement
   };
 }

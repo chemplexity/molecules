@@ -45,6 +45,7 @@ describe('createAppDelegates', () => {
         changeAtomElements: (...args) => ['changeAtomElements', ...args],
         changeAtomCharge: (...args) => ['changeAtomCharge', ...args],
         paintStyleTargets: (...args) => ['paintStyleTargets', ...args],
+        paintRingFill: (...args) => ['paintRingFill', ...args],
         replaceForceHydrogenWithDrawElement: (...args) => ['replaceForceHydrogenWithDrawElement', ...args]
       },
       drawBondPreviewActions: {
@@ -93,6 +94,7 @@ describe('createAppDelegates', () => {
     assert.deepEqual(delegates.changeAtomElements([1], 'N', { baz: 'qux' }), ['changeAtomElements', [1], 'N', { baz: 'qux' }]);
     assert.deepEqual(delegates.changeAtomCharge('a1', { chargeTool: 'positive' }), ['changeAtomCharge', 'a1', { chargeTool: 'positive' }]);
     assert.deepEqual(delegates.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' }, { keep: true }), ['paintStyleTargets', ['a1'], ['b1'], { color: '#3366ff' }, { keep: true }]);
+    assert.deepEqual(delegates.paintRingFill(['a1', 'a2', 'a3'], { color: '#ffcc00' }, { keep: true }), ['paintRingFill', ['a1', 'a2', 'a3'], { color: '#ffcc00' }, { keep: true }]);
     assert.deepEqual(delegates.replaceForceHydrogenWithDrawElement(5, 'molX'), ['replaceForceHydrogenWithDrawElement', 5, 'molX']);
     assert.deepEqual(delegates.startDrawBond(1, 2, 3), ['start', 1, 2, 3]);
     assert.deepEqual(delegates.updateDrawBondPreview([4, 5]), ['update', [4, 5]]);

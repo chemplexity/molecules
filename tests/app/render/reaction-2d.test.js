@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { generateResonanceStructures } from '../../../src/algorithms/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
-import { _captureReactionPreviewSnapshot, _restoreReactionPreviewSnapshot, _restoreReactionPreviewSource, initReaction2d } from '../../../src/app/render/reaction-2d.js';
+import { _captureReactionPreviewSnapshot, _paintReactionPreviewReactantSource, _restoreReactionPreviewSnapshot, _restoreReactionPreviewSource, initReaction2d } from '../../../src/app/render/reaction-2d.js';
 
 function serializePreviewMol(mol) {
   if (!mol) {
@@ -158,5 +158,52 @@ describe('reaction preview restore', () => {
 
     assert.deepEqual(snapshot?.sourceMol?.moleculeProperties?.previewMarker, { kept: true });
     assert.ok(snapshot?.sourceMol?.moleculeProperties?.resonance);
+  });
+
+  it('persists reactant paint edits into the stored reaction preview source', () => {
+    makeReaction2dContext();
+    const sourceMol = parseSMILES('C1CCCCC1');
+    const atomIds = [...sourceMol.atoms.keys()];
+    const ringAtomIds = sourceMol.getRings()[0];
+    const storedRingAtomIds = [...ringAtomIds].sort();
+    const bondId = sourceMol.bonds.keys().next().value;
+    const productAtomId = `__rxn_product__0:${atomIds[0]}`;
+    const productBondId = `__rxn_product__0:${bondId}`;
+
+    _restoreReactionPreviewSnapshot({
+      ...makePreviewSnapshot({
+        sourceMol,
+        entryDisplayMol: sourceMol
+      }),
+      reactantAtomIds: atomIds,
+      productAtomIds: [productAtomId]
+    });
+
+    const result = _paintReactionPreviewReactantSource({
+      atomIds: [atomIds[0], productAtomId],
+      bondIds: [bondId, productBondId],
+      style: { color: '#ff6633', opacity: 0.45 },
+      ringAtomIds: [...ringAtomIds, productAtomId],
+      ringFillStyle: { color: '#ffcc00', opacity: 0.35 }
+    });
+    const snapshot = _captureReactionPreviewSnapshot();
+    const styledAtom = snapshot.sourceMol.atoms.find(atom => atom.id === atomIds[0]);
+    const styledBond = snapshot.sourceMol.bonds.find(bond => bond.id === bondId);
+
+    assert.deepEqual(result, {
+      atomIds: [atomIds[0]],
+      bondIds: [bondId],
+      ringAtomIds
+    });
+    assert.deepEqual(styledAtom.properties.style, { color: '#ff6633', opacity: 0.45 });
+    assert.deepEqual(styledBond.properties.style, { color: '#ff6633', opacity: 0.45 });
+    assert.deepEqual(snapshot.sourceMol.moleculeProperties.style.ringFills, [
+      {
+        id: `ring-fill:${storedRingAtomIds.join('\0')}`,
+        atomIds: storedRingAtomIds,
+        color: '#ffcc00',
+        opacity: 0.35
+      }
+    ]);
   });
 });

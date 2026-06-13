@@ -160,7 +160,10 @@ describe('create2DHighlightRenderer', () => {
 
     renderer.redraw2dHighlights();
 
-    assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
+    const layerInsert = records.find(([kind, tag]) => kind === 'insert' && tag === 'g');
+    assert.ok(layerInsert);
+    assert.match(layerInsert[2], /g\.bonds/);
+    assert.notEqual(layerInsert[2], ':first-child');
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
   });
@@ -203,7 +206,10 @@ describe('create2DHighlightRenderer', () => {
     renderer.applyForceHighlights();
 
     assert.ok(records.some(([kind, selector]) => kind === 'selectAll' && selector === 'g.fg-highlight-layer'));
-    assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
+    const layerInsert = records.find(([kind, tag]) => kind === 'insert' && tag === 'g');
+    assert.ok(layerInsert);
+    assert.match(layerInsert[2], /line\.link/);
+    assert.notEqual(layerInsert[2], ':first-child');
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
   });

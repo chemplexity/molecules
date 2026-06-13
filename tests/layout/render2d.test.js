@@ -117,7 +117,7 @@ test('renderMolSVG wraps charge labels in a thin outlined circle', () => {
   assert.match(rendered.svgContent, />\+<\/text>/);
 });
 
-test('renderMolSVG renders custom atom, bond, and ring fill styles', () => {
+test('renderMolSVG renders custom bond and ring fill styles without implicit carbon atom markers', () => {
   const mol = parseSMILES('c1ccccc1');
   mol.atoms.get('C1').setStyle({ color: '#3366ff', opacity: 0.7 });
   const [bond] = mol.bonds.values();
@@ -129,7 +129,7 @@ test('renderMolSVG renders custom atom, bond, and ring fill styles', () => {
   assert.ok(rendered, 'expected SVG render output');
   assert.match(rendered.svgContent, /class="ring-fill"[^>]+fill="#ffe66d"[^>]+fill-opacity="0.3"/);
   assert.match(rendered.svgContent, /stroke="#ff6633" stroke-opacity="0.4"/);
-  assert.match(rendered.svgContent, /class="atom-style-marker"[^>]+fill="#3366ff"[^>]+fill-opacity="0.7"/);
+  assert.doesNotMatch(rendered.svgContent, /class="atom-style-marker"/);
   assert.ok(rendered.svgContent.indexOf('class="ring-fill"') < rendered.svgContent.indexOf('<line '), 'expected ring fill to render before bonds');
 });
 

@@ -21,7 +21,13 @@ describe('finalizeAppBootstrap', () => {
             },
             restoreZoomTransformSnapshot() {},
             commitDrawBond() {},
-            render2d() {}
+            render2d() {},
+            paintStyleTargets(...args) {
+              records.push(['paintStyleTargets', ...args]);
+            },
+            paintRingFill(...args) {
+              records.push(['paintRingFill', ...args]);
+            }
           };
         },
         createReaction2dDeps: value => value,
@@ -342,7 +348,13 @@ describe('finalizeAppBootstrap', () => {
 
     assert.equal(capturedPlotInteractionDeps.state.getChargeTool(), 'positive');
     assert.deepEqual(capturedGestureInteractionDeps.helpers.toSelectionSVGPt2d({ x: 4, y: 5 }), { x: 4, y: 5 });
+    capturedGestureInteractionDeps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' }, { skipSnapshot: true });
+    capturedGestureInteractionDeps.actions.paintRingFill(['r1', 'r2', 'r3'], { color: '#ffcc00' });
     capturedAppShellDeps.selection.setChargeTool('negative');
-    assert.deepEqual(records, [['setChargeTool', 'negative']]);
+    assert.deepEqual(records, [
+      ['paintStyleTargets', ['a1'], ['b1'], { color: '#3366ff' }, { skipSnapshot: true }],
+      ['paintRingFill', ['r1', 'r2', 'r3'], { color: '#ffcc00' }, {}],
+      ['setChargeTool', 'negative']
+    ]);
   });
 });

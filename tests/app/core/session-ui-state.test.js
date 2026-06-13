@@ -385,9 +385,9 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(drawBondMode, false);
     assert.equal(eraseMode, false);
     assert.equal(paintMode, false);
-    assert.equal(paintTool, 'bucket');
-    assert.equal(paintColor, '#ff6633');
-    assert.equal(paintOpacity, 0.45);
+    assert.equal(paintTool, 'brush');
+    assert.equal(paintColor, '#3366ff');
+    assert.equal(paintOpacity, 1);
     assert.equal(chargeTool, 'negative');
     assert.equal(drawBondElement, 'O');
     assert.equal(drawBondType, 'dash');
@@ -411,6 +411,8 @@ describe('createSessionUiStateBridge', () => {
     calls.length = 0;
     paintMode = true;
     paintTool = 'bucket';
+    paintColor = '#ff6633';
+    paintOpacity = 0.45;
     selectMode = false;
     chargeTool = null;
     assert.equal(bridge.captureInteractionState().toolMode, 'paint');
@@ -421,9 +423,9 @@ describe('createSessionUiStateBridge', () => {
       toolMode: 'paint'
     });
     assert.equal(paintMode, true);
-    assert.equal(paintTool, 'brush');
-    assert.equal(paintColor, '#3366ff');
-    assert.equal(paintOpacity, 1);
+    assert.equal(paintTool, 'bucket');
+    assert.equal(paintColor, '#ff6633');
+    assert.equal(paintOpacity, 0.45);
     assert.equal(selectMode, false);
     assert.equal(drawBondMode, false);
     assert.equal(eraseMode, false);

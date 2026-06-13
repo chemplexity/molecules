@@ -508,12 +508,6 @@ export function renderMolSVG(
     }
 
     if (!label) {
-      if (atom.properties?.style) {
-        const { x, y } = toSVG(atom);
-        labelElements.push(
-          `<circle class="atom-style-marker" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.4" fill="${atomDisplayColor(atom)}" fill-opacity="${atomDisplayOpacity(atom)}" stroke="none"/>`
-        );
-      }
       if (showLonePairs) {
         for (const dot of lonePairDots) {
           lonePairElements.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111" opacity="${atomDisplayOpacity(atom)}"/>`);

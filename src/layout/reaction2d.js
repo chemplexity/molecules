@@ -64,6 +64,18 @@ export function cloneWithPrefixedIds(mol, prefix) {
   return cloned;
 }
 
+function preserveReactantRingFills(previewMol, reactantMol) {
+  if (!previewMol || !reactantMol || typeof reactantMol.getRingFills !== 'function' || typeof previewMol.setRingFill !== 'function') {
+    return;
+  }
+  for (const fill of reactantMol.getRingFills()) {
+    if (!fill.atomIds?.every(atomId => previewMol.atoms.has(atomId))) {
+      continue;
+    }
+    previewMol.setRingFill(fill.atomIds, fill);
+  }
+}
+
 function prepareReaction2dStereoReferenceMol(mol, bondLength = 1.5) {
   if (!mol) {
     return mol;
@@ -271,6 +283,8 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
       cursor += pMaxX - pMinX + 3.0;
     }
   }
+
+  preserveReactantRingFills(previewMol, reactantMol);
 
   return {
     mol: previewMol,
