@@ -113,6 +113,15 @@ export function ringAtomKey(atomIds) {
 }
 
 /**
+ * Returns a DOM/SVG-safe id for a ring-fill atom set.
+ * @param {Iterable<string>} atomIds - Ring atom ids.
+ * @returns {string} Safe renderer id.
+ */
+export function ringFillDomId(atomIds) {
+  return `ring-fill:${normalizeRingAtomIds(atomIds).map(atomId => encodeURIComponent(atomId)).join('|')}`;
+}
+
+/**
  * Normalizes ring atom ids for storage.
  * @param {Iterable<string>} atomIds - Candidate atom ids.
  * @returns {string[]} Canonically sorted atom ids.

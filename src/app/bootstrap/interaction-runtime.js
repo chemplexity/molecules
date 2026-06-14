@@ -118,6 +118,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       panButton: ctx.panButton,
       selectButton: ctx.selectButton,
       drawBondButton: ctx.drawBondButton,
+      ringTemplateButton: ctx.ringTemplateButton,
       drawTools: ctx.drawTools,
       eraseButton: ctx.eraseButton,
       plotEl: ctx.plotEl,
@@ -127,7 +128,8 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       getPaintToolButtons: tool => ctx.getPaintToolButtons?.(tool) ?? [],
       getChargeToolButton: tool => ctx.getChargeToolButton(tool),
       getElementButton: element => ctx.getElementButton(element),
-      getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type)
+      getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type),
+      getRingTemplateSizeButton: size => ctx.getRingTemplateSizeButton?.(size) ?? null
     })
   );
 
@@ -157,6 +159,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
     depBuilders.createDragGestureActionDeps({
       createDrag: () => ctx.createDrag(),
       getDrawBondMode: () => ctx.getDrawBondMode(),
+      getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
       getEraseMode: () => ctx.getEraseMode(),
       getPaintMode: () => ctx.getPaintMode?.() ?? false,
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
@@ -290,6 +293,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       eraseItem: (atomIds, bondIds) => editingActions.eraseItem(atomIds, bondIds),
       changeAtomCharge: (atomId, changeOptions = {}) => ctx.changeAtomCharge(atomId, changeOptions),
       paintStyleTargets: (atomIds, bondIds, style, paintOptions = {}) => ctx.paintStyleTargets(atomIds, bondIds, style, paintOptions),
+      placeRingTemplate: (size, ox, oy, ringOptions = {}) => ctx.placeRingTemplate?.(size, ox, oy, ringOptions),
       replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol),
       autoPlaceBond: (atomId, ox, oy) => drawBondCommitActions.autoPlaceBond(atomId, ox, oy),
       showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.showPrimitiveHover(atomIds, bondIds),

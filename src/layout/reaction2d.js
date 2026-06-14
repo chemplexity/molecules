@@ -4,6 +4,7 @@ import { generateAndRefine2dCoords } from './index.js';
 import { ensureLandscapeOrientation, findPreferredBackbonePath, shouldPreferFinalLandscapeOrientation } from './engine/orientation.js';
 import { createLayoutGraph } from './engine/model/layout-graph.js';
 import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
+import { ringAtomKey } from '../core/style.js';
 
 // ---------------------------------------------------------------------------
 // Element-set constants (module-level to avoid repeated inline allocations)
@@ -64,15 +65,25 @@ export function cloneWithPrefixedIds(mol, prefix) {
   return cloned;
 }
 
-function preserveReactantRingFills(previewMol, reactantMol) {
+function preserveSourceRingFills(previewMol, reactantMol, productIdBySourceId = new Map()) {
   if (!previewMol || !reactantMol || typeof reactantMol.getRingFills !== 'function' || typeof previewMol.setRingFill !== 'function') {
     return;
   }
+  const previewRingKeys = typeof previewMol.getRings === 'function' ? new Set(previewMol.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds))) : null;
   for (const fill of reactantMol.getRingFills()) {
     if (!fill.atomIds?.every(atomId => previewMol.atoms.has(atomId))) {
       continue;
     }
     previewMol.setRingFill(fill.atomIds, fill);
+
+    const productAtomIds = fill.atomIds.map(atomId => productIdBySourceId.get(atomId));
+    if (productAtomIds.some(atomId => !atomId || !previewMol.atoms.has(atomId))) {
+      continue;
+    }
+    if (previewRingKeys && !previewRingKeys.has(ringAtomKey(productAtomIds))) {
+      continue;
+    }
+    previewMol.setRingFill(productAtomIds, { color: fill.color, opacity: fill.opacity });
   }
 }
 
@@ -284,7 +295,7 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
     }
   }
 
-  preserveReactantRingFills(previewMol, reactantMol);
+  preserveSourceRingFills(previewMol, reactantMol, productIdBySourceId);
 
   return {
     mol: previewMol,

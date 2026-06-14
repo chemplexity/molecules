@@ -64,6 +64,7 @@ const COMPACT_BRIDGED_NEUTRAL_HETERO_OUTWARD_MAX_DEVIATION = Math.PI / 2 + Math.
 const LARGE_MACROCYCLE_SIDECHAIN_INSIDE_MIN_RING_SIZE = 12;
 const NEAR_OUTWARD_CARBONYL_RING_ROOT_MAX_DEVIATION = (7 * Math.PI) / 18;
 const TETRAHEDRAL_BRANCH_LINKED_RING_CENTROID_MAX_DEVIATION = Math.PI / 3;
+const ARYL_PHOSPHONIUM_BRANCH_LINKED_RING_CENTROID_MAX_DEVIATION = (7 * Math.PI) / 18;
 const GEMINAL_TERMINAL_RING_SUBSTITUENT_SLOT_MAX_DEVIATION = Math.PI / 2 + Math.PI / 180;
 const GEMINAL_TERMINAL_RING_SUBSTITUENT_OUTWARD_SIBLING_MAX_DEVIATION = Math.PI / 9;
 const TETRAHEDRAL_BRANCH_LINKED_RING_ROOT_ELEMENTS = new Set(['C', 'Si', 'P']);
@@ -4219,7 +4220,7 @@ function isAcceptedNearOutwardCarbonylRingRoot(layoutGraph, coords, anchorAtomId
 }
 
 function isAcceptedTetrahedralBranchLinkedRingCentroid(layoutGraph, anchorAtomId, childAtomId, representativeAtomIds, outwardDeviation) {
-  if (!layoutGraph || representativeAtomIds.length <= 1 || !Number.isFinite(outwardDeviation) || outwardDeviation > TETRAHEDRAL_BRANCH_LINKED_RING_CENTROID_MAX_DEVIATION + 1e-9) {
+  if (!layoutGraph || representativeAtomIds.length <= 1 || !Number.isFinite(outwardDeviation)) {
     return false;
   }
 
@@ -4232,6 +4233,13 @@ function isAcceptedTetrahedralBranchLinkedRingCentroid(layoutGraph, anchorAtomId
     isMetalAtom(childAtom) ||
     (childAtom.heavyDegree ?? 0) < 4
   ) {
+    return false;
+  }
+
+  const maxOutwardDeviation = isArylPhosphoniumBranchLinkedRingRoot(layoutGraph, anchorAtomId, childAtomId)
+    ? ARYL_PHOSPHONIUM_BRANCH_LINKED_RING_CENTROID_MAX_DEVIATION
+    : TETRAHEDRAL_BRANCH_LINKED_RING_CENTROID_MAX_DEVIATION;
+  if (outwardDeviation > maxOutwardDeviation + 1e-9) {
     return false;
   }
 
@@ -4252,6 +4260,39 @@ function isAcceptedTetrahedralBranchLinkedRingCentroid(layoutGraph, anchorAtomId
   }
 
   return nonAnchorHeavyNeighborCount >= 2;
+}
+
+/**
+ * Returns whether a tetrahedral branch root is a charged aryl-rich
+ * phosphonium center. Its publication-style four-way cross can put one aryl
+ * centroid slightly beyond the generic tetrahedral linked-ring outward limit
+ * while still preserving the local ring exit and avoiding crossings.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring atom attached to the phosphonium center.
+ * @param {string} childAtomId - Candidate phosphonium atom id.
+ * @returns {boolean} True when the relaxed linked-ring centroid limit applies.
+ */
+function isArylPhosphoniumBranchLinkedRingRoot(layoutGraph, anchorAtomId, childAtomId) {
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!childAtom || childAtom.element !== 'P' || (childAtom.charge ?? 0) <= 0) {
+    return false;
+  }
+
+  let arylLigandCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    if (neighborAtomId === anchorAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom?.element === 'C' && neighborAtom.aromatic === true && layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+      arylLigandCount++;
+    }
+  }
+  return arylLigandCount >= 2;
 }
 
 function isAcceptedExactOutwardDirectLinkedRingRoot(layoutGraph, coords, anchorAtomId, childAtomId, representativeAtomIds, immediateOutwardDeviation) {

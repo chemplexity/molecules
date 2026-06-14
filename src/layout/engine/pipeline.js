@@ -81,8 +81,9 @@ import { assignBondValidationClass } from './placement/bond-validation.js';
 import { ensureLandscapeOrientation, findPreferredBackbonePath, levelCoords, normalizeOrientation } from './orientation.js';
 import { computeBounds } from './geometry/bounds.js';
 import { layoutKamadaKawai } from './geometry/kk-layout.js';
+import { pointInPolygon } from './geometry/polygon.js';
 import { cloneCoords, rotateAround } from './geometry/transforms.js';
-import { add, angleOf, angularDifference, centroidForAtomIds, centroidForPoints, rotate, sub } from './geometry/vec2.js';
+import { add, angleOf, angularDifference, centroidForAtomIds, centroidForPoints, distance, fromAngle, rotate, sub } from './geometry/vec2.js';
 import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, NUMERIC_EPSILON, PRESENTATION_METRIC_EPSILON, atomPairKey } from './constants.js';
 
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
@@ -166,6 +167,12 @@ const FINAL_COMPACT_BRIDGED_OVERLAP_BOND_REPAIR_MAX_HEAVY_ATOMS = 40;
 const FINAL_COMPACT_BRIDGED_OVERLAP_BOND_REPAIR_MAX_MOVED_HEAVY_ATOMS = 6;
 const FINAL_COMPACT_BRIDGED_OVERLAP_BOND_REPAIR_SPREAD_FACTORS = Object.freeze([0.12, 0.15, 0.18, 0.2, 0.24]);
 const FINAL_COMPACT_BRIDGED_OVERLAP_BOND_REPAIR_RELIEF_FACTORS = Object.freeze([0, 0.05, 0.075, 0.1]);
+const FINAL_BRIDGED_LINEAR_SHARED_CORNER_MAX_HEAVY_ATOMS = 90;
+const FINAL_BRIDGED_LINEAR_SHARED_CORNER_MAX_MOVED_HEAVY_ATOMS = 4;
+const FINAL_BRIDGED_LINEAR_SHARED_CORNER_TRIGGER = (17 * Math.PI) / 18;
+const FINAL_BRIDGED_LINEAR_SHARED_CORNER_TARGET = (5 * Math.PI) / 6;
+const FINAL_BRIDGED_LINEAR_SHARED_CORNER_MIN_GAIN = Math.PI / 36;
+const FINAL_BRIDGED_LINEAR_SHARED_CORNER_SHIFT_FACTORS = Object.freeze([0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.3]);
 const FINAL_RING_HYPERVALENT_BRANCH_OVERLAP_ELEMENTS = new Set(['S', 'P', 'Se']);
 const FINAL_RING_HYPERVALENT_BRANCH_OVERLAP_TERMINAL_LEAF_ELEMENTS = new Set(['O', 'N']);
 const FINAL_RING_HYPERVALENT_BRANCH_OVERLAP_MAX_RING_SYSTEM_ATOMS = 16;
@@ -334,6 +341,16 @@ const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze([5, 8, 10, 12,
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 40;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 320;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_CENTERS = 16;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_PASSES = 4;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_MOVED_HEAVY_ATOMS = 160;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_DEVIATION = (5 * Math.PI) / 36;
+const FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MAX_DEVIATION = Math.PI / 4;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_GAIN = Math.PI / 18;
+const FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MIN_MAX_GAIN = Math.PI / 45;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_TOTAL_INCREASE = 0.05;
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS = Object.freeze([15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_MAX_DEVIATION = 0.06;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MAX_TOTAL_INCREASE = 0.08;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_DEVIATION_GAIN = 0.04;
@@ -4574,6 +4591,399 @@ function maybeRetouchFinalThreeHeavyContinuationFans(molecule, layoutGraph, fina
 }
 
 /**
+ * Scores a visible three-heavy fan against ideal trigonal presentation.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @param {string[]} neighborAtomIds - Three visible heavy neighbor IDs.
+ * @returns {{maxDeviation: number, totalDeviation: number, angles: number[]}|null} Fan score in radians.
+ */
+function finalVisibleThreeHeavyFanScore(coords, centerAtomId, neighborAtomIds) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition || neighborAtomIds.length !== 3) {
+    return null;
+  }
+  const neighborAngles = neighborAtomIds.map(neighborAtomId => {
+    const neighborPosition = coords.get(neighborAtomId);
+    return neighborPosition ? angleOf(sub(neighborPosition, centerPosition)) : null;
+  });
+  if (neighborAngles.some(angle => angle == null)) {
+    return null;
+  }
+  let maxDeviation = 0;
+  let totalDeviation = 0;
+  const angles = [];
+  for (let firstIndex = 0; firstIndex < neighborAngles.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighborAngles.length; secondIndex++) {
+      const angle = angularDifference(neighborAngles[firstIndex], neighborAngles[secondIndex]);
+      const deviation = Math.abs(angle - EXACT_TRIGONAL_CONTINUATION_ANGLE);
+      angles.push(angle);
+      maxDeviation = Math.max(maxDeviation, deviation);
+      totalDeviation += deviation;
+    }
+  }
+  return { maxDeviation, totalDeviation, angles };
+}
+
+/**
+ * Returns terminal multiple-bond leaf metadata for a distorted fan, when one
+ * leaf can be paired with a support-branch bend.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Array<{bond: object, neighborAtomId: string}>} heavyBonds - Visible heavy bonds at the center.
+ * @returns {{leafAtomId: string, fixedNeighborIds: string[]}|null} Terminal leaf descriptor or null.
+ */
+function finalTargetedTerminalMultipleBondLeafInfo(layoutGraph, heavyBonds) {
+  const terminalLeaves = heavyBonds.filter(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return !bond.aromatic && (bond.order ?? 1) >= 2 && neighborAtom && neighborAtom.element !== 'C' && neighborAtom.element !== 'H' && neighborAtom.heavyDegree === 1;
+  });
+  if (terminalLeaves.length !== 1) {
+    return null;
+  }
+  const leafAtomId = terminalLeaves[0].neighborAtomId;
+  const fixedNeighborIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId).filter(neighborAtomId => neighborAtomId !== leafAtomId);
+  return fixedNeighborIds.length === 2 ? { leafAtomId, fixedNeighborIds } : null;
+}
+
+/**
+ * Collects the worst large-molecule placed visible fan centers for targeted
+ * final relief.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @returns {Array<{centerAtomId: string, heavyBonds: Array<{bond: object, neighborAtomId: string}>, neighborAtomIds: string[], score: object, terminalLeafInfo: object|null}>} Candidate centers.
+ */
+function finalLargeMoleculeTargetedAngleReliefCenters(layoutGraph, coords) {
+  const centers = [];
+  for (const centerAtomId of coords.keys()) {
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic) {
+      continue;
+    }
+    const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+    const neighborAtomIds = heavyBonds.map(({ neighborAtomId }) => neighborAtomId);
+    const score = finalVisibleThreeHeavyFanScore(coords, centerAtomId, neighborAtomIds);
+    if (!score || score.maxDeviation <= FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_DEVIATION) {
+      continue;
+    }
+    centers.push({
+      centerAtomId,
+      heavyBonds,
+      neighborAtomIds,
+      score,
+      terminalLeafInfo: finalTargetedTerminalMultipleBondLeafInfo(layoutGraph, heavyBonds)
+    });
+  }
+  return centers.sort((first, second) => second.score.maxDeviation - first.score.maxDeviation).slice(0, FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_CENTERS);
+}
+
+/**
+ * Builds a rigid support-branch rotation for targeted final fan relief.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @param {string} rootAtomId - Neighbor root of the moved subtree.
+ * @param {number} rotation - Rotation angle in radians.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], movedHeavyAtomCount: number, totalMove: number}|null} Candidate or null.
+ */
+function finalLargeMoleculeTargetedAngleReliefRotationCandidate(layoutGraph, coords, centerAtomId, rootAtomId, rotation) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition || Math.abs(rotation) <= PRESENTATION_METRIC_EPSILON) {
+    return null;
+  }
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerAtomId) || subtreeAtomIds.some(atomId => layoutGraph.fixedCoords?.has(atomId))) {
+    return null;
+  }
+  const movedHeavyAtomCount = subtreeAtomIds.reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+  if (movedHeavyAtomCount > FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_MOVED_HEAVY_ATOMS) {
+    return null;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  let totalMove = 0;
+  for (const atomId of subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const rotatedPosition = add(centerPosition, rotate(sub(position, centerPosition), rotation));
+    candidateCoords.set(atomId, rotatedPosition);
+    totalMove += distance(position, rotatedPosition);
+  }
+  return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, movedAtomIds: subtreeAtomIds, movedHeavyAtomCount, totalMove } : null;
+}
+
+/**
+ * Returns whether a center has a visible hydrogen branch that can make a
+ * moderate heavy fan distortion noticeable in explicit-H layouts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @returns {boolean} True when an explicit hydrogen neighbor is visible.
+ */
+function finalTargetedAngleReliefCenterHasVisibleHydrogen(layoutGraph, coords, centerAtomId) {
+  return (layoutGraph.bondsByAtomId.get(centerAtomId) ?? []).some(bond => {
+    if (!bond || bond.kind !== 'covalent') {
+      return false;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    return coords.has(neighborAtomId) && layoutGraph.atoms.get(neighborAtomId)?.element === 'H';
+  });
+}
+
+/**
+ * Builds a paired support-branch rotation for explicit-H visible fans where
+ * one branch move cannot be accepted without reopening contacts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @param {string} firstRootAtomId - First moved branch root.
+ * @param {number} firstRotation - First rotation angle in radians.
+ * @param {string} secondRootAtomId - Second moved branch root.
+ * @param {number} secondRotation - Second rotation angle in radians.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], movedHeavyAtomCount: number, totalMove: number, pairedBranch: boolean}|null} Candidate or null.
+ */
+function finalLargeMoleculeTargetedPairedAngleReliefRotationCandidate(layoutGraph, coords, centerAtomId, firstRootAtomId, firstRotation, secondRootAtomId, secondRotation) {
+  const firstCandidate = finalLargeMoleculeTargetedAngleReliefRotationCandidate(layoutGraph, coords, centerAtomId, firstRootAtomId, firstRotation);
+  if (!firstCandidate) {
+    return null;
+  }
+  const secondCandidate = finalLargeMoleculeTargetedAngleReliefRotationCandidate(layoutGraph, firstCandidate.coords, centerAtomId, secondRootAtomId, secondRotation);
+  if (!secondCandidate) {
+    return null;
+  }
+  const movedAtomIds = [...new Set([...firstCandidate.movedAtomIds, ...secondCandidate.movedAtomIds])];
+  const movedHeavyAtomCount = movedAtomIds.reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+  if (movedHeavyAtomCount > FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_MOVED_HEAVY_ATOMS) {
+    return null;
+  }
+  let totalMove = 0;
+  for (const atomId of movedAtomIds) {
+    const before = coords.get(atomId);
+    const after = secondCandidate.coords.get(atomId);
+    if (before && after) {
+      totalMove += distance(before, after);
+    }
+  }
+  return totalMove > PRESENTATION_METRIC_EPSILON
+    ? {
+        coords: secondCandidate.coords,
+        movedAtomIds,
+        movedHeavyAtomCount,
+        totalMove,
+        pairedBranch: true
+      }
+    : null;
+}
+
+/**
+ * Returns target-position variants for a terminal multiple-bond leaf after a
+ * support branch has been bent.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @param {{leafAtomId: string, fixedNeighborIds: string[]}|null} terminalLeafInfo - Terminal leaf metadata.
+ * @returns {Map<string, {x: number, y: number}>[]} Sparse coordinate overrides for the leaf.
+ */
+function finalLargeMoleculeTargetedTerminalLeafVariants(coords, centerAtomId, terminalLeafInfo) {
+  if (!terminalLeafInfo) {
+    return [new Map()];
+  }
+  const centerPosition = coords.get(centerAtomId);
+  const leafPosition = coords.get(terminalLeafInfo.leafAtomId);
+  if (!centerPosition || !leafPosition) {
+    return [new Map()];
+  }
+  const radius = distance(centerPosition, leafPosition);
+  return terminalMultipleBondLeafCandidateAngles(coords, centerAtomId, terminalLeafInfo.fixedNeighborIds).map(targetAngle => new Map([[terminalLeafInfo.leafAtomId, add(centerPosition, fromAngle(targetAngle, radius))]]));
+}
+
+/**
+ * Applies sparse target-position overrides to a coordinate map.
+ * @param {Map<string, {x: number, y: number}>} coords - Base coordinates.
+ * @param {Map<string, {x: number, y: number}>} overrides - Sparse coordinate overrides.
+ * @returns {Map<string, {x: number, y: number}>} Merged coordinate map.
+ */
+function withFinalTargetedAngleOverrides(coords, overrides) {
+  if (overrides.size === 0) {
+    return coords;
+  }
+  const candidateCoords = cloneCoords(coords);
+  for (const [atomId, position] of overrides) {
+    candidateCoords.set(atomId, position);
+  }
+  return candidateCoords;
+}
+
+/**
+ * Returns whether one targeted fan-relief candidate is preferable.
+ * @param {object} candidate - Candidate summary.
+ * @param {object|null} incumbent - Current best candidate.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function finalLargeMoleculeTargetedAngleReliefCandidateIsBetter(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.focusScore.maxDeviation < incumbent.focusScore.maxDeviation - PRESENTATION_METRIC_EPSILON) {
+    return true;
+  }
+  if (candidate.focusScore.maxDeviation > incumbent.focusScore.maxDeviation + PRESENTATION_METRIC_EPSILON) {
+    return false;
+  }
+  if (candidate.focusScore.totalDeviation < incumbent.focusScore.totalDeviation - PRESENTATION_METRIC_EPSILON) {
+    return true;
+  }
+  if (candidate.focusScore.totalDeviation > incumbent.focusScore.totalDeviation + PRESENTATION_METRIC_EPSILON) {
+    return false;
+  }
+  if (finalLargeMoleculeAngularReliefScoreIsBetter(candidate.aggregateScore, incumbent.aggregateScore)) {
+    return true;
+  }
+  if (finalLargeMoleculeAngularReliefScoreIsBetter(incumbent.aggregateScore, candidate.aggregateScore)) {
+    return false;
+  }
+  return candidate.totalMove < incumbent.totalMove - PRESENTATION_METRIC_EPSILON;
+}
+
+/**
+ * Performs a small targeted relief pass for very distorted fans on layouts
+ * block-stitched by the large-molecule placer but too large for the full
+ * final angle-relief sweep.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object|null, scoreBefore: object|null, scoreAfter: object|null}} Relief result.
+ */
+function maybeRetouchFinalLargeMoleculeTargetedAngleRelief(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  if (
+    !placement.placedFamilies?.includes('large-molecule') ||
+    heavyAtomCount <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS ||
+    heavyAtomCount > FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_HEAVY_ATOMS
+  ) {
+    return { changed: false, coords: finalCoords, movedAtomIds: [], audit: null, scoreBefore: null, scoreAfter: null };
+  }
+
+  const scoreBefore = finalLargeMoleculeAngularReliefScore(layoutGraph, finalCoords);
+  let currentCoords = finalCoords;
+  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
+  let currentAggregateScore = scoreBefore;
+  const movedAtomIds = new Set();
+  let changed = false;
+
+  for (let passIndex = 0; passIndex < FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_PASSES; passIndex++) {
+    let bestCandidate = null;
+    for (const center of finalLargeMoleculeTargetedAngleReliefCenters(layoutGraph, currentCoords)) {
+      const currentFocusScore = finalVisibleThreeHeavyFanScore(currentCoords, center.centerAtomId, center.neighborAtomIds);
+      if (!currentFocusScore) {
+        continue;
+      }
+      const tryRotationCandidate = rotationCandidate => {
+        if (!rotationCandidate) {
+          return;
+        }
+        for (const terminalLeafOverrides of finalLargeMoleculeTargetedTerminalLeafVariants(rotationCandidate.coords, center.centerAtomId, center.terminalLeafInfo)) {
+          const candidateCoords = withFinalTargetedAngleOverrides(rotationCandidate.coords, terminalLeafOverrides);
+          const focusScore = finalVisibleThreeHeavyFanScore(candidateCoords, center.centerAtomId, center.neighborAtomIds);
+          const minimumMaxGain =
+            rotationCandidate.pairedBranch === true ? FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MIN_MAX_GAIN : FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_GAIN;
+          if (!focusScore || focusScore.maxDeviation > currentFocusScore.maxDeviation - minimumMaxGain) {
+            continue;
+          }
+          const aggregateScore = finalLargeMoleculeAngularReliefScore(layoutGraph, candidateCoords);
+          if (
+            aggregateScore.maxDeviation > currentAggregateScore.maxDeviation + PRESENTATION_METRIC_EPSILON ||
+            aggregateScore.totalDeviation > currentAggregateScore.totalDeviation + FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_TOTAL_INCREASE + PRESENTATION_METRIC_EPSILON
+          ) {
+            continue;
+          }
+          const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength);
+          if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+            continue;
+          }
+          const candidateMovedAtomIds = [...new Set([...rotationCandidate.movedAtomIds, ...terminalLeafOverrides.keys()])];
+          const candidate = {
+            coords: candidateCoords,
+            movedAtomIds: candidateMovedAtomIds,
+            audit: candidateAudit,
+            focusScore,
+            aggregateScore,
+            totalMove:
+              rotationCandidate.totalMove +
+              [...terminalLeafOverrides].reduce((sum, [atomId, position]) => {
+                const previousPosition = currentCoords.get(atomId);
+                return previousPosition ? sum + distance(previousPosition, position) : sum;
+              }, 0)
+          };
+          if (finalLargeMoleculeTargetedAngleReliefCandidateIsBetter(candidate, bestCandidate)) {
+            bestCandidate = candidate;
+          }
+        }
+      };
+      for (const { bond, neighborAtomId } of center.heavyBonds) {
+        if (bond.aromatic || (bond.order ?? 1) !== 1) {
+          continue;
+        }
+        for (const rotation of FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS) {
+          tryRotationCandidate(finalLargeMoleculeTargetedAngleReliefRotationCandidate(layoutGraph, currentCoords, center.centerAtomId, neighborAtomId, rotation));
+        }
+      }
+      if (
+        center.terminalLeafInfo == null &&
+        currentFocusScore.maxDeviation <= FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MAX_DEVIATION &&
+        finalTargetedAngleReliefCenterHasVisibleHydrogen(layoutGraph, currentCoords, center.centerAtomId)
+      ) {
+        const singleBondNeighbors = center.heavyBonds.filter(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1);
+        for (let firstIndex = 0; firstIndex < singleBondNeighbors.length - 1; firstIndex++) {
+          for (let secondIndex = firstIndex + 1; secondIndex < singleBondNeighbors.length; secondIndex++) {
+            const firstNeighborAtomId = singleBondNeighbors[firstIndex].neighborAtomId;
+            const secondNeighborAtomId = singleBondNeighbors[secondIndex].neighborAtomId;
+            for (const firstRotation of FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS) {
+              for (const secondRotation of FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS) {
+                tryRotationCandidate(
+                  finalLargeMoleculeTargetedPairedAngleReliefRotationCandidate(
+                    layoutGraph,
+                    currentCoords,
+                    center.centerAtomId,
+                    firstNeighborAtomId,
+                    firstRotation,
+                    secondNeighborAtomId,
+                    secondRotation
+                  )
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    currentAggregateScore = bestCandidate.aggregateScore;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    changed = true;
+  }
+
+  return {
+    changed,
+    coords: currentCoords,
+    movedAtomIds: [...movedAtomIds],
+    audit: currentAudit,
+    scoreBefore,
+    scoreAfter: currentAggregateScore
+  };
+}
+
+/**
  * Scores aggregate final-angle distortion across the presentation angle
  * families that make large peptide-like layouts look kinked.
  * @param {object} layoutGraph - Layout graph shell.
@@ -5831,6 +6241,42 @@ function finalTerminalCarbonLeafContactCandidateMove(coords, candidateCoords, at
   }, 0);
 }
 
+/**
+ * Returns whether a terminal contact leaf sits inside any ring face incident
+ * to its anchor. Final contact retouches may clear nearby atoms, but they
+ * should not turn an already-exterior ring substituent back into the ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{anchorAtomId: string, leafAtomId: string}} descriptor - Terminal leaf descriptor.
+ * @returns {boolean} True when the leaf is inside an incident ring polygon.
+ */
+function finalTerminalContactLeafInsideIncidentRing(layoutGraph, coords, descriptor) {
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!leafPosition) {
+    return false;
+  }
+  for (const ring of layoutGraph.atomToRings.get(descriptor.anchorAtomId) ?? []) {
+    const polygon = ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+    if (polygon.length >= 3 && pointInPolygon(leafPosition, polygon)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns whether rotating a final contact leaf would newly intrude into an
+ * incident ring face that the current layout kept clear.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} currentCoords - Current coordinates.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates.
+ * @param {{anchorAtomId: string, leafAtomId: string}} descriptor - Terminal leaf descriptor.
+ * @returns {boolean} True when the candidate newly creates an inward ring leaf.
+ */
+function finalTerminalContactLeafCandidateCreatesRingIntrusion(layoutGraph, currentCoords, candidateCoords, descriptor) {
+  return !finalTerminalContactLeafInsideIncidentRing(layoutGraph, currentCoords, descriptor) && finalTerminalContactLeafInsideIncidentRing(layoutGraph, candidateCoords, descriptor);
+}
+
 function finalTerminalCarbonLeafContactAuditCanReplace(
   candidateAudit,
   baseAudit,
@@ -6314,6 +6760,7 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
         const candidateClearance = Number.isFinite(descriptor.clearance) ? finalTerminalCarbonLeafContactClearance(layoutGraph, candidateCoords, descriptor) : Number.POSITIVE_INFINITY;
         const allowAuditCleanAcylLeafFanTradeoff = finalTerminalAcylCarbonLeafFanTradeoffAllowed(layoutGraph, currentCoords, candidateCoords, descriptor, baseAudit, candidateAudit);
         if (
+          finalTerminalContactLeafCandidateCreatesRingIntrusion(layoutGraph, currentCoords, candidateCoords, descriptor) ||
           !finalTerminalCarbonLeafContactAuditCanReplace(candidateAudit, baseAudit, candidateClearance, descriptor.clearance, descriptor.clearanceThreshold, {
             preventSevereOverlapWorsening: descriptor.singleBondHeteroLeaf === true,
             allowAuditCleanAcylLeafFanTradeoff
@@ -7618,6 +8065,242 @@ function maybeRetouchFinalCompactBridgedOverlapBondRepair(layoutGraph, finalCoor
     changed: true,
     movedAtomIds: bestCandidate.movedAtomIds,
     audit: bestCandidate.audit
+  };
+}
+
+/**
+ * Collects a tiny non-ring side group attached to a shared bridged corner so a
+ * corner-opening nudge preserves terminal substituent bond lengths.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Saturated shared ring corner atom.
+ * @param {Set<string>} ringNeighborIdSet - Ring neighbors held fixed.
+ * @returns {string[]} Movable atom IDs including terminal leaves and hydrogens.
+ */
+function finalBridgedLinearSharedCornerSideGroup(layoutGraph, coords, centerAtomId, ringNeighborIdSet) {
+  const atomIds = new Set([centerAtomId]);
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    if (ringNeighborIdSet.has(neighborAtomId) || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
+      continue;
+    }
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+    const subtreeHeavyAtomIds = subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+    if (subtreeHeavyAtomIds.length > 1) {
+      continue;
+    }
+    for (const atomId of subtreeAtomIds) {
+      atomIds.add(atomId);
+    }
+  }
+  return [...atomIds];
+}
+
+/**
+ * Finds saturated shared bridged corners whose two ring bonds are visually
+ * collinear and can be opened by a tiny local side-group translation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {Array<object>} Linear shared-corner descriptors.
+ */
+function finalBridgedLinearSharedCornerDescriptors(layoutGraph, coords) {
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  if (heavyAtomCount > FINAL_BRIDGED_LINEAR_SHARED_CORNER_MAX_HEAVY_ATOMS || (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0) {
+    return [];
+  }
+
+  const descriptors = [];
+  for (const atom of layoutGraph.atoms.values()) {
+    if (
+      !atom ||
+      atom.element !== 'C' ||
+      atom.aromatic ||
+      !coords.has(atom.id) ||
+      !layoutGraph.ringAtomIdSet.has(atom.id) ||
+      (layoutGraph.ringCountByAtomId.get(atom.id) ?? 0) < 2 ||
+      (atom.heavyDegree ?? 0) < 3 ||
+      (atom.heavyDegree ?? 0) > 4
+    ) {
+      continue;
+    }
+    const ringNeighborIds = [];
+    for (const bond of layoutGraph.bondsByAtomId.get(atom.id) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || !bond.inRing || bond.aromatic) {
+        continue;
+      }
+      const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId)) {
+        ringNeighborIds.push(neighborAtomId);
+      }
+    }
+    if (ringNeighborIds.length !== 2) {
+      continue;
+    }
+    const centerPosition = coords.get(atom.id);
+    const firstPosition = coords.get(ringNeighborIds[0]);
+    const secondPosition = coords.get(ringNeighborIds[1]);
+    const anchorVector = sub(secondPosition, firstPosition);
+    const anchorLength = Math.hypot(anchorVector.x, anchorVector.y);
+    if (!centerPosition || !firstPosition || !secondPosition || anchorLength <= PRESENTATION_METRIC_EPSILON) {
+      continue;
+    }
+    const angle = angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition)));
+    if (angle < FINAL_BRIDGED_LINEAR_SHARED_CORNER_TRIGGER) {
+      continue;
+    }
+    const movedAtomIds = finalBridgedLinearSharedCornerSideGroup(layoutGraph, coords, atom.id, new Set(ringNeighborIds));
+    const movedHeavyAtomIds = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+    if (movedHeavyAtomIds.length === 0 || movedHeavyAtomIds.length > FINAL_BRIDGED_LINEAR_SHARED_CORNER_MAX_MOVED_HEAVY_ATOMS) {
+      continue;
+    }
+    descriptors.push({
+      centerAtomId: atom.id,
+      ringNeighborIds,
+      movedAtomIds,
+      movedHeavyAtomCount: movedHeavyAtomIds.length,
+      angle,
+      normalVectors: [
+        { x: -anchorVector.y / anchorLength, y: anchorVector.x / anchorLength },
+        { x: anchorVector.y / anchorLength, y: -anchorVector.x / anchorLength }
+      ]
+    });
+  }
+  return descriptors.sort((firstDescriptor, secondDescriptor) => firstDescriptor.centerAtomId.localeCompare(secondDescriptor.centerAtomId, 'en', { numeric: true }));
+}
+
+function finalBridgedLinearSharedCornerAngle(coords, descriptor) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const firstPosition = coords.get(descriptor.ringNeighborIds[0]);
+  const secondPosition = coords.get(descriptor.ringNeighborIds[1]);
+  if (!centerPosition || !firstPosition || !secondPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition)));
+}
+
+function finalBridgedLinearSharedCornerCandidate(coords, descriptor, normalVector, shift) {
+  const candidateCoords = new Map(coords);
+  const displacement = { x: normalVector.x * shift, y: normalVector.y * shift };
+  let totalMove = 0;
+  for (const atomId of descriptor.movedAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, add(position, displacement));
+    totalMove += Math.hypot(displacement.x, displacement.y);
+  }
+  return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, totalMove } : null;
+}
+
+function finalBridgedLinearSharedCornerAuditCanReplace(candidateAudit, baseAudit, candidateAngle, baseAngle, bondLength) {
+  if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
+    return false;
+  }
+  if ((candidateAudit.maxBondLengthDeviation ?? 0) > finalRetouchAllowedBondDeviation('bridged', bondLength) + PRESENTATION_METRIC_EPSILON) {
+    return false;
+  }
+  if (candidateAngle > baseAngle - FINAL_BRIDGED_LINEAR_SHARED_CORNER_MIN_GAIN) {
+    return false;
+  }
+  return candidateAngle <= FINAL_BRIDGED_LINEAR_SHARED_CORNER_TARGET + FINAL_BRIDGED_LINEAR_SHARED_CORNER_MIN_GAIN;
+}
+
+function compareFinalBridgedLinearSharedCornerCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  const candidateTargetDeviation = Math.abs(candidate.angle - FINAL_BRIDGED_LINEAR_SHARED_CORNER_TARGET);
+  const incumbentTargetDeviation = Math.abs(incumbent.angle - FINAL_BRIDGED_LINEAR_SHARED_CORNER_TARGET);
+  if (candidateTargetDeviation < incumbentTargetDeviation - PRESENTATION_METRIC_EPSILON) {
+    return -1;
+  }
+  if (candidateTargetDeviation > incumbentTargetDeviation + PRESENTATION_METRIC_EPSILON) {
+    return 1;
+  }
+  if (Math.abs((candidate.audit.maxBondLengthDeviation ?? 0) - (incumbent.audit.maxBondLengthDeviation ?? 0)) > PRESENTATION_METRIC_EPSILON) {
+    return (candidate.audit.maxBondLengthDeviation ?? 0) - (incumbent.audit.maxBondLengthDeviation ?? 0);
+  }
+  if (candidate.movedHeavyAtomCount !== incumbent.movedHeavyAtomCount) {
+    return candidate.movedHeavyAtomCount - incumbent.movedHeavyAtomCount;
+  }
+  if (Math.abs(candidate.totalMove - incumbent.totalMove) > PRESENTATION_METRIC_EPSILON) {
+    return candidate.totalMove - incumbent.totalMove;
+  }
+  return candidate.key.localeCompare(incumbent.key, 'en', { numeric: true });
+}
+
+/**
+ * Opens saturated shared bridged corners that placement left nearly collinear.
+ * The retouch translates only the corner plus tiny terminal side groups, and
+ * accepts a candidate only when final audit counts and bridged bond tolerance
+ * do not regress.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current final coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean, movedAtomIds: string[], audit: object|null, angleBefore?: number, angleAfter?: number}} Retouch result.
+ */
+function maybeRetouchFinalBridgedLinearSharedCorners(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  const descriptors = finalBridgedLinearSharedCornerDescriptors(layoutGraph, finalCoords);
+  if (descriptors.length === 0) {
+    return { coords: finalCoords, changed: false, movedAtomIds: [], audit: null };
+  }
+
+  const baseAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
+  if (baseAudit.ok !== true || baseAudit.fallback?.mode != null) {
+    return { coords: finalCoords, changed: false, movedAtomIds: [], audit: baseAudit };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of descriptors) {
+    const baseAngle = finalBridgedLinearSharedCornerAngle(finalCoords, descriptor);
+    for (const normalVector of descriptor.normalVectors) {
+      for (const shiftFactor of FINAL_BRIDGED_LINEAR_SHARED_CORNER_SHIFT_FACTORS) {
+        const candidate = finalBridgedLinearSharedCornerCandidate(finalCoords, descriptor, normalVector, bondLength * shiftFactor);
+        if (!candidate) {
+          continue;
+        }
+        const candidateAngle = finalBridgedLinearSharedCornerAngle(candidate.coords, descriptor);
+        const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+        if (!finalBridgedLinearSharedCornerAuditCanReplace(candidateAudit, baseAudit, candidateAngle, baseAngle, bondLength)) {
+          continue;
+        }
+        const scoredCandidate = {
+          ...candidate,
+          audit: candidateAudit,
+          angle: candidateAngle,
+          angleBefore: baseAngle,
+          movedAtomIds: descriptor.movedAtomIds,
+          movedHeavyAtomCount: descriptor.movedHeavyAtomCount,
+          key: `${descriptor.centerAtomId}:${normalVector.x}:${normalVector.y}:${shiftFactor}`
+        };
+        if (compareFinalBridgedLinearSharedCornerCandidates(scoredCandidate, bestCandidate) < 0) {
+          bestCandidate = scoredCandidate;
+        }
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return { coords: finalCoords, changed: false, movedAtomIds: [], audit: baseAudit };
+  }
+  return {
+    coords: bestCandidate.coords,
+    changed: true,
+    movedAtomIds: bestCandidate.movedAtomIds,
+    audit: bestCandidate.audit,
+    angleBefore: bestCandidate.angleBefore,
+    angleAfter: bestCandidate.angle
   };
 }
 
@@ -14082,6 +14765,20 @@ export function runPipeline(molecule, options = {}) {
       });
     }
   }
+  const finalLargeMoleculeTargetedAngleRelief = timeFinalRetouch('finalLargeMoleculeTargetedAngleRelief', () => {
+    return maybeRetouchFinalLargeMoleculeTargetedAngleRelief(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
+  });
+  if (finalLargeMoleculeTargetedAngleRelief.changed) {
+    finalCoords = finalLargeMoleculeTargetedAngleRelief.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Large Molecule Targeted Angle Relief', 'Very distorted large-molecule stitched fans softened with bounded support-branch rotations.', cloneCoords(finalCoords), {
+      movedAtomCount: finalLargeMoleculeTargetedAngleRelief.movedAtomIds.length,
+      maxDeviationBefore: finalLargeMoleculeTargetedAngleRelief.scoreBefore.maxDeviation,
+      maxDeviationAfter: finalLargeMoleculeTargetedAngleRelief.scoreAfter.maxDeviation,
+      totalDeviationBefore: finalLargeMoleculeTargetedAngleRelief.scoreBefore.totalDeviation,
+      totalDeviationAfter: finalLargeMoleculeTargetedAngleRelief.scoreAfter.totalDeviation
+    });
+  }
   if (shouldRunFinalLargeMoleculeAngleRelief(layoutGraph, familySummary)) {
     const finalLargeMoleculeAngleRelief = timeFinalRetouch('finalLargeMoleculeAngleRelief', () => {
       return maybeRelieveFinalLargeMoleculeAngles(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
@@ -14274,6 +14971,21 @@ export function runPipeline(molecule, options = {}) {
         maxBondLengthDeviationAfter: finalCompactBridgedRemoteTwoAtomPath.audit?.maxBondLengthDeviation ?? null
       }
     );
+  }
+  const finalBridgedLinearSharedCorner = timeFinalRetouch('finalBridgedLinearSharedCorner', () =>
+    familySummary.primaryFamily === 'bridged'
+      ? maybeRetouchFinalBridgedLinearSharedCorners(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+      : { changed: false, coords: finalCoords, movedAtomIds: [], audit: null }
+  );
+  if (finalBridgedLinearSharedCorner.changed) {
+    finalCoords = finalBridgedLinearSharedCorner.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Bridged Linear Shared-Corner Retouch', 'A saturated shared bridged ring corner opened from a near-linear placement while preserving audit-clean coordinates.', cloneCoords(finalCoords), {
+      movedAtomCount: finalBridgedLinearSharedCorner.movedAtomIds.length,
+      angleBefore: finalBridgedLinearSharedCorner.angleBefore,
+      angleAfter: finalBridgedLinearSharedCorner.angleAfter,
+      maxBondLengthDeviationAfter: finalBridgedLinearSharedCorner.audit?.maxBondLengthDeviation ?? null
+    });
   }
   const finalSulfonylOxatricycloLactone = timeFinalRetouch('finalSulfonylOxatricycloLactone', () =>
     maybeRetouchFinalSulfonylOxatricycloLactone(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)

@@ -1037,13 +1037,21 @@ div.tooltip td:first-child {
   transform: translateY(0) scale(1);
 }
 
+.style-brush-btn.active.paint-eraser-tool ~ .paint-style-controls {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateY(4px) scale(0.92);
+  transition: none;
+}
+
 .paint-color-selector {
   width: 28px;
   height: 28px;
   padding: 0;
   border: 2px solid #fff;
   border-radius: 50%;
-  background: var(--paint-color, #3366ff);
+  background: var(--paint-swatch-color, #3366ff);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.22);
   cursor: pointer;
   overflow: hidden;
@@ -1058,11 +1066,13 @@ div.tooltip td:first-child {
 .paint-color-selector::-webkit-color-swatch {
   border: 0;
   border-radius: 50%;
+  opacity: 0;
 }
 
 .paint-color-selector::-moz-color-swatch {
   border: 0;
   border-radius: 50%;
+  opacity: 0;
 }
 
 .paint-opacity-selector {
@@ -1361,6 +1371,7 @@ div.tooltip td:first-child {
 }
 
 #draw-bond-btn.active,
+#ring-template-btn.active,
 #charge-positive-btn.active,
 #charge-negative-btn.active {
   background: #5090f0;
@@ -1369,15 +1380,16 @@ div.tooltip td:first-child {
 }
 
 #draw-bond-btn.active:hover,
+#ring-template-btn.active:hover,
 #charge-positive-btn.active:hover,
 #charge-negative-btn.active:hover {
   background: #4080e0;
 }
 
-#draw-bond-drawer {
+#draw-bond-drawer,
+#ring-template-drawer {
   position: absolute;
   left: var(--draw-tool-button-size);
-  top: -10px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1385,7 +1397,16 @@ div.tooltip td:first-child {
   pointer-events: none;
 }
 
-#draw-bond-drawer::before {
+#draw-bond-drawer {
+  top: -10px;
+}
+
+#ring-template-drawer {
+  top: 34px;
+}
+
+#draw-bond-drawer::before,
+#ring-template-drawer::before {
   content: '';
   position: absolute;
   inset: -12px;
@@ -1394,17 +1415,24 @@ div.tooltip td:first-child {
 
 #draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-btn:hover) #draw-bond-drawer,
 #draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-drawer:hover) #draw-bond-drawer,
-#draw-tools.drawer-open #draw-bond-drawer {
+#draw-tools.drawer-open #draw-bond-drawer,
+#draw-tools:not(.drawer-hover-suppressed):has(#ring-template-btn:hover) #ring-template-drawer,
+#draw-tools:not(.drawer-hover-suppressed):has(#ring-template-drawer:hover) #ring-template-drawer,
+#draw-tools.ring-template-drawer-open #ring-template-drawer {
   pointer-events: auto;
 }
 
 #draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-btn:hover) #draw-bond-drawer::before,
 #draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-drawer:hover) #draw-bond-drawer::before,
-#draw-tools.drawer-open #draw-bond-drawer::before {
+#draw-tools.drawer-open #draw-bond-drawer::before,
+#draw-tools:not(.drawer-hover-suppressed):has(#ring-template-btn:hover) #ring-template-drawer::before,
+#draw-tools:not(.drawer-hover-suppressed):has(#ring-template-drawer:hover) #ring-template-drawer::before,
+#draw-tools.ring-template-drawer-open #ring-template-drawer::before {
   pointer-events: auto;
 }
 
-#draw-bond-drawer button {
+#draw-bond-drawer button,
+#ring-template-drawer button {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-10px) scale(0.92);
@@ -1415,18 +1443,24 @@ div.tooltip td:first-child {
 
 #draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-btn:hover) #draw-bond-drawer button,
 #draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-drawer:hover) #draw-bond-drawer button,
-#draw-tools.drawer-open #draw-bond-drawer button {
+#draw-tools.drawer-open #draw-bond-drawer button,
+#draw-tools:not(.drawer-hover-suppressed):has(#ring-template-btn:hover) #ring-template-drawer button,
+#draw-tools:not(.drawer-hover-suppressed):has(#ring-template-drawer:hover) #ring-template-drawer button,
+#draw-tools.ring-template-drawer-open #ring-template-drawer button {
   opacity: 1;
   transform: translateX(0) scale(1);
   pointer-events: auto;
 }
 
 #draw-bond-drawer button:hover,
-#draw-bond-drawer button.active {
+#draw-bond-drawer button.active,
+#ring-template-drawer button:hover,
+#ring-template-drawer button.active {
   box-shadow: 0 4px 12px rgba(48, 96, 192, 0.18);
 }
 
-#draw-bond-drawer button.active {
+#draw-bond-drawer button.active,
+#ring-template-drawer button.active {
   background: #5090f0;
   color: #fff;
   border-color: #3060c0;

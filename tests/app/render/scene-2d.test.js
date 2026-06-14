@@ -391,6 +391,37 @@ describe('create2DSceneRenderer', () => {
     );
   });
 
+  it('keeps live charge badges black on styled atoms', () => {
+    const { renderer, records } = makeRenderer();
+    const atom = {
+      ...makeAtom('n1', 0, 0),
+      name: 'N',
+      properties: { style: { color: '#3366ff', opacity: 0.55 } },
+      getCharge() {
+        return 1;
+      }
+    };
+    const mol = {
+      id: 'mol-charge-style',
+      atoms: new Map([[atom.id, atom]]),
+      bonds: new Map(),
+      hideHydrogens() {},
+      getChiralCenters() {
+        return [];
+      }
+    };
+
+    renderer.render2d(mol);
+
+    const ringClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'atom-charge-ring');
+    const textClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'atom-charge-text');
+    assert.ok(ringClassIndex >= 0, 'expected charge badge ring');
+    assert.ok(textClassIndex >= 0, 'expected charge badge text');
+    assert.deepEqual(records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'), ['attr', 'stroke', '#111111']);
+    assert.deepEqual(records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'), ['attr', 'fill', '#111111']);
+    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2] === '#3366ff'), true);
+  });
+
   it('draws 2D ring fills before functional group highlights', () => {
     const { renderer, records } = makeRenderer();
     const atoms = new Map([
@@ -420,10 +451,48 @@ describe('create2DSceneRenderer', () => {
 
     const ringFillIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'ring-fills');
     const highlightIndex = records.findIndex(entry => entry[0] === 'redrawHighlights');
+    const ringFillIdRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'data-ring-fill-id');
 
     assert.ok(ringFillIndex >= 0);
     assert.ok(highlightIndex >= 0);
     assert.ok(ringFillIndex < highlightIndex);
+    assert.equal(ringFillIdRecord?.[2], 'ring-fill:a1|a2|a3|a4');
+  });
+
+  it('draws larger fused 2D ring fills with shared smaller ring holes', () => {
+    const { renderer, records } = makeRenderer();
+    const atoms = new Map([
+      ['m1', makeAtom('m1', 0, 0)],
+      ['m2', makeAtom('m2', 2, 0)],
+      ['m3', makeAtom('m3', 2, 2)],
+      ['m4', makeAtom('m4', 0, 2)],
+      ['s3', makeAtom('s3', 1.4, 0.45)],
+      ['s4', makeAtom('s4', 0.6, 0.45)]
+    ]);
+    const macroRingAtomIds = ['m1', 'm2', 'm3', 'm4'];
+    const smallRingAtomIds = ['m1', 'm2', 's3', 's4'];
+    const mol = {
+      id: 'mol-ring-fill-hole',
+      atoms,
+      bonds: new Map(),
+      hideHydrogens() {},
+      getChiralCenters() {
+        return [];
+      },
+      getRings() {
+        return [macroRingAtomIds, smallRingAtomIds];
+      },
+      getRingFills() {
+        return [{ id: 'ring-fill:m1\0m2\0m3\0m4', atomIds: macroRingAtomIds, color: '#ffe66d', opacity: 0.3 }];
+      }
+    };
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const ringFillPathRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'd');
+    const fillRuleRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'fill-rule');
+    assert.equal((ringFillPathRecord?.[2]?.match(/M /g) ?? []).length, 2);
+    assert.equal(fillRuleRecord?.[2], 'evenodd');
   });
 
   it('syncs selection and can refit the current 2D view', () => {

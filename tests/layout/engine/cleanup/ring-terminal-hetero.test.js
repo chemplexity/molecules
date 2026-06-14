@@ -59,4 +59,15 @@ describe('layout/engine/cleanup/ring-terminal-hetero', () => {
     assert.ok(Math.abs(bondAngle(retouch.coords, centerAtomId, leafAtomId, fixedAtomId) - (2 * Math.PI) / 3) < 1e-9);
     assert.ok(Math.abs(bondAngle(retouch.coords, centerAtomId, supportAtomId, fixedAtomId) - (2 * Math.PI) / 3) < 1e-9);
   });
+
+  it('keeps aryl hydrazide carbonyl leaves on exact trigonal slots with branch relief', () => {
+    const result = runPipeline(parseSMILES('CC(C)(C)N(NC(=O)C1=CC=C(Cl)C=C1)C(=O)C1CCCC1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'O8', 'N6') - (2 * Math.PI) / 3) < 1e-9);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'O8', 'C9') - (2 * Math.PI) / 3) < 1e-9);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'N6', 'C9') - (2 * Math.PI) / 3) < 1e-9);
+  });
 });

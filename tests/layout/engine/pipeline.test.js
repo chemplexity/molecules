@@ -57,6 +57,10 @@ const DOUBLE_SHARED_PATH_SIX_SEVEN_EIGHT_CAGE_SMILES = 'CC(=O)C12CNC(CN1)C1CN=CN
 const LONG_THETA_SHARED_PATH_AMMONIUM_CAGE_SMILES = 'CC(C)C12CCC(CCC[NH2+]C1)C(C)CC2O';
 const AMINO_ETHER_LONG_THETA_CAGE_SMILES = 'CCCCC1(N)CNC2CN(C)C1COCC2';
 const AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_SMILES = 'C1CC2C1C1CCNC2C2=C1N=CO2';
+const MACROCYCLE_PLACED_LARGE_PEPTIDE_ANGLE_SMILES =
+  'CCCCC(NC(=O)[C@H](<CCC(=O)O>)NC(=O)[C@H](<CC(C)C>)NC(=O)[C@@H](<NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](Cc1cnc[nH]1)NC(=O)[C@@H](Cc2ccccc2)NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)O)NC(=O)C)[C@@H](C)O>)C(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](C)C(=O)N[C@@H](<CCC(=O)O>)C(=O)N[C@@H](<CCC(=O)N>)C(=O)NC(C)(CC(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](<CCC(=O)N>)C(=O)N[C@H]3CCC(=O)NCCCC[C@H](<NC(=O)[C@H](Cc4cnc[nH]4)NC(=O)[C@H](C)NC3=O>)C(=O)N[C@@H](<CC(=O)N>)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](<CC(C)C>)C(=O)N[C@@H](Cc5ccccc5)C(=O)N[C@@H](<CCC(=O)O>)C(=O)NC(C)(CC(C)C)C(=O)N[C@@H](<[C@@H](C)CC>)C(=O)N';
+const BRIDGED_FLAVONOID_LINEAR_CORNER_SMILES =
+  'O[C@H]1Cc2c(O)cc3O[C@@]4(Oc5cc(O)cc(O)c5[C@@H]([C@H]4O)c3c2O[C@@H]1c6ccc(O)cc6)c7ccc(O)c(O)c7';
 
 /**
  * Returns the interior angles for an ordered ring path.
@@ -350,6 +354,93 @@ describe('layout/engine/pipeline smoke', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.labelOverlapCount, 0);
     assert.ok(Math.abs(alkyneSeparation - 180) < 1e-6, `expected the terminal alkyne to stay linear, got ${alkyneSeparation.toFixed(2)}`);
+  });
+
+  it('keeps steroid terminal methyl leaves outside incident rings after final leaf retouch', () => {
+    const smiles =
+      '[H][C@@]12C[C@@]3([H])[C@]4([H])CCC5=CC(=O)C=C[C@]5(C)[C@@]4(F)[C@@H](O)C[C@]3(C)[C@@]1(OC1(CCCC1)O2)C(=O)COC(C)=O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const leafInsideIncidentRing = (anchorAtomId, leafAtomId) =>
+      (result.layoutGraph.atomToRings.get(anchorAtomId) ?? []).some(ring =>
+        pointInPolygon(
+          result.coords.get(leafAtomId),
+          ring.atomIds.map(atomId => result.coords.get(atomId))
+        )
+      );
+
+    assert.ok(bugMolecules.includes(smiles), 'expected steroid methyl regression molecule to be registered');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(leafInsideIncidentRing('C24', 'C25'), false);
+  });
+
+  it('relieves distorted macrocycle-primary peptide fans after large-molecule stitching', () => {
+    const result = runPipeline(parseSMILES(MACROCYCLE_PLACED_LARGE_PEPTIDE_ANGLE_SMILES), {
+      suppressH: true,
+      auditTelemetry: true,
+      timing: true
+    });
+    const c73Angles = [bondAngleAtAtom(result.coords, 'C73', 'C71', 'C75'), bondAngleAtAtom(result.coords, 'C73', 'C71', 'N82'), bondAngleAtAtom(result.coords, 'C73', 'C75', 'N82')];
+    const c162Angles = [bondAngleAtAtom(result.coords, 'C162', 'C155', 'O163'), bondAngleAtAtom(result.coords, 'C162', 'C155', 'N164'), bondAngleAtAtom(result.coords, 'C162', 'O163', 'N164')];
+    const c5Angles = [bondAngleAtAtom(result.coords, 'C5', 'N6', 'C128'), bondAngleAtAtom(result.coords, 'C5', 'N6', 'C4'), bondAngleAtAtom(result.coords, 'C5', 'C128', 'C4')];
+    const c277Angles = [bondAngleAtAtom(result.coords, 'C277', 'C279', 'C286'), bondAngleAtAtom(result.coords, 'C277', 'C279', 'N276'), bondAngleAtAtom(result.coords, 'C277', 'C286', 'N276')];
+
+    assert.ok(bugMolecules.includes(MACROCYCLE_PLACED_LARGE_PEPTIDE_ANGLE_SMILES), 'expected macrocycle-primary peptide angle regression molecule to be registered');
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok((result.metadata.audit.visibleHeavyBondCrossingCount ?? 0) <= 1);
+    assert.ok(maxAngleDeviation(c5Angles, 120) < 1e-6, `expected the first named peptide fan to stay exact, got ${c5Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(c73Angles, 120) < 31, `expected the collapsed peptide fan to open, got ${c73Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(c162Angles, 120) < 40, `expected the carbonyl peptide fan to open, got ${c162Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(c277Angles, 120) < 1e-6, `expected the later named peptide fan to stay exact, got ${c277Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(result.metadata.timing.finalRetouchBreakdownMs.finalLargeMoleculeTargetedAngleRelief < 3500, `expected targeted angle relief to stay bounded, got ${result.metadata.timing.finalRetouchBreakdownMs.finalLargeMoleculeTargetedAngleRelief}ms`);
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected macrocycle-primary peptide angle relief to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+
+    const explicitHydrogenResult = runPipeline(parseSMILES(MACROCYCLE_PLACED_LARGE_PEPTIDE_ANGLE_SMILES), {
+      suppressH: false,
+      auditTelemetry: true,
+      timing: true
+    });
+    const explicitHydrogenC5Angles = [
+      bondAngleAtAtom(explicitHydrogenResult.coords, 'C5', 'N6', 'C128'),
+      bondAngleAtAtom(explicitHydrogenResult.coords, 'C5', 'N6', 'C4'),
+      bondAngleAtAtom(explicitHydrogenResult.coords, 'C5', 'C128', 'C4')
+    ];
+
+    assert.equal(explicitHydrogenResult.metadata.audit.ok, true);
+    assert.equal(explicitHydrogenResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(explicitHydrogenResult.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(maxAngleDeviation(explicitHydrogenC5Angles, 120) < 25, `expected explicit-hydrogen C5 fan to open, got ${explicitHydrogenC5Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(explicitHydrogenResult.metadata.timing.totalMs < 12000, `expected explicit-hydrogen C5 relief to stay bounded, got ${explicitHydrogenResult.metadata.timing.totalMs}ms`);
+  });
+
+  it('opens saturated shared corners in bridged flavonoid cages', () => {
+    for (const suppressH of [true, false]) {
+      const result = runPipeline(parseSMILES(BRIDGED_FLAVONOID_LINEAR_CORNER_SMILES), {
+        suppressH,
+        auditTelemetry: true
+      });
+      const sharedCornerAngle = bondAngleAtAtom(result.coords, 'C23', 'C11', 'C21');
+
+      assert.equal(result.metadata.stage, 'coordinates-ready');
+      assert.equal(result.metadata.primaryFamily, 'bridged');
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+      assert.equal(result.metadata.audit.labelOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.ok(sharedCornerAngle < 160, `expected the shared saturated corner to show a visible bend, got ${sharedCornerAngle.toFixed(2)} degrees`);
+      assert.ok(sharedCornerAngle > 135, `expected the shared saturated corner to avoid an over-tight bend, got ${sharedCornerAngle.toFixed(2)} degrees`);
+    }
   });
 });
 

@@ -696,4 +696,74 @@ describe('initPlotInteractions', () => {
 
     assert.deepEqual(records, []);
   });
+
+  it('hides valence tooltips while paint mode is active', () => {
+    const records = [];
+    const warningMap = new Map([['a1', { atomId: 'a1', code: 'warn' }]]);
+    const atom = { id: 'a1', name: 'C' };
+    let tooltipAtomId = 'a1';
+    let mousemoveHandler = null;
+
+    initPlotInteractions({
+      plotEl: {
+        addEventListener() {}
+      },
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'mousemove') {
+            mousemoveHandler = handler;
+          }
+        },
+        elementsFromPoint() {
+          return [
+            {
+              classList: {
+                contains(value) {
+                  return value === 'node';
+                }
+              }
+            }
+          ];
+        }
+      },
+      state: {
+        getSelectMode: () => true,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getPaintMode: () => true,
+        getChargeTool: () => null,
+        isRenderableMode: () => true,
+        getActiveMolecule: () => ({ atoms: new Map([['a1', atom]]) }),
+        getTooltipMode: () => 'force'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => warningMap
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => tooltipAtomId,
+        setSelectionValenceTooltipAtomId(value) {
+          tooltipAtomId = value;
+          records.push(['setSelectionTooltipAtomId', value]);
+        }
+      },
+      tooltip: makeTooltip(records),
+      helpers: {
+        getNodeDatum: () => ({ id: 'a1' })
+      },
+      molecule: {
+        getAtomById: atomId => (atomId === 'a1' ? atom : null)
+      },
+      formatters: {
+        atomTooltipHtml: () => 'tooltip'
+      }
+    });
+
+    mousemoveHandler({ clientX: 10, clientY: 20 });
+
+    assert.deepEqual(records, [['setSelectionTooltipAtomId', null], ['hide']]);
+  });
 });

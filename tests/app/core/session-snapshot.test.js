@@ -94,7 +94,12 @@ function makeDeps() {
         calls.push(['restorePanelState', panelState]);
       },
       restoreInteractionState(snapshot) {
-        calls.push(['restoreInteractionState', snapshot.toolMode ?? snapshot.interactionState?.toolMode ?? null, snapshot.drawBondType ?? snapshot.interactionState?.drawBondType ?? null]);
+        calls.push([
+          'restoreInteractionState',
+          snapshot.toolMode ?? snapshot.interactionState?.toolMode ?? null,
+          snapshot.drawBondType ?? snapshot.interactionState?.drawBondType ?? null,
+          snapshot.ringTemplateSize ?? snapshot.interactionState?.ringTemplateSize ?? null
+        ]);
       },
       restoreZoomTransform(snapshot) {
         calls.push(['restoreZoomTransform', snapshot]);
@@ -468,6 +473,7 @@ describe('createSessionSnapshotManager', () => {
         selectedAtomIds: [],
         selectedBondIds: [],
         toolMode: 'draw-bond',
+        ringTemplateSize: 5,
         drawBondElement: 'C',
         drawBondType: 'dash',
         forceAutoFitEnabled: true,
@@ -483,7 +489,7 @@ describe('createSessionSnapshotManager', () => {
     });
 
     const restoreInteractionCall = calls.find(call => call[0] === 'restoreInteractionState');
-    assert.deepEqual(restoreInteractionCall, ['restoreInteractionState', 'draw-bond', 'dash']);
+    assert.deepEqual(restoreInteractionCall, ['restoreInteractionState', 'draw-bond', 'dash', 5]);
   });
 
   it('restores resonance analysis against the same 2D molecule instance shown in the viewport', () => {

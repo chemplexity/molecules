@@ -45,7 +45,7 @@ class FakeSelection {
   }
 
   attr(name, value) {
-    if (['class', 'data-ring-fill-id', 'fill', 'fill-opacity', 'points'].includes(name)) {
+    if (['class', 'data-ring-fill-id', 'd', 'fill-rule', 'fill', 'fill-opacity', 'points', 'stroke'].includes(name)) {
       const resolved = typeof value === 'function' && this.dataValue.length > 0 ? this.dataValue.map(d => value(d)) : value;
       this.records.push(['attr', name, resolved]);
     }
@@ -413,6 +413,28 @@ describe('createForceSceneRenderer', () => {
     );
   });
 
+  it('keeps force charge badges black on styled atoms', () => {
+    const molecule = parseSMILES('[NH4+]');
+    molecule.atoms.get('N1').setStyle({ color: '#3366ff', opacity: 0.55 });
+    const { renderer, records } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => ({
+        nodes: [{ id: 'N1', name: 'N', protons: 7, charge: 1, x: 20, y: 30 }],
+        links: []
+      })
+    });
+
+    renderer.updateForce(molecule, { preserveView: true });
+
+    const ringClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'charge-label-ring');
+    const textClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'charge-label-text');
+    assert.ok(ringClassIndex >= 0, 'expected force charge badge ring');
+    assert.ok(textClassIndex >= 0, 'expected force charge badge text');
+    assert.deepEqual(records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'), ['attr', 'stroke', '#111111']);
+    assert.deepEqual(records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'), ['attr', 'fill', '#111111']);
+    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && Array.isArray(entry[2]) && entry[2].includes('#3366ff')), true);
+  });
+
   it('renders force ring fills behind force bonds', () => {
     const molecule = parseSMILES('C1CCCCC1');
     const ring = molecule.getRings()[0];
@@ -441,14 +463,56 @@ describe('createForceSceneRenderer', () => {
 
     const fillClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'ring-fill force-ring-fill');
     const bondClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'link');
-    const pointsRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'points' && Array.isArray(entry[2]));
+    const pathRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'd' && Array.isArray(entry[2]));
+    const fillRuleRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'fill-rule' && entry[2] === 'evenodd');
+    const ringFillIdRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'data-ring-fill-id' && Array.isArray(entry[2]));
 
     assert.ok(fillClassIndex >= 0);
     assert.ok(bondClassIndex >= 0);
     assert.ok(fillClassIndex < bondClassIndex);
+    assert.ok(fillRuleRecord);
+    assert.equal(ringFillIdRecord?.[2]?.[0], 'ring-fill:C1|C2|C3|C4|C5|C6');
     assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2]?.[0] === '#ffe66d'), true);
     assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill-opacity' && entry[2]?.[0] === 0.3), true);
-    assert.equal(pointsRecord[2][0], '10,0 20,10 20,20 10,30 0,20 0,10');
+    assert.equal(pathRecord[2][0], 'M 10,0 L 20,10 L 20,20 L 10,30 L 0,20 L 0,10 Z');
+  });
+
+  it('renders force macro-ring fills with smaller fused ring holes', () => {
+    const molecule = parseSMILES('CCOCC1=C2CC(C1)COC1OC2C=C1');
+    const macroRing = molecule.getRings().find(ringAtomIds => ringAtomIds.length === 8);
+    molecule.setRingFill(macroRing, { color: '#ffe66d', opacity: 0.3 });
+    const positions = new Map([
+      ['C14', { x: 100, y: 0 }],
+      ['O13', { x: 70, y: -40 }],
+      ['C12', { x: 30, y: -40 }],
+      ['O11', { x: 0, y: 0 }],
+      ['C10', { x: 20, y: 80 }],
+      ['C8', { x: 80, y: 90 }],
+      ['C7', { x: 120, y: 70 }],
+      ['C6', { x: 130, y: 20 }],
+      ['C16', { x: 80, y: -10 }],
+      ['C15', { x: 55, y: -20 }]
+    ]);
+    const graphNodes = [...new Set([...macroRing, 'C16', 'C15'])].map(id => ({
+      id,
+      name: 'C',
+      protons: 6,
+      charge: 0,
+      ...positions.get(id)
+    }));
+    const { renderer, records } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => ({ nodes: graphNodes, links: [] })
+    });
+
+    renderer.updateForce(molecule, { preserveView: true });
+
+    const pathRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'd' && Array.isArray(entry[2]));
+    const fillRuleRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'fill-rule' && entry[2] === 'evenodd');
+    assert.ok(pathRecord);
+    assert.ok(fillRuleRecord);
+    assert.equal((pathRecord[2][0].match(/M /g) ?? []).length, 2);
+    assert.match(pathRecord[2][0], /M 80,-10 L 55,-20 L 100,0 L 70,-40 L 30,-40 Z/);
   });
 
   it('applies initial force patches before the first restarted tick', () => {

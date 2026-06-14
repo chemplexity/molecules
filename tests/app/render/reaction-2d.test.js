@@ -205,5 +205,25 @@ describe('reaction preview restore', () => {
         opacity: 0.35
       }
     ]);
+
+    const clearResult = _paintReactionPreviewReactantSource({
+      atomIds: [atomIds[0]],
+      bondIds: [bondId],
+      style: null,
+      ringAtomIds,
+      ringFillStyle: null
+    });
+    const clearedSnapshot = _captureReactionPreviewSnapshot();
+    const clearedAtom = clearedSnapshot.sourceMol.atoms.find(atom => atom.id === atomIds[0]);
+    const clearedBond = clearedSnapshot.sourceMol.bonds.find(bond => bond.id === bondId);
+
+    assert.deepEqual(clearResult, {
+      atomIds: [atomIds[0]],
+      bondIds: [bondId],
+      ringAtomIds
+    });
+    assert.equal(clearedAtom.properties.style, undefined);
+    assert.equal(clearedBond.properties.style, undefined);
+    assert.equal(clearedSnapshot.sourceMol.moleculeProperties.style, undefined);
   });
 });

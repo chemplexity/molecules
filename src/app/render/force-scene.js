@@ -21,7 +21,8 @@ import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydr
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
 import { getAtomNumberMap, multipleBondAnnotationBlockerAngles, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
-import { ringAtomKey } from '../../core/style.js';
+import { ringAtomKey, ringFillDomId } from '../../core/style.js';
+import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 
 /**
  * Removes an automatically assigned display hint from a bond while preserving
@@ -313,36 +314,36 @@ export function createForceSceneRenderer(ctx) {
     }
 
     const forceRingFills = forceRingFillData(molecule);
-    let forceRingFillPolygons = null;
+    const forceRingAtomIds = typeof molecule.getRings === 'function' ? molecule.getRings() : [];
+    let forceRingFillPaths = null;
     if (forceRingFills.length > 0) {
-      forceRingFillPolygons = ctx.g
+      forceRingFillPaths = ctx.g
         .append('g')
         .attr('class', 'force-ring-fills')
         .style('pointer-events', 'none')
-        .selectAll('polygon.force-ring-fill')
+        .selectAll('path.force-ring-fill')
         .data(forceRingFills, fill => fill.id)
         .enter()
-        .append('polygon')
+        .append('path')
         .attr('class', 'ring-fill force-ring-fill')
-        .attr('data-ring-fill-id', fill => fill.id)
+        .attr('data-ring-fill-id', fill => ringFillDomId(fill.atomIds))
+        .attr('fill-rule', 'evenodd')
         .attr('fill', fill => fill.color)
         .attr('fill-opacity', fill => fill.opacity ?? 0.25)
         .attr('stroke', 'none');
     }
 
     function _updateForceRingFills() {
-      if (!forceRingFillPolygons) {
+      if (!forceRingFillPaths) {
         return;
       }
-      forceRingFillPolygons.attr('points', fill =>
-        fill.atomIds
-          .map(atomId => {
-            const node = forceNodeById.get(atomId);
-            return node && Number.isFinite(node.x) && Number.isFinite(node.y) ? `${node.x},${node.y}` : null;
-          })
-          .filter(Boolean)
-          .join(' ')
-      );
+      forceRingFillPaths.attr('d', fill => {
+        const shape = buildRingFillShape(fill.atomIds, forceRingAtomIds, atomId => {
+          const node = forceNodeById.get(atomId);
+          return node && Number.isFinite(node.x) && Number.isFinite(node.y) ? node : null;
+        });
+        return shape?.path ?? '';
+      });
     }
 
     const bondEnter = ctx.g
@@ -575,6 +576,7 @@ export function createForceSceneRenderer(ctx) {
     const forceLonePairLayer = showLonePairs ? ctx.g.append('g').attr('class', 'force-lone-pairs').style('pointer-events', 'none') : null;
 
     const forceChargeFontSize = 11;
+    const chargeBadgeColor = '#111111';
     const chargeLabel = ctx.g
       .selectAll('g.charge-label')
       .data(
@@ -590,7 +592,7 @@ export function createForceSceneRenderer(ctx) {
       .attr('class', 'charge-label-ring')
       .attr('r', d => chargeBadgeMetrics(formatChargeLabel(d.charge), forceChargeFontSize).radius)
       .attr('fill', 'white')
-      .attr('stroke', d => atomDisplayColor(atomForNode(d), 'force'))
+      .attr('stroke', chargeBadgeColor)
       .attr('stroke-width', 0.9)
       .attr('opacity', d => atomDisplayOpacity(atomForNode(d)));
     chargeLabel
@@ -599,7 +601,7 @@ export function createForceSceneRenderer(ctx) {
       .attr('font-family', 'Arial, Helvetica, sans-serif')
       .attr('font-size', d => `${chargeBadgeMetrics(formatChargeLabel(d.charge), forceChargeFontSize).fontSize}px`)
       .attr('font-weight', '700')
-      .attr('fill', d => atomDisplayColor(atomForNode(d), 'force'))
+      .attr('fill', chargeBadgeColor)
       .attr('opacity', d => atomDisplayOpacity(atomForNode(d)))
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')

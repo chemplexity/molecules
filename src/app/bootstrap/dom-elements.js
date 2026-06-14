@@ -20,6 +20,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const panButton = document.getElementById('pan-mode-btn');
   const selectButton = document.getElementById('select-mode-btn');
   const drawBondButton = document.getElementById('draw-bond-btn');
+  const ringTemplateButton = document.getElementById('ring-template-btn');
   const styleBrushButton = document.getElementById('style-brush-btn');
   const forceStyleBrushButton = document.getElementById('force-style-brush-btn');
   const paintColorSelector = document.getElementById('paint-color-selector');
@@ -29,6 +30,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const positiveChargeButton = document.getElementById('charge-positive-btn');
   const negativeChargeButton = document.getElementById('charge-negative-btn');
   const bondDrawTypeButtons = new Map([...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button]));
+  const ringTemplateSizeButtons = new Map([...document.querySelectorAll('[data-ring-template-size]')].map(button => [Number(button.dataset.ringTemplateSize), button]));
   const paintToolButtons = new Map();
   for (const button of document.querySelectorAll('[data-paint-tool]')) {
     const list = paintToolButtons.get(button.dataset.paintTool) ?? [];
@@ -100,6 +102,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getPanButtonElement: () => panButton,
     getSelectButtonElement: () => selectButton,
     getDrawBondButtonElement: () => drawBondButton,
+    getRingTemplateButtonElement: () => ringTemplateButton,
     getStyleBrushButtonElement: () => styleBrushButton,
     getForceStyleBrushButtonElement: () => forceStyleBrushButton,
     getStyleBrushButtonElements: () => [styleBrushButton, forceStyleBrushButton].filter(Boolean),
@@ -109,6 +112,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getPositiveChargeButtonElement: () => positiveChargeButton,
     getNegativeChargeButtonElement: () => negativeChargeButton,
     getBondDrawTypeButtonElement: type => bondDrawTypeButtons.get(type) ?? null,
+    getRingTemplateSizeButtonElement: size => ringTemplateSizeButtons.get(Number(size)) ?? null,
     getEraseButtonElement: () => eraseButton,
     getElementButtonElement: element => document.getElementById(`elem-btn-${element}`),
     getMolecularFormulaElement: () => molecularFormula,

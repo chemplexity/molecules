@@ -89,6 +89,9 @@ export function createSessionUiStateBridge(deps) {
     if (deps.getDrawBondMode()) {
       return 'draw-bond';
     }
+    if (deps.getRingTemplateMode?.()) {
+      return 'ring-template';
+    }
     if (deps.getEraseMode()) {
       return 'erase';
     }
@@ -116,6 +119,7 @@ export function createSessionUiStateBridge(deps) {
       paintTool: deps.getPaintTool?.() ?? 'brush',
       paintColor: deps.getPaintColor?.() ?? '#3366ff',
       paintOpacity: deps.getPaintOpacity?.() ?? 1,
+      ringTemplateSize: deps.getRingTemplateSize?.() ?? 6,
       drawBondElement: deps.getDrawBondElement(),
       drawBondType: deps.getDrawBondType?.() ?? 'single',
       forceAutoFitEnabled: deps.getForceAutoFitEnabled(),
@@ -140,8 +144,10 @@ export function createSessionUiStateBridge(deps) {
     deps.setChargeTool?.(restoredChargeTool);
     deps.setDrawBondElement(snapshot.drawBondElement ?? 'C');
     deps.setDrawBondType?.(snapshot.drawBondType ?? 'single');
+    deps.setRingTemplateSize?.(snapshot.ringTemplateSize ?? 6);
     deps.setSelectMode(snapshot.toolMode === 'select');
     deps.setDrawBondMode(snapshot.toolMode === 'draw-bond');
+    deps.setRingTemplateMode?.(snapshot.toolMode === 'ring-template');
     deps.setEraseMode(snapshot.toolMode === 'erase');
     deps.setPaintMode?.(snapshot.toolMode === 'paint');
   }

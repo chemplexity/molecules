@@ -40,6 +40,8 @@ export function createAppShellDeps(deps) {
       setPaintOpacity: deps.selection.setPaintOpacity,
       toggleDrawBondMode: deps.selection.toggleDrawBondMode,
       handleDrawBondButtonClick: deps.selection.handleDrawBondButtonClick,
+      handleRingTemplateButtonClick: deps.selection.handleRingTemplateButtonClick,
+      setRingTemplateSize: deps.selection.setRingTemplateSize,
       openDrawBondDrawer: deps.selection.openDrawBondDrawer,
       closeDrawBondDrawer: deps.selection.closeDrawBondDrawer,
       toggleEraseMode: deps.selection.toggleEraseMode,

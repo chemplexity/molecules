@@ -516,6 +516,16 @@ describe('generateResonanceStructures — development regressions', () => {
     assert.equal(sawRingChargeSeparatedState, true);
   });
 
+  it('finds resonance in substituted pyrrole amide systems', () => {
+    const mol = parseSMILES('COCCCN1C=C(C(=O)N2CC[NH2+]CC2CC2=CC=CC=C2)C(=C1C1=CC=CC=C1)C1=CC=CC=C1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+
+    assert.ok(mol.resonanceCount > 1, `expected multiple resonance states, got ${mol.resonanceCount}`);
+  });
+
   it('does not explode on Ru-bound fused aza systems when independent permutations are disabled', { timeout: 1000 }, () => {
     const mol = parseSMILES('C1=CC2=C3C=C(CCCCCCCCC(=O)N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C=CN3[Ru++]34(N5C=CC=CC5=C5C=CC=CN35)(N3C=CC=CC3=C3C=CC=CN43)N2C=C1');
     assert.doesNotThrow(() => {

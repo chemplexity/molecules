@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../../../src/app/core/editor-actions.js';
 import { repairImplicitHydrogensWhenValenceImproves } from '../../../src/app/interactions/implicit-hydrogen-repair.js';
 import { createStructuralEditActions } from '../../../src/app/interactions/structural-edit-actions.js';
+import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
 import { validateValence } from '../../../src/validation/index.js';
@@ -168,6 +169,149 @@ describe('createStructuralEditActions', () => {
     const result = actions.prepareResonanceStructuralEdit({ id: 'stale-mol' });
 
     assert.deepEqual(result, { mol: liveMol, resonanceReset: true });
+  });
+
+  it('places a carbon ring template through a structural edit', () => {
+    const mol = new Molecule();
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(5, 600, 200);
+
+    assert.equal(result.performed, true);
+    const carbons = [...mol.atoms.values()].filter(atom => atom.name === 'C');
+    const hydrogens = [...mol.atoms.values()].filter(atom => atom.name === 'H');
+    assert.equal(carbons.length, 5);
+    assert.equal(hydrogens.length, 10);
+    assert.equal(mol.bonds.size, 15);
+    assert.ok(carbons.every(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y)));
+    assert.ok(hydrogens.every(atom => atom.visible === false));
+  });
+
+  it('uses a clicked existing atom as one vertex of a regular ring template', () => {
+    const mol = new Molecule();
+    const anchor = mol.addAtom(null, 'C');
+    anchor.x = 0;
+    anchor.y = 0;
+    const substituent = mol.addAtom(null, 'C');
+    substituent.x = -1.5;
+    substituent.y = 0;
+    mol.addBond(null, anchor.id, substituent.id, { order: 1 });
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 300, 200, { anchorAtomId: anchor.id });
+
+    assert.equal(result.performed, true);
+    const ringAtomIds = result.result.restorePrimitiveHover.atomIds;
+    assert.equal(ringAtomIds.length, 6);
+    assert.equal(ringAtomIds[0], anchor.id);
+    assert.equal(mol.atoms.size, 21);
+    assert.equal(mol.bonds.size, 21);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'C').length, 7);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible === false).length, 14);
+
+    const edgeLengths = ringAtomIds.map((atomId, index) => {
+      const atom = mol.atoms.get(atomId);
+      const next = mol.atoms.get(ringAtomIds[(index + 1) % ringAtomIds.length]);
+      return Math.hypot(atom.x - next.x, atom.y - next.y);
+    });
+    assert.ok(edgeLengths.every(length => Math.abs(length - 1.5) < 1e-6));
+    const newRingAtoms = ringAtomIds.slice(1).map(atomId => mol.atoms.get(atomId));
+    assert.ok(newRingAtoms.every(atom => atom.x > -0.001), 'expected the ring to be placed away from the existing left-side substituent');
+  });
+
+  it('uses an explicit snapped orientation when placing an anchored ring template', () => {
+    const mol = new Molecule();
+    const anchor = mol.addAtom(null, 'C');
+    anchor.x = 0;
+    anchor.y = 0;
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 300, 200, {
+      anchorAtomId: anchor.id,
+      anchorCenterAngle: 0
+    });
+
+    assert.equal(result.performed, true);
+    const ringAtomIds = result.result.restorePrimitiveHover.atomIds;
+    const newRingAtoms = ringAtomIds.slice(1).map(atomId => mol.atoms.get(atomId));
+    assert.ok(newRingAtoms.every(atom => atom.x > 0.7), 'expected the oriented ring to extend to the right of the anchor');
   });
 
   it('cycles aromatic bond promotion through the extracted structural-edit action', () => {
@@ -1091,6 +1235,78 @@ describe('createStructuralEditActions', () => {
     assert.deepEqual(atom.properties.style, { color: '#3366ff', opacity: 0.5 });
   });
 
+  it('clears atom and bond paint styles through the structural edit action', () => {
+    const atom = {
+      id: 'a1',
+      name: 'C',
+      properties: { style: { color: '#ff6633', opacity: 0.45 } },
+      clearStyle() {
+        delete this.properties.style;
+      },
+      setStyle(style) {
+        if (style) {
+          this.properties.style = { ...style };
+        } else {
+          this.clearStyle();
+        }
+      }
+    };
+    const bond = {
+      id: 'b1',
+      atoms: ['a1', 'a2'],
+      properties: { style: { color: '#3366ff', opacity: 0.5 } },
+      clearStyle() {
+        delete this.properties.style;
+      },
+      setStyle(style) {
+        if (style) {
+          this.properties.style = { ...style };
+        } else {
+          this.clearStyle();
+        }
+      }
+    };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      bonds: new Map([['b1', bond]])
+    };
+
+    let captured = null;
+    const persisted = [];
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            assert.equal(options.preflight({ mol }), true);
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        },
+        overlays: {
+          paintReactionPreviewReactantSource(payload) {
+            persisted.push(payload);
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.paintStyleTargets(['a1'], ['b1'], null, { zoomSnapshot: 'zoom-snapshot' });
+
+    assert.equal(captured.kind, 'paint-style-targets');
+    assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.take);
+    assert.equal(atom.properties.style, undefined);
+    assert.equal(bond.properties.style, undefined);
+    assert.deepEqual(persisted, [
+      {
+        atomIds: ['a1'],
+        bondIds: ['b1'],
+        style: null
+      }
+    ]);
+    assert.equal(result.syncInput, false);
+  });
+
   it('paints a ring fill through the structural edit action', () => {
     const ringFills = [];
     const mol = {
@@ -1161,6 +1377,71 @@ describe('createStructuralEditActions', () => {
     ]);
     assert.equal(result.syncInput, false);
     assert.equal(result.updateAnalysis, false);
+    assert.equal(result.clearPrimitiveHover, true);
+  });
+
+  it('clears a ring fill through the structural edit action', () => {
+    const ringFills = [
+      {
+        id: 'ring-fill:a1\0a2\0a3',
+        atomIds: ['a1', 'a2', 'a3'],
+        color: '#ffcc00',
+        opacity: 0.35
+      }
+    ];
+    const mol = {
+      atoms: new Map([
+        ['a1', {}],
+        ['a2', {}],
+        ['a3', {}]
+      ]),
+      bonds: new Map(),
+      getRings() {
+        return [['a1', 'a2', 'a3']];
+      },
+      getRingFills() {
+        return ringFills.map(entry => ({ ...entry, atomIds: [...entry.atomIds] }));
+      },
+      clearRingFill(atomIds) {
+        const key = [...atomIds].sort().join('\0');
+        const index = ringFills.findIndex(entry => [...entry.atomIds].sort().join('\0') === key);
+        if (index >= 0) {
+          ringFills.splice(index, 1);
+        }
+      }
+    };
+
+    let captured = null;
+    const persisted = [];
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            assert.equal(options.preflight({ mol }), true);
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        },
+        overlays: {
+          paintReactionPreviewReactantSource(payload) {
+            persisted.push(payload);
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.paintRingFill(['a1', 'a2', 'a3'], null, { zoomSnapshot: 'zoom-snapshot' });
+
+    assert.equal(captured.kind, 'paint-ring-fill');
+    assert.equal(captured.options.snapshotPolicy, SnapshotPolicy.take);
+    assert.deepEqual(ringFills, []);
+    assert.deepEqual(persisted, [
+      {
+        ringAtomIds: ['a1', 'a2', 'a3'],
+        ringFillStyle: null
+      }
+    ]);
     assert.equal(result.clearPrimitiveHover, true);
   });
 

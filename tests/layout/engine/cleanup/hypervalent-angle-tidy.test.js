@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../../src/io/smiles.js';
+import { generateCoords } from '../../../../src/layout/engine/api.js';
 import { measureOrthogonalHypervalentDeviation, runHypervalentAngleTidy } from '../../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { angleOf, angularDifference, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
@@ -104,6 +106,19 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
 
     assert.ok(result.nudges > 0);
     assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, result.coords)) < 1e-9);
+    assertOrthogonalCross(ligandAngles);
+  });
+
+  it('keeps aryl-rich phosphonium ligands on an orthogonal cross in the full pipeline', () => {
+    const result = generateCoords(parseSMILES('CC1=C(CCCC[P+](c2ccccc2)(c3ccccc3)c4ccccc4)C(=O)c5ccccc5C1=O'), { suppressH: true });
+    const phosphorus = [...result.layoutGraph.atoms.values()].find(atom => atom.element === 'P');
+    assert.ok(phosphorus);
+
+    const ligandAtomIds = (result.layoutGraph.bondsByAtomId.get(phosphorus.id) ?? []).map(bond => (bond.a === phosphorus.id ? bond.b : bond.a));
+    const ligandAngles = ligandAtomIds.map(ligandAtomId => angleAt(result.coords, phosphorus.id, ligandAtomId));
+
+    assert.equal(auditLayout(result.layoutGraph, result.coords).ok, true);
+    assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords)) < 1e-9);
     assertOrthogonalCross(ligandAngles);
   });
 

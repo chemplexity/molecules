@@ -123,6 +123,11 @@ export function initKeyboardInteractions(context) {
         event.preventDefault();
         return;
       }
+      if (context.state.overlayState.getRingTemplateMode?.()) {
+        context.selection.toggleRingTemplateMode?.();
+        event.preventDefault();
+        return;
+      }
       return;
     }
 

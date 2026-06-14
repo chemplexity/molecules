@@ -61,6 +61,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       },
       getSelectMode: () => ctx.getSelectMode(),
       getDrawBondMode: () => ctx.getDrawBondMode(),
+      getRingTemplateMode: () => ctx.runtimeState.ringTemplateMode,
       getEraseMode: () => ctx.getEraseMode(),
       isRenderableMode: () => ctx.runtimeState.mode === '2d' || ctx.runtimeState.mode === 'force',
       getActiveMolecule: () => (ctx.runtimeState.mode === 'force' ? ctx.runtimeState.currentMol : ctx.runtimeState.mol2d),

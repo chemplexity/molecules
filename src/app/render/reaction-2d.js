@@ -265,7 +265,7 @@ export function _captureReactionPreviewSnapshot() {
   if (!_hasReactionPreview() || !_reactionPreviewSourceMol) {
     return null;
   }
-  const displayMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
+  const displayMol = _activeReactionPreviewDisplayMol();
   return {
     sourceMol: _serializeSnapshotMol(_reactionPreviewSourceMol),
     displayMol: _serializeSnapshotMol(displayMol),
@@ -291,6 +291,11 @@ export function _captureReactionPreviewSnapshot() {
     entryMode: _reactionPreviewEntryMode ?? null,
     entryForceNodePositions: _reactionPreviewEntryForceNodePositions ? [..._reactionPreviewEntryForceNodePositions] : null
   };
+}
+
+function _activeReactionPreviewDisplayMol() {
+  const primary = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
+  return primary ?? ctx._mol2d ?? ctx.currentMol ?? null;
 }
 
 /**
@@ -326,7 +331,7 @@ export function _getReactionPreviewMappedAtomPairs() {
  * @param {string[]} [options.bondIds] - Reactant bond ids to style.
  * @param {object|null} [options.style] - Atom/bond style.
  * @param {string[]} [options.ringAtomIds] - Reactant ring atom ids to fill.
- * @param {object|null} [options.ringFillStyle] - Ring-fill style.
+ * @param {object|null} [options.ringFillStyle] - Ring-fill style, or null to clear the fill.
  * @returns {{atomIds: string[], bondIds: string[], ringAtomIds: string[]}|null} Persisted target ids, or null when no preview source is active.
  */
 export function _paintReactionPreviewReactantSource({ atomIds = [], bondIds = [], style = null, ringAtomIds = [], ringFillStyle = null } = {}) {
@@ -361,11 +366,15 @@ export function _paintReactionPreviewReactantSource({ atomIds = [], bondIds = []
   }
 
   const normalizedRingAtomIds = [...new Set(ringAtomIds)].filter(atomId => reactantAtomIds.has(atomId) && _reactionPreviewSourceMol.atoms.has(atomId));
-  if (normalizedRingAtomIds.length >= 3 && ringFillStyle && typeof _reactionPreviewSourceMol.setRingFill === 'function') {
+  if (normalizedRingAtomIds.length >= 3) {
     const key = ringAtomKey(normalizedRingAtomIds);
     const hasSourceRing = _reactionPreviewSourceMol.getRings?.().some(ringIds => ringAtomKey(ringIds) === key);
     if (hasSourceRing) {
-      _reactionPreviewSourceMol.setRingFill(normalizedRingAtomIds, ringFillStyle);
+      if (ringFillStyle) {
+        _reactionPreviewSourceMol.setRingFill?.(normalizedRingAtomIds, ringFillStyle);
+      } else {
+        _reactionPreviewSourceMol.clearRingFill?.(normalizedRingAtomIds);
+      }
       persistedRingAtomIds.push(...normalizedRingAtomIds);
     }
   }
@@ -375,6 +384,49 @@ export function _paintReactionPreviewReactantSource({ atomIds = [], bondIds = []
     bondIds: persistedBondIds,
     ringAtomIds: persistedRingAtomIds
   };
+}
+
+function _ringFillEntriesForAtomScope(mol, atomIds) {
+  if (!mol || typeof mol.getRingFills !== 'function' || typeof mol.getRings !== 'function') {
+    return [];
+  }
+  const atomScope = atomIds instanceof Set ? atomIds : new Set(atomIds ?? []);
+  if (atomScope.size === 0) {
+    return [];
+  }
+  const ringKeys = new Set(mol.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds)));
+  return mol
+    .getRingFills()
+    .filter(fill => {
+      const fillAtomIds = fill.atomIds ?? [];
+      return fillAtomIds.length >= 3 && fillAtomIds.every(atomId => atomScope.has(atomId) && mol.atoms.has(atomId)) && ringKeys.has(ringAtomKey(fillAtomIds));
+    })
+    .map(fill => ({
+      ...fill,
+      atomIds: [...fill.atomIds]
+    }));
+}
+
+function _applyRingFillEntriesForAtomScope(mol, ringFills, atomIds) {
+  if (!mol || !ringFills?.length || typeof mol.setRingFill !== 'function' || typeof mol.getRings !== 'function') {
+    return;
+  }
+  const atomScope = atomIds instanceof Set ? atomIds : new Set(atomIds ?? []);
+  if (atomScope.size === 0) {
+    return;
+  }
+  const ringKeys = new Set(mol.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds)));
+  for (const fill of ringFills) {
+    const fillAtomIds = fill.atomIds ?? [];
+    if (fillAtomIds.length < 3 || !fillAtomIds.every(atomId => atomScope.has(atomId) && mol.atoms.has(atomId)) || !ringKeys.has(ringAtomKey(fillAtomIds))) {
+      continue;
+    }
+    mol.setRingFill(fillAtomIds, fill);
+  }
+}
+
+function _captureProductRingFillsFromActivePreview() {
+  return _ringFillEntriesForAtomScope(_activeReactionPreviewDisplayMol(), _reactionPreviewProductAtomIds);
 }
 
 function _getReactionTemplateSourceMol() {
@@ -1498,7 +1550,7 @@ function _filterReactionMatchGroups(mol, entry, reactantSmarts, mappings) {
   });
 }
 
-function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true } = {}) {
+function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true, productRingFills = [] } = {}) {
   if (!sourceMol || !entry.matchGroups?.length) {
     return;
   }
@@ -1535,6 +1587,7 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
     _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
     _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
+    _applyRingFillEntriesForAtomScope(preview.mol, productRingFills, _reactionPreviewProductAtomIds);
     ctx.renderMol(preview.mol, {
       recomputeResonance: false,
       refreshResonancePanel: false,
@@ -1559,6 +1612,7 @@ export function _reapplyActiveReactionPreview() {
   if (!_reactionPreviewLocked || !_activeReactionSmirks || !_reactionPreviewSourceMol) {
     return false;
   }
+  const productRingFills = _captureProductRingFillsFromActivePreview();
   const entry = Object.values(reactionTemplates).find(candidate => candidate.smirks === _activeReactionSmirks);
   if (!entry) {
     return false;
@@ -1583,7 +1637,7 @@ export function _reapplyActiveReactionPreview() {
       matchGroups
     },
     Math.min(_activeReactionMatchIndex, matchGroups.length - 1),
-    { lock: true }
+    { lock: true, productRingFills }
   );
   updateReactionTemplatesPanel();
   return true;

@@ -240,6 +240,8 @@ describe('createSessionUiStateBridge', () => {
     let selectedBondIds = new Set(['b1']);
     let selectMode = true;
     let drawBondMode = false;
+    let ringTemplateMode = false;
+    let ringTemplateSize = 6;
     let eraseMode = false;
     let paintMode = false;
     let paintTool = 'brush';
@@ -258,6 +260,8 @@ describe('createSessionUiStateBridge', () => {
       getSelectedBondIds: () => selectedBondIds,
       getSelectMode: () => selectMode,
       getDrawBondMode: () => drawBondMode,
+      getRingTemplateMode: () => ringTemplateMode,
+      getRingTemplateSize: () => ringTemplateSize,
       getEraseMode: () => eraseMode,
       getPaintMode: () => paintMode,
       getPaintTool: () => paintTool,
@@ -308,6 +312,12 @@ describe('createSessionUiStateBridge', () => {
       setDrawBondMode(value) {
         drawBondMode = value;
       },
+      setRingTemplateMode(value) {
+        ringTemplateMode = value;
+      },
+      setRingTemplateSize(value) {
+        ringTemplateSize = value;
+      },
       setEraseMode(value) {
         eraseMode = value;
       },
@@ -357,6 +367,7 @@ describe('createSessionUiStateBridge', () => {
       paintTool: 'brush',
       paintColor: '#3366ff',
       paintOpacity: 1,
+      ringTemplateSize: 6,
       drawBondElement: 'N',
       drawBondType: 'double',
       forceAutoFitEnabled: false,
@@ -372,6 +383,7 @@ describe('createSessionUiStateBridge', () => {
       paintTool: 'bucket',
       paintColor: '#ff6633',
       paintOpacity: 0.45,
+      ringTemplateSize: 5,
       drawBondElement: 'O',
       drawBondType: 'dash',
       forceAutoFitEnabled: true,
@@ -383,6 +395,8 @@ describe('createSessionUiStateBridge', () => {
     assert.deepEqual([...selectedBondIds], ['b2']);
     assert.equal(selectMode, false);
     assert.equal(drawBondMode, false);
+    assert.equal(ringTemplateMode, false);
+    assert.equal(ringTemplateSize, 5);
     assert.equal(eraseMode, false);
     assert.equal(paintMode, false);
     assert.equal(paintTool, 'brush');
@@ -414,7 +428,13 @@ describe('createSessionUiStateBridge', () => {
     paintColor = '#ff6633';
     paintOpacity = 0.45;
     selectMode = false;
+    ringTemplateMode = true;
+    ringTemplateSize = 7;
     chargeTool = null;
+    assert.equal(bridge.captureInteractionState().toolMode, 'ring-template');
+    assert.equal(bridge.captureInteractionState().ringTemplateSize, 7);
+    ringTemplateMode = false;
+    paintMode = true;
     assert.equal(bridge.captureInteractionState().toolMode, 'paint');
 
     bridge.restoreInteractionState({
@@ -428,6 +448,7 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(paintOpacity, 0.45);
     assert.equal(selectMode, false);
     assert.equal(drawBondMode, false);
+    assert.equal(ringTemplateMode, false);
     assert.equal(eraseMode, false);
     assert.equal(calls.includes('syncToolButtonsFromState'), true);
   });

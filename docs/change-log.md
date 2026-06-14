@@ -1,5 +1,23 @@
 # Change Log
 
+## 2026-06-13
+
+- Keep saturated shared corners in bridged flavonoid cages visibly bent.
+- Open moderate explicit-hydrogen peptide fans with paired support-branch relief.
+- Open distorted macrocycle-primary peptide fans after large-molecule block stitching with targeted support-branch relief.
+- Keep final terminal leaf retouches from rotating exterior ring methyls into ring faces.
+- Rescue compact fused cages with collapsed nonbonded atoms through the cage fallback.
+- Clear stale ring-fill styles when deleting atoms or bonds that break a filled ring.
+- Keep 2D and force charge badges black when atom label styles apply custom colors.
+- Keep aryl hydrazide carbonyl leaves on exact trigonal slots when adjacent branch relief clears crowding.
+- Render larger fused ring fills with smaller shared ring faces punched out in 2D and force views.
+- Keep aryl-rich phosphonium centers on an orthogonal 2D cross.
+- Recognize N-substituted pyrrole-like aromatic nitrogens during resonance enumeration.
+- Keep product-side ring fills when a locked reaction preview is regenerated.
+- Mirror source ring fills onto retained product rings when entering reaction preview.
+- Render ring-fill DOM/SVG attributes with export-safe ids so saved ring fills do not break SVG or PNG copy.
+- Show the paint color selector swatch as a flat color with the selected opacity applied.
+
 ## 2026-06-12
 
 - Preview paint-bucket ring fills on hover without committing the selected color and opacity until mouse down.
@@ -11,6 +29,8 @@
 - Preserve active reaction previews when brush painting atoms/bonds or bucket filling rings.
 - Persist reactant-side brush paint and ring-fill styles from reaction previews back to the stored source molecule.
 - Keep pre-existing reactant ring fills visible when entering reaction preview.
+- Add a paint-drawer eraser that clears atom, bond, and ring-fill color/opacity styles back to defaults.
+- Make paint drawer tool selection enter paint mode directly, hide color/opacity controls for the eraser, and preview erasing styled atoms, bonds, and ring fills before commit.
 
 ## 2026-06-11
 

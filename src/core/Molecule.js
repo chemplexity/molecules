@@ -95,6 +95,31 @@ export class Molecule {
   }
 
   /**
+   * Removes stored ring-fill styles whose atom set no longer exists as a ring.
+   * @private
+   * @returns {void}
+   */
+  _pruneInvalidRingFills() {
+    const ringFills = this.properties.style?.ringFills;
+    if (!Array.isArray(ringFills) || ringFills.length === 0) {
+      return;
+    }
+
+    const currentRingKeys = new Set(this.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds)));
+    this.properties.style.ringFills = ringFills.filter(entry => {
+      const atomIds = entry.atomIds ?? [];
+      return atomIds.every(atomId => this.atoms.has(atomId)) && currentRingKeys.has(ringAtomKey(atomIds));
+    });
+
+    if (this.properties.style.ringFills.length === 0) {
+      delete this.properties.style.ringFills;
+    }
+    if (this.properties.style && Object.keys(this.properties.style).length === 0) {
+      delete this.properties.style;
+    }
+  }
+
+  /**
    * Ensures bond ring-membership is cached for the current topology.
    *
    * A bond is in a graph cycle iff it is not a bridge. Computing every bond's
@@ -263,6 +288,7 @@ export class Molecule {
     }
     this.atoms.delete(id);
     this._invalidateTopologyCaches();
+    this._pruneInvalidRingFills();
     if (this.properties.resonance) {
       this.clearResonanceStates();
     }
@@ -627,6 +653,7 @@ export class Molecule {
     this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
     this._invalidateTopologyCaches();
     this.bonds.delete(id);
+    this._pruneInvalidRingFills();
     if (this.properties.resonance) {
       this.clearResonanceStates();
     }
@@ -638,6 +665,7 @@ export class Molecule {
           this.atoms.delete(atomId);
         }
       }
+      this._pruneInvalidRingFills();
     }
 
     this._recomputeProperties();

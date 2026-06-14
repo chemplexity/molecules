@@ -91,6 +91,20 @@ test('renderMolSVG omits lone-pair circles by default', () => {
   assert.equal((rendered.svgContent.match(/class="lone-pair"/g) ?? []).length, 0);
 });
 
+test('renderMolSVG punches smaller fused ring faces out of larger ring fills', () => {
+  const mol = parseSMILES('CCOCC1=C2CC(C1)COC1OC2C=C1');
+  const macroRingAtomIds = mol.getRings().find(ringAtomIds => ringAtomIds.length === 8);
+  mol.setRingFill(macroRingAtomIds, { color: '#ffe66d', opacity: 0.3 });
+
+  const rendered = renderMolSVG(mol);
+
+  assert.ok(rendered, 'expected SVG render output');
+  const pathMatch = /<path class="ring-fill"[^>]+d="([^"]+)"[^>]+fill-rule="evenodd"/.exec(rendered.svgContent);
+  assert.ok(pathMatch, 'expected compound ring-fill path');
+  assert.equal((pathMatch[1].match(/M /g) ?? []).length, 2);
+  assert.doesNotMatch(rendered.svgContent, /<polygon class="ring-fill"/);
+});
+
 test('renderMolSVG emits lone-pair circles when enabled', () => {
   const mol = parseSMILES('CO');
   const rendered = renderMolSVG(mol, { showLonePairs: true });
@@ -117,6 +131,18 @@ test('renderMolSVG wraps charge labels in a thin outlined circle', () => {
   assert.match(rendered.svgContent, />\+<\/text>/);
 });
 
+test('renderMolSVG keeps charge badges black on styled atoms', () => {
+  const mol = parseSMILES('[NH4+]');
+  mol.atoms.get('N1').setStyle({ color: '#3366ff', opacity: 0.55 });
+
+  const rendered = renderMolSVG(mol);
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.match(rendered.svgContent, /<text [^>]*fill="#3366ff" opacity="0.55"[^>]*><tspan>NH<\/tspan><tspan baseline-shift="sub"[^>]*>4<\/tspan><\/text>/);
+  assert.match(rendered.svgContent, /class="atom-charge-ring"[^>]+stroke="#111111"[^>]+opacity="0.55"/);
+  assert.match(rendered.svgContent, /class="atom-charge-text"[^>]+fill="#111111"[^>]+opacity="0.55"[^>]*>\+<\/text>/);
+});
+
 test('renderMolSVG renders custom bond and ring fill styles without implicit carbon atom markers', () => {
   const mol = parseSMILES('c1ccccc1');
   mol.atoms.get('C1').setStyle({ color: '#3366ff', opacity: 0.7 });
@@ -128,6 +154,8 @@ test('renderMolSVG renders custom bond and ring fill styles without implicit car
 
   assert.ok(rendered, 'expected SVG render output');
   assert.match(rendered.svgContent, /class="ring-fill"[^>]+fill="#ffe66d"[^>]+fill-opacity="0.3"/);
+  assert.match(rendered.svgContent, /data-ring-fill-id="ring-fill:C1\|C2\|C3\|C4\|C5\|C6"/);
+  assert.equal(rendered.svgContent.includes('\0'), false);
   assert.match(rendered.svgContent, /stroke="#ff6633" stroke-opacity="0.4"/);
   assert.doesNotMatch(rendered.svgContent, /class="atom-style-marker"/);
   assert.ok(rendered.svgContent.indexOf('class="ring-fill"') < rendered.svgContent.indexOf('<line '), 'expected ring fill to render before bonds');

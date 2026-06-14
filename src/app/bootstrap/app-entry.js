@@ -225,7 +225,7 @@ const { plotEl, tooltip, inputEl, collectionSelectEl, svg, g, zoom } = initPlotB
   d3,
   document,
   getInteractionModeActive: event =>
-    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.eraseMode || runtimeState.paintMode || runtimeState.chargeTool != null) &&
+    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.ringTemplateMode || runtimeState.eraseMode || runtimeState.paintMode || runtimeState.chargeTool != null) &&
     (runtimeState.mode === '2d' || runtimeState.mode === 'force') &&
     (event.type === 'mousedown' || event.type === 'dblclick') &&
     event.button === 0,
@@ -640,6 +640,7 @@ let _promoteBondOrder;
 let _changeAtomElements;
 let _changeAtomCharge;
 let _paintStyleTargets;
+let _placeRingTemplate;
 let _replaceForceHydrogenWithDrawElement;
 let _startDrawBond;
 let _updateDrawBondPreview;
@@ -731,6 +732,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       panButton: domElements.getPanButtonElement(),
       selectButton: domElements.getSelectButtonElement(),
       drawBondButton: domElements.getDrawBondButtonElement(),
+      ringTemplateButton: domElements.getRingTemplateButtonElement(),
       drawTools: domElements.getDrawToolsElement(),
       eraseButton: domElements.getEraseButtonElement(),
       getStyleBrushButtons: () => domElements.getStyleBrushButtonElements(),
@@ -740,6 +742,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       getChargeToolButton: tool => (tool === 'positive' ? domElements.getPositiveChargeButtonElement() : tool === 'negative' ? domElements.getNegativeChargeButtonElement() : null),
       getElementButton: element => domElements.getElementButtonElement(element),
       getBondDrawTypeButton: type => domElements.getBondDrawTypeButtonElement(type),
+      getRingTemplateSizeButton: size => domElements.getRingTemplateSizeButtonElement(size),
       performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
       prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds),
       reactionPreviewBlock: ReactionPreviewPolicy.block,
@@ -764,6 +767,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       },
       createDrag: () => d3.drag(),
       getDrawBondMode: () => runtimeState.drawBondMode,
+      getRingTemplateMode: () => runtimeState.ringTemplateMode,
       getEraseMode: () => runtimeState.eraseMode,
       getPaintMode: () => runtimeState.paintMode,
       getChargeTool: () => runtimeState.chargeTool,
@@ -837,6 +841,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
       changeAtomCharge: (atomId, options = {}) => _changeAtomCharge(atomId, options),
       paintStyleTargets: (atomIds, bondIds, style, options = {}) => _paintStyleTargets(atomIds, bondIds, style, options),
+      placeRingTemplate: (size, ox, oy, options = {}) => _placeRingTemplate?.(size, ox, oy, options),
       promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
       isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
       hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
@@ -907,6 +912,14 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     getDrawBondMode: () => runtimeState.drawBondMode,
     setDrawBondMode: value => {
       runtimeState.drawBondMode = value;
+    },
+    getRingTemplateMode: () => runtimeState.ringTemplateMode,
+    setRingTemplateMode: value => {
+      runtimeState.ringTemplateMode = value;
+    },
+    getRingTemplateSize: () => runtimeState.ringTemplateSize,
+    setRingTemplateSize: value => {
+      runtimeState.ringTemplateSize = value;
     },
     getEraseMode: () => runtimeState.eraseMode,
     setEraseMode: value => {
@@ -1034,7 +1047,9 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     navigationActions,
     exampleMolecules,
     moleculeCatalog,
-    forceBondLength: FORCE_LAYOUT_BOND_LENGTH
+    forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
+    scale: SCALE,
+    forceScale: 25
   })
 );
 
@@ -1079,6 +1094,7 @@ finalizeAppBootstrap(
         changeAtomElements: _changeAtomElements,
         changeAtomCharge: _changeAtomCharge,
         paintStyleTargets: _paintStyleTargets,
+        placeRingTemplate: _placeRingTemplate,
         replaceForceHydrogenWithDrawElement: _replaceForceHydrogenWithDrawElement,
         startDrawBond: _startDrawBond,
         updateDrawBondPreview: _updateDrawBondPreview,

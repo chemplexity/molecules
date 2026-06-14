@@ -36,7 +36,8 @@ const DENSE_FUSED_CAGE_POLISH = Object.freeze({
  * Returns whether a fused system should try the bridged/KK rescue path.
  * Dense fused cages and compact high-ring-count cages often behave more like
  * non-planar polyhedra than planar fused polycycles, so let them compete
- * against the bridged fallback when the planar fused placement is bond-dirty.
+ * against the bridged fallback when the planar fused placement has stretched
+ * bonds or collapsed non-bonded atoms.
  * @param {number} atomCount - Fused-system atom count.
  * @param {number} ringCount - Fused-system ring count.
  * @param {string|null} templateId - Matched template ID.
@@ -44,7 +45,10 @@ const DENSE_FUSED_CAGE_POLISH = Object.freeze({
  * @returns {boolean} True when a bridged rescue should be attempted.
  */
 export function shouldTryBridgedRescueForFusedSystem(atomCount, ringCount, templateId, audit) {
-  if (templateId || !audit || audit.bondLengthFailureCount <= 0) {
+  if (templateId || !audit) {
+    return false;
+  }
+  if ((audit.bondLengthFailureCount ?? 0) <= 0 && (audit.severeOverlapCount ?? 0) <= 0) {
     return false;
   }
   return (
@@ -73,8 +77,9 @@ export function shouldShortCircuitToFusedCageKk(atomCount, ringCount, templateId
 
 /**
  * Returns whether a bridged rescue placement should replace the fused result.
- * The rescue is bond-first but still refuses candidates that introduce a large
- * overlap spike over the incumbent fused placement.
+ * The rescue is bond-first for stretched fused layouts, but an overlap-free
+ * compact-cage candidate may replace an overlap-dirty incumbent when it keeps
+ * the same bridged bond-validation status.
  * @param {object|null} candidateAudit - Bridged rescue audit.
  * @param {object|null} incumbentAudit - Fused placement audit.
  * @returns {boolean} True when the rescue should win.
@@ -88,6 +93,9 @@ export function isBetterBridgedRescueForFusedSystem(candidateAudit, incumbentAud
   }
   if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount + FUSED_RESCUE_LIMITS.maxRescueOverlapPenalty) {
     return false;
+  }
+  if (candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount && candidateAudit.bondLengthFailureCount <= incumbentAudit.bondLengthFailureCount) {
+    return true;
   }
   if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
     return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;

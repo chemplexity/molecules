@@ -259,6 +259,7 @@ describe('interaction action deps builders', () => {
       promoteBondOrder: bondId => records.push(['promote', bondId]),
       eraseItem: (atomIds, bondIds) => records.push(['erase', atomIds, bondIds]),
       paintStyleTargets: (atomIds, bondIds, style) => records.push(['paint', atomIds, bondIds, style]),
+      placeRingTemplate: (size, x, y, options) => records.push(['ring', size, x, y, options]),
       replaceForceHydrogenAtom: (atomId, mol) => records.push(['replaceH', atomId, mol]),
       showPrimitiveHover: (atomIds, bondIds) => records.push(['showHover', atomIds, bondIds]),
       clearPrimitiveHover: () => records.push(['clearHover']),
@@ -281,6 +282,7 @@ describe('interaction action deps builders', () => {
 
     deps.drawBond.start(4, 5, 6);
     deps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' });
+    deps.actions.placeRingTemplate(6, 10, 20, { anchorAtomId: 'a1' });
     deps.tooltip.showImmediate('hello', { clientX: 1 });
     deps.tooltipState.setSelectionValenceTooltipAtomId(99);
 
@@ -292,6 +294,7 @@ describe('interaction action deps builders', () => {
     assert.deepEqual(records, [
       ['start', 4, 5, 6],
       ['paint', ['a1'], ['b1'], { color: '#3366ff' }],
+      ['ring', 6, 10, 20, { anchorAtomId: 'a1' }],
       ['immediateTooltip', 'hello', { clientX: 1 }],
       ['setTooltipAtom', 99]
     ]);

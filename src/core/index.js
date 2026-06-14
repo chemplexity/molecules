@@ -13,6 +13,7 @@ export {
   normalizeRingFillStyle,
   normalizeStyleColor,
   normalizeVisualStyle,
+  ringFillDomId,
   ringAtomKey,
   styleColor,
   styleOpacity

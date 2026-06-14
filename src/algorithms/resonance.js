@@ -208,11 +208,7 @@ function _expectedAromaticPiBondCount(atom, molecule, formalCharge) {
     if (formalCharge === 1) {
       return 1;
     }
-    const hasHydrogen = atom.bonds.some(bondId => {
-      const bond = molecule.bonds.get(bondId);
-      return bond && molecule.atoms.get(bond.getOtherAtom(atom.id))?.name === 'H';
-    });
-    return hasHydrogen ? 0 : 1;
+    return _isNeutralAromaticNLonePairDonor(atom, molecule, formalCharge) ? 0 : 1;
   }
 
   if (atom.name === 'O' || atom.name === 'S') {
@@ -265,6 +261,46 @@ function _hasExocyclicPositiveDonorPiBond(atom, ringAtomSet, molecule, bondOrder
   }
 
   return false;
+}
+
+/**
+ * Returns true when a neutral aromatic nitrogen contributes its lone pair to
+ * the ring instead of needing an in-ring localized pi bond.
+ *
+ * This covers five-member pyrrole-like nitrogens with either an explicit
+ * hydrogen or an exocyclic substituent, such as N-substituted pyrroles.
+ * Pyridine-like nitrogens have only their two aromatic ring bonds and must
+ * still take one localized ring pi bond.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {number} formalCharge - Formal charge value.
+ * @returns {boolean} `true` if the nitrogen is a lone-pair donor.
+ */
+function _isNeutralAromaticNLonePairDonor(atom, molecule, formalCharge) {
+  if (atom.name !== 'N' || formalCharge !== 0) {
+    return false;
+  }
+
+  const hasFiveMemberAromaticRing = molecule.getRings().some(ring => ring.length === 5 && ring.includes(atom.id) && ring.every(atomId => molecule.atoms.get(atomId)?.properties?.aromatic));
+  if (!hasFiveMemberAromaticRing) {
+    return false;
+  }
+
+  let aromaticBondCount = 0;
+  let hasNonAromaticAttachment = false;
+  for (const bondId of atom.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    if (bond.properties.aromatic) {
+      aromaticBondCount++;
+    } else {
+      hasNonAromaticAttachment = true;
+    }
+  }
+
+  return aromaticBondCount === 2 && hasNonAromaticAttachment;
 }
 
 /**
@@ -334,11 +370,7 @@ function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, form
     if (formalCharge === -1) {
       return hasRingPiBond ? null : 2;
     }
-    const hasHydrogen = atom.bonds.some(bondId => {
-      const bond = molecule.bonds.get(bondId);
-      return bond && molecule.atoms.get(bond.getOtherAtom(atom.id))?.name === 'H';
-    });
-    if (hasHydrogen) {
+    if (_isNeutralAromaticNLonePairDonor(atom, molecule, formalCharge)) {
       return hasRingPiBond ? null : 2;
     }
     return hasRingPiBond ? 1 : null;

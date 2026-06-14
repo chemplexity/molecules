@@ -19,6 +19,8 @@ import {
   stereoBondCenterIdForRender,
   atomBBox
 } from '../../layout/mol2d-helpers.js';
+import { ringFillDomId } from '../../core/style.js';
+import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 
 /**
@@ -292,8 +294,9 @@ export function create2DSceneRenderer(ctx) {
       if (ringFills.length === 0) {
         return;
       }
+      const rings = mol.getRings();
       const ringByKey = new Map();
-      for (const ringAtomIds of mol.getRings()) {
+      for (const ringAtomIds of rings) {
         ringByKey.set([...ringAtomIds].sort().join('\0'), ringAtomIds);
       }
       const ringFillLayer = ctx.g.append('g').attr('class', 'ring-fills').style('pointer-events', 'none');
@@ -302,24 +305,22 @@ export function create2DSceneRenderer(ctx) {
         if (!ringAtomIds) {
           continue;
         }
-        const points = [];
-        for (const atomId of ringAtomIds) {
+        const shape = buildRingFillShape(ringAtomIds, rings, atomId => {
           const atom = mol.atoms.get(atomId);
           if (!atom || atom.visible === false || atom.x == null || atom.y == null) {
-            points.length = 0;
-            break;
+            return null;
           }
-          const point = toSVGPt(atom);
-          points.push(`${point.x},${point.y}`);
-        }
-        if (points.length < 3) {
+          return toSVGPt(atom);
+        });
+        if (!shape) {
           continue;
         }
         ringFillLayer
-          .append('polygon')
+          .append('path')
           .attr('class', 'ring-fill')
-          .attr('data-ring-fill-id', fill.id)
-          .attr('points', points.join(' '))
+          .attr('data-ring-fill-id', ringFillDomId(ringAtomIds))
+          .attr('d', shape.path)
+          .attr('fill-rule', 'evenodd')
           .attr('fill', fill.color)
           .attr('fill-opacity', fill.opacity ?? 0.25)
           .attr('stroke', 'none');
@@ -732,6 +733,7 @@ export function create2DSceneRenderer(ctx) {
 
       const styledAtomColor = atomDisplayColor(atom, '2d');
       const styledAtomOpacity = atomDisplayOpacity(atom);
+      const chargeBadgeColor = '#111111';
 
       if (label) {
         renderAtomLabel(hitGroup, label, atom.properties?.style ? styledAtomColor : symbol === 'H' ? '#333333' : styledAtomColor, labelDx, labelDy, fontSize).attr('opacity', styledAtomOpacity);
@@ -754,7 +756,7 @@ export function create2DSceneRenderer(ctx) {
               .attr('r', placement.radius)
               .attr('pointer-events', 'none')
               .attr('fill', 'white')
-              .attr('stroke', styledAtomColor)
+              .attr('stroke', chargeBadgeColor)
               .attr('stroke-width', 0.9)
               .attr('opacity', styledAtomOpacity);
             hitGroup
@@ -764,7 +766,7 @@ export function create2DSceneRenderer(ctx) {
               .attr('y', placement.y - y)
               .style('font-size', `${placement.fontSize}px`)
               .attr('pointer-events', 'none')
-              .attr('fill', styledAtomColor)
+              .attr('fill', chargeBadgeColor)
               .attr('opacity', styledAtomOpacity)
               .attr('text-anchor', 'middle')
               .attr('dominant-baseline', 'central')

@@ -41,6 +41,14 @@ export function createAppRuntimeDeps(ctx) {
       setSelectMode: ctx.setSelectMode,
       getDrawBondMode: ctx.getDrawBondMode,
       setDrawBondMode: ctx.setDrawBondMode,
+      getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
+      setRingTemplateMode: value => {
+        ctx.setRingTemplateMode?.(value);
+      },
+      getRingTemplateSize: () => ctx.getRingTemplateSize?.() ?? 6,
+      setRingTemplateSize: value => {
+        ctx.setRingTemplateSize?.(value);
+      },
       getEraseMode: ctx.getEraseMode,
       setEraseMode: ctx.setEraseMode,
       getPaintMode: () => ctx.getPaintMode?.() ?? false,
@@ -243,7 +251,9 @@ export function createAppRuntimeDeps(ctx) {
       moleculeCatalog: ctx.moleculeCatalog
     },
     constants: {
-      forceBondLength: ctx.forceBondLength
+      forceBondLength: ctx.forceBondLength,
+      scale: ctx.scale,
+      forceScale: ctx.forceScale
     }
   };
 }

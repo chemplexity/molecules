@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { findSevereOverlaps, measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { AUDIT_PLANAR_VALIDATION } from '../../../../src/layout/engine/constants.js';
@@ -130,7 +131,29 @@ describe('layout/engine/families/fused', () => {
   it('tries bridged rescue heuristics for large high-ring-count fused cages even when they are not compact', () => {
     assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 29 }), true);
     assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, 'template-id', { bondLengthFailureCount: 29 }), false);
-    assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 0 }), false);
+    assert.equal(shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 0, severeOverlapCount: 0 }), false);
+    assert.equal(shouldTryBridgedRescueForFusedSystem(9, 5, null, { bondLengthFailureCount: 0, severeOverlapCount: 2 }), true);
+  });
+
+  it('rescues compact fused cages whose pericondensed placement collapses nonbonded atoms', () => {
+    const smiles = 'C1(C2(C3(C4(C1C5(C2C3C45)))))';
+    assert.ok(bugMolecules.includes(smiles), 'expected compact fused-cage regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.equal(result.metadata.placementMode, 'projected-kamada-kawai');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(
+      distance(result.coords.get('C1'), result.coords.get('C3')) > result.layoutGraph.options.bondLength * 0.5,
+      'expected collapsed nonbonded cage atoms to be separated by the fused-cage rescue'
+    );
   });
 
   it('short-circuits only giant dense no-template fused cages to the cage KK path', () => {

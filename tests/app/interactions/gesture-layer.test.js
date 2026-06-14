@@ -183,6 +183,8 @@ function makeBaseContext(overrides = {}) {
   let mode = '2d';
   let selectMode = false;
   let drawBondMode = false;
+  let ringTemplateMode = false;
+  let ringTemplateSize = 6;
   let eraseMode = false;
   let paintMode = false;
   let paintTool = 'brush';
@@ -221,6 +223,14 @@ function makeBaseContext(overrides = {}) {
         getDrawBondMode: () => drawBondMode,
         setDrawBondMode: value => {
           drawBondMode = value;
+        },
+        getRingTemplateMode: () => ringTemplateMode,
+        setRingTemplateMode: value => {
+          ringTemplateMode = value;
+        },
+        getRingTemplateSize: () => ringTemplateSize,
+        setRingTemplateSize: value => {
+          ringTemplateSize = value;
         },
         getEraseMode: () => eraseMode,
         setEraseMode: value => {
@@ -278,6 +288,10 @@ function makeBaseContext(overrides = {}) {
       },
       paintRingFill(atomIds, style, options) {
         calls.push(['paintRingFill', atomIds, style, options]);
+        return { performed: true };
+      },
+      placeRingTemplate(size, x, y) {
+        calls.push(['placeRingTemplate', size, x, y]);
         return { performed: true };
       }
     },
@@ -345,6 +359,8 @@ function makeBaseContext(overrides = {}) {
       setMode: value => (mode = value),
       setSelectMode: value => (selectMode = value),
       setDrawBondMode: value => (drawBondMode = value),
+      setRingTemplateMode: value => (ringTemplateMode = value),
+      setRingTemplateSize: value => (ringTemplateSize = value),
       setPaintMode: value => (paintMode = value),
       setPaintTool: value => (paintTool = value),
       setPaintColor: value => (paintColor = value),
@@ -383,6 +399,30 @@ describe('initGestureInteractions', () => {
 
     assert.equal(stopped, true);
     assert.deepEqual(started, { atomId: null, x: 12, y: 34 });
+  });
+
+  it('places the selected ring template on a blank-space click', () => {
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(5);
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {
+        calls.push(['preventDefault']);
+      },
+      stopPropagation() {
+        calls.push(['stopPropagation']);
+      }
+    });
+
+    assert.deepEqual(calls, [
+      ['preventDefault'],
+      ['stopPropagation'],
+      ['placeRingTemplate', 5, 12, 34]
+    ]);
   });
 
   it('selects the whole molecule on blank-space double-click and enters select mode', () => {
@@ -534,6 +574,59 @@ describe('initGestureInteractions', () => {
     ]);
   });
 
+  it('clears atom, bond, and ring styles while dragging in paint eraser mode', () => {
+    const atomHit = makeHitElement('atom', 'a1');
+    const bondHit = makeHitElement('bond', 'b1');
+    const mol = {
+      atoms: new Map([
+        ['r1', { id: 'r1', x: 0, y: 0, visible: true }],
+        ['r2', { id: 'r2', x: 100, y: 0, visible: true }],
+        ['r3', { id: 'r3', x: 100, y: 100, visible: true }],
+        ['r4', { id: 'r4', x: 0, y: 100, visible: true }]
+      ]),
+      getRings() {
+        return [['r1', 'r2', 'r3', 'r4']];
+      }
+    };
+    let pointer = [50, 50];
+    const { context, svg, listeners, calls, state } = makeBaseContext({
+      pointer: () => pointer
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    state.setPaintTool('eraser');
+    context.doc.elementsFromPoint = x => {
+      if (x === 10) {
+        return [atomHit];
+      }
+      if (x === 30) {
+        return [bondHit];
+      }
+      return [];
+    };
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    pointer = [150, 150];
+    listeners.get('mousemove')({
+      clientX: 30,
+      clientY: 10
+    });
+
+    assert.deepEqual(calls, [
+      ['paintStyleTargets', ['a1'], [], null, { skipSnapshot: false }],
+      ['paintRingFill', ['r1', 'r2', 'r3', 'r4'], null, { skipSnapshot: true }],
+      ['paintStyleTargets', [], ['b1'], null, { skipSnapshot: true }]
+    ]);
+  });
+
   it('previews brush color on 2D atom and bond hover without committing', () => {
     const atomHit = makeHitElement('atom', 'a1');
     const bondHit = makeHitElement('bond', 'b1');
@@ -633,6 +726,66 @@ describe('initGestureInteractions', () => {
     assert.equal(forceAtom.node().style['fill-opacity'], '1');
     assert.equal(forceBond.node().style.stroke, '#66ccff');
     assert.equal(forceBond.node().style['stroke-opacity'], '0.55');
+    assert.deepEqual(calls, []);
+  });
+
+  it('previews erasing 2D atom and bond styles without committing', () => {
+    const atomHit = makeHitElement('atom', 'a1');
+    const bondHit = makeHitElement('bond', 'b1');
+    const mol = {
+      atoms: new Map([['a1', { id: 'a1', name: 'C', properties: { style: { color: '#ff6633', opacity: 0.45 } } }]]),
+      bonds: new Map([['b1', { id: 'b1', properties: { style: { color: '#ff6633', opacity: 0.45 } } }]])
+    };
+    const { context, g, listeners, calls, state } = makeBaseContext();
+    context.state.documentState.getMol2d = () => mol;
+    const atomGroup = g.append('g').attr('data-atom-id', 'a1');
+    const atomLabel = atomGroup.append('text').attr('class', 'atom-label').style('fill', '#ff6633').style('opacity', '0.45');
+    const bondGroup = g.append('g').attr('data-bond-id', 'b1');
+    const bondLine = bondGroup.append('line').attr('class', 'bond').style('stroke', '#ff6633').style('stroke-opacity', '0.45');
+    state.setPaintMode(true);
+    state.setPaintTool('eraser');
+    context.doc.elementsFromPoint = x => {
+      if (x === 10) {
+        return [atomHit];
+      }
+      if (x === 30) {
+        return [bondHit];
+      }
+      return [];
+    };
+
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      clientX: 10,
+      clientY: 10,
+      buttons: 0
+    });
+
+    assert.equal(atomLabel.node().style.fill, '#333333');
+    assert.equal(atomLabel.node().style.opacity, '1');
+    assert.deepEqual(calls, []);
+
+    listeners.get('mousemove')({
+      clientX: 30,
+      clientY: 10,
+      buttons: 0
+    });
+
+    assert.equal(atomLabel.node().style.fill, '#ff6633');
+    assert.equal(atomLabel.node().style.opacity, '0.45');
+    assert.equal(bondLine.node().style.stroke, '#111');
+    assert.equal(bondLine.node().style['stroke-opacity'], '1');
+    assert.deepEqual(calls, []);
+
+    listeners.get('mousemove')({
+      clientX: 90,
+      clientY: 10,
+      buttons: 0
+    });
+
+    assert.equal(bondLine.node().style.stroke, '#ff6633');
+    assert.equal(bondLine.node().style['stroke-opacity'], '0.45');
     assert.deepEqual(calls, []);
   });
 
@@ -815,6 +968,51 @@ describe('initGestureInteractions', () => {
     ]);
   });
 
+  it('does not spill a bucket drag from a larger fused ring into its smaller shared ring', () => {
+    const mol = {
+      atoms: new Map([
+        ['m1', { id: 'm1', x: 0, y: 0, visible: true }],
+        ['m2', { id: 'm2', x: 100, y: 0, visible: true }],
+        ['m3', { id: 'm3', x: 100, y: 100, visible: true }],
+        ['m4', { id: 'm4', x: 0, y: 100, visible: true }],
+        ['s3', { id: 's3', x: 70, y: 22, visible: true }],
+        ['s4', { id: 's4', x: 30, y: 22, visible: true }]
+      ]),
+      getRings() {
+        return [
+          ['m1', 'm2', 'm3', 'm4'],
+          ['m1', 'm2', 's3', 's4']
+        ];
+      }
+    };
+    let pointer = [50, 80];
+    const { context, svg, listeners, calls, state } = makeBaseContext({
+      pointer: () => pointer
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    state.setPaintTool('bucket');
+    state.setPaintColor('#ffcc00');
+    state.setPaintOpacity(0.35);
+
+    initGestureInteractions(context);
+
+    const blankTarget = { closest: () => null };
+    svg.handlers.get('mousedown.paint-bucket')({
+      button: 0,
+      target: blankTarget,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    pointer = [50, 10];
+    listeners.get('mousemove')({
+      buttons: 1,
+      target: blankTarget
+    });
+
+    assert.deepEqual(calls, [['paintRingFill', ['m1', 'm2', 'm3', 'm4'], { color: '#ffcc00', opacity: 0.35 }, { skipSnapshot: false }]]);
+  });
+
   it('previews a bucket ring fill on hover and commits only on mousedown', () => {
     const mol = {
       atoms: new Map([
@@ -843,7 +1041,7 @@ describe('initGestureInteractions', () => {
       .attr('class', 'ring-fills')
       .append('polygon')
       .attr('class', 'ring-fill')
-      .attr('data-ring-fill-id', 'ring-fill:a1\0a2\0a3\0a4')
+      .attr('data-ring-fill-id', 'ring-fill:a1|a2|a3|a4')
       .style('display', '');
     const highlightLayer = g.append('g').attr('class', 'atom-highlights');
     const bondLayer = g.append('g').attr('class', 'bonds');
@@ -856,7 +1054,9 @@ describe('initGestureInteractions', () => {
 
     const preview = g.children.find(child => child.attrs.get('class') === 'ring-fill paint-bucket-ring-preview');
     assert.ok(preview);
-    assert.equal(preview.attrs.get('points'), '0,0 100,0 100,100 0,100');
+    assert.equal(preview.tagName, 'path');
+    assert.equal(preview.attrs.get('d'), 'M 0,0 L 100,0 L 100,100 L 0,100 Z');
+    assert.equal(preview.attrs.get('fill-rule'), 'evenodd');
     assert.equal(preview.attrs.get('fill'), '#ffcc00');
     assert.equal(preview.attrs.get('fill-opacity'), 0.35);
     assert.equal(preview.styles.get('display'), null);
@@ -889,6 +1089,116 @@ describe('initGestureInteractions', () => {
 
     assert.equal(preview.styles.get('display'), 'none');
     assert.deepEqual(calls, [['paintRingFill', ['a1', 'a2', 'a3', 'a4'], { color: '#ffcc00', opacity: 0.35 }, { skipSnapshot: false }]]);
+  });
+
+  it('previews larger fused ring bucket fills with smaller shared ring holes', () => {
+    const mol = {
+      atoms: new Map([
+        ['m1', { id: 'm1', x: 0, y: 0, visible: true }],
+        ['m2', { id: 'm2', x: 100, y: 0, visible: true }],
+        ['m3', { id: 'm3', x: 100, y: 100, visible: true }],
+        ['m4', { id: 'm4', x: 0, y: 100, visible: true }],
+        ['s3', { id: 's3', x: 70, y: 22, visible: true }],
+        ['s4', { id: 's4', x: 30, y: 22, visible: true }]
+      ]),
+      getRings() {
+        return [
+          ['m1', 'm2', 'm3', 'm4'],
+          ['m1', 'm2', 's3', 's4']
+        ];
+      }
+    };
+    const { context, g, listeners, calls, state } = makeBaseContext({
+      pointer: () => [50, 80]
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    state.setPaintTool('bucket');
+
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      buttons: 0,
+      target: { closest: () => null }
+    });
+
+    const preview = g.children.find(child => child.attrs.get('class') === 'ring-fill paint-bucket-ring-preview');
+    assert.ok(preview);
+    assert.equal((preview.attrs.get('d').match(/M /g) ?? []).length, 2);
+    assert.match(preview.attrs.get('d'), /M 0,0 L 100,0 L 100,100 L 0,100 Z M 0,0 L 100,0 L 70,22 L 30,22 Z/);
+    assert.equal(preview.attrs.get('fill-rule'), 'evenodd');
+    assert.deepEqual(calls, []);
+  });
+
+  it('previews erasing a ring fill on hover and commits only on mousedown', () => {
+    const mol = {
+      atoms: new Map([
+        ['a1', { id: 'a1', x: 0, y: 0, visible: true }],
+        ['a2', { id: 'a2', x: 100, y: 0, visible: true }],
+        ['a3', { id: 'a3', x: 100, y: 100, visible: true }],
+        ['a4', { id: 'a4', x: 0, y: 100, visible: true }]
+      ]),
+      getRings() {
+        return [['a1', 'a2', 'a3', 'a4']];
+      }
+    };
+    let pointer = [50, 50];
+    const { context, svg, g, listeners, calls, state } = makeBaseContext({
+      pointer: () => pointer
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    state.setPaintTool('eraser');
+
+    initGestureInteractions(context);
+    const existingFill = g
+      .append('g')
+      .attr('class', 'ring-fills')
+      .append('polygon')
+      .attr('class', 'ring-fill')
+      .attr('data-ring-fill-id', 'ring-fill:a1|a2|a3|a4')
+      .style('display', '');
+
+    const blankTarget = { closest: () => null };
+    listeners.get('mousemove')({
+      clientX: 50,
+      clientY: 50,
+      buttons: 0,
+      target: blankTarget
+    });
+
+    assert.equal(existingFill.node().style.display, 'none');
+    assert.deepEqual(calls, []);
+
+    pointer = [150, 150];
+    listeners.get('mousemove')({
+      clientX: 150,
+      clientY: 150,
+      buttons: 0,
+      target: blankTarget
+    });
+
+    assert.equal(existingFill.node().style.display, '');
+    assert.deepEqual(calls, []);
+
+    pointer = [50, 50];
+    listeners.get('mousemove')({
+      clientX: 50,
+      clientY: 50,
+      buttons: 0,
+      target: blankTarget
+    });
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 50,
+      clientY: 50,
+      target: blankTarget,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(existingFill.node().style.display, '');
+    assert.deepEqual(calls, [['paintRingFill', ['a1', 'a2', 'a3', 'a4'], null, { skipSnapshot: false }]]);
   });
 
   it('does not fill a ring when bucket paint starts on an atom or bond hit', () => {

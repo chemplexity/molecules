@@ -346,6 +346,113 @@ describe('createSelectionActions', () => {
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
   });
 
+  it('setRingTemplateSize activates ring-template mode and closes its drawer', () => {
+    let selectMode = true;
+    let drawBondMode = true;
+    let ringTemplateMode = false;
+    let ringTemplateSize = 6;
+    let eraseMode = false;
+    let chargeTool = null;
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      ring: makeButton(),
+      erase: makeButton(),
+      positive: makeButton(),
+      negative: makeButton(),
+      ring5: makeButton()
+    };
+    buttons.ring5.innerHTML = '<svg data-ring="5"></svg>';
+    const drawTools = makeButton();
+    drawTools.classList.add('ring-template-drawer-open');
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => selectMode,
+          setSelectMode: value => {
+            selectMode = value;
+          },
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getRingTemplateMode: () => ringTemplateMode,
+          setRingTemplateMode: value => {
+            ringTemplateMode = value;
+          },
+          getRingTemplateSize: () => ringTemplateSize,
+          setRingTemplateSize: value => {
+            ringTemplateSize = value;
+          },
+          getEraseMode: () => eraseMode,
+          setEraseMode: value => {
+            eraseMode = value;
+          },
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getPaintMode: () => false,
+          setPaintMode() {},
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {}
+      },
+      drawBond: {
+        cancelDrawBond() {}
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        ringTemplateButton: buttons.ring,
+        drawTools,
+        eraseButton: buttons.erase,
+        getStyleBrushButtons: () => [],
+        getPaintColorSelectors: () => [],
+        getPaintOpacitySelectors: () => [],
+        getPaintToolButtons: () => [],
+        getChargeToolButton: tool => (tool === 'positive' ? buttons.positive : buttons.negative),
+        getElementButton: () => makeButton(),
+        getBondDrawTypeButton: () => makeButton(),
+        getRingTemplateSizeButton: size => (size === 5 ? buttons.ring5 : makeButton())
+      }
+    });
+
+    actions.setRingTemplateSize(5);
+
+    assert.equal(ringTemplateMode, true);
+    assert.equal(ringTemplateSize, 5);
+    assert.equal(selectMode, false);
+    assert.equal(drawBondMode, false);
+    assert.equal(buttons.ring.classList.contains('active'), true);
+    assert.equal(buttons.ring5.classList.contains('active'), true);
+    assert.equal(buttons.ring.innerHTML, '<svg data-ring="5"></svg>');
+    assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
+  });
+
   it('togglePaintMode toggles active paint buttons and the plot cursor class', () => {
     let selectMode = true;
     let drawBondMode = false;
@@ -367,6 +474,8 @@ describe('createSelectionActions', () => {
       brushForce: makeButton(),
       bucket2d: makeButton(),
       bucketForce: makeButton(),
+      eraser2d: makeButton(),
+      eraserForce: makeButton(),
       color2d: makeColorInput(),
       colorForce: makeColorInput(),
       opacity2d: makeRangeInput(),
@@ -375,6 +484,7 @@ describe('createSelectionActions', () => {
     };
     buttons.brush2d.innerHTML = '<svg>brush</svg>';
     buttons.bucket2d.innerHTML = '<svg>bucket</svg>';
+    buttons.eraser2d.innerHTML = '<svg>eraser</svg>';
     const plotElement = makeButton();
 
     const actions = createSelectionActions({
@@ -465,6 +575,9 @@ describe('createSelectionActions', () => {
           if (tool === 'bucket') {
             return [buttons.bucket2d, buttons.bucketForce];
           }
+          if (tool === 'eraser') {
+            return [buttons.eraser2d, buttons.eraserForce];
+          }
           return [];
         },
         getChargeToolButton: tool => buttons[tool] ?? null,
@@ -488,9 +601,12 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.brushForce.classList.contains('active'), true);
     assert.equal(buttons.bucket2d.classList.contains('active'), false);
     assert.equal(buttons.bucketForce.classList.contains('active'), false);
+    assert.equal(buttons.eraser2d.classList.contains('active'), false);
+    assert.equal(buttons.eraserForce.classList.contains('active'), false);
     assert.equal(buttons.color2d.value, '#3366ff');
-    assert.equal(buttons.colorForce.style.backgroundColor, '#3366ff');
+    assert.equal(buttons.colorForce.style.backgroundColor, 'rgba(51, 102, 255, 1)');
     assert.equal(buttons.color2d.style.getPropertyValue('--paint-color'), '#3366ff');
+    assert.equal(buttons.color2d.style.getPropertyValue('--paint-swatch-color'), 'rgba(51, 102, 255, 1)');
     assert.equal(buttons.opacity2d.value, '1');
     assert.equal(buttons.opacityForce.value, '1');
     assert.equal(buttons.opacity2d.style.getPropertyValue('--paint-opacity'), '1');
@@ -506,7 +622,8 @@ describe('createSelectionActions', () => {
     assert.equal(paintColor, '#ff6633');
     assert.equal(buttons.color2d.value, '#ff6633');
     assert.equal(buttons.colorForce.value, '#ff6633');
-    assert.equal(buttons.colorForce.style.backgroundColor, '#ff6633');
+    assert.equal(buttons.colorForce.style.backgroundColor, 'rgba(255, 102, 51, 1)');
+    assert.equal(buttons.colorForce.style.getPropertyValue('--paint-swatch-color'), 'rgba(255, 102, 51, 1)');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /%23ff6633/);
 
     buttons.opacity2d.dispatchInput('0.4');
@@ -515,6 +632,8 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.opacity2d.value, '0.4');
     assert.equal(buttons.opacityForce.value, '0.4');
     assert.equal(buttons.opacityForce.style.getPropertyValue('--paint-opacity'), '0.4');
+    assert.equal(buttons.color2d.style.backgroundColor, 'rgba(255, 102, 51, 0.4)');
+    assert.equal(buttons.colorForce.style.getPropertyValue('--paint-swatch-color'), 'rgba(255, 102, 51, 0.4)');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /fill-opacity='0.4'/);
 
     actions.setPaintTool('bucket');
@@ -526,20 +645,48 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.brushForce.classList.contains('active'), false);
     assert.equal(buttons.bucket2d.classList.contains('active'), true);
     assert.equal(buttons.bucketForce.classList.contains('active'), true);
+    assert.equal(buttons.eraser2d.classList.contains('active'), false);
+    assert.equal(buttons.eraserForce.classList.contains('active'), false);
+    assert.equal(buttons.paint2d.classList.contains('paint-eraser-tool'), false);
+
+    actions.setPaintTool('eraser');
+
+    assert.equal(paintTool, 'eraser');
+    assert.equal(buttons.paint2d.innerHTML, '<svg>eraser</svg>');
+    assert.equal(buttons.paintForce.innerHTML, '<svg>eraser</svg>');
+    assert.equal(buttons.brush2d.classList.contains('active'), false);
+    assert.equal(buttons.bucket2d.classList.contains('active'), false);
+    assert.equal(buttons.eraser2d.classList.contains('active'), true);
+    assert.equal(buttons.eraserForce.classList.contains('active'), true);
+    assert.equal(buttons.paint2d.classList.contains('paint-eraser-tool'), true);
+    assert.equal(buttons.paintForce.classList.contains('paint-eraser-tool'), true);
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /fill='none'/);
 
     actions.togglePaintMode();
 
     assert.equal(paintMode, false);
     assert.equal(buttons.paint2d.classList.contains('active'), false);
     assert.equal(buttons.paintForce.classList.contains('active'), false);
-    assert.equal(buttons.paint2d.innerHTML, '<svg>bucket</svg>');
-    assert.equal(buttons.paintForce.innerHTML, '<svg>bucket</svg>');
+    assert.equal(buttons.paint2d.innerHTML, '<svg>eraser</svg>');
+    assert.equal(buttons.paintForce.innerHTML, '<svg>eraser</svg>');
     assert.equal(buttons.brush2d.classList.contains('active'), false);
     assert.equal(buttons.brushForce.classList.contains('active'), false);
     assert.equal(buttons.bucket2d.classList.contains('active'), false);
     assert.equal(buttons.bucketForce.classList.contains('active'), false);
+    assert.equal(buttons.eraser2d.classList.contains('active'), false);
+    assert.equal(buttons.eraserForce.classList.contains('active'), false);
     assert.equal(plotElement.classList.contains('paint-mode-cursor'), false);
     assert.equal(buttons.pan.classList.contains('active'), true);
+
+    actions.setPaintTool('bucket');
+
+    assert.equal(paintMode, true);
+    assert.equal(paintTool, 'bucket');
+    assert.equal(buttons.pan.classList.contains('active'), false);
+    assert.equal(buttons.paint2d.classList.contains('active'), true);
+    assert.equal(buttons.bucket2d.classList.contains('active'), true);
+    assert.equal(buttons.paint2d.classList.contains('paint-eraser-tool'), false);
+    assert.equal(plotElement.classList.contains('paint-mode-cursor'), true);
   });
 
   it('setDrawElement activates draw-bond mode when needed', () => {

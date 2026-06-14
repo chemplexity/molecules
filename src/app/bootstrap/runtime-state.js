@@ -38,6 +38,8 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     selectionModifierActive: false,
     selectMode: false,
     drawBondMode: false,
+    ringTemplateMode: false,
+    ringTemplateSize: 6,
     eraseMode: false,
     paintMode: false,
     paintTool: 'brush',

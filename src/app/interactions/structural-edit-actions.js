@@ -4,10 +4,111 @@ import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy 
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
-import { normalizeRingFillStyle, normalizeVisualStyle, ringAtomKey } from '../../core/style.js';
+import { normalizeRingAtomIds, normalizeRingFillStyle, normalizeVisualStyle, ringAtomKey } from '../../core/style.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 const DEFAULT_2D_BOND_LENGTH = 1.5;
+const RING_TEMPLATE_MIN_SIZE = 3;
+const RING_TEMPLATE_MAX_SIZE = 7;
+const TAU = Math.PI * 2;
+const GEOMETRY_EPSILON = 1e-6;
+
+function normalizeRingTemplateSize(size) {
+  const normalizedSize = Number(size);
+  if (!Number.isInteger(normalizedSize) || normalizedSize < RING_TEMPLATE_MIN_SIZE || normalizedSize > RING_TEMPLATE_MAX_SIZE) {
+    return null;
+  }
+  return normalizedSize;
+}
+
+function regularRingPositions(size, cx, cy, bondLength) {
+  const radius = bondLength / (2 * Math.sin(Math.PI / size));
+  const startAngle = size % 2 === 0 ? -Math.PI / 2 + Math.PI / size : -Math.PI / 2;
+  const positions = [];
+  for (let index = 0; index < size; index++) {
+    const angle = startAngle + (index * Math.PI * 2) / size;
+    positions.push({
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius
+    });
+  }
+  return positions;
+}
+
+function normalizeAngle(angle) {
+  const normalized = angle % TAU;
+  return normalized < 0 ? normalized + TAU : normalized;
+}
+
+function isFinitePoint(point) {
+  return point && Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
+function pointDistance(a, b) {
+  return Math.hypot((a?.x ?? 0) - (b?.x ?? 0), (a?.y ?? 0) - (b?.y ?? 0));
+}
+
+function neighborAnglesForRingAnchor(mol, atom, anchorPoint) {
+  if (!atom || typeof atom.getNeighbors !== 'function') {
+    return [];
+  }
+  const angles = [];
+  for (const neighbor of atom.getNeighbors(mol)) {
+    if (!neighbor || neighbor.visible === false || neighbor.name === 'H' || !Number.isFinite(neighbor.x) || !Number.isFinite(neighbor.y)) {
+      continue;
+    }
+    const dx = neighbor.x - anchorPoint.x;
+    const dy = neighbor.y - anchorPoint.y;
+    if (Math.hypot(dx, dy) <= GEOMETRY_EPSILON) {
+      continue;
+    }
+    angles.push(normalizeAngle(Math.atan2(dy, dx)));
+  }
+  return angles;
+}
+
+function largestAngularGapMidpoint(angles, fallbackAngle = -Math.PI / 2) {
+  if (angles.length === 0) {
+    return normalizeAngle(fallbackAngle);
+  }
+  const sorted = [...angles].sort((a, b) => a - b);
+  let bestStart = sorted[0];
+  let bestGap = -Infinity;
+  for (let index = 0; index < sorted.length; index++) {
+    const start = sorted[index];
+    const end = index === sorted.length - 1 ? sorted[0] + TAU : sorted[index + 1];
+    const gap = end - start;
+    if (gap > bestGap) {
+      bestGap = gap;
+      bestStart = start;
+    }
+  }
+  return normalizeAngle(bestStart + bestGap / 2);
+}
+
+function anchoredRingPositions(size, anchorPoint, bondLength, centerAngle) {
+  const radius = bondLength / (2 * Math.sin(Math.PI / size));
+  const center = {
+    x: anchorPoint.x + Math.cos(centerAngle) * radius,
+    y: anchorPoint.y + Math.sin(centerAngle) * radius
+  };
+  const anchorAngleFromCenter = centerAngle + Math.PI;
+  const positions = [{ x: anchorPoint.x, y: anchorPoint.y }];
+  for (let index = 1; index < size; index++) {
+    const angle = anchorAngleFromCenter + (index * TAU) / size;
+    positions.push({
+      x: center.x + Math.cos(angle) * radius,
+      y: center.y + Math.sin(angle) * radius
+    });
+  }
+  return positions;
+}
+
+function anchoredRingPositionsForAtom(mol, anchorAtom, size, bondLength, fallbackAngle = -Math.PI / 2, centerAngleOverride = null) {
+  const anchorPoint = { x: anchorAtom.x, y: anchorAtom.y };
+  const centerAngle = Number.isFinite(centerAngleOverride) ? centerAngleOverride : largestAngularGapMidpoint(neighborAnglesForRingAnchor(mol, anchorAtom, anchorPoint), fallbackAngle);
+  return anchoredRingPositions(size, anchorPoint, bondLength, centerAngle);
+}
 
 /**
  * Returns ring polygons incident to one atom using already-placed 2D coords.
@@ -309,6 +410,11 @@ function ringFillMatches(entry, nextEntry) {
   );
 }
 
+function findRingFillEntry(mol, atomIds) {
+  const key = ringAtomKey(atomIds);
+  return mol?.getRingFills?.().find(entry => ringAtomKey(entry.atomIds ?? []) === key) ?? null;
+}
+
 function moleculeHasRingAtomSet(mol, atomIds) {
   if (!mol?.getRings) {
     return false;
@@ -373,6 +479,145 @@ export function createStructuralEditActions(context) {
       mol = context.molecule.getActive();
     }
     return { mol: structuralEdit.mol ?? mol, resonanceReset: structuralEdit.resonanceReset };
+  }
+
+  function getAverageMoleculeCenter(mol) {
+    let x = 0;
+    let y = 0;
+    let count = 0;
+    for (const atom of mol?.atoms?.values?.() ?? []) {
+      if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+        continue;
+      }
+      x += atom.x;
+      y += atom.y;
+      count++;
+    }
+    return count > 0 ? { x: x / count, y: y / count } : { x: 0, y: 0 };
+  }
+
+  function getRingTemplatePlacementCenter(mol, mode, ox, oy) {
+    const { width: plotWidth = 600, height: plotHeight = 400 } = context.plot?.getSize?.() ?? {};
+    if (mode === 'force') {
+      const moleculeCenter = getAverageMoleculeCenter(mol);
+      const forceScale = context.constants.forceScale ?? 25;
+      return {
+        x: moleculeCenter.x + (ox - plotWidth / 2) / forceScale,
+        y: moleculeCenter.y - (oy - plotHeight / 2) / forceScale
+      };
+    }
+    const scale = context.constants.scale ?? 40;
+    return {
+      x: (context.view2D?.getCenterX?.() ?? 0) + (ox - plotWidth / 2) / scale,
+      y: (context.view2D?.getCenterY?.() ?? 0) - (oy - plotHeight / 2) / scale
+    };
+  }
+
+  function placeRingTemplate(size, ox, oy, options = {}) {
+    const normalizedSize = normalizeRingTemplateSize(size);
+    if (normalizedSize === null) {
+      return { performed: false, cancelled: true };
+    }
+    const anchorAtomId = options.anchorAtomId ?? null;
+    const anchorCenterAngle = Number.isFinite(options.anchorCenterAngle) ? options.anchorCenterAngle : null;
+    const anchorForceCenterAngle = Number.isFinite(options.anchorForceCenterAngle) ? options.anchorForceCenterAngle : null;
+
+    const mode = context.getMode();
+    if (!context.molecule.getActive?.() && context.molecule.ensureActive) {
+      context.molecule.ensureActive();
+    }
+    const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransformSnapshot() : null;
+    return context.controller.performStructuralEdit(
+      'place-ring-template',
+      {
+        overlayPolicy: ReactionPreviewPolicy.preserve,
+        resonancePolicy: options.skipResonancePrep ? ResonancePolicy.preserve : ResonancePolicy.normalizeForEdit,
+        snapshotPolicy: options.skipSnapshot ? SnapshotPolicy.skip : SnapshotPolicy.take,
+        viewportPolicy: ViewportPolicy.restoreEdit,
+        zoomSnapshot,
+        preflight: ({ mode: editMode }) => editMode === '2d' || editMode === 'force'
+      },
+      ({ mol, mode: editMode }) => {
+        mol = mol ?? context.molecule.ensureActive?.();
+        if (!mol) {
+          return { cancelled: true };
+        }
+
+        const bondLength = DEFAULT_2D_BOND_LENGTH;
+        const anchorAtom = anchorAtomId ? mol.atoms.get(anchorAtomId) : null;
+        let anchorPoint = anchorAtom && Number.isFinite(anchorAtom.x) && Number.isFinite(anchorAtom.y) ? { x: anchorAtom.x, y: anchorAtom.y } : null;
+        if (anchorAtom && !anchorPoint && editMode === 'force') {
+          anchorPoint = getRingTemplatePlacementCenter(mol, editMode, ox, oy);
+          anchorAtom.x = anchorPoint.x;
+          anchorAtom.y = anchorPoint.y;
+        }
+        const positions = anchorAtom
+          ? isFinitePoint(anchorPoint)
+            ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle)
+            : null
+          : (() => {
+              const center = getRingTemplatePlacementCenter(mol, editMode, ox, oy);
+              return regularRingPositions(normalizedSize, center.x, center.y, bondLength);
+            })();
+        if (!positions || anchorAtom?.name === 'H') {
+          return { cancelled: true };
+        }
+
+        const newAtomIds = [];
+        const ringAtomIds = anchorAtom ? [anchorAtom.id] : [];
+        for (const position of anchorAtom ? positions.slice(1) : positions) {
+          const atom = mol.addAtom(null, 'C', {}, { recompute: false });
+          atom.x = position.x;
+          atom.y = position.y;
+          newAtomIds.push(atom.id);
+          ringAtomIds.push(atom.id);
+        }
+        for (let index = 0; index < ringAtomIds.length; index++) {
+          mol.addBond(null, ringAtomIds[index], ringAtomIds[(index + 1) % ringAtomIds.length], { order: 1 }, false);
+        }
+        mol.repairImplicitHydrogens?.(ringAtomIds);
+        mol._recomputeProperties?.();
+        context.chemistry.kekulize(mol);
+        context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+
+        const result = {
+          clearSelection: true,
+          clearPrimitiveHover: true,
+          restorePrimitiveHover: {
+            atomIds: ringAtomIds
+          }
+        };
+        if (editMode === 'force') {
+          const forceBondLength = context.constants.forceBondLength ?? 30;
+          const fallbackForceCenterAngle = () => {
+            const graphAnchorPoint = { x: ox, y: oy };
+            const currentForceNodes = context.force.getSimulation?.()?.nodes?.() ?? [];
+            const graphNeighborAngles = (anchorAtom.getNeighbors?.(mol) ?? [])
+              .filter(neighbor => neighbor && neighbor.id !== newAtomIds[0] && neighbor.visible !== false && neighbor.name !== 'H')
+              .map(neighbor => {
+                const position = currentForceNodes.find?.(node => node.id === neighbor.id);
+                if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y) || pointDistance(position, graphAnchorPoint) <= GEOMETRY_EPSILON) {
+                  return null;
+                }
+                return normalizeAngle(Math.atan2(position.y - graphAnchorPoint.y, position.x - graphAnchorPoint.x));
+              })
+              .filter(angle => angle !== null);
+            return largestAngularGapMidpoint(graphNeighborAngles, -Math.PI / 2);
+          };
+          const forcePositions = anchorAtom
+            ? anchoredRingPositions(normalizedSize, { x: ox, y: oy }, forceBondLength, anchorForceCenterAngle ?? fallbackForceCenterAngle())
+            : regularRingPositions(normalizedSize, ox, oy, forceBondLength);
+          const patchPos = new Map(ringAtomIds.map((atomId, index) => [atomId, forcePositions[index]]));
+          result.force = {
+            options: { preservePositions: true, preserveView: true, initialPatchPos: patchPos },
+            afterRender: () => {
+              context.force.patchNodePositions(patchPos);
+            }
+          };
+        }
+        return result;
+      }
+    );
   }
 
   function dearomatizeBondAromaticComponent(mol, startBondId) {
@@ -747,15 +992,16 @@ export function createStructuralEditActions(context) {
       reactionEdit = null,
       skipSnapshot = false
     } = options;
-    let normalizedStyle;
+    const clearStyle = style == null;
+    let normalizedStyle = null;
 
     try {
-      normalizedStyle = normalizeVisualStyle(style);
+      normalizedStyle = clearStyle ? null : normalizeVisualStyle(style);
     } catch {
       return { performed: false, cancelled: true };
     }
 
-    if (!normalizedStyle || (atomIds.length === 0 && bondIds.length === 0)) {
+    if ((!clearStyle && !normalizedStyle) || (atomIds.length === 0 && bondIds.length === 0)) {
       return { performed: false, cancelled: true };
     }
 
@@ -846,10 +1092,13 @@ export function createStructuralEditActions(context) {
       reactionEdit = null,
       skipSnapshot = false
     } = options;
-    let normalizedEntry;
+    const clearFill = style == null;
+    let normalizedAtomIds;
+    let normalizedEntry = null;
 
     try {
-      normalizedEntry = normalizeRingFillStyle({ ...style, atomIds });
+      normalizedAtomIds = normalizeRingAtomIds(atomIds);
+      normalizedEntry = clearFill ? null : normalizeRingFillStyle({ ...style, atomIds: normalizedAtomIds });
     } catch {
       return { performed: false, cancelled: true };
     }
@@ -866,26 +1115,30 @@ export function createStructuralEditActions(context) {
         viewportPolicy: ViewportPolicy.restoreEdit,
         zoomSnapshot,
         preflight: ({ mol }) => {
-          if (!moleculeHasRingAtomSet(mol, normalizedEntry.atomIds)) {
+          if (!moleculeHasRingAtomSet(mol, normalizedAtomIds)) {
             return false;
           }
-          const currentEntry = mol.getRingFills?.().find(entry => ringAtomKey(entry.atomIds ?? []) === ringAtomKey(normalizedEntry.atomIds));
-          return !ringFillMatches(currentEntry, normalizedEntry);
+          const currentEntry = findRingFillEntry(mol, normalizedAtomIds);
+          return clearFill ? !!currentEntry : !ringFillMatches(currentEntry, normalizedEntry);
         }
       },
       ({ mol, mode }) => {
-        if ((mode !== '2d' && mode !== 'force') || !moleculeHasRingAtomSet(mol, normalizedEntry.atomIds)) {
+        if ((mode !== '2d' && mode !== 'force') || !moleculeHasRingAtomSet(mol, normalizedAtomIds)) {
           return { cancelled: true };
         }
 
-        const currentEntry = mol.getRingFills?.().find(entry => ringAtomKey(entry.atomIds ?? []) === ringAtomKey(normalizedEntry.atomIds));
-        if (ringFillMatches(currentEntry, normalizedEntry)) {
+        const currentEntry = findRingFillEntry(mol, normalizedAtomIds);
+        if (clearFill ? !currentEntry : ringFillMatches(currentEntry, normalizedEntry)) {
           return { cancelled: true };
         }
 
-        mol.setRingFill(normalizedEntry.atomIds, normalizedEntry);
+        if (clearFill) {
+          mol.clearRingFill?.(normalizedAtomIds);
+        } else {
+          mol.setRingFill(normalizedEntry.atomIds, normalizedEntry);
+        }
         context.overlays?.paintReactionPreviewReactantSource?.({
-          ringAtomIds: normalizedEntry.atomIds,
+          ringAtomIds: clearFill ? normalizedAtomIds : normalizedEntry.atomIds,
           ringFillStyle: normalizedEntry
         });
 
@@ -988,6 +1241,7 @@ export function createStructuralEditActions(context) {
     changeAtomCharge,
     paintStyleTargets,
     paintRingFill,
+    placeRingTemplate,
     replaceForceHydrogenWithDrawElement
   };
 }

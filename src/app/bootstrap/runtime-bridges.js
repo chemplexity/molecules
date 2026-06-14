@@ -62,6 +62,14 @@ export function initializeRuntimeBridges(deps) {
       setDrawBondMode: value => {
         deps.runtimeState.drawBondMode = value;
       },
+      getRingTemplateMode: () => deps.runtimeState.ringTemplateMode,
+      setRingTemplateMode: value => {
+        deps.runtimeState.ringTemplateMode = value;
+      },
+      getRingTemplateSize: () => deps.runtimeState.ringTemplateSize,
+      setRingTemplateSize: value => {
+        deps.runtimeState.ringTemplateSize = value;
+      },
       getEraseMode: () => deps.runtimeState.eraseMode,
       setEraseMode: value => {
         deps.runtimeState.eraseMode = value;

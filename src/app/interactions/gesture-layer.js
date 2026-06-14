@@ -1,6 +1,9 @@
 /** @module app/interactions/gesture-layer */
 
 import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
+import { ringFillDomId } from '../../core/style.js';
+import { atomColor } from '../render/helpers.js';
+import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 
 /**
  * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
@@ -45,6 +48,7 @@ export function initGestureInteractions(context) {
   let paintBucketPainting = false;
   let paintBucketStrokeHasSnapshot = false;
   let paintBucketStrokeTargetKeys = new Set();
+  let paintBucketStrokeRings = [];
   let paintBrushPreviewStyles = new Map();
 
   const PAINT_R = 12;
@@ -294,11 +298,36 @@ export function initGestureInteractions(context) {
     return (context.state.overlayState.getPaintMode?.() ?? false) && context.state.overlayState.getPaintTool?.() === 'bucket';
   }
 
+  function isPaintEraserMode() {
+    return (context.state.overlayState.getPaintMode?.() ?? false) && context.state.overlayState.getPaintTool?.() === 'eraser';
+  }
+
+  function isRingTemplateMode() {
+    return context.state.overlayState.getRingTemplateMode?.() ?? false;
+  }
+
   function getPaintStyle() {
     return {
       color: context.state.overlayState.getPaintColor?.() ?? '#3366ff',
       opacity: context.state.overlayState.getPaintOpacity?.() ?? 1
     };
+  }
+
+  function getPaintMolecule(mode = context.state.viewState.getMode()) {
+    return mode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+  }
+
+  function readableTextColor(fill) {
+    const hex = String(fill ?? '');
+    const match = /^#?([0-9a-f]{6})$/i.exec(hex);
+    if (!match) {
+      return '#111';
+    }
+    const value = match[1];
+    const cr = parseInt(value.slice(0, 2), 16);
+    const cg = parseInt(value.slice(2, 4), 16);
+    const cb = parseInt(value.slice(4, 6), 16);
+    return cr * 0.299 + cg * 0.587 + cb * 0.114 > 140 ? '#333' : '#fff';
   }
 
   function elementClassContains(element, className) {
@@ -420,6 +449,86 @@ export function initGestureInteractions(context) {
     }
   }
 
+  function previewPaintEraserAtom(atomId, mode) {
+    const root = g.node?.();
+    const mol = getPaintMolecule(mode);
+    const atom = mol?.atoms?.get?.(atomId);
+    if (!root || !atom?.properties?.style) {
+      return false;
+    }
+    const defaultColor = atomColor(atom.name ?? 'C', mode);
+    const defaultLabelColor = mode === '2d' && atom.name === 'H' ? '#333333' : defaultColor;
+    if (mode === 'force') {
+      for (const element of [...(root.querySelectorAll?.('circle.node, text.atom-symbol, g.charge-label') ?? [])]) {
+        const datum = element.__data__;
+        if (datum?.id !== atomId) {
+          continue;
+        }
+        if (elementClassContains(element, 'node')) {
+          applyPaintBrushPreviewStyle(element, {
+            fill: defaultColor,
+            'fill-opacity': '1',
+            'stroke-opacity': '1'
+          });
+        } else if (elementClassContains(element, 'atom-symbol')) {
+          applyPaintBrushPreviewStyle(element, {
+            fill: readableTextColor(defaultColor),
+            opacity: '1'
+          });
+        } else {
+          applyPaintBrushPreviewStyle(element, { opacity: '1' });
+        }
+      }
+      return true;
+    }
+
+    for (const element of elementsWithDataAttribute(root, 'data-atom-id', atomId)) {
+      if (elementTagName(element) !== 'g') {
+        continue;
+      }
+      for (const label of element.querySelectorAll?.('.atom-label, .atom-charge-text') ?? []) {
+        applyPaintBrushPreviewStyle(label, { fill: defaultLabelColor, opacity: '1' });
+      }
+      for (const ring of element.querySelectorAll?.('.atom-charge-ring') ?? []) {
+        applyPaintBrushPreviewStyle(ring, { stroke: defaultLabelColor, opacity: '1' });
+      }
+      if (elementClassContains(element, 'atom-lone-pairs')) {
+        applyPaintBrushPreviewStyle(element, { opacity: '1' });
+        for (const dot of element.querySelectorAll?.('circle') ?? []) {
+          applyPaintBrushPreviewStyle(dot, { fill: '#111111' });
+        }
+      }
+    }
+    return true;
+  }
+
+  function previewPaintEraserBond(bondId, mode) {
+    const root = g.node?.();
+    const mol = getPaintMolecule(mode);
+    const bond = mol?.bonds?.get?.(bondId);
+    if (!root || !bond?.properties?.style) {
+      return false;
+    }
+    const bondElements =
+      mode === 'force'
+        ? elementsWithDataAttribute(root, 'data-bond-id', bondId).filter(element => !elementClassContains(element, 'bond-hover-target'))
+        : elementsWithDataAttribute(root, 'data-bond-id', bondId).flatMap(element => [...(element.querySelectorAll?.('.bond') ?? [])]);
+    for (const element of bondElements) {
+      const tagName = elementTagName(element);
+      if (tagName === 'polygon' || tagName === 'path') {
+        applyPaintBrushPreviewStyle(element, { fill: '#111', 'fill-opacity': '1' });
+      } else if (elementClassContains(element, 'separator')) {
+        applyPaintBrushPreviewStyle(element, { 'stroke-opacity': '1' });
+      } else {
+        applyPaintBrushPreviewStyle(element, {
+          stroke: mode === 'force' ? '' : '#111',
+          'stroke-opacity': '1'
+        });
+      }
+    }
+    return true;
+  }
+
   function isPaintHitElement(element) {
     return (
       element?.classList?.contains?.('atom-hit') ||
@@ -465,6 +574,39 @@ export function initGestureInteractions(context) {
     return [...atomIds].sort().join('\0');
   }
 
+  /**
+   * Counts shared atoms between two ring atom id lists.
+   * @param {string[]} firstAtomIds - First ring atom ids.
+   * @param {string[]} secondAtomIds - Second ring atom ids.
+   * @returns {number} Number of atom ids present in both rings.
+   */
+  function countSharedRingAtoms(firstAtomIds, secondAtomIds) {
+    const first = new Set(firstAtomIds);
+    let count = 0;
+    for (const atomId of secondAtomIds) {
+      if (first.has(atomId)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Returns true when a bucket stroke has already targeted a larger fused ring
+   * containing the current pointer hit, so a smaller shared ring should not be
+   * filled as spillover from the same drag.
+   * @param {{area:number, atomIds:string[], hitPoint:{x:number,y:number}}} ring - Candidate ring hit.
+   * @returns {boolean} True when the candidate should be ignored for this stroke.
+   */
+  function isCoveredByPaintBucketStrokeRing(ring) {
+    return paintBucketStrokeRings.some(strokeRing => {
+      if (ring.area >= strokeRing.area || countSharedRingAtoms(ring.atomIds, strokeRing.atomIds) < 2) {
+        return false;
+      }
+      return pointInPolygon(ring.hitPoint, strokeRing.points);
+    });
+  }
+
   function restorePaintBucketPreviewHiddenFills() {
     for (const { element, display } of paintBucketPreviewHiddenFills) {
       if (element?.isConnected !== false) {
@@ -482,7 +624,7 @@ export function initGestureInteractions(context) {
     }
     restorePaintBucketPreviewHiddenFills();
 
-    const ringFillId = `ring-fill:${key}`;
+    const ringFillId = ringFillDomId(atomIds);
     const root = g.node?.();
     const fills = root?.querySelectorAll?.('.ring-fill:not(.paint-bucket-ring-preview)') ?? [];
     for (const element of fills) {
@@ -501,9 +643,10 @@ export function initGestureInteractions(context) {
       return paintBucketPreview;
     }
     const insertPreview = typeof g.insert === 'function' ? g.insert.bind(g) : g.append.bind(g);
-    paintBucketPreview = insertPreview('polygon', PAINT_BUCKET_PREVIEW_BEFORE_SELECTOR)
+    paintBucketPreview = insertPreview('path', PAINT_BUCKET_PREVIEW_BEFORE_SELECTOR)
       .attr('class', 'ring-fill paint-bucket-ring-preview')
       .attr('pointer-events', 'none')
+      .attr('fill-rule', 'evenodd')
       .attr('stroke', 'none')
       .style('display', 'none');
     return paintBucketPreview;
@@ -532,7 +675,8 @@ export function initGestureInteractions(context) {
         ? new Map(context.simulation.nodes().map(node => [node.id, node]))
         : null;
 
-    for (const ringAtomIds of mol.getRings()) {
+    const rings = mol.getRings();
+    for (const ringAtomIds of rings) {
       const polygon = [];
       let valid = true;
       for (const atomId of ringAtomIds) {
@@ -557,12 +701,31 @@ export function initGestureInteractions(context) {
         best = {
           area,
           atomIds: [...ringAtomIds],
+          hitPoint: { x, y },
           points: polygon.map(({ x, y }) => ({ x, y }))
         };
       }
     }
 
-    return best;
+    if (!best) {
+      return null;
+    }
+    const shape = buildRingFillShape(best.atomIds, rings, atomId => {
+      const atom = mol.atoms.get(atomId);
+      if (!atom || atom.visible === false) {
+        return null;
+      }
+      const svgPoint = forceNodeById ? forceNodeById.get(atomId) : context.helpers.toSVGPt2d(atom);
+      return Number.isFinite(svgPoint?.x) && Number.isFinite(svgPoint?.y) ? svgPoint : null;
+    });
+    return shape
+      ? {
+          ...best,
+          holes: shape.holes,
+          path: shape.path,
+          points: shape.points
+        }
+      : best;
   }
 
   function updatePaintBucketPreview(event) {
@@ -589,7 +752,7 @@ export function initGestureInteractions(context) {
     const style = getPaintStyle();
     hidePermanentRingFillForPreview(ring.atomIds);
     ensurePaintBucketPreview()
-      .attr('points', ring.points.map(point => `${point.x},${point.y}`).join(' '))
+      .attr('d', ring.path ?? ring.points.map(point => `${point.x},${point.y}`).join(' '))
       .attr('fill', style.color)
       .attr('fill-opacity', style.opacity)
       .attr('data-ring-fill-preview-atom-ids', ring.atomIds.join(' '))
@@ -610,7 +773,15 @@ export function initGestureInteractions(context) {
     if (paintBucketStrokeTargetKeys.has(key)) {
       return;
     }
+    if (isCoveredByPaintBucketStrokeRing(ring)) {
+      return;
+    }
     paintBucketStrokeTargetKeys.add(key);
+    paintBucketStrokeRings.push({
+      area: ring.area,
+      atomIds: ring.atomIds,
+      points: ring.points
+    });
     hidePaintBucketPreview();
     const result = context.actions.paintRingFill?.(ring.atomIds, getPaintStyle(), {
       skipSnapshot: paintBucketStrokeHasSnapshot
@@ -675,7 +846,8 @@ export function initGestureInteractions(context) {
   }
 
   function applyPaintStroke(event) {
-    if (!isPaintBrushMode() || !paintPainting) {
+    const erasing = isPaintEraserMode();
+    if ((!isPaintBrushMode() && !erasing) || !paintPainting) {
       return;
     }
     restorePaintBrushPreview();
@@ -708,18 +880,34 @@ export function initGestureInteractions(context) {
     for (const element of collectPaintHitElements(event.clientX, event.clientY)) {
       addResolved(resolvePaintHitElement(element));
     }
-    if (atomIds.length === 0 && bondIds.length === 0) {
+
+    const ring = erasing ? findPaintBucketRing(event) : null;
+    const ringKey = ring ? `ring:${paintBucketRingKey(ring.atomIds)}` : null;
+    if (ringKey && !paintStrokeTargetKeys.has(ringKey)) {
+      keys.push(ringKey);
+    }
+    if (atomIds.length === 0 && bondIds.length === 0 && (!ring || paintStrokeTargetKeys.has(ringKey))) {
       return;
     }
 
-    const result = context.actions.paintStyleTargets?.(atomIds, bondIds, getPaintStyle(), {
-      skipSnapshot: paintStrokeHasSnapshot
-    });
+    if (atomIds.length > 0 || bondIds.length > 0) {
+      const result = context.actions.paintStyleTargets?.(atomIds, bondIds, erasing ? null : getPaintStyle(), {
+        skipSnapshot: paintStrokeHasSnapshot
+      });
+      if (result?.performed) {
+        paintStrokeHasSnapshot = true;
+      }
+    }
+    if (ring && !paintStrokeTargetKeys.has(ringKey)) {
+      const result = context.actions.paintRingFill?.(ring.atomIds, null, {
+        skipSnapshot: paintStrokeHasSnapshot
+      });
+      if (result?.performed) {
+        paintStrokeHasSnapshot = true;
+      }
+    }
     for (const key of keys) {
       paintStrokeTargetKeys.add(key);
-    }
-    if (result?.performed) {
-      paintStrokeHasSnapshot = true;
     }
   }
 
@@ -752,6 +940,45 @@ export function initGestureInteractions(context) {
     }
     for (const bondId of bondIds) {
       previewPaintBrushBond(bondId, mode, style);
+    }
+  }
+
+  function updatePaintEraserPreview(event) {
+    if (!isPaintEraserMode()) {
+      return;
+    }
+    if (paintPainting || event.buttons) {
+      restorePaintBrushPreview();
+      hidePaintBucketPreview();
+      return;
+    }
+
+    const atomIds = new Set();
+    const bondIds = new Set();
+    for (const element of collectPaintHitElements(event.clientX, event.clientY)) {
+      const resolved = resolvePaintHitElement(element);
+      for (const atomId of resolved?.atomIds ?? []) {
+        atomIds.add(atomId);
+      }
+      for (const bondId of resolved?.bondIds ?? []) {
+        bondIds.add(bondId);
+      }
+    }
+
+    restorePaintBrushPreview();
+    const mode = context.state.viewState.getMode();
+    for (const atomId of atomIds) {
+      previewPaintEraserAtom(atomId, mode);
+    }
+    for (const bondId of bondIds) {
+      previewPaintEraserBond(bondId, mode);
+    }
+
+    const ring = findPaintBucketRing(event);
+    if (ring) {
+      hidePermanentRingFillForPreview(ring.atomIds);
+    } else {
+      hidePaintBucketPreview();
     }
   }
 
@@ -1011,6 +1238,30 @@ export function initGestureInteractions(context) {
     context.drawBond.start(null, gX, gY);
   });
 
+  svg.on('mousedown.ring-template', event => {
+    const mode = context.state.viewState.getMode();
+    if (!isRingTemplateMode()) {
+      return;
+    }
+    if (mode !== '2d' && mode !== 'force') {
+      return;
+    }
+    if (event.button !== 0) {
+      return;
+    }
+    if (context.overlays.hasReactionPreview()) {
+      return;
+    }
+    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target')) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const [gX, gY] = context.pointer(event, g.node());
+    context.actions.placeRingTemplate?.(context.state.overlayState.getRingTemplateSize?.() ?? 6, gX, gY);
+  });
+
   svg.on('mousedown.erase', event => {
     if (!context.state.overlayState.getEraseMode() || event.button !== 0) {
       return;
@@ -1023,9 +1274,10 @@ export function initGestureInteractions(context) {
   });
 
   svg.on('mousedown.paint', event => {
-    if (!isPaintBrushMode() || event.button !== 0) {
+    if ((!isPaintBrushMode() && !isPaintEraserMode()) || event.button !== 0) {
       return;
     }
+    hidePaintBucketPreview();
     restorePaintBrushPreview();
     paintPainting = true;
     paintStrokeHasSnapshot = false;
@@ -1043,6 +1295,7 @@ export function initGestureInteractions(context) {
     paintBucketPainting = true;
     paintBucketStrokeHasSnapshot = false;
     paintBucketStrokeTargetKeys = new Set();
+    paintBucketStrokeRings = [];
     hidePaintBucketPreview();
     event.preventDefault();
     event.stopPropagation();
@@ -1056,6 +1309,7 @@ export function initGestureInteractions(context) {
     if (
       context.state.overlayState.getDrawBondMode() ||
       context.drawBond.hasDrawBondState() ||
+      isRingTemplateMode() ||
       context.state.overlayState.getEraseMode() ||
       (context.state.overlayState.getPaintMode?.() ?? false) ||
       context.state.overlayState.getChargeTool?.()
@@ -1120,6 +1374,7 @@ export function initGestureInteractions(context) {
   doc.addEventListener('mousemove', updatePaintBrushPreview);
   doc.addEventListener('mousemove', applyPaintBucketStroke);
   doc.addEventListener('mousemove', updatePaintBucketPreview);
+  doc.addEventListener('mousemove', updatePaintEraserPreview);
 
   doc.addEventListener('mouseup', event => {
     if (event.button === 0) {
@@ -1133,7 +1388,9 @@ export function initGestureInteractions(context) {
       paintBucketPainting = false;
       paintBucketStrokeHasSnapshot = false;
       paintBucketStrokeTargetKeys.clear();
+      paintBucketStrokeRings = [];
       updatePaintBucketPreview(event);
+      updatePaintEraserPreview(event);
     }
     if (context.drawBond.hasDrawBondState()) {
       if (event.button === 0) {

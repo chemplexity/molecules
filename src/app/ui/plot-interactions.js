@@ -149,7 +149,7 @@ export function initPlotInteractions(deps) {
 
   deps.document.addEventListener('mousemove', event => {
     const warningHoverMode = deps.state.getSelectMode() || (deps.state.getDrawBondMode() && !deps.state.hasDrawBondState()) || deps.state.getEraseMode();
-    if (!warningHoverMode || !deps.state.isRenderableMode()) {
+    if ((deps.state.getPaintMode?.() ?? false) || (deps.state.getRingTemplateMode?.() ?? false) || !warningHoverMode || !deps.state.isRenderableMode()) {
       if (deps.tooltipState.getSelectionValenceTooltipAtomId() !== null) {
         deps.tooltipState.setSelectionValenceTooltipAtomId(null);
         deps.tooltip.hide();

@@ -31,8 +31,10 @@ describe('dom-elements bootstrap helpers', () => {
     const paintToolButtons = [
       createElement({ dataset: { paintTool: 'brush' } }),
       createElement({ dataset: { paintTool: 'bucket' } }),
+      createElement({ dataset: { paintTool: 'eraser' } }),
       createElement({ dataset: { paintTool: 'brush' } }),
-      createElement({ dataset: { paintTool: 'bucket' } })
+      createElement({ dataset: { paintTool: 'bucket' } }),
+      createElement({ dataset: { paintTool: 'eraser' } })
     ];
     const elements = {
       'toggle-btn': createElement(),
@@ -117,8 +119,9 @@ describe('dom-elements bootstrap helpers', () => {
     assert.deepEqual(dom.getStyleBrushButtonElements(), [elements['style-brush-btn'], elements['force-style-brush-btn']]);
     assert.deepEqual(dom.getPaintColorSelectorElements(), [elements['paint-color-selector'], elements['force-paint-color-selector']]);
     assert.deepEqual(dom.getPaintOpacitySelectorElements(), [elements['paint-opacity-selector'], elements['force-paint-opacity-selector']]);
-    assert.deepEqual(dom.getPaintToolButtonElements('brush'), [paintToolButtons[0], paintToolButtons[2]]);
-    assert.deepEqual(dom.getPaintToolButtonElements('bucket'), [paintToolButtons[1], paintToolButtons[3]]);
+    assert.deepEqual(dom.getPaintToolButtonElements('brush'), [paintToolButtons[0], paintToolButtons[3]]);
+    assert.deepEqual(dom.getPaintToolButtonElements('bucket'), [paintToolButtons[1], paintToolButtons[4]]);
+    assert.deepEqual(dom.getPaintToolButtonElements('eraser'), [paintToolButtons[2], paintToolButtons[5]]);
   });
 
   it('clears the summary fields through shared helpers', () => {

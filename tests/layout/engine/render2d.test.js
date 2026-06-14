@@ -44,6 +44,18 @@ describe('layout/engine/render2d', () => {
     assert.match(rendered.svgContent, />\+<\/text>/);
   });
 
+  it('keeps charge badges black on styled atoms', () => {
+    const molecule = parseSMILES('[NH4+]');
+    molecule.atoms.get('N1').setStyle({ color: '#3366ff', opacity: 0.55 });
+
+    const rendered = renderMolSVG(molecule);
+
+    assert.ok(rendered, 'expected SVG render output');
+    assert.match(rendered.svgContent, /<text [^>]*fill="#3366ff" opacity="0.55"[^>]*><tspan>NH<\/tspan><tspan baseline-shift="sub"[^>]*>4<\/tspan><\/text>/);
+    assert.match(rendered.svgContent, /class="atom-charge-ring"[^>]+stroke="#111111"[^>]+opacity="0.55"/);
+    assert.match(rendered.svgContent, /class="atom-charge-text"[^>]+fill="#111111"[^>]+opacity="0.55"[^>]*>\+<\/text>/);
+  });
+
   it('renders custom bond and ring fill styles without implicit carbon atom markers', () => {
     const molecule = parseSMILES('c1ccccc1');
     molecule.atoms.get('C1').setStyle({ color: '#3366ff', opacity: 0.7 });
@@ -55,9 +67,25 @@ describe('layout/engine/render2d', () => {
 
     assert.ok(rendered, 'expected SVG render output');
     assert.match(rendered.svgContent, /class="ring-fill"[^>]+fill="#ffe66d"[^>]+fill-opacity="0.3"/);
+    assert.match(rendered.svgContent, /data-ring-fill-id="ring-fill:C1\|C2\|C3\|C4\|C5\|C6"/);
+    assert.equal(rendered.svgContent.includes('\0'), false);
     assert.match(rendered.svgContent, /stroke="#ff6633" stroke-opacity="0.4"/);
     assert.doesNotMatch(rendered.svgContent, /class="atom-style-marker"/);
     assert.ok(rendered.svgContent.indexOf('class="ring-fill"') < rendered.svgContent.indexOf('<line '), 'expected ring fill to render before bonds');
+  });
+
+  it('punches smaller fused ring faces out of larger ring fills', () => {
+    const molecule = parseSMILES('CCOCC1=C2CC(C1)COC1OC2C=C1');
+    const macroRingAtomIds = molecule.getRings().find(ringAtomIds => ringAtomIds.length === 8);
+    molecule.setRingFill(macroRingAtomIds, { color: '#ffe66d', opacity: 0.3 });
+
+    const rendered = renderMolSVG(molecule);
+
+    assert.ok(rendered, 'expected SVG render output');
+    const pathMatch = /<path class="ring-fill"[^>]+d="([^"]+)"[^>]+fill-rule="evenodd"/.exec(rendered.svgContent);
+    assert.ok(pathMatch, 'expected compound ring-fill path');
+    assert.equal((pathMatch[1].match(/M /g) ?? []).length, 2);
+    assert.doesNotMatch(rendered.svgContent, /<polygon class="ring-fill"/);
   });
 
   it('renders custom atom label opacity', () => {

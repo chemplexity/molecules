@@ -63,6 +63,9 @@ export function createAppDelegates(deps) {
     paintRingFill(atomIds = [], style = {}, options = {}) {
       return deps.structuralEditActions.paintRingFill(atomIds, style, options);
     },
+    placeRingTemplate(size, ox, oy, options = {}) {
+      return deps.structuralEditActions.placeRingTemplate(size, ox, oy, options);
+    },
     replaceForceHydrogenWithDrawElement(atomId, mol = deps.state.getCurrentMol()) {
       return deps.structuralEditActions.replaceForceHydrogenWithDrawElement(atomId, mol);
     },

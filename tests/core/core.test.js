@@ -722,6 +722,30 @@ describe('Molecule', () => {
     assert.equal(mol.properties.style, undefined);
   });
 
+  it('removes ring fill styles when a filled ring atom is deleted', () => {
+    const mol = parseSMILES('c1ccccc1');
+    const ring = mol.getRings()[0];
+    mol.setRingFill(ring, { color: '#ffcc00', opacity: 0.35 });
+
+    mol.removeAtom(ring[0]);
+
+    assert.deepEqual(mol.getRingFills(), []);
+    assert.equal(mol.properties.style, undefined);
+  });
+
+  it('removes ring fill styles when a filled ring bond is deleted', () => {
+    const mol = parseSMILES('c1ccccc1');
+    const ring = mol.getRings()[0];
+    mol.setRingFill(ring, { color: '#ffcc00', opacity: 0.35 });
+    const ringBond = [...mol.bonds.values()].find(bond => ring.includes(bond.atoms[0]) && ring.includes(bond.atoms[1]));
+    assert.ok(ringBond, 'expected a bond in the filled ring');
+
+    mol.removeBond(ringBond.id, { pruneIsolated: false });
+
+    assert.deepEqual(mol.getRingFills(), []);
+    assert.equal(mol.properties.style, undefined);
+  });
+
   it('rejects invalid molecule-level ring fill styles', () => {
     const mol = new Molecule();
 

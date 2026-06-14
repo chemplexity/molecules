@@ -2,8 +2,9 @@
 
 const DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
 const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'dash'];
+const RING_TEMPLATE_SIZES = [3, 4, 5, 6, 7];
 const CHARGE_TOOLS = ['positive', 'negative'];
-const PAINT_TOOLS = ['brush', 'bucket'];
+const PAINT_TOOLS = ['brush', 'bucket', 'eraser'];
 const DEFAULT_PAINT_COLOR = '#3366ff';
 const DEFAULT_PAINT_OPACITY = 1;
 const PAINT_CURSOR_SIZE = 24;
@@ -23,9 +24,19 @@ function normalizePaintOpacity(value) {
   return Math.round(Math.min(1, Math.max(0, opacity)) * 100) / 100;
 }
 
-function paintCursorValue(color, opacity = DEFAULT_PAINT_OPACITY) {
-  const encodedColor = encodeURIComponent(normalizePaintColor(color));
-  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${PAINT_CURSOR_SIZE}' height='${PAINT_CURSOR_SIZE}' viewBox='0 0 ${PAINT_CURSOR_SIZE} ${PAINT_CURSOR_SIZE}'%3E%3Ccircle cx='${PAINT_CURSOR_CENTER}' cy='${PAINT_CURSOR_CENTER}' r='${PAINT_CURSOR_RADIUS}' fill='${encodedColor}' fill-opacity='${normalizePaintOpacity(opacity)}' stroke='black' stroke-width='2'/%3E%3C/svg%3E") ${PAINT_CURSOR_CENTER} ${PAINT_CURSOR_CENTER}, crosshair`;
+function paintSwatchColor(color, opacity = DEFAULT_PAINT_OPACITY) {
+  const normalizedColor = normalizePaintColor(color);
+  const normalizedOpacity = normalizePaintOpacity(opacity);
+  const red = Number.parseInt(normalizedColor.slice(1, 3), 16);
+  const green = Number.parseInt(normalizedColor.slice(3, 5), 16);
+  const blue = Number.parseInt(normalizedColor.slice(5, 7), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${normalizedOpacity})`;
+}
+
+function paintCursorValue(color, opacity = DEFAULT_PAINT_OPACITY, tool = 'brush') {
+  const fill = tool === 'eraser' ? 'none' : encodeURIComponent(normalizePaintColor(color));
+  const fillOpacity = tool === 'eraser' ? '' : ` fill-opacity='${normalizePaintOpacity(opacity)}'`;
+  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${PAINT_CURSOR_SIZE}' height='${PAINT_CURSOR_SIZE}' viewBox='0 0 ${PAINT_CURSOR_SIZE} ${PAINT_CURSOR_SIZE}'%3E%3Ccircle cx='${PAINT_CURSOR_CENTER}' cy='${PAINT_CURSOR_CENTER}' r='${PAINT_CURSOR_RADIUS}' fill='${fill}'${fillOpacity} stroke='black' stroke-width='2'/%3E%3C/svg%3E") ${PAINT_CURSOR_CENTER} ${PAINT_CURSOR_CENTER}, crosshair`;
 }
 
 /**
@@ -74,6 +85,10 @@ export function createSelectionActions(context) {
     context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);
   }
 
+  function setRingTemplateDrawerHoverSuppressed(value) {
+    context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);
+  }
+
   const doc = context.document ?? globalThis.document ?? null;
 
   if (context.dom.drawTools && typeof context.dom.drawTools.addEventListener === 'function' && !context.dom.drawTools.__bondDrawerHoverSuppressBound) {
@@ -87,13 +102,16 @@ export function createSelectionActions(context) {
     doc.addEventListener(
       'pointerdown',
       event => {
-        if (!context.dom.drawTools?.classList?.contains?.('drawer-open')) {
+        const hasOpenDrawer =
+          context.dom.drawTools?.classList?.contains?.('drawer-open') || context.dom.drawTools?.classList?.contains?.('ring-template-drawer-open');
+        if (!hasOpenDrawer) {
           return;
         }
         if (typeof event?.target?.closest === 'function' && event.target.closest('#draw-tools')) {
           return;
         }
         closeDrawBondDrawer();
+        closeRingTemplateDrawer();
       },
       true
     );
@@ -110,6 +128,16 @@ export function createSelectionActions(context) {
     drawBondButton.innerHTML = sourceButton.innerHTML;
   }
 
+  function syncRingTemplateButtonIcon() {
+    const activeSize = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    const sourceButton = context.dom.getRingTemplateSizeButton?.(activeSize);
+    const ringTemplateButton = context.dom.ringTemplateButton;
+    if (!sourceButton || !ringTemplateButton || typeof sourceButton.innerHTML !== 'string') {
+      return;
+    }
+    ringTemplateButton.innerHTML = sourceButton.innerHTML;
+  }
+
   function openDrawBondDrawer() {
     setDrawBondDrawerHoverSuppressed(false);
     context.dom.drawTools?.classList?.add('drawer-open');
@@ -117,6 +145,22 @@ export function createSelectionActions(context) {
 
   function closeDrawBondDrawer() {
     context.dom.drawTools?.classList?.remove('drawer-open');
+  }
+
+  function openRingTemplateDrawer() {
+    setRingTemplateDrawerHoverSuppressed(false);
+    context.dom.drawTools?.classList?.add('ring-template-drawer-open');
+  }
+
+  function closeRingTemplateDrawer() {
+    context.dom.drawTools?.classList?.remove('ring-template-drawer-open');
+  }
+
+  function toggleRingTemplateDrawer() {
+    if (!context.dom.drawTools?.classList) {
+      return;
+    }
+    context.dom.drawTools.classList.toggle('ring-template-drawer-open');
   }
 
   function toggleDrawBondDrawer() {
@@ -129,19 +173,22 @@ export function createSelectionActions(context) {
   function syncToolButtonsFromState() {
     const selectMode = context.state.overlayState.getSelectMode();
     const drawBondMode = context.state.overlayState.getDrawBondMode();
+    const ringTemplateMode = context.state.overlayState.getRingTemplateMode?.() ?? false;
     const eraseMode = context.state.overlayState.getEraseMode();
     const paintMode = context.state.overlayState.getPaintMode?.() ?? false;
     const chargeTool = context.state.overlayState.getChargeTool?.() ?? null;
-    const panMode = !selectMode && !drawBondMode && !eraseMode && !paintMode && chargeTool == null;
+    const panMode = !selectMode && !drawBondMode && !ringTemplateMode && !eraseMode && !paintMode && chargeTool == null;
 
     context.dom.panButton.classList.toggle('active', panMode);
     context.dom.selectButton.classList.toggle('active', selectMode);
     context.dom.drawBondButton.classList.toggle('active', drawBondMode);
+    context.dom.ringTemplateButton?.classList?.toggle('active', ringTemplateMode);
     context.dom.eraseButton.classList.toggle('active', eraseMode);
     syncPaintButtons(paintMode);
     syncPaintCursor(paintMode);
     syncPaintButtonIcon();
     syncPaintToolButtons(paintMode);
+    syncPaintToolStyles();
     syncPaintColorSelectors();
     syncPaintOpacitySelectors();
     syncChargeButtons();
@@ -155,11 +202,20 @@ export function createSelectionActions(context) {
       clearBondDrawTypeButtons();
       closeDrawBondDrawer();
     }
+
+    if (ringTemplateMode) {
+      syncRingTemplateSizeButtons();
+      syncRingTemplateButtonIcon();
+    } else {
+      clearRingTemplateSizeButtons();
+      closeRingTemplateDrawer();
+    }
   }
 
   const chargeSync = createButtonSynchronizer(CHARGE_TOOLS, tool => context.dom.getChargeToolButton?.(tool));
   const elementSync = createButtonSynchronizer(DRAW_ELEMENTS, element => context.dom.getElementButton(element));
   const bondTypeSync = createButtonSynchronizer(DRAW_BOND_TYPES, type => context.dom.getBondDrawTypeButton?.(type));
+  const ringTemplateSizeSync = createButtonSynchronizer(RING_TEMPLATE_SIZES, size => context.dom.getRingTemplateSizeButton?.(size));
   const paintToolSync = createButtonSynchronizer(PAINT_TOOLS, tool => context.dom.getPaintToolButtons?.(tool) ?? []);
   bindPaintColorSelectors();
   bindPaintOpacitySelectors();
@@ -178,9 +234,10 @@ export function createSelectionActions(context) {
   function syncPaintCursor(
     active = context.state.overlayState.getPaintMode?.() ?? false,
     color = context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
-    opacity = context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY
+    opacity = context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
+    tool = context.state.overlayState.getPaintTool?.() ?? 'brush'
   ) {
-    context.dom.plotElement?.style?.setProperty?.('--paint-mode-cursor', paintCursorValue(color, opacity));
+    context.dom.plotElement?.style?.setProperty?.('--paint-mode-cursor', paintCursorValue(color, opacity, tool));
     context.dom.plotElement?.classList?.toggle?.('paint-mode-cursor', active);
   }
   function syncPaintButtonIcon(tool = context.state.overlayState.getPaintTool?.() ?? 'brush') {
@@ -195,8 +252,22 @@ export function createSelectionActions(context) {
       }
     }
   }
+  function syncPaintToolStyles(tool = context.state.overlayState.getPaintTool?.() ?? 'brush') {
+    const eraserTool = tool === 'eraser';
+    for (const button of context.dom.getStyleBrushButtons?.() ?? []) {
+      button?.classList?.toggle?.('paint-eraser-tool', eraserTool);
+    }
+    syncPaintCursor(
+      context.state.overlayState.getPaintMode?.() ?? false,
+      context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
+      context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
+      tool
+    );
+  }
   function syncPaintColorSelectors(color = normalizePaintColor(context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR)) {
     const normalizedColor = normalizePaintColor(color);
+    const normalizedOpacity = normalizePaintOpacity(context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY);
+    const swatchColor = paintSwatchColor(normalizedColor, normalizedOpacity);
     for (const selector of context.dom.getPaintColorSelectors?.() ?? []) {
       if (!selector) {
         continue;
@@ -205,14 +276,21 @@ export function createSelectionActions(context) {
         selector.value = normalizedColor;
       }
       selector.style?.setProperty?.('--paint-color', normalizedColor);
+      selector.style?.setProperty?.('--paint-opacity', String(normalizedOpacity));
+      selector.style?.setProperty?.('--paint-swatch-color', swatchColor);
       if (selector.style) {
-        selector.style.backgroundColor = normalizedColor;
+        selector.style.backgroundColor = swatchColor;
       }
     }
     for (const selector of context.dom.getPaintOpacitySelectors?.() ?? []) {
       selector?.style?.setProperty?.('--paint-color', normalizedColor);
     }
-    syncPaintCursor(context.state.overlayState.getPaintMode?.() ?? false, normalizedColor, context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY);
+    syncPaintCursor(
+      context.state.overlayState.getPaintMode?.() ?? false,
+      normalizedColor,
+      context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
+      context.state.overlayState.getPaintTool?.() ?? 'brush'
+    );
   }
   function setPaintColor(color) {
     const normalizedColor = normalizePaintColor(color);
@@ -221,6 +299,8 @@ export function createSelectionActions(context) {
   }
   function syncPaintOpacitySelectors(opacity = normalizePaintOpacity(context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY)) {
     const normalizedOpacity = normalizePaintOpacity(opacity);
+    const normalizedColor = normalizePaintColor(context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR);
+    const swatchColor = paintSwatchColor(normalizedColor, normalizedOpacity);
     for (const selector of context.dom.getPaintOpacitySelectors?.() ?? []) {
       if (!selector) {
         continue;
@@ -229,9 +309,21 @@ export function createSelectionActions(context) {
         selector.value = String(normalizedOpacity);
       }
       selector.style?.setProperty?.('--paint-opacity', String(normalizedOpacity));
-      selector.style?.setProperty?.('--paint-color', normalizePaintColor(context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR));
+      selector.style?.setProperty?.('--paint-color', normalizedColor);
     }
-    syncPaintCursor(context.state.overlayState.getPaintMode?.() ?? false, context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR, normalizedOpacity);
+    for (const selector of context.dom.getPaintColorSelectors?.() ?? []) {
+      selector?.style?.setProperty?.('--paint-opacity', String(normalizedOpacity));
+      selector?.style?.setProperty?.('--paint-swatch-color', swatchColor);
+      if (selector?.style) {
+        selector.style.backgroundColor = swatchColor;
+      }
+    }
+    syncPaintCursor(
+      context.state.overlayState.getPaintMode?.() ?? false,
+      context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
+      normalizedOpacity,
+      context.state.overlayState.getPaintTool?.() ?? 'brush'
+    );
   }
   function setPaintOpacity(opacity) {
     const normalizedOpacity = normalizePaintOpacity(opacity);
@@ -270,6 +362,7 @@ export function createSelectionActions(context) {
     syncPaintCursor(value);
     syncPaintButtonIcon();
     syncPaintToolButtons(value);
+    syncPaintToolStyles();
     syncPaintColorSelectors();
     syncPaintOpacitySelectors();
   }
@@ -292,6 +385,12 @@ export function createSelectionActions(context) {
   function clearBondDrawTypeButtons() {
     bondTypeSync.clear();
   }
+  function syncRingTemplateSizeButtons() {
+    ringTemplateSizeSync.sync(context.state.overlayState.getRingTemplateSize?.() ?? 6);
+  }
+  function clearRingTemplateSizeButtons() {
+    ringTemplateSizeSync.clear();
+  }
 
   function rerenderToolOverlay() {
     if (context.state.viewState.getMode() === 'force') {
@@ -301,10 +400,33 @@ export function createSelectionActions(context) {
     }
   }
 
+  function enterPaintMode() {
+    setPaintMode(true);
+    context.state.overlayState.setSelectMode(false);
+    context.state.overlayState.setDrawBondMode(false);
+    context.state.overlayState.setRingTemplateMode?.(false);
+    context.state.overlayState.setEraseMode(false);
+    context.state.overlayState.setErasePainting(false);
+    context.state.overlayState.setChargeTool?.(null);
+    context.drawBond.cancelDrawBond();
+    context.view.clearPrimitiveHover();
+    clearElementButtons();
+    clearBondDrawTypeButtons();
+    clearChargeButtons();
+    closeDrawBondDrawer();
+    closeRingTemplateDrawer();
+    context.dom.panButton.classList.remove('active');
+    context.dom.selectButton.classList.remove('active');
+    context.dom.drawBondButton.classList.remove('active');
+    context.dom.ringTemplateButton?.classList?.remove('active');
+    context.dom.eraseButton.classList.remove('active');
+  }
+
   function togglePanMode() {
     if (
       !context.state.overlayState.getSelectMode() &&
       !context.state.overlayState.getDrawBondMode() &&
+      !(context.state.overlayState.getRingTemplateMode?.() ?? false) &&
       !context.state.overlayState.getEraseMode() &&
       !(context.state.overlayState.getPaintMode?.() ?? false) &&
       (context.state.overlayState.getChargeTool?.() ?? null) == null
@@ -313,6 +435,7 @@ export function createSelectionActions(context) {
     }
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
+    context.state.overlayState.setRingTemplateMode?.(false);
     context.state.overlayState.setEraseMode(false);
     setPaintMode(false);
     context.state.overlayState.setChargeTool?.(null);
@@ -322,9 +445,11 @@ export function createSelectionActions(context) {
     clearBondDrawTypeButtons();
     clearChargeButtons();
     closeDrawBondDrawer();
+    closeRingTemplateDrawer();
     context.dom.panButton.classList.add('active');
     context.dom.selectButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
+    context.dom.ringTemplateButton?.classList?.remove('active');
     context.dom.eraseButton.classList.remove('active');
     rerenderToolOverlay();
   }
@@ -335,6 +460,7 @@ export function createSelectionActions(context) {
     }
     context.state.overlayState.setSelectMode(true);
     context.state.overlayState.setDrawBondMode(false);
+    context.state.overlayState.setRingTemplateMode?.(false);
     context.state.overlayState.setEraseMode(false);
     setPaintMode(false);
     context.state.overlayState.setChargeTool?.(null);
@@ -344,32 +470,20 @@ export function createSelectionActions(context) {
     clearBondDrawTypeButtons();
     clearChargeButtons();
     closeDrawBondDrawer();
+    closeRingTemplateDrawer();
     context.dom.selectButton.classList.add('active');
     context.dom.panButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
+    context.dom.ringTemplateButton?.classList?.remove('active');
     context.dom.eraseButton.classList.remove('active');
   }
 
   function togglePaintMode() {
     const next = !(context.state.overlayState.getPaintMode?.() ?? false);
-    setPaintMode(next);
     if (next) {
-      context.state.overlayState.setSelectMode(false);
-      context.state.overlayState.setDrawBondMode(false);
-      context.state.overlayState.setEraseMode(false);
-      context.state.overlayState.setErasePainting(false);
-      context.state.overlayState.setChargeTool?.(null);
-      context.drawBond.cancelDrawBond();
-      context.view.clearPrimitiveHover();
-      clearElementButtons();
-      clearBondDrawTypeButtons();
-      clearChargeButtons();
-      closeDrawBondDrawer();
-      context.dom.panButton.classList.remove('active');
-      context.dom.selectButton.classList.remove('active');
-      context.dom.drawBondButton.classList.remove('active');
-      context.dom.eraseButton.classList.remove('active');
+      enterPaintMode();
     } else {
+      setPaintMode(false);
       context.view.clearPrimitiveHover();
       context.dom.panButton.classList.add('active');
       clearChargeButtons();
@@ -382,12 +496,16 @@ export function createSelectionActions(context) {
       return;
     }
     context.state.overlayState.setPaintTool?.(tool);
-    syncPaintButtonIcon(tool);
     if (!(context.state.overlayState.getPaintMode?.() ?? false)) {
-      togglePaintMode();
+      enterPaintMode();
+      rerenderToolOverlay();
       return;
     }
+    syncPaintButtonIcon(tool);
     syncPaintToolButtons(true);
+    syncPaintToolStyles(tool);
+    syncPaintColorSelectors();
+    syncPaintOpacitySelectors();
   }
 
   function toggleDrawBondMode() {
@@ -396,6 +514,7 @@ export function createSelectionActions(context) {
     const btn = context.dom.drawBondButton;
     if (next) {
       context.state.overlayState.setSelectMode(false);
+      context.state.overlayState.setRingTemplateMode?.(false);
       context.state.overlayState.setEraseMode(false);
       setPaintMode(false);
       context.state.overlayState.setChargeTool?.(null);
@@ -405,6 +524,9 @@ export function createSelectionActions(context) {
       context.dom.selectButton.classList.remove('active');
       context.dom.eraseButton.classList.remove('active');
       clearChargeButtons();
+      clearRingTemplateSizeButtons();
+      closeRingTemplateDrawer();
+      context.dom.ringTemplateButton?.classList?.remove('active');
       btn.classList.add('active');
       syncElementButtons();
       syncBondDrawTypeButtons();
@@ -418,6 +540,41 @@ export function createSelectionActions(context) {
       clearBondDrawTypeButtons();
       clearChargeButtons();
       closeDrawBondDrawer();
+      closeRingTemplateDrawer();
+    }
+    rerenderToolOverlay();
+  }
+
+  function toggleRingTemplateMode() {
+    const next = !(context.state.overlayState.getRingTemplateMode?.() ?? false);
+    context.state.overlayState.setRingTemplateMode?.(next);
+    const btn = context.dom.ringTemplateButton;
+    if (next) {
+      context.state.overlayState.setSelectMode(false);
+      context.state.overlayState.setDrawBondMode(false);
+      context.state.overlayState.setEraseMode(false);
+      setPaintMode(false);
+      context.state.overlayState.setChargeTool?.(null);
+      context.drawBond.cancelDrawBond();
+      context.view.clearPrimitiveHover();
+      context.dom.panButton.classList.remove('active');
+      context.dom.selectButton.classList.remove('active');
+      context.dom.drawBondButton.classList.remove('active');
+      context.dom.eraseButton.classList.remove('active');
+      clearElementButtons();
+      clearBondDrawTypeButtons();
+      clearChargeButtons();
+      closeDrawBondDrawer();
+      btn?.classList?.add('active');
+      syncRingTemplateSizeButtons();
+      syncRingTemplateButtonIcon();
+    } else {
+      context.view.clearPrimitiveHover();
+      context.dom.panButton.classList.add('active');
+      btn?.classList?.remove('active');
+      clearRingTemplateSizeButtons();
+      clearChargeButtons();
+      closeRingTemplateDrawer();
     }
     rerenderToolOverlay();
   }
@@ -429,6 +586,7 @@ export function createSelectionActions(context) {
     if (next) {
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setDrawBondMode(false);
+      context.state.overlayState.setRingTemplateMode?.(false);
       setPaintMode(false);
       context.state.overlayState.setChargeTool?.(null);
       context.drawBond.cancelDrawBond();
@@ -436,9 +594,11 @@ export function createSelectionActions(context) {
       clearBondDrawTypeButtons();
       clearChargeButtons();
       closeDrawBondDrawer();
+      closeRingTemplateDrawer();
       context.dom.panButton.classList.remove('active');
       context.dom.selectButton.classList.remove('active');
       context.dom.drawBondButton.classList.remove('active');
+      context.dom.ringTemplateButton?.classList?.remove('active');
       btn.classList.add('active');
       if (context.state.overlayState.getSelectedAtomIds().size > 0 || context.state.overlayState.getSelectedBondIds().size > 0) {
         context.actions.deleteSelection();
@@ -464,6 +624,7 @@ export function createSelectionActions(context) {
     context.state.overlayState.setChargeTool?.(nextTool);
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
+    context.state.overlayState.setRingTemplateMode?.(false);
     context.state.overlayState.setEraseMode(false);
     setPaintMode(false);
     context.drawBond.cancelDrawBond();
@@ -471,12 +632,30 @@ export function createSelectionActions(context) {
     clearElementButtons();
     clearBondDrawTypeButtons();
     closeDrawBondDrawer();
+    closeRingTemplateDrawer();
     context.dom.selectButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
+    context.dom.ringTemplateButton?.classList?.remove('active');
     context.dom.eraseButton.classList.remove('active');
     context.dom.panButton.classList.toggle('active', nextTool == null);
     syncChargeButtons();
     rerenderToolOverlay();
+  }
+
+  function setRingTemplateSize(size) {
+    const normalizedSize = Number(size);
+    if (!RING_TEMPLATE_SIZES.includes(normalizedSize)) {
+      return;
+    }
+    context.state.overlayState.setRingTemplateSize?.(normalizedSize);
+    if (!(context.state.overlayState.getRingTemplateMode?.() ?? false)) {
+      toggleRingTemplateMode();
+    } else {
+      syncRingTemplateSizeButtons();
+    }
+    syncRingTemplateButtonIcon();
+    closeRingTemplateDrawer();
+    setRingTemplateDrawerHoverSuppressed(true);
   }
 
   function setDrawElement(element) {
@@ -507,6 +686,13 @@ export function createSelectionActions(context) {
     toggleDrawBondMode();
   }
 
+  function handleRingTemplateButtonClick() {
+    toggleRingTemplateMode();
+    if (context.state.overlayState.getRingTemplateMode?.() ?? false) {
+      toggleRingTemplateDrawer();
+    }
+  }
+
   return {
     togglePanMode,
     toggleSelectMode,
@@ -515,19 +701,28 @@ export function createSelectionActions(context) {
     setPaintColor,
     setPaintOpacity,
     toggleDrawBondMode,
+    toggleRingTemplateMode,
+    setRingTemplateSize,
     toggleEraseMode,
     setChargeTool,
     setDrawElement,
     setDrawBondType,
     handleDrawBondButtonClick,
+    handleRingTemplateButtonClick,
     openDrawBondDrawer,
     closeDrawBondDrawer,
+    openRingTemplateDrawer,
+    closeRingTemplateDrawer,
     toggleDrawBondDrawer,
+    toggleRingTemplateDrawer,
     syncToolButtonsFromState,
     syncElementButtons,
     clearElementButtons,
     syncBondDrawTypeButtons,
     clearBondDrawTypeButtons,
+    syncRingTemplateSizeButtons,
+    clearRingTemplateSizeButtons,
+    syncRingTemplateButtonIcon,
     syncChargeButtons,
     clearChargeButtons,
     syncDrawBondButtonIcon

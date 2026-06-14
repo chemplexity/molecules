@@ -42,6 +42,8 @@ export function createAppRuntime(deps) {
     getSelectedBondIds: deps.selection.getSelectedBondIds,
     getSelectMode: deps.selection.getSelectMode,
     getDrawBondMode: deps.selection.getDrawBondMode,
+    getRingTemplateMode: deps.selection.getRingTemplateMode,
+    getRingTemplateSize: deps.selection.getRingTemplateSize,
     getEraseMode: deps.selection.getEraseMode,
     getPaintMode: deps.selection.getPaintMode,
     getPaintTool: deps.selection.getPaintTool,
@@ -66,6 +68,8 @@ export function createAppRuntime(deps) {
     setDrawBondType: deps.selection.setDrawBondType,
     setSelectMode: deps.selection.setSelectMode,
     setDrawBondMode: deps.selection.setDrawBondMode,
+    setRingTemplateMode: deps.selection.setRingTemplateMode,
+    setRingTemplateSize: deps.selection.setRingTemplateSize,
     setEraseMode: deps.selection.setEraseMode,
     setPaintMode: deps.selection.setPaintMode,
     setPaintTool: deps.selection.setPaintTool,
@@ -374,12 +378,36 @@ export function createAppRuntime(deps) {
     getDrawBondElement: deps.selection.getDrawBondElement,
     molecule: {
       getActive: () => (deps.runtimeState.mode === 'force' ? deps.runtimeState.currentMol : deps.runtimeState.mol2d),
-      getCurrentForceMol: () => deps.runtimeState.currentMol
+      getCurrentForceMol: () => deps.runtimeState.currentMol,
+      ensureActive: () => {
+        if (deps.runtimeState.mode === 'force') {
+          if (!deps.runtimeState.currentMol) {
+            deps.runtimeState.currentMol = new deps.Molecule();
+          }
+          return deps.runtimeState.currentMol;
+        }
+        if (!deps.runtimeState.mol2d) {
+          deps.runtimeState.mol2d = new deps.Molecule();
+          deps.runtimeState.hCounts2d = new Map();
+          deps.runtimeState.stereoMap2d = new Map();
+        }
+        return deps.runtimeState.mol2d;
+      }
     },
     view: {
       captureZoomTransformSnapshot: deps.view.captureZoomTransformSnapshot,
       restoreZoomTransformSnapshot: deps.view.restoreZoomTransformSnapshot,
       zoomToFitIf2d: deps.view.zoomToFitIf2d
+    },
+    view2D: {
+      getCenterX: () => deps.runtimeState.cx2d,
+      getCenterY: () => deps.runtimeState.cy2d
+    },
+    plot: {
+      getSize: () => ({
+        width: deps.dom.plotEl.clientWidth || 600,
+        height: deps.dom.plotEl.clientHeight || 400
+      })
     },
     resonance: {
       prepareResonanceStateForStructuralEdit: deps.resonance.prepareResonanceStateForStructuralEdit

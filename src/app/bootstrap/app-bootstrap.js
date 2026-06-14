@@ -249,7 +249,8 @@ export function finalizeAppBootstrap(ctx) {
     actions: {
       eraseItem: (atomIds, bondIds) => ctx.actions.editingActions.eraseItem(atomIds, bondIds),
       paintStyleTargets: (atomIds, bondIds, style, options = {}) => appDelegates.paintStyleTargets(atomIds, bondIds, style, options),
-      paintRingFill: (atomIds, style, options = {}) => appDelegates.paintRingFill(atomIds, style, options)
+      paintRingFill: (atomIds, style, options = {}) => appDelegates.paintRingFill(atomIds, style, options),
+      placeRingTemplate: (size, ox, oy, options = {}) => appDelegates.placeRingTemplate(size, ox, oy, options)
     },
     view: {
       getZoomTransform: () => ctx.view.getZoomTransform(),
@@ -330,6 +331,7 @@ export function finalizeAppBootstrap(ctx) {
     state: {
       getSelectMode: () => ctx.state.getSelectMode(),
       getDrawBondMode: () => ctx.state.getDrawBondMode(),
+      getRingTemplateMode: () => ctx.state.getRingTemplateMode?.() ?? false,
       hasDrawBondState: () => ctx.state.hasDrawBondState(),
       getEraseMode: () => ctx.state.getEraseMode(),
       getChargeTool: () => ctx.state.getChargeTool?.() ?? null,
@@ -417,6 +419,8 @@ export function finalizeAppBootstrap(ctx) {
         setPaintOpacity: opacity => ctx.actions.selectionActions.setPaintOpacity(opacity),
         toggleDrawBondMode: () => ctx.actions.selectionActions.toggleDrawBondMode(),
         handleDrawBondButtonClick: () => ctx.actions.selectionActions.handleDrawBondButtonClick(),
+        handleRingTemplateButtonClick: () => ctx.actions.selectionActions.handleRingTemplateButtonClick(),
+        setRingTemplateSize: size => ctx.actions.selectionActions.setRingTemplateSize(size),
         openDrawBondDrawer: () => ctx.actions.selectionActions.openDrawBondDrawer(),
         closeDrawBondDrawer: () => ctx.actions.selectionActions.closeDrawBondDrawer(),
         toggleEraseMode: () => ctx.actions.selectionActions.toggleEraseMode(),

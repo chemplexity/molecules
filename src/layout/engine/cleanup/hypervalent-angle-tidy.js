@@ -16,6 +16,7 @@ import { atomPairKey, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const ORTHOGONAL_ORGANOSILICON_ELEMENTS = new Set(['Si']);
 const ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS = 2;
+const ORTHOGONAL_PHOSPHONIUM_MIN_ARYL_LIGANDS = 2;
 const ANGLE_THRESHOLD = Math.PI / 18;
 const FIXED_LIGAND_WEIGHT = 12;
 const BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
@@ -666,6 +667,49 @@ function isOrthogonalOrganosiliconLigandSet(layoutGraph, atomIds) {
 }
 
 /**
+ * Returns whether a direct phosphonium ligand is a carbon ligand eligible for
+ * four-way orthogonal projection.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate ligand atom id.
+ * @returns {boolean} True when the ligand is carbon.
+ */
+function isOrthogonalPhosphoniumSingleLigand(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return Boolean(atom && atom.element === 'C');
+}
+
+/**
+ * Returns whether a direct phosphonium carbon ligand is an aromatic ring root.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate ligand atom id.
+ * @returns {boolean} True when the ligand is an aryl root.
+ */
+function isOrthogonalPhosphoniumArylLigand(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return Boolean(atom && atom.element === 'C' && atom.aromatic === true && layoutGraph.ringAtomIdSet.has(atomId));
+}
+
+/**
+ * Returns whether a tetracarbon phosphonium center should use the same
+ * publication-style orthogonal projection as other four-ligand hypervalent
+ * centers. Requiring aryl ligands keeps ordinary small alkyl phosphonium fans
+ * out of this bulky-ring presentation rule.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate phosphorus atom id.
+ * @param {string[]} ligandAtomIds - Direct single-bond ligand atom ids.
+ * @returns {boolean} True when the ligand set should be squared.
+ */
+function isOrthogonalPhosphoniumLigandSet(layoutGraph, atomId, ligandAtomIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return (
+    atom?.element === 'P' &&
+    (atom.charge ?? 0) > 0 &&
+    ligandAtomIds.every(ligandAtomId => isOrthogonalPhosphoniumSingleLigand(layoutGraph, ligandAtomId)) &&
+    ligandAtomIds.filter(ligandAtomId => isOrthogonalPhosphoniumArylLigand(layoutGraph, ligandAtomId)).length >= ORTHOGONAL_PHOSPHONIUM_MIN_ARYL_LIGANDS
+  );
+}
+
+/**
  * Returns whether a bis-oxo center has a hydrogen hidden from the published
  * heavy-atom drawing. Once hydrogens are suppressed, a center with one visible
  * single-bond ligand and two oxo ligands reads as a three-heavy trigonal fan,
@@ -740,6 +784,9 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
   }
   if (singleNeighborIds.length === 4 && multipleNeighborIds.length === 0 && ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element) && isOrthogonalOrganosiliconLigandSet(layoutGraph, singleNeighborIds)) {
     return { kind: 'organosilicon', singleNeighborIds, multipleNeighborIds };
+  }
+  if (singleNeighborIds.length === 4 && multipleNeighborIds.length === 0 && isOrthogonalPhosphoniumLigandSet(layoutGraph, atomId, singleNeighborIds)) {
+    return { kind: 'phosphonium', singleNeighborIds, multipleNeighborIds };
   }
   return null;
 }

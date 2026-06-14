@@ -15,8 +15,9 @@
 
 import { parseSMILES } from '../io/smiles.js';
 import { parseINCHI } from '../io/inchi.js';
-import { styleColor, styleOpacity } from '../core/style.js';
+import { ringFillDomId, styleColor, styleOpacity } from '../core/style.js';
 import { generateAndRefine2dCoords } from './index.js';
+import { buildRingFillShape } from './ring-fill-shape.js';
 import {
   atomColor,
   WEDGE_HALF_W,
@@ -384,8 +385,9 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
   const ringFillEls = [];
   const ringFills = typeof mol.getRingFills === 'function' ? mol.getRingFills() : (mol.properties?.style?.ringFills ?? []);
   if (ringFills.length > 0) {
+    const rings = mol.getRings();
     const ringByKey = new Map();
-    for (const ringAtomIds of mol.getRings()) {
+    for (const ringAtomIds of rings) {
       ringByKey.set([...ringAtomIds].sort().join('\0'), ringAtomIds);
     }
     for (const fill of ringFills) {
@@ -393,19 +395,17 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
       if (!ringAtomIds) {
         continue;
       }
-      const points = [];
-      for (const atomId of ringAtomIds) {
+      const shape = buildRingFillShape(ringAtomIds, rings, atomId => {
         const atom = mol.atoms.get(atomId);
         if (!atom || atom.visible === false || !renderPosition(atom, projectedCoords, mol)) {
-          points.length = 0;
-          break;
+          return null;
         }
         const point = toSVG(atom);
-        points.push(`${point.x.toFixed(2)},${point.y.toFixed(2)}`);
-      }
-      if (points.length >= 3) {
+        return { x: Number(point.x.toFixed(2)), y: Number(point.y.toFixed(2)) };
+      });
+      if (shape) {
         ringFillEls.push(
-          `<polygon class="ring-fill" data-ring-fill-id="${escapeXml(String(fill.id ?? ''))}" points="${points.join(' ')}" fill="${fill.color}" fill-opacity="${fill.opacity ?? 0.25}" stroke="none"/>`
+          `<path class="ring-fill" data-ring-fill-id="${escapeXml(ringFillDomId(ringAtomIds))}" d="${escapeXml(shape.path)}" fill-rule="evenodd" fill="${fill.color}" fill-opacity="${fill.opacity ?? 0.25}" stroke="none"/>`
         );
       }
     }
@@ -513,6 +513,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     let chargeSup = '';
     if (charge !== 0) {
       const sign = formatChargeLabel(charge);
+      const chargeBadgeColor = '#111111';
       const extraOccupiedAngles = showLonePairs ? (lonePairDotsByAtomId.get(atom.id) ?? []).map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite) : [];
       const placement = computeChargeBadgePlacement(atom, mol, {
         pointForAtom: toSVG,
@@ -523,8 +524,8 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
       });
       if (placement) {
         chargeSup =
-          `<circle class="atom-charge-ring" cx="${placement.x.toFixed(2)}" cy="${placement.y.toFixed(2)}" r="${placement.radius.toFixed(2)}" fill="white" stroke="${color}" stroke-width="0.9" opacity="${opacity}"/>` +
-          `<text class="atom-charge-text" x="${placement.x.toFixed(2)}" y="${placement.y.toFixed(2)}" font-family="sans-serif" font-size="${placement.fontSize.toFixed(1)}" font-weight="700" fill="${color}" opacity="${opacity}" text-anchor="middle" dominant-baseline="central">${escapeXml(sign)}</text>`;
+          `<circle class="atom-charge-ring" cx="${placement.x.toFixed(2)}" cy="${placement.y.toFixed(2)}" r="${placement.radius.toFixed(2)}" fill="white" stroke="${chargeBadgeColor}" stroke-width="0.9" opacity="${opacity}"/>` +
+          `<text class="atom-charge-text" x="${placement.x.toFixed(2)}" y="${placement.y.toFixed(2)}" font-family="sans-serif" font-size="${placement.fontSize.toFixed(1)}" font-weight="700" fill="${chargeBadgeColor}" opacity="${opacity}" text-anchor="middle" dominant-baseline="central">${escapeXml(sign)}</text>`;
       }
     }
 

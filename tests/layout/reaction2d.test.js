@@ -242,7 +242,7 @@ function findProductCarbonylCenters(preview, predicate) {
   });
 }
 
-test('reaction preview preserves reactant ring fills from the source molecule', () => {
+test('reaction preview preserves source ring fills on reactant and retained product rings', () => {
   const sourceMol = parseSMILES('OCc1ccccc1');
   const ringAtomIds = sourceMol.getRings()[0];
   sourceMol.setRingFill(ringAtomIds, { color: '#ffcc00', opacity: 0.35 });
@@ -251,8 +251,24 @@ test('reaction preview preserves reactant ring fills from the source molecule', 
   assert.ok(mapping, 'expected alcohol-oxidation mapping for benzyl alcohol');
 
   const preview = buildReaction2dMol(sourceMol, reactionTemplates.alcoholOxidation.smirks, mapping);
+  const productIdBySourceId = new Map(preview.mappedAtomPairs);
+  const productRingAtomIds = ringAtomIds.map(atomId => productIdBySourceId.get(atomId)).sort();
+  const sourceRingAtomIds = [...ringAtomIds].sort();
 
-  assert.deepEqual(preview.mol.getRingFills(), sourceMol.getRingFills());
+  assert.deepEqual(preview.mol.getRingFills(), [
+    {
+      id: `ring-fill:${sourceRingAtomIds.join('\0')}`,
+      atomIds: sourceRingAtomIds,
+      color: '#ffcc00',
+      opacity: 0.35
+    },
+    {
+      id: `ring-fill:${productRingAtomIds.join('\0')}`,
+      atomIds: productRingAtomIds,
+      color: '#ffcc00',
+      opacity: 0.35
+    }
+  ]);
 });
 
 test('force reaction arrow shifts to a clearer parallel lane when atoms block the centerline', () => {
@@ -451,6 +467,75 @@ test('reaction preview snapshot can reapply the locked preview as an overlay ins
     assert.equal(renderCalls.length, 1, 'expected preview reapply to render once');
     assert.equal(renderCalls[0].options?.preserveHistory, true, 'expected preview reapply to preserve undo history');
     assert.ok(renderCalls[0].mol.atoms.size > sourceMol.atoms.size, 'expected reapply to render the composite preview rather than the source molecule');
+  } finally {
+    globalThis.document = previousDocument;
+    _clearReactionPreviewState();
+  }
+});
+
+test('reaction preview reapply preserves product-side ring fills', () => {
+  const sourceMol = parseSMILES('C1=CCCCC1');
+  const smirks = reactionTemplates.alkeneHydrogenation.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected hydrogenation preview to be buildable');
+  const productRingAtomIds = preview.mol.getRings().find(ringAtomIds => ringAtomIds.every(atomId => preview.productAtomIds.has(atomId)));
+  assert.ok(productRingAtomIds, 'expected product-side ring in preview');
+  preview.mol.setRingFill(productRingAtomIds, { color: '#66ccff', opacity: 0.42 });
+
+  const previousDocument = globalThis.document;
+  const renderCalls = [];
+  try {
+    globalThis.document = {
+      getElementById() {
+        return null;
+      }
+    };
+    initHighlights({
+      mode: '2d',
+      _mol2d: null,
+      draw2d() {},
+      applyForceHighlights() {}
+    });
+    initReaction2d({
+      mode: '2d',
+      _mol2d: preview.mol,
+      currentMol: null,
+      renderMol(mol, options = {}) {
+        renderCalls.push({ mol, options });
+        this._mol2d = mol;
+      }
+    });
+    _restoreReactionPreviewSnapshot({
+      sourceMol: serializeMol(sourceMol),
+      activeReactionSmirks: smirks,
+      activeReactionMatchIndex: 0,
+      reactionPreviewLocked: true,
+      reactantAtomIds: [...preview.reactantAtomIds],
+      productAtomIds: [...preview.productAtomIds],
+      productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+      mappedAtomPairs: [...preview.mappedAtomPairs],
+      editedProductAtomIds: [...preview.editedProductAtomIds],
+      preservedReactantStereoByCenter: [],
+      preservedReactantStereoBondTypes: [],
+      preservedProductStereoByCenter: [],
+      preservedProductStereoBondTypes: [],
+      forcedStereoByCenter: [],
+      forcedStereoBondTypes: [],
+      forcedStereoBondCenters: [],
+      reactantReferenceCoords: [],
+      reactionPreviewHighlightMappings: []
+    });
+
+    assert.equal(_reapplyActiveReactionPreview(), true, 'expected locked preview to reapply');
+    const reappliedFills = renderCalls[0]?.mol.getRingFills() ?? [];
+    assert.equal(reappliedFills.length, 1);
+    assert.deepEqual(reappliedFills[0], {
+      id: `ring-fill:${[...productRingAtomIds].sort().join('\0')}`,
+      atomIds: [...productRingAtomIds].sort(),
+      color: '#66ccff',
+      opacity: 0.42
+    });
   } finally {
     globalThis.document = previousDocument;
     _clearReactionPreviewState();

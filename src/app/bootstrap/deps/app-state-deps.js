@@ -97,6 +97,14 @@ export function createAppStateBridgeDeps(ctx) {
       setDrawBondMode: value => {
         ctx.setDrawBondMode(value);
       },
+      getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
+      setRingTemplateMode: value => {
+        ctx.setRingTemplateMode?.(value);
+      },
+      getRingTemplateSize: () => ctx.getRingTemplateSize?.() ?? 6,
+      setRingTemplateSize: value => {
+        ctx.setRingTemplateSize?.(value);
+      },
       getEraseMode: () => ctx.getEraseMode(),
       setEraseMode: value => {
         ctx.setEraseMode(value);
