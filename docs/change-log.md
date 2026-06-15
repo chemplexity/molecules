@@ -1,5 +1,21 @@
 # Change Log
 
+## 2026-06-14
+
+- Add ring-template placement from existing atoms and bonds in both 2D and force layouts, including matching previews for held atom and bond interactions.
+- Keep held bond-anchored ring previews visible while the mouse moves, and refit/keep the viewport in view after placing rings near the window edge.
+- Commit bond-anchored ring-template previews on mouseup after a held bond interaction, suppressing the follow-up click so the ring is not duplicated.
+- Reuse overlapped existing atoms and bonds when placing atom-anchored ring templates so fused placements do not create duplicate stacked geometry.
+- Highlight ring-template anchor atoms/bonds and any existing fused atoms/bonds that a pivoted ring preview would reuse.
+- Clear ring-template selection highlights after placing a ring instead of leaving the new ring highlighted.
+- Let held bond-anchored ring-template previews switch to the side of the bond under the mouse and place the ring on that same side.
+- Match force-mode ring-template preview sizing to the effective placed ring size for atom/free and bond-anchored placements.
+- Preserve existing implicit-hydrogen atom ids during ring-template repairs so force-mode bond-ring placement does not appear to delete and recreate extra atoms.
+- Prevent rendered force bond strokes from falling through to blank-canvas ring placement, so clicking bond 8 in force ring mode anchors the new ring to that bond instead of creating a separate ring.
+- Keep bond-anchored ring templates from reusing incidental nearby atoms, so force-mode bond clicks add the expected ring atoms instead of over-fusing into the existing chain.
+- Restore deliberate fusing for dragged bond-anchored ring templates while keeping plain bond clicks protected from accidental reuse.
+- Match deliberate force-mode bond-ring fusing against force node positions, so dragged force previews can reuse overlapped atoms even when molecule coordinates differ.
+
 ## 2026-06-13
 
 - Keep saturated shared corners in bridged flavonoid cages visibly bent.

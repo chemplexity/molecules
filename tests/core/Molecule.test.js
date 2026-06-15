@@ -55,3 +55,32 @@ describe('Molecule.resetIds', () => {
     assert.equal(mol._bondIndex.get('1,2'), '1');
   });
 });
+
+describe('Molecule.repairImplicitHydrogens', () => {
+  it('preserves existing pendant hydrogens and removes only excess atoms', () => {
+    const mol = new Molecule();
+    const carbon = mol.addAtom('C1', 'C', {}, { recompute: false });
+    carbon.x = 0;
+    carbon.y = 0;
+    const hydrogenIds = [];
+    for (let index = 0; index < 4; index++) {
+      const hydrogen = mol.addAtom(`H${index + 1}`, 'H', {}, { recompute: false });
+      hydrogen.visible = false;
+      hydrogenIds.push(hydrogen.id);
+      mol.addBond(`CH${index + 1}`, carbon.id, hydrogen.id, { order: 1 }, false);
+    }
+    const neighbor = mol.addAtom('C2', 'C', {}, { recompute: false });
+    mol.addBond('CC', carbon.id, neighbor.id, { order: 1 }, false);
+
+    mol.repairImplicitHydrogens([carbon.id]);
+
+    const remainingHydrogenIds = [...mol.atoms.values()]
+      .filter(atom => atom.name === 'H')
+      .map(atom => atom.id);
+    assert.deepEqual(remainingHydrogenIds, hydrogenIds.slice(0, 3));
+    assert.equal(mol.atoms.has(hydrogenIds[3]), false);
+    for (const hydrogenId of remainingHydrogenIds) {
+      assert.ok(mol.getBond(carbon.id, hydrogenId));
+    }
+  });
+});

@@ -122,7 +122,11 @@ function makeHitElement(kind, id) {
         ? ['bond-hit']
         : kind === 'force-atom'
           ? ['node']
-          : ['bond-hover-target'];
+          : kind === 'force-link'
+            ? ['link']
+            : kind === 'force-separator'
+              ? ['separator']
+              : ['bond-hover-target'];
   const ownerSVGElement = {
     createSVGPoint() {
       return {
@@ -153,6 +157,10 @@ function makeHitElement(kind, id) {
     closest(selector) {
       if ((selector === '[data-atom-id]' && kind === 'atom') || (selector === '[data-bond-id]' && kind === 'bond')) {
         return group;
+      }
+      const selectorParts = selector.split(',').map(part => part.trim());
+      if (selectorParts.some(part => part.startsWith('.') && classes.includes(part.slice(1)))) {
+        return this;
       }
       return null;
     },
@@ -423,6 +431,29 @@ describe('initGestureInteractions', () => {
       ['stopPropagation'],
       ['placeRingTemplate', 5, 12, 34]
     ]);
+  });
+
+  it('does not place a free ring when ring-template mousedown starts on a rendered force bond stroke', () => {
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setMode('force');
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+    const forceLink = makeHitElement('force-link', '8');
+    assert.equal(Boolean(forceLink.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')), true);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: forceLink,
+      preventDefault() {
+        calls.push(['preventDefault']);
+      },
+      stopPropagation() {
+        calls.push(['stopPropagation']);
+      }
+    });
+
+    assert.deepEqual(calls, []);
   });
 
   it('selects the whole molecule on blank-space double-click and enters select mode', () => {

@@ -108,6 +108,7 @@ function makeManager(options = {}) {
       getMode: () => options.mode ?? '2d',
       getSelectMode: () => options.selectMode ?? false,
       getDrawBondMode: () => options.drawBondMode ?? false,
+      getRingTemplateMode: () => options.ringTemplateMode ?? false,
       getEraseMode: () => options.eraseMode ?? false,
       getChargeTool: () => options.chargeTool ?? null,
       getSelectionModifierActive: () => options.selectionModifierActive ?? false,
@@ -292,6 +293,30 @@ describe('createSelectionOverlayManager', () => {
     manager.showPrimitiveHover(['a1'], ['b1']);
 
     assert.deepEqual([...hoveredAtomIds], ['a1']);
+    assert.deepEqual([...hoveredBondIds], ['b1']);
+    assert.equal(typeof scheduler.callback, 'function');
+  });
+
+  it('allows primitive hover updates while ring-template mode is active', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const atomB = makeAtom('a2', { x: 40, y: 10 });
+    const bond = makeBond('b1', atomA, atomB);
+    const mol = {
+      atoms: new Map([
+        ['a1', atomA],
+        ['a2', atomB]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { manager, hoveredAtomIds, hoveredBondIds, scheduler } = makeManager({
+      mode: '2d',
+      ringTemplateMode: true,
+      mol2D: mol
+    });
+
+    manager.showPrimitiveHover(['a1', 'a2'], ['b1']);
+
+    assert.deepEqual([...hoveredAtomIds], ['a1', 'a2']);
     assert.deepEqual([...hoveredBondIds], ['b1']);
     assert.equal(typeof scheduler.callback, 'function');
   });

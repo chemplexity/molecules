@@ -660,6 +660,9 @@ export function create2DSceneRenderer(ctx) {
         )
         .style('pointer-events', 'stroke')
         .on('mousedown', event => {
+          if (ctx.events.handle2dBondMouseDownRingTemplate(event, bi.bond.id, p1, p2, bi.bond.atoms)) {
+            return;
+          }
           if (!ctx.overlay.getDrawBondMode()) {
             return;
           }

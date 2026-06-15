@@ -175,6 +175,9 @@ describe('interaction runtime bootstrap', () => {
         get2DAtoms() {
           return [];
         },
+        toSelectionSVGPt2d() {
+          return null;
+        },
         get2DCenterX: () => 0,
         get2DCenterY: () => 0,
         forceBondLength: 25,

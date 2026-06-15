@@ -1188,7 +1188,7 @@ export function initGestureInteractions(context) {
     if (event.button !== 0) {
       return;
     }
-    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target')) {
+    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
       return;
     }
 
@@ -1229,7 +1229,7 @@ export function initGestureInteractions(context) {
     if (context.overlays.hasReactionPreview()) {
       return;
     }
-    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target')) {
+    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
       return;
     }
 
@@ -1252,7 +1252,7 @@ export function initGestureInteractions(context) {
     if (context.overlays.hasReactionPreview()) {
       return;
     }
-    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target')) {
+    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
       return;
     }
 

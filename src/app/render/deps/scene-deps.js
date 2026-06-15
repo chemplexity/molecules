@@ -139,6 +139,7 @@ export function createForceSceneRendererDeps(ctx) {
     },
     events: {
       handleForceBondClick: (event, bondId, molecule) => ctx.handleForceBondClick(event, bondId, molecule),
+      handleForceBondMouseDownRingTemplate: (event, linkDatum) => ctx.handleForceBondMouseDownRingTemplate?.(event, linkDatum) ?? false,
       handleForceBondDblClick: (event, atomIds) => ctx.handleForceBondDblClick(event, atomIds),
       handleForceBondMouseOver: (event, bondId, molecule) => ctx.handleForceBondMouseOver(event, bondId, molecule),
       handleForceBondMouseMove: event => ctx.handleForceBondMouseMove(event),
@@ -222,6 +223,8 @@ export function create2DSceneRendererDeps(ctx) {
     },
     events: {
       handle2dBondClick: (event, bondId) => ctx.handle2dBondClick(event, bondId),
+      handle2dBondMouseDownRingTemplate: (event, bondId, anchorA, anchorB, anchorAtomIds = []) =>
+        ctx.handle2dBondMouseDownRingTemplate?.(event, bondId, anchorA, anchorB, anchorAtomIds) ?? false,
       handle2dBondDblClick: (event, atomIds) => ctx.handle2dBondDblClick(event, atomIds),
       handle2dBondMouseOver: (event, bond, a1, a2) => ctx.handle2dBondMouseOver(event, bond, a1, a2),
       handle2dBondMouseMove: event => ctx.handle2dBondMouseMove(event),
@@ -267,6 +270,7 @@ export function createSelectionOverlayManagerDeps(ctx) {
       getMode: () => ctx.getMode(),
       getSelectMode: () => ctx.getSelectMode(),
       getDrawBondMode: () => ctx.getDrawBondMode(),
+      getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
       getEraseMode: () => ctx.getEraseMode(),
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
       getSelectionModifierActive: () => ctx.getSelectionModifierActive(),

@@ -373,7 +373,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('data-bond-id', d => d.id)
       .style('stroke-width', d => singleBondWidth(d.order))
       .style('stroke', d => bondDisplayColor(bondForLink(d)))
-      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
+      .style('pointer-events', 'none');
 
     const doubleSep = bondEnter
       .append('line')
@@ -382,7 +383,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
       .style('stroke-width', PI_STROKE.width)
-      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
+      .style('pointer-events', 'none');
 
     const aroBond1 = bondEnter
       .append('line')
@@ -391,7 +393,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('data-bond-id', d => d.id)
       .style('stroke', ARO_STROKE.stroke)
       .style('stroke-width', ARO_STROKE.width)
-      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
+      .style('pointer-events', 'none');
 
     const aroBond2 = bondEnter
       .append('line')
@@ -401,7 +404,8 @@ export function createForceSceneRenderer(ctx) {
       .style('stroke', ARO_STROKE.stroke)
       .style('stroke-width', ARO_STROKE.width)
       .style('stroke-dasharray', ARO_STROKE.dashArray)
-      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
+      .style('pointer-events', 'none');
 
     const tripleSep1 = bondEnter
       .append('line')
@@ -410,7 +414,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
       .style('stroke-width', PI_STROKE.width)
-      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
+      .style('pointer-events', 'none');
 
     const tripleSep2 = bondEnter
       .append('line')
@@ -419,7 +424,8 @@ export function createForceSceneRenderer(ctx) {
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
       .style('stroke-width', PI_STROKE.width)
-      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)));
+      .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
+      .style('pointer-events', 'none');
 
     const bondHoverTarget = bondEnter
       .append('line')
@@ -428,6 +434,9 @@ export function createForceSceneRenderer(ctx) {
       .style('stroke-width', '14px')
       .style('pointer-events', 'stroke')
       .style('cursor', 'grab')
+      .on('mousedown', (event, d) => {
+        ctx.events.handleForceBondMouseDownRingTemplate(event, d);
+      })
       .on('click', (event, d) => {
         ctx.events.handleForceBondClick(event, d.id, molecule);
       })

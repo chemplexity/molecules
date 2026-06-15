@@ -277,6 +277,11 @@ describe('interaction action deps builders', () => {
       atomTooltipHtml: atom => `atom:${atom.id}`,
       bondTooltipHtml: bond => `bond:${bond.id}`,
       pointer: (event, node) => [event.x, node.y],
+      scale: 60,
+      forceBondLength: 41,
+      getForceNodeById: atomId => ({ id: atomId, x: 1, y: 2 }),
+      get2DAtomById: atomId => ({ id: atomId, x: 3, y: 4 }),
+      toSelectionSVGPt2d: atom => ({ x: atom.x + 10, y: atom.y + 20 }),
       getGNode: () => ({ id: 'g' })
     });
 
@@ -291,6 +296,9 @@ describe('interaction action deps builders', () => {
     assert.equal(deps.drawBond.getElement(), 'O');
     assert.equal(deps.tooltipState.getSelectionValenceTooltipAtomId(), 12);
     assert.deepEqual(deps.pointer({ x: 7 }, { y: 8 }), [7, 8]);
+    assert.deepEqual(deps.constants, { scale: 60, forceBondLength: 41 });
+    assert.deepEqual(deps.helpers.getForceNodeById('a1'), { id: 'a1', x: 1, y: 2 });
+    assert.deepEqual(deps.helpers.toSelectionSVGPt2d({ x: 3, y: 4 }), { x: 13, y: 24 });
     assert.deepEqual(records, [
       ['start', 4, 5, 6],
       ['paint', ['a1'], ['b1'], { color: '#3366ff' }],

@@ -194,6 +194,7 @@ describe('scene deps builders', () => {
       getMode: () => '2d',
       getSelectMode: () => true,
       getDrawBondMode: () => false,
+      getRingTemplateMode: () => true,
       getEraseMode: () => false,
       getChargeTool: () => 'positive',
       getSelectionModifierActive: () => false,
@@ -230,6 +231,7 @@ describe('scene deps builders', () => {
     assert.deepEqual(scene2D.drag.create2dAtomDrag(), { type: 'atom' });
     scene2D.events.handle2dAtomContextMenu();
     assert.equal(overlay.state.getMode(), '2d');
+    assert.equal(overlay.state.getRingTemplateMode(), true);
     assert.equal(overlay.state.getChargeTool(), 'positive');
     assert.deepEqual(forceSelection.selection.getRenderableSelectionIds(), { atomIds: [1], bondIds: [2] });
     forceSelection.cache.setSelectionLines('L');

@@ -450,6 +450,16 @@ export function createPrimitiveEventHandlerDeps(ctx) {
       bondTooltipHtml: ctx.bondTooltipHtml
     },
     pointer: (event, node) => ctx.pointer(event, node),
+    constants: {
+      scale: ctx.scale,
+      forceBondLength: ctx.forceBondLength
+    },
+    helpers: {
+      getForceNodeById: atomId => ctx.getForceNodeById?.(atomId) ?? null,
+      getForceNodes: () => ctx.getForceNodes?.() ?? [],
+      get2DAtomById: atomId => ctx.get2DAtomById?.(atomId) ?? null,
+      toSelectionSVGPt2d: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null
+    },
     dom: {
       gNode: () => ctx.getGNode()
     }

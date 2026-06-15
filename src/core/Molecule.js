@@ -401,8 +401,12 @@ export class Molecule {
     const chargeAdj = getImplicitHydrogenChargeAdjustment(group, charge);
     const neededH = Math.max(0, valence - nonHBondOrder - radical + chargeAdj);
 
-    // Remove existing pendant H atoms.
-    for (const hId of pendantHIds) {
+    // Preserve existing pendant hydrogens where possible so local edits do not
+    // churn stable atom ids and force-layout positions.
+    const hydrogensToRemove = pendantHIds.slice(neededH);
+
+    // Remove only excess pendant H atoms.
+    for (const hId of hydrogensToRemove) {
       const hAtom = this.atoms.get(hId);
       if (!hAtom) {
         continue;
@@ -421,7 +425,7 @@ export class Molecule {
 
     // Add the required number of new H atoms (invisible — kept in graph for
     // correct SMARTS X/H-count semantics but hidden from 2D layout/rendering).
-    for (let i = 0; i < neededH; i++) {
+    for (let i = pendantHIds.length; i < neededH; i++) {
       const hAtom = new Atom(this._generateAutoAtomId(), 'H');
       hAtom.resolveElement();
       hAtom.visible = false;

@@ -4,7 +4,11 @@ import { atomDisplayColor, atomDisplayOpacity, atomRadius, getRenderOptions, sin
 
 const RING_TEMPLATE_ROTATION_SNAP = Math.PI / 6;
 const RING_TEMPLATE_DRAG_THRESHOLD_PX = 3;
+const RING_TEMPLATE_REUSE_DISTANCE_FACTOR = 0.2;
+const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const TAU = Math.PI * 2;
+const GEOMETRY_EPSILON = 1e-6;
 
 /**
  * Creates event handler functions for all atom and bond mouse interactions in both 2D and force-layout modes.
@@ -13,6 +17,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
  */
 export function createPrimitiveEventHandlers(context) {
   let pendingRingTemplate = null;
+  let pendingBondRingTemplatePreview = null;
   let suppressNextRingTemplateClick = false;
 
   function getChargeTool() {
@@ -35,7 +40,30 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function getRingTemplateBondLength() {
-    return context.state.viewState.getMode() === 'force' ? (context.constants?.forceBondLength ?? 30) : (context.constants?.scale ?? 40) * 1.5;
+    return context.state.viewState.getMode() === 'force' ? (context.constants?.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR : (context.constants?.scale ?? 40) * 1.5;
+  }
+
+  function forcePreviewBondAnchorPoints(anchorA, anchorB) {
+    if (context.state.viewState.getMode() !== 'force' || !isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
+      return [{ x: anchorA.x, y: anchorA.y }, { x: anchorB.x, y: anchorB.y }];
+    }
+    const dx = anchorB.x - anchorA.x;
+    const dy = anchorB.y - anchorA.y;
+    const length = Math.hypot(dx, dy);
+    if (length <= GEOMETRY_EPSILON) {
+      return [{ x: anchorA.x, y: anchorA.y }, { x: anchorB.x, y: anchorB.y }];
+    }
+    const targetLength = getRingTemplateBondLength();
+    const halfX = (dx / length) * targetLength * 0.5;
+    const halfY = (dy / length) * targetLength * 0.5;
+    const midpoint = {
+      x: (anchorA.x + anchorB.x) * 0.5,
+      y: (anchorA.y + anchorB.y) * 0.5
+    };
+    return [
+      { x: midpoint.x - halfX, y: midpoint.y - halfY },
+      { x: midpoint.x + halfX, y: midpoint.y + halfY }
+    ];
   }
 
   function normalizePreviewAngle(angle) {
@@ -45,6 +73,28 @@ export function createPrimitiveEventHandlers(context) {
 
   function snapRingTemplateAngle(angle) {
     return normalizePreviewAngle(Math.round(angle / RING_TEMPLATE_ROTATION_SNAP) * RING_TEMPLATE_ROTATION_SNAP);
+  }
+
+  function isFinitePoint(point) {
+    return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+  }
+
+  function pointerPoint(event) {
+    const [gX, gY] = context.pointer(event, context.dom.gNode());
+    return { x: gX, y: gY };
+  }
+
+  function getRingTemplateAnchorPoint(event, atomId, atomDatum = null) {
+    if (context.state.viewState.getMode() === 'force') {
+      const node = isFinitePoint(atomDatum) ? atomDatum : context.helpers?.getForceNodeById?.(atomId);
+      if (isFinitePoint(node)) {
+        return { x: node.x, y: node.y };
+      }
+      return pointerPoint(event);
+    }
+    const atom = context.helpers?.get2DAtomById?.(atomId);
+    const point = atom ? context.helpers?.toSelectionSVGPt2d?.(atom) : null;
+    return isFinitePoint(point) ? { x: point.x, y: point.y } : pointerPoint(event);
   }
 
   function previewRingPositions(size, anchorPoint, bondLength, centerAngle) {
@@ -65,11 +115,232 @@ export function createPrimitiveEventHandlers(context) {
     return positions;
   }
 
+  function pointDistance(a, b) {
+    return Math.hypot((a?.x ?? 0) - (b?.x ?? 0), (a?.y ?? 0) - (b?.y ?? 0));
+  }
+
+  function regularRingPositionsForBondPoints(anchorA, anchorB, size, sideSign = 1) {
+    if (!isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
+      return null;
+    }
+    const dx = anchorB.x - anchorA.x;
+    const dy = anchorB.y - anchorA.y;
+    const bondLength = Math.hypot(dx, dy);
+    if (bondLength <= GEOMETRY_EPSILON) {
+      return null;
+    }
+    const ux = dx / bondLength;
+    const uy = dy / bondLength;
+    const midpoint = {
+      x: (anchorA.x + anchorB.x) / 2,
+      y: (anchorA.y + anchorB.y) / 2
+    };
+    const apothem = bondLength / (2 * Math.tan(Math.PI / size));
+    const center = {
+      x: midpoint.x - uy * apothem * sideSign,
+      y: midpoint.y + ux * apothem * sideSign
+    };
+    const radius = bondLength / (2 * Math.sin(Math.PI / size));
+    const step = TAU / size;
+    const angleA = Math.atan2(anchorA.y - center.y, anchorA.x - center.x);
+    const angleB = Math.atan2(anchorB.y - center.y, anchorB.x - center.x);
+    const direction = normalizePreviewAngle(angleB - angleA) <= Math.PI ? 1 : -1;
+    const positions = [
+      { x: anchorA.x, y: anchorA.y },
+      { x: anchorB.x, y: anchorB.y }
+    ];
+    for (let index = 2; index < size; index++) {
+      const angle = angleB + direction * step * (index - 1);
+      positions.push({
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius
+      });
+    }
+    return positions;
+  }
+
+  function scoreBondAnchoredRingSide(newPositions, occupiedPoints, bondLength) {
+    let score = 0;
+    for (const position of newPositions) {
+      for (const occupied of occupiedPoints) {
+        const distance = pointDistance(position, occupied);
+        if (distance <= GEOMETRY_EPSILON) {
+          score += 1e6;
+          continue;
+        }
+        score += 1 / (distance * distance);
+        if (distance < bondLength * 0.8) {
+          score += (bondLength * 0.8 - distance) * 100;
+        }
+      }
+    }
+    return score;
+  }
+
+  function chooseBondAnchoredRingSide(anchorA, anchorB, size, occupiedPoints = []) {
+    const first = regularRingPositionsForBondPoints(anchorA, anchorB, size, 1);
+    const second = regularRingPositionsForBondPoints(anchorA, anchorB, size, -1);
+    if (!first || !second) {
+      return null;
+    }
+    const bondLength = pointDistance(anchorA, anchorB);
+    const firstScore = scoreBondAnchoredRingSide(first.slice(2), occupiedPoints, bondLength);
+    const secondScore = scoreBondAnchoredRingSide(second.slice(2), occupiedPoints, bondLength);
+    return firstScore <= secondScore ? 1 : -1;
+  }
+
+  function bondSideSignForPoint(anchorA, anchorB, point, fallbackSideSign = 1) {
+    if (!isFinitePoint(anchorA) || !isFinitePoint(anchorB) || !isFinitePoint(point)) {
+      return fallbackSideSign < 0 ? -1 : 1;
+    }
+    const cross = (anchorB.x - anchorA.x) * (point.y - anchorA.y) - (anchorB.y - anchorA.y) * (point.x - anchorA.x);
+    if (Math.abs(cross) <= GEOMETRY_EPSILON) {
+      return fallbackSideSign < 0 ? -1 : 1;
+    }
+    return cross < 0 ? -1 : 1;
+  }
+
+  function get2DOccupiedRingPreviewPoints(anchorAtomIds = []) {
+    const anchorIds = new Set(anchorAtomIds);
+    const mol = context.state.documentState.getMol2d?.() ?? null;
+    if (!mol?.atoms?.values) {
+      return [];
+    }
+    const points = [];
+    for (const atom of mol.atoms.values()) {
+      if (anchorIds.has(atom.id) || atom.name === 'H' || atom.visible === false) {
+        continue;
+      }
+      const point = context.helpers?.toSelectionSVGPt2d?.(atom);
+      if (isFinitePoint(point)) {
+        points.push({ x: point.x, y: point.y });
+      }
+    }
+    return points;
+  }
+
+  function getForceOccupiedRingPreviewPoints(anchorAtomIds = []) {
+    const anchorIds = new Set(anchorAtomIds);
+    const nodes = context.helpers?.getForceNodes?.() ?? [];
+    return nodes
+      .filter(node => !anchorIds.has(node.id) && node.name !== 'H' && node.visible !== false && isFinitePoint(node))
+      .map(node => ({ x: node.x, y: node.y }));
+  }
+
+  function getRingTemplateMolecule() {
+    return context.state.viewState.getMode() === '2d' ? context.state.documentState.getMol2d?.() : context.state.documentState.getCurrentMol?.();
+  }
+
+  function getRingTemplateAtomEntries() {
+    if (context.state.viewState.getMode() === 'force') {
+      return (context.helpers?.getForceNodes?.() ?? [])
+        .filter(node => node?.id && node.name !== 'H' && node.visible !== false && isFinitePoint(node))
+        .map(node => ({ id: node.id, x: node.x, y: node.y }));
+    }
+    const mol = context.state.documentState.getMol2d?.();
+    if (!mol?.atoms?.values) {
+      return [];
+    }
+    const entries = [];
+    for (const atom of mol.atoms.values()) {
+      if (!atom?.id || atom.name === 'H' || atom.visible === false) {
+        continue;
+      }
+      const point = context.helpers?.toSelectionSVGPt2d?.(atom);
+      if (isFinitePoint(point)) {
+        entries.push({ id: atom.id, x: point.x, y: point.y });
+      }
+    }
+    return entries;
+  }
+
+  function findReusableRingTemplateAtomId(position, atomEntries, usedAtomIds, tolerance) {
+    let bestAtomId = null;
+    let bestDistance = tolerance;
+    for (const atom of atomEntries) {
+      if (usedAtomIds.has(atom.id)) {
+        continue;
+      }
+      const distance = pointDistance(position, atom);
+      if (distance <= bestDistance + GEOMETRY_EPSILON) {
+        bestAtomId = atom.id;
+        bestDistance = distance;
+      }
+    }
+    return bestAtomId;
+  }
+
+  function getExistingRingTemplateBondId(atomIdA, atomIdB) {
+    if (!atomIdA || !atomIdB) {
+      return null;
+    }
+    const mol = getRingTemplateMolecule();
+    if (mol?.getBond) {
+      return mol.getBond(atomIdA, atomIdB)?.id ?? null;
+    }
+    for (const bond of mol?.bonds?.values?.() ?? []) {
+      if ((bond.atoms?.[0] === atomIdA && bond.atoms?.[1] === atomIdB) || (bond.atoms?.[0] === atomIdB && bond.atoms?.[1] === atomIdA)) {
+        return bond.id ?? null;
+      }
+    }
+    return null;
+  }
+
+  function ringTemplateHoverTargets(positions, knownAtomIds = [], options = {}) {
+    const allowReuse = options.allowReuse ?? true;
+    const atomIds = [];
+    const bondIds = [];
+    const ringAtomIds = new Array(positions.length).fill(null);
+    const usedAtomIds = new Set();
+    knownAtomIds.forEach((atomId, index) => {
+      if (!atomId || index >= ringAtomIds.length) {
+        return;
+      }
+      ringAtomIds[index] = atomId;
+      usedAtomIds.add(atomId);
+      atomIds.push(atomId);
+    });
+
+    if (allowReuse) {
+      const atomEntries = getRingTemplateAtomEntries();
+      const tolerance = getRingTemplateBondLength() * RING_TEMPLATE_REUSE_DISTANCE_FACTOR;
+      for (let index = 0; index < positions.length; index++) {
+        if (ringAtomIds[index]) {
+          continue;
+        }
+        const reusableAtomId = findReusableRingTemplateAtomId(positions[index], atomEntries, usedAtomIds, tolerance);
+        if (!reusableAtomId) {
+          continue;
+        }
+        ringAtomIds[index] = reusableAtomId;
+        usedAtomIds.add(reusableAtomId);
+        atomIds.push(reusableAtomId);
+      }
+    }
+
+    for (let index = 0; index < ringAtomIds.length; index++) {
+      const bondId = getExistingRingTemplateBondId(ringAtomIds[index], ringAtomIds[(index + 1) % ringAtomIds.length]);
+      if (bondId) {
+        bondIds.push(bondId);
+      }
+    }
+
+    return {
+      atomIds: [...new Set(atomIds)],
+      bondIds: [...new Set(bondIds)]
+    };
+  }
+
+  function showRingTemplateHover(positions, knownAtomIds = [], knownBondIds = [], options = {}) {
+    const targets = ringTemplateHoverTargets(positions, knownAtomIds, options);
+    context.view.showPrimitiveHover([...new Set([...knownAtomIds.filter(Boolean), ...targets.atomIds])], [...new Set([...knownBondIds.filter(Boolean), ...targets.bondIds])]);
+  }
+
   function removeRingTemplatePreview() {
     context.dom.gNode?.()?.querySelector?.('g.ring-template-preview')?.remove?.();
   }
 
-  function renderRingTemplatePreview(state, centerAngle) {
+  function renderRingTemplatePreviewPositions(positions, existingAtomCount = 1) {
     const gNode = context.dom.gNode?.();
     if (!gNode?.appendChild || !gNode.ownerDocument) {
       return;
@@ -78,7 +349,6 @@ export function createPrimitiveEventHandlers(context) {
     const group = gNode.ownerDocument.createElementNS(SVG_NS, 'g');
     group.setAttribute('class', 'ring-template-preview');
     group.setAttribute('pointer-events', 'none');
-    const positions = previewRingPositions(state.size, state.anchorPoint, getRingTemplateBondLength(), centerAngle);
     const mode = context.state.viewState.getMode();
     const isForce = mode === 'force';
     const bondStrokeWidth = isForce ? singleBondWidth(1) : `${getRenderOptions().twoDBondThickness}px`;
@@ -99,7 +369,7 @@ export function createPrimitiveEventHandlers(context) {
 
     if (isForce) {
       const previewCarbon = { name: 'C', properties: {} };
-      for (let index = 1; index < positions.length; index++) {
+      for (let index = existingAtomCount; index < positions.length; index++) {
         const point = positions[index];
         const circle = gNode.ownerDocument.createElementNS(SVG_NS, 'circle');
         circle.setAttribute('class', 'node');
@@ -118,9 +388,24 @@ export function createPrimitiveEventHandlers(context) {
     gNode.appendChild(group);
   }
 
+  function renderRingTemplatePreview(state, centerAngle) {
+    const positions = previewRingPositions(state.size, state.anchorPoint, getRingTemplateBondLength(), centerAngle);
+    renderRingTemplatePreviewPositions(positions, 1);
+    showRingTemplateHover(positions, [state.atomId]);
+  }
+
   function clearPendingRingTemplateListeners(state) {
     state?.document?.removeEventListener?.('mousemove', state.handleMove, true);
     state?.document?.removeEventListener?.('mouseup', state.handleUp, true);
+  }
+
+  function clearPendingBondRingTemplatePreview(state) {
+    state?.document?.removeEventListener?.('mousemove', state.handleMove, true);
+    state?.document?.removeEventListener?.('mouseup', state.handleUp, true);
+    if (!state || pendingBondRingTemplatePreview === state) {
+      pendingBondRingTemplatePreview = null;
+      removeRingTemplatePreview();
+    }
   }
 
   function commitPendingRingTemplate(state) {
@@ -145,7 +430,7 @@ export function createPrimitiveEventHandlers(context) {
     renderRingTemplatePreview(state, state.currentGraphAngle);
   }
 
-  function startRingTemplateOnAtom(event, atomId) {
+  function startRingTemplateOnAtom(event, atomId, atomDatum = null) {
     if (!isRingTemplateMode()) {
       return false;
     }
@@ -154,12 +439,13 @@ export function createPrimitiveEventHandlers(context) {
     }
     event.preventDefault?.();
     event.stopPropagation?.();
-    const [gX, gY] = context.pointer(event, context.dom.gNode());
+    const anchorPoint = getRingTemplateAnchorPoint(event, atomId, atomDatum);
+    context.view.showPrimitiveHover([atomId], []);
     const doc = event.currentTarget?.ownerDocument ?? context.document ?? globalThis.document ?? null;
     const state = {
       atomId,
       size: context.state.overlayState.getRingTemplateSize?.() ?? 6,
-      anchorPoint: { x: gX, y: gY },
+      anchorPoint,
       currentGraphAngle: null,
       dragged: false,
       document: doc,
@@ -196,7 +482,7 @@ export function createPrimitiveEventHandlers(context) {
     return true;
   }
 
-  function placeRingTemplateOnAtomClick(event, atomId) {
+  function placeRingTemplateOnAtomClick(event, atomId, atomDatum = null) {
     if (!isRingTemplateMode()) {
       return false;
     }
@@ -206,10 +492,127 @@ export function createPrimitiveEventHandlers(context) {
       suppressNextRingTemplateClick = false;
       return true;
     }
-    const [gX, gY] = context.pointer(event, context.dom.gNode());
-    context.actions.placeRingTemplate?.(context.state.overlayState.getRingTemplateSize?.() ?? 6, gX, gY, {
+    const anchorPoint = getRingTemplateAnchorPoint(event, atomId, atomDatum);
+    context.view.showPrimitiveHover([atomId], []);
+    context.actions.placeRingTemplate?.(context.state.overlayState.getRingTemplateSize?.() ?? 6, anchorPoint.x, anchorPoint.y, {
       anchorAtomId: atomId
     });
+    return true;
+  }
+
+  function placeRingTemplateOnBondClick(event, bondId) {
+    if (!isRingTemplateMode()) {
+      return false;
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    if (suppressNextRingTemplateClick) {
+      suppressNextRingTemplateClick = false;
+      return true;
+    }
+    const anchorPoint = pointerPoint(event);
+    context.view.showPrimitiveHover([], [bondId]);
+    context.actions.placeRingTemplate?.(context.state.overlayState.getRingTemplateSize?.() ?? 6, anchorPoint.x, anchorPoint.y, {
+      anchorBondId: bondId
+    });
+    return true;
+  }
+
+  function commitPendingBondRingTemplate(state, event) {
+    const anchorPoint = pointerPoint(event);
+    const sideSign = bondSideSignForPoint(state.anchorA, state.anchorB, anchorPoint, state.sideSign);
+    state.sideSign = sideSign;
+    context.actions.placeRingTemplate?.(state.size, anchorPoint.x, anchorPoint.y, {
+      anchorBondId: state.bondId,
+      anchorBondSide: sideSign,
+      allowBondPositionReuse: state.hasDragged === true
+    });
+  }
+
+  function renderPendingBondRingTemplatePreview(state, event = null) {
+    const pointer = event ? pointerPoint(event) : null;
+    const sideSign = bondSideSignForPoint(state.anchorA, state.anchorB, pointer, state.sideSign);
+    const positions = regularRingPositionsForBondPoints(state.anchorA, state.anchorB, state.size, sideSign);
+    if (!positions) {
+      return;
+    }
+    state.sideSign = sideSign;
+    state.positions = positions;
+    renderRingTemplatePreviewPositions(positions, 2);
+    showRingTemplateHover(positions, state.anchorAtomIds, [state.bondId], { allowReuse: state.hasDragged === true });
+  }
+
+  function startRingTemplatePreviewOnBond(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
+    if (!isRingTemplateMode()) {
+      return false;
+    }
+    if (event.button != null && event.button !== 0) {
+      return false;
+    }
+    if (!isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
+      return false;
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    clearPendingRingTemplateListeners(pendingRingTemplate);
+    pendingRingTemplate = null;
+    clearPendingBondRingTemplatePreview(pendingBondRingTemplatePreview);
+    const isForce = context.state.viewState.getMode() === 'force';
+    const occupiedPoints = isForce ? getForceOccupiedRingPreviewPoints(anchorAtomIds) : get2DOccupiedRingPreviewPoints(anchorAtomIds);
+    const size = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    const [previewAnchorA, previewAnchorB] = forcePreviewBondAnchorPoints(anchorA, anchorB);
+    const fallbackSideSign = chooseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, occupiedPoints);
+    if (fallbackSideSign === null) {
+      return true;
+    }
+    const doc = event.currentTarget?.ownerDocument ?? context.document ?? globalThis.document ?? null;
+    const startPointer = pointerPoint(event);
+    const state = {
+      bondId,
+      size,
+      anchorA: previewAnchorA,
+      anchorB: previewAnchorB,
+      anchorAtomIds: [...anchorAtomIds],
+      sideSign: bondSideSignForPoint(previewAnchorA, previewAnchorB, pointerPoint(event), fallbackSideSign),
+      positions: null,
+      startPointer,
+      hasDragged: false,
+      document: doc,
+      handleMove: null,
+      handleUp: null
+    };
+    renderPendingBondRingTemplatePreview(state);
+    state.handleMove = moveEvent => {
+      if (pendingBondRingTemplatePreview !== state) {
+        return;
+      }
+      moveEvent.preventDefault?.();
+      moveEvent.stopPropagation?.();
+      moveEvent.stopImmediatePropagation?.();
+      const currentPointer = pointerPoint(moveEvent);
+      if (pointDistance(currentPointer, state.startPointer) >= RING_TEMPLATE_DRAG_THRESHOLD_PX) {
+        state.hasDragged = true;
+      }
+      renderPendingBondRingTemplatePreview(state, moveEvent);
+    };
+    state.handleUp = upEvent => {
+      if (pendingBondRingTemplatePreview !== state) {
+        return;
+      }
+      upEvent.preventDefault?.();
+      upEvent.stopPropagation?.();
+      upEvent.stopImmediatePropagation?.();
+      clearPendingBondRingTemplatePreview(state);
+      suppressNextRingTemplateClick = true;
+      commitPendingBondRingTemplate(state, upEvent);
+      setTimeout(() => {
+        suppressNextRingTemplateClick = false;
+      }, 0);
+    };
+    pendingBondRingTemplatePreview = state;
+    doc?.addEventListener?.('mousemove', state.handleMove, true);
+    doc?.addEventListener?.('mouseup', state.handleUp, true);
     return true;
   }
 
@@ -259,7 +662,7 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handle2dBondClick(event, bondId) {
-    if (isRingTemplateMode()) {
+    if (placeRingTemplateOnBondClick(event, bondId)) {
       return;
     }
     if (context.state.overlayState.getDrawBondMode()) {
@@ -279,6 +682,10 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     context.selection.handle2dPrimitiveClick(event, [], [bondId]);
+  }
+
+  function handle2dBondMouseDownRingTemplate(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
+    return startRingTemplatePreviewOnBond(event, bondId, anchorA, anchorB, anchorAtomIds);
   }
 
   function handle2dBondDblClick(event, atomIds) {
@@ -422,6 +829,12 @@ export function createPrimitiveEventHandlers(context) {
 
   function handleForceBondClick(event, bondId, molecule) {
     if (isRingTemplateMode()) {
+      const bond = molecule.bonds.get(bondId);
+      if (bond?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) {
+        return;
+      }
+    }
+    if (placeRingTemplateOnBondClick(event, bondId)) {
       return;
     }
     if (context.state.overlayState.getDrawBondMode()) {
@@ -445,6 +858,12 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     context.selection.handleForcePrimitiveClick(event, [], [bondId]);
+  }
+
+  function handleForceBondMouseDownRingTemplate(event, linkDatum) {
+    const source = linkDatum?.source;
+    const target = linkDatum?.target;
+    return startRingTemplatePreviewOnBond(event, linkDatum?.id, source, target, [source?.id, target?.id].filter(Boolean));
   }
 
   function handleForceBondDblClick(event, atomIds) {
@@ -497,7 +916,7 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceAtomMouseDownDrawBond(event, atom) {
-    if (startRingTemplateOnAtom(event, atom.id)) {
+    if (startRingTemplateOnAtom(event, atom.id, atom)) {
       return;
     }
     if (!context.state.overlayState.getDrawBondMode() || context.state.viewState.getMode() !== 'force' || !context.state.documentState.getCurrentMol()) {
@@ -515,7 +934,7 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceAtomClick(event, atom, molecule) {
-    if (placeRingTemplateOnAtomClick(event, atom.id)) {
+    if (placeRingTemplateOnAtomClick(event, atom.id, atom)) {
       return;
     }
     if (context.state.overlayState.getDrawBondMode()) {
@@ -641,6 +1060,7 @@ export function createPrimitiveEventHandlers(context) {
 
   return {
     handle2dBondClick,
+    handle2dBondMouseDownRingTemplate,
     handle2dBondDblClick,
     handle2dBondMouseOver,
     handle2dBondMouseMove,
@@ -653,6 +1073,7 @@ export function createPrimitiveEventHandlers(context) {
     handle2dAtomMouseMove,
     handle2dAtomMouseOut,
     handleForceBondClick,
+    handleForceBondMouseDownRingTemplate,
     handleForceBondDblClick,
     handleForceBondMouseOver,
     handleForceBondMouseMove,
