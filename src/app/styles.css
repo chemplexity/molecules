@@ -1116,7 +1116,7 @@ div.tooltip td:first-child {
   background: #4080e0;
 }
 
-.svg-plot.labels-hidden .atom-symbol {
+.svg-plot.labels-hidden .atom-symbol:not(.force-auto-label) {
   display: none;
 }
 

@@ -9,6 +9,7 @@ const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
+const RING_TEMPLATE_PREVIEW_VIEWPORT_PAD = 36;
 
 /**
  * Creates event handler functions for all atom and bond mouse interactions in both 2D and force-layout modes.
@@ -19,6 +20,7 @@ export function createPrimitiveEventHandlers(context) {
   let pendingRingTemplate = null;
   let pendingBondRingTemplatePreview = null;
   let suppressNextRingTemplateClick = false;
+  let pendingViewportReadjustment = null;
 
   function getChargeTool() {
     return context.state.overlayState.getChargeTool?.() ?? null;
@@ -254,6 +256,29 @@ export function createPrimitiveEventHandlers(context) {
     return entries;
   }
 
+  function getRingTemplateViewportPoints() {
+    if (context.state.viewState.getMode() === 'force') {
+      return (context.helpers?.getForceNodes?.() ?? [])
+        .filter(node => node?.id && node.visible !== false && isFinitePoint(node))
+        .map(node => ({ x: node.x, y: node.y }));
+    }
+    const mol = context.state.documentState.getMol2d?.();
+    if (!mol?.atoms?.values) {
+      return [];
+    }
+    const points = [];
+    for (const atom of mol.atoms.values()) {
+      if (!atom?.id || atom.visible === false) {
+        continue;
+      }
+      const point = context.helpers?.toSelectionSVGPt2d?.(atom);
+      if (isFinitePoint(point)) {
+        points.push({ x: point.x, y: point.y });
+      }
+    }
+    return points;
+  }
+
   function findReusableRingTemplateAtomId(position, atomEntries, usedAtomIds, tolerance) {
     let bestAtomId = null;
     let bestDistance = tolerance;
@@ -288,8 +313,11 @@ export function createPrimitiveEventHandlers(context) {
 
   function ringTemplateHoverTargets(positions, knownAtomIds = [], options = {}) {
     const allowReuse = options.allowReuse ?? true;
+    const requireExistingReuseBond = options.requireExistingReuseBond === true;
+    const knownBondIds = new Set(options.knownBondIds ?? []);
     const atomIds = [];
     const bondIds = [];
+    const reusedAtomIds = [];
     const ringAtomIds = new Array(positions.length).fill(null);
     const usedAtomIds = new Set();
     knownAtomIds.forEach((atomId, index) => {
@@ -301,7 +329,7 @@ export function createPrimitiveEventHandlers(context) {
       atomIds.push(atomId);
     });
 
-    if (allowReuse) {
+    if (allowReuse || requireExistingReuseBond) {
       const atomEntries = getRingTemplateAtomEntries();
       const tolerance = getRingTemplateBondLength() * RING_TEMPLATE_REUSE_DISTANCE_FACTOR;
       for (let index = 0; index < positions.length; index++) {
@@ -315,29 +343,207 @@ export function createPrimitiveEventHandlers(context) {
         ringAtomIds[index] = reusableAtomId;
         usedAtomIds.add(reusableAtomId);
         atomIds.push(reusableAtomId);
+        reusedAtomIds.push(reusableAtomId);
       }
     }
 
+    let hasExistingReuseBond = false;
     for (let index = 0; index < ringAtomIds.length; index++) {
       const bondId = getExistingRingTemplateBondId(ringAtomIds[index], ringAtomIds[(index + 1) % ringAtomIds.length]);
       if (bondId) {
         bondIds.push(bondId);
+        if (!knownBondIds.has(bondId)) {
+          hasExistingReuseBond = true;
+        }
       }
     }
 
+    if (requireExistingReuseBond && !hasExistingReuseBond) {
+      return {
+        atomIds: [],
+        bondIds: []
+      };
+    }
+
     return {
-      atomIds: [...new Set(atomIds)],
+      atomIds: [...new Set(requireExistingReuseBond ? reusedAtomIds : atomIds)],
       bondIds: [...new Set(bondIds)]
     };
   }
 
   function showRingTemplateHover(positions, knownAtomIds = [], knownBondIds = [], options = {}) {
-    const targets = ringTemplateHoverTargets(positions, knownAtomIds, options);
+    const targets = ringTemplateHoverTargets(positions, knownAtomIds, { ...options, knownBondIds });
     context.view.showPrimitiveHover([...new Set([...knownAtomIds.filter(Boolean), ...targets.atomIds])], [...new Set([...knownBondIds.filter(Boolean), ...targets.bondIds])]);
   }
 
+  function chooseAutoFuseBondAnchoredRingSide(anchorA, anchorB, size, knownAtomIds = [], knownBondIds = []) {
+    for (const sideSign of [1, -1]) {
+      const positions = regularRingPositionsForBondPoints(anchorA, anchorB, size, sideSign);
+      if (!positions) {
+        continue;
+      }
+      const targets = ringTemplateHoverTargets(positions, knownAtomIds, {
+        allowReuse: true,
+        requireExistingReuseBond: true,
+        knownBondIds
+      });
+      if (targets.bondIds.some(bondId => !knownBondIds.includes(bondId))) {
+        return sideSign;
+      }
+    }
+    return null;
+  }
+
   function removeRingTemplatePreview() {
+    cancelRingTemplateViewportReadjustment();
     context.dom.gNode?.()?.querySelector?.('g.ring-template-preview')?.remove?.();
+  }
+
+  function cancelRingTemplateViewportReadjustment() {
+    if (pendingViewportReadjustment == null) {
+      return;
+    }
+    const cancel =
+      context.timers?.cancelAnimationFrame ?? globalThis.cancelAnimationFrame ?? (id => {
+        clearTimeout(id);
+      });
+    cancel(pendingViewportReadjustment);
+    pendingViewportReadjustment = null;
+  }
+
+  function scheduleRingTemplateViewportReadjustment(positions, remaining = 2) {
+    if (context.state.viewState.getMode() !== 'force' || remaining <= 0) {
+      return;
+    }
+    cancelRingTemplateViewportReadjustment();
+    const schedule =
+      context.timers?.requestAnimationFrame ?? globalThis.requestAnimationFrame ?? (callback => {
+        return setTimeout(callback, 16);
+      });
+    pendingViewportReadjustment = schedule(() => {
+      pendingViewportReadjustment = null;
+      if (!context.dom.gNode?.()?.querySelector?.('g.ring-template-preview')) {
+        return;
+      }
+      adjustRingTemplatePreviewViewport(positions, { scheduleFollowup: false });
+      scheduleRingTemplateViewportReadjustment(positions, remaining - 1);
+    });
+  }
+
+  function adjustRingTemplatePreviewViewport(positions, options = {}) {
+    if (!positions?.length || typeof context.view.getZoomTransform !== 'function' || typeof context.view.setZoomTransform !== 'function') {
+      return;
+    }
+    const size = context.plot?.getSize?.() ?? null;
+    const width = size?.width ?? 0;
+    const height = size?.height ?? 0;
+    if (!(width > 0) || !(height > 0)) {
+      return;
+    }
+    if (options.scheduleFollowup !== false) {
+      scheduleRingTemplateViewportReadjustment(positions);
+    }
+    const transform = context.view.getZoomTransform();
+    const k = Number.isFinite(transform?.k) ? transform.k : 1;
+    const tx = Number.isFinite(transform?.x) ? transform.x : 0;
+    const ty = Number.isFinite(transform?.y) ? transform.y : 0;
+    const points = [...positions, ...getRingTemplateViewportPoints()];
+    let minGraphX = Infinity;
+    let maxGraphX = -Infinity;
+    let minGraphY = Infinity;
+    let maxGraphY = -Infinity;
+    for (const point of points) {
+      if (!isFinitePoint(point)) {
+        continue;
+      }
+      minGraphX = Math.min(minGraphX, point.x);
+      maxGraphX = Math.max(maxGraphX, point.x);
+      minGraphY = Math.min(minGraphY, point.y);
+      maxGraphY = Math.max(maxGraphY, point.y);
+    }
+    if (!Number.isFinite(minGraphX) || !Number.isFinite(minGraphY)) {
+      return;
+    }
+
+    const pad = Math.min(RING_TEMPLATE_PREVIEW_VIEWPORT_PAD, Math.max(0, Math.min(width, height) * 0.2));
+    const availableWidth = Math.max(1, width - pad * 2);
+    const availableHeight = Math.max(1, height - pad * 2);
+    const graphSpanX = maxGraphX - minGraphX;
+    const graphSpanY = maxGraphY - minGraphY;
+    let nextK = k;
+    if (graphSpanX > GEOMETRY_EPSILON && graphSpanX * nextK > availableWidth) {
+      nextK = Math.min(nextK, availableWidth / graphSpanX);
+    }
+    if (graphSpanY > GEOMETRY_EPSILON && graphSpanY * nextK > availableHeight) {
+      nextK = Math.min(nextK, availableHeight / graphSpanY);
+    }
+
+    const minCurrentX = tx + minGraphX * k;
+    const maxCurrentX = tx + maxGraphX * k;
+    const minCurrentY = ty + minGraphY * k;
+    const maxCurrentY = ty + maxGraphY * k;
+
+    function adjustedAxisTranslation({ currentT, minGraph, maxGraph, minCurrent, maxCurrent, viewportSize, availableSize }) {
+      let nextT = currentT;
+      if (Math.abs(nextK - k) > 0.0001) {
+        const onlyMinOverflow = minCurrent < pad && maxCurrent <= viewportSize - pad;
+        const onlyMaxOverflow = maxCurrent > viewportSize - pad && minCurrent >= pad;
+        if (onlyMinOverflow) {
+          nextT = maxCurrent - maxGraph * nextK;
+        } else if (onlyMaxOverflow) {
+          nextT = minCurrent - minGraph * nextK;
+        } else {
+          const currentCenter = (minCurrent + maxCurrent) / 2;
+          const graphCenter = (minGraph + maxGraph) / 2;
+          nextT = currentCenter - graphCenter * nextK;
+        }
+      }
+
+      const minScreen = nextT + minGraph * nextK;
+      const maxScreen = nextT + maxGraph * nextK;
+      const span = maxScreen - minScreen;
+      if (span > availableSize) {
+        return viewportSize / 2 - (minScreen + maxScreen) / 2 + nextT;
+      }
+      if (minScreen < pad) {
+        return nextT + pad - minScreen;
+      }
+      if (maxScreen > viewportSize - pad) {
+        return nextT + viewportSize - pad - maxScreen;
+      }
+      return nextT;
+    }
+
+    const nextTx = adjustedAxisTranslation({
+      currentT: tx,
+      minGraph: minGraphX,
+      maxGraph: maxGraphX,
+      minCurrent: minCurrentX,
+      maxCurrent: maxCurrentX,
+      viewportSize: width,
+      availableSize: availableWidth
+    });
+    const nextTy = adjustedAxisTranslation({
+      currentT: ty,
+      minGraph: minGraphY,
+      maxGraph: maxGraphY,
+      minCurrent: minCurrentY,
+      maxCurrent: maxCurrentY,
+      viewportSize: height,
+      availableSize: availableHeight
+    });
+    if (Math.abs(nextTx - tx) <= 0.5 && Math.abs(nextTy - ty) <= 0.5 && Math.abs(nextK - k) <= 0.0001) {
+      return;
+    }
+    const nextTransform =
+      typeof context.view.makeZoomIdentity === 'function'
+        ? context.view.makeZoomIdentity(nextTx, nextTy, nextK)
+        : {
+            x: nextTx,
+            y: nextTy,
+            k: nextK
+          };
+    context.view.setZoomTransform(nextTransform);
   }
 
   function renderRingTemplatePreviewPositions(positions, existingAtomCount = 1) {
@@ -386,12 +592,15 @@ export function createPrimitiveEventHandlers(context) {
       }
     }
     gNode.appendChild(group);
+    adjustRingTemplatePreviewViewport(positions);
   }
 
   function renderRingTemplatePreview(state, centerAngle) {
     const positions = previewRingPositions(state.size, state.anchorPoint, getRingTemplateBondLength(), centerAngle);
     renderRingTemplatePreviewPositions(positions, 1);
-    showRingTemplateHover(positions, [state.atomId]);
+    showRingTemplateHover(positions, [state.atomId], [], {
+      requireExistingReuseBond: context.state.viewState.getMode() === 'force'
+    });
   }
 
   function clearPendingRingTemplateListeners(state) {
@@ -513,19 +722,26 @@ export function createPrimitiveEventHandlers(context) {
     const anchorPoint = pointerPoint(event);
     context.view.showPrimitiveHover([], [bondId]);
     context.actions.placeRingTemplate?.(context.state.overlayState.getRingTemplateSize?.() ?? 6, anchorPoint.x, anchorPoint.y, {
-      anchorBondId: bondId
+      anchorBondId: bondId,
+      autoFuseBondPositionReuse: true
     });
     return true;
   }
 
   function commitPendingBondRingTemplate(state, event) {
     const anchorPoint = pointerPoint(event);
-    const sideSign = bondSideSignForPoint(state.anchorA, state.anchorB, anchorPoint, state.sideSign);
-    state.sideSign = sideSign;
-    context.actions.placeRingTemplate?.(state.size, anchorPoint.x, anchorPoint.y, {
+    const sideSign = state.sideSign;
+    const placementOptions = {
       anchorBondId: state.bondId,
-      anchorBondSide: sideSign,
-      allowBondPositionReuse: state.hasDragged === true
+      anchorBondSide: sideSign
+    };
+    if (state.hasDragged === true) {
+      placementOptions.allowBondPositionReuse = true;
+    } else {
+      placementOptions.autoFuseBondPositionReuse = true;
+    }
+    context.actions.placeRingTemplate?.(state.size, anchorPoint.x, anchorPoint.y, {
+      ...placementOptions
     });
   }
 
@@ -539,7 +755,10 @@ export function createPrimitiveEventHandlers(context) {
     state.sideSign = sideSign;
     state.positions = positions;
     renderRingTemplatePreviewPositions(positions, 2);
-    showRingTemplateHover(positions, state.anchorAtomIds, [state.bondId], { allowReuse: state.hasDragged === true });
+    showRingTemplateHover(positions, state.anchorAtomIds, [state.bondId], {
+      allowReuse: state.hasDragged === true,
+      requireExistingReuseBond: state.hasDragged !== true
+    });
   }
 
   function startRingTemplatePreviewOnBond(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
@@ -562,7 +781,8 @@ export function createPrimitiveEventHandlers(context) {
     const occupiedPoints = isForce ? getForceOccupiedRingPreviewPoints(anchorAtomIds) : get2DOccupiedRingPreviewPoints(anchorAtomIds);
     const size = context.state.overlayState.getRingTemplateSize?.() ?? 6;
     const [previewAnchorA, previewAnchorB] = forcePreviewBondAnchorPoints(anchorA, anchorB);
-    const fallbackSideSign = chooseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, occupiedPoints);
+    const autoFuseSideSign = isForce ? chooseAutoFuseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, anchorAtomIds, [bondId]) : null;
+    const fallbackSideSign = autoFuseSideSign ?? chooseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, occupiedPoints);
     if (fallbackSideSign === null) {
       return true;
     }

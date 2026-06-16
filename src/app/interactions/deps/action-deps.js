@@ -151,7 +151,7 @@ export function createEditingActionDeps(ctx) {
     },
     force: {
       getSimulation: () => ctx.simulation,
-      patchNodePositions: patchPos => ctx.patchNodePositions(patchPos),
+      patchNodePositions: (patchPos, options = {}) => ctx.patchNodePositions(patchPos, options),
       reseatHydrogensAroundPatched: patchPos => ctx.reseatHydrogensAroundPatched(patchPos)
     },
     view2D: {
@@ -332,7 +332,7 @@ export function createDrawBondCommitActionDeps(ctx) {
     force: {
       getNodeById: atomId => ctx.getForceNodeById(atomId),
       getNodes: () => ctx.getForceNodes(),
-      patchNodePositions: patchPos => ctx.patchNodePositions(patchPos),
+      patchNodePositions: (patchPos, options = {}) => ctx.patchNodePositions(patchPos, options),
       reseatHydrogensAroundPatched: patchPos => ctx.reseatHydrogensAroundPatched(patchPos),
       enableKeepInView: () => ctx.enableKeepInView()
     },
@@ -428,7 +428,13 @@ export function createPrimitiveEventHandlerDeps(ctx) {
       isPrimitiveHoverSuppressed: () => ctx.isPrimitiveHoverSuppressed(),
       setPrimitiveHoverSuppressed: value => {
         ctx.setPrimitiveHoverSuppressed(value);
-      }
+      },
+      getZoomTransform: () => ctx.getZoomTransform?.() ?? null,
+      setZoomTransform: transform => ctx.setZoomTransform?.(transform),
+      makeZoomIdentity: (x, y, k) => ctx.makeZoomIdentity?.(x, y, k) ?? { x, y, k }
+    },
+    plot: {
+      getSize: () => ctx.getPlotSize?.() ?? null
     },
     tooltip: {
       showDelayed: (html, event, delay = 150) => ctx.showDelayedTooltip(html, event, delay),

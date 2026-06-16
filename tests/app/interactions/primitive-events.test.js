@@ -218,7 +218,13 @@ function makeContext(overrides = {}) {
     }
   };
 
+  const mergedView = { ...context.view, ...(overrides.view ?? {}) };
+  const mergedPlot = { ...(context.plot ?? {}), ...(overrides.plot ?? {}) };
   Object.assign(context, overrides);
+  context.view = mergedView;
+  if (Object.keys(mergedPlot).length > 0) {
+    context.plot = mergedPlot;
+  }
   return {
     context,
     calls,
@@ -318,7 +324,7 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(stopped, true);
     assert.deepEqual(calls, [
       ['showPrimitiveHover', [], ['b1']],
-      ['placeRingTemplate', 6, 10, 20, { anchorBondId: 'b1' }]
+      ['placeRingTemplate', 6, 10, 20, { anchorBondId: 'b1', autoFuseBondPositionReuse: true }]
     ]);
   });
 
@@ -344,7 +350,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     assert.deepEqual(calls, [
       ['showPrimitiveHover', [], ['b1']],
-      ['placeRingTemplate', 5, 10, 20, { anchorBondId: 'b1' }]
+      ['placeRingTemplate', 5, 10, 20, { anchorBondId: 'b1', autoFuseBondPositionReuse: true }]
     ]);
   });
 
@@ -571,6 +577,59 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(preview.querySelector('polygon'), null);
   });
 
+  it('does not highlight incidental single force atom-pivot overlaps in the preview', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    let pointer = [10, 20];
+    const mol = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['f1', { id: 'f1', name: 'C' }]
+      ]),
+      bonds: new Map(),
+      getBond() {
+        return null;
+      }
+    };
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      currentMol: mol,
+      document: documentMock,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        getForceNodes: () => [
+          { id: 'a1', name: 'C', x: 10, y: 20 },
+          { id: 'f1', name: 'C', x: 36.65, y: -26.16 }
+        ]
+      },
+      constants: {
+        forceBondLength: 41
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize(6);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseDownDrawBond({ preventDefault() {}, stopPropagation() {} }, { id: 'a1', x: 10, y: 20 });
+    pointer = [70, 20];
+    listeners.get('mousemove')({ preventDefault() {} });
+
+    assert.deepEqual(calls.at(-1), ['showPrimitiveHover', ['a1'], []]);
+  });
+
   it('commits 2D bond-anchored ring templates on mouseup after bond mousedown preview', () => {
     const listeners = new Map();
     const svgRoot = makeSvgRoot();
@@ -668,6 +727,253 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handle2dBondClick({ preventDefault() {}, stopPropagation() {} }, 'b1');
     assert.equal(calls.filter(call => call[0] === 'placeRingTemplate').length, 1);
+  });
+
+  it('pans the viewport to keep an offscreen ring-template preview visible', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const zoomTransforms = [];
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => [290, 60],
+      dom: {
+        gNode: () => svgRoot
+      },
+      plot: {
+        getSize: () => ({ width: 300, height: 220 })
+      },
+      view: {
+        getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+        makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+        setZoomTransform(transform) {
+          zoomTransforms.push(transform);
+          calls.push(['setZoomTransform', transform]);
+        }
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize(6);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handle2dBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      'b-edge',
+      { x: 250, y: 70 },
+      { x: 310, y: 70 },
+      ['a1', 'a2']
+    );
+
+    assert.equal(handled, true);
+    assert.ok(svgRoot.querySelector('g.ring-template-preview'));
+    assert.equal(zoomTransforms.length, 1);
+    assert.ok(zoomTransforms[0].x < 0, 'expected preview viewport pan to shift left');
+    assert.equal(zoomTransforms[0].k, 1);
+    assert.deepEqual(calls.at(-1), ['showPrimitiveHover', ['a1', 'a2'], ['b-edge']]);
+  });
+
+  it('fits the ring-template preview together with the existing molecule when panning alone would hide atoms', () => {
+    const svgRoot = makeSvgRoot();
+    const mol2d = {
+      atoms: new Map([
+        ['left', { id: 'left', name: 'C', x: 0, y: 70 }]
+      ]),
+      bonds: new Map()
+    };
+    const zoomTransforms = [];
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      mol2d,
+      pointer: () => [290, 60],
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        toSelectionSVGPt2d: atom => ({ x: atom.x, y: atom.y })
+      },
+      plot: {
+        getSize: () => ({ width: 300, height: 220 })
+      },
+      view: {
+        getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+        makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+        setZoomTransform(transform) {
+          zoomTransforms.push(transform);
+        }
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize(6);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handle2dBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      'b-edge',
+      { x: 250, y: 70 },
+      { x: 310, y: 70 },
+      ['a1', 'a2']
+    );
+
+    assert.equal(handled, true);
+    assert.equal(zoomTransforms.length, 1);
+    assert.ok(zoomTransforms[0].k < 1, 'expected preview plus molecule fit to zoom out when panning cannot keep both visible');
+    assert.ok(zoomTransforms[0].x > 0, 'expected the existing left-side molecule atom to remain inside the viewport');
+  });
+
+  it('keeps horizontal placement stable when only vertical ring-template fitting needs zoom', () => {
+    const svgRoot = makeSvgRoot();
+    const mol2d = {
+      atoms: new Map([
+        ['top', { id: 'top', name: 'C', x: 130, y: -130 }],
+        ['bottom', { id: 'bottom', name: 'C', x: 130, y: 130 }]
+      ]),
+      bonds: new Map()
+    };
+    const zoomTransforms = [];
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      mol2d,
+      pointer: () => [130, -120],
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        toSelectionSVGPt2d: atom => ({ x: atom.x, y: atom.y })
+      },
+      plot: {
+        getSize: () => ({ width: 320, height: 180 })
+      },
+      view: {
+        getZoomTransform: () => ({ x: 20, y: 120, k: 1 }),
+        makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+        setZoomTransform(transform) {
+          zoomTransforms.push(transform);
+        }
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize(6);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handle2dBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      'b-top',
+      { x: 100, y: -130 },
+      { x: 160, y: -130 },
+      ['a1', 'a2']
+    );
+
+    assert.equal(handled, true);
+    assert.equal(zoomTransforms.length, 1);
+    assert.ok(zoomTransforms[0].k < 1, 'expected vertical overflow to reduce zoom');
+
+    const beforeCenterX = 20 + 130;
+    const afterCenterX = zoomTransforms[0].x + 130 * zoomTransforms[0].k;
+    assert.ok(Math.abs(afterCenterX - beforeCenterX) < 1, 'expected vertical fit not to introduce horizontal drift');
+  });
+
+  it('rechecks force ring-template preview fitting after force nodes move', () => {
+    const listeners = new Map();
+    const rafCallbacks = [];
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    let transform = { x: 0, y: 0, k: 1 };
+    const nodes = [
+      { id: 'a1', name: 'C', x: 80, y: 70 },
+      { id: 'a2', name: 'C', x: 120, y: 70 }
+    ];
+    const zoomTransforms = [];
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => [100, 95],
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        getForceNodes: () => nodes
+      },
+      timers: {
+        requestAnimationFrame(callback) {
+          rafCallbacks.push(callback);
+          return rafCallbacks.length;
+        },
+        cancelAnimationFrame() {}
+      },
+      constants: {
+        forceBondLength: 41
+      },
+      plot: {
+        getSize: () => ({ width: 220, height: 160 })
+      },
+      view: {
+        getZoomTransform: () => transform,
+        makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+        setZoomTransform(nextTransform) {
+          transform = nextTransform;
+          zoomTransforms.push(nextTransform);
+        }
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize(5);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handleForceBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      {
+        id: 'b1',
+        source: nodes[0],
+        target: nodes[1]
+      }
+    );
+
+    assert.equal(handled, true);
+    assert.ok(svgRoot.querySelector('g.ring-template-preview'));
+    assert.ok(rafCallbacks.length > 0);
+    const initialTransformCount = zoomTransforms.length;
+    const initialX = transform.x;
+
+    nodes[1].x = 250;
+    rafCallbacks.shift()();
+
+    assert.equal(zoomTransforms.length, initialTransformCount + 1);
+    assert.ok(transform.x < initialX, 'expected follow-up force fit to pan after node movement');
   });
 
   it('commits force bond-anchored ring templates on mouseup after bond mousedown preview', () => {
@@ -770,6 +1076,254 @@ describe('createPrimitiveEventHandlers', () => {
       bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]])
     });
     assert.equal(calls.filter(call => call[0] === 'placeRingTemplate').length, 1);
+  });
+
+  it('highlights stationary force bond-ring auto-fuse atoms and bonds in the preview', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const mol = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'C' }],
+        ['f1', { id: 'f1', name: 'C' }]
+      ]),
+      bonds: new Map([
+        ['b1', { id: 'b1', atoms: ['a1', 'a2'] }],
+        ['b2', { id: 'b2', atoms: ['a2', 'f1'] }]
+      ]),
+      getBond(atomIdA, atomIdB) {
+        return [...this.bonds.values()].find(
+          bond => (bond.atoms[0] === atomIdA && bond.atoms[1] === atomIdB) || (bond.atoms[0] === atomIdB && bond.atoms[1] === atomIdA)
+        ) ?? null;
+      }
+    };
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      currentMol: mol,
+      document: documentMock,
+      pointer: () => [30, 20],
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        getForceNodes: () => [
+          { id: 'a1', name: 'C', x: 10, y: 20 },
+          { id: 'a2', name: 'C', x: 51, y: 20 },
+          { id: 'f1', name: 'C', x: 73.62, y: 70.69 }
+        ]
+      },
+      constants: {
+        forceBondLength: 41
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize(5);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handleForceBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      {
+        id: 'b1',
+        source: { id: 'a1', name: 'C', x: 10, y: 20 },
+        target: { id: 'a2', name: 'C', x: 51, y: 20 }
+      }
+    );
+
+    assert.equal(handled, true);
+    assert.deepEqual(calls.at(-1), ['showPrimitiveHover', ['a1', 'a2', 'f1'], ['b1', 'b2']]);
+  });
+
+  it('does not highlight stationary force bond-ring incidental atom overlaps', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const mol = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'C' }],
+        ['f1', { id: 'f1', name: 'C' }]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]]),
+      getBond(atomIdA, atomIdB) {
+        return [...this.bonds.values()].find(
+          bond => (bond.atoms[0] === atomIdA && bond.atoms[1] === atomIdB) || (bond.atoms[0] === atomIdB && bond.atoms[1] === atomIdA)
+        ) ?? null;
+      }
+    };
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      currentMol: mol,
+      document: documentMock,
+      pointer: () => [30, 20],
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        getForceNodes: () => [
+          { id: 'a1', name: 'C', x: 10, y: 20 },
+          { id: 'a2', name: 'C', x: 51, y: 20 },
+          { id: 'f1', name: 'C', x: 73.62, y: 70.69 }
+        ]
+      },
+      constants: {
+        forceBondLength: 41
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize(5);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handleForceBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      {
+        id: 'b1',
+        source: { id: 'a1', name: 'C', x: 10, y: 20 },
+        target: { id: 'a2', name: 'C', x: 51, y: 20 }
+      }
+    );
+
+    assert.equal(handled, true);
+    assert.deepEqual(calls.at(-1), ['showPrimitiveHover', ['a1', 'a2'], ['b1']]);
+  });
+
+  it('lets stationary force bond-ring commits auto-pick the fused side', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const pointer = [30, 20];
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        getForceNodes: () => [
+          { id: 'a1', name: 'C', x: 10, y: 20 },
+          { id: 'a2', name: 'C', x: 51, y: 20 },
+          { id: 'f1', name: 'C', x: 78.3, y: 66.9 }
+        ]
+      },
+      constants: {
+        forceBondLength: 41
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize(5);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handleForceBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      {
+        id: 'b1',
+        source: { id: 'a1', name: 'C', x: 10, y: 20 },
+        target: { id: 'a2', name: 'C', x: 51, y: 20 }
+      }
+    );
+
+    assert.equal(handled, true);
+    listeners.get('mouseup')({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+
+    assert.deepEqual(calls.at(-1), ['placeRingTemplate', 5, 30, 20, { anchorBondId: 'b1', anchorBondSide: -1, autoFuseBondPositionReuse: true }]);
+  });
+
+  it('commits force bond-ring placement on the last rendered preview side', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    let pointer = [30, 20];
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      },
+      helpers: {
+        getForceNodes: () => [
+          { id: 'a1', name: 'C', x: 10, y: 20 },
+          { id: 'a2', name: 'C', x: 51, y: 20 }
+        ]
+      },
+      constants: {
+        forceBondLength: 41
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize(5);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    const handled = handlers.handleForceBondMouseDownRingTemplate(
+      {
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      {
+        id: 'b1',
+        source: { id: 'a1', name: 'C', x: 10, y: 20 },
+        target: { id: 'a2', name: 'C', x: 51, y: 20 }
+      }
+    );
+
+    assert.equal(handled, true);
+    pointer = [30, 70];
+    listeners.get('mousemove')({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+
+    pointer = [30, -30];
+    listeners.get('mouseup')({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+
+    assert.deepEqual(calls.at(-1), ['placeRingTemplate', 5, 30, -30, { anchorBondId: 'b1', anchorBondSide: 1, allowBondPositionReuse: true }]);
   });
 
   it('uses the rendered force atom center as the ring rotation pivot and final anchor', () => {

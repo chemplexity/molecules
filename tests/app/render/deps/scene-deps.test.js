@@ -66,6 +66,10 @@ describe('scene deps builders', () => {
       forceLayoutInitialHRadiusScale: 1.2,
       forceLayoutInitialZoomMultiplier: 1.1,
       forceLayoutInitialKeepInViewTicks: 8,
+      forceLayoutInitialSettleTicks: 6,
+      forceLayoutInitialSettleAlpha: 0.7,
+      forceLayoutInitialRestartAlpha: 0.08,
+      forceLayoutEditRestartAlpha: 0.005,
       forceLayoutFitPad: 16,
       forceLayoutKeepInViewAlphaMin: 0.02,
       setActiveValenceWarningMap: map => records.push(['map', map]),
@@ -93,9 +97,11 @@ describe('scene deps builders', () => {
       seedForceNodePositions: () => records.push(['seed']),
       patchForceNodePositions: () => records.push(['patch']),
       reseatHydrogensAroundPatched: () => records.push(['reseat']),
+      reseatForceGraphHydrogens: () => records.push(['reseatGraph']),
       forceLinkDistance: link => link.distance,
       forceAnchorRadius: () => 9,
       forceHydrogenRepulsion: () => 4,
+      forceHydrogenPlacement: links => ({ links }),
       forceFitTransform: () => ({ k: 1 }),
       isHydrogenNode: node => node.name === 'H',
       enLabelColor: value => value,
@@ -122,13 +128,19 @@ describe('scene deps builders', () => {
     });
 
     assert.equal(deps.constants.forceLayoutFitPad, 16);
+    assert.equal(deps.constants.forceLayoutInitialSettleTicks, 6);
+    assert.equal(deps.constants.forceLayoutInitialSettleAlpha, 0.7);
+    assert.equal(deps.constants.forceLayoutInitialRestartAlpha, 0.08);
+    assert.equal(deps.constants.forceLayoutEditRestartAlpha, 0.005);
     assert.equal(deps.helpers.forceLinkDistance({ distance: 7 }), 7);
     assert.equal(deps.helpers.forceAnchorRadius(), 9);
+    assert.deepEqual(deps.helpers.forceHydrogenPlacement(['link']), { links: ['link'] });
+    deps.helpers.reseatForceGraphHydrogens({});
     assert.deepEqual(deps.drag.createForceAtomDrag('sim'), { sim: 'sim', type: 'atom' });
     assert.equal(deps.callbacks.hasHighlights(), true);
     deps.events.handleForceAtomContextMenu();
     deps.callbacks.applyForceSelection();
-    assert.deepEqual(records, [['atomContext'], ['applySelection']]);
+    assert.deepEqual(records, [['reseatGraph'], ['atomContext'], ['applySelection']]);
   });
 
   it('builds 2d scene, selection overlay, and force selection deps', () => {

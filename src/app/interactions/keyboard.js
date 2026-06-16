@@ -134,9 +134,10 @@ export function initKeyboardInteractions(context) {
     const selectMode = context.state.overlayState.getSelectMode();
     const drawBondMode = context.state.overlayState.getDrawBondMode();
     const eraseMode = context.state.overlayState.getEraseMode();
+    const ringTemplateMode = context.state.overlayState.getRingTemplateMode?.() ?? false;
     const hoveredAtomIds = context.state.overlayState.getHoveredAtomIds();
 
-    if ((selectMode || (drawBondMode && !context.drawBond.hasDrawBondState())) && hoveredAtomIds.size > 0 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if ((selectMode || ringTemplateMode || (drawBondMode && !context.drawBond.hasDrawBondState())) && hoveredAtomIds.size > 0 && !event.metaKey && !event.ctrlKey && !event.altKey) {
       const elementKeys = {
         c: 'C',
         C: 'C',
@@ -181,7 +182,7 @@ export function initKeyboardInteractions(context) {
       return;
     }
     if (
-      (selectMode || eraseMode || (drawBondMode && !context.drawBond.hasDrawBondState())) &&
+      (selectMode || eraseMode || ringTemplateMode || (drawBondMode && !context.drawBond.hasDrawBondState())) &&
       context.state.overlayState.getSelectedAtomIds().size === 0 &&
       context.state.overlayState.getSelectedBondIds().size === 0 &&
       (context.state.overlayState.getHoveredAtomIds().size > 0 || context.state.overlayState.getHoveredBondIds().size > 0)

@@ -1,7 +1,33 @@
 # Change Log
 
+## 2026-06-15
+
+- Make the ring-template size drawer follow the same hover-driven click behavior as the line-tool drawer, without adding a sticky open state.
+- Keep the ring-template selection drawer from staying open by clearing stale drawer state when it closes.
+- Let atom shortcut keys such as O, N, and P change hovered atoms while ring-template mode is active.
+- Let Backspace/Delete remove hovered atoms or bonds while ring-template mode is active.
+- Prevent force-mode atom-pivot ring placement from reusing incidental single-atom overlaps or unrelated stored-coordinate atoms.
+- Commit force-mode bond-ring placements on the last rendered preview side so mouseup cannot flip the ring.
+- Highlight stationary force-mode ring preview auto-fuse atoms and bonds only when they form a real fused edge.
+- Let stationary force-mode bond-ring commits auto-pick the fused side instead of freezing the initial preview side.
+- Match clicked force-mode ring auto-fusing to the visible preview side and size.
+- Auto-fuse clicked bond-anchored ring templates when the preview overlaps an existing fused edge.
+- Recheck force-mode ring-template viewport fitting after force nodes move so preview auto-panning catches simulation ticks.
+- Keep ring-template preview fitting axis-aware so vertical-only viewport corrections do not introduce sideways drift.
+- Fit ring-template previews together with the current molecule bounds so keeping the preview visible does not push existing atoms out of view.
+- Pan the view while ring-template previews are dragged so offscreen preview rings stay visible before placement.
+- Make blank-space line-tool clicks place only the selected atom, show carbon placement feedback immediately, and delay the second-atom preview until a real drag begins.
+- Keep nonstandard force-mode atom labels such as Fe visible even when ordinary atom labels are hidden.
+- Keep force-mode ring-template after-render patches from restarting the simulation so unrelated hydrogens do not shift after adding a ring.
+- Warm fresh force layouts before first paint and reseat hydrogen groups with zero velocity so explicit hydrogens do not visibly surge on initial load.
+
 ## 2026-06-14
 
+- Stop force-mode hydrogens on the same parent atom from repelling each other during initial layout, reducing visible startup wobble.
+- Place clicked terminal methyl bonds on zigzag slots in the line tool.
+- Split geminal methyl/carboxyl exits across saturated ring exterior fans instead of pinching them into a priority carbonyl slot.
+- Keep terminal alkene methyl leaves on exact trigonal continuations in mixed ring layouts.
+- Let residual attached-ring retouch rotate bulky glycoside branches without stretching bonds.
 - Add ring-template placement from existing atoms and bonds in both 2D and force layouts, including matching previews for held atom and bond interactions.
 - Keep held bond-anchored ring previews visible while the mouse moves, and refit/keep the viewport in view after placing rings near the window edge.
 - Commit bond-anchored ring-template previews on mouseup after a held bond interaction, suppressing the follow-up click so the ring is not duplicated.
@@ -15,6 +41,7 @@
 - Keep bond-anchored ring templates from reusing incidental nearby atoms, so force-mode bond clicks add the expected ring atoms instead of over-fusing into the existing chain.
 - Restore deliberate fusing for dragged bond-anchored ring templates while keeping plain bond clicks protected from accidental reuse.
 - Match deliberate force-mode bond-ring fusing against force node positions, so dragged force previews can reuse overlapped atoms even when molecule coordinates differ.
+- Keep cyclic functional-group matches separate in fused systems so counts and highlights agree.
 
 ## 2026-06-13
 

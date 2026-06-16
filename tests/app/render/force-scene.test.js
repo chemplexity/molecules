@@ -90,7 +90,7 @@ class FakeSelection {
   }
 }
 
-function makeSimulation(records) {
+function makeSimulation(records, initialNodes = []) {
   const linkForce = {
     linksValue: [],
     links(value) {
@@ -124,7 +124,7 @@ function makeSimulation(records) {
     link: linkForce,
     charge: chargeForce
   };
-  let nodesValue = [];
+  let nodesValue = initialNodes;
   let alphaValue = 0.6;
   return {
     nodes(value) {
@@ -156,6 +156,10 @@ function makeSimulation(records) {
       records.push(['simulation.restart']);
       return this;
     },
+    tick(iterations) {
+      records.push(['simulation.tick', iterations]);
+      return this;
+    },
     on(eventName, handler) {
       records.push(['simulation.on', eventName, typeof handler]);
       return this;
@@ -170,13 +174,20 @@ function makeRenderer({
   preserveView = false,
   generate2dCoords = () => {},
   alignReaction2dProductOrientation = () => {},
-  convertMolecule = () => ({ nodes: [], links: [] })
+  convertMolecule = () => ({ nodes: [], links: [] }),
+  initialSimulationNodes = [],
+  seedForceNodePositions = null
 } = {}) {
   const records = [];
+  const seedForceNodePositionsImpl =
+    seedForceNodePositions ??
+    ((_graph, _molecule, anchorLayout) => {
+      records.push(['seedForceNodePositions', anchorLayout]);
+    });
   const nodeRef = { id: 'svg-node' };
   const svg = new FakeSelection(records, nodeRef);
   const zoomTransform = function zoomTransform() {};
-  const simulation = makeSimulation(records);
+  const simulation = makeSimulation(records, initialSimulationNodes);
   const renderer = createForceSceneRenderer({
     d3: {
       zoomIdentity: { kind: 'identity' },
@@ -204,6 +215,10 @@ function makeRenderer({
       forceLayoutInitialHRadiusScale: 0.75,
       forceLayoutInitialZoomMultiplier: 0.9,
       forceLayoutInitialKeepInViewTicks: 10,
+      forceLayoutInitialSettleTicks: 7,
+      forceLayoutInitialSettleAlpha: 0.7,
+      forceLayoutInitialRestartAlpha: 0.08,
+      forceLayoutEditRestartAlpha: 0.005,
       forceLayoutFitPad: 40,
       forceLayoutKeepInViewAlphaMin: 0.05
     },
@@ -257,17 +272,19 @@ function makeRenderer({
         return null;
       },
       convertMolecule,
-      seedForceNodePositions: (_graph, _molecule, anchorLayout) => {
-        records.push(['seedForceNodePositions', anchorLayout]);
-      },
+      seedForceNodePositions: seedForceNodePositionsImpl,
       forceLinkDistance: () => 30,
       forceAnchorRadius: () => ({ kind: 'anchor' }),
       forceHydrogenRepulsion: () => ({ kind: 'hRepel' }),
+      forceHydrogenPlacement: links => ({ kind: 'hPlace', links }),
       patchForceNodePositions: (patchPos, options = {}) => {
         records.push(['patchForceNodePositions', patchPos, options]);
       },
       reseatHydrogensAroundPatched: (patchPos, options = {}) => {
         records.push(['reseatHydrogensAroundPatched', patchPos, options]);
+      },
+      reseatForceGraphHydrogens: (graph, options = {}) => {
+        records.push(['reseatForceGraphHydrogens', graph, options]);
       },
       forceFitTransform: () => null,
       isHydrogenNode: node => node?.name === 'H',
@@ -411,6 +428,96 @@ describe('createForceSceneRenderer', () => {
       }),
       [['setForceAutoFitEnabled', true], ['disableKeepInView'], ['syncSelectionToMolecule', 'mol-sync'], ['setPreserveSelectionOnNextRender', false], ['call', 'zoomTransform', { kind: 'identity' }]]
     );
+  });
+
+  it('settles fresh force layouts invisibly before restarting gently', () => {
+    const graph = {
+      nodes: [{ id: 'c1', name: 'C', protons: 6, charge: 0 }],
+      links: []
+    };
+    const { renderer, records } = makeRenderer({
+      convertMolecule: () => graph
+    });
+
+    renderer.updateForce({ id: 'mol-settle', atoms: new Map(), bonds: new Map() });
+
+    const settleAlphaIndex = records.findIndex(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.7);
+    const tickIndex = records.findIndex(entry => entry[0] === 'simulation.tick');
+    const reseatIndex = records.findIndex(entry => entry[0] === 'reseatForceGraphHydrogens');
+    const restartAlphaIndex = records.findIndex(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.08);
+    const restartIndex = records.findIndex(entry => entry[0] === 'simulation.restart');
+
+    assert.ok(settleAlphaIndex >= 0);
+    assert.ok(tickIndex > settleAlphaIndex);
+    assert.ok(reseatIndex > tickIndex);
+    assert.ok(restartAlphaIndex > reseatIndex);
+    assert.ok(restartIndex > restartAlphaIndex);
+    assert.deepEqual(records[tickIndex], ['simulation.tick', 7]);
+    assert.deepEqual(records[reseatIndex], ['reseatForceGraphHydrogens', graph, { resetVelocity: true }]);
+  });
+
+  it('keeps preserved-position force updates from running the initial settle pass', () => {
+    const { renderer, records } = makeRenderer();
+
+    renderer.updateForce({ id: 'mol-preserve', atoms: new Map(), bonds: new Map() }, { preservePositions: true });
+
+    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
+    assert.equal(records.some(entry => entry[0] === 'reseatForceGraphHydrogens'), false);
+    assert.ok(records.some(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.005));
+  });
+
+  it('marks nonstandard force atom labels as auto-visible', () => {
+    const molecule = parseSMILES('[Fe]C');
+    const { renderer, records } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => ({
+        nodes: [
+          { id: 'Fe1', name: 'Fe', protons: 26, charge: 0, x: 10, y: 20 },
+          { id: 'C2', name: 'C', protons: 6, charge: 0, x: 40, y: 20 }
+        ],
+        links: []
+      })
+    });
+
+    renderer.updateForce(molecule, { preserveView: true });
+
+    const atomSymbolClassRecord = records.find(
+      entry => entry[0] === 'attr' && entry[1] === 'class' && Array.isArray(entry[2]) && entry[2].some(value => value.startsWith('atom-symbol'))
+    );
+    assert.deepEqual(atomSymbolClassRecord?.[2], ['atom-symbol force-auto-label', 'atom-symbol']);
+  });
+
+  it('carries force hydrogen slot metadata through preserved-position edits', () => {
+    const previousHydrogen = {
+      id: 'h1',
+      name: 'H',
+      x: 12,
+      y: 34,
+      vx: 0.5,
+      vy: -0.25,
+      forcePlacementParentId: 'c1',
+      forcePlacementAngle: Math.PI / 4
+    };
+    let capturedOptions = null;
+    const { renderer } = makeRenderer({
+      initialSimulationNodes: [{ id: 'c1', name: 'C', x: 10, y: 20 }, previousHydrogen],
+      convertMolecule: () => ({
+        nodes: [
+          { id: 'c1', name: 'C', protons: 6, charge: 0 },
+          { id: 'h1', name: 'H', protons: 1, charge: 0 }
+        ],
+        links: [{ id: 'b1', source: 0, target: 1, order: 1 }]
+      }),
+      seedForceNodePositions: (_graph, _molecule, _anchorLayout, options) => {
+        capturedOptions = options;
+      }
+    });
+
+    renderer.updateForce({ id: 'mol-ring-edit', atoms: new Map(), bonds: new Map() }, { preservePositions: true });
+
+    const previous = capturedOptions?.previousNodePositions?.get('h1');
+    assert.equal(previous?.forcePlacementParentId, 'c1');
+    assert.equal(previous?.forcePlacementAngle, Math.PI / 4);
   });
 
   it('keeps force charge badges black on styled atoms', () => {

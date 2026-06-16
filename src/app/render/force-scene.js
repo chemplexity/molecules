@@ -24,6 +24,18 @@ import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCou
 import { ringAtomKey, ringFillDomId } from '../../core/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 
+const FORCE_STANDARD_UNLABELED_ATOMS = new Set(['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']);
+
+/**
+ * Returns whether a force-mode atom should keep its symbol visible even when
+ * normal atom labels are hidden.
+ * @param {object} node - Force graph node.
+ * @returns {boolean} True when the atom is outside the common organic palette.
+ */
+function shouldAutoLabelForceAtom(node) {
+  return typeof node?.name === 'string' && !FORCE_STANDARD_UNLABELED_ATOMS.has(node.name);
+}
+
 /**
  * Removes an automatically assigned display hint from a bond while preserving
  * any manual display choice.
@@ -258,7 +270,9 @@ function _capturePreviousNodePositions(simulation) {
         fx: node.fx,
         fy: node.fy,
         anchorX: node.anchorX,
-        anchorY: node.anchorY
+        anchorY: node.anchorY,
+        forcePlacementParentId: node.forcePlacementParentId,
+        forcePlacementAngle: node.forcePlacementAngle
       }
     ])
   );
@@ -561,7 +575,7 @@ export function createForceSceneRenderer(ctx) {
       .data(graph.nodes, d => d.id)
       .enter()
       .append('text')
-      .attr('class', 'atom-symbol')
+      .attr('class', d => (shouldAutoLabelForceAtom(d) ? 'atom-symbol force-auto-label' : 'atom-symbol'))
       .attr('pointer-events', 'none')
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
@@ -746,14 +760,22 @@ export function createForceSceneRenderer(ctx) {
       .strength(link => (ctx.helpers.isHydrogenNode(link.source) || ctx.helpers.isHydrogenNode(link.target) ? 0.8 : 0.9))
       .distance(ctx.helpers.forceLinkDistance);
     ctx.simulation.force('anchor', ctx.helpers.forceAnchorRadius());
-    ctx.simulation.force('hRepel', ctx.helpers.forceHydrogenRepulsion());
+    const hydrogenRepulsionForce = ctx.helpers.forceHydrogenRepulsion();
+    hydrogenRepulsionForce.links?.(graph.links);
+    ctx.simulation.force('hRepel', hydrogenRepulsionForce);
+    ctx.simulation.force('hPlace', ctx.helpers.forceHydrogenPlacement(graph.links));
     if (initialPatchPos?.size) {
       // Apply edit-driven force patches before the first restarted tick so
       // newly-added hydrogens do not animate in from the temporary seed layout.
       ctx.helpers.patchForceNodePositions(initialPatchPos, { alpha: 0, restart: false });
       ctx.helpers.reseatHydrogensAroundPatched(initialPatchPos, { resetVelocity: true });
     }
-    ctx.simulation.alpha(preservePositions ? 0.2 : 1).restart();
+    if (!preservePositions && typeof ctx.simulation.tick === 'function') {
+      ctx.simulation.alpha(ctx.constants.forceLayoutInitialSettleAlpha);
+      ctx.simulation.tick(ctx.constants.forceLayoutInitialSettleTicks);
+      ctx.helpers.reseatForceGraphHydrogens(graph, { resetVelocity: true });
+    }
+    ctx.simulation.alpha(preservePositions ? ctx.constants.forceLayoutEditRestartAlpha : ctx.constants.forceLayoutInitialRestartAlpha).restart();
     _updateForceRingFills();
     _updateForceLonePairs();
     _updateForceChargeLabels();

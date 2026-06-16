@@ -524,8 +524,56 @@ function terminalAlkeneContinuationDescriptor(layoutGraph, coords, centerAtomId,
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
     return !bond.aromatic && (bond.order ?? 1) >= 2 && neighborAtom?.element === 'C' && (neighborAtom.heavyDegree ?? 0) === 1;
   });
-  if (!parentBond || !leafBond) {
+  const terminalSingleLeafBond = heavyBonds.find(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return !bond.aromatic && (bond.order ?? 1) === 1 && neighborAtom?.element === 'C' && (neighborAtom.heavyDegree ?? 0) === 1;
+  });
+  const multipleParentBond = heavyBonds.find(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return !bond.aromatic && (bond.order ?? 1) >= 2 && neighborAtom?.element === 'C';
+  });
+  if ((!parentBond || !leafBond) && (!terminalSingleLeafBond || !multipleParentBond)) {
     return null;
+  }
+  if (!parentBond || !leafBond) {
+    const parentAtomId = multipleParentBond.neighborAtomId;
+    const leafAtomId = terminalSingleLeafBond.neighborAtomId;
+    if (frozenAtomIds?.has(parentAtomId) || frozenAtomIds?.has(leafAtomId)) {
+      return null;
+    }
+    const leafSubtreeAtomIds = [...collectCutSubtree(layoutGraph, leafAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+    if (leafSubtreeAtomIds.length === 0 || leafSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))) {
+      return null;
+    }
+    const parentSubtreeOptions = [
+      {
+        grandParentAtomId: null,
+        parentSubtreeAtomIds: []
+      }
+    ];
+    for (const { neighborAtomId: grandParentAtomId } of visibleHeavyCovalentBonds(layoutGraph, coords, parentAtomId)) {
+      if (grandParentAtomId === centerAtomId || frozenAtomIds?.has(grandParentAtomId)) {
+        continue;
+      }
+      const parentSubtreeAtomIds = [...collectCutSubtree(layoutGraph, parentAtomId, grandParentAtomId)].filter(atomId => coords.has(atomId));
+      if (parentSubtreeAtomIds.length === 0 || parentSubtreeAtomIds.some(atomId => frozenAtomIds?.has(atomId))) {
+        continue;
+      }
+      parentSubtreeOptions.push({
+        grandParentAtomId,
+        parentSubtreeAtomIds
+      });
+    }
+    return {
+      centerAtomId,
+      parentAtomId,
+      grandParentAtomId: null,
+      leafAtomId,
+      idealContinuationAngle: (multipleParentBond.bond.order ?? 1) >= 3 ? Math.PI : IDEAL_DIVALENT_CONTINUATION_ANGLE,
+      parentSubtreeAtomIds: [],
+      leafSubtreeAtomIds,
+      parentSubtreeOptions
+    };
   }
   const parentAtomId = parentBond.neighborAtomId;
   const leafAtomId = leafBond.neighborAtomId;
@@ -679,6 +727,46 @@ export function measureRingAdjacentTerminalDivalentContinuationDistortion(layout
     totalDeviation += focusedPenalty.maxDeviation;
     maxDeviation = Math.max(maxDeviation, focusedPenalty.maxDeviation);
     if (focusedPenalty.maxDeviation > CLEANUP_EPSILON) {
+      distortedCenterCount++;
+    }
+  }
+
+  return {
+    centerCount,
+    distortedCenterCount,
+    totalDeviation,
+    maxDeviation
+  };
+}
+
+/**
+ * Measures distorted terminal alkene continuations that the terminal multiple-bond
+ * relief can repair by rotating a bounded terminal side.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{frozenAtomIds?: Set<string>|null}} [options] - Measurement options.
+ * @returns {{centerCount: number, distortedCenterCount: number, totalDeviation: number, maxDeviation: number}} Terminal alkene deviation statistics.
+ */
+export function measureTerminalAlkeneContinuationDeviation(layoutGraph, coords, options = {}) {
+  const frozenAtomIds = options.frozenAtomIds ?? null;
+  let centerCount = 0;
+  let distortedCenterCount = 0;
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+
+  for (const atomId of coords.keys()) {
+    const descriptor = terminalAlkeneContinuationDescriptor(layoutGraph, coords, atomId, frozenAtomIds);
+    if (!descriptor) {
+      continue;
+    }
+    const deviation = terminalAlkeneAngleDeviation(coords, descriptor);
+    if (!Number.isFinite(deviation)) {
+      continue;
+    }
+    centerCount++;
+    totalDeviation += deviation;
+    maxDeviation = Math.max(maxDeviation, deviation);
+    if (deviation > CLEANUP_EPSILON) {
       distortedCenterCount++;
     }
   }
@@ -1086,33 +1174,47 @@ export function runTerminalAlkeneContinuationRelief(layoutGraph, inputCoords, op
   const baseAudit = auditLayout(layoutGraph, inputCoords, { bondLength });
   let bestCandidate = null;
   for (const descriptor of descriptors) {
-    for (const rotation of TERMINAL_ALKENE_PARENT_ROTATIONS) {
-      const parentRotatedCoords = rotateAtomIdsAroundAtom(inputCoords, descriptor.parentSubtreeAtomIds, descriptor.grandParentAtomId, rotation);
-      const candidateCoords = parentRotatedCoords ? restoreTerminalAlkeneLeafAngle(parentRotatedCoords, descriptor) : null;
-      if (!candidateCoords || terminalAlkeneAngleDeviation(candidateCoords, descriptor) > CLEANUP_EPSILON) {
-        continue;
+    if (terminalAlkeneAngleDeviation(inputCoords, descriptor) <= CLEANUP_EPSILON) {
+      continue;
+    }
+    const parentSubtreeOptions = descriptor.parentSubtreeOptions ?? [
+      {
+        grandParentAtomId: descriptor.grandParentAtomId,
+        parentSubtreeAtomIds: descriptor.parentSubtreeAtomIds
       }
-      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
-      if (
-        (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0) ||
-        (candidateAudit.bondLengthFailureCount ?? 0) > (baseAudit.bondLengthFailureCount ?? 0) ||
-        (candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0) + 1
-      ) {
-        continue;
-      }
-      const candidate = {
-        coords: candidateCoords,
-        audit: candidateAudit,
-        rotationMagnitude: Math.abs(rotation),
-        movedAtomIds: [...new Set([...descriptor.parentSubtreeAtomIds, ...descriptor.leafSubtreeAtomIds])]
-      };
-      if (
-        !bestCandidate ||
-        (candidate.audit.ok === true && bestCandidate.audit.ok !== true) ||
-        (candidate.audit.severeOverlapCount ?? 0) < (bestCandidate.audit.severeOverlapCount ?? 0) ||
-        ((candidate.audit.severeOverlapCount ?? 0) === (bestCandidate.audit.severeOverlapCount ?? 0) && candidate.rotationMagnitude < bestCandidate.rotationMagnitude - CLEANUP_EPSILON)
-      ) {
-        bestCandidate = candidate;
+    ];
+    for (const parentSubtreeOption of parentSubtreeOptions) {
+      const parentRotations = parentSubtreeOption.grandParentAtomId ? TERMINAL_ALKENE_PARENT_ROTATIONS : [0];
+      for (const rotation of parentRotations) {
+        const parentRotatedCoords = parentSubtreeOption.grandParentAtomId
+          ? rotateAtomIdsAroundAtom(inputCoords, parentSubtreeOption.parentSubtreeAtomIds, parentSubtreeOption.grandParentAtomId, rotation)
+          : inputCoords;
+        const candidateCoords = parentRotatedCoords ? restoreTerminalAlkeneLeafAngle(parentRotatedCoords, descriptor) : null;
+        if (!candidateCoords || terminalAlkeneAngleDeviation(candidateCoords, descriptor) > CLEANUP_EPSILON) {
+          continue;
+        }
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        if (
+          (candidateAudit.severeOverlapCount ?? 0) > (baseAudit.severeOverlapCount ?? 0) ||
+          (candidateAudit.bondLengthFailureCount ?? 0) > (baseAudit.bondLengthFailureCount ?? 0) ||
+          (candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0) + 1
+        ) {
+          continue;
+        }
+        const candidate = {
+          coords: candidateCoords,
+          audit: candidateAudit,
+          rotationMagnitude: Math.abs(rotation),
+          movedAtomIds: [...new Set([...parentSubtreeOption.parentSubtreeAtomIds, ...descriptor.leafSubtreeAtomIds])]
+        };
+        if (
+          !bestCandidate ||
+          (candidate.audit.ok === true && bestCandidate.audit.ok !== true) ||
+          (candidate.audit.severeOverlapCount ?? 0) < (bestCandidate.audit.severeOverlapCount ?? 0) ||
+          ((candidate.audit.severeOverlapCount ?? 0) === (bestCandidate.audit.severeOverlapCount ?? 0) && candidate.rotationMagnitude < bestCandidate.rotationMagnitude - CLEANUP_EPSILON)
+        ) {
+          bestCandidate = candidate;
+        }
       }
     }
   }

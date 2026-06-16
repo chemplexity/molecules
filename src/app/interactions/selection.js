@@ -145,6 +145,7 @@ export function createSelectionActions(context) {
 
   function closeDrawBondDrawer() {
     context.dom.drawTools?.classList?.remove('drawer-open');
+    setDrawBondDrawerHoverSuppressed(false);
   }
 
   function openRingTemplateDrawer() {
@@ -154,6 +155,7 @@ export function createSelectionActions(context) {
 
   function closeRingTemplateDrawer() {
     context.dom.drawTools?.classList?.remove('ring-template-drawer-open');
+    setRingTemplateDrawerHoverSuppressed(false);
   }
 
   function toggleRingTemplateDrawer() {
@@ -688,9 +690,6 @@ export function createSelectionActions(context) {
 
   function handleRingTemplateButtonClick() {
     toggleRingTemplateMode();
-    if (context.state.overlayState.getRingTemplateMode?.() ?? false) {
-      toggleRingTemplateDrawer();
-    }
   }
 
   return {

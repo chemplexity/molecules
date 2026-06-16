@@ -91,7 +91,7 @@ export function createInteractionRuntimeDeps(ctx) {
     clearStereoAnnotations: (mol, affectedIds) => ctx.clearStereoAnnotations(mol, affectedIds),
     kekulize: ctx.kekulize,
     refreshAromaticity: ctx.refreshAromaticity,
-    patchNodePositions: patchPos => ctx.patchNodePositions(patchPos),
+    patchNodePositions: (patchPos, options = {}) => ctx.patchNodePositions(patchPos, options),
     reseatHydrogensAroundPatched: patchPos => ctx.reseatHydrogensAroundPatched(patchPos),
     refreshSelectionOverlay: () => ctx.refreshSelectionOverlay(),
     flashEraseButton: () => ctx.flashEraseButton(),

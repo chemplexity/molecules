@@ -265,6 +265,7 @@ let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
 let _highlightMol = null; // molecule used for last updateFunctionalGroups call
 
 const _functionalGroupAnchorCache = new Map();
+const _functionalGroupCyclicCache = new Map();
 const _persistentHighlightFallbacks = new Map();
 let _activeFunctionalGroupKey = null;
 let _activeFunctionalGroupMatchIndex = 0;
@@ -395,6 +396,23 @@ function _functionalGroupAnchorQueryIds(smarts) {
 }
 
 /**
+ * Returns whether a functional-group SMARTS query contains a ring topology.
+ * Cyclic queries keep individual atom-set mappings so fused rings that share
+ * an anchor bond do not collapse into one merged highlight.
+ * @param {string} smarts - SMARTS pattern string to inspect.
+ * @returns {boolean} True when the parsed query graph has at least one ring.
+ */
+function _functionalGroupQueryIsCyclic(smarts) {
+  if (_functionalGroupCyclicCache.has(smarts)) {
+    return _functionalGroupCyclicCache.get(smarts);
+  }
+  const queryMol = parseSMARTS(smarts);
+  const isCyclic = (queryMol.getRings?.().length ?? 0) > 0;
+  _functionalGroupCyclicCache.set(smarts, isCyclic);
+  return isCyclic;
+}
+
+/**
  * Returns the query atom ids that serve as canonical anchors for deduplicating SMARTS matches.
  * @param {string} smarts - SMARTS pattern string to look up or compute anchor ids for.
  * @returns {string[]} Array of query atom ids representing the anchor atoms.
@@ -404,6 +422,9 @@ export function getHighlightAnchorQueryIds(smarts) {
 }
 
 function _mergeMappingsByAnchor(smarts, mappings) {
+  if (_functionalGroupQueryIsCyclic(smarts)) {
+    return mappings.map(mapping => new Map(mapping));
+  }
   const anchorQueryIds = _functionalGroupAnchorQueryIds(smarts);
   const mergedByAnchor = new Map();
   for (const mapping of mappings) {

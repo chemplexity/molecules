@@ -202,6 +202,66 @@ describe('createDrawBondPreviewActions', () => {
     });
   });
 
+  it('starts a blank-space 2D preview with only the origin atom visible', () => {
+    const { actions, getDrawBondState, g } = makeActions({
+      drawBondElement: 'O'
+    });
+
+    actions.start(null, 200, 150);
+
+    assert.deepEqual(getDrawBondState(), {
+      atomId: null,
+      ox: 200,
+      oy: 150,
+      ex: 200,
+      ey: 150,
+      dragged: false
+    });
+    assert.equal(g.select('text.draw-bond-origin-label').empty(), false);
+    assert.equal(g.select('g.draw-bond-preview').empty(), true);
+    assert.equal(g.select('text.draw-bond-dest-label').empty(), true);
+  });
+
+  it('shows a temporary carbon label for blank-space carbon placement feedback', () => {
+    const { actions, g } = makeActions({
+      drawBondElement: 'C'
+    });
+
+    actions.start(null, 200, 150);
+
+    const originLabel = g.select('text.draw-bond-origin-label');
+    assert.equal(originLabel.empty(), false);
+    assert.equal(originLabel.node.text, 'C');
+    assert.equal(g.select('text.draw-bond-dest-label').empty(), true);
+  });
+
+  it('waits for sufficient blank-space movement before showing a second atom preview', () => {
+    const { actions, getDrawBondState, g } = makeActions({
+      drawBondElement: 'O'
+    });
+
+    actions.start(null, 200, 150);
+    actions.update([220, 150]);
+
+    assert.deepEqual(getDrawBondState(), {
+      atomId: null,
+      ox: 200,
+      oy: 150,
+      ex: 200,
+      ey: 150,
+      dragged: false,
+      snapAtomId: null
+    });
+    assert.equal(g.select('g.draw-bond-preview').empty(), true);
+    assert.equal(g.select('text.draw-bond-dest-label').empty(), true);
+
+    actions.update([240, 150]);
+
+    assert.equal(g.select('g.draw-bond-preview').empty(), false);
+    assert.equal(g.select('text.draw-bond-dest-label').empty(), false);
+    assert.equal(getDrawBondState().ex, 240);
+  });
+
   it('updates a 2D preview and snaps to a nearby atom', () => {
     const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
     const dest = { id: 'a2', x: 1, y: 0, visible: true, name: 'N' };

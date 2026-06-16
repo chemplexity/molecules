@@ -1,5 +1,7 @@
 /** @module app/interactions/draw-bond-preview */
 
+const BLANK_SPACE_DRAW_DISTANCE_THRESHOLD = 30;
+
 /**
  * Creates draw-bond preview action handlers that manage the transient preview geometry shown while the user drags to place a new bond.
  * @param {object} context - Dependency context providing g, state, getMode, force, view2D, plot, renderers, view, helpers, constants, overlays, and getDrawBondElement.
@@ -173,7 +175,9 @@ export function createDrawBondPreviewActions(context) {
     const ex = ox;
     const ey = oy;
     context.state.setDrawBondState({ atomId, ox, oy, ex, ey, dragged: false });
-    renderPreviewGeometry(ox, oy, ex, ey);
+    if (atomId !== null) {
+      renderPreviewGeometry(ox, oy, ex, ey);
+    }
 
     if (context.getMode() === 'force') {
       const drawElemProtons = context.getDrawElemProtons();
@@ -192,17 +196,19 @@ export function createDrawBondPreviewActions(context) {
           .attr('stroke-width', 1)
           .attr('pointer-events', 'none');
       }
-      context.g
-        .append('circle')
-        .attr('class', 'draw-bond-dest-node')
-        .attr('cx', ox)
-        .attr('cy', oy)
-        .attr('r', radius)
-        .attr('fill', fill)
-        .attr('stroke', stroke)
-        .attr('stroke-width', 1)
-        .attr('pointer-events', 'none');
-    } else if (context.getDrawBondElement() !== 'C') {
+      if (atomId !== null) {
+        context.g
+          .append('circle')
+          .attr('class', 'draw-bond-dest-node')
+          .attr('cx', ox)
+          .attr('cy', oy)
+          .attr('r', radius)
+          .attr('fill', fill)
+          .attr('stroke', stroke)
+          .attr('stroke-width', 1)
+          .attr('pointer-events', 'none');
+      }
+    } else {
       const fill = context.helpers.atomColor(context.getDrawBondElement(), '2d');
       if (atomId === null) {
         context.g
@@ -218,18 +224,20 @@ export function createDrawBondPreviewActions(context) {
           .attr('pointer-events', 'none')
           .text(context.getDrawBondElement());
       }
-      context.g
-        .append('text')
-        .attr('class', 'draw-bond-dest-label')
-        .attr('x', ox)
-        .attr('y', oy)
-        .attr('text-anchor', 'middle')
-        .attr('dominant-baseline', 'central')
-        .attr('fill', fill)
-        .attr('font-size', context.constants.fontSize)
-        .attr('font-weight', 'bold')
-        .attr('pointer-events', 'none')
-        .text(context.getDrawBondElement());
+      if (atomId !== null && context.getDrawBondElement() !== 'C') {
+        context.g
+          .append('text')
+          .attr('class', 'draw-bond-dest-label')
+          .attr('x', ox)
+          .attr('y', oy)
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'central')
+          .attr('fill', fill)
+          .attr('font-size', context.constants.fontSize)
+          .attr('font-weight', 'bold')
+          .attr('pointer-events', 'none')
+          .text(context.getDrawBondElement());
+      }
     }
   }
 
@@ -240,6 +248,20 @@ export function createDrawBondPreviewActions(context) {
     }
 
     const { ox, oy } = drawBondState;
+    const blankSpaceDragDistance = drawBondState.atomId === null ? Math.hypot(mx - ox, my - oy) : Infinity;
+    if (blankSpaceDragDistance < BLANK_SPACE_DRAW_DISTANCE_THRESHOLD) {
+      context.state.setDrawBondState({
+        ...drawBondState,
+        ex: ox,
+        ey: oy,
+        snapAtomId: null
+      });
+      removePreviewGeometry();
+      context.g.select('circle.draw-bond-dest-node').remove();
+      context.g.select('text.draw-bond-dest-label').remove();
+      return;
+    }
+
     const bondLength = context.getMode() === 'force' ? context.constants.forceBondLength : 1.5 * context.constants.scale;
     const { width, height } = context.plot.getSize();
     const snapRadius = 30;
@@ -324,7 +346,22 @@ export function createDrawBondPreviewActions(context) {
     }
 
     const destCircle = context.g.select('circle.draw-bond-dest-node');
-    if (!destCircle.empty()) {
+    if (destCircle.empty() && snapAtomId === null && context.getMode() === 'force') {
+      const drawElemProtons = context.getDrawElemProtons();
+      const radius = context.helpers.atomRadius(drawElemProtons[context.getDrawBondElement()] ?? 6);
+      const fill = context.helpers.atomColor(context.getDrawBondElement(), 'force');
+      const stroke = context.helpers.strokeColor(context.getDrawBondElement());
+      context.g
+        .append('circle')
+        .attr('class', 'draw-bond-dest-node')
+        .attr('cx', ex)
+        .attr('cy', ey)
+        .attr('r', radius)
+        .attr('fill', fill)
+        .attr('stroke', stroke)
+        .attr('stroke-width', 1)
+        .attr('pointer-events', 'none');
+    } else if (!destCircle.empty()) {
       if (snapAtomId !== null) {
         destCircle.attr('display', 'none');
       } else {
@@ -333,7 +370,21 @@ export function createDrawBondPreviewActions(context) {
     }
 
     const destLabel = context.g.select('text.draw-bond-dest-label');
-    if (!destLabel.empty()) {
+    if (destLabel.empty() && snapAtomId === null && context.getMode() !== 'force' && context.getDrawBondElement() !== 'C') {
+      const fill = context.helpers.atomColor(context.getDrawBondElement(), '2d');
+      context.g
+        .append('text')
+        .attr('class', 'draw-bond-dest-label')
+        .attr('x', ex)
+        .attr('y', ey)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('fill', fill)
+        .attr('font-size', context.constants.fontSize)
+        .attr('font-weight', 'bold')
+        .attr('pointer-events', 'none')
+        .text(context.getDrawBondElement());
+    } else if (!destLabel.empty()) {
       if (snapAtomId !== null) {
         destLabel.attr('display', 'none');
       } else {

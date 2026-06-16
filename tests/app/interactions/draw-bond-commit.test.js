@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 
 import { ReactionPreviewPolicy } from '../../../src/app/core/editor-actions.js';
 import { createDrawBondCommitActions } from '../../../src/app/interactions/draw-bond-commit.js';
+import { parseSMILES } from '../../../src/io/index.js';
+import { generateCoords } from '../../../src/layout/engine/api.js';
+import { angleOf, angularDifference, sub } from '../../../src/layout/engine/geometry/vec2.js';
 
 function makeAtom(id, name = 'C') {
   return {
@@ -31,11 +34,29 @@ function makeBond(id, atomA, atomB) {
   };
 }
 
-function makeEditableMol(atom) {
+function copyLayoutCoordsToMolecule(mol, coords) {
+  for (const [atomId, position] of coords) {
+    const atom = mol.atoms.get(atomId);
+    if (atom) {
+      atom.x = position.x;
+      atom.y = position.y;
+    }
+  }
+}
+
+function bondAngleDegrees(coords, centerAtomId, firstAtomId, secondAtomId) {
+  const center = coords.get(centerAtomId);
+  const first = coords.get(firstAtomId);
+  const second = coords.get(secondAtomId);
+  return (angularDifference(angleOf(sub(first, center)), angleOf(sub(second, center))) * 180) / Math.PI;
+}
+
+function makeEditableMol(atom = null) {
   let atomCounter = 1;
   let bondCounter = 0;
+  const atoms = atom ? new Map([[atom.id, atom]]) : new Map();
   const mol = {
-    atoms: new Map([[atom.id, atom]]),
+    atoms,
     bonds: new Map(),
     addAtom(_id, name) {
       atomCounter += 1;
@@ -85,7 +106,9 @@ function makeActions(overrides = {}) {
     snapshots: [],
     restoredSnapshots: [],
     changedAtoms: [],
-    promotedBonds: []
+    promotedBonds: [],
+    renderers: [],
+    selection: []
   };
 
   const context = {
@@ -169,8 +192,17 @@ function makeActions(overrides = {}) {
       updatePanels: () => {}
     },
     renderers: {
-      draw2d: () => {},
-      updateForce: () => {}
+      draw2d: () => {
+        calls.renderers.push(['draw2d']);
+      },
+      updateForce: (...args) => {
+        calls.renderers.push(['updateForce', ...args]);
+      }
+    },
+    selection: {
+      clearSelection: () => {
+        calls.selection.push('clearSelection');
+      }
     },
     actions: {
       changeAtomElements: (atomIds, newEl, options = {}) => {
@@ -240,6 +272,35 @@ describe('createDrawBondCommitActions', () => {
       }
     ]);
     assert.deepEqual(calls.snapshots, []);
+  });
+
+  it('places only one selected atom on a blank-space no-drag commit', () => {
+    const mol = makeEditableMol();
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      drawBondElement: 'N',
+      initialDrawBondState: {
+        atomId: null,
+        ox: 340,
+        oy: 160,
+        ex: 340,
+        ey: 160,
+        snapAtomId: null,
+        dragged: false
+      }
+    });
+
+    actions.commit();
+
+    assert.equal(mol.atoms.size, 1);
+    assert.equal(mol.bonds.size, 0);
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'N');
+    assert.equal(atom.x, 1);
+    assert.equal(atom.y, 1);
+    assert.deepEqual([...mol.repairedHydrogens], [atom.id]);
+    assert.deepEqual(calls.selection, ['clearSelection']);
+    assert.deepEqual(calls.renderers, [['draw2d']]);
   });
 
   it('restores the prior reaction preview on a short hydrogen snap no-op', () => {
@@ -365,6 +426,40 @@ describe('createDrawBondCommitActions', () => {
     ]);
   });
 
+  it('places a clicked terminal methyl bond on the zigzag side instead of a straight cap', () => {
+    const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
+    const layout = generateCoords(mol, {
+      finalLandscapeOrientation: true
+    });
+    copyLayoutCoordsToMolecule(mol, layout.coords);
+    const beforeAtomIds = new Set(mol.atoms.keys());
+    const { actions } = makeActions({
+      activeMol: mol,
+      drawBondElement: 'C'
+    });
+
+    actions.autoPlaceBond('C9', 300, 200);
+
+    const newAtomId = [...mol.atoms.keys()].find(atomId => !beforeAtomIds.has(atomId));
+    assert.ok(newAtomId, 'expected auto-placement to add a new atom');
+    const coords = new Map([...mol.atoms].filter(([, atom]) => Number.isFinite(atom.x) && Number.isFinite(atom.y)).map(([atomId, atom]) => [atomId, { x: atom.x, y: atom.y }]));
+    const newAtom = mol.atoms.get(newAtomId);
+    const sourceAtom = mol.atoms.get('C9');
+    const existingNeighbor = mol.atoms.get('C8');
+
+    assert.ok(newAtom.y < sourceAtom.y, 'expected the new bond to use the lower zigzag slot from C9');
+    assert.ok(Math.abs(newAtom.y - existingNeighbor.y) > 0.5, 'expected the new atom not to line up horizontally with the existing branch endpoint');
+    assert.ok(Math.abs(bondAngleDegrees(coords, 'C9', 'C8', newAtomId) - 120) < 1e-6, 'expected the new C8-C9 bond angle to stay at 120 degrees');
+    assert.deepEqual(
+      sourceAtom
+        .getNeighbors(mol)
+        .filter(neighbor => neighbor.name === 'H')
+        .map(neighbor => neighbor.id)
+        .sort(),
+      ['H21', 'H23']
+    );
+  });
+
   it('keeps a dragged 2d bond endpoint on the previewed release position instead of re-snapping it', () => {
     const srcAtom = makeAtom('a1', 'C');
     srcAtom.x = 0;
@@ -390,6 +485,33 @@ describe('createDrawBondCommitActions', () => {
     assert.ok(newAtom);
     assert.equal(newAtom.x, 1.5);
     assert.equal(newAtom.y, 1.5);
+  });
+
+  it('creates a line from blank space when the blank-space gesture is dragged', () => {
+    const mol = makeEditableMol();
+    const { actions } = makeActions({
+      activeMol: mol,
+      drawBondElement: 'C',
+      initialDrawBondState: {
+        atomId: null,
+        ox: 300,
+        oy: 200,
+        ex: 360,
+        ey: 140,
+        snapAtomId: null,
+        dragged: true
+      }
+    });
+
+    actions.commit();
+
+    assert.equal(mol.atoms.size, 2);
+    assert.equal(mol.bonds.size, 1);
+    const [sourceAtom, destAtom] = [...mol.atoms.values()];
+    assert.equal(sourceAtom.x, 0);
+    assert.equal(sourceAtom.y, 0);
+    assert.equal(destAtom.x, 1.5);
+    assert.equal(destAtom.y, 1.5);
   });
 
   it('stores manual wedge display metadata when auto-placing a new wedge bond', () => {

@@ -11,6 +11,7 @@ import { transformAttachedBlock } from '../placement/linkers.js';
 import { auditCandidateSafety, auditLayout } from '../audit/audit.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { runRingPresentationCleanup } from '../cleanup/presentation/ring-presentation.js';
+import { runTerminalAlkeneContinuationRelief } from '../cleanup/presentation/divalent-continuation.js';
 import { measureRingSubstituentPresentationPenalty } from '../cleanup/presentation/ring-substituent.js';
 import { collectMovableAttachedRingDescriptors, runAttachedRingRotationTouchup } from '../cleanup/presentation/attached-ring-fallback.js';
 import {
@@ -23386,6 +23387,13 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   const rootAromaticGeometryRestore = restoreMixedRootAromaticGeometry(layoutGraph, coords, state.rootRingSystem ?? null, bondValidationClasses, bondLength);
   if (rootAromaticGeometryRestore.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const terminalAlkeneContinuationRelief = runTerminalAlkeneContinuationRelief(layoutGraph, coords, {
+    bondLength
+  });
+  if (terminalAlkeneContinuationRelief.changed) {
+    overwriteCoordMap(coords, terminalAlkeneContinuationRelief.coords);
     markMixedBranchPlacementContextDirty(state);
   }
   for (const atomId of nonRingAtomIds) {

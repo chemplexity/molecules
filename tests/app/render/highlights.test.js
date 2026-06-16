@@ -190,3 +190,39 @@ test('functional-group hover temporarily overrides a locked physchem highlight a
     globalThis.document = previousDocument;
   }
 });
+
+test('cyclic functional-group rows keep fused ring matches separate', () => {
+  const previousDocument = globalThis.document;
+  const fgBody = makeMockElement('tbody');
+  globalThis.document = {
+    getElementById(id) {
+      return id === 'fg-body' ? fgBody : null;
+    },
+    querySelector() {
+      return null;
+    },
+    createElement(tagName) {
+      return makeMockElement(tagName);
+    }
+  };
+
+  initHighlights({
+    applyForceHighlights() {}
+  });
+
+  try {
+    const mol = parseSMILES('CC(=O)C(Cl)CC1C(C)C4C3C(CCC2C3=C1CCC2)CCC4');
+    updateFunctionalGroups(mol);
+
+    const cyclohexeneRow = fgBody.children.find(child => collectText(child).includes('Cyclohexene'));
+    assert.ok(cyclohexeneRow);
+    assert.equal(cyclohexeneRow.cells[1].textContent, '2');
+
+    cyclohexeneRow.dispatch('mousedown', { button: 0 });
+    const highlightedHeavyAtomIds = [...getHighlightedAtomIds()].filter(id => !String(id).startsWith('H'));
+    assert.equal(highlightedHeavyAtomIds.length, 6);
+  } finally {
+    clearHighlightState();
+    globalThis.document = previousDocument;
+  }
+});

@@ -273,6 +273,10 @@ describe('interaction action deps builders', () => {
       hideTooltip: () => records.push(['hideTooltip']),
       getSelectionValenceTooltipAtomId: () => 12,
       setSelectionValenceTooltipAtomId: value => records.push(['setTooltipAtom', value]),
+      getZoomTransform: () => ({ x: 1, y: 2, k: 3 }),
+      setZoomTransform: transform => records.push(['setZoom', transform]),
+      makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+      getPlotSize: () => ({ width: 600, height: 400 }),
       getRenderOptions: () => ({ mode: '2d' }),
       atomTooltipHtml: atom => `atom:${atom.id}`,
       bondTooltipHtml: bond => `bond:${bond.id}`,
@@ -288,6 +292,7 @@ describe('interaction action deps builders', () => {
     deps.drawBond.start(4, 5, 6);
     deps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' });
     deps.actions.placeRingTemplate(6, 10, 20, { anchorAtomId: 'a1' });
+    deps.view.setZoomTransform(deps.view.makeZoomIdentity(4, 5, 6));
     deps.tooltip.showImmediate('hello', { clientX: 1 });
     deps.tooltipState.setSelectionValenceTooltipAtomId(99);
 
@@ -295,6 +300,8 @@ describe('interaction action deps builders', () => {
     assert.equal(deps.overlays.isReactionPreviewEditableAtomId(1), true);
     assert.equal(deps.drawBond.getElement(), 'O');
     assert.equal(deps.tooltipState.getSelectionValenceTooltipAtomId(), 12);
+    assert.deepEqual(deps.view.getZoomTransform(), { x: 1, y: 2, k: 3 });
+    assert.deepEqual(deps.plot.getSize(), { width: 600, height: 400 });
     assert.deepEqual(deps.pointer({ x: 7 }, { y: 8 }), [7, 8]);
     assert.deepEqual(deps.constants, { scale: 60, forceBondLength: 41 });
     assert.deepEqual(deps.helpers.getForceNodeById('a1'), { id: 'a1', x: 1, y: 2 });
@@ -303,6 +310,7 @@ describe('interaction action deps builders', () => {
       ['start', 4, 5, 6],
       ['paint', ['a1'], ['b1'], { color: '#3366ff' }],
       ['ring', 6, 10, 20, { anchorAtomId: 'a1' }],
+      ['setZoom', { x: 4, y: 5, k: 6 }],
       ['immediateTooltip', 'hello', { clientX: 1 }],
       ['setTooltipAtom', 99]
     ]);

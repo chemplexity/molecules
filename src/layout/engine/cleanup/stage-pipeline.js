@@ -38,7 +38,7 @@ import {
   runRingTerminalHeteroTidy,
   runTerminalMultipleBondLeafFanTidy
 } from './presentation/ring-terminal-hetero.js';
-import { runDivalentContinuationTidy, runTerminalAlkeneContinuationRelief } from './presentation/divalent-continuation.js';
+import { measureTerminalAlkeneContinuationDeviation, runDivalentContinuationTidy, runTerminalAlkeneContinuationRelief } from './presentation/divalent-continuation.js';
 import { runRingTerminalRootExactClearance } from './presentation/ring-terminal-root-clearance.js';
 import { hasPlanarNitrogenAttachedRingRootOutwardMiss, refineDirectAttachedRingRootsWithTerminalLeafClearance } from '../families/mixed.js';
 
@@ -217,6 +217,9 @@ export function buildCleanupStageGraph(context) {
     const smallRingExteriorFanExactPenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, coords);
     const omittedHydrogenCollateralRootPenalty = measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
     const divalentContinuationPenalty = measureDivalentContinuationDistortion(layoutGraph, coords);
+    const terminalAlkeneContinuationPenalty = measureTerminalAlkeneContinuationDeviation(layoutGraph, coords, {
+      frozenAtomIds: placement.frozenAtomIds
+    });
     const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, coords);
     const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords);
     const metrics = {
@@ -224,6 +227,8 @@ export function buildCleanupStageGraph(context) {
       hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
       divalentContinuationPenalty: divalentContinuationPenalty.totalDeviation,
       divalentContinuationMaxPenalty: divalentContinuationPenalty.maxDeviation,
+      terminalAlkeneContinuationPenalty: terminalAlkeneContinuationPenalty.totalDeviation,
+      terminalAlkeneContinuationMaxPenalty: terminalAlkeneContinuationPenalty.maxDeviation,
       trigonalDistortionPenalty: trigonalDistortionPenalty.totalDeviation,
       omittedHydrogenTrigonalPenalty: omittedHydrogenTrigonalPenalty.totalDeviation,
       omittedHydrogenDirectRingHubCollateralRootMaxPenalty: omittedHydrogenCollateralRootPenalty.maxDeviation,
@@ -273,6 +278,8 @@ export function buildCleanupStageGraph(context) {
       presentationPenalty: metrics?.presentationPenalty ?? 0,
       hypervalentDeviation: metrics?.hypervalentDeviation ?? 0,
       divalentContinuationPenalty: metrics?.divalentContinuationPenalty ?? 0,
+      terminalAlkeneContinuationPenalty: metrics?.terminalAlkeneContinuationPenalty ?? 0,
+      terminalAlkeneContinuationMaxPenalty: metrics?.terminalAlkeneContinuationMaxPenalty ?? 0,
       trigonalDistortionPenalty: metrics?.trigonalDistortionPenalty ?? 0,
       omittedHydrogenTrigonalPenalty: metrics?.omittedHydrogenTrigonalPenalty ?? 0,
       omittedHydrogenDirectRingHubCollateralRootMaxPenalty: metrics?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0,
@@ -476,6 +483,28 @@ export function buildCleanupStageGraph(context) {
       return false;
     }
     return true;
+  };
+  const terminalAlkeneContinuationRetouchComparator = (candidate, incumbent) => {
+    if (worsensHypervalentDeviation(candidate, incumbent)) {
+      return false;
+    }
+    if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
+      return false;
+    }
+    if (
+      (candidate.terminalAlkeneContinuationMaxPenalty ?? Number.POSITIVE_INFINITY) >
+        (incumbent?.terminalAlkeneContinuationMaxPenalty ?? Number.POSITIVE_INFINITY) + PRESENTATION_METRIC_EPSILON ||
+      (candidate.terminalAlkeneContinuationPenalty ?? Number.POSITIVE_INFINITY) >
+        (incumbent?.terminalAlkeneContinuationPenalty ?? Number.POSITIVE_INFINITY) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    return (
+      (candidate.terminalAlkeneContinuationMaxPenalty ?? Number.POSITIVE_INFINITY) <
+        (incumbent?.terminalAlkeneContinuationMaxPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON ||
+      (candidate.terminalAlkeneContinuationPenalty ?? Number.POSITIVE_INFINITY) <
+        (incumbent?.terminalAlkeneContinuationPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+    );
   };
   const omittedHydrogenCollateralRootRetouchComparator = (candidate, incumbent) => {
     if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
@@ -1035,7 +1064,7 @@ export function buildCleanupStageGraph(context) {
         return result;
       },
       scoreFn: auditFinalStereoWithPresentationMetrics,
-      comparatorFn: stabilizationComparator,
+      comparatorFn: terminalAlkeneContinuationRetouchComparator,
       accumulateSidecar: acceptedNudgeAccumulator('terminalAlkeneContinuationFinalRetouch')
     },
     {

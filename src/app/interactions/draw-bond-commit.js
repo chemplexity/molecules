@@ -4,6 +4,21 @@ import { ReactionPreviewPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 
+const TAU = Math.PI * 2;
+
+function _normalizeAngle(angle) {
+  const normalized = angle % TAU;
+  return normalized < 0 ? normalized + TAU : normalized;
+}
+
+function _angularDifference(firstAngle, secondAngle) {
+  let diff = Math.abs(_normalizeAngle(firstAngle) - _normalizeAngle(secondAngle));
+  if (diff > Math.PI) {
+    diff = TAU - diff;
+  }
+  return diff;
+}
+
 /**
  * Removes all display-stereo properties (as, centerId, manual) from a bond,
  * deleting the `display` object entirely if it becomes empty.
@@ -116,6 +131,88 @@ function _applyBondDrawType(mol, bond, drawBondType, preferredCenterId = null) {
 }
 
 /**
+ * Chooses a no-drag bond auto-placement angle from visible heavy-neighbor
+ * directions. A terminal atom uses the zigzag side opposite its existing bond
+ * instead of capping both bonds onto the same side of the source atom.
+ * @param {number[]} existingAngles - Angles from source atom to existing heavy neighbors.
+ * @param {number} [steps] - Number of compass samples for crowded multi-neighbor placement.
+ * @returns {number} Placement angle in radians normalized to [0, 2pi).
+ */
+function _chooseAutoPlacedBondAngle(existingAngles, steps = 12) {
+  if (existingAngles.length === 0) {
+    return (11 / 12) * TAU;
+  }
+  if (existingAngles.length === 1) {
+    const back = existingAngles[0];
+    const opt1 = back + (2 * Math.PI) / 3;
+    const opt2 = back - (2 * Math.PI) / 3;
+    const sBack = Math.sin(back);
+    const s1 = Math.sin(opt1);
+    const s2 = Math.sin(opt2);
+    if (Math.abs(sBack) > 1e-6) {
+      const opposite1 = s1 * sBack < 0;
+      const opposite2 = s2 * sBack < 0;
+      if (opposite1 && !opposite2) {
+        return _normalizeAngle(opt1);
+      }
+      if (opposite2 && !opposite1) {
+        return _normalizeAngle(opt2);
+      }
+      return _normalizeAngle(Math.cos(opt1) >= Math.cos(opt2) ? opt1 : opt2);
+    }
+    return _normalizeAngle(s1 <= s2 ? opt1 : opt2);
+  }
+
+  let bestAngle = 0;
+  let bestMinSep = -1;
+  for (let i = 0; i < steps; i++) {
+    const candidate = (i / steps) * TAU;
+    let minSep = Math.PI;
+    for (const angle of existingAngles) {
+      minSep = Math.min(minSep, _angularDifference(candidate, angle));
+    }
+    if (minSep > bestMinSep) {
+      bestMinSep = minSep;
+      bestAngle = candidate;
+    }
+  }
+  return bestAngle;
+}
+
+/**
+ * Removes the source hydrogen closest to the new bond direction. This lets
+ * explicit hydrogens behave like replaceable valence slots during no-drag bond
+ * placement instead of forcing the new bond around a hydrogen that will be
+ * deleted.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule being edited.
+ * @param {object} srcAtom - Source atom object.
+ * @param {{x: number, y: number}} sourcePoint - Source atom point in the same coordinate space as `pointForAtom`.
+ * @param {number} targetAngle - Chosen new bond angle.
+ * @param {(atom: object) => ({x: number, y: number}|null)} pointForAtom - Returns an atom point for angle comparison.
+ */
+function _removeSourceHydrogenNearestAngle(mol, srcAtom, sourcePoint, targetAngle, pointForAtom) {
+  const sourceHydrogens = srcAtom?.getNeighbors?.(mol).filter(neighbor => neighbor.name === 'H') ?? [];
+  if (sourceHydrogens.length === 0) {
+    return;
+  }
+  let bestHydrogen = sourceHydrogens[0];
+  let bestDeviation = Number.POSITIVE_INFINITY;
+  for (const hydrogen of sourceHydrogens) {
+    const hydrogenPoint = pointForAtom(hydrogen);
+    if (!Number.isFinite(hydrogenPoint?.x) || !Number.isFinite(hydrogenPoint?.y)) {
+      continue;
+    }
+    const hydrogenAngle = Math.atan2(hydrogenPoint.y - sourcePoint.y, hydrogenPoint.x - sourcePoint.x);
+    const deviation = _angularDifference(hydrogenAngle, targetAngle);
+    if (deviation < bestDeviation) {
+      bestDeviation = deviation;
+      bestHydrogen = hydrogen;
+    }
+  }
+  mol.removeAtom(bestHydrogen.id);
+}
+
+/**
  * Creates draw-bond commit action handlers wired to the provided context.
  * @param {object} context - App context providing state, molecule, view, history,
  *   overlay, snapshot, chemistry, analysis, renderer, and force sub-objects.
@@ -145,6 +242,83 @@ export function createDrawBondCommitActions(context) {
     return [...mol.bonds.values()].find(bond => {
       const [a1, a2] = bond.getAtomObjects(mol);
       return (a1?.id === atomIdA && a2?.id === atomIdB) || (a1?.id === atomIdB && a2?.id === atomIdA);
+    });
+  }
+
+  function moleculePointFromViewportPoint(mol, mode, x, y) {
+    const { width: plotWidth, height: plotHeight } = context.plot.getSize();
+    if (mode === 'force') {
+      const forceScale = context.constants.forceScale;
+      let cx2d = 0;
+      let cy2d = 0;
+      let count = 0;
+      for (const [, atom] of mol.atoms) {
+        if (atom.x != null) {
+          cx2d += atom.x;
+          cy2d += atom.y;
+          count++;
+        }
+      }
+      if (count > 0) {
+        cx2d /= count;
+        cy2d /= count;
+      }
+      return {
+        x: cx2d + (x - plotWidth / 2) / forceScale,
+        y: cy2d - (y - plotHeight / 2) / forceScale
+      };
+    }
+    return {
+      x: context.view2D.getCenterX() + (x - plotWidth / 2) / context.constants.scale,
+      y: context.view2D.getCenterY() - (y - plotHeight / 2) / context.constants.scale
+    };
+  }
+
+  function placeStandaloneAtom(ox, oy) {
+    const mode = context.getMode();
+    const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransform() : null;
+    const reactionEdit = context.overlays.prepareReactionPreviewEditTargets({ atomId: null });
+    if (reactionEdit === null) {
+      return;
+    }
+    const previousSnapshot = reactionEdit?.previousSnapshot ?? context.snapshot.capture();
+    const structuralEdit = context.overlays.prepareResonanceStructuralEdit(context.molecule.getActive());
+    context.history.takeSnapshot(
+      previousSnapshot
+        ? {
+            clearReactionPreview: false,
+            snapshot: previousSnapshot
+          }
+        : undefined
+    );
+    const mol = structuralEdit.mol ?? context.molecule.ensureActive();
+    const newAtom = mol.addAtom(null, context.getDrawBondElement(), {});
+    const point = moleculePointFromViewportPoint(mol, mode, ox, oy);
+    newAtom.x = point.x;
+    newAtom.y = point.y;
+    mol.repairImplicitHydrogens?.([newAtom.id]);
+
+    context.analysis.syncInputField(mol);
+    context.analysis.updateFormula(mol);
+    context.analysis.updateDescriptors(mol);
+    context.analysis.updatePanels(mol);
+    clearSelectionBeforeStructuralDraw();
+
+    if (mode === 'force') {
+      context.renderers.updateForce(mol, {
+        preservePositions: true,
+        initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
+      });
+      context.force.enableKeepInView();
+      return;
+    }
+
+    context.view2D.syncDerivedState(mol);
+    context.renderers.draw2d();
+    context.view.restore2dEditViewport(zoomSnapshot, {
+      reactionRestored: reactionEdit?.restored,
+      reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
+      resonanceReset: structuralEdit.resonanceReset
     });
   }
 
@@ -237,6 +411,10 @@ export function createDrawBondCommitActions(context) {
         continue;
       }
       const otherId = bond.getOtherAtom(resolvedId);
+      const otherAtom = mol.atoms.get(otherId);
+      if (!otherAtom || otherAtom.name === 'H') {
+        continue;
+      }
       if (mode === 'force') {
         const otherNode = context.force.getNodeById(otherId);
         if (!otherNode) {
@@ -244,7 +422,6 @@ export function createDrawBondCommitActions(context) {
         }
         existingAngles.push(Math.atan2(otherNode.y - srcRY, otherNode.x - srcRX));
       } else {
-        const otherAtom = mol.atoms.get(otherId);
         if (!otherAtom || otherAtom.x == null || otherAtom.visible === false) {
           continue;
         }
@@ -252,61 +429,18 @@ export function createDrawBondCommitActions(context) {
       }
     }
 
-    let bestAngle;
-    if (existingAngles.length === 0) {
-      bestAngle = (11 / 12) * 2 * Math.PI;
-    } else if (existingAngles.length === 1) {
-      const back = existingAngles[0];
-      const opt1 = back + (2 * Math.PI) / 3;
-      const opt2 = back - (2 * Math.PI) / 3;
-      const sBack = Math.sin(back);
-      const s1 = Math.sin(opt1);
-      const s2 = Math.sin(opt2);
-      if (Math.abs(sBack) > 1e-6) {
-        const ok1 = s1 * sBack > 0;
-        const ok2 = s2 * sBack > 0;
-        if (ok1 && !ok2) {
-          bestAngle = opt1;
-        } else if (ok2 && !ok1) {
-          bestAngle = opt2;
-        } else {
-          bestAngle = Math.cos(opt1) >= Math.cos(opt2) ? opt1 : opt2;
-        }
-      } else {
-        bestAngle = s1 <= s2 ? opt1 : opt2;
-      }
-      bestAngle = ((bestAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-    } else {
-      bestAngle = 0;
-      let bestMinSep = -1;
-      for (let i = 0; i < steps; i++) {
-        const candidate = (i / steps) * 2 * Math.PI;
-        let minSep = Math.PI;
-        for (const angle of existingAngles) {
-          let diff = Math.abs(candidate - angle);
-          if (diff > Math.PI) {
-            diff = 2 * Math.PI - diff;
-          }
-          if (diff < minSep) {
-            minSep = diff;
-          }
-        }
-        if (minSep > bestMinSep) {
-          bestMinSep = minSep;
-          bestAngle = candidate;
-        }
-      }
-    }
+    let bestAngle = _chooseAutoPlacedBondAngle(existingAngles, steps);
 
     {
       const bondLength = mode === 'force' ? 1.5 * forceScale : 1.5;
       const thresholdSq = (bondLength * 0.7) ** 2;
+      const sourceHydrogenIds = new Set(srcAtom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').map(neighbor => neighbor.id));
       const overlaps = angle => {
         const px = srcRX + Math.cos(angle) * bondLength;
         const py = srcRY + Math.sin(angle) * bondLength;
         if (mode === 'force') {
           for (const node of context.force.getNodes()) {
-            if (node.id === resolvedId) {
+            if (node.id === resolvedId || sourceHydrogenIds.has(node.id)) {
               continue;
             }
             const dx = node.x - px;
@@ -317,7 +451,7 @@ export function createDrawBondCommitActions(context) {
           }
         } else {
           for (const [id, atom] of mol.atoms) {
-            if (id === resolvedId || atom.x == null || atom.visible === false) {
+            if (id === resolvedId || sourceHydrogenIds.has(id) || atom.x == null || atom.visible === false) {
               continue;
             }
             const dx = atom.x - px;
@@ -339,13 +473,7 @@ export function createDrawBondCommitActions(context) {
           }
           let minSep = Math.PI;
           for (const angle of existingAngles) {
-            let diff = Math.abs(candidate - angle);
-            if (diff > Math.PI) {
-              diff = 2 * Math.PI - diff;
-            }
-            if (diff < minSep) {
-              minSep = diff;
-            }
+            minSep = Math.min(minSep, _angularDifference(candidate, angle));
           }
           if (minSep > bestSep) {
             bestSep = minSep;
@@ -356,10 +484,6 @@ export function createDrawBondCommitActions(context) {
       }
     }
 
-    const srcHydrogen = srcAtom.getNeighbors(mol).find(neighbor => neighbor.name === 'H');
-    if (srcHydrogen) {
-      mol.removeAtom(srcHydrogen.id);
-    }
     const newAtom = mol.addAtom(null, context.getDrawBondElement(), {});
     const newBond = mol.addBond(null, resolvedId, newAtom.id, { order: 1 }, false);
     _applyBondDrawType(mol, newBond, drawBondType, resolvedId);
@@ -368,6 +492,13 @@ export function createDrawBondCommitActions(context) {
     if (mode === 'force') {
       const bondLengthPx = 1.5 * forceScale;
       const angle = forcedAngle !== null ? forcedAngle : bestAngle;
+      _removeSourceHydrogenNearestAngle(
+        mol,
+        srcAtom,
+        { x: srcRX, y: srcRY },
+        angle,
+        atom => context.force.getNodeById(atom.id) ?? (Number.isFinite(atom.x) && Number.isFinite(atom.y) ? { x: atom.x, y: atom.y } : null)
+      );
       const destGX = srcRX + Math.cos(angle) * bondLengthPx;
       const destGY = srcRY + Math.sin(angle) * bondLengthPx;
       const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
@@ -408,6 +539,9 @@ export function createDrawBondCommitActions(context) {
       return;
     }
 
+    _removeSourceHydrogenNearestAngle(mol, srcAtom, { x: srcRX, y: srcRY }, bestAngle, atom =>
+      Number.isFinite(atom.x) && Number.isFinite(atom.y) ? { x: atom.x, y: atom.y } : null
+    );
     newAtom.x = srcRX + Math.cos(bestAngle) * 1.5;
     newAtom.y = srcRY + Math.sin(bestAngle) * 1.5;
 
@@ -465,6 +599,11 @@ export function createDrawBondCommitActions(context) {
           });
           return;
         }
+      }
+
+      if (atomId === null) {
+        placeStandaloneAtom(ox, oy);
+        return;
       }
 
       autoPlaceBond(atomId, ox, oy);

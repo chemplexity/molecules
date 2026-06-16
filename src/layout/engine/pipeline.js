@@ -14096,8 +14096,10 @@ export function runPipeline(molecule, options = {}) {
         bondValidationClasses: placement.bondValidationClasses,
         frozenAtomIds: placement.frozenAtomIds,
         maxHeavyAtomCount: 90,
+        maxAttachedRingSubtreeHeavyAtomCount: 24,
         maxPasses: 2,
-        focusSevereOverlaps: true
+        focusSevereOverlaps: true,
+        protectBondIntegrity: true
       })
     );
     if ((residualAttachedRingRetouch.nudges ?? 0) > 0) {

@@ -3894,6 +3894,26 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C60', 'C58', 'O61') - 120) < 1e-6);
   });
 
+  it('rotates bulky steroid glycoside sugar branches out of the fused core without stretching bonds', () => {
+    const smiles = bugMolecules.find(candidate => candidate.startsWith('[H][C@@]1(CC[C@]2(C)[C@]1([H])[C@H](O)C[C@]1([H])[C@@]3(C)CC[C@H](<O[C@@H]4'));
+    assert.ok(smiles, 'expected the bulky steroid glycoside regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   stressIt('keeps large sulfated glycoside chains overlap-free after dense block retry', () => {
     const result = runPipeline(
       parseSMILES(

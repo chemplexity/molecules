@@ -6,12 +6,13 @@ export const FORCE_LAYOUT_BOND_LENGTH = 41;
 export const FORCE_LAYOUT_H_BOND_LENGTH = 20;
 export const FORCE_LAYOUT_MULTIPLE_BOND_FACTOR = 0.93;
 export const FORCE_LAYOUT_AROMATIC_BOND_FACTOR = 0.96;
-export const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 12;
-export const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.26;
-export const FORCE_LAYOUT_HEAVY_REPULSION = -55;
+export const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 4;
+export const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.68;
+export const FORCE_LAYOUT_HEAVY_REPULSION = -28;
 export const FORCE_LAYOUT_H_REPULSION = -25;
 export const FORCE_LAYOUT_HH_REPULSION_DISTANCE = 40;
 export const FORCE_LAYOUT_HH_REPULSION_STRENGTH = 30.0;
+export const FORCE_LAYOUT_H_PLACEMENT_STRENGTH = 0.22;
 export const FORCE_LAYOUT_FIT_PAD = 40;
 export const FORCE_LAYOUT_INITIAL_FIT_PAD = 14;
 export const FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE = 0.4;
@@ -19,7 +20,11 @@ export const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
 export const FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN = 0.08;
 export const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
 export const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
-const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.22;
+export const FORCE_LAYOUT_INITIAL_SETTLE_TICKS = 26;
+export const FORCE_LAYOUT_INITIAL_SETTLE_ALPHA = 0.7;
+export const FORCE_LAYOUT_INITIAL_RESTART_ALPHA = 0.08;
+export const FORCE_LAYOUT_EDIT_RESTART_ALPHA = 0.005;
+const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.14;
 
 /**
  * Converts a Molecule instance into a plain graph object with node and link arrays suitable for D3 force simulation.
@@ -121,16 +126,42 @@ export function createForceAnchorRadiusForce(radius = FORCE_LAYOUT_HEAVY_ANCHOR_
 }
 
 /**
- * Creates a D3 custom force that repels hydrogen nodes from each other when they are within a maximum distance.
+ * Creates a D3 custom force that repels unrelated hydrogen nodes from each other when they are within a maximum distance.
  * @param {number} [maxDistance] - Maximum distance at which the repulsion force acts.
  * @param {number} [strength] - Strength coefficient for the repulsion.
- * @returns {object} D3-compatible force function with an `initialize` method.
+ * @param {Array<object>} [links] - Simulation links, preferably after D3 link resolution.
+ * @returns {object} D3-compatible force function with `initialize` and `links` methods.
  */
-export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_REPULSION_DISTANCE, strength = FORCE_LAYOUT_HH_REPULSION_STRENGTH) {
+export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_REPULSION_DISTANCE, strength = FORCE_LAYOUT_HH_REPULSION_STRENGTH, links = []) {
   let nodes = [];
+  let currentLinks = links;
   const maxDistanceSq = maxDistance * maxDistance;
+
+  const resolveNode = value => {
+    if (typeof value === 'object') {
+      return value;
+    }
+    return Array.isArray(nodes) ? nodes[value] : null;
+  };
+
   function force(alpha) {
     const hydrogens = nodes.filter(node => isHydrogenNode(node) && node.fx == null && node.fy == null);
+    const parentByHydrogen = new Map();
+    for (const link of currentLinks) {
+      const source = resolveNode(link.source);
+      const target = resolveNode(link.target);
+      if (!source || !target) {
+        continue;
+      }
+      const sourceIsHydrogen = isHydrogenNode(source);
+      const targetIsHydrogen = isHydrogenNode(target);
+      if (sourceIsHydrogen && !targetIsHydrogen) {
+        parentByHydrogen.set(source, target.id ?? target);
+      } else if (targetIsHydrogen && !sourceIsHydrogen) {
+        parentByHydrogen.set(target, source.id ?? source);
+      }
+    }
+
     for (let i = 0; i < hydrogens.length; i++) {
       const a = hydrogens[i];
       if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) {
@@ -139,6 +170,10 @@ export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_
       for (let j = i + 1; j < hydrogens.length; j++) {
         const b = hydrogens[j];
         if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) {
+          continue;
+        }
+        const parentA = parentByHydrogen.get(a);
+        if (parentA !== undefined && parentA === parentByHydrogen.get(b)) {
           continue;
         }
         let dx = b.x - a.x;
@@ -166,6 +201,113 @@ export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_
   }
   force.initialize = initialNodes => {
     nodes = initialNodes;
+  };
+  force.links = value => {
+    if (value === undefined) {
+      return currentLinks;
+    }
+    currentLinks = value;
+    return force;
+  };
+  return force;
+}
+
+/**
+ * Creates a D3 custom force that keeps terminal hydrogens in stable open
+ * angular slots around their current heavy-atom parent.
+ * @param {Array<object>} [links] - Simulation links, preferably after D3 link resolution.
+ * @param {object} [options] - Placement options.
+ * @param {number} [options.distance] - Target H-parent distance.
+ * @param {number} [options.strength] - Pull strength toward the target slot when rigid placement is disabled.
+ * @param {boolean} [options.rigid] - When true, places hydrogens directly on parent-relative slots.
+ * @returns {object} D3-compatible force function with `initialize` and `links` methods.
+ */
+export function createForceHydrogenPlacementForce(links = [], { distance = FORCE_LAYOUT_H_BOND_LENGTH, strength = FORCE_LAYOUT_H_PLACEMENT_STRENGTH, rigid = true } = {}) {
+  let nodes = [];
+  let currentLinks = links;
+
+  const resolveNode = value => {
+    if (typeof value === 'object') {
+      return value;
+    }
+    return Array.isArray(nodes) ? nodes[value] : null;
+  };
+
+  function force(alpha) {
+    const hydrogensByParent = new Map();
+    const occupiedAnglesByParent = new Map();
+
+    for (const link of currentLinks) {
+      const source = resolveNode(link.source);
+      const target = resolveNode(link.target);
+      if (!source || !target) {
+        continue;
+      }
+      const sourceIsHydrogen = isHydrogenNode(source);
+      const targetIsHydrogen = isHydrogenNode(target);
+      if (sourceIsHydrogen && !targetIsHydrogen) {
+        if (!hydrogensByParent.has(target)) {
+          hydrogensByParent.set(target, []);
+        }
+        hydrogensByParent.get(target).push(source);
+      } else if (targetIsHydrogen && !sourceIsHydrogen) {
+        if (!hydrogensByParent.has(source)) {
+          hydrogensByParent.set(source, []);
+        }
+        hydrogensByParent.get(source).push(target);
+      } else if (!sourceIsHydrogen && !targetIsHydrogen && Number.isFinite(source.x) && Number.isFinite(source.y) && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+        if (!occupiedAnglesByParent.has(source)) {
+          occupiedAnglesByParent.set(source, []);
+        }
+        if (!occupiedAnglesByParent.has(target)) {
+          occupiedAnglesByParent.set(target, []);
+        }
+        occupiedAnglesByParent.get(source).push(Math.atan2(target.y - source.y, target.x - source.x));
+        occupiedAnglesByParent.get(target).push(Math.atan2(source.y - target.y, source.x - target.x));
+      }
+    }
+
+    for (const [parent, hydrogens] of hydrogensByParent) {
+      if (!Number.isFinite(parent.x) || !Number.isFinite(parent.y)) {
+        continue;
+      }
+      const sortedHydrogens = [...hydrogens].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      const angles = chooseOpenAngles(occupiedAnglesByParent.get(parent) ?? [], sortedHydrogens.length);
+      sortedHydrogens.forEach((hydrogenNode, index) => {
+        if (hydrogenNode.fx != null || hydrogenNode.fy != null) {
+          return;
+        }
+        let angle = angles[index] ?? (Math.PI * 2 * index) / sortedHydrogens.length;
+        if (hydrogenNode.forcePlacementParentId === parent.id && Number.isFinite(hydrogenNode.forcePlacementAngle)) {
+          angle = hydrogenNode.forcePlacementAngle;
+        } else {
+          hydrogenNode.forcePlacementParentId = parent.id;
+          hydrogenNode.forcePlacementAngle = angle;
+        }
+        const targetX = parent.x + Math.cos(angle) * distance;
+        const targetY = parent.y + Math.sin(angle) * distance;
+        if (rigid || !Number.isFinite(hydrogenNode.x) || !Number.isFinite(hydrogenNode.y)) {
+          hydrogenNode.x = targetX;
+          hydrogenNode.y = targetY;
+          hydrogenNode.vx = 0;
+          hydrogenNode.vy = 0;
+          return;
+        }
+        hydrogenNode.vx -= (hydrogenNode.x - targetX) * strength * alpha;
+        hydrogenNode.vy -= (hydrogenNode.y - targetY) * strength * alpha;
+      });
+    }
+  }
+
+  force.initialize = initialNodes => {
+    nodes = initialNodes;
+  };
+  force.links = value => {
+    if (value === undefined) {
+      return currentLinks;
+    }
+    currentLinks = value;
+    return force;
   };
   return force;
 }
@@ -259,13 +401,61 @@ export function placeHydrogensAroundParent(parentNode, hydrogens, links, { dista
     hydrogenNode.y = parentNode.y + Math.sin(angle) * distance;
     hydrogenNode.anchorX = hydrogenNode.x;
     hydrogenNode.anchorY = hydrogenNode.y;
+    hydrogenNode.forcePlacementParentId = parentNode.id;
+    hydrogenNode.forcePlacementAngle = angle;
   });
+}
+
+/**
+ * Repositions every explicit hydrogen in a force graph around its current parent atom.
+ * @param {{nodes: Array<object>, links: Array<object>}} graph - Force graph with resolved or index-based links.
+ * @param {object} [options] - Optional reseating parameters.
+ * @param {boolean} [options.resetVelocity] - When true, clears hydrogen velocity after reseating.
+ * @returns {void}
+ */
+export function reseatForceGraphHydrogens(graph, { resetVelocity = true } = {}) {
+  if (!graph?.nodes?.length || !graph?.links?.length) {
+    return;
+  }
+  const hydrogenGroups = new Map();
+  for (const link of graph.links) {
+    const source = typeof link.source === 'object' ? link.source : graph.nodes[link.source];
+    const target = typeof link.target === 'object' ? link.target : graph.nodes[link.target];
+    if (!source || !target) {
+      continue;
+    }
+    if (isHydrogenNode(source) && !isHydrogenNode(target)) {
+      if (!hydrogenGroups.has(target)) {
+        hydrogenGroups.set(target, []);
+      }
+      hydrogenGroups.get(target).push(source);
+    } else if (isHydrogenNode(target) && !isHydrogenNode(source)) {
+      if (!hydrogenGroups.has(source)) {
+        hydrogenGroups.set(source, []);
+      }
+      hydrogenGroups.get(source).push(target);
+    }
+  }
+
+  for (const [parentNode, hydrogens] of hydrogenGroups) {
+    placeHydrogensAroundParent(parentNode, hydrogens, graph.links, {
+      distance: FORCE_LAYOUT_H_BOND_LENGTH,
+      excludeIds: new Set(hydrogens.map(node => node.id)),
+      nodes: graph.nodes
+    });
+    if (resetVelocity) {
+      for (const hydrogenNode of hydrogens) {
+        hydrogenNode.vx = 0;
+        hydrogenNode.vy = 0;
+      }
+    }
+  }
 }
 
 /**
  * Creates a bundle of force-layout helper functions bound to the simulation and plot context.
  * @param {object} context - Context providing `simulation`, `plotEl`, `d3`, `viewportFitPadding`, `generate2dCoords`, `alignReaction2dProductOrientation`, `spreadReaction2dProductComponents`, and `centerReaction2dPairCoords`.
- * @returns {object} Object with `buildForceAnchorLayout`, `convertMolecule`, `seedForceNodePositions`, `forceLinkDistance`, `forceAnchorRadius`, `forceHydrogenRepulsion`, `forceFitTransform`, `isHydrogenNode`, `zoomTransformsDiffer`, `placeHydrogensAroundParent`, `patchForceNodePositions`, and `reseatHydrogensAroundPatched`.
+ * @returns {object} Object with `buildForceAnchorLayout`, `convertMolecule`, `seedForceNodePositions`, `forceLinkDistance`, `forceAnchorRadius`, `forceHydrogenRepulsion`, `forceHydrogenPlacement`, `forceFitTransform`, `isHydrogenNode`, `zoomTransformsDiffer`, `placeHydrogensAroundParent`, `reseatForceGraphHydrogens`, `patchForceNodePositions`, and `reseatHydrogensAroundPatched`.
  */
 export function createForceHelpers(context) {
   function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30 } = {}) {
@@ -392,12 +582,16 @@ export function createForceHelpers(context) {
         }
         node.x = previous.x;
         node.y = previous.y;
-        node.vx = previous.vx;
-        node.vy = previous.vy;
+        node.vx = 0;
+        node.vy = 0;
         node.fx = previous.fx;
         node.fy = previous.fy;
         node.anchorX = Number.isFinite(previous.anchorX) ? previous.anchorX : node.anchorX;
         node.anchorY = Number.isFinite(previous.anchorY) ? previous.anchorY : node.anchorY;
+        if (isHydrogenNode(node)) {
+          node.forcePlacementParentId = previous.forcePlacementParentId ?? node.forcePlacementParentId;
+          node.forcePlacementAngle = Number.isFinite(previous.forcePlacementAngle) ? previous.forcePlacementAngle : node.forcePlacementAngle;
+        }
         if (!isHydrogenNode(node) && !Number.isFinite(node.anchorX) && Number.isFinite(previous.x) && Number.isFinite(previous.y)) {
           node.anchorX = previous.x;
           node.anchorY = previous.y;
@@ -491,10 +685,12 @@ export function createForceHelpers(context) {
     forceLinkDistance,
     forceAnchorRadius: createForceAnchorRadiusForce,
     forceHydrogenRepulsion: createForceHydrogenRepulsionForce,
+    forceHydrogenPlacement: createForceHydrogenPlacementForce,
     forceFitTransform,
     isHydrogenNode,
     zoomTransformsDiffer,
     placeHydrogensAroundParent,
+    reseatForceGraphHydrogens,
     patchForceNodePositions,
     reseatHydrogensAroundPatched
   };

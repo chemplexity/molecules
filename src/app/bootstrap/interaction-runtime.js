@@ -147,7 +147,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       kekulize: ctx.kekulize,
       refreshAromaticity: ctx.refreshAromaticity,
       simulation: ctx.simulation,
-      patchNodePositions: patchPos => ctx.patchNodePositions(patchPos),
+      patchNodePositions: (patchPos, options = {}) => ctx.patchNodePositions(patchPos, options),
       reseatHydrogensAroundPatched: patchPos => ctx.reseatHydrogensAroundPatched(patchPos),
       getFitCurrent2dView: () => ctx.getFitCurrent2dView(),
       refreshSelectionOverlay: () => ctx.refreshSelectionOverlay(),
@@ -248,7 +248,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       ensureActiveMolecule: () => ctx.ensureActiveMolecule(),
       getForceNodeById: atomId => ctx.getForceNodeById(atomId),
       getForceNodes: () => ctx.getForceNodes(),
-      patchNodePositions: patchPos => ctx.patchNodePositions(patchPos),
+      patchNodePositions: (patchPos, options = {}) => ctx.patchNodePositions(patchPos, options),
       reseatHydrogensAroundPatched: patchPos => ctx.reseatHydrogensAroundPatched(patchPos),
       enableKeepInView: () => ctx.enableKeepInView(),
       get2DCenterX: () => ctx.get2DCenterX(),
@@ -312,6 +312,10 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       setSelectionValenceTooltipAtomId: value => {
         ctx.setSelectionValenceTooltipAtomId(value);
       },
+      getZoomTransform: () => ctx.getZoomTransform(),
+      setZoomTransform: transform => ctx.setZoomTransform(transform),
+      makeZoomIdentity: (x, y, k) => ctx.makeZoomIdentity(x, y, k),
+      getPlotSize: () => ctx.getPlotSize(),
       getRenderOptions: ctx.getRenderOptions,
       atomTooltipHtml: ctx.atomTooltipHtml,
       bondTooltipHtml: ctx.bondTooltipHtml,

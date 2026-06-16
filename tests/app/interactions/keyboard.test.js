@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 
 import { initKeyboardInteractions } from '../../../src/app/interactions/keyboard.js';
 
-function makeKeyboardContext({ activeTagName = 'BODY' } = {}) {
+function makeKeyboardContext({
+  activeTagName = 'BODY',
+  activeMolecule = null,
+  mode = '2d',
+  ringTemplateMode = false,
+  hoveredAtomIds = new Set(),
+  hoveredBondIds = new Set(),
+  selectedAtomIds = new Set(),
+  selectedBondIds = new Set()
+} = {}) {
   const handlers = new Map();
   const records = [];
   const doc = {
@@ -23,21 +32,22 @@ function makeKeyboardContext({ activeTagName = 'BODY' } = {}) {
     win,
     state: {
       documentState: {
-        getActiveMolecule: () => null
+        getActiveMolecule: () => activeMolecule
       },
       viewState: {
-        getMode: () => '2d'
+        getMode: () => mode
       },
       overlayState: {
         getSelectionModifierActive: () => false,
         setSelectionModifierActive() {},
         getSelectMode: () => false,
         getDrawBondMode: () => false,
+        getRingTemplateMode: () => ringTemplateMode,
         getEraseMode: () => false,
-        getSelectedAtomIds: () => new Set(),
-        getSelectedBondIds: () => new Set(),
-        getHoveredAtomIds: () => new Set(),
-        getHoveredBondIds: () => new Set()
+        getSelectedAtomIds: () => selectedAtomIds,
+        getSelectedBondIds: () => selectedBondIds,
+        getHoveredAtomIds: () => hoveredAtomIds,
+        getHoveredBondIds: () => hoveredBondIds
       }
     },
     selection: {
@@ -55,9 +65,13 @@ function makeKeyboardContext({ activeTagName = 'BODY' } = {}) {
       isReactionPreviewEditableAtomId: () => true
     },
     actions: {
-      changeAtomElements() {},
+      changeAtomElements(atomIds, element) {
+        records.push(['changeAtomElements', atomIds, element]);
+      },
       deleteSelection() {},
-      deleteTargets() {}
+      deleteTargets(atomIds, bondIds, options) {
+        records.push(['deleteTargets', atomIds, bondIds, options]);
+      }
     },
     history: {
       undo() {
@@ -73,13 +87,19 @@ function makeKeyboardContext({ activeTagName = 'BODY' } = {}) {
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform() {},
       makeZoomIdentity: (x, y, k) => ({ x, y, k }),
-      clearPrimitiveHover() {}
+      clearPrimitiveHover() {
+        records.push(['clearPrimitiveHover']);
+        hoveredAtomIds.clear();
+        hoveredBondIds.clear();
+      }
     }
   });
 
   return {
     handlers,
-    records
+    records,
+    hoveredAtomIds,
+    hoveredBondIds
   };
 }
 
@@ -193,5 +213,120 @@ describe('initKeyboardInteractions', () => {
       ['setChargeTool', 'positive'],
       ['setChargeTool', 'negative']
     ]);
+  });
+
+  it('deletes a hovered atom while ring-template mode is active', () => {
+    const mol = {
+      atoms: new Map([['a1', { id: 'a1', name: 'C' }]]),
+      bonds: new Map()
+    };
+    const { handlers, records, hoveredAtomIds } = makeKeyboardContext({
+      activeMolecule: mol,
+      ringTemplateMode: true,
+      hoveredAtomIds: new Set(['a1'])
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'Backspace',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, [
+      ['clearPrimitiveHover'],
+      ['deleteTargets', ['a1'], [], { transient: true }]
+    ]);
+    assert.equal(hoveredAtomIds.size, 0);
+    assert.equal(prevented, true);
+  });
+
+  it('changes a hovered atom element while ring-template mode is active', () => {
+    const mol = {
+      atoms: new Map([['a1', { id: 'a1', name: 'C' }]]),
+      bonds: new Map()
+    };
+    const { handlers, records } = makeKeyboardContext({
+      activeMolecule: mol,
+      ringTemplateMode: true,
+      hoveredAtomIds: new Set(['a1'])
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'O',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, [['changeAtomElements', ['a1'], 'O']]);
+    assert.equal(prevented, true);
+  });
+
+  it('ignores ring-template element shortcuts when the hovered atom already matches', () => {
+    const mol = {
+      atoms: new Map([['a1', { id: 'a1', name: 'O' }]]),
+      bonds: new Map()
+    };
+    const { handlers, records } = makeKeyboardContext({
+      activeMolecule: mol,
+      ringTemplateMode: true,
+      hoveredAtomIds: new Set(['a1'])
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'o',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, []);
+    assert.equal(prevented, true);
+  });
+
+  it('deletes a hovered bond while ring-template mode is active', () => {
+    const mol = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'C' }]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]])
+    };
+    const { handlers, records, hoveredBondIds } = makeKeyboardContext({
+      activeMolecule: mol,
+      ringTemplateMode: true,
+      hoveredBondIds: new Set(['b1'])
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'Delete',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, [
+      ['clearPrimitiveHover'],
+      ['deleteTargets', [], ['b1'], { transient: true }]
+    ]);
+    assert.equal(hoveredBondIds.size, 0);
+    assert.equal(prevented, true);
   });
 });

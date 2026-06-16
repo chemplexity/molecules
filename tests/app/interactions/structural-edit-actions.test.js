@@ -119,8 +119,8 @@ function makeBaseContext(overrides = {}) {
       placeHydrogensAroundParent: (...args) => {
         calls.push(['placeHydrogensAroundParent', ...args]);
       },
-      patchNodePositions: patchPos => {
-        calls.push(['patchNodePositions', patchPos]);
+      patchNodePositions: (patchPos, options = {}) => {
+        calls.push(['patchNodePositions', patchPos, options]);
       },
       reseatHydrogensAroundPatched: patchPos => {
         calls.push(['reseatHydrogensAroundPatched', patchPos]);
@@ -478,6 +478,61 @@ describe('createStructuralEditActions', () => {
     assert.equal(result.result.ringAtomIds.slice(2).length, 4);
   });
 
+  it('auto-fuses clicked bond-anchored ring templates when overlap includes an existing bond edge', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom(null, 'C');
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom(null, 'C');
+    atomB.x = 1.5;
+    atomB.y = 0;
+    const anchorBond = mol.addBond(null, atomA.id, atomB.id, { order: 1 });
+    const fusedAtom = mol.addAtom(null, 'C');
+    fusedAtom.x = 2.25;
+    fusedAtom.y = 1.299038105676658;
+    const fusedBond = mol.addBond(null, atomB.id, fusedAtom.id, { order: 1 });
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 300, 200, {
+      anchorBondId: anchorBond.id,
+      anchorBondSide: -1,
+      autoFuseBondPositionReuse: true
+    });
+
+    assert.equal(result.performed, true);
+    assert.equal(result.result.ringAtomIds.length, 6);
+    assert.equal(result.result.ringAtomIds.includes(fusedAtom.id), true);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'C').length, 6);
+    assert.equal(mol.getBond(atomB.id, fusedAtom.id).id, fusedBond.id);
+    assert.equal([...mol.bonds.values()].filter(bond => bond.atoms.includes(atomB.id) && bond.atoms.includes(fusedAtom.id)).length, 1);
+  });
+
   it('reuses overlapped atoms for an explicitly dragged bond-anchored ring template', () => {
     const mol = new Molecule();
     const atomA = mol.addAtom(null, 'C');
@@ -663,9 +718,220 @@ describe('createStructuralEditActions', () => {
     assert.ok(Math.abs(fusedPatchPosition.y - fusedForceY) < 1e-6);
   });
 
+  it('auto-fuses clicked force bond-anchored ring templates using force preview positions', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom(null, 'C');
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom(null, 'C');
+    atomB.x = 1.5;
+    atomB.y = 0;
+    const anchorBond = mol.addBond(null, atomA.id, atomB.id, { order: 1 });
+    const fusedAtom = mol.addAtom(null, 'C');
+    fusedAtom.x = 99;
+    fusedAtom.y = 99;
+    const fusedBond = mol.addBond(null, atomB.id, fusedAtom.id, { order: 1 });
+    const forceBondLength = 30 * 1.3;
+    const fusedForceX = 10 + forceBondLength;
+    const fusedForceY = forceBondLength * Math.sqrt(3) / 2;
+    const nodes = [
+      { id: atomA.id, name: 'C', x: 0, y: 0 },
+      { id: atomB.id, name: 'C', x: 20, y: 0 },
+      { id: fusedAtom.id, name: 'C', x: fusedForceX, y: fusedForceY }
+    ];
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      mode: 'force',
+      simulation: {
+        nodes: () => nodes,
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 300, 200, {
+      anchorBondId: anchorBond.id,
+      autoFuseBondPositionReuse: true
+    });
+
+    assert.equal(result.performed, true);
+    assert.equal(result.result.ringAtomIds.includes(fusedAtom.id), true);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'C').length, 6);
+    assert.equal(mol.getBond(atomB.id, fusedAtom.id).id, fusedBond.id);
+    const fusedPatchPosition = result.result.force.options.initialPatchPos.get(fusedAtom.id);
+    assert.ok(Math.abs(fusedPatchPosition.x - fusedForceX) < 1e-6);
+    assert.ok(Math.abs(fusedPatchPosition.y - fusedForceY) < 1e-6);
+  });
+
+  it('does not reuse incidental single force overlaps for atom-anchored ring templates', () => {
+    const mol = new Molecule();
+    const anchor = mol.addAtom(null, 'C');
+    anchor.x = 0;
+    anchor.y = 0;
+    const storedCoordOverlap = mol.addAtom(null, 'C');
+    storedCoordOverlap.x = 0.75;
+    storedCoordOverlap.y = -1.299038105676658;
+    const forceOnlyOverlap = mol.addAtom(null, 'C');
+    forceOnlyOverlap.x = 99;
+    forceOnlyOverlap.y = 99;
+    const forceBondLength = 30 * 1.3;
+    const forceOverlapPosition = {
+      x: forceBondLength * 0.5,
+      y: -forceBondLength * Math.sqrt(3) / 2
+    };
+    const nodes = [
+      { id: anchor.id, name: 'C', x: 0, y: 0 },
+      { id: storedCoordOverlap.id, name: 'C', x: 300, y: 300 },
+      { id: forceOnlyOverlap.id, name: 'C', x: forceOverlapPosition.x, y: forceOverlapPosition.y }
+    ];
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      mode: 'force',
+      simulation: {
+        nodes: () => nodes,
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 0, 0, {
+      anchorAtomId: anchor.id,
+      anchorCenterAngle: 0,
+      anchorForceCenterAngle: 0
+    });
+
+    assert.equal(result.performed, true);
+    assert.equal(result.result.ringAtomIds.includes(storedCoordOverlap.id), false);
+    assert.equal(result.result.ringAtomIds.includes(forceOnlyOverlap.id), false);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'C').length, 8);
+  });
+
+  it('reuses only existing-edge force overlaps for atom-anchored ring templates', () => {
+    const mol = new Molecule();
+    const anchor = mol.addAtom(null, 'C');
+    anchor.x = 0;
+    anchor.y = 0;
+    const fusedAtom = mol.addAtom(null, 'C');
+    fusedAtom.x = 99;
+    fusedAtom.y = 99;
+    const fusedBond = mol.addBond(null, anchor.id, fusedAtom.id, { order: 1 });
+    const storedCoordOverlap = mol.addAtom(null, 'C');
+    storedCoordOverlap.x = 0.75;
+    storedCoordOverlap.y = -1.299038105676658;
+    const forceBondLength = 30 * 1.3;
+    const forceOverlapPosition = {
+      x: forceBondLength * 0.5,
+      y: -forceBondLength * Math.sqrt(3) / 2
+    };
+    const nodes = [
+      { id: anchor.id, name: 'C', x: 0, y: 0 },
+      { id: fusedAtom.id, name: 'C', x: forceOverlapPosition.x, y: forceOverlapPosition.y },
+      { id: storedCoordOverlap.id, name: 'C', x: 300, y: 300 }
+    ];
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      mode: 'force',
+      simulation: {
+        nodes: () => nodes,
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 0, 0, {
+      anchorAtomId: anchor.id,
+      anchorCenterAngle: 0,
+      anchorForceCenterAngle: 0
+    });
+
+    assert.equal(result.performed, true);
+    assert.equal(result.result.ringAtomIds.includes(fusedAtom.id), true);
+    assert.equal(result.result.ringAtomIds.includes(storedCoordOverlap.id), false);
+    assert.equal(mol.getBond(anchor.id, fusedAtom.id).id, fusedBond.id);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'C').length, 7);
+  });
+
   it('enables force keep-in-view after placing a force-mode ring template', () => {
     const mol = new Molecule();
-    const { context } = makeBaseContext({
+    const { calls, context } = makeBaseContext({
       activeMol: mol,
       mode: 'force',
       context: {
@@ -699,6 +965,11 @@ describe('createStructuralEditActions', () => {
     const firstPosition = patchPos.get(ringAtomIds[0]);
     const secondPosition = patchPos.get(ringAtomIds[1]);
     assert.ok(Math.abs(Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) - 39) < 1e-6);
+
+    result.result.force.afterRender();
+
+    const patchCall = calls.find(([kind]) => kind === 'patchNodePositions');
+    assert.deepEqual(patchCall, ['patchNodePositions', patchPos, { alpha: 0, restart: false }]);
   });
 
   it('cycles aromatic bond promotion through the extracted structural-edit action', () => {

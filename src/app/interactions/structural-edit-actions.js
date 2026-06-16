@@ -278,6 +278,151 @@ function addOrReuseRingTemplateAtom(mol, position, ringAtomIds, usedAtomIds, bon
   return atom.id;
 }
 
+/**
+ * Determines whether a bond-anchored ring preview should automatically enable atom reuse.
+ * Auto-fusing is limited to previews that overlap existing atoms connected by an
+ * existing ring edge, avoiding accidental capture of isolated nearby atoms.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule receiving the ring.
+ * @param {import('../../core/Bond.js').Bond} anchorBond - Existing bond used as the first ring edge.
+ * @param {Array<{x: number, y: number}>} positions - Full ring preview positions, including anchor atoms.
+ * @param {number} bondLength - Nominal 2D bond length used for reuse tolerance.
+ * @param {object} [reuseOptions] - Optional position/entry overrides for force-mode graph coordinates.
+ * @param {Array<{id: string, x: number, y: number}>} [reuseOptions.entries] - Candidate existing atoms in the same coordinate space as reuse positions.
+ * @param {Array<{x: number, y: number}>} [reuseOptions.positions] - Reuse positions matching `positions.slice(2)`.
+ * @param {number} [reuseOptions.tolerance] - Candidate match distance.
+ * @returns {boolean} True when preview overlap represents an existing fused edge.
+ */
+function shouldAutoFuseBondPositionReuse(mol, anchorBond, positions, bondLength, reuseOptions = {}) {
+  if (!mol?.getBond || !anchorBond?.atoms?.length || !Array.isArray(positions) || positions.length < 3) {
+    return false;
+  }
+  const ringAtomIds = new Array(positions.length).fill(null);
+  const usedAtomIds = new Set();
+  ringAtomIds[0] = anchorBond.atoms[0];
+  ringAtomIds[1] = anchorBond.atoms[1];
+  usedAtomIds.add(ringAtomIds[0]);
+  usedAtomIds.add(ringAtomIds[1]);
+
+  const tolerance = reuseOptions.tolerance ?? bondLength * RING_TEMPLATE_REUSE_DISTANCE_FACTOR;
+  for (let index = 2; index < positions.length; index++) {
+    const reusePosition = reuseOptions.positions?.[index - 2] ?? positions[index];
+    const reusableAtomId = reuseOptions.entries
+      ? findReusableRingTemplateAtomEntryId(reuseOptions.entries, reusePosition, usedAtomIds, tolerance)
+      : findReusableRingTemplateAtomId(mol, reusePosition, usedAtomIds, tolerance);
+    if (reusableAtomId) {
+      ringAtomIds[index] = reusableAtomId;
+      usedAtomIds.add(reusableAtomId);
+    }
+  }
+
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    const atomA = ringAtomIds[index];
+    const atomB = ringAtomIds[(index + 1) % ringAtomIds.length];
+    if (!atomA || !atomB) {
+      continue;
+    }
+    const existingBond = mol.getBond(atomA, atomB);
+    if (existingBond && existingBond.id !== anchorBond.id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Finds force-mode atom-pivot reuse candidates that participate in an existing edge.
+ * This keeps a single incidental overlap from pulling unrelated atoms into the new ring.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule receiving the ring.
+ * @param {import('../../core/Atom.js').Atom} anchorAtom - Existing atom used as the first ring vertex.
+ * @param {Array<{x: number, y: number}>} positions - Full ring positions, including the anchor atom.
+ * @param {number} bondLength - Nominal bond length used for reuse tolerance.
+ * @param {object} [reuseOptions] - Optional force-coordinate reuse overrides.
+ * @param {Array<{id: string, x: number, y: number}>} [reuseOptions.entries] - Candidate atoms in the same coordinate space as reuse positions.
+ * @param {Array<{x: number, y: number}>} [reuseOptions.positions] - Reuse positions matching `positions.slice(1)`.
+ * @param {number} [reuseOptions.tolerance] - Candidate match distance.
+ * @returns {Set<string>} Reused atom ids that are part of at least one existing ring edge.
+ */
+function findAutoFuseAtomPositionReuseIds(mol, anchorAtom, positions, bondLength, reuseOptions = {}) {
+  const allowedAtomIds = new Set();
+  if (!mol?.getBond || !anchorAtom?.id || !Array.isArray(positions) || positions.length < 3) {
+    return allowedAtomIds;
+  }
+
+  const ringAtomIds = new Array(positions.length).fill(null);
+  const usedAtomIds = new Set([anchorAtom.id]);
+  ringAtomIds[0] = anchorAtom.id;
+  const tolerance = reuseOptions.tolerance ?? bondLength * RING_TEMPLATE_REUSE_DISTANCE_FACTOR;
+
+  for (let index = 1; index < positions.length; index++) {
+    const reusePosition = reuseOptions.positions?.[index - 1] ?? positions[index];
+    const reusableAtomId = reuseOptions.entries
+      ? findReusableRingTemplateAtomEntryId(reuseOptions.entries, reusePosition, usedAtomIds, tolerance)
+      : findReusableRingTemplateAtomId(mol, reusePosition, usedAtomIds, tolerance);
+    if (!reusableAtomId) {
+      continue;
+    }
+    ringAtomIds[index] = reusableAtomId;
+    usedAtomIds.add(reusableAtomId);
+  }
+
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    const atomA = ringAtomIds[index];
+    const atomB = ringAtomIds[(index + 1) % ringAtomIds.length];
+    if (!atomA || !atomB || !mol.getBond(atomA, atomB)) {
+      continue;
+    }
+    if (atomA !== anchorAtom.id) {
+      allowedAtomIds.add(atomA);
+    }
+    if (atomB !== anchorAtom.id) {
+      allowedAtomIds.add(atomB);
+    }
+  }
+
+  return allowedAtomIds;
+}
+
+/**
+ * Finds the bond side whose ring preview overlaps an existing fused edge.
+ * Force mode is evaluated in force graph coordinates so auto-fuse follows the
+ * visible preview size rather than the smaller stored 2D coordinates.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule receiving the ring.
+ * @param {import('../../core/Bond.js').Bond} anchorBond - Existing bond used as the first ring edge.
+ * @param {number} size - Ring template size.
+ * @param {'2d'|'force'} editMode - Active edit mode.
+ * @param {Array<object>} currentForceNodes - Current force simulation nodes.
+ * @param {number} forceBondLength - Effective force-mode ring bond length.
+ * @param {number} bondLength - Nominal 2D bond length.
+ * @returns {number|null} Side sign in the same convention as `anchorBondSide`.
+ */
+function findAutoFuseBondPositionReuseSide(mol, anchorBond, size, editMode, currentForceNodes, forceBondLength, bondLength) {
+  for (const placementSide of [1, -1]) {
+    if (editMode === 'force') {
+      const forcePositions = forceBondAnchoredRingPositions(currentForceNodes, anchorBond, size, placementSide, forceBondLength);
+      const anchorIds = new Set(anchorBond.atoms);
+      const forceEntries = (currentForceNodes ?? []).filter(
+        node => node?.id && !anchorIds.has(node.id) && node.name !== 'H' && node.visible !== false && Number.isFinite(node.x) && Number.isFinite(node.y)
+      );
+      if (
+        forcePositions &&
+        shouldAutoFuseBondPositionReuse(mol, anchorBond, forcePositions, forceBondLength, {
+          entries: forceEntries,
+          tolerance: forceBondLength * RING_TEMPLATE_REUSE_DISTANCE_FACTOR
+        })
+      ) {
+        return placementSide;
+      }
+      continue;
+    }
+
+    const positions = bondAnchoredRingPositionsForBond(mol, anchorBond, size, placementSide);
+    if (positions && shouldAutoFuseBondPositionReuse(mol, anchorBond, positions, bondLength)) {
+      return -placementSide;
+    }
+  }
+  return null;
+}
+
 function forceBondAnchoredRingPositions(currentForceNodes, anchorBond, size, sideSign, forceBondLength) {
   const nodeById = new Map((currentForceNodes ?? []).map(node => [node.id, node]));
   const anchorA = nodeById.get(anchorBond?.atoms?.[0]);
@@ -715,7 +860,8 @@ export function createStructuralEditActions(context) {
     const anchorBondSide = normalizeBondSideSign(options.anchorBondSide);
     const anchorCenterAngle = Number.isFinite(options.anchorCenterAngle) ? options.anchorCenterAngle : null;
     const anchorForceCenterAngle = Number.isFinite(options.anchorForceCenterAngle) ? options.anchorForceCenterAngle : null;
-    const allowBondPositionReuse = options.allowBondPositionReuse === true;
+    const explicitBondPositionReuse = options.allowBondPositionReuse === true;
+    const autoFuseBondPositionReuse = options.autoFuseBondPositionReuse === true;
 
     const mode = context.getMode();
     if (!context.molecule.getActive?.() && context.molecule.ensureActive) {
@@ -743,8 +889,12 @@ export function createStructuralEditActions(context) {
         const anchorAtom = anchorAtomId ? mol.atoms.get(anchorAtomId) : null;
         const forceBondLength = (context.constants.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR;
         const currentForceNodes = editMode === 'force' ? (context.force.getSimulation?.()?.nodes?.() ?? []) : [];
+        const effectiveAnchorBondSide =
+          anchorBond && anchorBondSide === null && autoFuseBondPositionReuse
+            ? findAutoFuseBondPositionReuseSide(mol, anchorBond, normalizedSize, editMode, currentForceNodes, forceBondLength, bondLength)
+            : anchorBondSide;
         const precomputedForceBondPositions = editMode === 'force' && anchorBond
-          ? forceBondAnchoredRingPositions(currentForceNodes, anchorBond, normalizedSize, anchorBondSide, forceBondLength)
+          ? forceBondAnchoredRingPositions(currentForceNodes, anchorBond, normalizedSize, effectiveAnchorBondSide, forceBondLength)
           : null;
         let anchorPoint = anchorAtom && Number.isFinite(anchorAtom.x) && Number.isFinite(anchorAtom.y) ? { x: anchorAtom.x, y: anchorAtom.y } : null;
         if (anchorAtom && !anchorPoint && editMode === 'force') {
@@ -752,8 +902,28 @@ export function createStructuralEditActions(context) {
           anchorAtom.x = anchorPoint.x;
           anchorAtom.y = anchorPoint.y;
         }
+        const fallbackForceCenterAngle = () => {
+          if (!anchorAtom) {
+            return -Math.PI / 2;
+          }
+          const graphAnchorPoint = { x: ox, y: oy };
+          const graphNeighborAngles = (anchorAtom.getNeighbors?.(mol) ?? [])
+            .filter(neighbor => neighbor && neighbor.visible !== false && neighbor.name !== 'H')
+            .map(neighbor => {
+              const position = currentForceNodes.find?.(node => node.id === neighbor.id);
+              if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y) || pointDistance(position, graphAnchorPoint) <= GEOMETRY_EPSILON) {
+                return null;
+              }
+              return normalizeAngle(Math.atan2(position.y - graphAnchorPoint.y, position.x - graphAnchorPoint.x));
+            })
+            .filter(angle => angle !== null);
+          return largestAngularGapMidpoint(graphNeighborAngles, -Math.PI / 2);
+        };
+        const precomputedForceAtomPositions = editMode === 'force' && anchorAtom
+          ? anchoredRingPositions(normalizedSize, { x: ox, y: oy }, forceBondLength, anchorForceCenterAngle ?? fallbackForceCenterAngle())
+          : null;
         const positions = anchorBond
-          ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && anchorBondSide !== null ? -anchorBondSide : anchorBondSide)
+          ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && effectiveAnchorBondSide !== null ? -effectiveAnchorBondSide : effectiveAnchorBondSide)
           : anchorAtom
             ? isFinitePoint(anchorPoint)
               ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle)
@@ -769,12 +939,46 @@ export function createStructuralEditActions(context) {
         const newAtomIds = [];
         const ringAtomIds = anchorBond ? [...anchorBond.atoms] : anchorAtom ? [anchorAtom.id] : [];
         const usedRingAtomIds = new Set(ringAtomIds);
-        const allowPositionReuse = (!!anchorAtom && !anchorBond) || (!!anchorBond && allowBondPositionReuse);
-        const positionList = anchorBond ? positions.slice(2) : anchorAtom ? positions.slice(1) : positions;
-        const forceReusePositions = anchorBond && allowBondPositionReuse && editMode === 'force' ? precomputedForceBondPositions?.slice(2) : null;
-        const forceReuseEntries = forceReusePositions
-          ? currentForceNodes.filter(node => node?.id && !usedRingAtomIds.has(node.id) && node.name !== 'H' && node.visible !== false && Number.isFinite(node.x) && Number.isFinite(node.y))
+        const forceReusePositions = editMode === 'force'
+          ? anchorBond
+            ? precomputedForceBondPositions?.slice(2)
+            : anchorAtom
+              ? precomputedForceAtomPositions?.slice(1)
+              : null
           : null;
+        const atomForceReuseIds =
+          anchorAtom && !anchorBond && forceReusePositions
+            ? findAutoFuseAtomPositionReuseIds(mol, anchorAtom, positions, bondLength, {
+                entries: currentForceNodes.filter(
+                  node => node?.id && node.id !== anchorAtom.id && node.name !== 'H' && node.visible !== false && Number.isFinite(node.x) && Number.isFinite(node.y)
+                ),
+                positions: forceReusePositions,
+                tolerance: forceBondLength * RING_TEMPLATE_REUSE_DISTANCE_FACTOR
+              })
+            : null;
+        const forceReuseEntries = forceReusePositions
+          ? currentForceNodes.filter(
+              node =>
+                node?.id &&
+                !usedRingAtomIds.has(node.id) &&
+                node.name !== 'H' &&
+                node.visible !== false &&
+                Number.isFinite(node.x) &&
+                Number.isFinite(node.y) &&
+                (!atomForceReuseIds || atomForceReuseIds.has(node.id))
+            )
+          : null;
+        const autoAllowBondPositionReuse =
+          !!anchorBond &&
+          autoFuseBondPositionReuse &&
+          shouldAutoFuseBondPositionReuse(mol, anchorBond, positions, bondLength, {
+            entries: forceReuseEntries,
+            positions: forceReusePositions,
+            tolerance: forceReusePositions ? forceBondLength * RING_TEMPLATE_REUSE_DISTANCE_FACTOR : undefined
+          });
+        const allowAtomPositionReuse = !!anchorAtom && !anchorBond && (editMode !== 'force' || (atomForceReuseIds?.size ?? 0) > 0);
+        const allowPositionReuse = allowAtomPositionReuse || (!!anchorBond && (explicitBondPositionReuse || autoAllowBondPositionReuse));
+        const positionList = anchorBond ? positions.slice(2) : anchorAtom ? positions.slice(1) : positions;
         for (let index = 0; index < positionList.length; index++) {
           const position = positionList[index];
           const reuseOptions = forceReuseEntries
@@ -812,24 +1016,10 @@ export function createStructuralEditActions(context) {
           }
         };
         if (editMode === 'force') {
-          const fallbackForceCenterAngle = () => {
-            const graphAnchorPoint = { x: ox, y: oy };
-            const graphNeighborAngles = (anchorAtom.getNeighbors?.(mol) ?? [])
-              .filter(neighbor => neighbor && neighbor.id !== newAtomIds[0] && neighbor.visible !== false && neighbor.name !== 'H')
-              .map(neighbor => {
-                const position = currentForceNodes.find?.(node => node.id === neighbor.id);
-                if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y) || pointDistance(position, graphAnchorPoint) <= GEOMETRY_EPSILON) {
-                  return null;
-                }
-                return normalizeAngle(Math.atan2(position.y - graphAnchorPoint.y, position.x - graphAnchorPoint.x));
-              })
-              .filter(angle => angle !== null);
-            return largestAngularGapMidpoint(graphNeighborAngles, -Math.PI / 2);
-          };
           const forcePositions = anchorBond
             ? precomputedForceBondPositions
             : anchorAtom
-              ? anchoredRingPositions(normalizedSize, { x: ox, y: oy }, forceBondLength, anchorForceCenterAngle ?? fallbackForceCenterAngle())
+              ? precomputedForceAtomPositions
               : regularRingPositions(normalizedSize, ox, oy, forceBondLength);
           if (!forcePositions) {
             return result;
@@ -838,7 +1028,7 @@ export function createStructuralEditActions(context) {
           result.force = {
             options: { preservePositions: true, preserveView: true, initialPatchPos: patchPos },
             afterRender: () => {
-              context.force.patchNodePositions(patchPos);
+              context.force.patchNodePositions(patchPos, { alpha: 0, restart: false });
             },
             enableKeepInView: true
           };

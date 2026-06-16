@@ -451,6 +451,179 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.ring5.classList.contains('active'), true);
     assert.equal(buttons.ring.innerHTML, '<svg data-ring="5"></svg>');
     assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
+    assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), true);
+  });
+
+  it('handleRingTemplateButtonClick mirrors line drawer click behavior without latching or suppressing hover', () => {
+    let selectMode = true;
+    let drawBondMode = false;
+    let ringTemplateMode = false;
+    let eraseMode = false;
+    let chargeTool = null;
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      ring: makeButton(),
+      erase: makeButton(),
+      ring6: makeButton()
+    };
+    buttons.ring6.innerHTML = '<svg data-ring="6"></svg>';
+    const drawTools = makeButton();
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => selectMode,
+          setSelectMode: value => {
+            selectMode = value;
+          },
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getRingTemplateMode: () => ringTemplateMode,
+          setRingTemplateMode: value => {
+            ringTemplateMode = value;
+          },
+          getRingTemplateSize: () => 6,
+          setRingTemplateSize() {},
+          getEraseMode: () => eraseMode,
+          setEraseMode: value => {
+            eraseMode = value;
+          },
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getPaintMode: () => false,
+          setPaintMode() {},
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {}
+      },
+      drawBond: {
+        cancelDrawBond() {}
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        ringTemplateButton: buttons.ring,
+        drawTools,
+        eraseButton: buttons.erase,
+        getStyleBrushButtons: () => [],
+        getPaintColorSelectors: () => [],
+        getPaintOpacitySelectors: () => [],
+        getPaintToolButtons: () => [],
+        getChargeToolButton: () => null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null,
+        getRingTemplateSizeButton: size => (size === 6 ? buttons.ring6 : null)
+      }
+    });
+
+    actions.handleRingTemplateButtonClick();
+
+    assert.equal(ringTemplateMode, true);
+    assert.equal(selectMode, false);
+    assert.equal(buttons.ring.classList.contains('active'), true);
+    assert.equal(buttons.ring.innerHTML, '<svg data-ring="6"></svg>');
+    assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
+    assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), false);
+  });
+
+  it('closeRingTemplateDrawer clears open and hover-suppressed drawer state', () => {
+    const drawTools = makeButton();
+    drawTools.classList.add('ring-template-drawer-open');
+    drawTools.classList.add('drawer-hover-suppressed');
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => false,
+          setSelectMode() {},
+          getDrawBondMode: () => false,
+          setDrawBondMode() {},
+          getRingTemplateMode: () => true,
+          setRingTemplateMode() {},
+          getRingTemplateSize: () => 6,
+          setRingTemplateSize() {},
+          getEraseMode: () => false,
+          setEraseMode() {},
+          getChargeTool: () => null,
+          setChargeTool() {},
+          getPaintMode: () => false,
+          setPaintMode() {},
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {}
+      },
+      drawBond: {
+        cancelDrawBond() {}
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: makeButton(),
+        selectButton: makeButton(),
+        drawBondButton: makeButton(),
+        ringTemplateButton: makeButton(),
+        drawTools,
+        eraseButton: makeButton(),
+        getStyleBrushButtons: () => [],
+        getPaintColorSelectors: () => [],
+        getPaintOpacitySelectors: () => [],
+        getPaintToolButtons: () => [],
+        getChargeToolButton: () => null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null,
+        getRingTemplateSizeButton: () => null
+      }
+    });
+
+    actions.closeRingTemplateDrawer();
+
+    assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
+    assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), false);
   });
 
   it('togglePaintMode toggles active paint buttons and the plot cursor class', () => {
@@ -940,7 +1113,7 @@ describe('createSelectionActions', () => {
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
   });
 
-  it('closes an opened bond drawer on outside pointer interaction', () => {
+  it('closes opened tool drawers on outside pointer interaction', () => {
     let pointerDownHandler = null;
     const drawTools = makeButton();
     const actions = createSelectionActions({
@@ -1002,6 +1175,7 @@ describe('createSelectionActions', () => {
     });
 
     actions.openDrawBondDrawer();
+    actions.openRingTemplateDrawer();
     pointerDownHandler({
       target: {
         closest: () => null
@@ -1009,6 +1183,7 @@ describe('createSelectionActions', () => {
     });
 
     assert.equal(drawTools.classList.contains('drawer-open'), false);
+    assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
   });
 
   it('keeps an opened bond drawer open while the pointer interaction stays inside draw tools', () => {

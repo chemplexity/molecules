@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { findSevereOverlaps, findVisibleHeavyBondCrossings, measureRingSubstituentReadability } from '../../../../src/layout/engine/audit/invariants.js';
@@ -430,6 +431,26 @@ describe('layout/engine/families/mixed', () => {
       }
     }
     assert.ok(readability.maxOutwardDeviation <= 1e-6, `expected aryl exits to remain exact, got ${((readability.maxOutwardDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+  });
+
+  it('keeps terminal alkene methyl leaves on exact trigonal continuations in mixed ring layouts', () => {
+    const smiles = 'CC=C(C(C)C1=C(Cl)C(F)=CC=C1OC(F)F)C(=C)C=C(C)C1=C(C)N(CC(C)O)N=C1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const terminalAlkeneAngle = bondAngleAtAtom(result.coords, 'C2', 'C1', 'C3');
+
+    assert.ok(bugMolecules.includes(smiles), 'expected terminal alkene angle regression molecule to be registered');
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(Math.abs(terminalAlkeneAngle - (2 * Math.PI) / 3) < 1e-6, `expected C1-C2=C3 to stay at 120 degrees, got ${((terminalAlkeneAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
   it('lays out fused mixed scaffolds with long perfluoroalkyl tails without stalling branch placement', () => {
@@ -1648,7 +1669,7 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the saturated-ring exterior fan penalty to be clean');
   });
 
-  it('centers geminal carbonyl roots on saturated ring exterior exits', () => {
+  it('splits geminal methyl and carbonyl roots across saturated ring exterior exits', () => {
     const smiles = 'CC1(C(=O)OC)CCCCC1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
@@ -1662,12 +1683,15 @@ describe('layout/engine/families/mixed', () => {
       const carbonylRootAtomId = 'C3';
       const methylAtomId = 'C1';
       const anchorPosition = coords.get(anchorAtomId);
-      const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
-      const carbonylDeviation = Math.min(...outwardAngles.map(outwardAngle => angularDifference(angleOf(sub(coords.get(carbonylRootAtomId), anchorPosition)), outwardAngle)));
-      const methylDeviation = Math.min(...outwardAngles.map(outwardAngle => angularDifference(angleOf(sub(coords.get(methylAtomId), anchorPosition)), outwardAngle)));
+      const ringNeighborAngles = ['C11', 'C7'].map(atomId => angleOf(sub(coords.get(atomId), anchorPosition)));
+      const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
+      const exocyclicAngles = [carbonylRootAtomId, methylAtomId].map(atomId => angleOf(sub(coords.get(atomId), anchorPosition)));
+      const alignedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1]));
+      const swappedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0]));
+      const separations = sortedHeavyNeighborSeparations(adjacency, coords, anchorAtomId, layoutGraph);
 
-      assert.ok(carbonylDeviation < 1e-6, `expected ${label} carbonyl root to sit on the exact exterior axis, got ${((carbonylDeviation * 180) / Math.PI).toFixed(2)} degrees`);
-      assert.ok(Math.abs(methylDeviation - Math.PI / 3) < 1e-6, `expected ${label} sibling methyl to take the side exterior slot, got ${((methylDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(separations[0] > 1.3, `expected ${label} methyl/carbonyl roots to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`);
+      assert.ok(Math.min(alignedDeviation, swappedDeviation) < 1e-6, `expected ${label} methyl/carbonyl roots to occupy the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`);
       assert.ok(measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) < 1e-9, `expected ${label} exterior fan penalty to be clean`);
     };
 
@@ -1675,6 +1699,35 @@ describe('layout/engine/families/mixed', () => {
     assertCarbonylExterior(graph, mixedResult.coords, 'mixed layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assertCarbonylExterior(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('splits fused sugar methyl and carboxyl exits across the saturated ring exterior gap', () => {
+    const smiles = 'C[C@]1(OC[C@H]2O[C@@H](O)[C@H](O)[C@@H](O)[C@H]2O1)C(O)=O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const anchorAtomId = 'C2';
+    const anchorPosition = result.coords.get(anchorAtomId);
+    const ringNeighborAngles = ['O19', 'O3'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
+    const exocyclicAngles = ['C20', 'C1'].map(atomId => angleOf(sub(result.coords.get(atomId), anchorPosition)));
+    const alignedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[0]), angularDifference(exocyclicAngles[1], targetAngles[1]));
+    const swappedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0]));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, anchorAtomId, graph);
+
+    assert.ok(bugMolecules.includes(smiles), 'expected fused sugar methyl/carboxyl angle regression molecule to be registered');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(separations[0] > 1.3, `expected C2 methyl/carboxyl exits to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`);
+    assert.ok(Math.min(alignedDeviation, swappedDeviation) < 1e-6, `expected C2 methyl/carboxyl exits on the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the C2 exterior fan penalty to be clean');
   });
 
   it('splits saturated ring carbonyl and linker exits across the exterior gap', () => {

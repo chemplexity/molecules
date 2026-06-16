@@ -399,7 +399,7 @@ function _buildForceSvg(withWhiteBg = true) {
     _replaceForceWhiteSeparatorsForTransparentExport(gClone);
   }
   if (document.querySelector('.svg-plot').classList.contains('labels-hidden')) {
-    gClone.querySelectorAll('.atom-symbol').forEach(el => el.remove());
+    gClone.querySelectorAll('.atom-symbol:not(.force-auto-label)').forEach(el => el.remove());
   }
 
   let contentBBox = _measureClonedSvgBBox(gClone);

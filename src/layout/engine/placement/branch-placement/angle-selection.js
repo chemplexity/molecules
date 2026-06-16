@@ -3455,6 +3455,20 @@ function isSimpleExteriorSiblingLeaf(layoutGraph, anchorAtomId, neighborAtomId) 
   return heavyNeighborCount === 1;
 }
 
+/**
+ * Returns whether a non-priority sibling is a terminal carbon leaf. Pairing a
+ * centered carbonyl-like root with a methyl leaf leaves an unavoidable
+ * 60-degree projected gap, so these pairs use the balanced exterior fan.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} neighborAtomId - Exocyclic neighbor atom ID.
+ * @returns {boolean} True when the sibling is a terminal carbon leaf.
+ */
+function isTerminalCarbonExteriorSiblingLeaf(layoutGraph, anchorAtomId, neighborAtomId) {
+  const neighborAtom = layoutGraph?.atoms.get(neighborAtomId);
+  return neighborAtom?.element === 'C' && isSimpleExteriorSiblingLeaf(layoutGraph, anchorAtomId, neighborAtomId);
+}
+
 function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighborAngles, exocyclicNeighborIds) {
   if (!descriptor || ringNeighborAngles.length !== 2 || exocyclicNeighborIds.length !== 2) {
     return [];
@@ -3468,6 +3482,9 @@ function prioritizedExteriorTargetAngleSets(layoutGraph, descriptor, ringNeighbo
   }
   const nonPriorityNeighborIds = descriptor.exocyclicNeighborIds.filter(neighborAtomId => neighborAtomId !== priorityNeighborIds[0]);
   if (!nonPriorityNeighborIds.every(neighborAtomId => isSimpleExteriorSiblingLeaf(layoutGraph, descriptor.anchorAtomId, neighborAtomId))) {
+    return [];
+  }
+  if (nonPriorityNeighborIds.some(neighborAtomId => isTerminalCarbonExteriorSiblingLeaf(layoutGraph, descriptor.anchorAtomId, neighborAtomId))) {
     return [];
   }
 

@@ -6,6 +6,7 @@ import {
   countSevereOverlapsWithOverrides,
   countVisibleHeavyBondCrossings,
   findSevereOverlaps,
+  measureBondLengthDeviation,
   measureDirectAttachedRingJunctionContinuationDistortion,
   measureLayoutCost,
   measureRingSubstituentReadability,
@@ -44,6 +45,7 @@ const ATTACHED_RING_COUPLED_RESCUE_ANGLES = [Math.PI / 12, -(Math.PI / 12), Math
 const ATTACHED_RING_ROOT_CLEARANCE_ROTATIONS = [Math.PI / 6, -(Math.PI / 6), Math.PI / 2, -(Math.PI / 2)];
 const ATTACHED_RING_ROOT_CLEARANCE_STRETCHES = [0.15];
 const ATTACHED_RING_PERIPHERAL_FOCUS_CLEARANCE_FACTOR = 0.75;
+const DEFAULT_ATTACHED_RING_SUBTREE_HEAVY_ATOMS = 18;
 const MAX_ANCHOR_SIDE_OUTWARD_SUBTREE_HEAVY_ATOMS = 24;
 const ATTACHED_RING_PARENT_CONJUGATED_HETERO_ELEMENTS = new Set(['O', 'S', 'Se', 'P']);
 const CROWDED_CENTER_HEAVY_ATOM_LIMIT = 60;
@@ -3021,12 +3023,16 @@ function measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, coords, fo
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current placed coordinates.
  * @param {Set<string>|null} [frozenAtomIds] - Optional atoms that must not move.
+ * @param {{maxSubtreeHeavyAtomCount?: number}} [options] - Optional descriptor budget overrides.
  * @returns {Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>} Unique movable descriptors.
  */
-export function collectMovableAttachedRingDescriptors(layoutGraph, coords, frozenAtomIds = null) {
+export function collectMovableAttachedRingDescriptors(layoutGraph, coords, frozenAtomIds = null, options = {}) {
   const uniqueDescriptors = new Map();
   const ringAtomIds = new Set();
   const totalHeavyAtomCount = [...coords.keys()].reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+  const maxSubtreeHeavyAtomCount = Number.isFinite(options.maxSubtreeHeavyAtomCount)
+    ? Math.max(DEFAULT_ATTACHED_RING_SUBTREE_HEAVY_ATOMS, options.maxSubtreeHeavyAtomCount)
+    : DEFAULT_ATTACHED_RING_SUBTREE_HEAVY_ATOMS;
   for (const ring of layoutGraph.rings ?? []) {
     for (const atomId of ring.atomIds) {
       ringAtomIds.add(atomId);
@@ -3061,7 +3067,7 @@ export function collectMovableAttachedRingDescriptors(layoutGraph, coords, froze
       const supportsAnchorSideOutwardRescue = heavyAtomCount <= MAX_ANCHOR_SIDE_OUTWARD_SUBTREE_HEAVY_ATOMS && anchorSideOutwardRigidRotations(layoutGraph, coords, descriptor).length > 0;
       if (
         heavyAtomCount === 0 ||
-        (heavyAtomCount > 18 && !supportsAnchorSideOutwardRescue) ||
+        (heavyAtomCount > maxSubtreeHeavyAtomCount && !supportsAnchorSideOutwardRescue) ||
         !subtreeAtomIds.some(atomId => ringAtomIds.has(atomId)) ||
         subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)) ||
         (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds))
@@ -4229,10 +4235,15 @@ export function runExactAttachedRingRootOutwardRetidy(layoutGraph, inputCoords, 
  * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
  * @param {{
  *   bondLength?: number,
+ *   bondValidationClasses?: Map<string, string>,
  *   frozenAtomIds?: Set<string>|null,
  *   cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>,
  *   protectLargeMoleculeBackbone?: boolean,
  *   maxHeavyAtomCount?: number,
+ *   maxAttachedRingSubtreeHeavyAtomCount?: number,
+ *   maxPasses?: number,
+ *   focusSevereOverlaps?: boolean,
+ *   protectBondIntegrity?: boolean,
  *   includeOmittedHydrogenFan?: boolean
  * }} [options] - Touchup options.
  * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Best accepted touchup result.
@@ -4251,7 +4262,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
   let totalNudges = 0;
 
   for (let pass = 0; pass < maxPasses; pass++) {
-    let descriptors = collectMovableAttachedRingDescriptors(layoutGraph, currentCoords, frozenAtomIds);
+    let descriptors = collectMovableAttachedRingDescriptors(layoutGraph, currentCoords, frozenAtomIds, {
+      maxSubtreeHeavyAtomCount: options.maxAttachedRingSubtreeHeavyAtomCount
+    });
     const baseAtomGrid = buildAtomGrid(layoutGraph, currentCoords, bondLength);
     if (descriptors.length === 0) {
       break;
@@ -4263,6 +4276,12 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       descriptors = focusedAttachedRingDescriptors(descriptors, severeOverlapAtomIdSet(baseSevereOverlaps));
     }
     const baseOverlapCount = baseSevereOverlaps.length;
+    const baseBondLengthFailureCount =
+      options.protectBondIntegrity === true
+        ? measureBondLengthDeviation(layoutGraph, currentCoords, bondLength, {
+            bondValidationClasses: options.bondValidationClasses
+          }).failingBondCount
+        : null;
     const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, currentCoords);
     let bestCandidate =
       findBestProjectedTetrahedralAttachedRingCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds) ??
@@ -4333,6 +4352,15 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         if (overlapCount > baseOverlapCount) {
           buildCandidateScore.lastRejectReason = 'overlap-count';
           return null;
+        }
+        if (baseBondLengthFailureCount != null) {
+          const bondLengthFailureCount = measureBondLengthDeviation(layoutGraph, candidateCoords, bondLength, {
+            bondValidationClasses: options.bondValidationClasses
+          }).failingBondCount;
+          if (bondLengthFailureCount > baseBondLengthFailureCount) {
+            buildCandidateScore.lastRejectReason = 'bond-length';
+            return null;
+          }
         }
         const reducesOverlapCount = baseOverlapCount > 0 && overlapCount < baseOverlapCount;
         const junctionContinuationPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;

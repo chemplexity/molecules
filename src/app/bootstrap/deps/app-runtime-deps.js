@@ -142,7 +142,7 @@ export function createAppRuntimeDeps(ctx) {
         getSimulation: () => ctx.simulation,
         isHydrogenNode: ctx.isHydrogenNode,
         placeHydrogensAroundParent: (parent, hydrogens, links, options = {}) => ctx.forceHelpers.placeHydrogensAroundParent(parent, hydrogens, links, options),
-        patchNodePositions: patchPos => ctx.forceHelpers.patchForceNodePositions(patchPos),
+        patchNodePositions: (patchPos, options = {}) => ctx.forceHelpers.patchForceNodePositions(patchPos, options),
         reseatHydrogensAroundPatched: patchPos => ctx.forceHelpers.reseatHydrogensAroundPatched(patchPos)
       }
     },
