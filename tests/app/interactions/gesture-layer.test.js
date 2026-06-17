@@ -197,6 +197,7 @@ function makeBaseContext(overrides = {}) {
   let paintMode = false;
   let paintTool = 'brush';
   let paintColor = '#3366ff';
+  let paintBrushSize = 12;
   let paintOpacity = 1;
   let chargeTool = null;
   let erasePainting = false;
@@ -255,6 +256,10 @@ function makeBaseContext(overrides = {}) {
         getPaintColor: () => paintColor,
         setPaintColor: value => {
           paintColor = value;
+        },
+        getPaintBrushSize: () => paintBrushSize,
+        setPaintBrushSize: value => {
+          paintBrushSize = value;
         },
         getPaintOpacity: () => paintOpacity,
         setPaintOpacity: value => {
@@ -372,6 +377,7 @@ function makeBaseContext(overrides = {}) {
       setPaintMode: value => (paintMode = value),
       setPaintTool: value => (paintTool = value),
       setPaintColor: value => (paintColor = value),
+      setPaintBrushSize: value => (paintBrushSize = value),
       setPaintOpacity: value => (paintOpacity = value),
       setChargeTool: value => (chargeTool = value)
     }
@@ -603,6 +609,47 @@ describe('initGestureInteractions', () => {
       ['paintStyleTargets', ['a1'], [], { color: '#ff6633', opacity: 0.45 }, { skipSnapshot: false }],
       ['paintStyleTargets', [], ['b1'], { color: '#ff6633', opacity: 0.45 }, { skipSnapshot: true }]
     ]);
+  });
+
+  it('uses the configured brush size for paint hit coverage', () => {
+    const atomHit = makeHitElement('atom', 'a1');
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setPaintMode(true);
+    state.setPaintBrushSize(20);
+    context.doc.elementsFromPoint = x => (x === 30 ? [atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['a1'], [], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
+  it('uses the configured brush size for eraser hit coverage', () => {
+    const atomHit = makeHitElement('atom', 'a1');
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setPaintMode(true);
+    state.setPaintTool('eraser');
+    state.setPaintBrushSize(20);
+    context.doc.elementsFromPoint = x => (x === 30 ? [atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['a1'], [], null, { skipSnapshot: false }]]);
   });
 
   it('clears atom, bond, and ring styles while dragging in paint eraser mode', () => {

@@ -147,8 +147,9 @@ function isLegacyNeutralPentavalentNitrogen(atom, molecule, totalBO, charge, rad
  *   - O/S family: neutral 2 (plus 4/6 for heavier atoms); cations step up
  *   - halogens: neutral 1; anions step down to 0
  *
- * Aromatic atoms are skipped: their bond orders are resonance-averaged
- * (fractional) and only well-defined after Kekulé assignment.
+ * Aromatic atoms use a sigma-bond overflow check: underbonded aromatic atoms
+ * are tolerated because their pi order is resonance/Kekulé dependent, but
+ * atoms with too many sigma bonds still produce warnings.
  *
  * Transition metals (groups 3–12) and unknown elements are silently skipped.
  *
@@ -189,11 +190,7 @@ export function validateValence(molecule) {
       continue;
     }
 
-    // Skip aromatic atoms: their bond orders are fractional (resonance-averaged)
-    // and only well-defined after Kekulé assignment.
-    if (atom.isAromatic()) {
-      continue;
-    }
+    const isAromaticAtom = atom.isAromatic();
 
     // Valence electrons:
     //   period-1 group-18 (He): special case → 2, not 8
@@ -231,11 +228,13 @@ export function validateValence(molecule) {
     // and a donor-adjusted total that omits metal links, then accept either.
     let totalBO = 0;
     let donorAdjustedBO = 0;
+    let attachedBondCount = 0;
     for (const bondId of atom.bonds) {
       const bond = molecule.bonds.get(bondId);
       if (!bond) {
         continue;
       }
+      attachedBondCount++;
       const bondOrder = Math.floor(bond.properties.order ?? 1);
       totalBO += bondOrder;
       const otherAtomId = bond.getOtherAtom(atomId);
@@ -248,15 +247,26 @@ export function validateValence(molecule) {
     }
 
     const acceptedBondOrders = totalBO === donorAdjustedBO ? [totalBO] : [totalBO, donorAdjustedBO];
-    const hasValidBondOrder = acceptedBondOrders.some(bondOrder => allowed.includes(bondOrder));
+    const maxAllowedBondOrder = allowed.length > 0 ? Math.max(...allowed) : null;
+    const hasValidBondOrder = isAromaticAtom
+      ? maxAllowedBondOrder !== null && acceptedBondOrders.some(bondOrder => bondOrder <= maxAllowedBondOrder)
+      : acceptedBondOrders.some(bondOrder => allowed.includes(bondOrder));
+    const hasCarbonAttachedBondOverflow =
+      atom.name === 'C' &&
+      maxAllowedBondOrder !== null &&
+      attachedBondCount > maxAllowedBondOrder;
     const hasLegacyNitrogenValence = isLegacyNeutralPentavalentNitrogen(atom, molecule, totalBO, charge, radical);
 
-    if (!hasValidBondOrder && !hasLegacyNitrogenValence) {
+    if ((!hasValidBondOrder || hasCarbonAttachedBondOverflow) && !hasLegacyNitrogenValence) {
       const chargeStr = charge > 0 ? `+${charge}` : `${charge}`;
       const radicalStr = radical > 0 ? `, radical ${radical}` : '';
       const allowedStr = allowed.length ? allowed.join(', ') : 'none';
       const bondOrderSummary = totalBO === donorAdjustedBO ? `${totalBO}` : `${totalBO} (or ${donorAdjustedBO} excluding transition-metal bonds)`;
-      const reason = `Bond order ${bondOrderSummary} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
+      const reason = hasCarbonAttachedBondOverflow
+        ? `Attached bond count ${attachedBondCount} exceeds the valence limit for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed up to: ${allowedStr})`
+        : isAromaticAtom
+        ? `Aromatic sigma bond order ${bondOrderSummary} exceeds the valence limit for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed up to: ${allowedStr})`
+        : `Bond order ${bondOrderSummary} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
       warnings.push({
         atomId,
         element: atom.name,

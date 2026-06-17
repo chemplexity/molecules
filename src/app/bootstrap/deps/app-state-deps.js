@@ -121,6 +121,10 @@ export function createAppStateBridgeDeps(ctx) {
       setPaintColor: value => {
         ctx.setPaintColor?.(value);
       },
+      getPaintBrushSize: () => ctx.getPaintBrushSize?.() ?? 12,
+      setPaintBrushSize: value => {
+        ctx.setPaintBrushSize?.(value);
+      },
       getPaintOpacity: () => ctx.getPaintOpacity?.() ?? 1,
       setPaintOpacity: value => {
         ctx.setPaintOpacity?.(value);

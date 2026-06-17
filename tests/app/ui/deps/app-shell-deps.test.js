@@ -35,6 +35,7 @@ describe('createAppShellDeps', () => {
         togglePaintMode: () => 'togglePaintMode',
         setPaintTool: value => `setPaintTool:${value}`,
         setPaintColor: value => `setPaintColor:${value}`,
+        setPaintBrushSize: value => `setPaintBrushSize:${value}`,
         setPaintOpacity: value => `setPaintOpacity:${value}`,
         toggleDrawBondMode: () => 'toggleDrawBondMode',
         handleDrawBondButtonClick: () => 'handleDrawBondButtonClick',
@@ -84,6 +85,7 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.selection.togglePaintMode(), 'togglePaintMode');
     assert.equal(deps.selection.setPaintTool('bucket'), 'setPaintTool:bucket');
     assert.equal(deps.selection.setPaintColor('#ff6633'), 'setPaintColor:#ff6633');
+    assert.equal(deps.selection.setPaintBrushSize(18), 'setPaintBrushSize:18');
     assert.equal(deps.selection.setPaintOpacity(0.45), 'setPaintOpacity:0.45');
     assert.equal(deps.selection.setChargeTool('positive'), 'setChargeTool:positive');
     assert.equal(deps.selection.setDrawElement('N'), 'setDrawElement:N');

@@ -25,12 +25,15 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const forceStyleBrushButton = document.getElementById('force-style-brush-btn');
   const paintColorSelector = document.getElementById('paint-color-selector');
   const forcePaintColorSelector = document.getElementById('force-paint-color-selector');
+  const paintBrushSizeSelector = document.getElementById('paint-brush-size-selector');
+  const forcePaintBrushSizeSelector = document.getElementById('force-paint-brush-size-selector');
   const paintOpacitySelector = document.getElementById('paint-opacity-selector');
   const forcePaintOpacitySelector = document.getElementById('force-paint-opacity-selector');
   const positiveChargeButton = document.getElementById('charge-positive-btn');
   const negativeChargeButton = document.getElementById('charge-negative-btn');
   const bondDrawTypeButtons = new Map([...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button]));
-  const ringTemplateSizeButtons = new Map([...document.querySelectorAll('[data-ring-template-size]')].map(button => [Number(button.dataset.ringTemplateSize), button]));
+  const ringTemplateKey = value => (/^\d+$/.test(String(value)) ? Number(value) : String(value));
+  const ringTemplateSizeButtons = new Map([...document.querySelectorAll('[data-ring-template-size]')].map(button => [ringTemplateKey(button.dataset.ringTemplateSize), button]));
   const paintToolButtons = new Map();
   for (const button of document.querySelectorAll('[data-paint-tool]')) {
     const list = paintToolButtons.get(button.dataset.paintTool) ?? [];
@@ -107,12 +110,13 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getForceStyleBrushButtonElement: () => forceStyleBrushButton,
     getStyleBrushButtonElements: () => [styleBrushButton, forceStyleBrushButton].filter(Boolean),
     getPaintColorSelectorElements: () => [paintColorSelector, forcePaintColorSelector].filter(Boolean),
+    getPaintBrushSizeSelectorElements: () => [paintBrushSizeSelector, forcePaintBrushSizeSelector].filter(Boolean),
     getPaintOpacitySelectorElements: () => [paintOpacitySelector, forcePaintOpacitySelector].filter(Boolean),
     getPaintToolButtonElements: tool => paintToolButtons.get(tool) ?? [],
     getPositiveChargeButtonElement: () => positiveChargeButton,
     getNegativeChargeButtonElement: () => negativeChargeButton,
     getBondDrawTypeButtonElement: type => bondDrawTypeButtons.get(type) ?? null,
-    getRingTemplateSizeButtonElement: size => ringTemplateSizeButtons.get(Number(size)) ?? null,
+    getRingTemplateSizeButtonElement: size => ringTemplateSizeButtons.get(ringTemplateKey(size)) ?? null,
     getEraseButtonElement: () => eraseButton,
     getElementButtonElement: element => document.getElementById(`elem-btn-${element}`),
     getMolecularFormulaElement: () => molecularFormula,

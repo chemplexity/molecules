@@ -45,6 +45,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     paintTool: 'brush',
     paintColor: '#3366ff',
     paintOpacity: 1,
+    paintBrushSize: 12,
     erasePainting: false,
     chargeTool: null,
     forceSelectionLines: null,

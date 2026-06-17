@@ -51,7 +51,7 @@ export function initGestureInteractions(context) {
   let paintBucketStrokeRings = [];
   let paintBrushPreviewStyles = new Map();
 
-  const PAINT_R = 12;
+  const DEFAULT_PAINT_R = 12;
   const ERASE_R = 14;
   const PAINT_BUCKET_PREVIEW_BEFORE_SELECTOR = [
     ':scope > g.atom-highlights',
@@ -311,6 +311,11 @@ export function initGestureInteractions(context) {
       color: context.state.overlayState.getPaintColor?.() ?? '#3366ff',
       opacity: context.state.overlayState.getPaintOpacity?.() ?? 1
     };
+  }
+
+  function getPaintBrushRadius() {
+    const radius = Number(context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_R);
+    return Number.isFinite(radius) ? Math.max(1, radius) : DEFAULT_PAINT_R;
   }
 
   function getPaintMolecule(mode = context.state.viewState.getMode()) {
@@ -795,6 +800,7 @@ export function initGestureInteractions(context) {
   function collectPaintHitElements(cx, cy) {
     const seen = new Set();
     const candidates = [];
+    const paintRadius = getPaintBrushRadius();
     const addIfTarget = element => {
       if (!isPaintHitElement(element) || seen.has(element)) {
         return;
@@ -809,8 +815,8 @@ export function initGestureInteractions(context) {
     }
     for (const angle of perimeterAngles) {
       const rad = (angle * Math.PI) / 180;
-      const px = cx + PAINT_R * Math.cos(rad);
-      const py = cy + PAINT_R * Math.sin(rad);
+      const px = cx + paintRadius * Math.cos(rad);
+      const py = cy + paintRadius * Math.sin(rad);
       for (const element of doc.elementsFromPoint(px, py)) {
         addIfTarget(element);
       }
@@ -823,7 +829,7 @@ export function initGestureInteractions(context) {
       const box = element.getBoundingClientRect();
       const acx = (box.left + box.right) / 2;
       const acy = (box.top + box.bottom) / 2;
-      if (Math.hypot(cx - acx, cy - acy) <= PAINT_R) {
+      if (Math.hypot(cx - acx, cy - acy) <= paintRadius) {
         addIfTarget(element);
       }
     }
@@ -837,7 +843,7 @@ export function initGestureInteractions(context) {
       if (!p1 || !p2) {
         continue;
       }
-      if (distToSegment(cx, cy, p1.x, p1.y, p2.x, p2.y) <= PAINT_R) {
+      if (distToSegment(cx, cy, p1.x, p1.y, p2.x, p2.y) <= paintRadius) {
         addIfTarget(element);
       }
     }

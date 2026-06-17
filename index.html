@@ -98,7 +98,10 @@
                 </button>
                 <div class="paint-style-controls" aria-label="Paint style controls">
                   <input id="force-paint-color-selector" class="paint-color-selector" type="color" value="#3366ff" title="Paint color" aria-label="Paint color" />
-                  <input id="force-paint-opacity-selector" class="paint-opacity-selector" type="range" min="0" max="1" step="0.05" value="1" title="Paint opacity" aria-label="Paint opacity" />
+                  <div class="paint-range-stack">
+                    <input id="force-paint-brush-size-selector" class="paint-brush-size-selector" type="range" min="4" max="32" step="1" value="12" title="Brush size" aria-label="Brush size" />
+                    <input id="force-paint-opacity-selector" class="paint-opacity-selector" type="range" min="0" max="1" step="0.05" value="1" title="Paint opacity" aria-label="Paint opacity" />
+                  </div>
                 </div>
                 <div class="paint-tool-drawer" aria-label="Paint mode options">
                   <button
@@ -162,7 +165,10 @@
                 </button>
                 <div class="paint-style-controls" aria-label="Paint style controls">
                   <input id="paint-color-selector" class="paint-color-selector" type="color" value="#3366ff" title="Paint color" aria-label="Paint color" />
-                  <input id="paint-opacity-selector" class="paint-opacity-selector" type="range" min="0" max="1" step="0.05" value="1" title="Paint opacity" aria-label="Paint opacity" />
+                  <div class="paint-range-stack">
+                    <input id="paint-brush-size-selector" class="paint-brush-size-selector" type="range" min="4" max="32" step="1" value="12" title="Brush size" aria-label="Brush size" />
+                    <input id="paint-opacity-selector" class="paint-opacity-selector" type="range" min="0" max="1" step="0.05" value="1" title="Paint opacity" aria-label="Paint opacity" />
+                  </div>
                 </div>
                 <div class="paint-tool-drawer" aria-label="Paint mode options">
                   <button
@@ -261,6 +267,12 @@
               <button type="button" data-ring-template-size="7" title="7-member ring" aria-label="7-member ring" onclick="setRingTemplateSize(7)">
                 <svg class="ring-template-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <polygon points="8,2 12.7,4.3 13.9,9.4 10.6,13.5 5.4,13.5 2.1,9.4 3.3,4.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <button type="button" data-ring-template-size="benzene" title="6-member ring (aromatic)" aria-label="6-member ring (aromatic)" onclick="setRingTemplateSize('benzene')">
+                <svg class="ring-template-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <polygon points="8,2.2 13,5.1 13,10.9 8,13.8 3,10.9 3,5.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                  <path d="M8.9 4.1L11.8 5.8M11.9 10.1L8.9 11.8M4.1 9.8V6.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
                 </svg>
               </button>
             </div>

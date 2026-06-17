@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  convertForceCoordsToLineLayout,
+  convertLineCoordsToForceLayout,
   FORCE_LAYOUT_BOND_LENGTH,
   FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS,
   FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH,
@@ -17,6 +19,7 @@ import {
   reseatForceGraphHydrogens,
   zoomTransformsDiffer
 } from '../../../src/app/render/force-helpers.js';
+import { Molecule } from '../../../src/core/Molecule.js';
 
 function makeZoomIdentity() {
   return {
@@ -33,6 +36,84 @@ function makeZoomIdentity() {
 }
 
 describe('force-helpers', () => {
+  it('converts line coordinates to force coordinates while reseating hydrogens in stable slots', () => {
+    const mol = new Molecule();
+    const c1 = mol.addAtom('c1', 'C');
+    const c2 = mol.addAtom('c2', 'C');
+    const h1 = mol.addAtom('h1', 'H');
+    c1.x = 0;
+    c1.y = 0;
+    c2.x = 1.5;
+    c2.y = 0;
+    h1.visible = false;
+    mol.addBond('b1', 'c1', 'c2', { order: 1 }, false);
+    mol.addBond('b2', 'c1', 'h1', { order: 1 }, false);
+
+    const converted = convertLineCoordsToForceLayout(mol, {
+      forceCenter: { x: 100, y: 50 }
+    });
+    const c1Coords = converted.coords.get('c1');
+    const c2Coords = converted.coords.get('c2');
+    const h1Coords = converted.coords.get('h1');
+
+    assert.equal(converted.scale, FORCE_LAYOUT_BOND_LENGTH / 1.5);
+    assert.equal(Math.hypot(c2Coords.x - c1Coords.x, c2Coords.y - c1Coords.y), FORCE_LAYOUT_BOND_LENGTH);
+    assert.equal((c1Coords.x + c2Coords.x) / 2, 100);
+    assert.equal(c1Coords.y, 50);
+    assert.equal(c2Coords.y, 50);
+    assert.ok(h1Coords.x < c1Coords.x, 'hydrogen should use the open force slot opposite the heavy neighbor');
+    assert.ok(Math.abs(h1Coords.y - c1Coords.y) < 1e-6);
+    assert.equal(h1Coords.forcePlacementParentId, 'c1');
+    assert.equal(converted.forceAnchorCoords.get('c1').x, c1Coords.x);
+  });
+
+  it('converts force coordinates back to line coordinates and omits hidden hydrogens by default', () => {
+    const mol = new Molecule();
+    const c1 = mol.addAtom('c1', 'C');
+    const c2 = mol.addAtom('c2', 'C');
+    const h1 = mol.addAtom('h1', 'H');
+    c1.x = -0.75;
+    c1.y = 0;
+    c2.x = 0.75;
+    c2.y = 0;
+    h1.visible = false;
+    mol.addBond('b1', 'c1', 'c2', { order: 1 }, false);
+    mol.addBond('b2', 'c1', 'h1', { order: 1 }, false);
+
+    const forceLayout = convertLineCoordsToForceLayout(mol, {
+      forceCenter: { x: 300, y: 200 }
+    });
+    const lineLayout = convertForceCoordsToLineLayout(mol, forceLayout.nodes);
+
+    assert.deepEqual([...lineLayout.coords.keys()].sort(), ['c1', 'c2']);
+    assert.equal(lineLayout.coords.get('c1').x, -0.75);
+    assert.equal(lineLayout.coords.get('c1').y, 0);
+    assert.equal(lineLayout.coords.get('c2').x, 0.75);
+    assert.equal(lineLayout.coords.get('c2').y, 0);
+  });
+
+  it('can preserve force hydrogen coordinates when converting back to line coordinates', () => {
+    const mol = new Molecule();
+    mol.addAtom('c1', 'C');
+    const h1 = mol.addAtom('h1', 'H');
+    h1.visible = false;
+    mol.addBond('b1', 'c1', 'h1', { order: 1 }, false);
+    const forceNodes = [
+      { id: 'c1', name: 'C', x: 100, y: 100 },
+      { id: 'h1', name: 'H', x: 100, y: 120 }
+    ];
+
+    const lineLayout = convertForceCoordsToLineLayout(mol, forceNodes, {
+      hydrogenMode: 'preserve'
+    });
+
+    assert.deepEqual([...lineLayout.coords.keys()].sort(), ['c1', 'h1']);
+    assert.equal(lineLayout.coords.get('c1').x, 0);
+    assert.equal(lineLayout.coords.get('c1').y, 0);
+    assert.equal(lineLayout.coords.get('h1').x, 0);
+    assert.equal(lineLayout.coords.get('h1').y, -20 * (1.5 / FORCE_LAYOUT_BOND_LENGTH));
+  });
+
   it('computes force link distances for heavy, hydrogen, and aromatic bonds', () => {
     assert.equal(forceLinkDistance({ source: { name: 'C' }, target: { name: 'C' }, order: 1 }), FORCE_LAYOUT_BOND_LENGTH);
     assert.equal(forceLinkDistance({ source: { name: 'H' }, target: { name: 'C' }, order: 1 }), FORCE_LAYOUT_H_BOND_LENGTH);
@@ -296,6 +377,9 @@ describe('force-helpers', () => {
     assert.ok(records.some(([kind]) => kind === 'restart'));
     assert.ok(Number.isFinite(simulation._nodes[1].x));
     assert.ok(Number.isFinite(simulation._nodes[1].y));
+    helpers.patchForceNodePositions(new Map([['h1', { x: 80, y: 120, forcePlacementParentId: 'c1', forcePlacementAngle: Math.PI }]]));
+    assert.equal(simulation._nodes[1].forcePlacementParentId, 'c1');
+    assert.equal(simulation._nodes[1].forcePlacementAngle, Math.PI);
   });
 
   it('preserves force hydrogen slot metadata when reusing previous node positions', () => {

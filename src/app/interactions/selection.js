@@ -2,14 +2,14 @@
 
 const DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
 const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'dash'];
-const RING_TEMPLATE_SIZES = [3, 4, 5, 6, 7];
+const RING_TEMPLATE_SIZES = [3, 4, 5, 6, 7, 'benzene'];
 const CHARGE_TOOLS = ['positive', 'negative'];
 const PAINT_TOOLS = ['brush', 'bucket', 'eraser'];
 const DEFAULT_PAINT_COLOR = '#3366ff';
 const DEFAULT_PAINT_OPACITY = 1;
-const PAINT_CURSOR_SIZE = 24;
-const PAINT_CURSOR_CENTER = PAINT_CURSOR_SIZE / 2;
-const PAINT_CURSOR_RADIUS = 11;
+const DEFAULT_PAINT_BRUSH_SIZE = 12;
+const MIN_PAINT_BRUSH_SIZE = 4;
+const MAX_PAINT_BRUSH_SIZE = 32;
 const PAINT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
 function normalizePaintColor(value) {
@@ -24,6 +24,14 @@ function normalizePaintOpacity(value) {
   return Math.round(Math.min(1, Math.max(0, opacity)) * 100) / 100;
 }
 
+function normalizePaintBrushSize(value) {
+  const size = Number(value);
+  if (!Number.isFinite(size)) {
+    return DEFAULT_PAINT_BRUSH_SIZE;
+  }
+  return Math.round(Math.min(MAX_PAINT_BRUSH_SIZE, Math.max(MIN_PAINT_BRUSH_SIZE, size)));
+}
+
 function paintSwatchColor(color, opacity = DEFAULT_PAINT_OPACITY) {
   const normalizedColor = normalizePaintColor(color);
   const normalizedOpacity = normalizePaintOpacity(opacity);
@@ -33,10 +41,22 @@ function paintSwatchColor(color, opacity = DEFAULT_PAINT_OPACITY) {
   return `rgba(${red}, ${green}, ${blue}, ${normalizedOpacity})`;
 }
 
-function paintCursorValue(color, opacity = DEFAULT_PAINT_OPACITY, tool = 'brush') {
+function paintCursorValue(color, opacity = DEFAULT_PAINT_OPACITY, tool = 'brush', brushSize = DEFAULT_PAINT_BRUSH_SIZE) {
+  const radius = normalizePaintBrushSize(brushSize);
+  const cursorSize = radius * 2;
+  const cursorCenter = radius;
+  const cursorRadius = Math.max(1, radius - 1);
   const fill = tool === 'eraser' ? 'none' : encodeURIComponent(normalizePaintColor(color));
   const fillOpacity = tool === 'eraser' ? '' : ` fill-opacity='${normalizePaintOpacity(opacity)}'`;
-  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${PAINT_CURSOR_SIZE}' height='${PAINT_CURSOR_SIZE}' viewBox='0 0 ${PAINT_CURSOR_SIZE} ${PAINT_CURSOR_SIZE}'%3E%3Ccircle cx='${PAINT_CURSOR_CENTER}' cy='${PAINT_CURSOR_CENTER}' r='${PAINT_CURSOR_RADIUS}' fill='${fill}'${fillOpacity} stroke='black' stroke-width='2'/%3E%3C/svg%3E") ${PAINT_CURSOR_CENTER} ${PAINT_CURSOR_CENTER}, crosshair`;
+  return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${cursorSize}' height='${cursorSize}' viewBox='0 0 ${cursorSize} ${cursorSize}'%3E%3Ccircle cx='${cursorCenter}' cy='${cursorCenter}' r='${cursorRadius}' fill='${fill}'${fillOpacity} stroke='black' stroke-width='2'/%3E%3C/svg%3E") ${cursorCenter} ${cursorCenter}, crosshair`;
+}
+
+function normalizeRingTemplateSelection(value) {
+  if (value === 'benzene') {
+    return value;
+  }
+  const normalizedSize = Number(value);
+  return Number.isInteger(normalizedSize) ? normalizedSize : null;
 }
 
 /**
@@ -192,6 +212,7 @@ export function createSelectionActions(context) {
     syncPaintToolButtons(paintMode);
     syncPaintToolStyles();
     syncPaintColorSelectors();
+    syncPaintBrushSizeSelectors();
     syncPaintOpacitySelectors();
     syncChargeButtons();
 
@@ -220,6 +241,7 @@ export function createSelectionActions(context) {
   const ringTemplateSizeSync = createButtonSynchronizer(RING_TEMPLATE_SIZES, size => context.dom.getRingTemplateSizeButton?.(size));
   const paintToolSync = createButtonSynchronizer(PAINT_TOOLS, tool => context.dom.getPaintToolButtons?.(tool) ?? []);
   bindPaintColorSelectors();
+  bindPaintBrushSizeSelectors();
   bindPaintOpacitySelectors();
 
   function syncChargeButtons() {
@@ -237,9 +259,10 @@ export function createSelectionActions(context) {
     active = context.state.overlayState.getPaintMode?.() ?? false,
     color = context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
     opacity = context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
-    tool = context.state.overlayState.getPaintTool?.() ?? 'brush'
+    tool = context.state.overlayState.getPaintTool?.() ?? 'brush',
+    brushSize = context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_BRUSH_SIZE
   ) {
-    context.dom.plotElement?.style?.setProperty?.('--paint-mode-cursor', paintCursorValue(color, opacity, tool));
+    context.dom.plotElement?.style?.setProperty?.('--paint-mode-cursor', paintCursorValue(color, opacity, tool, brushSize));
     context.dom.plotElement?.classList?.toggle?.('paint-mode-cursor', active);
   }
   function syncPaintButtonIcon(tool = context.state.overlayState.getPaintTool?.() ?? 'brush') {
@@ -263,7 +286,8 @@ export function createSelectionActions(context) {
       context.state.overlayState.getPaintMode?.() ?? false,
       context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
       context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
-      tool
+      tool,
+      context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_BRUSH_SIZE
     );
   }
   function syncPaintColorSelectors(color = normalizePaintColor(context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR)) {
@@ -291,13 +315,37 @@ export function createSelectionActions(context) {
       context.state.overlayState.getPaintMode?.() ?? false,
       normalizedColor,
       context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
-      context.state.overlayState.getPaintTool?.() ?? 'brush'
+      context.state.overlayState.getPaintTool?.() ?? 'brush',
+      context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_BRUSH_SIZE
     );
   }
   function setPaintColor(color) {
     const normalizedColor = normalizePaintColor(color);
     context.state.overlayState.setPaintColor?.(normalizedColor);
     syncPaintColorSelectors(normalizedColor);
+  }
+  function syncPaintBrushSizeSelectors(size = normalizePaintBrushSize(context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_BRUSH_SIZE)) {
+    const normalizedSize = normalizePaintBrushSize(size);
+    for (const selector of context.dom.getPaintBrushSizeSelectors?.() ?? []) {
+      if (!selector) {
+        continue;
+      }
+      if ('value' in selector) {
+        selector.value = String(normalizedSize);
+      }
+    }
+    syncPaintCursor(
+      context.state.overlayState.getPaintMode?.() ?? false,
+      context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
+      context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY,
+      context.state.overlayState.getPaintTool?.() ?? 'brush',
+      normalizedSize
+    );
+  }
+  function setPaintBrushSize(size) {
+    const normalizedSize = normalizePaintBrushSize(size);
+    context.state.overlayState.setPaintBrushSize?.(normalizedSize);
+    syncPaintBrushSizeSelectors(normalizedSize);
   }
   function syncPaintOpacitySelectors(opacity = normalizePaintOpacity(context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY)) {
     const normalizedOpacity = normalizePaintOpacity(opacity);
@@ -324,7 +372,8 @@ export function createSelectionActions(context) {
       context.state.overlayState.getPaintMode?.() ?? false,
       context.state.overlayState.getPaintColor?.() ?? DEFAULT_PAINT_COLOR,
       normalizedOpacity,
-      context.state.overlayState.getPaintTool?.() ?? 'brush'
+      context.state.overlayState.getPaintTool?.() ?? 'brush',
+      context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_BRUSH_SIZE
     );
   }
   function setPaintOpacity(opacity) {
@@ -343,6 +392,19 @@ export function createSelectionActions(context) {
       selector.addEventListener('input', handleColorInput);
       selector.addEventListener('change', handleColorInput);
       selector.__paintColorSyncBound = true;
+    }
+  }
+  function bindPaintBrushSizeSelectors() {
+    for (const selector of context.dom.getPaintBrushSizeSelectors?.() ?? []) {
+      if (!selector || typeof selector.addEventListener !== 'function' || selector.__paintBrushSizeSyncBound) {
+        continue;
+      }
+      const handleBrushSizeInput = () => {
+        setPaintBrushSize(selector.value);
+      };
+      selector.addEventListener('input', handleBrushSizeInput);
+      selector.addEventListener('change', handleBrushSizeInput);
+      selector.__paintBrushSizeSyncBound = true;
     }
   }
   function bindPaintOpacitySelectors() {
@@ -366,6 +428,7 @@ export function createSelectionActions(context) {
     syncPaintToolButtons(value);
     syncPaintToolStyles();
     syncPaintColorSelectors();
+    syncPaintBrushSizeSelectors();
     syncPaintOpacitySelectors();
   }
   function syncPaintToolButtons(active = context.state.overlayState.getPaintMode?.() ?? false) {
@@ -645,7 +708,7 @@ export function createSelectionActions(context) {
   }
 
   function setRingTemplateSize(size) {
-    const normalizedSize = Number(size);
+    const normalizedSize = normalizeRingTemplateSelection(size);
     if (!RING_TEMPLATE_SIZES.includes(normalizedSize)) {
       return;
     }
@@ -698,6 +761,7 @@ export function createSelectionActions(context) {
     togglePaintMode,
     setPaintTool,
     setPaintColor,
+    setPaintBrushSize,
     setPaintOpacity,
     toggleDrawBondMode,
     toggleRingTemplateMode,

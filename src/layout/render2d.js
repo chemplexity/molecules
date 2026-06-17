@@ -518,6 +518,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
       const placement = computeChargeBadgePlacement(atom, mol, {
         pointForAtom: toSVG,
         label,
+        labelOffset: { dx, dy },
         fontSize: FONT_SIZE,
         chargeLabel: sign,
         extraOccupiedAngles

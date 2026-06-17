@@ -328,6 +328,68 @@ describe('createPrimitiveEventHandlers', () => {
     ]);
   });
 
+  it('ignores product-side atom clicks in reaction preview ring-template mode', () => {
+    const { context, calls, setMode, setRingTemplateMode } = makeContext({
+      overlays: {
+        isReactionPreviewEditableAtomId: atomId => atomId !== 'product-a1'
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+
+    handlers.handle2dAtomClick(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      'product-a1'
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, []);
+  });
+
+  it('ignores product-side bond clicks in reaction preview ring-template mode', () => {
+    const productBond = { id: 'product-b1', atoms: ['product-a1', 'product-a2'] };
+    const { context, calls, setMode, setRingTemplateMode } = makeContext({
+      mol2d: {
+        bonds: new Map([[productBond.id, productBond]])
+      },
+      overlays: {
+        isReactionPreviewEditableAtomId: atomId => !atomId.startsWith('product-')
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+
+    handlers.handle2dBondClick(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      productBond.id
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, []);
+  });
+
   it('routes force bond clicks to bond-anchored ring template placement for heavy-atom bonds', () => {
     const { context, calls, setRingTemplateMode, setRingTemplateSize } = makeContext();
     setRingTemplateMode(true);
@@ -532,6 +594,69 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls.at(-1), ['showPrimitiveHover', ['a1', 'a2'], ['b1']]);
   });
 
+  it('previews atom-anchored benzene double bonds using the fused bond phase', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    let pointer = [0, 0];
+    const atomA = { id: 'a1', name: 'C', x: 0, y: 0 };
+    const atomB = { id: 'a2', name: 'C', x: 90, y: 0 };
+    const bond = { id: 'b1', atoms: ['a1', 'a2'], properties: { localizedOrder: 2 } };
+    const mol = {
+      atoms: new Map([
+        ['a1', atomA],
+        ['a2', atomB]
+      ]),
+      bonds: new Map([['b1', bond]]),
+      getBond(atomIdA, atomIdB) {
+        return (atomIdA === 'a1' && atomIdB === 'a2') || (atomIdA === 'a2' && atomIdB === 'a1') ? bond : null;
+      }
+    };
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      },
+      constants: {
+        scale: 60
+      },
+      mol2d: mol,
+      helpers: {
+        get2DAtomById: atomId => mol.atoms.get(atomId),
+        toSelectionSVGPt2d: atom => ({ x: atom.x, y: atom.y })
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize('benzene');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dAtomMouseDownDrawBond({ preventDefault() {}, stopPropagation() {} }, 'a1');
+    pointer = [60, 104];
+    listeners.get('mousemove')({ preventDefault() {} });
+
+    const preview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(preview);
+    const doubleLines = preview.children.filter(child => child.tagName === 'line' && child.getAttribute('class') === 'bond ring-template-double-bond');
+    assert.equal(doubleLines.length, 3);
+    const hasSharedEdgeDouble = doubleLines.some(line => {
+      const y1 = Number(line.getAttribute('y1'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.abs(y1 - y2) < 1e-6 && Math.abs((y1 + y2) / 2) <= 6;
+    });
+    assert.equal(hasSharedEdgeDouble, true);
+  });
+
   it('previews force ring templates with final-style links and carbon nodes', () => {
     const listeners = new Map();
     const svgRoot = makeSvgRoot();
@@ -575,6 +700,212 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(Math.round(svgLineLength(lines[0])), 53);
     assert.equal(circles.every(circle => circle.getAttribute('class') === 'node' && circle.getAttribute('fill')), true);
     assert.equal(preview.querySelector('polygon'), null);
+  });
+
+  it('previews benzene as a six-member ring while committing the benzene template key', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    let pointer = [10, 20];
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      },
+      constants: {
+        forceBondLength: 41
+      }
+    });
+    setMode('force');
+    setRingTemplateMode(true);
+    setRingTemplateSize('benzene');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseDownDrawBond({ preventDefault() {}, stopPropagation() {} }, { id: 'a1' });
+    pointer = [70, 20];
+    listeners.get('mousemove')({ preventDefault() {} });
+
+    const preview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(preview);
+    const lines = preview.children.filter(child => child.tagName === 'line');
+    assert.equal(lines.length, 9);
+    assert.equal(lines.filter(line => line.getAttribute('class') === 'link ring-template-double-bond').length, 3);
+    assert.equal(preview.children.filter(child => child.tagName === 'circle').length, 5);
+
+    listeners.get('mouseup')({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    const placement = calls.find(call => call[0] === 'placeRingTemplate');
+    assert.ok(placement);
+    assert.equal(placement[1], 'benzene');
+    assert.equal(placement[4].anchorAtomId, 'a1');
+  });
+
+  it('previews bond-anchored benzene without a double bond on the shared edge', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const pointer = [50, 20];
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize('benzene');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dBondMouseDownRingTemplate(
+      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
+      'b1',
+      { x: 10, y: 20 },
+      { x: 100, y: 20 },
+      ['a1', 'a2']
+    );
+
+    const preview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(preview);
+    const doubleLines = preview.children.filter(child => child.tagName === 'line' && child.getAttribute('class') === 'bond ring-template-double-bond');
+    assert.equal(doubleLines.length, 3);
+    const hasSharedEdgeDouble = doubleLines.some(line => {
+      const y1 = Number(line.getAttribute('y1'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.abs(y1 - y2) < 1e-6 && Math.abs((y1 + y2) / 2 - 20) <= 6;
+    });
+    assert.equal(hasSharedEdgeDouble, false);
+  });
+
+  it('previews bond-anchored benzene double bonds using the anchor bond phase', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const pointer = [50, 20];
+    const mol2d = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'C' }]
+      ]),
+      bonds: new Map([
+        ['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1.5, aromatic: true, localizedOrder: 2 } }]
+      ])
+    };
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      mol2d,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize('benzene');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dBondMouseDownRingTemplate(
+      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
+      'b1',
+      { x: 10, y: 20 },
+      { x: 100, y: 20 },
+      ['a1', 'a2']
+    );
+
+    const preview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(preview);
+    const doubleLines = preview.children.filter(child => child.tagName === 'line' && child.getAttribute('class') === 'bond ring-template-double-bond');
+    assert.equal(doubleLines.length, 3);
+    const hasSharedEdgeDouble = doubleLines.some(line => {
+      const y1 = Number(line.getAttribute('y1'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.abs(y1 - y2) < 1e-6 && Math.abs((y1 + y2) / 2 - 20) <= 6;
+    });
+    assert.equal(hasSharedEdgeDouble, true);
+  });
+
+  it('previews only two benzene double bonds when a full Kekule preview would overload the anchor', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const pointer = [50, 20];
+    const mol2d = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'C' }],
+        ['x1', { id: 'x1', name: 'C' }],
+        ['x2', { id: 'x2', name: 'C' }]
+      ]),
+      bonds: new Map([
+        ['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1.5, aromatic: true, localizedOrder: 1 } }],
+        ['b2', { id: 'b2', atoms: ['a1', 'x1'], properties: { order: 1.5, aromatic: true, localizedOrder: 2 } }],
+        ['b3', { id: 'b3', atoms: ['a2', 'x2'], properties: { order: 1.5, aromatic: true, localizedOrder: 1 } }]
+      ])
+    };
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      mol2d,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize('benzene');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dBondMouseDownRingTemplate(
+      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
+      'b1',
+      { x: 10, y: 20 },
+      { x: 100, y: 20 },
+      ['a1', 'a2']
+    );
+
+    const preview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(preview);
+    const doubleLines = preview.children.filter(child => child.tagName === 'line' && child.getAttribute('class') === 'bond ring-template-double-bond');
+    assert.equal(doubleLines.length, 2);
   });
 
   it('does not highlight incidental single force atom-pivot overlaps in the preview', () => {

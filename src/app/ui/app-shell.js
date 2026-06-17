@@ -49,6 +49,7 @@ export function initAppShell(context) {
   bindGlobal(win, 'togglePaintMode', () => context.selection.togglePaintMode());
   bindGlobal(win, 'setPaintTool', tool => context.selection.setPaintTool(tool));
   bindGlobal(win, 'setPaintColor', color => context.selection.setPaintColor(color));
+  bindGlobal(win, 'setPaintBrushSize', size => context.selection.setPaintBrushSize(size));
   bindGlobal(win, 'setPaintOpacity', opacity => context.selection.setPaintOpacity(opacity));
   bindGlobal(win, 'toggleDrawBondMode', () => context.selection.toggleDrawBondMode());
   bindGlobal(win, 'handleDrawBondButtonClick', () => context.selection.handleDrawBondButtonClick());

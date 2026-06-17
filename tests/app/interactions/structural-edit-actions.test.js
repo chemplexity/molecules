@@ -6,7 +6,9 @@ import { repairImplicitHydrogensWhenValenceImproves } from '../../../src/app/int
 import { createStructuralEditActions } from '../../../src/app/interactions/structural-edit-actions.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { refreshAromaticity } from '../../../src/algorithms/aromaticity.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
+import { kekulize } from '../../../src/layout/mol2d-helpers.js';
 import { validateValence } from '../../../src/validation/index.js';
 
 function makeAtom(id, name) {
@@ -215,6 +217,55 @@ describe('createStructuralEditActions', () => {
     assert.ok(hydrogens.every(atom => atom.visible === false));
   });
 
+  it('places the benzene ring template as an alternating six-member ring', () => {
+    const mol = new Molecule();
+    const { context, calls } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate('benzene', 600, 200);
+
+    assert.equal(result.performed, true);
+    assert.equal(result.result.ringAtomIds.length, 6);
+    const ringAtomIdSet = new Set(result.result.ringAtomIds);
+    const carbons = [...mol.atoms.values()].filter(atom => atom.name === 'C');
+    const hydrogens = [...mol.atoms.values()].filter(atom => atom.name === 'H');
+    const ringBonds = [...mol.bonds.values()].filter(bond => ringAtomIdSet.has(bond.atoms[0]) && ringAtomIdSet.has(bond.atoms[1]));
+    const ringBondOrders = ringBonds.map(bond => bond.properties.order);
+
+    assert.equal(carbons.length, 6);
+    assert.equal(hydrogens.length, 6);
+    assert.equal(ringBonds.length, 6);
+    assert.equal(ringBondOrders.filter(order => order === 2).length, 3);
+    assert.equal(ringBondOrders.filter(order => order === 1).length, 3);
+    assert.equal(mol.bonds.size, 12);
+    assert.ok(calls.some(call => call[0] === 'kekulize'));
+    assert.equal(calls.some(call => call[0] === 'refreshAromaticity'), false);
+  });
+
   it('uses a clicked existing atom as one vertex of a regular ring template', () => {
     const mol = new Molecule();
     const anchor = mol.addAtom(null, 'C');
@@ -272,6 +323,65 @@ describe('createStructuralEditActions', () => {
     assert.ok(edgeLengths.every(length => Math.abs(length - 1.5) < 1e-6));
     const newRingAtoms = ringAtomIds.slice(1).map(atomId => mol.atoms.get(atomId));
     assert.ok(newRingAtoms.every(atom => atom.x > -0.001), 'expected the ring to be placed away from the existing left-side substituent');
+  });
+
+  it('does not place ring templates on reaction-preview product-side anchors', () => {
+    const mol = new Molecule();
+    const reactant = mol.addAtom('reactant-a1', 'C');
+    reactant.x = -2;
+    reactant.y = 0;
+    const productA = mol.addAtom('product-a1', 'C');
+    productA.x = 2;
+    productA.y = 0;
+    const productB = mol.addAtom('product-a2', 'C');
+    productB.x = 3.5;
+    productB.y = 0;
+    const productBond = mol.addBond('product-b1', productA.id, productB.id, { order: 1 });
+    mol.__reactionPreview = {
+      reactantAtomIds: new Set([reactant.id])
+    };
+    const initialAtomCount = mol.atoms.size;
+    const initialBondCount = mol.bonds.size;
+    let mutationCount = 0;
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), false);
+            if (options.preflight(editContext)) {
+              mutationCount++;
+              mutate(editContext);
+            }
+            return { performed: false, cancelled: true };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const atomResult = actions.placeRingTemplate(6, 300, 200, { anchorAtomId: productA.id });
+    const bondResult = actions.placeRingTemplate(6, 300, 200, { anchorBondId: productBond.id });
+
+    assert.deepEqual(atomResult, { performed: false, cancelled: true });
+    assert.deepEqual(bondResult, { performed: false, cancelled: true });
+    assert.equal(mutationCount, 0);
+    assert.equal(mol.atoms.size, initialAtomCount);
+    assert.equal(mol.bonds.size, initialBondCount);
   });
 
   it('uses an explicit snapped orientation when placing an anchored ring template', () => {
@@ -427,6 +537,320 @@ describe('createStructuralEditActions', () => {
       assert.ok(mol.getBond(atom1.id, atom2.id));
       assert.ok(Math.abs(Math.hypot(atom2.x - atom1.x, atom2.y - atom1.y) - 1.5) < 1e-6);
     }
+  });
+
+  it('keeps the shared edge single when placing bond-anchored benzene', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom(null, 'C');
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom(null, 'C');
+    atomB.x = 1.5;
+    atomB.y = 0;
+    const anchorBond = mol.addBond(null, atomA.id, atomB.id, { order: 1 });
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate('benzene', 300, 200, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
+
+    assert.equal(result.performed, true);
+    const ringAtomIds = result.result.ringAtomIds;
+    const ringBondOrders = ringAtomIds.map((atomId, index) => mol.getBond(atomId, ringAtomIds[(index + 1) % ringAtomIds.length]).properties.order);
+    const ringLocalizedOrders = ringAtomIds.map((atomId, index) => mol.getBond(atomId, ringAtomIds[(index + 1) % ringAtomIds.length]).properties.localizedOrder);
+    assert.deepEqual(ringAtomIds.slice(0, 2), [atomA.id, atomB.id]);
+    assert.equal(mol.getBond(atomA.id, atomB.id).id, anchorBond.id);
+    assert.deepEqual(ringBondOrders, [1, 2, 1, 2, 1, 2]);
+    assert.deepEqual(ringLocalizedOrders, [1, 2, 1, 2, 1, 2]);
+  });
+
+  it('preserves existing aromatic heavy bonds when placing benzene on an aromatic bond', () => {
+    const mol = parseSMILES('CC(=O)C(Cl)Cc1c(C)ccc2c1cccc2');
+    kekulize(mol);
+    const anchorBond = mol.bonds.get('6');
+    const [atomAId, atomBId] = anchorBond.atoms;
+    const existingHeavyBondProperties = new Map(
+      [...mol.bonds.values()]
+        .filter(bond => bond.atoms.every(atomId => mol.atoms.get(atomId)?.name !== 'H'))
+        .map(bond => [
+          bond.id,
+          {
+            order: bond.properties.order,
+            aromatic: bond.properties.aromatic,
+            localizedOrder: bond.properties.localizedOrder
+          }
+        ])
+    );
+    mol.atoms.get(atomAId).x = 0;
+    mol.atoms.get(atomAId).y = 0;
+    mol.atoms.get(atomBId).x = 1.5;
+    mol.atoms.get(atomBId).y = 0;
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        chemistry: {
+          kekulize,
+          refreshAromaticity: () => {}
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate('benzene', 300, 200, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
+
+    assert.equal(result.performed, true);
+    const ringAtomIds = result.result.ringAtomIds;
+    const ringLocalizedOrders = ringAtomIds.map((atomId, index) => mol.getBond(atomId, ringAtomIds[(index + 1) % ringAtomIds.length]).properties.localizedOrder);
+    assert.deepEqual(ringAtomIds.slice(0, 2), anchorBond.atoms);
+    assert.equal(ringLocalizedOrders[0], 1);
+    assert.equal(ringLocalizedOrders.filter(order => order === 2).length, 2);
+    for (const [bondId, properties] of existingHeavyBondProperties) {
+      const bond = mol.bonds.get(bondId);
+      assert.ok(bond, `expected existing heavy bond ${bondId} to remain`);
+      assert.equal(bond.properties.order, properties.order, `expected bond ${bondId} order to remain stable`);
+      assert.equal(bond.properties.aromatic, properties.aromatic, `expected bond ${bondId} aromatic state to remain stable`);
+      assert.equal(bond.properties.localizedOrder, properties.localizedOrder, `expected bond ${bondId} localized order to remain stable`);
+    }
+    assert.equal(mol.atoms.get(atomAId).getNeighbors(mol).filter(atom => atom.name === 'H').length, 0);
+    assert.equal(mol.atoms.get(atomBId).getNeighbors(mol).filter(atom => atom.name === 'H').length, 0);
+    assert.deepEqual(
+      ringAtomIds.slice(2).map(atomId => mol.atoms.get(atomId).getNeighbors(mol).filter(atom => atom.name === 'H' && atom.visible === false).length),
+      [1, 1, 1, 1]
+    );
+  });
+
+  it('drops to two benzene double bonds when a full Kekule ring would overload a fused atom', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom('a0', 'C', { aromatic: true });
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom('a1', 'C', { aromatic: true });
+    atomB.x = 1.5;
+    atomB.y = 0;
+    const externalDoubleAtom = mol.addAtom('x0', 'C', { aromatic: true });
+    externalDoubleAtom.x = -1.5;
+    externalDoubleAtom.y = 0;
+    const externalSingleAtom = mol.addAtom('x1', 'C', { aromatic: true });
+    externalSingleAtom.x = 3;
+    externalSingleAtom.y = 0;
+    const anchorBond = mol.addBond('anchor', atomA.id, atomB.id, { order: 1.5, aromatic: true }, false);
+    Object.assign(anchorBond.properties, { localizedOrder: 1 });
+    const externalDoubleBond = mol.addBond('oldDouble', atomA.id, externalDoubleAtom.id, { order: 1.5, aromatic: true }, false);
+    Object.assign(externalDoubleBond.properties, { localizedOrder: 2 });
+    const externalSingleBond = mol.addBond('oldSingle', atomB.id, externalSingleAtom.id, { order: 1.5, aromatic: true }, false);
+    Object.assign(externalSingleBond.properties, { localizedOrder: 1 });
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        chemistry: {
+          kekulize,
+          refreshAromaticity
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate('benzene', 300, 200, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
+
+    assert.equal(result.performed, true);
+    const ringAtomIds = result.result.ringAtomIds;
+    const ringLocalizedOrders = ringAtomIds.map((atomId, index) => mol.getBond(atomId, ringAtomIds[(index + 1) % ringAtomIds.length]).properties.localizedOrder);
+    assert.equal(ringLocalizedOrders.filter(order => order === 2).length, 2);
+    assert.deepEqual(validateValence(mol), []);
+  });
+
+  it('repairs new carbon hydrogens when preserving fused benzene placement in force mode', () => {
+    const mol = parseSMILES('CC(=O)C(Cl)Cc1c(C)ccc2c1cccc2');
+    generateAndRefine2dCoords(mol);
+    kekulize(mol);
+    const anchorBond = mol.bonds.get('6');
+    const nodes = [...mol.atoms.values()].map(atom => ({
+      id: atom.id,
+      name: atom.name,
+      visible: atom.visible,
+      x: Number.isFinite(atom.x) ? atom.x * 25 : 0,
+      y: Number.isFinite(atom.y) ? atom.y * 25 : 0
+    }));
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        chemistry: {
+          kekulize,
+          refreshAromaticity
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        force: {
+          getSimulation: () => ({
+            nodes: () => nodes
+          }),
+          patchNodePositions() {},
+          reseatHydrogensAroundPatched() {}
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate('benzene', 0, 0, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
+
+    assert.equal(result.performed, true);
+    assert.deepEqual(
+      result.result.ringAtomIds.slice(2).map(atomId => mol.atoms.get(atomId).getNeighbors(mol).filter(atom => atom.name === 'H').length),
+      [1, 1, 1, 1]
+    );
+  });
+
+  it('replaces a terminal C-H bond with a benzene attachment instead of fusing through hydrogen', () => {
+    const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C1=CC=CC=C1');
+    generateAndRefine2dCoords(mol);
+    kekulize(mol);
+    const anchorBond = mol.bonds.get('28');
+    const [heavyAtomId, hydrogenAtomId] = anchorBond.atoms;
+    const heavyAtom = mol.atoms.get(heavyAtomId);
+    const nodes = [...mol.atoms.values()].map(atom => ({
+      id: atom.id,
+      name: atom.name,
+      visible: atom.visible,
+      x: Number.isFinite(atom.x) ? atom.x * 25 : 0,
+      y: Number.isFinite(atom.y) ? atom.y * 25 : 0
+    }));
+    const heavyNode = nodes.find(node => node.id === heavyAtomId);
+    const hydrogenNode = nodes.find(node => node.id === hydrogenAtomId);
+    hydrogenNode.visible = true;
+    hydrogenNode.x = heavyNode.x + 30;
+    hydrogenNode.y = heavyNode.y;
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        chemistry: {
+          kekulize,
+          refreshAromaticity
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        force: {
+          getSimulation: () => ({
+            nodes: () => nodes
+          }),
+          patchNodePositions() {},
+          reseatHydrogensAroundPatched() {}
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate('benzene', hydrogenNode.x, hydrogenNode.y, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
+
+    assert.equal(result.performed, true);
+    assert.equal(mol.atoms.get(hydrogenAtomId).name, 'C');
+    assert.equal(mol.getBond(heavyAtom.id, hydrogenAtomId).id, anchorBond.id);
+    assert.equal(mol.getBond(heavyAtom.id, hydrogenAtomId).properties.order, 1);
+    assert.deepEqual(result.result.ringAtomIds[0], hydrogenAtomId);
+    assert.deepEqual(validateValence(mol), []);
   });
 
   it('does not reuse incidental overlap atoms when placing a bond-anchored ring template', () => {

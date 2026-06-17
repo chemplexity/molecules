@@ -751,6 +751,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       eraseButton: domElements.getEraseButtonElement(),
       getStyleBrushButtons: () => domElements.getStyleBrushButtonElements(),
       getPaintColorSelectors: () => domElements.getPaintColorSelectorElements(),
+      getPaintBrushSizeSelectors: () => domElements.getPaintBrushSizeSelectorElements(),
       getPaintOpacitySelectors: () => domElements.getPaintOpacitySelectorElements(),
       getPaintToolButtons: tool => domElements.getPaintToolButtonElements(tool),
       getChargeToolButton: tool => (tool === 'positive' ? domElements.getPositiveChargeButtonElement() : tool === 'negative' ? domElements.getNegativeChargeButtonElement() : null),
@@ -950,6 +951,10 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     getPaintColor: () => runtimeState.paintColor,
     setPaintColor: value => {
       runtimeState.paintColor = value;
+    },
+    getPaintBrushSize: () => runtimeState.paintBrushSize,
+    setPaintBrushSize: value => {
+      runtimeState.paintBrushSize = value;
     },
     getPaintOpacity: () => runtimeState.paintOpacity,
     setPaintOpacity: value => {

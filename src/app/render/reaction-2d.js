@@ -10,6 +10,7 @@ import {
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
 import { atomRadius } from './helpers.js';
+import { FORCE_LAYOUT_BOND_LENGTH } from './force-helpers.js';
 import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
 import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
@@ -61,6 +62,15 @@ let _reactionPreviewEntryForceNodePositions = null;
 const _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH = 12;
 const _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH = 8;
 const _REACTION_PREVIEW_FORCE_ARROW_PAD_FALLBACKS = [12, 8, 4, 0];
+
+/**
+ * Returns whether a reaction preview can keep the existing functional-group analysis.
+ * @param {object|null|undefined} entry - Reaction template entry.
+ * @returns {boolean} True for acid/base templates that only change protonation state.
+ */
+export function _reactionPreviewSkipsFunctionalGroupRefresh(entry) {
+  return /\b(?:Protonation|Deprotonation)\b/.test(entry?.name ?? '');
+}
 
 function _takeReactionPreviewHistoryStep() {
   ctx.takeSnapshot?.({ clearReactionPreview: false });
@@ -491,6 +501,174 @@ function _buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
 }
 
 /**
+ * Builds a force anchor map from existing molecule coordinates without regenerating a 2D layout.
+ * @param {object|null|undefined} mol - Molecule-like graph with atom coordinates.
+ * @returns {Map<string, {x: number, y: number}>|null} Anchor coordinates keyed by atom id.
+ */
+function _forceAnchorLayoutFromVisibleCoords(mol) {
+  const anchors = new Map();
+  for (const [id, atom] of mol?.atoms ?? []) {
+    if (atom.name === 'H' || atom.visible === false || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    anchors.set(id, { x: atom.x, y: atom.y });
+  }
+  return anchors.size > 0 ? anchors : null;
+}
+
+function _forcePreviewBondLength(mol, aId, bId) {
+  const bond = mol?.getBond?.(aId, bId);
+  let length = FORCE_LAYOUT_BOND_LENGTH;
+  const order = bond?.properties?.order ?? 1;
+  if (order === 2) {
+    length *= 0.93;
+  } else if (order === 3) {
+    length *= 0.93 * 0.92;
+  } else if (order === 1.5) {
+    length *= 0.96;
+  }
+  return length;
+}
+
+function _fallbackForcePreviewAngle(atomId) {
+  let hash = 0;
+  for (let i = 0; i < String(atomId).length; i += 1) {
+    hash = (hash * 31 + String(atomId).charCodeAt(i)) >>> 0;
+  }
+  return ((hash % 360) / 180) * Math.PI;
+}
+
+function _placeMissingForcePreviewPatchAtoms(mol, patch) {
+  const pending = new Set([...mol.atoms.keys()].filter(id => !patch.has(id)));
+  let progressed = true;
+  while (pending.size > 0 && progressed) {
+    progressed = false;
+    for (const atomId of [...pending]) {
+      const atom = mol.atoms.get(atomId);
+      if (!atom || atom.name === 'H') {
+        pending.delete(atomId);
+        continue;
+      }
+      const placedNeighbors = atom.getNeighbors(mol).filter(nb => patch.has(nb.id));
+      if (placedNeighbors.length === 0) {
+        continue;
+      }
+      const parent = placedNeighbors.find(nb => nb.name !== 'H') ?? placedNeighbors[0];
+      const parentPos = patch.get(parent.id);
+      if (!parentPos || !Number.isFinite(parentPos.x) || !Number.isFinite(parentPos.y)) {
+        continue;
+      }
+
+      let blockers = parent.getNeighbors(mol).filter(nb => nb.id !== atomId && nb.name !== 'H' && patch.has(nb.id));
+      if (blockers.length === 0) {
+        blockers = parent.getNeighbors(mol).filter(nb => nb.id !== atomId && patch.has(nb.id));
+      }
+      let vx = 0;
+      let vy = 0;
+      for (const nb of blockers) {
+        const pos = patch.get(nb.id);
+        const dx = pos.x - parentPos.x;
+        const dy = pos.y - parentPos.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= 1e-6) {
+          continue;
+        }
+        vx -= dx / dist;
+        vy -= dy / dist;
+      }
+      if (Math.hypot(vx, vy) <= 1e-6) {
+        const angle = _fallbackForcePreviewAngle(atomId);
+        vx = Math.cos(angle);
+        vy = Math.sin(angle);
+      }
+      const magnitude = Math.hypot(vx, vy) || 1;
+      const length = _forcePreviewBondLength(mol, atomId, parent.id);
+      patch.set(atomId, {
+        x: parentPos.x + (vx / magnitude) * length,
+        y: parentPos.y + (vy / magnitude) * length
+      });
+      pending.delete(atomId);
+      progressed = true;
+    }
+  }
+}
+
+/**
+ * Converts reaction-preview coordinates into force pixels for every positioned atom in one shared frame.
+ * @param {object} mol - Reaction preview molecule.
+ * @param {Map<string, {x: number, y: number}>|null} anchorLayout - Heavy-atom 2D anchors keyed by atom id.
+ * @param {object} [options] - Viewport sizing options.
+ * @param {number} [options.width] - Force viewport width in pixels.
+ * @param {number} [options.height] - Force viewport height in pixels.
+ * @returns {Map<string, {x: number, y: number}>|null} Initial force positions keyed by atom id.
+ */
+export function _forceInitialPatchFromAnchorCoords(mol, anchorLayout, { width = 600, height = 400 } = {}) {
+  if (!mol?.atoms || !anchorLayout?.size) {
+    return null;
+  }
+  const anchors = [];
+  for (const [id, pos] of anchorLayout) {
+    if (!Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) {
+      continue;
+    }
+    anchors.push([id, pos]);
+  }
+  if (anchors.length === 0) {
+    return null;
+  }
+  let cx = 0;
+  let cy = 0;
+  for (const [, pos] of anchors) {
+    cx += pos.x;
+    cy += pos.y;
+  }
+  cx /= anchors.length;
+  cy /= anchors.length;
+
+  const viewportWidth = Number.isFinite(width) && width > 0 ? width : 600;
+  const viewportHeight = Number.isFinite(height) && height > 0 ? height : 400;
+  const scale = FORCE_LAYOUT_BOND_LENGTH / 1.5;
+  const toForcePixels = pos => ({
+    x: viewportWidth / 2 + (pos.x - cx) * scale,
+    y: viewportHeight / 2 - (pos.y - cy) * scale
+  });
+  const patch = new Map();
+  for (const [id, pos] of anchors) {
+    patch.set(id, toForcePixels(pos));
+  }
+  for (const [id, atom] of mol.atoms) {
+    if (patch.has(id) || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    patch.set(id, toForcePixels(atom));
+  }
+  _placeMissingForcePreviewPatchAtoms(mol, patch);
+  return patch.size > 0 ? patch : null;
+}
+
+function _applyActiveReactionPreviewMetadata(mol, entry) {
+  if (!mol) {
+    return;
+  }
+  mol.__reactionPreview = {
+    reactantAtomIds: _reactionPreviewReactantAtomIds,
+    productAtomIds: _reactionPreviewProductAtomIds,
+    productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
+    mappedAtomPairs: _reactionPreviewMappedAtomPairs,
+    editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
+    preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
+    preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
+    preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
+    preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
+    forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
+    forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
+    forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
+    reactantReferenceCoords: _reactionPreviewReactantReferenceCoords,
+    skipForceStereoSeed: _reactionPreviewSkipsFunctionalGroupRefresh(entry)
+  };
+}
+
+/**
  * Clears the reaction preview and re-renders the source molecule, optionally restoring the entry zoom and display state.
  * @param {object} [options] - Options controlling what entry state is restored.
  * @param {boolean} [options.restoreEntryZoom] - Whether to restore the zoom transform captured at preview entry.
@@ -507,11 +685,16 @@ export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restor
   const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
   const entryForceNodePositions = canRestoreEntryState && ctx.mode === 'force' && _reactionPreviewEntryForceNodePositions ? new Map(_reactionPreviewEntryForceNodePositions) : null;
   _clearReactionPreviewState();
-  ctx.renderMol(sourceMol, {
+  const renderOptions = {
     preserveHistory: true,
     preserveView: !!(restoreEntryZoom && canRestoreEntryState && entryZoomTransform),
     preserveGeometry: shouldRestoreEntryDisplay && ctx.mode === '2d'
-  });
+  };
+  if (canRestoreEntryState && ctx.mode === 'force') {
+    renderOptions.forcePreservePositions = true;
+    renderOptions.forceAnchorLayout = _forceAnchorLayoutFromVisibleCoords(sourceMol);
+  }
+  ctx.renderMol(sourceMol, renderOptions);
   if (entryForceNodePositions?.size) {
     ctx.restoreForceNodePositions?.(entryForceNodePositions);
     ctx.restartForceSimulation?.();
@@ -1587,15 +1770,31 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true, 
     _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
     _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
+    _applyActiveReactionPreviewMetadata(preview.mol, entry);
     _applyRingFillEntriesForAtomScope(preview.mol, productRingFills, _reactionPreviewProductAtomIds);
-    ctx.renderMol(preview.mol, {
+    const renderOptions = {
       recomputeResonance: false,
       refreshResonancePanel: false,
       preserveHistory: true,
       preserveAnalysis: true,
       preserveGeometry: true
-    });
-    updateFunctionalGroups(preview.mol);
+    };
+    if (ctx.mode === 'force') {
+      const forceAnchorLayout = _forceAnchorLayoutFromVisibleCoords(preview.mol);
+      renderOptions.forceAnchorLayout = forceAnchorLayout;
+      const plotRect = ctx.plotEl?.getBoundingClientRect?.();
+      const initialPatch = _forceInitialPatchFromAnchorCoords(preview.mol, forceAnchorLayout, {
+        width: plotRect?.width,
+        height: plotRect?.height
+      });
+      if (initialPatch) {
+        renderOptions.forceInitialPatchPos = initialPatch;
+      }
+    }
+    ctx.renderMol(preview.mol, renderOptions);
+    if (!_reactionPreviewSkipsFunctionalGroupRefresh(entry)) {
+      updateFunctionalGroups(preview.mol);
+    }
     updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
     _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
     return;

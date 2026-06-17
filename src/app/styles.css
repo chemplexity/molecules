@@ -1037,12 +1037,9 @@ div.tooltip td:first-child {
   transform: translateY(0) scale(1);
 }
 
-.style-brush-btn.active.paint-eraser-tool ~ .paint-style-controls {
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
-  transform: translateY(4px) scale(0.92);
-  transition: none;
+.style-brush-btn.active.paint-eraser-tool ~ .paint-style-controls .paint-color-selector,
+.style-brush-btn.active.paint-eraser-tool ~ .paint-style-controls .paint-opacity-selector {
+  display: none;
 }
 
 .paint-color-selector {
@@ -1075,6 +1072,13 @@ div.tooltip td:first-child {
   opacity: 0;
 }
 
+.paint-range-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.paint-brush-size-selector,
 .paint-opacity-selector {
   width: 72px;
   height: 18px;

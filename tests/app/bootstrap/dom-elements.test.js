@@ -51,6 +51,8 @@ describe('dom-elements bootstrap helpers', () => {
       'force-style-brush-btn': createElement(),
       'paint-color-selector': createElement(),
       'force-paint-color-selector': createElement(),
+      'paint-brush-size-selector': createElement(),
+      'force-paint-brush-size-selector': createElement(),
       'paint-opacity-selector': createElement(),
       'force-paint-opacity-selector': createElement(),
       'charge-positive-btn': createElement(),
@@ -118,6 +120,7 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(dom.getNegativeChargeButtonElement(), elements['charge-negative-btn']);
     assert.deepEqual(dom.getStyleBrushButtonElements(), [elements['style-brush-btn'], elements['force-style-brush-btn']]);
     assert.deepEqual(dom.getPaintColorSelectorElements(), [elements['paint-color-selector'], elements['force-paint-color-selector']]);
+    assert.deepEqual(dom.getPaintBrushSizeSelectorElements(), [elements['paint-brush-size-selector'], elements['force-paint-brush-size-selector']]);
     assert.deepEqual(dom.getPaintOpacitySelectorElements(), [elements['paint-opacity-selector'], elements['force-paint-opacity-selector']]);
     assert.deepEqual(dom.getPaintToolButtonElements('brush'), [paintToolButtons[0], paintToolButtons[3]]);
     assert.deepEqual(dom.getPaintToolButtonElements('bucket'), [paintToolButtons[1], paintToolButtons[4]]);

@@ -118,6 +118,7 @@ export function createSessionUiStateBridge(deps) {
       chargeTool: deps.getChargeTool?.() ?? null,
       paintTool: deps.getPaintTool?.() ?? 'brush',
       paintColor: deps.getPaintColor?.() ?? '#3366ff',
+      paintBrushSize: deps.getPaintBrushSize?.() ?? 12,
       paintOpacity: deps.getPaintOpacity?.() ?? 1,
       ringTemplateSize: deps.getRingTemplateSize?.() ?? 6,
       drawBondElement: deps.getDrawBondElement(),

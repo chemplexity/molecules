@@ -126,6 +126,7 @@ function makeSimulation(records, initialNodes = []) {
   };
   let nodesValue = initialNodes;
   let alphaValue = 0.6;
+  const handlers = new Map();
   return {
     nodes(value) {
       if (value !== undefined) {
@@ -161,7 +162,12 @@ function makeSimulation(records, initialNodes = []) {
       return this;
     },
     on(eventName, handler) {
+      handlers.set(eventName, handler);
       records.push(['simulation.on', eventName, typeof handler]);
+      return this;
+    },
+    emit(eventName) {
+      handlers.get(eventName)?.();
       return this;
     }
   };
@@ -176,7 +182,11 @@ function makeRenderer({
   alignReaction2dProductOrientation = () => {},
   convertMolecule = () => ({ nodes: [], links: [] }),
   initialSimulationNodes = [],
-  seedForceNodePositions = null
+  seedForceNodePositions = null,
+  forceFitTransform = () => null,
+  zoomTransformsDiffer = () => true,
+  isKeepInViewEnabled = () => false,
+  getKeepInViewTicks = () => 0
 } = {}) {
   const records = [];
   const seedForceNodePositionsImpl =
@@ -236,8 +246,8 @@ function makeRenderer({
       disableKeepInView: () => {
         records.push(['disableKeepInView']);
       },
-      isKeepInViewEnabled: () => false,
-      getKeepInViewTicks: () => 0,
+      isKeepInViewEnabled,
+      getKeepInViewTicks,
       setKeepInViewTicks: value => {
         records.push(['setKeepInViewTicks', value]);
       },
@@ -286,7 +296,8 @@ function makeRenderer({
       reseatForceGraphHydrogens: (graph, options = {}) => {
         records.push(['reseatForceGraphHydrogens', graph, options]);
       },
-      forceFitTransform: () => null,
+      forceFitTransform,
+      zoomTransformsDiffer,
       isHydrogenNode: node => node?.name === 'H',
       enLabelColor: () => '#000',
       renderReactionPreviewArrowForce: () => {
@@ -328,7 +339,7 @@ function makeRenderer({
     }
   });
 
-  return { renderer, records };
+  return { renderer, records, simulation };
 }
 
 /**
@@ -412,6 +423,56 @@ describe('createForceSceneRenderer', () => {
     );
   });
 
+  it('arms force keep-in-view after restoring a preserved viewport when requested', () => {
+    const { renderer, records } = makeRenderer({
+      preserveView: true
+    });
+
+    renderer.updateForce({ id: 'mol-force-clean', atoms: new Map(), bonds: new Map() }, { preserveView: true, keepInView: true });
+
+    const restoreIndex = records.findIndex(entry => entry[0] === 'call' && entry[1] === 'zoomTransform' && entry[2]?.x === 10 && entry[2]?.y === 20 && entry[2]?.k === 2);
+    const keepInViewIndex = records.findIndex(entry => entry[0] === 'enableKeepInView');
+
+    assert.ok(restoreIndex >= 0);
+    assert.ok(keepInViewIndex > restoreIndex);
+    assert.deepEqual(records[keepInViewIndex], ['enableKeepInView', 10]);
+  });
+
+  it('fits the force viewport while keep-in-view is active even when zooming in', () => {
+    const fitTransform = { x: 120, y: 90, k: 1.4 };
+    const currentTransform = { x: 10, y: 20, k: 2 };
+    const graph = {
+      nodes: [
+        { id: 'a1', name: 'C', protons: 6, x: 100, y: 100 },
+        { id: 'a2', name: 'C', protons: 6, x: 140, y: 100 }
+      ],
+      links: []
+    };
+    const { renderer, records, simulation } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => graph,
+      isKeepInViewEnabled: () => true,
+      forceFitTransform: (nodes, pad) => {
+        records.push(['forceFitTransform', nodes.map(node => node.id), pad]);
+        return fitTransform;
+      },
+      zoomTransformsDiffer: (a, b) => {
+        records.push(['zoomTransformsDiffer', a, b]);
+        return true;
+      }
+    });
+
+    renderer.updateForce({ id: 'mol-force-fit', atoms: new Map(), bonds: new Map() }, { preserveView: true, keepInView: true });
+    records.length = 0;
+    simulation.emit('tick');
+
+    assert.deepEqual(records.filter(entry => entry[0] === 'forceFitTransform' || entry[0] === 'zoomTransformsDiffer' || (entry[0] === 'call' && entry[1] === 'zoomTransform')), [
+      ['forceFitTransform', ['a1', 'a2'], 40],
+      ['zoomTransformsDiffer', fitTransform, currentTransform],
+      ['call', 'zoomTransform', fitTransform]
+    ]);
+  });
+
   it('resets to identity and syncs selection state on a fresh force render', () => {
     const { renderer, records } = makeRenderer({
       preserveSelectionOnNextRender: true
@@ -485,6 +546,30 @@ describe('createForceSceneRenderer', () => {
       entry => entry[0] === 'attr' && entry[1] === 'class' && Array.isArray(entry[2]) && entry[2].some(value => value.startsWith('atom-symbol'))
     );
     assert.deepEqual(atomSymbolClassRecord?.[2], ['atom-symbol force-auto-label', 'atom-symbol']);
+  });
+
+  it('skips chiral force stereo reseeding when reaction preview metadata allows it', () => {
+    const molecule = {
+      atoms: new Map([['__rxn_product__0:c1', { id: '__rxn_product__0:c1', name: 'C', protons: 6, bonds: [], properties: {} }]]),
+      bonds: new Map(),
+      __reactionPreview: {
+        skipForceStereoSeed: true
+      },
+      getChiralCenters: () => ['__rxn_product__0:c1']
+    };
+    const { renderer, records } = makeRenderer({
+      convertMolecule: () => ({
+        nodes: [{ id: '__rxn_product__0:c1', name: 'C', protons: 6, charge: 0, x: 100, y: 100 }],
+        links: []
+      }),
+      generate2dCoords: () => {
+        records.push(['generate2dCoords']);
+      }
+    });
+
+    renderer.updateForce(molecule, { preservePositions: true });
+
+    assert.equal(records.some(entry => entry[0] === 'generate2dCoords'), false);
   });
 
   it('carries force hydrogen slot metadata through preserved-position edits', () => {
@@ -648,6 +733,22 @@ describe('createForceSceneRenderer', () => {
     assert.ok(alphaIndex < restartIndex);
     assert.deepEqual(records[patchIndex], ['patchForceNodePositions', patchPos, { alpha: 0, restart: false }]);
     assert.deepEqual(records[reseatIndex], ['reseatHydrogensAroundPatched', patchPos, { resetVelocity: true }]);
+  });
+
+  it('keeps converter-seeded force renders from running the full fresh settle pass', () => {
+    const { renderer, records } = makeRenderer();
+    const patchPos = new Map([['a1', { x: 120, y: 140 }]]);
+
+    renderer.updateForce(
+      { id: 'mol-converted-patch', atoms: new Map(), bonds: new Map() },
+      {
+        initialPatchPos: patchPos
+      }
+    );
+
+    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
+    assert.equal(records.some(entry => entry[0] === 'reseatForceGraphHydrogens'), false);
+    assert.ok(records.some(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.005));
   });
 
   it('honors a provided force anchor layout instead of regenerating one', () => {

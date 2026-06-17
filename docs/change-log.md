@@ -1,7 +1,36 @@
 # Change Log
 
+## 2026-06-16
+
+- Keep the brush-size slider visible in paint eraser mode while hiding only the color and opacity controls.
+- Add a brush-size slider above paint opacity and use it to control the paint brush cursor and hit radius in 2D and force modes.
+- Rename the benzene ring drawer tooltip to "6-member ring (aromatic)" and raise the default 2D bond line thickness to 1.8.
+- Let benzene ring-template placement and preview drop to a two-double-bond pattern when the full three-double Kekule form would overload a fused attachment atom.
+- Treat terminal C-H bond anchors as benzene attachment points by converting the selected H into the first ring carbon instead of fusing through hydrogen.
+- Match benzene ring-template previews to the same localized double-bond phase used during placement.
+- Phase aromatic ring-template double bonds against reused bonds, keeping bond-anchored benzene fused edges single by default.
+- Keep benzene ring-template placement local so fused aromatic placement does not rewrite existing aromatic bonds.
+- Repair implicit hydrogens on fused aromatic benzene placements so shared aromatic atoms lose H while new aromatic carbons gain one H each.
+- Warn whenever carbon has more attached bonds than its valence allows, even if aromatic or transition-metal bond-order adjustments would hide the overflow.
+- Warn on over-bonded aromatic atoms by checking sigma-bond overflow instead of skipping aromatic valence validation entirely.
+- Show benzene ring-template previews and drawer icons with explicit alternating double bonds.
+- Make line-mode rotate auto-fit use the same zoom-in/zoom-out cap and padding behavior as force-mode rotate.
+- Add a benzene option after the 7-member ring in the ring-template drawer, placing it as an alternating six-member ring.
+- Seed force-mode reaction-preview product atoms that lack source coordinates beside their placed product parent, keeping new oxo atoms from starting in the corner.
+- Seed force-mode reaction previews from one shared reactant/product coordinate frame so products do not overlap reactants, while skipping chiral force stereo reseeding for acid/base previews.
+- Make force-mode rotate and keep-in-view auto-fit zoom in or out to the current molecule bounds instead of only zooming out after atoms leave the viewport.
+- Preserve force simulation positions when leaving reaction previews and reuse preview coordinates on entry so force-mode acid/base previews avoid fresh layout work.
+- Cache parsed SMARTS/SMIRKS templates and skip full functional-group rescans for protonation/deprotonation reaction previews so acid/base previews open quickly.
+
 ## 2026-06-15
 
+- Keep force-mode hydrogens attached to rotate/flip transforms and preserve the viewport when rotating normal force views.
+- Tighten force-mode physics so converted line layouts keep stricter heavy-atom angles with less force drift.
+- Wire the force/line mode toggle through the line-force coordinate converters instead of regenerating coordinates on switch.
+- Add reusable line/force coordinate conversion helpers with stable force hydrogen slotting and displayed-hydrogen line output.
+- Make reaction-preview product-side ring-template clicks no-ops.
+- Offset 2D charge badges from the actual shifted atom label box so carbonyl oxygen labels stay clear.
+- Keep force-cleaned molecules in view after preserving the current viewport.
 - Make the ring-template size drawer follow the same hover-driven click behavior as the line-tool drawer, without adding a sticky open state.
 - Keep the ring-template selection drawer from staying open by clearing stale drawer state when it closes.
 - Let atom shortcut keys such as O, N, and P change hovered atoms while ring-template mode is active.

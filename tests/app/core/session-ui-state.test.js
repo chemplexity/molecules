@@ -246,6 +246,7 @@ describe('createSessionUiStateBridge', () => {
     let paintMode = false;
     let paintTool = 'brush';
     let paintColor = '#3366ff';
+    let paintBrushSize = 12;
     let paintOpacity = 1;
     let chargeTool = 'positive';
     let drawBondElement = 'N';
@@ -266,6 +267,7 @@ describe('createSessionUiStateBridge', () => {
       getPaintMode: () => paintMode,
       getPaintTool: () => paintTool,
       getPaintColor: () => paintColor,
+      getPaintBrushSize: () => paintBrushSize,
       getPaintOpacity: () => paintOpacity,
       getChargeTool: () => chargeTool,
       getDrawBondElement: () => drawBondElement,
@@ -330,6 +332,9 @@ describe('createSessionUiStateBridge', () => {
       setPaintColor(value) {
         paintColor = value;
       },
+      setPaintBrushSize(value) {
+        paintBrushSize = value;
+      },
       setPaintOpacity(value) {
         paintOpacity = value;
       },
@@ -366,6 +371,7 @@ describe('createSessionUiStateBridge', () => {
       chargeTool: 'positive',
       paintTool: 'brush',
       paintColor: '#3366ff',
+      paintBrushSize: 12,
       paintOpacity: 1,
       ringTemplateSize: 6,
       drawBondElement: 'N',
@@ -382,6 +388,7 @@ describe('createSessionUiStateBridge', () => {
       chargeTool: 'negative',
       paintTool: 'bucket',
       paintColor: '#ff6633',
+      paintBrushSize: 20,
       paintOpacity: 0.45,
       ringTemplateSize: 5,
       drawBondElement: 'O',
@@ -401,6 +408,7 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(paintMode, false);
     assert.equal(paintTool, 'brush');
     assert.equal(paintColor, '#3366ff');
+    assert.equal(paintBrushSize, 12);
     assert.equal(paintOpacity, 1);
     assert.equal(chargeTool, 'negative');
     assert.equal(drawBondElement, 'O');
@@ -426,6 +434,7 @@ describe('createSessionUiStateBridge', () => {
     paintMode = true;
     paintTool = 'bucket';
     paintColor = '#ff6633';
+    paintBrushSize = 20;
     paintOpacity = 0.45;
     selectMode = false;
     ringTemplateMode = true;
@@ -445,6 +454,7 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(paintMode, true);
     assert.equal(paintTool, 'bucket');
     assert.equal(paintColor, '#ff6633');
+    assert.equal(paintBrushSize, 20);
     assert.equal(paintOpacity, 0.45);
     assert.equal(selectMode, false);
     assert.equal(drawBondMode, false);

@@ -76,6 +76,7 @@ export function createInteractionRuntimeDeps(ctx) {
     eraseButton: ctx.eraseButton,
     getStyleBrushButtons: () => ctx.getStyleBrushButtons?.() ?? [],
     getPaintColorSelectors: () => ctx.getPaintColorSelectors?.() ?? [],
+    getPaintBrushSizeSelectors: () => ctx.getPaintBrushSizeSelectors?.() ?? [],
     getPaintOpacitySelectors: () => ctx.getPaintOpacitySelectors?.() ?? [],
     getPaintToolButtons: tool => ctx.getPaintToolButtons?.(tool) ?? [],
     getChargeToolButton: tool => ctx.getChargeToolButton(tool),

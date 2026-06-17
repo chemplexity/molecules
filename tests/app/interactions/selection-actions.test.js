@@ -361,9 +361,11 @@ describe('createSelectionActions', () => {
       erase: makeButton(),
       positive: makeButton(),
       negative: makeButton(),
-      ring5: makeButton()
+      ring5: makeButton(),
+      benzene: makeButton()
     };
     buttons.ring5.innerHTML = '<svg data-ring="5"></svg>';
+    buttons.benzene.innerHTML = '<svg data-ring="benzene"></svg>';
     const drawTools = makeButton();
     drawTools.classList.add('ring-template-drawer-open');
     const actions = createSelectionActions({
@@ -432,12 +434,13 @@ describe('createSelectionActions', () => {
         eraseButton: buttons.erase,
         getStyleBrushButtons: () => [],
         getPaintColorSelectors: () => [],
+        getPaintBrushSizeSelectors: () => [],
         getPaintOpacitySelectors: () => [],
         getPaintToolButtons: () => [],
         getChargeToolButton: tool => (tool === 'positive' ? buttons.positive : buttons.negative),
         getElementButton: () => makeButton(),
         getBondDrawTypeButton: () => makeButton(),
-        getRingTemplateSizeButton: size => (size === 5 ? buttons.ring5 : makeButton())
+        getRingTemplateSizeButton: size => (size === 5 ? buttons.ring5 : size === 'benzene' ? buttons.benzene : makeButton())
       }
     });
 
@@ -450,6 +453,19 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.ring.classList.contains('active'), true);
     assert.equal(buttons.ring5.classList.contains('active'), true);
     assert.equal(buttons.ring.innerHTML, '<svg data-ring="5"></svg>');
+    assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
+    assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), true);
+
+    drawTools.classList.add('ring-template-drawer-open');
+    drawTools.classList.remove('drawer-hover-suppressed');
+    actions.setRingTemplateSize('benzene');
+
+    assert.equal(ringTemplateMode, true);
+    assert.equal(ringTemplateSize, 'benzene');
+    assert.equal(buttons.ring.classList.contains('active'), true);
+    assert.equal(buttons.ring5.classList.contains('active'), false);
+    assert.equal(buttons.benzene.classList.contains('active'), true);
+    assert.equal(buttons.ring.innerHTML, '<svg data-ring="benzene"></svg>');
     assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
     assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), true);
   });
@@ -534,6 +550,7 @@ describe('createSelectionActions', () => {
         eraseButton: buttons.erase,
         getStyleBrushButtons: () => [],
         getPaintColorSelectors: () => [],
+        getPaintBrushSizeSelectors: () => [],
         getPaintOpacitySelectors: () => [],
         getPaintToolButtons: () => [],
         getChargeToolButton: () => null,
@@ -611,6 +628,7 @@ describe('createSelectionActions', () => {
         eraseButton: makeButton(),
         getStyleBrushButtons: () => [],
         getPaintColorSelectors: () => [],
+        getPaintBrushSizeSelectors: () => [],
         getPaintOpacitySelectors: () => [],
         getPaintToolButtons: () => [],
         getChargeToolButton: () => null,
@@ -633,6 +651,7 @@ describe('createSelectionActions', () => {
     let paintMode = false;
     let paintTool = 'brush';
     let paintColor = '#3366ff';
+    let paintBrushSize = 12;
     let paintOpacity = 1;
     let chargeTool = 'positive';
     const calls = [];
@@ -651,6 +670,8 @@ describe('createSelectionActions', () => {
       eraserForce: makeButton(),
       color2d: makeColorInput(),
       colorForce: makeColorInput(),
+      brushSize2d: makeRangeInput(),
+      brushSizeForce: makeRangeInput(),
       opacity2d: makeRangeInput(),
       opacityForce: makeRangeInput(),
       positive: makeButton()
@@ -692,6 +713,10 @@ describe('createSelectionActions', () => {
           getPaintColor: () => paintColor,
           setPaintColor: value => {
             paintColor = value;
+          },
+          getPaintBrushSize: () => paintBrushSize,
+          setPaintBrushSize: value => {
+            paintBrushSize = value;
           },
           getPaintOpacity: () => paintOpacity,
           setPaintOpacity: value => {
@@ -740,6 +765,7 @@ describe('createSelectionActions', () => {
         plotElement,
         getStyleBrushButtons: () => [buttons.paint2d, buttons.paintForce],
         getPaintColorSelectors: () => [buttons.color2d, buttons.colorForce],
+        getPaintBrushSizeSelectors: () => [buttons.brushSize2d, buttons.brushSizeForce],
         getPaintOpacitySelectors: () => [buttons.opacity2d, buttons.opacityForce],
         getPaintToolButtons: tool => {
           if (tool === 'brush') {
@@ -780,6 +806,8 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.colorForce.style.backgroundColor, 'rgba(51, 102, 255, 1)');
     assert.equal(buttons.color2d.style.getPropertyValue('--paint-color'), '#3366ff');
     assert.equal(buttons.color2d.style.getPropertyValue('--paint-swatch-color'), 'rgba(51, 102, 255, 1)');
+    assert.equal(buttons.brushSize2d.value, '12');
+    assert.equal(buttons.brushSizeForce.value, '12');
     assert.equal(buttons.opacity2d.value, '1');
     assert.equal(buttons.opacityForce.value, '1');
     assert.equal(buttons.opacity2d.style.getPropertyValue('--paint-opacity'), '1');
@@ -798,6 +826,14 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.colorForce.style.backgroundColor, 'rgba(255, 102, 51, 1)');
     assert.equal(buttons.colorForce.style.getPropertyValue('--paint-swatch-color'), 'rgba(255, 102, 51, 1)');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /%23ff6633/);
+
+    buttons.brushSize2d.dispatchInput('18');
+
+    assert.equal(paintBrushSize, 18);
+    assert.equal(buttons.brushSize2d.value, '18');
+    assert.equal(buttons.brushSizeForce.value, '18');
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /width='36' height='36'/);
+    assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /r='17'/);
 
     buttons.opacity2d.dispatchInput('0.4');
 

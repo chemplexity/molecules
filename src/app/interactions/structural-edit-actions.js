@@ -10,17 +10,218 @@ const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 const DEFAULT_2D_BOND_LENGTH = 1.5;
 const RING_TEMPLATE_MIN_SIZE = 3;
 const RING_TEMPLATE_MAX_SIZE = 7;
+const BENZENE_RING_TEMPLATE = 'benzene';
 const RING_TEMPLATE_REUSE_DISTANCE_FACTOR = 0.2;
 const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
 
 function normalizeRingTemplateSize(size) {
+  if (size === BENZENE_RING_TEMPLATE) {
+    return {
+      key: BENZENE_RING_TEMPLATE,
+      size: 6,
+      aromatic: true
+    };
+  }
   const normalizedSize = Number(size);
   if (!Number.isInteger(normalizedSize) || normalizedSize < RING_TEMPLATE_MIN_SIZE || normalizedSize > RING_TEMPLATE_MAX_SIZE) {
     return null;
   }
-  return normalizedSize;
+  return {
+    key: normalizedSize,
+    size: normalizedSize,
+    aromatic: false
+  };
+}
+
+function ringTemplateBondProperties(template, index, doubleBondIndices = null) {
+  if (!template?.aromatic) {
+    return { order: 1 };
+  }
+  const order = doubleBondIndices?.has(index) ? 2 : 1;
+  return { order, localizedOrder: order };
+}
+
+function singleDoubleBondOrderPreference(bond) {
+  const localizedOrder = Number(bond?.properties?.localizedOrder);
+  if (localizedOrder === 1 || localizedOrder === 2) {
+    return localizedOrder;
+  }
+  const order = Number(bond?.properties?.order);
+  if (order === 1 || order === 2) {
+    return order;
+  }
+  return null;
+}
+
+function aromaticRingTemplateDoubleBondCandidates(ringSize) {
+  if (!Number.isInteger(ringSize) || ringSize % 2 !== 0) {
+    return [new Set()];
+  }
+  const candidates = [];
+  for (const phase of [0, 1]) {
+    const full = [];
+    for (let index = 0; index < ringSize; index++) {
+      if ((index + phase) % 2 === 0) {
+        full.push(index);
+      }
+    }
+    candidates.push(new Set(full));
+    for (const omittedIndex of full) {
+      candidates.push(new Set(full.filter(index => index !== omittedIndex)));
+    }
+  }
+  const seen = new Set();
+  return candidates.filter(candidate => {
+    const key = [...candidate].sort((a, b) => a - b).join(',');
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function localizedBondOrderForValence(bond) {
+  return singleDoubleBondOrderPreference(bond) ?? Math.floor(bond?.properties?.order ?? 1);
+}
+
+function aromaticRingTemplateLocalizedValenceOverflow(mol, ringAtomIds, doubleBondIndices) {
+  const ringEdges = new Map();
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    const atomA = ringAtomIds[index];
+    const atomB = ringAtomIds[(index + 1) % ringAtomIds.length];
+    if (!atomA || !atomB) {
+      continue;
+    }
+    const key = atomA < atomB ? `${atomA},${atomB}` : `${atomB},${atomA}`;
+    ringEdges.set(key, doubleBondIndices.has(index) ? 2 : 1);
+  }
+
+  let overflow = 0;
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    const atomId = ringAtomIds[index];
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name !== 'C') {
+      continue;
+    }
+    let orderSum = 0;
+    for (const bondId of atom.bonds ?? []) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) {
+        continue;
+      }
+      const otherAtomId = bond.getOtherAtom(atomId);
+      const otherAtom = mol.atoms.get(otherAtomId);
+      if (otherAtom?.name === 'H') {
+        continue;
+      }
+      const key = atomId < otherAtomId ? `${atomId},${otherAtomId}` : `${otherAtomId},${atomId}`;
+      if (ringEdges.has(key)) {
+        continue;
+      }
+      orderSum += localizedBondOrderForValence(bond);
+    }
+    const previousRingEdgeIndex = (index - 1 + ringAtomIds.length) % ringAtomIds.length;
+    orderSum += doubleBondIndices.has(previousRingEdgeIndex) ? 2 : 1;
+    orderSum += doubleBondIndices.has(index) ? 2 : 1;
+    const overage = orderSum - 4;
+    if (overage > 0) {
+      overflow += overage;
+    }
+  }
+  return overflow;
+}
+
+function scoreAromaticRingTemplateDoubleBondSet(mol, ringAtomIds, doubleBondIndices, anchorBondId = null) {
+  let score = 0;
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    const atomA = ringAtomIds[index];
+    const atomB = ringAtomIds[(index + 1) % ringAtomIds.length];
+    const existingBond = mol.getBond?.(atomA, atomB);
+    if (!existingBond) {
+      continue;
+    }
+    const desiredOrder = doubleBondIndices.has(index) ? 2 : 1;
+    const existingOrder = singleDoubleBondOrderPreference(existingBond);
+    const isAnchorBond = existingBond.id === anchorBondId;
+    if (existingOrder !== null && existingOrder !== desiredOrder) {
+      score += isAnchorBond ? 50 : 20;
+    }
+    if (isAnchorBond && existingOrder === null && desiredOrder === 2) {
+      score += 10;
+    }
+  }
+  score += aromaticRingTemplateLocalizedValenceOverflow(mol, ringAtomIds, doubleBondIndices) * 1000;
+  score += (ringAtomIds.length / 2 - doubleBondIndices.size) * 100;
+  return score;
+}
+
+function chooseAromaticRingTemplateDoubleBondIndices(mol, template, ringAtomIds, anchorBondId = null) {
+  if (!template?.aromatic || ringAtomIds.length % 2 !== 0) {
+    return new Set();
+  }
+  const candidates = aromaticRingTemplateDoubleBondCandidates(ringAtomIds.length);
+  let bestCandidate = candidates[0] ?? new Set();
+  let bestScore = Infinity;
+  for (const candidate of candidates) {
+    const score = scoreAromaticRingTemplateDoubleBondSet(mol, ringAtomIds, candidate, anchorBondId);
+    if (score < bestScore) {
+      bestCandidate = candidate;
+      bestScore = score;
+    }
+  }
+  return bestCandidate;
+}
+
+function syncHiddenHydrogenPositionsToParent(mol, atom) {
+  if (atom?.x == null || atom?.y == null) {
+    return;
+  }
+  for (const neighbor of atom.getNeighbors?.(mol) ?? []) {
+    if (neighbor?.name === 'H' && neighbor.visible === false) {
+      neighbor.x = atom.x;
+      neighbor.y = atom.y;
+    }
+  }
+}
+
+function repairRingTemplateCarbonImplicitHydrogens(mol, atomIds) {
+  for (const atomId of atomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name !== 'C') {
+      continue;
+    }
+    if (atom.properties?.aromatic !== true) {
+      mol._adjustImplicitHydrogens?.(atomId);
+      syncHiddenHydrogenPositionsToParent(mol, atom);
+      continue;
+    }
+    const neighbors = atom.getNeighbors?.(mol) ?? [];
+    const heavyNeighborCount = neighbors.filter(neighbor => neighbor?.name !== 'H').length;
+    const hydrogenIds = neighbors
+      .filter(neighbor => neighbor?.name === 'H' && (neighbor.bonds?.length ?? 0) === 1)
+      .map(neighbor => neighbor.id);
+    const neededHydrogenCount = heavyNeighborCount === 2 ? 1 : 0;
+
+    for (const hydrogenId of hydrogenIds.slice(neededHydrogenCount)) {
+      mol.removeAtom?.(hydrogenId);
+    }
+
+    for (let index = hydrogenIds.length; index < neededHydrogenCount; index++) {
+      const hydrogen = mol.addAtom?.(null, 'H', {}, { recompute: false });
+      if (!hydrogen) {
+        continue;
+      }
+      hydrogen.visible = false;
+      hydrogen.x = atom.x;
+      hydrogen.y = atom.y;
+      mol.addBond?.(null, atomId, hydrogen.id, { order: 1 }, false);
+    }
+    syncHiddenHydrogenPositionsToParent(mol, atom);
+  }
+  mol._recomputeProperties?.();
 }
 
 function regularRingPositions(size, cx, cy, bondLength) {
@@ -108,6 +309,48 @@ function largestAngularGapMidpoint(angles, fallbackAngle = -Math.PI / 2) {
     }
   }
   return normalizeAngle(bestStart + bestGap / 2);
+}
+
+function forceNodePoint(currentForceNodes, atomId) {
+  const node = currentForceNodes?.find?.(entry => entry?.id === atomId);
+  return isFinitePoint(node) ? { x: node.x, y: node.y } : null;
+}
+
+function terminalHydrogenRingAnchor(mol, anchorBond, currentForceNodes = [], bondLength = DEFAULT_2D_BOND_LENGTH) {
+  const [atomA, atomB] = anchorBond?.getAtomObjects?.(mol) ?? [];
+  if (!atomA || !atomB || atomA.name === atomB.name) {
+    return null;
+  }
+  const hydrogenAtom = atomA.name === 'H' ? atomA : atomB.name === 'H' ? atomB : null;
+  const heavyAtom = atomA.name === 'H' ? atomB : atomB.name === 'H' ? atomA : null;
+  if (!hydrogenAtom || !heavyAtom || !isFinitePoint(heavyAtom)) {
+    return null;
+  }
+
+  const hydrogenPoint = isFinitePoint(hydrogenAtom) && pointDistance(hydrogenAtom, heavyAtom) > GEOMETRY_EPSILON
+    ? { x: hydrogenAtom.x, y: hydrogenAtom.y }
+    : null;
+  const forceHydrogenPoint = forceNodePoint(currentForceNodes, hydrogenAtom.id);
+  const forceHeavyPoint = forceNodePoint(currentForceNodes, heavyAtom.id);
+  const forceAngle = forceHydrogenPoint && forceHeavyPoint && pointDistance(forceHydrogenPoint, forceHeavyPoint) > GEOMETRY_EPSILON
+    ? normalizeAngle(Math.atan2(forceHydrogenPoint.y - forceHeavyPoint.y, forceHydrogenPoint.x - forceHeavyPoint.x))
+    : null;
+  const moleculeAngle = hydrogenPoint
+    ? normalizeAngle(Math.atan2(hydrogenPoint.y - heavyAtom.y, hydrogenPoint.x - heavyAtom.x))
+    : forceAngle ?? largestAngularGapMidpoint(neighborAnglesForRingAnchor(mol, heavyAtom, heavyAtom), -Math.PI / 2);
+  const anchorPoint = hydrogenPoint ?? {
+    x: heavyAtom.x + Math.cos(moleculeAngle) * bondLength,
+    y: heavyAtom.y + Math.sin(moleculeAngle) * bondLength
+  };
+
+  return {
+    heavyAtom,
+    hydrogenAtom,
+    anchorPoint,
+    centerAngle: moleculeAngle,
+    forceCenterAngle: forceAngle,
+    forceAnchorPoint: forceHydrogenPoint
+  };
 }
 
 function anchoredRingPositions(size, anchorPoint, bondLength, centerAngle) {
@@ -760,6 +1003,25 @@ function moleculeHasRingAtomSet(mol, atomIds) {
   return mol.getRings().some(ringAtomIds => ringAtomKey(ringAtomIds) === key);
 }
 
+function reactionPreviewReactantAtomIds(mol) {
+  const atomIds = mol?.__reactionPreview?.reactantAtomIds;
+  if (!atomIds) {
+    return null;
+  }
+  return atomIds instanceof Set ? atomIds : new Set(atomIds);
+}
+
+function isReactionPreviewEditableAtomId(mol, atomId) {
+  const reactantAtomIds = reactionPreviewReactantAtomIds(mol);
+  return !reactantAtomIds || reactantAtomIds.has(atomId);
+}
+
+function isReactionPreviewEditableBond(mol, bond) {
+  const reactantAtomIds = reactionPreviewReactantAtomIds(mol);
+  const atomIds = [...(bond?.atoms ?? [])];
+  return !reactantAtomIds || atomIds.every(atomId => reactantAtomIds.has(atomId));
+}
+
 /**
  * Creates structural edit action handlers for bond-order promotion, atom-element changes, force-hydrogen replacement, and 2D viewport restoration.
  * @param {object} context - Dependency context providing controller, getMode, getDrawBondElement, molecule, view, resonance, chemistry, force, and constants.
@@ -851,10 +1113,11 @@ export function createStructuralEditActions(context) {
   }
 
   function placeRingTemplate(size, ox, oy, options = {}) {
-    const normalizedSize = normalizeRingTemplateSize(size);
-    if (normalizedSize === null) {
+    const template = normalizeRingTemplateSize(size);
+    if (template === null) {
       return { performed: false, cancelled: true };
     }
+    const normalizedSize = template.size;
     const anchorAtomId = options.anchorAtomId ?? null;
     const anchorBondId = options.anchorBondId ?? null;
     const anchorBondSide = normalizeBondSideSign(options.anchorBondSide);
@@ -876,7 +1139,18 @@ export function createStructuralEditActions(context) {
         snapshotPolicy: options.skipSnapshot ? SnapshotPolicy.skip : SnapshotPolicy.take,
         viewportPolicy: ViewportPolicy.restoreEdit,
         zoomSnapshot,
-        preflight: ({ mode: editMode }) => editMode === '2d' || editMode === 'force'
+        preflight: ({ mol, mode: editMode }) => {
+          if (editMode !== '2d' && editMode !== 'force') {
+            return false;
+          }
+          if (anchorAtomId && !isReactionPreviewEditableAtomId(mol, anchorAtomId)) {
+            return false;
+          }
+          if (anchorBondId && !isReactionPreviewEditableBond(mol, mol?.bonds?.get?.(anchorBondId))) {
+            return false;
+          }
+          return true;
+        }
       },
       ({ mol, mode: editMode }) => {
         mol = mol ?? context.molecule.ensureActive?.();
@@ -884,11 +1158,18 @@ export function createStructuralEditActions(context) {
           return { cancelled: true };
         }
 
-        const bondLength = DEFAULT_2D_BOND_LENGTH;
-        const anchorBond = anchorBondId ? mol.bonds.get(anchorBondId) : null;
-        const anchorAtom = anchorAtomId ? mol.atoms.get(anchorAtomId) : null;
         const forceBondLength = (context.constants.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR;
         const currentForceNodes = editMode === 'force' ? (context.force.getSimulation?.()?.nodes?.() ?? []) : [];
+        const bondLength = DEFAULT_2D_BOND_LENGTH;
+        const requestedAnchorBond = anchorBondId ? mol.bonds.get(anchorBondId) : null;
+        const hydrogenRingAnchor = !anchorAtomId ? terminalHydrogenRingAnchor(mol, requestedAnchorBond, currentForceNodes, bondLength) : null;
+        const anchorBond = hydrogenRingAnchor ? null : requestedAnchorBond;
+        let anchorAtom = hydrogenRingAnchor?.hydrogenAtom ?? (anchorAtomId ? mol.atoms.get(anchorAtomId) : null);
+        if (hydrogenRingAnchor) {
+          anchorAtom = mol.changeAtomElement?.(hydrogenRingAnchor.hydrogenAtom.id, 'C') ?? hydrogenRingAnchor.hydrogenAtom;
+          anchorAtom.x = hydrogenRingAnchor.anchorPoint.x;
+          anchorAtom.y = hydrogenRingAnchor.anchorPoint.y;
+        }
         const effectiveAnchorBondSide =
           anchorBond && anchorBondSide === null && autoFuseBondPositionReuse
             ? findAutoFuseBondPositionReuseSide(mol, anchorBond, normalizedSize, editMode, currentForceNodes, forceBondLength, bondLength)
@@ -920,13 +1201,18 @@ export function createStructuralEditActions(context) {
           return largestAngularGapMidpoint(graphNeighborAngles, -Math.PI / 2);
         };
         const precomputedForceAtomPositions = editMode === 'force' && anchorAtom
-          ? anchoredRingPositions(normalizedSize, { x: ox, y: oy }, forceBondLength, anchorForceCenterAngle ?? fallbackForceCenterAngle())
+          ? anchoredRingPositions(
+              normalizedSize,
+              hydrogenRingAnchor?.forceAnchorPoint ?? { x: ox, y: oy },
+              forceBondLength,
+              anchorForceCenterAngle ?? hydrogenRingAnchor?.forceCenterAngle ?? fallbackForceCenterAngle()
+            )
           : null;
         const positions = anchorBond
           ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && effectiveAnchorBondSide !== null ? -effectiveAnchorBondSide : effectiveAnchorBondSide)
           : anchorAtom
             ? isFinitePoint(anchorPoint)
-              ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle)
+              ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle ?? hydrogenRingAnchor?.centerAngle)
               : null
             : (() => {
                 const center = getRingTemplatePlacementCenter(mol, editMode, ox, oy);
@@ -995,17 +1281,34 @@ export function createStructuralEditActions(context) {
             newAtomIds.push(newAtomId);
           }
         }
+        const aromaticDoubleBondIndices = chooseAromaticRingTemplateDoubleBondIndices(mol, template, ringAtomIds, anchorBond?.id ?? null);
         for (let index = 0; index < ringAtomIds.length; index++) {
           const atomA = ringAtomIds[index];
           const atomB = ringAtomIds[(index + 1) % ringAtomIds.length];
-          if (!mol.getBond?.(atomA, atomB)) {
-            mol.addBond(null, atomA, atomB, { order: 1 }, false);
+          const bondProperties = ringTemplateBondProperties(template, index, aromaticDoubleBondIndices);
+          const existingBond = mol.getBond?.(atomA, atomB);
+          if (existingBond && template.aromatic) {
+            if (existingBond.properties?.aromatic === true) {
+              existingBond.properties.localizedOrder = bondProperties.localizedOrder;
+            } else {
+              Object.assign(existingBond.properties, bondProperties);
+            }
+          }
+          if (!existingBond) {
+            const newBond = mol.addBond(null, atomA, atomB, bondProperties, false);
+            if (template.aromatic) {
+              Object.assign(newBond.properties, bondProperties);
+            }
           }
         }
         mol.repairImplicitHydrogens?.(ringAtomIds);
         mol._recomputeProperties?.();
         context.chemistry.kekulize(mol);
-        context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+        if (template.aromatic) {
+          repairRingTemplateCarbonImplicitHydrogens(mol, ringAtomIds);
+        } else {
+          context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+        }
 
         const result = {
           clearSelection: true,

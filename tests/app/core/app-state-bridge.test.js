@@ -144,6 +144,10 @@ describe('createAppStateBridge', () => {
         setPaintColor: value => {
           records.push(['setPaintColor', value]);
         },
+        getPaintBrushSize: () => 14,
+        setPaintBrushSize: value => {
+          records.push(['setPaintBrushSize', value]);
+        },
         getPaintOpacity: () => 0.4,
         setPaintOpacity: value => {
           records.push(['setPaintOpacity', value]);
@@ -173,6 +177,7 @@ describe('createAppStateBridge', () => {
     assert.equal(bridge.overlayState.getPaintMode(), true);
     assert.equal(bridge.overlayState.getPaintTool(), 'bucket');
     assert.equal(bridge.overlayState.getPaintColor(), '#ff6633');
+    assert.equal(bridge.overlayState.getPaintBrushSize(), 14);
     assert.equal(bridge.overlayState.getPaintOpacity(), 0.4);
     assert.equal(bridge.overlayState.getDrawBondElement(), 'N');
     assert.equal(bridge.overlayState.getDrawBondType(), 'double');
@@ -182,6 +187,7 @@ describe('createAppStateBridge', () => {
     bridge.overlayState.setPaintMode(false);
     bridge.overlayState.setPaintTool('brush');
     bridge.overlayState.setPaintColor('#3366ff');
+    bridge.overlayState.setPaintBrushSize(18);
     bridge.overlayState.setPaintOpacity(0.75);
     bridge.overlayState.setDrawBondElement('O');
     bridge.overlayState.setDrawBondType('triple');
@@ -193,6 +199,7 @@ describe('createAppStateBridge', () => {
       ['setPaintMode', false],
       ['setPaintTool', 'brush'],
       ['setPaintColor', '#3366ff'],
+      ['setPaintBrushSize', 18],
       ['setPaintOpacity', 0.75],
       ['setDrawBondElement', 'O'],
       ['setDrawBondType', 'triple']

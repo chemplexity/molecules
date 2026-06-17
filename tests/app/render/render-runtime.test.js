@@ -117,6 +117,42 @@ describe('createRenderRuntime', () => {
     ]);
   });
 
+  it('passes initial force coordinate patches through the shared policy layer', () => {
+    const { runtime, calls } = makeRuntime({ mode: 'force' });
+    const mol = { id: 'mol-force-patch' };
+    const forceAnchorLayout = new Map([['a1', { x: 0, y: 0 }]]);
+    const forceInitialPatchPos = new Map([['a1', { x: 100, y: 120 }]]);
+
+    runtime.renderMol(mol, {
+      preserveHistory: true,
+      forceAnchorLayout,
+      forceInitialPatchPos
+    });
+
+    assert.deepEqual(
+      calls.find(call => call[0] === 'updateForce'),
+      ['updateForce', mol, { preserveView: false, anchorLayout: forceAnchorLayout, initialPatchPos: forceInitialPatchPos }]
+    );
+  });
+
+  it('passes force position preservation through the shared policy layer', () => {
+    const { runtime, calls } = makeRuntime({ mode: 'force' });
+    const mol = { id: 'mol-force-preserve' };
+    const forceAnchorLayout = new Map([['a1', { x: 0, y: 0 }]]);
+
+    runtime.renderMol(mol, {
+      preserveHistory: true,
+      preserveView: true,
+      forcePreservePositions: true,
+      forceAnchorLayout
+    });
+
+    assert.deepEqual(
+      calls.find(call => call[0] === 'updateForce'),
+      ['updateForce', mol, { preserveView: true, anchorLayout: forceAnchorLayout, preservePositions: true }]
+    );
+  });
+
   it('preserves history and analysis when asked', () => {
     const { runtime, calls } = makeRuntime({ mode: '2d' });
     const mol = { id: 'mol-overlay' };
@@ -139,6 +175,25 @@ describe('createRenderRuntime', () => {
         }
       ]
     ]);
+  });
+
+  it('passes force keep-in-view through the shared policy layer when requested', () => {
+    const { runtime, calls } = makeRuntime({ mode: 'force' });
+    const mol = { id: 'mol-force-clean' };
+    const forceAnchorLayout = new Map([['a1', { x: 0, y: 0 }]]);
+
+    runtime.renderMol(mol, {
+      preserveHistory: true,
+      preserveAnalysis: true,
+      preserveView: true,
+      forceKeepInView: true,
+      forceAnchorLayout
+    });
+
+    assert.deepEqual(
+      calls.filter(call => call[0] === 'updateForce'),
+      [['updateForce', mol, { preserveView: true, anchorLayout: forceAnchorLayout, keepInView: true }]]
+    );
   });
 
   it('restores the prior 2D zoom when preserveView is requested', () => {

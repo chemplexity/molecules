@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { create2DRenderHelpers } from '../../../src/app/render/2d-helpers.js';
-import { getAtomLabel, labelHalfH, labelHalfW, labelTextOffset } from '../../../src/layout/mol2d-helpers.js';
+import { computeChargeBadgePlacement, getAtomLabel, labelHalfH, labelHalfW, labelTextOffset } from '../../../src/layout/mol2d-helpers.js';
 
 class FakeSelection {
   constructor(records, nodeRef = {}) {
@@ -207,6 +207,34 @@ function extractLines(records) {
 }
 
 describe('create2DRenderHelpers', () => {
+  it('places charge badges outside shifted carbonyl oxygen labels', () => {
+    const carbon = makeAtom('c1', 'C', -40, 0);
+    const oxygen = makeAtom('o1', 'O', 0, 0);
+    carbon._neighbors = [oxygen];
+    oxygen._neighbors = [carbon];
+    const molecule = {
+      atoms: new Map([
+        [carbon.id, carbon],
+        [oxygen.id, oxygen]
+      ])
+    };
+    const label = 'O';
+    const fontSize = 14;
+    const labelOffset = { dx: 8, dy: 0 };
+    const placement = computeChargeBadgePlacement(oxygen, molecule, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label,
+      labelOffset,
+      fontSize,
+      chargeLabel: '−',
+      preferredAngle: 0
+    });
+
+    assert.ok(placement);
+    const labelRightEdge = labelOffset.dx + labelHalfW(label, fontSize);
+    assert.ok(placement.x - placement.radius >= labelRightEdge + 3, 'expected charge badge to clear the shifted oxygen label');
+  });
+
   it('maps 2D molecule coordinates into SVG coordinates using the current center', () => {
     const { helpers } = makeHelpersContext({ centerX: 1, centerY: -1 });
     const point = helpers.toSVGPt2d({ x: 2, y: 1 });

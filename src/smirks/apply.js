@@ -6,6 +6,27 @@ import { generateCoords } from '../layout/index.js';
 import { _findSMARTSParsed } from '../smarts/search.js';
 import { parseSMIRKS } from './parser.js';
 
+const SMIRKS_PARSE_CACHE_MAX = 128;
+const _smirksParseCache = new Map();
+
+function _cachedParseSMIRKS(smirks) {
+  if (typeof smirks !== 'string') {
+    return smirks;
+  }
+  const cached = _smirksParseCache.get(smirks);
+  if (cached) {
+    _smirksParseCache.delete(smirks);
+    _smirksParseCache.set(smirks, cached);
+    return cached;
+  }
+  const parsed = parseSMIRKS(smirks);
+  _smirksParseCache.set(smirks, parsed);
+  if (_smirksParseCache.size > SMIRKS_PARSE_CACHE_MAX) {
+    _smirksParseCache.delete(_smirksParseCache.keys().next().value);
+  }
+  return parsed;
+}
+
 function _mappingEquals(a, b) {
   if (!(a instanceof Map) || !(b instanceof Map) || a.size !== b.size) {
     return false;
@@ -623,7 +644,7 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
  * @returns {import('../core/Molecule.js').Molecule|null} The computed result.
  */
 export function applySMIRKS(molecule, smirks, options = {}) {
-  const transform = typeof smirks === 'string' ? parseSMIRKS(smirks) : smirks;
+  const transform = _cachedParseSMIRKS(smirks);
   return _applyParsedSMIRKS(molecule, transform, options);
 }
 

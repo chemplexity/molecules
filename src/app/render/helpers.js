@@ -27,7 +27,7 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   atomNumberingFontSize: 10,
   bondEnFontSize: 10,
   bondLengthFontSize: 10,
-  twoDBondThickness: 1.6,
+  twoDBondThickness: 1.8,
   forceAtomSizeMultiplier: 1,
   forceBondThicknessMultiplier: 1
 });

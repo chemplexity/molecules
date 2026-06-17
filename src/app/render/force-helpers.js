@@ -6,9 +6,9 @@ export const FORCE_LAYOUT_BOND_LENGTH = 41;
 export const FORCE_LAYOUT_H_BOND_LENGTH = 20;
 export const FORCE_LAYOUT_MULTIPLE_BOND_FACTOR = 0.93;
 export const FORCE_LAYOUT_AROMATIC_BOND_FACTOR = 0.96;
-export const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 4;
-export const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.68;
-export const FORCE_LAYOUT_HEAVY_REPULSION = -28;
+export const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 1.25;
+export const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 1.15;
+export const FORCE_LAYOUT_HEAVY_REPULSION = -14;
 export const FORCE_LAYOUT_H_REPULSION = -25;
 export const FORCE_LAYOUT_HH_REPULSION_DISTANCE = 40;
 export const FORCE_LAYOUT_HH_REPULSION_STRENGTH = 30.0;
@@ -20,11 +20,12 @@ export const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
 export const FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN = 0.08;
 export const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
 export const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
-export const FORCE_LAYOUT_INITIAL_SETTLE_TICKS = 26;
-export const FORCE_LAYOUT_INITIAL_SETTLE_ALPHA = 0.7;
-export const FORCE_LAYOUT_INITIAL_RESTART_ALPHA = 0.08;
+export const FORCE_LAYOUT_INITIAL_SETTLE_TICKS = 12;
+export const FORCE_LAYOUT_INITIAL_SETTLE_ALPHA = 0.35;
+export const FORCE_LAYOUT_INITIAL_RESTART_ALPHA = 0.02;
 export const FORCE_LAYOUT_EDIT_RESTART_ALPHA = 0.005;
 const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.14;
+const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
 
 /**
  * Converts a Molecule instance into a plain graph object with node and link arrays suitable for D3 force simulation.
@@ -406,6 +407,242 @@ export function placeHydrogensAroundParent(parentNode, hydrogens, links, { dista
   });
 }
 
+function isFinitePoint(point) {
+  return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+}
+
+function forceConverterNodeList(forceNodesOrGraph) {
+  if (Array.isArray(forceNodesOrGraph)) {
+    return forceNodesOrGraph;
+  }
+  if (forceNodesOrGraph?.nodes instanceof Map) {
+    return [...forceNodesOrGraph.nodes.values()];
+  }
+  if (Array.isArray(forceNodesOrGraph?.nodes)) {
+    return forceNodesOrGraph.nodes;
+  }
+  if (forceNodesOrGraph instanceof Map) {
+    return [...forceNodesOrGraph.values()];
+  }
+  return [];
+}
+
+function centroid(points, fallback = { x: 0, y: 0 }) {
+  const finitePoints = points.filter(isFinitePoint);
+  if (finitePoints.length === 0) {
+    return fallback;
+  }
+  let x = 0;
+  let y = 0;
+  for (const point of finitePoints) {
+    x += point.x;
+    y += point.y;
+  }
+  return {
+    x: x / finitePoints.length,
+    y: y / finitePoints.length
+  };
+}
+
+function forceConverterHydrogenParentId(molecule, hydrogenAtom) {
+  for (const bondId of hydrogenAtom?.bonds ?? []) {
+    const bond = molecule?.bonds?.get?.(bondId);
+    if (!bond?.atoms) {
+      continue;
+    }
+    const otherId = bond.atoms[0] === hydrogenAtom.id ? bond.atoms[1] : bond.atoms[1] === hydrogenAtom.id ? bond.atoms[0] : null;
+    const otherAtom = molecule?.atoms?.get?.(otherId);
+    if (otherAtom && otherAtom.name !== 'H') {
+      return otherId;
+    }
+  }
+  return null;
+}
+
+function shouldIncludeLineHydrogen(atom, hydrogenMode) {
+  if (atom.name !== 'H') {
+    return true;
+  }
+  if (hydrogenMode === 'omit') {
+    return false;
+  }
+  if (hydrogenMode === 'preserve') {
+    return true;
+  }
+  return atom.visible !== false;
+}
+
+/**
+ * Converts stored 2D/line molecule coordinates into force-layout pixel coordinates.
+ *
+ * Heavy atoms are scaled around the heavy-atom centroid and receive matching
+ * anchors. Hydrogens default to stable parent-relative force slots so hidden
+ * implicit hydrogens do not inherit stale or coincident 2D coordinates.
+ * @param {object} molecule - Molecule with atom coordinates in 2D layout units.
+ * @param {object} [options] - Conversion options.
+ * @param {number} [options.bondLength] - Source 2D bond length in molecule coordinate units.
+ * @param {number} [options.forceBondLength] - Target force heavy-heavy bond length in pixels.
+ * @param {{x: number, y: number}} [options.forceCenter] - Target force-coordinate center.
+ * @param {'stable'|'preserve'|'omit'} [options.hydrogenMode] - Hydrogen conversion strategy.
+ * @param {number} [options.hydrogenDistance] - Parent-H force distance in pixels.
+ * @returns {{coords: Map<string, object>, nodes: Array<object>, links: Array<object>, lineAnchorCoords: Map<string, object>, forceAnchorCoords: Map<string, object>, scale: number, lineCenter: {x: number, y: number}, forceCenter: {x: number, y: number}}} Converted force-coordinate data.
+ */
+export function convertLineCoordsToForceLayout(
+  molecule,
+  {
+    bondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH,
+    forceBondLength = FORCE_LAYOUT_BOND_LENGTH,
+    forceCenter = { x: 0, y: 0 },
+    hydrogenMode = 'stable',
+    hydrogenDistance = FORCE_LAYOUT_H_BOND_LENGTH
+  } = {}
+) {
+  const coords = new Map();
+  const nodes = [];
+  const links = [];
+  const lineAnchorCoords = new Map();
+  const forceAnchorCoords = new Map();
+  const nodeById = new Map();
+  const scale = forceBondLength / bondLength;
+  const atoms = molecule?.atoms instanceof Map ? [...molecule.atoms.values()] : [];
+  const heavyAtoms = atoms.filter(atom => atom.name !== 'H' && atom.visible !== false && isFinitePoint(atom));
+  const lineCenter = centroid(heavyAtoms, centroid(atoms.filter(isFinitePoint)));
+
+  for (const atom of atoms) {
+    if (atom.name === 'H') {
+      continue;
+    }
+    if (atom.visible === false || !isFinitePoint(atom)) {
+      continue;
+    }
+    const x = forceCenter.x + (atom.x - lineCenter.x) * scale;
+    const y = forceCenter.y - (atom.y - lineCenter.y) * scale;
+    const node = {
+      id: atom.id,
+      name: atom.name,
+      protons: atom.properties?.protons,
+      charge: typeof atom.getCharge === 'function' ? atom.getCharge() : atom.properties?.charge ?? 0,
+      aromatic: typeof atom.isAromatic === 'function' ? atom.isAromatic() : atom.properties?.aromatic === true,
+      x,
+      y,
+      anchorX: x,
+      anchorY: y
+    };
+    coords.set(atom.id, { x, y, anchorX: x, anchorY: y });
+    lineAnchorCoords.set(atom.id, { x: atom.x, y: atom.y });
+    forceAnchorCoords.set(atom.id, { x, y });
+    nodes.push(node);
+    nodeById.set(atom.id, node);
+  }
+
+  for (const bond of molecule?.bonds?.values?.() ?? []) {
+    const source = nodeById.get(bond.atoms?.[0]);
+    const target = nodeById.get(bond.atoms?.[1]);
+    if (source && target) {
+      links.push({ id: bond.id, source, target, order: renderBondOrder(bond), aromatic: bond.properties?.aromatic === true });
+    }
+  }
+
+  const hydrogenGroups = new Map();
+  for (const atom of atoms) {
+    if (atom.name !== 'H' || hydrogenMode === 'omit') {
+      continue;
+    }
+    const parentId = forceConverterHydrogenParentId(molecule, atom);
+    const parentNode = nodeById.get(parentId);
+    if (!parentNode) {
+      continue;
+    }
+    let node = null;
+    if (hydrogenMode === 'preserve' && isFinitePoint(atom)) {
+      const x = forceCenter.x + (atom.x - lineCenter.x) * scale;
+      const y = forceCenter.y - (atom.y - lineCenter.y) * scale;
+      node = { id: atom.id, name: atom.name, protons: atom.properties?.protons, x, y, anchorX: x, anchorY: y };
+      coords.set(atom.id, { x, y, anchorX: x, anchorY: y });
+    } else {
+      node = { id: atom.id, name: atom.name, protons: atom.properties?.protons };
+      if (!hydrogenGroups.has(parentNode)) {
+        hydrogenGroups.set(parentNode, []);
+      }
+      hydrogenGroups.get(parentNode).push(node);
+    }
+    nodes.push(node);
+    nodeById.set(atom.id, node);
+    links.push({ id: `${parentId}:${atom.id}`, source: parentNode, target: node, order: 1, aromatic: false });
+  }
+
+  for (const [parentNode, hydrogens] of hydrogenGroups) {
+    hydrogens.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    placeHydrogensAroundParent(parentNode, hydrogens, links, {
+      distance: hydrogenDistance,
+      excludeIds: new Set(hydrogens.map(node => node.id))
+    });
+    for (const hydrogenNode of hydrogens) {
+      coords.set(hydrogenNode.id, {
+        x: hydrogenNode.x,
+        y: hydrogenNode.y,
+        anchorX: hydrogenNode.anchorX,
+        anchorY: hydrogenNode.anchorY,
+        forcePlacementParentId: hydrogenNode.forcePlacementParentId,
+        forcePlacementAngle: hydrogenNode.forcePlacementAngle
+      });
+    }
+  }
+
+  return { coords, nodes, links, lineAnchorCoords, forceAnchorCoords, scale, lineCenter, forceCenter };
+}
+
+/**
+ * Converts force-layout pixel coordinates back into 2D/line molecule coordinates.
+ *
+ * Hidden implicit hydrogens are omitted by default so line mode can regenerate
+ * or project them, while displayed hydrogens keep their force position.
+ * @param {object} molecule - Molecule whose atom ids define the conversion target.
+ * @param {Array<object>|Map<string, object>|{nodes: Array<object>|Map<string, object>}} forceNodesOrGraph - Force nodes or graph.
+ * @param {object} [options] - Conversion options.
+ * @param {number} [options.bondLength] - Target 2D bond length in molecule coordinate units.
+ * @param {number} [options.forceBondLength] - Source force heavy-heavy bond length in pixels.
+ * @param {{x: number, y: number}} [options.lineCenter] - Target line-coordinate center.
+ * @param {'displayed'|'preserve'|'omit'} [options.hydrogenMode] - Hydrogen conversion strategy.
+ * @returns {{coords: Map<string, object>, scale: number, forceCenter: {x: number, y: number}, lineCenter: {x: number, y: number}}} Converted line-coordinate data.
+ */
+export function convertForceCoordsToLineLayout(
+  molecule,
+  forceNodesOrGraph,
+  {
+    bondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH,
+    forceBondLength = FORCE_LAYOUT_BOND_LENGTH,
+    lineCenter = { x: 0, y: 0 },
+    hydrogenMode = 'displayed'
+  } = {}
+) {
+  const coords = new Map();
+  const nodeById = new Map(forceConverterNodeList(forceNodesOrGraph).filter(isFinitePoint).map(node => [node.id, node]));
+  const atoms = molecule?.atoms instanceof Map ? [...molecule.atoms.values()] : [];
+  const heavyNodes = atoms
+    .filter(atom => atom.name !== 'H' && atom.visible !== false)
+    .map(atom => nodeById.get(atom.id))
+    .filter(isFinitePoint);
+  const forceCenter = centroid(heavyNodes, centroid([...nodeById.values()]));
+  const scale = bondLength / forceBondLength;
+
+  for (const atom of atoms) {
+    if (!shouldIncludeLineHydrogen(atom, hydrogenMode)) {
+      continue;
+    }
+    const node = nodeById.get(atom.id);
+    if (!isFinitePoint(node)) {
+      continue;
+    }
+    coords.set(atom.id, {
+      x: lineCenter.x + (node.x - forceCenter.x) * scale,
+      y: lineCenter.y - (node.y - forceCenter.y) * scale
+    });
+  }
+
+  return { coords, scale, forceCenter, lineCenter };
+}
+
 /**
  * Repositions every explicit hydrogen in a force graph around its current parent atom.
  * @param {{nodes: Array<object>, links: Array<object>}} graph - Force graph with resolved or index-based links.
@@ -635,6 +872,12 @@ export function createForceHelpers(context) {
       }
       if (Number.isFinite(pos.y)) {
         node.y = pos.y;
+      }
+      if (pos.forcePlacementParentId != null) {
+        node.forcePlacementParentId = pos.forcePlacementParentId;
+      }
+      if (Number.isFinite(pos.forcePlacementAngle)) {
+        node.forcePlacementAngle = pos.forcePlacementAngle;
       }
       node.vx = 0;
       node.vy = 0;

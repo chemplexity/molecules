@@ -553,6 +553,7 @@ export function renderMolSVG(
       const placement = computeChargeBadgePlacement(atom, molecule, {
         pointForAtom: toSVG,
         label,
+        labelOffset: { dx, dy },
         fontSize: FONT_SIZE,
         chargeLabel,
         extraOccupiedAngles: lonePairAnglesByAtomId.get(atom.id) ?? []

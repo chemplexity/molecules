@@ -100,6 +100,9 @@ describe('initAppShell', () => {
         setPaintColor: color => {
           records.push(['setPaintColor', color]);
         },
+        setPaintBrushSize: size => {
+          records.push(['setPaintBrushSize', size]);
+        },
         setPaintOpacity: opacity => {
           records.push(['setPaintOpacity', opacity]);
         },
@@ -199,6 +202,7 @@ describe('initAppShell', () => {
     win.togglePaintMode();
     win.setPaintTool('bucket');
     win.setPaintColor('#ff6633');
+    win.setPaintBrushSize(18);
     win.setPaintOpacity(0.45);
     win.toggleDrawBondMode();
     win.handleDrawBondButtonClick();
@@ -242,6 +246,7 @@ describe('initAppShell', () => {
       ['togglePaintMode'],
       ['setPaintTool', 'bucket'],
       ['setPaintColor', '#ff6633'],
+      ['setPaintBrushSize', 18],
       ['setPaintOpacity', 0.45],
       ['toggleDrawBondMode'],
       ['handleDrawBondButtonClick'],
@@ -294,6 +299,7 @@ describe('initAppShell', () => {
         togglePaintMode() {},
         setPaintTool() {},
         setPaintColor() {},
+        setPaintBrushSize() {},
         setPaintOpacity() {},
         toggleDrawBondMode() {},
         handleDrawBondButtonClick() {},
@@ -366,6 +372,7 @@ describe('initAppShell', () => {
         togglePaintMode() {},
         setPaintTool() {},
         setPaintColor() {},
+        setPaintBrushSize() {},
         setPaintOpacity() {},
         toggleDrawBondMode() {},
         handleDrawBondButtonClick() {},

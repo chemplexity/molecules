@@ -844,48 +844,16 @@ function chooseLonePairAngles(occupiedAngles, count, preferredNorthAngle = -Math
   return chosen;
 }
 
-function rayDistanceToLabelBox(angle, label, fontSize) {
+function rayDistanceToLabelBox(angle, label, fontSize, labelOffset = null) {
   const halfWidth = labelHalfW(label, fontSize);
   const halfHeight = labelHalfH(label, fontSize);
   if (halfWidth <= 0 || halfHeight <= 0) {
     return 0;
   }
 
-  const centerX = labelTextOffset(label, fontSize);
-  const dirX = Math.cos(angle);
-  const dirY = Math.sin(angle);
-  const candidates = [];
-  const minX = centerX - halfWidth;
-  const maxX = centerX + halfWidth;
-  const minY = -halfHeight;
-  const maxY = halfHeight;
-
-  if (Math.abs(dirX) > 1e-8) {
-    for (const edgeX of [minX, maxX]) {
-      const t = edgeX / dirX;
-      if (t < 0) {
-        continue;
-      }
-      const hitY = dirY * t;
-      if (hitY >= minY - 1e-6 && hitY <= maxY + 1e-6) {
-        candidates.push(t);
-      }
-    }
-  }
-  if (Math.abs(dirY) > 1e-8) {
-    for (const edgeY of [minY, maxY]) {
-      const t = edgeY / dirY;
-      if (t < 0) {
-        continue;
-      }
-      const hitX = dirX * t;
-      if (hitX >= minX - 1e-6 && hitX <= maxX + 1e-6) {
-        candidates.push(t);
-      }
-    }
-  }
-
-  return candidates.length > 0 ? Math.min(...candidates) : 0;
+  const centerX = Number.isFinite(labelOffset?.dx) ? labelOffset.dx : labelTextOffset(label, fontSize);
+  const centerY = Number.isFinite(labelOffset?.dy) ? labelOffset.dy : 0;
+  return rayDistanceToShiftedBox(angle, centerX, centerY, halfWidth, halfHeight);
 }
 
 /**
@@ -896,6 +864,7 @@ function rayDistanceToLabelBox(angle, label, fontSize) {
  * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} options.pointForAtom - Maps an atom to `{x, y}` render coordinates.
  * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} [options.orientationPointForAtom] - Maps an atom to orientation render coordinates.
  * @param {string|null} [options.label] - rendered atom label, if any
+ * @param {{dx:number,dy:number}|null} [options.labelOffset] - rendered label offset from the atom center.
  * @param {number} [options.fontSize] - Font size for rendering.
  * @param {number} [options.baseRadius] - Configuration sub-option.
  * @param {number} [options.offsetFromBoundary] - Configuration sub-option.
@@ -913,6 +882,7 @@ export function computeChargeBadgePlacement(
     pointForAtom,
     orientationPointForAtom = pointForAtom,
     label = null,
+    labelOffset = null,
     fontSize = 14,
     baseRadius = 0,
     offsetFromBoundary = 3,
@@ -974,7 +944,7 @@ export function computeChargeBadgePlacement(
   }
 
   const metrics = chargeBadgeMetrics(chargeLabel, fontSize);
-  const boundary = Math.max(baseRadius, rayDistanceToLabelBox(bestAngle, label, fontSize));
+  const boundary = Math.max(baseRadius, rayDistanceToLabelBox(bestAngle, label, fontSize, labelOffset));
   const distance = boundary + offsetFromBoundary + metrics.radius;
   return {
     x: center.x + Math.cos(bestAngle) * distance,

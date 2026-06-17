@@ -416,6 +416,7 @@ export function finalizeAppBootstrap(ctx) {
         togglePaintMode: () => ctx.actions.selectionActions.togglePaintMode(),
         setPaintTool: tool => ctx.actions.selectionActions.setPaintTool(tool),
         setPaintColor: color => ctx.actions.selectionActions.setPaintColor(color),
+        setPaintBrushSize: size => ctx.actions.selectionActions.setPaintBrushSize(size),
         setPaintOpacity: opacity => ctx.actions.selectionActions.setPaintOpacity(opacity),
         toggleDrawBondMode: () => ctx.actions.selectionActions.toggleDrawBondMode(),
         handleDrawBondButtonClick: () => ctx.actions.selectionActions.handleDrawBondButtonClick(),

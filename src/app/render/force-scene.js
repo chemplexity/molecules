@@ -236,7 +236,8 @@ function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
   const hasDisplayStereo = [...molecule.bonds.values()].some(bond => bond.properties.display?.as);
   const hasChiralCenters = (molecule.getChiralCenters?.()?.length ?? 0) > 0;
   const needsProjectedOrganometallicSeed = hasProjectedOrganometallicDisplayCandidate(molecule) && hasIncompleteProjectedOrganometallicDisplay(molecule);
-  const shouldSeed = (!hasDisplayStereo && hasChiralCenters) || needsProjectedOrganometallicSeed || (isReactionPreviewMol && hasChiralCenters);
+  const skipReactionPreviewStereoSeed = isReactionPreviewMol && molecule.__reactionPreview?.skipForceStereoSeed === true;
+  const shouldSeed = needsProjectedOrganometallicSeed || (!skipReactionPreviewStereoSeed && ((!hasDisplayStereo && hasChiralCenters) || (isReactionPreviewMol && hasChiralCenters)));
   if (!shouldSeed) {
     return;
   }
@@ -290,11 +291,12 @@ export function createForceSceneRenderer(ctx) {
    * @param {object} [options] - Optional force-render controls.
    * @param {boolean} [options.preservePositions] - When true, reuses the prior node positions and velocities where possible.
    * @param {boolean} [options.preserveView] - When true, preserves the current zoom transform.
+   * @param {boolean} [options.keepInView] - When true, keeps the graph inside the viewport after restoring a preserved transform.
    * @param {Map<string, {x: number, y: number}>|null} [options.anchorLayout] - Optional precomputed heavy-atom anchors keyed by atom id.
    * @param {Map<string, {x: number, y: number}>|null} [options.initialPatchPos] - Optional initial patch positions applied before the first restarted tick.
    * @returns {void}
    */
-  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, anchorLayout = null, initialPatchPos = null } = {}) {
+  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, keepInView = false, anchorLayout = null, initialPatchPos = null } = {}) {
     prepareAromaticBondRendering(molecule);
     const { showLonePairs } = getRenderOptions();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(molecule);
@@ -764,18 +766,19 @@ export function createForceSceneRenderer(ctx) {
     hydrogenRepulsionForce.links?.(graph.links);
     ctx.simulation.force('hRepel', hydrogenRepulsionForce);
     ctx.simulation.force('hPlace', ctx.helpers.forceHydrogenPlacement(graph.links));
-    if (initialPatchPos?.size) {
-      // Apply edit-driven force patches before the first restarted tick so
-      // newly-added hydrogens do not animate in from the temporary seed layout.
+    const hasInitialPatch = initialPatchPos?.size > 0;
+    if (hasInitialPatch) {
+      // Apply converter/edit-driven force patches before the first restarted
+      // tick so nodes do not animate in from the temporary seed layout.
       ctx.helpers.patchForceNodePositions(initialPatchPos, { alpha: 0, restart: false });
       ctx.helpers.reseatHydrogensAroundPatched(initialPatchPos, { resetVelocity: true });
     }
-    if (!preservePositions && typeof ctx.simulation.tick === 'function') {
+    if (!preservePositions && !hasInitialPatch && typeof ctx.simulation.tick === 'function') {
       ctx.simulation.alpha(ctx.constants.forceLayoutInitialSettleAlpha);
       ctx.simulation.tick(ctx.constants.forceLayoutInitialSettleTicks);
       ctx.helpers.reseatForceGraphHydrogens(graph, { resetVelocity: true });
     }
-    ctx.simulation.alpha(preservePositions ? ctx.constants.forceLayoutEditRestartAlpha : ctx.constants.forceLayoutInitialRestartAlpha).restart();
+    ctx.simulation.alpha(preservePositions || hasInitialPatch ? ctx.constants.forceLayoutEditRestartAlpha : ctx.constants.forceLayoutInitialRestartAlpha).restart();
     _updateForceRingFills();
     _updateForceLonePairs();
     _updateForceChargeLabels();
@@ -1159,26 +1162,10 @@ export function createForceSceneRenderer(ctx) {
           ctx.state.disableKeepInView();
           return;
         }
-        const width = ctx.plotEl.clientWidth;
-        const height = ctx.plotEl.clientHeight;
-        const pad = ctx.constants.forceLayoutFitPad;
         const transform = ctx.d3.zoomTransform(ctx.svg.node());
-        let anyOut = false;
-        for (const node of graph.nodes) {
-          const radius = atomRadius(node.protons);
-          const sx1 = transform.x + (node.x - radius) * transform.k;
-          const sy1 = transform.y + (node.y - radius) * transform.k;
-          const sx2 = transform.x + (node.x + radius) * transform.k;
-          const sy2 = transform.y + (node.y + radius) * transform.k;
-          if (sx1 < pad || sx2 > width - pad || sy1 < pad || sy2 > height - pad) {
-            anyOut = true;
-          }
-        }
-        if (anyOut) {
-          const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, ctx.constants.forceLayoutFitPad);
-          if (fitTransform) {
-            ctx.svg.call(ctx.zoom.transform, fitTransform);
-          }
+        const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, ctx.constants.forceLayoutFitPad);
+        if (fitTransform && ctx.helpers.zoomTransformsDiffer(fitTransform, transform)) {
+          ctx.svg.call(ctx.zoom.transform, fitTransform);
           ctx.state.disableKeepInView();
         }
       }
@@ -1186,6 +1173,9 @@ export function createForceSceneRenderer(ctx) {
 
     if (preserveView && previousZoomTransform) {
       ctx.svg.call(ctx.zoom.transform, previousZoomTransform);
+    }
+    if (keepInView) {
+      ctx.state.enableKeepInView(ctx.constants.forceLayoutInitialKeepInViewTicks);
     }
 
     if (ctx.callbacks.hasHighlights()) {

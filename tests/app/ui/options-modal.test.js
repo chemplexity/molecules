@@ -59,7 +59,7 @@ describe('initOptionsModal', () => {
       atomNumberingFontSize: 10,
       bondEnFontSize: 10,
       bondLengthFontSize: 10,
-      twoDBondThickness: 1.6,
+      twoDBondThickness: 1.8,
       forceAtomSizeMultiplier: 1,
       forceBondThicknessMultiplier: 1
     };
@@ -162,7 +162,7 @@ describe('initOptionsModal', () => {
           atomNumberingFontSize: 24,
           bondEnFontSize: 24,
           bondLengthFontSize: 24,
-          twoDBondThickness: 1.6,
+          twoDBondThickness: 1.8,
           forceAtomSizeMultiplier: 1,
           forceBondThicknessMultiplier: 1
         }
@@ -195,7 +195,7 @@ describe('initOptionsModal', () => {
     const atomNumberingFontSizeEl = makeInput('10');
     const bondEnFontSizeEl = makeInput('10');
     const bondLengthFontSizeEl = makeInput('10');
-    const twoDBondThicknessEl = makeInput('1.6');
+    const twoDBondThicknessEl = makeInput('1.8');
     const forceAtomSizeEl = makeInput('2.8');
     const forceBondThicknessEl = makeInput('0.4');
     const applyBtnEl = makeButton();
@@ -209,7 +209,7 @@ describe('initOptionsModal', () => {
       atomNumberingFontSize: 10,
       bondEnFontSize: 10,
       bondLengthFontSize: 10,
-      twoDBondThickness: 1.6,
+      twoDBondThickness: 1.8,
       forceAtomSizeMultiplier: 1,
       forceBondThicknessMultiplier: 1
     };
@@ -286,7 +286,7 @@ describe('initOptionsModal', () => {
           atomNumberingFontSize: 10,
           bondEnFontSize: 10,
           bondLengthFontSize: 10,
-          twoDBondThickness: 1.6,
+          twoDBondThickness: 1.8,
           forceAtomSizeMultiplier: 2.5,
           forceBondThicknessMultiplier: 0.5
         }

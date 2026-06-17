@@ -3165,6 +3165,43 @@ test('clean in force mode preserves the aromatic-aza-protonation product on the 
   await expect.poll(async () => forceReactionPreviewHorizontalDelta(page)).toBeGreaterThan(20);
 });
 
+test('force-mode benzylic oxidation seeds the new product oxygen beside the product carbonyl', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'Cc1cc(ccc1c2ccc(F)cc2F)C(O)CCCCCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const oxidationRow = page.locator('#reaction-body tr').filter({ hasText: 'Benzylic Oxidation' }).first();
+  await expect(oxidationRow).toBeVisible();
+  await oxidationRow.click();
+  await expect(oxidationRow).toHaveClass(/reaction-active/);
+
+  const productOxoDistance = async () =>
+    await page.evaluate(() => {
+      for (const line of document.querySelectorAll('line.link')) {
+        const link = line.__data__;
+        const source = typeof link?.source === 'object' ? link.source : null;
+        const target = typeof link?.target === 'object' ? link.target : null;
+        if (!source || !target || link.order !== 2) {
+          continue;
+        }
+        if (!source.id?.startsWith('__rxn_product__') || !target.id?.startsWith('__rxn_product__')) {
+          continue;
+        }
+        const isCarbonyl = (source.name === 'C' && target.name === 'O') || (source.name === 'O' && target.name === 'C');
+        if (!isCarbonyl) {
+          continue;
+        }
+        return Math.hypot(target.x - source.x, target.y - source.y);
+      }
+      return null;
+    });
+
+  await expect.poll(productOxoDistance).toBeLessThan(90);
+});
+
 test('force-mode reaction preview rotation keeps the reaction arrow visible', async ({ page }) => {
   await page.goto('/index.html');
 

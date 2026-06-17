@@ -70,6 +70,8 @@ export function createAppStateBridge(deps) {
       setPaintTool: deps.overlayState.setPaintTool,
       getPaintColor: deps.overlayState.getPaintColor ?? (() => '#3366ff'),
       setPaintColor: deps.overlayState.setPaintColor ?? (() => {}),
+      getPaintBrushSize: deps.overlayState.getPaintBrushSize ?? (() => 12),
+      setPaintBrushSize: deps.overlayState.setPaintBrushSize ?? (() => {}),
       getPaintOpacity: deps.overlayState.getPaintOpacity ?? (() => 1),
       setPaintOpacity: deps.overlayState.setPaintOpacity ?? (() => {}),
       getChargeTool: deps.overlayState.getChargeTool,

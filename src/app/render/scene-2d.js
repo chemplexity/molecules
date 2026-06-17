@@ -746,6 +746,7 @@ export function create2DSceneRenderer(ctx) {
           const placement = computeChargeBadgePlacement(atom, mol, {
             pointForAtom: toSVGPt,
             label,
+            labelOffset: { dx: labelDx, dy: labelDy },
             fontSize,
             chargeLabel: sign,
             extraOccupiedAngles: lonePairDots.map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite)

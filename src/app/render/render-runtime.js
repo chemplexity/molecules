@@ -24,7 +24,10 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.preserveGeometry] - When true, retains the existing 2D coordinates.
    * @param {boolean} [options.preserveView] - When true, does not reset the viewport transform.
    * @param {boolean} [options.preserveAnalysis] - When true, keeps existing analysis highlights.
+   * @param {boolean} [options.forcePreservePositions] - When true for force renders, reuses current simulation positions where possible.
+   * @param {boolean} [options.forceKeepInView] - When true for force renders, preserves the current viewport first but refits if the graph settles outside it.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceAnchorLayout] - Optional force-anchor layout override keyed by atom id.
+   * @param {Map<string, {x: number, y: number}>|null} [options.forceInitialPatchPos] - Optional force-pixel positions applied before the first force tick.
    */
   function renderMol(mol, options = {}) {
     const {
@@ -34,7 +37,10 @@ export function createRenderRuntime(deps) {
       preserveGeometry = false,
       preserveView = false,
       preserveAnalysis = false,
-      forceAnchorLayout = null
+      forcePreservePositions = false,
+      forceKeepInView = false,
+      forceAnchorLayout = null,
+      forceInitialPatchPos = null
     } = options;
 
     if (!preserveAnalysis) {
@@ -53,7 +59,17 @@ export function createRenderRuntime(deps) {
     deps.chemistry.kekulize(mol);
 
     if (deps.state.getMode() === 'force') {
-      updateForce(mol, { preserveView, anchorLayout: forceAnchorLayout });
+      const forceOptions = { preserveView, anchorLayout: forceAnchorLayout };
+      if (forcePreservePositions) {
+        forceOptions.preservePositions = true;
+      }
+      if (forceInitialPatchPos) {
+        forceOptions.initialPatchPos = forceInitialPatchPos;
+      }
+      if (forceKeepInView) {
+        forceOptions.keepInView = true;
+      }
+      updateForce(mol, forceOptions);
       if (!preserveAnalysis) {
         deps.analysis.updateFormula(mol);
         deps.analysis.updateDescriptors(mol);

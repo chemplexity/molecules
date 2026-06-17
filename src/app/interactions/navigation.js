@@ -1,9 +1,13 @@
 /** @module app/interactions/navigation */
 
-import { FORCE_LAYOUT_BOND_LENGTH } from '../render/force-helpers.js';
+import { convertForceCoordsToLineLayout, convertLineCoordsToForceLayout, FORCE_LAYOUT_BOND_LENGTH } from '../render/force-helpers.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
 const CLEAN_2D_BOND_LENGTH_TOLERANCE = 0.18;
+const ROTATE_FIT_FALLBACK_PAD = 40;
+const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
+const ROTATE_FIT_MAX_SCALE = 30;
+const ZOOM_TRANSFORM_EPSILON = 0.001;
 
 /**
  * Preserves reaction-preview metadata on a working molecule clone so clean and
@@ -128,6 +132,65 @@ function buildForceAnchorLayoutFromPlacedCoords(molecule) {
   }
 
   return anchorLayout;
+}
+
+function applyLineLayoutCoords(molecule, coords) {
+  if (!molecule?.atoms || !(coords instanceof Map)) {
+    return 0;
+  }
+  let applied = 0;
+  for (const [atomId, pos] of coords) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || !Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) {
+      continue;
+    }
+    atom.x = pos.x;
+    atom.y = pos.y;
+    applied++;
+  }
+  return applied;
+}
+
+function forcePatchEntryForNode(node) {
+  const entry = { x: node.x, y: node.y };
+  if (node.forcePlacementParentId != null) {
+    entry.forcePlacementParentId = node.forcePlacementParentId;
+  }
+  if (Number.isFinite(node.forcePlacementAngle)) {
+    entry.forcePlacementAngle = node.forcePlacementAngle;
+  }
+  return entry;
+}
+
+function zoomTransformsDiffer(a, b, epsilon = ZOOM_TRANSFORM_EPSILON) {
+  if (!a || !b) {
+    return true;
+  }
+  return Math.abs(a.k - b.k) > epsilon || Math.abs(a.x - b.x) > epsilon || Math.abs(a.y - b.y) > epsilon;
+}
+
+function lineRotateFitTransform(context, bbox) {
+  if (!bbox || !Number.isFinite(bbox.minX) || !Number.isFinite(bbox.maxX) || !Number.isFinite(bbox.minY) || !Number.isFinite(bbox.maxY)) {
+    return null;
+  }
+  const width = context.dom.plotEl?.clientWidth || 600;
+  const height = context.dom.plotEl?.clientHeight || 400;
+  const pad = context.force?.fitPad ?? ROTATE_FIT_FALLBACK_PAD;
+  const pads = context.overlays.viewportFitPadding?.(pad) ?? { left: pad, right: pad, top: pad, bottom: pad };
+  const horizontalPad = Math.max(pad, (pads.left + pads.right) / 2);
+  const verticalPad = Math.max(pad, (pads.top + pads.bottom) / 2);
+  const molSVGW = (bbox.maxX - bbox.minX) * context.view.scale || 1;
+  const molSVGH = (bbox.maxY - bbox.minY) * context.view.scale || 1;
+  const fitWidth = Math.max(1, width - horizontalPad * 2);
+  const fitHeight = Math.max(1, height - verticalPad * 2);
+  const exactFitScale = Math.min(fitWidth / molSVGW, fitHeight / molSVGH, ROTATE_FIT_MAX_SCALE);
+  const scaleMultiplier = context.force?.initialZoomMultiplier ?? ROTATE_FIT_ZOOM_MULTIPLIER;
+  const scale = exactFitScale < 1 ? exactFitScale : Math.min(scaleMultiplier, exactFitScale, ROTATE_FIT_MAX_SCALE);
+  return context.view.makeZoomIdentity?.(width / 2 - (width / 2) * scale, height / 2 - (height / 2) * scale, scale) ?? {
+    x: width / 2 - (width / 2) * scale,
+    y: height / 2 - (height / 2) * scale,
+    k: scale
+  };
 }
 
 /**
@@ -284,6 +347,7 @@ export function createNavigationActions(context) {
       preserveHistory: true,
       preserveAnalysis: true,
       preserveView: true,
+      forceKeepInView: true,
       forceAnchorLayout: forceAnchorLayout.size > 0 ? forceAnchorLayout : null
     });
     const btn = context.dom.cleanForceButton;
@@ -328,7 +392,29 @@ export function createNavigationActions(context) {
     }
 
     const mol = resonanceResetMol ? resonanceResetMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
-    context.renderers.renderMol(mol, { preserveHistory: true });
+    if (previousMode === 'force') {
+      const converted = convertForceCoordsToLineLayout(mol, context.simulation.nodes?.(), {
+        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      });
+      const appliedCount = applyLineLayoutCoords(mol, converted.coords);
+      context.renderers.renderMol(mol, {
+        preserveHistory: true,
+        preserveGeometry: appliedCount > 0
+      });
+      return;
+    }
+
+    const plotWidth = context.dom.plotEl?.clientWidth || 600;
+    const plotHeight = context.dom.plotEl?.clientHeight || 400;
+    const converted = convertLineCoordsToForceLayout(mol, {
+      bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+      forceCenter: { x: plotWidth / 2, y: plotHeight / 2 }
+    });
+    context.renderers.renderMol(mol, {
+      preserveHistory: true,
+      forceAnchorLayout: converted.lineAnchorCoords.size > 0 ? converted.lineAnchorCoords : null,
+      forceInitialPatchPos: converted.coords.size > 0 ? converted.coords : null
+    });
   }
 
   function startRotate(delta) {
@@ -363,19 +449,20 @@ export function createNavigationActions(context) {
           const dy = node.y - cy;
           node.x = cx + dx * cosR - dy * sinR;
           node.y = cy + dx * sinR + dy * cosR;
+          if (Number.isFinite(node.forcePlacementAngle)) {
+            node.forcePlacementAngle += rad;
+          }
           node.vx = 0;
           node.vy = 0;
-          patchPos.set(node.id, { x: node.x, y: node.y });
+          patchPos.set(node.id, forcePatchEntryForNode(node));
         }
         context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
+        const currentTransform = context.view.getZoomTransform();
         const fitTransform = context.force.forceFitTransform(nodes, context.force.fitPad, {
           scaleMultiplier: context.force.initialZoomMultiplier
         });
-        if (fitTransform) {
-          const currentTransform = context.view.getZoomTransform();
-          if (context.force.zoomTransformsDiffer(fitTransform, currentTransform)) {
-            context.view.setZoomTransform(fitTransform);
-          }
+        if (fitTransform && context.force.zoomTransformsDiffer(fitTransform, currentTransform)) {
+          context.view.setZoomTransform(fitTransform);
         }
       };
       step();
@@ -416,20 +503,11 @@ export function createNavigationActions(context) {
       const bbox = context.helpers.atomBBox(allAtoms);
       context.state.viewState.setCx2d(bbox.cx);
       context.state.viewState.setCy2d(bbox.cy);
-
-      const W = context.dom.plotEl.clientWidth || 600;
-      const H = context.dom.plotEl.clientHeight || 400;
-      const PAD = context.overlays.hasReactionPreview() ? 12 : 18;
-      const pads = context.overlays.viewportFitPadding(PAD);
-      const horizontalPad = Math.max(PAD, (pads.left + pads.right) / 2);
-      const verticalPad = Math.max(PAD, (pads.top + pads.bottom) / 2);
-      const molSVGW = (bbox.maxX - bbox.minX) * context.view.scale || 1;
-      const molSVGH = (bbox.maxY - bbox.minY) * context.view.scale || 1;
-      const fitCap = context.overlays.hasReactionPreview() ? 1.28 : 1;
-      const neededScale = Math.min(Math.max(1, W - horizontalPad * 2) / molSVGW, Math.max(1, H - verticalPad * 2) / molSVGH, fitCap);
-      const currentScale = context.view.getZoomTransform().k;
-      if (Math.abs(neededScale - currentScale) > 0.001) {
-        context.view.setZoomTransform(context.view.makeZoomIdentity(W / 2 - (W / 2) * neededScale, H / 2 - (H / 2) * neededScale, neededScale));
+      const fitTransform = lineRotateFitTransform(context, bbox);
+      const currentTransform = context.view.getZoomTransform();
+      const differs = context.force?.zoomTransformsDiffer?.(fitTransform, currentTransform, ZOOM_TRANSFORM_EPSILON) ?? zoomTransformsDiffer(fitTransform, currentTransform);
+      if (fitTransform && differs) {
+        context.view.setZoomTransform(fitTransform);
       }
       context.renderers.draw2d();
     };
@@ -462,12 +540,18 @@ export function createNavigationActions(context) {
       for (const node of nodes) {
         if (isFlipH) {
           node.x = 2 * cx - node.x;
+          if (Number.isFinite(node.forcePlacementAngle)) {
+            node.forcePlacementAngle = Math.PI - node.forcePlacementAngle;
+          }
         } else {
           node.y = 2 * cy - node.y;
+          if (Number.isFinite(node.forcePlacementAngle)) {
+            node.forcePlacementAngle = -node.forcePlacementAngle;
+          }
         }
         node.vx = 0;
         node.vy = 0;
-        patchPos.set(node.id, { x: node.x, y: node.y });
+        patchPos.set(node.id, forcePatchEntryForNode(node));
       }
       context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
       const flipResult = context.helpers.flipDisplayStereo?.(mol);

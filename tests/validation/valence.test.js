@@ -204,6 +204,19 @@ describe('validateValence — over-bonded carbon', () => {
     assert.equal(ws[0].bondOrder, 6);
   });
 
+  it('C with 5 attached atoms warns even when one bond is to a transition metal', () => {
+    const mol = buildWithNBonds('C', 4);
+    mol.addAtom('pt', 'Pt');
+    mol.addBond(null, 'center', 'pt', { order: 1 }, false);
+
+    const ws = centerWarnings(mol);
+
+    assert.equal(ws.length, 1);
+    assert.equal(ws[0].element, 'C');
+    assert.equal(ws[0].bondOrder, 5);
+    assert.match(ws[0].reason, /Attached bond count 5 exceeds/);
+  });
+
   it('neutral C with 2 single bonds now produces a warning', () => {
     const ws = centerWarnings(buildWithNBonds('C', 2));
     assert.equal(ws.length, 1);
@@ -214,6 +227,24 @@ describe('validateValence — over-bonded carbon', () => {
     const ws = centerWarnings(buildWithNBonds('C', 0));
     assert.equal(ws.length, 1);
     assert.deepEqual(ws[0].allowed, [4]);
+  });
+
+  it('over-bonded aromatic carbon produces a warning', () => {
+    const mol = parseSMILES('c1ccccc1');
+    const target = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.properties.aromatic);
+    assert.ok(target);
+    for (let i = 0; i < 10; i++) {
+      const substituent = mol.addAtom(`extra${i}`, 'C');
+      mol.addBond(`extra-bond${i}`, target.id, substituent.id, { order: 1 }, false);
+    }
+
+    const ws = validateValence(mol).filter(warning => warning.atomId === target.id);
+
+    assert.equal(ws.length, 1);
+    assert.equal(ws[0].element, 'C');
+    assert.ok(ws[0].bondOrder > 4);
+    assert.deepEqual(ws[0].allowed, [4]);
+    assert.match(ws[0].reason, /Attached bond count 13 exceeds/);
   });
 });
 

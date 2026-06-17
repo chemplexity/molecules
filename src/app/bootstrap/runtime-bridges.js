@@ -86,6 +86,10 @@ export function initializeRuntimeBridges(deps) {
       setPaintColor: value => {
         deps.runtimeState.paintColor = value;
       },
+      getPaintBrushSize: () => deps.runtimeState.paintBrushSize,
+      setPaintBrushSize: value => {
+        deps.runtimeState.paintBrushSize = value;
+      },
       getPaintOpacity: () => deps.runtimeState.paintOpacity,
       setPaintOpacity: value => {
         deps.runtimeState.paintOpacity = value;

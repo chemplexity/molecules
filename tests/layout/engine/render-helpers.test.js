@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords } from '../../../src/layout/engine/api.js';
-import { atomColor, formatChargeLabel, kekulize, ringLabelOffset } from '../../../src/layout/engine/render-helpers.js';
+import { atomColor, computeChargeBadgePlacement, formatChargeLabel, kekulize, labelHalfW, ringLabelOffset } from '../../../src/layout/engine/render-helpers.js';
 
 describe('layout/engine/render-helpers', () => {
   it('uses the subdued metallic palette for selected metals', () => {
@@ -21,6 +21,44 @@ describe('layout/engine/render-helpers', () => {
     assert.equal(formatChargeLabel(2), '2+');
     assert.equal(formatChargeLabel(-1), '−');
     assert.equal(formatChargeLabel(-2), '2−');
+  });
+
+  it('places charge badges outside shifted carbonyl oxygen labels', () => {
+    const carbon = { id: 'c1', name: 'C', x: -40, y: 0 };
+    const oxygen = {
+      id: 'o1',
+      name: 'O',
+      x: 0,
+      y: 0,
+      getNeighbors() {
+        return [carbon];
+      },
+      getCharge() {
+        return -1;
+      }
+    };
+    carbon.getNeighbors = () => [oxygen];
+    const molecule = {
+      atoms: new Map([
+        [carbon.id, carbon],
+        [oxygen.id, oxygen]
+      ])
+    };
+    const label = 'O';
+    const fontSize = 14;
+    const labelOffset = { dx: 8, dy: 0 };
+    const placement = computeChargeBadgePlacement(oxygen, molecule, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label,
+      labelOffset,
+      fontSize,
+      chargeLabel: '−',
+      preferredAngle: 0
+    });
+
+    assert.ok(placement);
+    const labelRightEdge = labelOffset.dx + labelHalfW(label, fontSize);
+    assert.ok(placement.x - placement.radius >= labelRightEdge + 3, 'expected charge badge to clear the shifted oxygen label');
   });
 
   it('localizes fluorene aromatic bonds without turning the bridge into an exocyclic double', () => {

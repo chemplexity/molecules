@@ -3,6 +3,27 @@
 import { parseSMARTS } from './parser.js';
 import { findSubgraphMappings } from '../algorithms/vf2.js';
 
+const SMARTS_PARSE_CACHE_MAX = 256;
+const _smartsParseCache = new Map();
+
+function _cachedParseSMARTS(smarts) {
+  if (typeof smarts !== 'string') {
+    return smarts;
+  }
+  const cached = _smartsParseCache.get(smarts);
+  if (cached) {
+    _smartsParseCache.delete(smarts);
+    _smartsParseCache.set(smarts, cached);
+    return cached;
+  }
+  const parsed = parseSMARTS(smarts);
+  _smartsParseCache.set(smarts, parsed);
+  if (_smartsParseCache.size > SMARTS_PARSE_CACHE_MAX) {
+    _smartsParseCache.delete(_smartsParseCache.keys().next().value);
+  }
+  return parsed;
+}
+
 /**
  * Flips a SMILES directional-bond marker: `'/'` ↔ `'\\'`.
  * @param {'/'|'\\'} dir - The dir value.
@@ -249,7 +270,7 @@ function* _findSMARTSParsed(target, queryMol, options = {}, { dedupe = true } = 
  * @yields {Map<string, string>}
  */
 export function* findSMARTS(target, smarts, options = {}) {
-  const queryMol = parseSMARTS(smarts);
+  const queryMol = _cachedParseSMARTS(smarts);
   yield* _findSMARTSParsed(target, queryMol, options, { dedupe: true });
 }
 
@@ -266,7 +287,7 @@ export function* findSMARTS(target, smarts, options = {}) {
  * @yields {Map<string, string>}
  */
 export function* findSMARTSRaw(target, smarts, options = {}) {
-  const queryMol = parseSMARTS(smarts);
+  const queryMol = _cachedParseSMARTS(smarts);
   yield* _findSMARTSParsed(target, queryMol, options, { dedupe: false });
 }
 
