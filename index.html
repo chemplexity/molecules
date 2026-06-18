@@ -58,6 +58,31 @@
             <button id="elem-btn-Cl" title="Chlorine" onclick="setDrawElement('Cl')">Cl</button>
             <button id="elem-btn-Br" title="Bromine" onclick="setDrawElement('Br')">Br</button>
             <button id="elem-btn-I" title="Iodine" onclick="setDrawElement('I')">I</button>
+            <button id="periodic-table-btn" type="button" title="Periodic table" aria-label="Periodic table" onclick="togglePeriodicTablePicker()">
+              <svg class="periodic-table-icon" viewBox="0 0 24 18" aria-hidden="true">
+                <rect x="1" y="1" width="2.2" height="2.2"></rect>
+                <rect x="20.8" y="1" width="2.2" height="2.2"></rect>
+                <rect x="1" y="4.4" width="2.2" height="2.2"></rect>
+                <rect x="4.3" y="4.4" width="2.2" height="2.2"></rect>
+                <rect x="14.2" y="4.4" width="2.2" height="2.2"></rect>
+                <rect x="17.5" y="4.4" width="2.2" height="2.2"></rect>
+                <rect x="20.8" y="4.4" width="2.2" height="2.2"></rect>
+                <rect x="1" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="4.3" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="7.6" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="10.9" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="14.2" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="17.5" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="20.8" y="7.8" width="2.2" height="2.2"></rect>
+                <rect x="7.6" y="14.6" width="2.2" height="2.2"></rect>
+                <rect x="10.9" y="14.6" width="2.2" height="2.2"></rect>
+                <rect x="14.2" y="14.6" width="2.2" height="2.2"></rect>
+                <rect x="17.5" y="14.6" width="2.2" height="2.2"></rect>
+              </svg>
+            </button>
+            <div id="periodic-table-popover" class="periodic-table-popover" role="dialog" aria-label="Periodic table element picker" hidden>
+              <div id="periodic-table-grid" class="periodic-table-grid"></div>
+            </div>
           </div>
           <div id="undo-controls">
             <button id="undo-btn" title="Undo (Ctrl+Z)" onclick="undoAction()" disabled>
@@ -75,6 +100,7 @@
           </div>
           <div id="force-controls">
             <button id="label-toggle" title="Toggle atom labels" onclick="toggleLabels()">Atom Labels</button>
+            <button id="force-auto-zoom-btn" title="Fit to window" aria-label="Fit to window" onclick="autoZoomView()">⛶</button>
             <button id="force-rotate-ccw" title="Rotate counter-clockwise">&#x21BA;</button>
             <button id="force-rotate-cw" title="Rotate clockwise">&#x21BB;</button>
             <button id="force-flip-h" title="Flip horizontal">&#x2194;</button>
@@ -142,6 +168,7 @@
             </div>
           </div>
           <div id="rotate-controls">
+            <button id="auto-zoom-btn" title="Fit to window" aria-label="Fit to window" onclick="autoZoomView()">⛶</button>
             <button id="rotate-ccw" title="Rotate counter-clockwise">&#x21BA;</button>
             <button id="rotate-cw" title="Rotate clockwise">&#x21BB;</button>
             <button id="flip-h" title="Flip horizontal">&#x2194;</button>

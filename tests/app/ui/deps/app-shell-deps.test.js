@@ -25,6 +25,7 @@ describe('createAppShellDeps', () => {
         open: () => 'open'
       },
       navigation: {
+        autoZoom: () => 'autoZoom',
         cleanLayout2d: () => 'cleanLayout2d',
         cleanLayoutForce: () => 'cleanLayoutForce',
         toggleMode: () => 'toggleMode'
@@ -44,6 +45,8 @@ describe('createAppShellDeps', () => {
         toggleEraseMode: () => 'toggleEraseMode',
         setChargeTool: value => `setChargeTool:${value}`,
         setDrawElement: value => `setDrawElement:${value}`,
+        togglePeriodicTablePicker: () => 'togglePeriodicTablePicker',
+        selectPeriodicElement: value => `selectPeriodicElement:${value}`,
         setDrawBondType: value => `setDrawBondType:${value}`
       },
       editing: {
@@ -81,6 +84,7 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.history.undo(), 'undo');
     assert.equal(deps.exportActions.copyForceSvg(), 'copyForceSvg');
     assert.equal(deps.options.open(), 'open');
+    assert.equal(deps.navigation.autoZoom(), 'autoZoom');
     assert.equal(deps.navigation.toggleMode(), 'toggleMode');
     assert.equal(deps.selection.togglePaintMode(), 'togglePaintMode');
     assert.equal(deps.selection.setPaintTool('bucket'), 'setPaintTool:bucket');
@@ -89,6 +93,8 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.selection.setPaintOpacity(0.45), 'setPaintOpacity:0.45');
     assert.equal(deps.selection.setChargeTool('positive'), 'setChargeTool:positive');
     assert.equal(deps.selection.setDrawElement('N'), 'setDrawElement:N');
+    assert.equal(deps.selection.togglePeriodicTablePicker(), 'togglePeriodicTablePicker');
+    assert.equal(deps.selection.selectPeriodicElement('Fe'), 'selectPeriodicElement:Fe');
     assert.equal(deps.selection.setDrawBondType('dash'), 'setDrawBondType:dash');
     assert.equal(deps.editing.deleteSelection(), 'deleteSelection');
     assert.equal(deps.state.hasLoadedInput(), true);

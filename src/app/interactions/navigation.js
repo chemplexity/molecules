@@ -4,6 +4,11 @@ import { convertForceCoordsToLineLayout, convertLineCoordsToForceLayout, FORCE_L
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
 const CLEAN_2D_BOND_LENGTH_TOLERANCE = 0.18;
+const CLEAN_RING_SNAP_MIN_SIZE = 3;
+const CLEAN_RING_SNAP_MAX_SIZE = 8;
+const CLEAN_RING_SNAP_MAX_DISPLACEMENT_RATIO = 0.75;
+const CLEAN_RING_SNAP_RMS_DISPLACEMENT_RATIO = 0.4;
+const CLEAN_RING_SNAP_MIN_MOVE = 1e-4;
 const ROTATE_FIT_FALLBACK_PAD = 40;
 const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
 const ROTATE_FIT_MAX_SCALE = 30;
@@ -151,6 +156,144 @@ function applyLineLayoutCoords(molecule, coords) {
   return applied;
 }
 
+function ringBondIds(molecule, ring) {
+  const ids = [];
+  for (let index = 0; index < ring.length; index++) {
+    const firstId = ring[index];
+    const secondId = ring[(index + 1) % ring.length];
+    const bond =
+      typeof molecule.getBond === 'function'
+        ? molecule.getBond(firstId, secondId)
+        : [...(molecule.bonds?.values?.() ?? [])].find(candidate => candidate?.atoms?.includes(firstId) && candidate?.atoms?.includes(secondId));
+    if (bond?.id != null) {
+      ids.push(bond.id);
+    }
+  }
+  return ids;
+}
+
+function polygonAreaForRing(ring, coords) {
+  let area = 0;
+  for (let index = 0; index < ring.length; index++) {
+    const current = coords.get(ring[index]);
+    const next = coords.get(ring[(index + 1) % ring.length]);
+    area += current.x * next.y - next.x * current.y;
+  }
+  return area / 2;
+}
+
+function regularRingTargetsForCurrentPose(ring, coords, bondLength = DEFAULT_LAYOUT_BOND_LENGTH) {
+  const size = ring.length;
+  let cx = 0;
+  let cy = 0;
+  for (const atomId of ring) {
+    const position = coords.get(atomId);
+    cx += position.x;
+    cy += position.y;
+  }
+  cx /= size;
+  cy /= size;
+
+  const radius = bondLength / (2 * Math.sin(Math.PI / size));
+  const direction = polygonAreaForRing(ring, coords) >= 0 ? 1 : -1;
+  let best = null;
+  for (let anchorIndex = 0; anchorIndex < size; anchorIndex++) {
+    const anchor = coords.get(ring[anchorIndex]);
+    const startAngle = Math.atan2(anchor.y - cy, anchor.x - cx) - direction * ((2 * Math.PI * anchorIndex) / size);
+    const targets = new Map();
+    let score = 0;
+    for (let index = 0; index < size; index++) {
+      const angle = startAngle + direction * ((2 * Math.PI * index) / size);
+      const target = {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle)
+      };
+      const current = coords.get(ring[index]);
+      score += (target.x - current.x) ** 2 + (target.y - current.y) ** 2;
+      targets.set(ring[index], target);
+    }
+    if (!best || score < best.score) {
+      best = { score, targets };
+    }
+  }
+  return best?.targets ?? new Map();
+}
+
+function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT_BOND_LENGTH } = {}) {
+  const snappedAtoms = new Set();
+  const snappedBonds = new Set();
+  const targetSums = new Map();
+  if (!molecule?.atoms || !molecule?.bonds || typeof molecule.getRings !== 'function') {
+    return { snappedAtoms, snappedBonds, snappedCount: 0 };
+  }
+
+  const coords = new Map();
+  for (const [atomId, atom] of molecule.atoms) {
+    if (atom.name === 'H' || atom.visible === false || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    coords.set(atomId, { x: atom.x, y: atom.y });
+  }
+
+  for (const ring of molecule.getRings()) {
+    if (ring.length < CLEAN_RING_SNAP_MIN_SIZE || ring.length > CLEAN_RING_SNAP_MAX_SIZE || !ring.every(atomId => coords.has(atomId))) {
+      continue;
+    }
+    const targets = regularRingTargetsForCurrentPose(ring, coords, bondLength);
+    if (targets.size !== ring.length) {
+      continue;
+    }
+
+    let maxMove = 0;
+    let moveSquared = 0;
+    for (const atomId of ring) {
+      const current = coords.get(atomId);
+      const target = targets.get(atomId);
+      const move = Math.hypot(target.x - current.x, target.y - current.y);
+      maxMove = Math.max(maxMove, move);
+      moveSquared += move * move;
+    }
+    const rmsMove = Math.sqrt(moveSquared / ring.length);
+    if (
+      maxMove < CLEAN_RING_SNAP_MIN_MOVE ||
+      maxMove > bondLength * CLEAN_RING_SNAP_MAX_DISPLACEMENT_RATIO ||
+      rmsMove > bondLength * CLEAN_RING_SNAP_RMS_DISPLACEMENT_RATIO
+    ) {
+      continue;
+    }
+
+    for (const atomId of ring) {
+      const target = targets.get(atomId);
+      const sum = targetSums.get(atomId) ?? { x: 0, y: 0, count: 0 };
+      sum.x += target.x;
+      sum.y += target.y;
+      sum.count += 1;
+      targetSums.set(atomId, sum);
+      snappedAtoms.add(atomId);
+    }
+    for (const bondId of ringBondIds(molecule, ring)) {
+      snappedBonds.add(bondId);
+    }
+  }
+
+  for (const [atomId, sum] of targetSums) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || sum.count === 0) {
+      continue;
+    }
+    atom.x = sum.x / sum.count;
+    atom.y = sum.y / sum.count;
+  }
+
+  if (snappedAtoms.size > 0) {
+    for (const atomId of [...snappedAtoms]) {
+      addTouchedHeavyNeighborhood(molecule, molecule.atoms.get(atomId), snappedAtoms, snappedBonds, 1);
+    }
+  }
+
+  return { snappedAtoms, snappedBonds, snappedCount: targetSums.size };
+}
+
 function forcePatchEntryForNode(node) {
   const entry = { x: node.x, y: node.y };
   if (node.forcePlacementParentId != null) {
@@ -289,10 +432,19 @@ export function createNavigationActions(context) {
     const mol = context.state.documentState.getMol2d();
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
+    const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
+      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+    });
     const hasRefinementRelayout = typeof context.helpers.refineExistingCoords === 'function';
     const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
       bondLength: DEFAULT_LAYOUT_BOND_LENGTH
     });
+    for (const atomId of ringSnapHints.snappedAtoms) {
+      refinementHints.touchedAtoms.add(atomId);
+    }
+    for (const bondId of ringSnapHints.snappedBonds) {
+      refinementHints.touchedBonds.add(bondId);
+    }
     const refinedCoords = hasRefinementRelayout
       ? context.helpers.refineExistingCoords(relayoutMol, {
           suppressH: true,
@@ -302,7 +454,7 @@ export function createNavigationActions(context) {
           touchedBonds: refinementHints.touchedBonds
         })
       : null;
-    const preserveGeometry = refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout;
+    const preserveGeometry = ringSnapHints.snappedCount > 0 || (refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
       preserveHistory: true,
@@ -328,9 +480,18 @@ export function createNavigationActions(context) {
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), DEFAULT_LAYOUT_BOND_LENGTH);
+    const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
+      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+    });
     const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
       bondLength: DEFAULT_LAYOUT_BOND_LENGTH
     });
+    for (const atomId of ringSnapHints.snappedAtoms) {
+      refinementHints.touchedAtoms.add(atomId);
+    }
+    for (const bondId of ringSnapHints.snappedBonds) {
+      refinementHints.touchedBonds.add(bondId);
+    }
     if (typeof context.helpers.refineExistingCoords === 'function') {
       context.helpers.refineExistingCoords(relayoutMol, {
         suppressH: true,
@@ -415,6 +576,39 @@ export function createNavigationActions(context) {
       forceAnchorLayout: converted.lineAnchorCoords.size > 0 ? converted.lineAnchorCoords : null,
       forceInitialPatchPos: converted.coords.size > 0 ? converted.coords : null
     });
+  }
+
+  function autoZoom() {
+    const mode = context.state.viewState.getMode();
+    if (mode === 'force') {
+      const nodes = context.simulation.nodes?.().filter(node => Number.isFinite(node.x) && Number.isFinite(node.y)) ?? [];
+      if (!nodes.length) {
+        return;
+      }
+      const fitTransform = context.force.forceFitTransform(nodes, context.force.fitPad, {
+        scaleMultiplier: context.force.initialZoomMultiplier
+      });
+      if (fitTransform) {
+        context.view.setZoomTransform(fitTransform);
+      }
+      return;
+    }
+
+    const mol = context.state.documentState.getMol2d();
+    if (mode !== '2d' || !mol) {
+      return;
+    }
+    const atoms = [...mol.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
+    if (!atoms.length) {
+      return;
+    }
+    const bbox = context.helpers.atomBBox(atoms);
+    context.state.viewState.setCx2d?.(bbox.cx);
+    context.state.viewState.setCy2d?.(bbox.cy);
+    const fitTransform = lineRotateFitTransform(context, bbox);
+    if (fitTransform) {
+      context.view.setZoomTransform(fitTransform);
+    }
   }
 
   function startRotate(delta) {
@@ -646,6 +840,7 @@ export function createNavigationActions(context) {
   }
 
   return {
+    autoZoom,
     cleanLayout2d,
     cleanLayoutForce,
     toggleMode,

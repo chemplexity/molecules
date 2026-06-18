@@ -1,6 +1,11 @@
 /** @module app/interactions/selection */
 
-const DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
+import elements from '../../data/elements.js';
+import { atomColor } from '../../layout/mol2d-helpers.js';
+
+const COMMON_DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
+const DRAW_ELEMENTS = Object.keys(elements);
+const PERIODIC_TABLE_ELEMENTS = DRAW_ELEMENTS.filter(symbol => symbol !== 'D');
 const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'dash'];
 const RING_TEMPLATE_SIZES = [3, 4, 5, 6, 7, 'benzene'];
 const CHARGE_TOOLS = ['positive', 'negative'];
@@ -11,6 +16,163 @@ const DEFAULT_PAINT_BRUSH_SIZE = 12;
 const MIN_PAINT_BRUSH_SIZE = 4;
 const MAX_PAINT_BRUSH_SIZE = 32;
 const PAINT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const LANTHANIDES = ['La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu'];
+const ACTINIDES = ['Ac', 'Th', 'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md', 'No', 'Lr'];
+const ELEMENT_NAMES = {
+  H: 'Hydrogen',
+  He: 'Helium',
+  Li: 'Lithium',
+  Be: 'Beryllium',
+  B: 'Boron',
+  C: 'Carbon',
+  N: 'Nitrogen',
+  O: 'Oxygen',
+  F: 'Fluorine',
+  Ne: 'Neon',
+  Na: 'Sodium',
+  Mg: 'Magnesium',
+  Al: 'Aluminum',
+  Si: 'Silicon',
+  P: 'Phosphorus',
+  S: 'Sulfur',
+  Cl: 'Chlorine',
+  Ar: 'Argon',
+  K: 'Potassium',
+  Ca: 'Calcium',
+  Sc: 'Scandium',
+  Ti: 'Titanium',
+  V: 'Vanadium',
+  Cr: 'Chromium',
+  Mn: 'Manganese',
+  Fe: 'Iron',
+  Co: 'Cobalt',
+  Ni: 'Nickel',
+  Cu: 'Copper',
+  Zn: 'Zinc',
+  Ga: 'Gallium',
+  Ge: 'Germanium',
+  As: 'Arsenic',
+  Se: 'Selenium',
+  Br: 'Bromine',
+  Kr: 'Krypton',
+  Rb: 'Rubidium',
+  Sr: 'Strontium',
+  Y: 'Yttrium',
+  Zr: 'Zirconium',
+  Nb: 'Niobium',
+  Mo: 'Molybdenum',
+  Tc: 'Technetium',
+  Ru: 'Ruthenium',
+  Rh: 'Rhodium',
+  Pd: 'Palladium',
+  Ag: 'Silver',
+  Cd: 'Cadmium',
+  In: 'Indium',
+  Sn: 'Tin',
+  Sb: 'Antimony',
+  Te: 'Tellurium',
+  I: 'Iodine',
+  Xe: 'Xenon',
+  Cs: 'Cesium',
+  Ba: 'Barium',
+  La: 'Lanthanum',
+  Ce: 'Cerium',
+  Pr: 'Praseodymium',
+  Nd: 'Neodymium',
+  Pm: 'Promethium',
+  Sm: 'Samarium',
+  Eu: 'Europium',
+  Gd: 'Gadolinium',
+  Tb: 'Terbium',
+  Dy: 'Dysprosium',
+  Ho: 'Holmium',
+  Er: 'Erbium',
+  Tm: 'Thulium',
+  Yb: 'Ytterbium',
+  Lu: 'Lutetium',
+  Hf: 'Hafnium',
+  Ta: 'Tantalum',
+  W: 'Tungsten',
+  Re: 'Rhenium',
+  Os: 'Osmium',
+  Ir: 'Iridium',
+  Pt: 'Platinum',
+  Au: 'Gold',
+  Hg: 'Mercury',
+  Tl: 'Thallium',
+  Pb: 'Lead',
+  Bi: 'Bismuth',
+  Po: 'Polonium',
+  At: 'Astatine',
+  Rn: 'Radon',
+  Fr: 'Francium',
+  Ra: 'Radium',
+  Ac: 'Actinium',
+  Th: 'Thorium',
+  Pa: 'Protactinium',
+  U: 'Uranium',
+  Np: 'Neptunium',
+  Pu: 'Plutonium',
+  Am: 'Americium',
+  Cm: 'Curium',
+  Bk: 'Berkelium',
+  Cf: 'Californium',
+  Es: 'Einsteinium',
+  Fm: 'Fermium',
+  Md: 'Mendelevium',
+  No: 'Nobelium',
+  Lr: 'Lawrencium',
+  Rf: 'Rutherfordium',
+  Db: 'Dubnium',
+  Sg: 'Seaborgium',
+  Bh: 'Bohrium',
+  Hs: 'Hassium',
+  Mt: 'Meitnerium',
+  Ds: 'Darmstadtium',
+  Rg: 'Roentgenium',
+  Cn: 'Copernicium',
+  Nh: 'Nihonium',
+  Fl: 'Flerovium',
+  Mc: 'Moscovium',
+  Lv: 'Livermorium',
+  Ts: 'Tennessine',
+  Og: 'Oganesson'
+};
+
+function colorChannelFromHex(hex, start) {
+  return Number.parseInt(hex.slice(start, start + 2), 16);
+}
+
+function readableTextColor(background) {
+  if (!/^#[0-9a-f]{6}$/i.test(background)) {
+    return '#111827';
+  }
+  const red = colorChannelFromHex(background, 1);
+  const green = colorChannelFromHex(background, 3);
+  const blue = colorChannelFromHex(background, 5);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  return luminance < 0.56 ? '#ffffff' : '#111827';
+}
+
+function elementTooltip(symbol) {
+  return `${symbol} (${ELEMENT_NAMES[symbol] ?? symbol})`;
+}
+
+function periodicTablePosition(symbol) {
+  const data = elements[symbol];
+  if (!data) {
+    return null;
+  }
+  const lanthanideIndex = LANTHANIDES.indexOf(symbol);
+  if (lanthanideIndex >= 0) {
+    return { row: 10, column: lanthanideIndex + 5 };
+  }
+  const actinideIndex = ACTINIDES.indexOf(symbol);
+  if (actinideIndex >= 0) {
+    return { row: 11, column: actinideIndex + 5 };
+  }
+  return { row: data.period + 1, column: data.group + 1 };
+}
 
 function normalizePaintColor(value) {
   return PAINT_COLOR_PATTERN.test(value ?? '') ? value.toLowerCase() : DEFAULT_PAINT_COLOR;
@@ -138,6 +300,139 @@ export function createSelectionActions(context) {
     context.dom.drawTools.__bondDrawerOutsideCloseBound = true;
   }
 
+  if (
+    doc &&
+    context.dom &&
+    typeof doc.addEventListener === 'function' &&
+    typeof context.dom.getPeriodicTablePopover === 'function' &&
+    !context.dom.__periodicTableOutsideCloseBound
+  ) {
+    doc.addEventListener(
+      'pointerdown',
+      event => {
+        const popover = context.dom.getPeriodicTablePopover?.();
+        if (!popover || popover.hidden) {
+          return;
+        }
+        const button = context.dom.getPeriodicTableButton?.();
+        const target = event?.target ?? null;
+        if (target === button || target === popover) {
+          return;
+        }
+        if (typeof button?.contains === 'function' && button.contains(target)) {
+          return;
+        }
+        if (typeof popover.contains === 'function' && popover.contains(target)) {
+          return;
+        }
+        closePeriodicTablePicker();
+      },
+      true
+    );
+    context.dom.__periodicTableOutsideCloseBound = true;
+  }
+
+  function setPeriodicTableDragOffset(popover, x, y) {
+    popover.__periodicTableDragX = x;
+    popover.__periodicTableDragY = y;
+    popover.style?.setProperty?.('--periodic-table-drag-x', `${x}px`);
+    popover.style?.setProperty?.('--periodic-table-drag-y', `${y}px`);
+  }
+
+  function anchorPeriodicTablePopover(popover) {
+    const button = context.dom.getPeriodicTableButton?.();
+    const buttonRect = button?.getBoundingClientRect?.();
+    const win = doc?.defaultView ?? (typeof window !== 'undefined' ? window : null);
+    const viewportWidth = win?.innerWidth;
+    if (!buttonRect || !Number.isFinite(buttonRect.top) || !Number.isFinite(buttonRect.left) || !Number.isFinite(viewportWidth)) {
+      return;
+    }
+    const wasHidden = popover.hidden === true;
+    const previousVisibility = popover.style?.visibility ?? '';
+    if (wasHidden) {
+      popover.hidden = false;
+      if (popover.style) {
+        popover.style.visibility = 'hidden';
+      }
+    }
+    const popoverRect = popover.getBoundingClientRect?.();
+    if (wasHidden) {
+      popover.hidden = true;
+      if (popover.style) {
+        popover.style.visibility = previousVisibility;
+      }
+    }
+    const popoverWidth = Number.isFinite(popoverRect?.width) && popoverRect.width > 0 ? popoverRect.width : 501;
+    const popoverHeight = Number.isFinite(popoverRect?.height) && popoverRect.height > 0 ? popoverRect.height : 301;
+    const viewportHeight = win?.innerHeight;
+    const buttonWidth = Number.isFinite(buttonRect.width) ? buttonRect.width : 32;
+    const buttonCenterX = buttonRect.left + buttonWidth / 2;
+    const centeredLeft = buttonCenterX - popoverWidth / 2;
+    const left = Math.max(8, Math.min(centeredLeft, viewportWidth - popoverWidth - 8));
+    const preferredTop = buttonRect.top - popoverHeight - 8;
+    const top = Number.isFinite(viewportHeight)
+      ? Math.max(8, Math.min(preferredTop, viewportHeight - popoverHeight - 8))
+      : Math.max(8, preferredTop);
+    popover.style?.setProperty?.('--periodic-table-popover-top', `${top}px`);
+    popover.style?.setProperty?.('--periodic-table-popover-left', `${left}px`);
+  }
+
+  if (doc && typeof doc.addEventListener === 'function' && typeof context.dom.getPeriodicTablePopover === 'function') {
+    const popover = context.dom.getPeriodicTablePopover?.();
+    if (popover && typeof popover.addEventListener === 'function' && !popover.__periodicTableDragBound) {
+      popover.addEventListener(
+        'click',
+        event => {
+          if (!popover.__periodicTableSuppressClick) {
+            return;
+          }
+          popover.__periodicTableSuppressClick = false;
+          event.preventDefault?.();
+          event.stopPropagation?.();
+        },
+        true
+      );
+      popover.addEventListener('pointerdown', event => {
+        if (popover.hidden) {
+          return;
+        }
+        const startX = event.clientX ?? 0;
+        const startY = event.clientY ?? 0;
+        const baseX = popover.__periodicTableDragX ?? 0;
+        const baseY = popover.__periodicTableDragY ?? 0;
+        let moved = false;
+
+        const handlePointerMove = moveEvent => {
+          const deltaX = (moveEvent.clientX ?? startX) - startX;
+          const deltaY = (moveEvent.clientY ?? startY) - startY;
+          if (!moved && Math.hypot(deltaX, deltaY) < 3) {
+            return;
+          }
+          moved = true;
+          popover.classList?.add?.('periodic-table-dragging');
+          moveEvent.preventDefault?.();
+          const nextX = baseX + deltaX;
+          const nextY = baseY + deltaY;
+          setPeriodicTableDragOffset(popover, nextX, nextY);
+        };
+        const handlePointerUp = () => {
+          if (moved) {
+            popover.__periodicTableSuppressClick = true;
+          }
+          popover.classList?.remove?.('periodic-table-dragging');
+          doc.removeEventListener?.('pointermove', handlePointerMove);
+          doc.removeEventListener?.('pointerup', handlePointerUp);
+          doc.removeEventListener?.('pointercancel', handlePointerUp);
+        };
+
+        doc.addEventListener('pointermove', handlePointerMove);
+        doc.addEventListener('pointerup', handlePointerUp);
+        doc.addEventListener('pointercancel', handlePointerUp);
+      });
+      popover.__periodicTableDragBound = true;
+    }
+  }
+
   function syncDrawBondButtonIcon() {
     const activeType = context.state.overlayState.getDrawBondType?.() ?? 'single';
     const sourceButton = context.dom.getBondDrawTypeButton?.(activeType);
@@ -190,6 +485,110 @@ export function createSelectionActions(context) {
       return;
     }
     context.dom.drawTools.classList.toggle('drawer-open');
+  }
+
+  function syncPeriodicTableButton() {
+    const button = context.dom.getPeriodicTableButton?.();
+    if (!button?.classList) {
+      return;
+    }
+    const activeElement = context.state.overlayState.getDrawBondElement?.() ?? null;
+    const drawBondMode = context.state.overlayState.getDrawBondMode?.() ?? false;
+    const popover = context.dom.getPeriodicTablePopover?.();
+    const pickerOpen = Boolean(popover && !popover.hidden);
+    button.classList.toggle('active', pickerOpen || (drawBondMode && activeElement != null && !COMMON_DRAW_ELEMENTS.includes(activeElement)));
+  }
+
+  function setPeriodicTablePickerOpen(open) {
+    const popover = context.dom.getPeriodicTablePopover?.();
+    if (!popover) {
+      return;
+    }
+    popover.hidden = !open;
+    syncPeriodicTableButton();
+  }
+
+  function closePeriodicTablePicker() {
+    setPeriodicTablePickerOpen(false);
+  }
+
+  function ensurePeriodicTablePicker() {
+    const grid = context.dom.getPeriodicTableGrid?.();
+    if (!grid || grid.__periodicTablePickerReady) {
+      return;
+    }
+    const createElement = doc?.createElement?.bind(doc);
+    if (typeof createElement !== 'function') {
+      return;
+    }
+    for (let column = 1; column <= 18; column++) {
+      const label = createElement('div');
+      label.className = 'periodic-table-column-label';
+      label.textContent = String(column);
+      label.style.gridRow = '1';
+      label.style.gridColumn = String(column + 1);
+      grid.appendChild(label);
+    }
+    for (let period = 1; period <= 7; period++) {
+      const label = createElement('div');
+      label.className = 'periodic-table-row-label';
+      label.textContent = String(period);
+      label.style.gridRow = String(period + 1);
+      label.style.gridColumn = '1';
+      grid.appendChild(label);
+    }
+    for (const symbol of PERIODIC_TABLE_ELEMENTS) {
+      const position = periodicTablePosition(symbol);
+      if (!position) {
+        continue;
+      }
+      const color = atomColor(symbol);
+      const button = createElement('button');
+      button.type = 'button';
+      button.className = 'periodic-element-cell';
+      button.textContent = symbol;
+      button.title = elementTooltip(symbol);
+      button.dataset.periodicElement = symbol;
+      if (position.row >= 9) {
+        button.classList.add('periodic-f-block-cell');
+      }
+      button.style.backgroundColor = color;
+      button.style.color = readableTextColor(color);
+      button.style.gridRow = String(position.row);
+      button.style.gridColumn = String(position.column);
+      button.addEventListener('click', () => {
+        selectPeriodicElement(symbol);
+      });
+      grid.appendChild(button);
+    }
+    grid.__periodicTablePickerReady = true;
+  }
+
+  function openPeriodicTablePicker() {
+    ensurePeriodicTablePicker();
+    const popover = context.dom.getPeriodicTablePopover?.();
+    if (popover) {
+      anchorPeriodicTablePopover(popover);
+    }
+    setPeriodicTablePickerOpen(true);
+    syncElementButtons();
+  }
+
+  function togglePeriodicTablePicker() {
+    const popover = context.dom.getPeriodicTablePopover?.();
+    if (!popover) {
+      return;
+    }
+    if (popover.hidden) {
+      openPeriodicTablePicker();
+    } else {
+      closePeriodicTablePicker();
+    }
+  }
+
+  function selectPeriodicElement(element) {
+    setDrawElement(element);
+    closePeriodicTablePicker();
   }
 
   function syncToolButtonsFromState() {
@@ -440,9 +839,12 @@ export function createSelectionActions(context) {
   }
   function syncElementButtons() {
     elementSync.sync(context.state.overlayState.getDrawBondElement());
+    syncPeriodicTableButton();
   }
   function clearElementButtons() {
     elementSync.clear();
+    closePeriodicTablePicker();
+    syncPeriodicTableButton();
   }
   function syncBondDrawTypeButtons() {
     bondTypeSync.sync(context.state.overlayState.getDrawBondType?.() ?? 'single');
@@ -724,6 +1126,9 @@ export function createSelectionActions(context) {
   }
 
   function setDrawElement(element) {
+    if (!elements[element]) {
+      return;
+    }
     context.state.overlayState.setDrawBondElement(element);
     if (!context.state.overlayState.getDrawBondMode()) {
       toggleDrawBondMode();
@@ -778,6 +1183,10 @@ export function createSelectionActions(context) {
     closeRingTemplateDrawer,
     toggleDrawBondDrawer,
     toggleRingTemplateDrawer,
+    openPeriodicTablePicker,
+    closePeriodicTablePicker,
+    togglePeriodicTablePicker,
+    selectPeriodicElement,
     syncToolButtonsFromState,
     syncElementButtons,
     clearElementButtons,

@@ -171,8 +171,10 @@ test('renderMolSVG renders custom atom label opacity', () => {
   assert.match(rendered.svgContent, /<text [^>]*fill="#3366ff" opacity="0.55"[^>]*><tspan>(?:OH|HO)<\/tspan><\/text>/);
 });
 
-test('atomColor uses a subdued metallic palette for selected metals', () => {
-  assert.equal(atomColor('Mg'), '#5E636B');
+test('atomColor uses the expanded CPK palette while preserving protected metals', () => {
+  assert.equal(atomColor('Mg'), '#8AFF00');
+  assert.equal(atomColor('Fe'), '#E06633');
+  assert.equal(atomColor('Kr'), '#5CB8D1');
   assert.equal(atomColor('Ag'), '#C0C0C0');
   assert.equal(atomColor('Au'), '#D4AF37');
   assert.equal(atomColor('Pt'), '#C9CDD2');

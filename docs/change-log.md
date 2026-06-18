@@ -1,7 +1,28 @@
 # Change Log
 
+## 2026-06-17
+
+- Balance the periodic-table picker with matching empty right and bottom gutters opposite the row and column labels.
+- Use real grid rows instead of transforms for periodic-table f-block spacing so Safari keeps the bottom rows inside the popover.
+- Use border-box sizing for periodic-table picker cells so Safari keeps every row inside the panel.
+- Compact the periodic-table picker spacing so the added row and column labels fit inside the panel.
+- Add period labels 1-7 along the left side of the periodic-table picker.
+- Add group-number labels above the periodic-table picker columns.
+- Skip valence warnings for group-0 f-block elements whose common valence is not modeled by the organic validator.
+- Expand the atom color palette from the CPK reference for most periodic-table elements while preserving the existing core element colors.
+- Center the periodic-table picker above its launcher button and raise it above all other app controls.
+- Strip pendant hydrogens from OH/NH2-style hetero atoms when they are reused as ring or benzene template vertices.
+- Let the draggable periodic-table picker float over the side panels instead of being clipped by the plot viewport.
+- Make the periodic-table picker draggable while preserving normal element selection clicks.
+- Snap slightly distorted 3- to 8-member rings back to regular polygon geometry when pressing Clean in 2D or force mode.
+- Color periodic-table picker cells from the app atom palette, remove deuterium from the table, add symbol/name hover tooltips, and replace the launcher with a periodic-table-shaped icon.
+- Add a compact periodic-table atom picker under iodine so any supported element can be selected for placement or atom changes.
+- Add toolbar auto-zoom controls that recenter and fit the active 2D or force molecule/reaction to the plot window.
+
 ## 2026-06-16
 
+- Let force-mode brush painting style both an atom and any exposed bond segment inside the brush while ignoring hidden bond portions under atom circles.
+- Give the paint brush-size slider a neutral accent so it no longer inherits the selected paint color.
 - Keep the brush-size slider visible in paint eraser mode while hiding only the color and opacity controls.
 - Add a brush-size slider above paint opacity and use it to control the paint brush cursor and hit radius in 2D and force modes.
 - Rename the benzene ring drawer tooltip to "6-member ring (aromatic)" and raise the default 2D bond line thickness to 1.8.

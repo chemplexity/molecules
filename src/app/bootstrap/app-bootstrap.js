@@ -406,6 +406,7 @@ export function finalizeAppBootstrap(ctx) {
         open: () => optionsModal.open()
       },
       navigation: {
+        autoZoom: () => ctx.controller.performViewAction('auto-zoom'),
         cleanLayout2d: () => ctx.controller.performViewAction('clean-layout-2d'),
         cleanLayoutForce: () => ctx.controller.performViewAction('clean-layout-force'),
         toggleMode: () => ctx.controller.performViewAction('toggle-mode')
@@ -427,6 +428,8 @@ export function finalizeAppBootstrap(ctx) {
         toggleEraseMode: () => ctx.actions.selectionActions.toggleEraseMode(),
         setChargeTool: tool => ctx.actions.selectionActions.setChargeTool(tool),
         setDrawElement: el => ctx.actions.selectionActions.setDrawElement(el),
+        togglePeriodicTablePicker: () => ctx.actions.selectionActions.togglePeriodicTablePicker(),
+        selectPeriodicElement: el => ctx.actions.selectionActions.selectPeriodicElement(el),
         setDrawBondType: type => ctx.actions.selectionActions.setDrawBondType(type)
       },
       editing: {

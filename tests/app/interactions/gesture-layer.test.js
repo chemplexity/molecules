@@ -114,7 +114,7 @@ function makeSelection(node = null) {
   };
 }
 
-function makeHitElement(kind, id) {
+function makeHitElement(kind, id, options = {}) {
   const classes =
     kind === 'atom'
       ? ['atom-hit']
@@ -147,7 +147,7 @@ function makeHitElement(kind, id) {
     }
   };
   return {
-    __datum: { id, name: 'C' },
+    __datum: options.datum ?? { id, name: 'C' },
     ownerSVGElement,
     classList: {
       contains(name) {
@@ -166,15 +166,18 @@ function makeHitElement(kind, id) {
     },
     getAttribute(name) {
       if (name === 'x1' || name === 'y1') {
-        return '0';
+        return String(options[name] ?? 0);
       }
       if (name === 'x2' || name === 'y2') {
-        return '10';
+        return String(options[name] ?? 10);
+      }
+      if (name === 'r' && options.r != null) {
+        return String(options.r);
       }
       return null;
     },
     getBoundingClientRect() {
-      return { left: 0, right: 10, top: 0, bottom: 10 };
+      return options.box ?? { left: 0, right: 10, top: 0, bottom: 10 };
     },
     getScreenCTM() {
       return {
@@ -652,6 +655,92 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(calls, [['paintStyleTargets', ['a1'], [], null, { skipSnapshot: false }]]);
   });
 
+  it('does not paint force bonds underneath the force atom being painted', () => {
+    const atomHit = makeHitElement('force-atom', 'a1');
+    const bondHit = makeHitElement('force-bond', 'b1', { x1: 2, y1: 5, x2: 8, y2: 5 });
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setMode('force');
+    state.setPaintMode(true);
+    context.doc.elementsFromPoint = () => [bondHit, atomHit];
+    context.dom.plotEl.querySelectorAll = selector => (selector === '.node' ? [atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 5,
+      clientY: 5,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['a1'], [], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
+  it('paints force atoms and exposed force bonds when the brush covers both', () => {
+    const atomHit = makeHitElement('force-atom', 'a1');
+    const bondHit = makeHitElement('force-bond', 'b1', { x1: 5, y1: 5, x2: 20, y2: 5 });
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setMode('force');
+    state.setPaintMode(true);
+    context.doc.elementsFromPoint = () => [bondHit, atomHit];
+    context.dom.plotEl.querySelectorAll = selector => (selector === '.node' ? [atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 5,
+      clientY: 5,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['a1'], ['b1'], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
+  it('paints force bonds when the pointer is outside force atom radii', () => {
+    const atomHit = makeHitElement('force-atom', 'a1');
+    const bondHit = makeHitElement('force-bond', 'b1', { x1: 20, y1: 5, x2: 40, y2: 5 });
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setMode('force');
+    state.setPaintMode(true);
+    context.doc.elementsFromPoint = () => [bondHit];
+    context.dom.plotEl.querySelectorAll = selector => (selector === '.node' ? [atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 30,
+      clientY: 5,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', [], ['b1'], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
+  it('ignores force bond hover hits outside the brush radius', () => {
+    const bondHit = makeHitElement('force-bond', 'b1', { x1: 30, y1: 30, x2: 40, y2: 30 });
+    const { context, svg, calls, state } = makeBaseContext();
+    state.setMode('force');
+    state.setPaintMode(true);
+    context.doc.elementsFromPoint = () => [bondHit];
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 5,
+      clientY: 5,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, []);
+  });
+
   it('clears atom, bond, and ring styles while dragging in paint eraser mode', () => {
     const atomHit = makeHitElement('atom', 'a1');
     const bondHit = makeHitElement('bond', 'b1');
@@ -763,7 +852,7 @@ describe('initGestureInteractions', () => {
 
   it('previews brush color on force atom and bond hover without committing', () => {
     const atomHit = makeHitElement('force-atom', 'a1');
-    const bondHit = makeHitElement('force-bond', 'b1');
+    const bondHit = makeHitElement('force-bond', 'b1', { x1: 20, y1: 10, x2: 40, y2: 10 });
     const { context, g, listeners, calls, state } = makeBaseContext();
     const forceAtom = g.append('circle').attr('class', 'node').style('fill', '#222222').style('fill-opacity', '1');
     forceAtom.node().__data__ = { id: 'a1' };

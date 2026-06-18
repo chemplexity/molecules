@@ -90,6 +90,9 @@ describe('interaction action deps builders', () => {
       selectButton: {},
       drawBondButton: {},
       eraseButton: {},
+      getPeriodicTableButton: () => 'periodic-button',
+      getPeriodicTablePopover: () => 'periodic-popover',
+      getPeriodicTableGrid: () => 'periodic-grid',
       getElementButton: element => ({ element })
     });
     const primitiveSelectionDeps = createPrimitiveSelectionActionDeps({
@@ -112,6 +115,9 @@ describe('interaction action deps builders', () => {
     assert.equal(cancelCalls, 1);
     assert.equal(deleteCalls, 1);
     assert.deepEqual(selectionDeps.document, { id: 'doc' });
+    assert.equal(selectionDeps.dom.getPeriodicTableButton(), 'periodic-button');
+    assert.equal(selectionDeps.dom.getPeriodicTablePopover(), 'periodic-popover');
+    assert.equal(selectionDeps.dom.getPeriodicTableGrid(), 'periodic-grid');
     assert.equal(primitiveSelectionDeps.helpers.isAdditiveSelectionEvent({ shiftKey: true }), true);
     assert.equal(primitiveSelectionDeps.helpers.hasVisibleStereoBond(7), true);
   });

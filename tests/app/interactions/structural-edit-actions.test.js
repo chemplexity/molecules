@@ -325,6 +325,84 @@ describe('createStructuralEditActions', () => {
     assert.ok(newRingAtoms.every(atom => atom.x > -0.001), 'expected the ring to be placed away from the existing left-side substituent');
   });
 
+  it('strips pendant hydrogens from OH and NH2 atoms reused as ring-template vertices', () => {
+    const makePlacementContext = mol =>
+      makeBaseContext({
+        activeMol: mol,
+        context: {
+          plot: {
+            getSize: () => ({ width: 600, height: 400 })
+          },
+          view2D: {
+            getCenterX: () => 0,
+            getCenterY: () => 0
+          },
+          constants: {
+            forceBondLength: 30,
+            scale: 40,
+            forceScale: 25
+          },
+          controller: {
+            performStructuralEdit(_kind, options, mutate) {
+              const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+              assert.equal(options.preflight(editContext), true);
+              const result = mutate(editContext);
+              return { performed: true, result, mol };
+            }
+          }
+        }
+      }).context;
+    const hydrogenNeighborCount = (mol, atom) => atom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').length;
+
+    const alcohol = new Molecule();
+    const methyl = alcohol.addAtom(null, 'C');
+    methyl.x = -1.5;
+    methyl.y = 0;
+    const oxygen = alcohol.addAtom(null, 'O');
+    oxygen.x = 0;
+    oxygen.y = 0;
+    alcohol.addBond(null, methyl.id, oxygen.id, { order: 1 });
+    assert.equal(hydrogenNeighborCount(alcohol, oxygen), 1);
+
+    const alcoholActions = createStructuralEditActions(makePlacementContext(alcohol));
+    const alcoholResult = alcoholActions.placeRingTemplate(6, 300, 200, { anchorAtomId: oxygen.id });
+
+    assert.equal(alcoholResult.performed, true);
+    assert.equal(hydrogenNeighborCount(alcohol, oxygen), 0);
+
+    const phenoxyLikeAlcohol = new Molecule();
+    const phenoxyCarbon = phenoxyLikeAlcohol.addAtom(null, 'C');
+    phenoxyCarbon.x = -1.5;
+    phenoxyCarbon.y = 0;
+    const phenoxyOxygen = phenoxyLikeAlcohol.addAtom(null, 'O');
+    phenoxyOxygen.x = 0;
+    phenoxyOxygen.y = 0;
+    phenoxyLikeAlcohol.addBond(null, phenoxyCarbon.id, phenoxyOxygen.id, { order: 1 });
+    assert.equal(hydrogenNeighborCount(phenoxyLikeAlcohol, phenoxyOxygen), 1);
+
+    const phenoxyActions = createStructuralEditActions(makePlacementContext(phenoxyLikeAlcohol));
+    const phenoxyResult = phenoxyActions.placeRingTemplate('benzene', 300, 200, { anchorAtomId: phenoxyOxygen.id });
+
+    assert.equal(phenoxyResult.performed, true);
+    assert.equal(hydrogenNeighborCount(phenoxyLikeAlcohol, phenoxyOxygen), 0);
+
+    const amine = new Molecule();
+    const carbon = amine.addAtom(null, 'C');
+    carbon.x = -1.5;
+    carbon.y = 0;
+    const nitrogen = amine.addAtom(null, 'N');
+    nitrogen.x = 0;
+    nitrogen.y = 0;
+    amine.addBond(null, carbon.id, nitrogen.id, { order: 1 });
+    assert.equal(hydrogenNeighborCount(amine, nitrogen), 2);
+
+    const amineActions = createStructuralEditActions(makePlacementContext(amine));
+    const amineResult = amineActions.placeRingTemplate(6, 300, 200, { anchorAtomId: nitrogen.id });
+
+    assert.equal(amineResult.performed, true);
+    assert.equal(hydrogenNeighborCount(amine, nitrogen), 0);
+  });
+
   it('does not place ring templates on reaction-preview product-side anchors', () => {
     const mol = new Molecule();
     const reactant = mol.addAtom('reactant-a1', 'C');

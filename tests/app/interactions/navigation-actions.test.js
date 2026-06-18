@@ -8,6 +8,101 @@ function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
 }
 
+test('autoZoom recenters and fits the 2d molecule viewport', () => {
+  const mol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0 }],
+      ['a2', { id: 'a2', name: 'O', x: 2, y: 1 }],
+      ['h1', { id: 'h1', name: 'H', x: 100, y: 100, visible: false }]
+    ])
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d',
+        setCx2d: value => calls.push(['setCx2d', value]),
+        setCy2d: value => calls.push(['setCy2d', value])
+      },
+      documentState: {
+        getMol2d: () => mol
+      }
+    },
+    helpers: {
+      atomBBox: atoms => ({
+        minX: Math.min(...atoms.map(atom => atom.x)),
+        maxX: Math.max(...atoms.map(atom => atom.x)),
+        minY: Math.min(...atoms.map(atom => atom.y)),
+        maxY: Math.max(...atoms.map(atom => atom.y)),
+        cx: atoms.reduce((sum, atom) => sum + atom.x, 0) / atoms.length,
+        cy: atoms.reduce((sum, atom) => sum + atom.y, 0) / atoms.length
+      })
+    },
+    dom: {
+      plotEl: { clientWidth: 600, clientHeight: 400 }
+    },
+    overlays: {
+      viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad })
+    },
+    force: {
+      fitPad: 40,
+      initialZoomMultiplier: 1.3
+    },
+    view: {
+      scale: 40,
+      makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.autoZoom();
+
+  assert.deepEqual(calls, [
+    ['setCx2d', 1],
+    ['setCy2d', 0.5],
+    ['setZoomTransform', { x: -90, y: -60, k: 1.3 }]
+  ]);
+});
+
+test('autoZoom fits the force molecule viewport', () => {
+  const nodes = [
+    { id: 'a1', x: 10, y: 20 },
+    { id: 'a2', x: 40, y: 30 },
+    { id: 'bad', x: NaN, y: 0 }
+  ];
+  const fitTransform = { x: 20, y: 30, k: 1.2 };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {}
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    force: {
+      fitPad: 40,
+      initialZoomMultiplier: 1.3,
+      forceFitTransform: (fitNodes, pad, options) => {
+        calls.push(['forceFitTransform', fitNodes.map(node => node.id), pad, options]);
+        return fitTransform;
+      }
+    },
+    view: {
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.autoZoom();
+
+  assert.deepEqual(calls, [
+    ['forceFitTransform', ['a1', 'a2'], 40, { scaleMultiplier: 1.3 }],
+    ['setZoomTransform', fitTransform]
+  ]);
+});
+
 test('cleanLayout2d rerenders from a cloned molecule with preserved history', () => {
   const clonedMol = {
     atoms: new Map([
@@ -143,6 +238,98 @@ test('cleanLayout2d preserves reaction-preview metadata on the working clone', (
   assert.equal(seen.refinePreview, previewMeta);
   assert.equal(seen.renderPreview, previewMeta);
   assert.equal(clonedMol.__reactionPreview, previewMeta);
+});
+
+test('cleanLayout2d snaps slightly distorted rings back to regular geometry before refinement', () => {
+  const radius = 1.5;
+  const atomEntries = Array.from({ length: 6 }, (_, index) => {
+    const angle = (2 * Math.PI * index) / 6;
+    const id = `a${index + 1}`;
+    return [
+      id,
+      {
+        id,
+        name: 'C',
+        x: radius * Math.cos(angle) + (index === 0 ? 0.18 : 0),
+        y: radius * Math.sin(angle),
+        visible: true
+      }
+    ];
+  });
+  const bondEntries = Array.from({ length: 6 }, (_, index) => {
+    const firstId = `a${index + 1}`;
+    const secondId = `a${((index + 1) % 6) + 1}`;
+    return [
+      `b${index + 1}`,
+      {
+        id: `b${index + 1}`,
+        atoms: [firstId, secondId],
+        isInRing: () => true
+      }
+    ];
+  });
+  const clonedMol = {
+    atoms: new Map(atomEntries),
+    bonds: new Map(bondEntries),
+    getRings: () => [['a1', 'a2', 'a3', 'a4', 'a5', 'a6']],
+    getBond(firstId, secondId) {
+      return [...this.bonds.values()].find(bond => bond.atoms.includes(firstId) && bond.atoms.includes(secondId)) ?? null;
+    }
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map([...clonedMol.atoms].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]));
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  const lengths = bondEntries.map(([, bond]) => {
+    const first = clonedMol.atoms.get(bond.atoms[0]);
+    const second = clonedMol.atoms.get(bond.atoms[1]);
+    return Math.hypot(first.x - second.x, first.y - second.y);
+  });
+  for (const length of lengths) {
+    approxEqual(length, 1.5, 1e-9);
+  }
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'],
+      touchedBonds: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']
+    }
+  ]);
 });
 
 test('cleanLayout2d ignores hidden hydrogen bonds when deriving refinement hints', () => {

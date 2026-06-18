@@ -48,6 +48,9 @@ describe('createAppController', () => {
         }
       },
       navigation: {
+        autoZoom() {
+          calls.push('auto-zoom');
+        },
         toggleMode() {
           calls.push('toggle-mode');
         },
@@ -71,10 +74,11 @@ describe('createAppController', () => {
 
     assert.deepEqual(controller.captureAppSnapshot(), snapshot);
     controller.restoreAppSnapshot(snapshot);
+    controller.performViewAction('auto-zoom');
     controller.performViewAction('toggle-mode');
     controller.performViewAction('start-rotate', { delta: 5 });
     controller.performViewAction('flip', { axis: 'h' });
 
-    assert.deepEqual(calls, ['capture', ['restore', snapshot], 'toggle-mode', ['start-rotate', 5], ['flip', 'h']]);
+    assert.deepEqual(calls, ['capture', ['restore', snapshot], 'auto-zoom', 'toggle-mode', ['start-rotate', 5], ['flip', 'h']]);
   });
 });

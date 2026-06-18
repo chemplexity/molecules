@@ -362,6 +362,16 @@ describe('validateValence — transition metals are skipped', () => {
     const mol = buildWithNBonds('Cu', 4);
     assert.equal(centerWarnings(mol).length, 0);
   });
+
+  it('f-block group-0 elements produce no warnings with or without bonds', () => {
+    const isolated = new Molecule();
+    isolated.addAtom('ce', 'Ce');
+    isolated.addAtom('th', 'Th');
+    assert.deepEqual(validateValence(isolated), []);
+
+    assert.equal(centerWarnings(buildWithNBonds('Ce', 4)).length, 0);
+    assert.equal(centerWarnings(buildWithNBonds('Th', 6)).length, 0);
+  });
 });
 
 describe('validateValence — warning object shape', () => {

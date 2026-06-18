@@ -543,6 +543,76 @@ export function initGestureInteractions(context) {
     );
   }
 
+  function isForceBondPaintHit(element) {
+    return element?.classList?.contains?.('bond-hover-target') ?? false;
+  }
+
+  function forceAtomScreenRadius(element) {
+    const box = element?.getBoundingClientRect?.();
+    const boxRadius = box ? Math.max(Math.abs((box.right ?? 0) - (box.left ?? 0)), Math.abs((box.bottom ?? 0) - (box.top ?? 0))) / 2 : 0;
+    if (boxRadius > 0) {
+      return boxRadius;
+    }
+    const radius = Number(element?.getAttribute?.('r'));
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return 0;
+    }
+    const ctm = element?.getScreenCTM?.();
+    const scale = ctm ? (Math.abs(ctm.a ?? 1) + Math.abs(ctm.d ?? 1)) / 2 : 1;
+    return radius * scale;
+  }
+
+  function collectForceAtomScreenCircles() {
+    return [...(context.dom.plotEl?.querySelectorAll?.('.node') ?? [])]
+      .map(element => {
+        const box = element?.getBoundingClientRect?.();
+        const radius = forceAtomScreenRadius(element);
+        if (!box || !Number.isFinite(radius) || radius <= 0) {
+          return null;
+        }
+        return {
+          x: ((box.left ?? 0) + (box.right ?? 0)) / 2,
+          y: ((box.top ?? 0) + (box.bottom ?? 0)) / 2,
+          radius
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function isInsideForceAtomScreenRadius(x, y, circles, padding = 0) {
+    return circles.some(circle => Math.hypot(x - circle.x, y - circle.y) <= circle.radius + padding);
+  }
+
+  function isForceBondWithinPaintRadius(element, x, y, paintRadius) {
+    if (!isForceBondPaintHit(element)) {
+      return true;
+    }
+    const p1 = svgPtToScreen(element, parseFloat(element.getAttribute('x1')), parseFloat(element.getAttribute('y1')));
+    const p2 = svgPtToScreen(element, parseFloat(element.getAttribute('x2')), parseFloat(element.getAttribute('y2')));
+    return !!p1 && !!p2 && distToSegment(x, y, p1.x, p1.y, p2.x, p2.y) <= paintRadius;
+  }
+
+  function forceBondHasExposedPaintPoint(element, x, y, paintRadius, circles) {
+    if (!isForceBondPaintHit(element) || circles.length === 0) {
+      return true;
+    }
+    const p1 = svgPtToScreen(element, parseFloat(element.getAttribute('x1')), parseFloat(element.getAttribute('y1')));
+    const p2 = svgPtToScreen(element, parseFloat(element.getAttribute('x2')), parseFloat(element.getAttribute('y2')));
+    if (!p1 || !p2) {
+      return false;
+    }
+    const sampleCount = 24;
+    for (let index = 0; index <= sampleCount; index++) {
+      const t = index / sampleCount;
+      const px = p1.x + (p2.x - p1.x) * t;
+      const py = p1.y + (p2.y - p1.y) * t;
+      if (!isInsideForceAtomScreenRadius(px, py, circles) && Math.hypot(x - px, y - py) <= paintRadius) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function resolvePaintHitElement(element) {
     if (element.classList.contains('node')) {
       const datum = context.helpers.getDatum(element);
@@ -801,8 +871,15 @@ export function initGestureInteractions(context) {
     const seen = new Set();
     const candidates = [];
     const paintRadius = getPaintBrushRadius();
+    const forceAtomCircles = context.state.viewState.getMode() === 'force' ? collectForceAtomScreenCircles() : [];
     const addIfTarget = element => {
       if (!isPaintHitElement(element) || seen.has(element)) {
+        return;
+      }
+      if (!isForceBondWithinPaintRadius(element, cx, cy, paintRadius)) {
+        return;
+      }
+      if (!forceBondHasExposedPaintPoint(element, cx, cy, paintRadius, forceAtomCircles)) {
         return;
       }
       seen.add(element);

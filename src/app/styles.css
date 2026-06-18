@@ -909,6 +909,95 @@ div.tooltip td:first-child {
   background: #f0f0f0;
 }
 
+.periodic-table-icon {
+  width: 20px;
+  height: 18px;
+  fill: currentColor;
+}
+
+#periodic-table-btn.active {
+  background: #eef1f5;
+  border-color: #6c7a89;
+}
+
+.periodic-table-popover {
+  position: fixed;
+  top: var(--periodic-table-popover-top, 88px);
+  left: var(--periodic-table-popover-left, 50px);
+  z-index: 10000;
+  transform: translate(var(--periodic-table-drag-x, 0), var(--periodic-table-drag-y, 0));
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid #cdd3db;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.periodic-table-popover.periodic-table-dragging {
+  opacity: 0.96;
+}
+
+.periodic-table-grid {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(19, 23px) 12px;
+  grid-template-rows: repeat(11, 23px) 12px;
+  grid-auto-rows: 23px;
+  gap: 2px;
+  width: calc(19 * 23px + 12px + 19 * 2px);
+}
+
+.periodic-table-column-label,
+.periodic-table-row-label {
+  box-sizing: border-box;
+  width: 23px;
+  height: 16px;
+  color: #4b5563;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.periodic-table-column-label {
+  align-self: end;
+}
+
+.periodic-table-row-label {
+  align-self: center;
+}
+
+#atom-selector .periodic-element-cell {
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 23px;
+  height: 23px;
+  border: 3px solid rgba(0, 0, 0, 0.72);
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#atom-selector .periodic-element-cell:hover {
+  filter: brightness(1.08);
+}
+
+#atom-selector .periodic-element-cell.active {
+  outline: 2px solid #123f6f;
+  outline-offset: 1px;
+}
+
+#atom-selector .periodic-f-block-cell {
+  transform: none;
+}
+
 #elem-btn-C {
   color: #333333;
 }
@@ -1085,6 +1174,13 @@ div.tooltip td:first-child {
   padding: 0;
   margin: 0;
   cursor: pointer;
+}
+
+.paint-brush-size-selector {
+  accent-color: #9ca3af;
+}
+
+.paint-opacity-selector {
   accent-color: var(--paint-color, #3366ff);
 }
 
@@ -1125,6 +1221,7 @@ div.tooltip td:first-child {
 }
 
 #rotate-controls button,
+#force-auto-zoom-btn,
 #force-rotate-ccw,
 #force-rotate-cw,
 #force-flip-h,
@@ -1146,6 +1243,7 @@ div.tooltip td:first-child {
 }
 
 #rotate-controls button:hover,
+#force-auto-zoom-btn:hover,
 #force-rotate-ccw:hover,
 #force-rotate-cw:hover,
 #force-flip-h:hover,

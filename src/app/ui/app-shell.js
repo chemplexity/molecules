@@ -42,6 +42,7 @@ export function initAppShell(context) {
     btn.classList.toggle('active', !svgEl.classList.contains('labels-hidden'));
   });
 
+  bindGlobal(win, 'autoZoomView', () => context.navigation.autoZoom());
   bindGlobal(win, 'cleanLayout2d', () => context.navigation.cleanLayout2d());
   bindGlobal(win, 'cleanLayoutForce', () => context.navigation.cleanLayoutForce());
   bindGlobal(win, 'togglePanMode', () => context.selection.togglePanMode());
@@ -60,6 +61,8 @@ export function initAppShell(context) {
   bindGlobal(win, 'toggleEraseMode', () => context.selection.toggleEraseMode());
   bindGlobal(win, 'setChargeTool', tool => context.selection.setChargeTool(tool));
   bindGlobal(win, 'setDrawElement', el => context.selection.setDrawElement(el));
+  bindGlobal(win, 'togglePeriodicTablePicker', () => context.selection.togglePeriodicTablePicker());
+  bindGlobal(win, 'selectPeriodicElement', el => context.selection.selectPeriodicElement(el));
   bindGlobal(win, 'setDrawBondType', type => context.selection.setDrawBondType(type));
   bindGlobal(win, 'toggleMode', () => context.navigation.toggleMode());
 

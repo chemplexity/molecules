@@ -27,6 +27,7 @@ export function createAppShellDeps(deps) {
       open: deps.options.open
     },
     navigation: {
+      autoZoom: deps.navigation.autoZoom,
       cleanLayout2d: deps.navigation.cleanLayout2d,
       cleanLayoutForce: deps.navigation.cleanLayoutForce,
       toggleMode: deps.navigation.toggleMode
@@ -48,6 +49,8 @@ export function createAppShellDeps(deps) {
       toggleEraseMode: deps.selection.toggleEraseMode,
       setChargeTool: deps.selection.setChargeTool,
       setDrawElement: deps.selection.setDrawElement,
+      togglePeriodicTablePicker: deps.selection.togglePeriodicTablePicker,
+      selectPeriodicElement: deps.selection.selectPeriodicElement,
       setDrawBondType: deps.selection.setDrawBondType
     },
     editing: {

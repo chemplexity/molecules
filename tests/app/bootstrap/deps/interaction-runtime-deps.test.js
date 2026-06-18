@@ -57,6 +57,9 @@ describe('interaction-runtime dependency builder', () => {
       drawBondButton: {},
       drawTools: {},
       eraseButton: {},
+      getPeriodicTableButton: () => 'periodic-button',
+      getPeriodicTablePopover: () => 'periodic-popover',
+      getPeriodicTableGrid: () => 'periodic-grid',
       getElementButton() {
         return {};
       },
@@ -166,6 +169,9 @@ describe('interaction-runtime dependency builder', () => {
     assert.equal(DRAW_ELEM_PROTONS.C, 6);
     assert.equal(deps.getDrawElemProtons().Cl, 17);
     assert.equal(deps.getDraw2D(), 'draw2d');
+    assert.equal(deps.getPeriodicTableButton(), 'periodic-button');
+    assert.equal(deps.getPeriodicTablePopover(), 'periodic-popover');
+    assert.equal(deps.getPeriodicTableGrid(), 'periodic-grid');
     assert.equal(deps.getFitCurrent2dView(), 'fit-current');
     deps.setAutoFitEnabled(true);
     assert.equal(autoFitEnabled, true);

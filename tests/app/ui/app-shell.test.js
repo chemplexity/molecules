@@ -74,6 +74,9 @@ describe('initAppShell', () => {
         }
       },
       navigation: {
+        autoZoom: () => {
+          records.push(['autoZoom']);
+        },
         cleanLayout2d: () => {
           records.push(['cleanLayout2d']);
         },
@@ -126,6 +129,12 @@ describe('initAppShell', () => {
         },
         setDrawElement: el => {
           records.push(['setDrawElement', el]);
+        },
+        togglePeriodicTablePicker: () => {
+          records.push(['togglePeriodicTablePicker']);
+        },
+        selectPeriodicElement: el => {
+          records.push(['selectPeriodicElement', el]);
         },
         setDrawBondType: type => {
           records.push(['setDrawBondType', type]);
@@ -195,6 +204,7 @@ describe('initAppShell', () => {
     win.savePng2d();
     win.openOptionsModal();
     win.toggleLabels();
+    win.autoZoomView();
     win.cleanLayout2d();
     win.cleanLayoutForce();
     win.togglePanMode();
@@ -211,6 +221,8 @@ describe('initAppShell', () => {
     win.toggleEraseMode();
     win.setChargeTool('positive');
     win.setDrawElement('N');
+    win.togglePeriodicTablePicker();
+    win.selectPeriodicElement('Fe');
     win.setDrawBondType('dash');
     win.toggleMode();
     win._parseSmiles('CCN');
@@ -239,6 +251,7 @@ describe('initAppShell', () => {
       ['copySvg2d'],
       ['savePng2d'],
       ['openOptionsModal'],
+      ['autoZoom'],
       ['cleanLayout2d'],
       ['cleanLayoutForce'],
       ['togglePanMode'],
@@ -255,6 +268,8 @@ describe('initAppShell', () => {
       ['toggleEraseMode'],
       ['setChargeTool', 'positive'],
       ['setDrawElement', 'N'],
+      ['togglePeriodicTablePicker'],
+      ['selectPeriodicElement', 'Fe'],
       ['setDrawBondType', 'dash'],
       ['toggleMode'],
       ['parseSmiles', 'CCN'],
@@ -292,7 +307,7 @@ describe('initAppShell', () => {
       history: { undo() {}, redo() {} },
       exportActions: { copyForcePng() {}, copyForceSvg() {}, copySvg2d() {}, savePng2d() {} },
       options: { open() {} },
-      navigation: { cleanLayout2d() {}, cleanLayoutForce() {}, toggleMode() {} },
+      navigation: { autoZoom() {}, cleanLayout2d() {}, cleanLayoutForce() {}, toggleMode() {} },
       selection: {
         togglePanMode() {},
         toggleSelectMode() {},
@@ -365,7 +380,7 @@ describe('initAppShell', () => {
       history: { undo() {}, redo() {} },
       exportActions: { copyForcePng() {}, copyForceSvg() {}, copySvg2d() {}, savePng2d() {} },
       options: { open() {} },
-      navigation: { cleanLayout2d() {}, cleanLayoutForce() {}, toggleMode() {} },
+      navigation: { autoZoom() {}, cleanLayout2d() {}, cleanLayoutForce() {}, toggleMode() {} },
       selection: {
         togglePanMode() {},
         toggleSelectMode() {},

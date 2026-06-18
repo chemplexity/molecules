@@ -29,6 +29,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const forcePaintBrushSizeSelector = document.getElementById('force-paint-brush-size-selector');
   const paintOpacitySelector = document.getElementById('paint-opacity-selector');
   const forcePaintOpacitySelector = document.getElementById('force-paint-opacity-selector');
+  const periodicTableButton = document.getElementById('periodic-table-btn');
+  const periodicTablePopover = document.getElementById('periodic-table-popover');
+  const periodicTableGrid = document.getElementById('periodic-table-grid');
   const positiveChargeButton = document.getElementById('charge-positive-btn');
   const negativeChargeButton = document.getElementById('charge-negative-btn');
   const bondDrawTypeButtons = new Map([...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button]));
@@ -113,12 +116,17 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getPaintBrushSizeSelectorElements: () => [paintBrushSizeSelector, forcePaintBrushSizeSelector].filter(Boolean),
     getPaintOpacitySelectorElements: () => [paintOpacitySelector, forcePaintOpacitySelector].filter(Boolean),
     getPaintToolButtonElements: tool => paintToolButtons.get(tool) ?? [],
+    getPeriodicTableButtonElement: () => periodicTableButton,
+    getPeriodicTablePopoverElement: () => periodicTablePopover,
+    getPeriodicTableGridElement: () => periodicTableGrid,
     getPositiveChargeButtonElement: () => positiveChargeButton,
     getNegativeChargeButtonElement: () => negativeChargeButton,
     getBondDrawTypeButtonElement: type => bondDrawTypeButtons.get(type) ?? null,
     getRingTemplateSizeButtonElement: size => ringTemplateSizeButtons.get(ringTemplateKey(size)) ?? null,
     getEraseButtonElement: () => eraseButton,
     getElementButtonElement: element => document.getElementById(`elem-btn-${element}`),
+    getElementButtonElements: element =>
+      [document.getElementById(`elem-btn-${element}`), ...document.querySelectorAll(`[data-periodic-element="${element}"]`)].filter(Boolean),
     getMolecularFormulaElement: () => molecularFormula,
     getMolecularWeightElement: () => molecularWeight,
     getDescriptorBodyElement: () => descriptorBody,

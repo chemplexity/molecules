@@ -151,7 +151,8 @@ function isLegacyNeutralPentavalentNitrogen(atom, molecule, totalBO, charge, rad
  * are tolerated because their pi order is resonance/Kekulé dependent, but
  * atoms with too many sigma bonds still produce warnings.
  *
- * Transition metals (groups 3–12) and unknown elements are silently skipped.
+ * Transition metals (groups 3–12), f-block elements with no simple main-group
+ * valence model (group 0), and unknown elements are silently skipped.
  *
  * Bond orders are floored before summing so that fractional aromatic bond
  * orders stored by the SMILES parser (1.5) are treated as sigma bonds (1)
@@ -185,8 +186,8 @@ export function validateValence(molecule) {
 
     const { group, period } = el;
 
-    // Skip transition metals (groups 3–12): complex multi-oxidation-state rules
-    if (group >= 3 && group <= 12) {
+    // Skip transition/f-block elements: complex multi-oxidation-state rules.
+    if (group === 0 || (group >= 3 && group <= 12)) {
       continue;
     }
 

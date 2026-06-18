@@ -7,8 +7,10 @@ import { generateCoords } from '../../../src/layout/engine/api.js';
 import { atomColor, computeChargeBadgePlacement, formatChargeLabel, kekulize, labelHalfW, ringLabelOffset } from '../../../src/layout/engine/render-helpers.js';
 
 describe('layout/engine/render-helpers', () => {
-  it('uses the subdued metallic palette for selected metals', () => {
-    assert.equal(atomColor('Mg'), '#5E636B');
+  it('uses the expanded CPK palette while preserving protected metals', () => {
+    assert.equal(atomColor('Mg'), '#8AFF00');
+    assert.equal(atomColor('Fe'), '#E06633');
+    assert.equal(atomColor('Kr'), '#5CB8D1');
     assert.equal(atomColor('Ag'), '#C0C0C0');
     assert.equal(atomColor('Au'), '#D4AF37');
     assert.equal(atomColor('Pt'), '#C9CDD2');

@@ -224,6 +224,33 @@ function repairRingTemplateCarbonImplicitHydrogens(mol, atomIds) {
   mol._recomputeProperties?.();
 }
 
+function stripExcessRingTemplateHeteroHydrogens(mol, ringAtomIds, newAtomIds = []) {
+  const newAtomIdSet = new Set(newAtomIds);
+  let changed = false;
+  for (const atomId of ringAtomIds) {
+    if (newAtomIdSet.has(atomId)) {
+      continue;
+    }
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name === 'C' || atom.name === 'H') {
+      continue;
+    }
+    const hydrogenCount = (atom.getNeighbors?.(mol) ?? []).filter(neighbor => neighbor?.name === 'H' && (neighbor.bonds?.length ?? 0) === 1).length;
+    if (hydrogenCount === 0) {
+      continue;
+    }
+    mol._adjustImplicitHydrogens?.(atomId);
+    syncHiddenHydrogenPositionsToParent(mol, atom);
+    const remainingHydrogenCount = (atom.getNeighbors?.(mol) ?? []).filter(neighbor => neighbor?.name === 'H' && (neighbor.bonds?.length ?? 0) === 1).length;
+    if (remainingHydrogenCount !== hydrogenCount) {
+      changed = true;
+    }
+  }
+  if (changed) {
+    mol._recomputeProperties?.();
+  }
+}
+
 function regularRingPositions(size, cx, cy, bondLength) {
   const radius = bondLength / (2 * Math.sin(Math.PI / size));
   const startAngle = size % 2 === 0 ? -Math.PI / 2 + Math.PI / size : -Math.PI / 2;
@@ -1302,6 +1329,7 @@ export function createStructuralEditActions(context) {
           }
         }
         mol.repairImplicitHydrogens?.(ringAtomIds);
+        stripExcessRingTemplateHeteroHydrogens(mol, ringAtomIds, newAtomIds);
         mol._recomputeProperties?.();
         context.chemistry.kekulize(mol);
         if (template.aromatic) {

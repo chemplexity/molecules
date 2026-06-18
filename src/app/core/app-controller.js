@@ -33,6 +33,8 @@ export function createAppController({ state, renderers, history, panels, analysi
       return undefined;
     }
     switch (kind) {
+      case 'auto-zoom':
+        return navigation.autoZoom?.(payload);
       case 'toggle-mode':
         return navigation.toggleMode(payload);
       case 'clean-layout-2d':

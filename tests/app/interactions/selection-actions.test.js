@@ -45,6 +45,64 @@ function makeButton() {
   };
 }
 
+function makeNode(initial = {}) {
+  const node = {
+    ...makeButton(),
+    children: [],
+    dataset: {},
+    hidden: false,
+    listeners: new Map(),
+    appendChild(child) {
+      this.children.push(child);
+      child.parentNode = this;
+      return child;
+    },
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    },
+    dispatch(type) {
+      this.listeners.get(type)?.({ target: this });
+    },
+    dispatchEvent(type, event = {}) {
+      this.listeners.get(type)?.({ target: this, ...event });
+    },
+    contains(target) {
+      return target === this || this.children.includes(target);
+    },
+    ...initial
+  };
+  return node;
+}
+
+function makeDocumentWithListeners() {
+  const listeners = new Map();
+  return {
+    createElement() {
+      return makeNode({ hidden: false });
+    },
+    addEventListener(type, handler) {
+      const list = listeners.get(type) ?? [];
+      list.push(handler);
+      listeners.set(type, list);
+    },
+    removeEventListener(type, handler) {
+      const list = listeners.get(type) ?? [];
+      listeners.set(
+        type,
+        list.filter(current => current !== handler)
+      );
+    },
+    dispatch(type, event = {}) {
+      for (const handler of listeners.get(type) ?? []) {
+        handler(event);
+      }
+    },
+    listenerCount(type) {
+      return listeners.get(type)?.length ?? 0;
+    }
+  };
+}
+
 function makeColorInput(value = '#3366ff') {
   const listeners = new Map();
   const properties = new Map();
@@ -973,6 +1031,251 @@ describe('createSelectionActions', () => {
     assert.equal(drawBondElement, 'O');
     assert.equal(drawBondMode, true);
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'applyForceSelection']);
+  });
+
+  it('periodic table picker selects any supported element for drawing', () => {
+    let drawBondMode = false;
+    let chargeTool = null;
+    let drawBondElement = 'C';
+    const calls = [];
+    const periodicButton = makeButton();
+    periodicButton.getBoundingClientRect = () => ({ top: 300, left: 512, width: 32, height: 32, bottom: 332 });
+    const periodicPopover = makeNode({ hidden: true });
+    periodicPopover.getBoundingClientRect = () => ({ width: 501, height: 301 });
+    const periodicGrid = makeNode();
+    const doc = {
+      defaultView: {
+        innerWidth: 1000,
+        innerHeight: 700
+      },
+      addEventListener() {},
+      createElement() {
+        return makeNode({ hidden: false });
+      }
+    };
+    const actions = createSelectionActions({
+      document: doc,
+      state: {
+        viewState: {
+          getMode: () => 'force'
+        },
+        documentState: {
+          getMol2d: () => null
+        },
+        overlayState: {
+          getSelectMode: () => false,
+          setSelectMode() {},
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getRingTemplateMode: () => false,
+          setRingTemplateMode() {},
+          getEraseMode: () => false,
+          setEraseMode() {},
+          getPaintMode: () => false,
+          setPaintMode() {},
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getDrawBondElement: () => drawBondElement,
+          setDrawBondElement: value => {
+            drawBondElement = value;
+          },
+          getDrawBondType: () => 'single',
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {
+          calls.push('applyForceSelection');
+        }
+      },
+      view: {
+        clearPrimitiveHover() {
+          calls.push('clearPrimitiveHover');
+        }
+      },
+      drawBond: {
+        cancelDrawBond() {
+          calls.push('cancelDrawBond');
+        }
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: makeButton(),
+        selectButton: makeButton(),
+        drawBondButton: makeButton(),
+        drawTools: makeButton(),
+        eraseButton: makeButton(),
+        getPeriodicTableButton: () => periodicButton,
+        getPeriodicTablePopover: () => periodicPopover,
+        getPeriodicTableGrid: () => periodicGrid,
+        getElementButton: element => periodicGrid.children.filter(child => child.dataset.periodicElement === element),
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.openPeriodicTablePicker();
+    const ironButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Fe');
+    const carbonButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'C');
+    const deuteriumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'D');
+    const lanthanumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'La');
+    const actiniumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Ac');
+    const columnLabels = periodicGrid.children.filter(child => child.className === 'periodic-table-column-label');
+    const rowLabels = periodicGrid.children.filter(child => child.className === 'periodic-table-row-label');
+
+    assert.equal(periodicPopover.hidden, false);
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-top'), '8px');
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-left'), '277.5px');
+    assert.equal(periodicGrid.children.length, 143);
+    assert.equal(columnLabels.length, 18);
+    assert.equal(rowLabels.length, 7);
+    assert.equal(columnLabels[0].textContent, '1');
+    assert.equal(columnLabels[17].textContent, '18');
+    assert.equal(columnLabels[0].style.gridRow, '1');
+    assert.equal(columnLabels[0].style.gridColumn, '2');
+    assert.equal(rowLabels[0].textContent, '1');
+    assert.equal(rowLabels[6].textContent, '7');
+    assert.equal(rowLabels[0].style.gridRow, '2');
+    assert.equal(rowLabels[0].style.gridColumn, '1');
+    assert.ok(ironButton);
+    assert.ok(carbonButton);
+    assert.ok(lanthanumButton);
+    assert.ok(actiniumButton);
+    assert.equal(deuteriumButton, undefined);
+    assert.equal(carbonButton.title, 'C (Carbon)');
+    assert.equal(carbonButton.style.backgroundColor, '#333333');
+    assert.equal(carbonButton.style.color, '#ffffff');
+    assert.equal(ironButton.style.gridRow, '5');
+    assert.equal(ironButton.style.gridColumn, '9');
+    assert.equal(lanthanumButton.style.gridRow, '10');
+    assert.equal(lanthanumButton.style.gridColumn, '5');
+    assert.equal(lanthanumButton.classList.contains('periodic-f-block-cell'), true);
+    assert.equal(actiniumButton.style.gridRow, '11');
+    assert.equal(actiniumButton.style.gridColumn, '5');
+
+    ironButton.dispatch('click');
+
+    assert.equal(drawBondElement, 'Fe');
+    assert.equal(drawBondMode, true);
+    assert.equal(periodicPopover.hidden, true);
+    assert.equal(periodicButton.classList.contains('active'), true);
+    assert.equal(ironButton.classList.contains('active'), true);
+    assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'applyForceSelection']);
+  });
+
+  it('periodic table popout can be dragged without stealing element clicks', () => {
+    let drawBondMode = false;
+    let drawBondElement = 'C';
+    const periodicButton = makeButton();
+    const periodicPopover = makeNode({ hidden: true });
+    const periodicGrid = makeNode();
+    const doc = makeDocumentWithListeners();
+    const actions = createSelectionActions({
+      document: doc,
+      state: {
+        viewState: {
+          getMode: () => 'force'
+        },
+        documentState: {
+          getMol2d: () => null
+        },
+        overlayState: {
+          getSelectMode: () => false,
+          setSelectMode() {},
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getRingTemplateMode: () => false,
+          setRingTemplateMode() {},
+          getEraseMode: () => false,
+          setEraseMode() {},
+          getPaintMode: () => false,
+          setPaintMode() {},
+          getChargeTool: () => null,
+          setChargeTool() {},
+          getDrawBondElement: () => drawBondElement,
+          setDrawBondElement: value => {
+            drawBondElement = value;
+          },
+          getDrawBondType: () => 'single',
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {}
+      },
+      drawBond: {
+        cancelDrawBond() {}
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: makeButton(),
+        selectButton: makeButton(),
+        drawBondButton: makeButton(),
+        drawTools: makeButton(),
+        eraseButton: makeButton(),
+        getPeriodicTableButton: () => periodicButton,
+        getPeriodicTablePopover: () => periodicPopover,
+        getPeriodicTableGrid: () => periodicGrid,
+        getElementButton: element => periodicGrid.children.filter(child => child.dataset.periodicElement === element),
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.openPeriodicTablePicker();
+    const ironButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Fe');
+
+    periodicPopover.dispatchEvent('pointerdown', {
+      clientX: 100,
+      clientY: 80
+    });
+    let movePrevented = false;
+    doc.dispatch('pointermove', {
+      clientX: 125,
+      clientY: 92,
+      preventDefault() {
+        movePrevented = true;
+      }
+    });
+
+    assert.equal(movePrevented, true);
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-drag-x'), '25px');
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-drag-y'), '12px');
+    assert.equal(periodicPopover.classList.contains('periodic-table-dragging'), true);
+
+    doc.dispatch('pointerup', {});
+
+    assert.equal(periodicPopover.classList.contains('periodic-table-dragging'), false);
+    assert.equal(doc.listenerCount('pointermove'), 0);
+
+    periodicPopover.dispatchEvent('pointerdown', {
+      target: ironButton,
+      clientX: 125,
+      clientY: 92
+    });
+    ironButton.dispatch('click');
+
+    assert.equal(drawBondElement, 'Fe');
+    assert.equal(drawBondMode, true);
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-drag-x'), '25px');
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-drag-y'), '12px');
   });
 
   it('setDrawBondType enables draw mode, marks the active option, updates the main button icon, and closes the drawer', () => {

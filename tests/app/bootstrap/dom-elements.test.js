@@ -28,6 +28,7 @@ describe('dom-elements bootstrap helpers', () => {
     const inputLabel = createElement();
     const examplesList = createElement();
     const svgPlot = createElement();
+    const periodicFeButton = createElement();
     const paintToolButtons = [
       createElement({ dataset: { paintTool: 'brush' } }),
       createElement({ dataset: { paintTool: 'bucket' } }),
@@ -55,6 +56,9 @@ describe('dom-elements bootstrap helpers', () => {
       'force-paint-brush-size-selector': createElement(),
       'paint-opacity-selector': createElement(),
       'force-paint-opacity-selector': createElement(),
+      'periodic-table-btn': createElement(),
+      'periodic-table-popover': createElement(),
+      'periodic-table-grid': createElement(),
       'charge-positive-btn': createElement(),
       'charge-negative-btn': createElement(),
       'erase-btn': createElement(),
@@ -94,6 +98,9 @@ describe('dom-elements bootstrap helpers', () => {
         if (selector === '[data-paint-tool]') {
           return paintToolButtons;
         }
+        if (selector === '[data-periodic-element="Fe"]') {
+          return [periodicFeButton];
+        }
         return [];
       }
     };
@@ -116,6 +123,11 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(dom.getExamplesElement(), examplesList);
     assert.equal(dom.getSvgPlotElement(), svgPlot);
     assert.equal(dom.getElementButtonElement('C'), elements['elem-btn-C']);
+    assert.deepEqual(dom.getElementButtonElements('C'), [elements['elem-btn-C']]);
+    assert.deepEqual(dom.getElementButtonElements('Fe'), [periodicFeButton]);
+    assert.equal(dom.getPeriodicTableButtonElement(), elements['periodic-table-btn']);
+    assert.equal(dom.getPeriodicTablePopoverElement(), elements['periodic-table-popover']);
+    assert.equal(dom.getPeriodicTableGridElement(), elements['periodic-table-grid']);
     assert.equal(dom.getPositiveChargeButtonElement(), elements['charge-positive-btn']);
     assert.equal(dom.getNegativeChargeButtonElement(), elements['charge-negative-btn']);
     assert.deepEqual(dom.getStyleBrushButtonElements(), [elements['style-brush-btn'], elements['force-style-brush-btn']]);

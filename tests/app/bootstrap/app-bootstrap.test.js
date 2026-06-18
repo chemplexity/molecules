@@ -141,6 +141,8 @@ describe('finalizeAppBootstrap', () => {
             records.push(['setChargeTool', tool]);
           },
           setDrawElement() {},
+          togglePeriodicTablePicker() {},
+          selectPeriodicElement() {},
           setDrawBondType() {}
         }
       },
