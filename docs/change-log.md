@@ -1,7 +1,23 @@
 # Change Log
 
+## 2026-06-18
+
+- Choose benzene ring-template double-bond phases with at least two displayed double bonds while avoiding placed-ring valence warnings when possible.
+- Split medium ring-decorated peptide layouts into denser blocks so side-chain junction angles stay open.
+- Snap generic aromatic peptide side-chain exits back to a trigonal ring fan while clearing nearby carbonyl leaf contacts.
+- Position force-rendered atoms and bonds before applying highlights so reaction previews do not flash overlays first.
+- Normalize reaction-preview seed/display coordinates so force-mode ether-cleavage previews match line-mode geometry.
+- Add a homoadamantane bridged-cage template so compact tricyclic undecane layouts stay tight instead of relying on fallback cleanup.
+- Open flattened degree-two carbon vertices in compact bridged cage layouts.
+- Reapply ring cleanup after 2D refinement so repeated Clean calls cannot rescale rings.
+- Keep Clean's ring-substituent angle snap from rotating attached ring systems.
+- Snap single ring substituent exits back to their exterior angle when cleaning.
+- Regularize small rings when switching from force mode back to line mode so repeated cleans preserve ring shape.
+
 ## 2026-06-17
 
+- Trim line-mode hydrogen placement preview strokes away from the H label so the bond line does not obscure it.
+- Render 2D/line-mode hydrogen placement labels in dark text while keeping the periodic-table hydrogen swatch white.
 - Balance the periodic-table picker with matching empty right and bottom gutters opposite the row and column labels.
 - Use real grid rows instead of transforms for periodic-table f-block spacing so Safari keeps the bottom rows inside the popover.
 - Use border-box sizing for periodic-table picker cells so Safari keeps every row inside the panel.

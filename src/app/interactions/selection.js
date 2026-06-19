@@ -362,8 +362,8 @@ export function createSelectionActions(context) {
         popover.style.visibility = previousVisibility;
       }
     }
-    const popoverWidth = Number.isFinite(popoverRect?.width) && popoverRect.width > 0 ? popoverRect.width : 501;
-    const popoverHeight = Number.isFinite(popoverRect?.height) && popoverRect.height > 0 ? popoverRect.height : 301;
+    const popoverWidth = Number.isFinite(popoverRect?.width) && popoverRect.width > 0 ? popoverRect.width : 497;
+    const popoverHeight = Number.isFinite(popoverRect?.height) && popoverRect.height > 0 ? popoverRect.height : 297;
     const viewportHeight = win?.innerHeight;
     const buttonWidth = Number.isFinite(buttonRect.width) ? buttonRect.width : 32;
     const buttonCenterX = buttonRect.left + buttonWidth / 2;

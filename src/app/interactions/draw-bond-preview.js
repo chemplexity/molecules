@@ -328,13 +328,13 @@ export function createDrawBondPreviewActions(context) {
         const ux = dx / dist;
         const uy = dy / dist;
         const sourceName = drawBondState.atomId ? (context.view2D.getAtomById(drawBondState.atomId)?.name ?? 'C') : context.getDrawBondElement();
-        if (sourceName !== 'C' && sourceName !== 'H') {
+        if (sourceName !== 'C') {
           const gap = context.helpers.labelHalfW(sourceName, context.constants.fontSize) + 3;
           lx1 = ox + ux * gap;
           ly1 = oy + uy * gap;
         }
         const destName = snapAtomId ? (context.view2D.getAtomById(snapAtomId)?.name ?? 'C') : context.getDrawBondElement();
-        if (destName !== 'C' && destName !== 'H') {
+        if (destName !== 'C') {
           const gap = context.helpers.labelHalfW(destName, context.constants.fontSize) + 3;
           lx2 = ex - ux * gap;
           ly2 = ey - uy * gap;

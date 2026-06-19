@@ -1549,6 +1549,15 @@ function createNoradamantaneCoreTemplate() {
   return createHeavyTemplateFromSmiles('noradamantane-core', 'C12CC3CC1CC(C2)C3');
 }
 
+/**
+ * Creates the homoadamantane-like hydrocarbon cage graph used by compact
+ * tricyclic undecane scaffolds such as `C1(CC2(CC3(CC1CC(C2)C3)))`.
+ * @returns {Molecule} Homoadamantane scaffold template molecule.
+ */
+function createHomoadamantaneCoreTemplate() {
+  return createHeavyTemplateFromSmiles('homoadamantane-core', 'C1(CC2(CC3(CC1CC(C2)C3)))');
+}
+
 function freezeCoordEntries(entries) {
   return Object.freeze(entries.map(([atomId, position]) => Object.freeze([atomId, Object.freeze({ x: position.x, y: position.y })])));
 }
@@ -4383,6 +4392,27 @@ function createNoradamantaneCoreGeometry() {
 }
 
 /**
+ * Creates a compact homoadamantane cage projection with no heavy-bond
+ * crossings and bounded foreshortening across the three bridged lanes.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createHomoadamantaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C1', { x: -0.5888, y: 0.908 }],
+    ['C2', { x: 0.437, y: 1.2519 }],
+    ['C3', { x: 1.1745, y: 0.462 }],
+    ['C4', { x: 0.3157, y: 0.7004 }],
+    ['C5', { x: 0.4553, y: -0.1933 }],
+    ['C6', { x: -0.209, y: 0.4871 }],
+    ['C7', { x: -1.0519, y: -0.0798 }],
+    ['C8', { x: -1.0128, y: -1.1824 }],
+    ['C9', { x: -0.0444, y: -1.2736 }],
+    ['C10', { x: 0.85, y: -0.6046 }],
+    ['C11', { x: -0.3257, y: -0.4757 }]
+  ]);
+}
+
+/**
  * Creates a standard 2D cube projection for cubane.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -4473,6 +4503,9 @@ export const PLANAR_VALIDATION = TEMPLATE_PLANAR_VALIDATION;
 export function buildTemplateLibrary() {
   return [
     createTemplate('adamantane', 'bridged', 70, createAdamantaneTemplate(), geometrySpec('normalized-xy', createAdamantaneGeometry(), BRIDGED_VALIDATION)),
+    createTemplate('homoadamantane-core', 'bridged', 67, createHomoadamantaneCoreTemplate(), geometrySpec('normalized-xy', createHomoadamantaneCoreGeometry(), BRIDGED_VALIDATION), {
+      rankGeometryMappings: true
+    }),
     createTemplate('noradamantane-core', 'bridged', 65, createNoradamantaneCoreTemplate(), geometrySpec('normalized-xy', createNoradamantaneCoreGeometry(), BRIDGED_VALIDATION), {
       rankGeometryMappings: true
     }),

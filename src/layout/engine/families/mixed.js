@@ -14854,6 +14854,31 @@ function isNonAromaticConjugatedNitrogenRingSubstituent(layoutGraph, anchorAtomI
   return otherHeavyNeighborIds.length === 1 && isPlanarDivalentNitrogenContinuationPair(layoutGraph, anchorAtomId, otherHeavyNeighborIds[0]);
 }
 
+function aromaticRingHasTerminalOxygenSubstituent(layoutGraph, anchorAtomId) {
+  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
+    if (!ring.aromatic) {
+      continue;
+    }
+    const ringAtomIds = new Set(ring.atomIds);
+    for (const ringAtomId of ring.atomIds) {
+      for (const bond of layoutGraph.bondsByAtomId.get(ringAtomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent' || bond.inRing) {
+          continue;
+        }
+        const neighborAtomId = bond.a === ringAtomId ? bond.b : bond.a;
+        if (ringAtomIds.has(neighborAtomId)) {
+          continue;
+        }
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        if (neighborAtom?.element === 'O' && neighborAtom.heavyDegree === 1) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Returns candidate carbonyl leaf compressions after an exact ring-anchor snap.
  * @param {object} layoutGraph - Layout graph shell.
@@ -15019,11 +15044,19 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
     }
 
     const childAtomId = exocyclicNeighborIds[0];
-    if (!isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) {
-      continue;
-    }
     const childAtom = layoutGraph.atoms.get(childAtomId);
     const isMetalChild = isMetalAtom(layoutGraph.sourceMolecule.atoms.get(childAtomId) ?? childAtom);
+    const isExactAromaticCarbonSidechainRoot =
+      anchorAtom.element === 'C' &&
+      anchorAtom.aromatic &&
+      !isMetalChild &&
+      childAtom?.element === 'C' &&
+      childAtom.aromatic !== true &&
+      !layoutGraph.ringAtomIdSet.has(childAtomId) &&
+      aromaticRingHasTerminalOxygenSubstituent(layoutGraph, anchorAtomId);
+    if (!isExactAromaticCarbonSidechainRoot && !isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) {
+      continue;
+    }
     const isExactNonAromaticCarbonylRoot =
       anchorAtom.element === 'C' &&
       !anchorAtom.aromatic &&
@@ -15036,7 +15069,7 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
     if (anchorAtom.element === 'C' && !anchorAtom.aromatic && !isMetalChild && !isExactNonAromaticCarbonylRoot && !isExactNonAromaticTerminalHeteroLeaf && !isExactNonAromaticConjugatedNitrogenRoot) {
       continue;
     }
-    if (anchorAtom.element === 'C' && anchorAtom.aromatic && !hasNonAromaticMultipleBond(layoutGraph, childAtomId)) {
+    if (anchorAtom.element === 'C' && anchorAtom.aromatic && !isExactAromaticCarbonSidechainRoot && !hasNonAromaticMultipleBond(layoutGraph, childAtomId)) {
       continue;
     }
 
@@ -15054,6 +15087,7 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
       angularDifference(candidateAngle, currentChildAngle) < angularDifference(bestAngle, currentChildAngle) ? candidateAngle : bestAngle
     );
     const rotationAngle = wrapAngle(targetChildAngle - currentChildAngle);
+    const aromaticSideRotationAngle = wrapAngle(currentChildAngle - targetChildAngle);
     if (Math.abs(rotationAngle) <= 1e-9) {
       if (isExactNonAromaticTerminalHeteroLeaf) {
         const touchupCoords = runTerminalHeteroRingSubstituentAttachedRingTouchup(layoutGraph, coords, anchorAtomId, childAtomId, bondLength);
@@ -15065,8 +15099,11 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
       continue;
     }
 
-    const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId).filter(atomId => atomId !== anchorAtomId && coords.has(atomId));
-    if (subtreeAtomIds.length === 0) {
+    const subtreeAtomIds = isExactAromaticCarbonSidechainRoot
+      ? collectCovalentSubtreeAtomIds(layoutGraph, anchorAtomId, childAtomId).filter(atomId => atomId !== anchorAtomId && coords.has(atomId))
+      : collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId).filter(atomId => atomId !== anchorAtomId && coords.has(atomId));
+    const appliedRotationAngle = isExactAromaticCarbonSidechainRoot ? aromaticSideRotationAngle : rotationAngle;
+    if (subtreeAtomIds.length === 0 || Math.abs(appliedRotationAngle) <= 1e-9) {
       continue;
     }
     const baseVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, {
@@ -15074,7 +15111,7 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
     });
     const candidateCoords = new Map(coords);
     for (const atomId of subtreeAtomIds) {
-      candidateCoords.set(atomId, add(anchorPosition, rotate(sub(coords.get(atomId), anchorPosition), rotationAngle)));
+      candidateCoords.set(atomId, add(anchorPosition, rotate(sub(coords.get(atomId), anchorPosition), appliedRotationAngle)));
     }
     const candidateVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, {
       bondLength
@@ -15097,11 +15134,16 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
       if (!acceptedCoords) {
         continue;
       }
-    } else if (isExactNonAromaticCarbonylRoot || isExactAromaticCarbonylRoot || isExactNonAromaticConjugatedNitrogenRoot) {
+    } else if (isExactNonAromaticCarbonylRoot || isExactAromaticCarbonylRoot || isExactAromaticCarbonSidechainRoot || isExactNonAromaticConjugatedNitrogenRoot) {
       const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
       const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
       if (!exactRingAnchorSubstituentAuditDoesNotRegress(candidateAudit, baseAudit)) {
-        if (isExactNonAromaticConjugatedNitrogenRoot) {
+        if (isExactAromaticCarbonSidechainRoot) {
+          const relievedCoords = new Map(candidateCoords);
+          const terminalMultipleBondLeafRelief = resolveTerminalMultipleBondLeafSevereOverlaps(layoutGraph, relievedCoords, bondLength);
+          const relievedAudit = terminalMultipleBondLeafRelief.changed ? auditLayout(layoutGraph, relievedCoords, { bondLength }) : null;
+          acceptedCoords = relievedAudit && exactRingAnchorSubstituentAuditDoesNotRegress(relievedAudit, baseAudit) ? relievedCoords : null;
+        } else if (isExactNonAromaticConjugatedNitrogenRoot) {
           acceptedCoords = buildExactConjugatedNitrogenRingSubstituentFlipCandidate(layoutGraph, candidateCoords, anchorAtomId, childAtomId, subtreeAtomIds, bondLength, baseAudit);
         } else {
           acceptedCoords = null;
@@ -15127,7 +15169,8 @@ function snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAt
       }
     }
 
-    for (const atomId of subtreeAtomIds) {
+    const acceptedAtomIds = isExactAromaticCarbonSidechainRoot ? [...acceptedCoords.keys()] : subtreeAtomIds;
+    for (const atomId of acceptedAtomIds) {
       coords.set(atomId, acceptedCoords.get(atomId));
     }
     changed = true;

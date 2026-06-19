@@ -22,6 +22,9 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   densePartitionRetryBlockCountCeiling: 4,
   densePartitionRetryRingSystemFloor: 4,
   densePartitionRetryHeavyAtomCap: 70,
+  mediumDensePartitionRetryHeavyAtomCap: 60,
+  mediumDensePartitionRetryComponentHeavyAtomCap: 160,
+  mediumDensePartitionRetryRingFloor: 6,
   fineDensePartitionRetryHeavyAtomCap: 24,
   fineDensePartitionRetryComponentHeavyAtomCap: 160,
   fineDensePartitionRetryRingFloor: 7,
@@ -1150,10 +1153,15 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
     hypervalentConnectorCount >= Math.max(4, Math.floor(ringSystemCount * 0.25));
   const useFineDensePartition =
     componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap && ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryRingFloor;
+  const useMediumDensePartition =
+    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryComponentHeavyAtomCap &&
+    ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryRingFloor;
   const denseHeavyAtomCap = hypervalentRingChain
     ? LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomCap
     : useFineDensePartition
       ? LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryHeavyAtomCap
+      : useMediumDensePartition
+        ? LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryHeavyAtomCap
       : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {
     ...threshold,

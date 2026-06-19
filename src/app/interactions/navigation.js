@@ -9,6 +9,7 @@ const CLEAN_RING_SNAP_MAX_SIZE = 8;
 const CLEAN_RING_SNAP_MAX_DISPLACEMENT_RATIO = 0.75;
 const CLEAN_RING_SNAP_RMS_DISPLACEMENT_RATIO = 0.4;
 const CLEAN_RING_SNAP_MIN_MOVE = 1e-4;
+const CLEAN_RING_SUBSTITUENT_MIN_ANGLE_DELTA = (1 * Math.PI) / 180;
 const ROTATE_FIT_FALLBACK_PAD = 40;
 const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
 const ROTATE_FIT_MAX_SCALE = 30;
@@ -172,6 +173,14 @@ function ringBondIds(molecule, ring) {
   return ids;
 }
 
+function bondBetween(molecule, firstId, secondId) {
+  return (
+    (typeof molecule.getBond === 'function' ? molecule.getBond(firstId, secondId) : null) ??
+    [...(molecule.bonds?.values?.() ?? [])].find(candidate => candidate?.atoms?.includes(firstId) && candidate?.atoms?.includes(secondId)) ??
+    null
+  );
+}
+
 function polygonAreaForRing(ring, coords) {
   let area = 0;
   for (let index = 0; index < ring.length; index++) {
@@ -219,6 +228,156 @@ function regularRingTargetsForCurrentPose(ring, coords, bondLength = DEFAULT_LAY
   return best?.targets ?? new Map();
 }
 
+/**
+ * Rotates a connected heavy-atom substituent component around a fixed ring
+ * anchor. The component walk blocks the anchor and rejects paths that return
+ * to the same ring, so clean can restore an exit angle without distorting the
+ * ring scaffold itself.
+ * @param {object} molecule - Molecule containing atoms and bonds.
+ * @param {string} anchorAtomId - Fixed ring atom id.
+ * @param {string} rootAtomId - First substituent atom bonded to the anchor.
+ * @param {Set<string>} blockedRingAtomIds - Any ring atoms that must not move.
+ * @returns {Set<string>|null} Movable heavy atom ids, or null when unsafe.
+ */
+function collectMovableRingSubstituent(molecule, anchorAtomId, rootAtomId, blockedRingAtomIds) {
+  const rootAtom = molecule.atoms.get(rootAtomId);
+  if (!rootAtom || rootAtom.name === 'H' || rootAtom.visible === false) {
+    return null;
+  }
+
+  const movedAtomIds = new Set();
+  const visited = new Set([anchorAtomId]);
+  const queue = [rootAtomId];
+  while (queue.length > 0) {
+    const atomId = queue.shift();
+    if (visited.has(atomId)) {
+      continue;
+    }
+    visited.add(atomId);
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || atom.name === 'H' || atom.visible === false) {
+      continue;
+    }
+    if (blockedRingAtomIds.has(atomId)) {
+      return null;
+    }
+    movedAtomIds.add(atomId);
+    for (const bond of molecule.bonds?.values?.() ?? []) {
+      if (!bond.atoms?.includes(atomId)) {
+        continue;
+      }
+      const neighborId = bond.atoms[0] === atomId ? bond.atoms[1] : bond.atoms[0];
+      if (neighborId === anchorAtomId || visited.has(neighborId)) {
+        continue;
+      }
+      const neighbor = molecule.atoms.get(neighborId);
+      if (!neighbor || neighbor.name === 'H' || neighbor.visible === false) {
+        continue;
+      }
+      queue.push(neighborId);
+    }
+  }
+
+  return movedAtomIds.size > 0 ? movedAtomIds : null;
+}
+
+/**
+ * Snaps single heavy substituent exits on regularized rings to the local
+ * exterior bisector by rotating the substituent subtree around the ring atom.
+ * @param {object} molecule - Molecule whose coordinates should be repaired.
+ * @param {Map<string, {x: number, y: number}>} coords - Current heavy-atom coordinates.
+ * @param {Array<string>} ring - Ring atom ids in perimeter order.
+ * @param {Set<string>} allRingAtomIds - All ring atom ids in the molecule.
+ * @param {object} hints - Accumulator with snapped atom/bond sets.
+ * @returns {number} Number of substituent roots moved.
+ */
+function snapRingSubstituentAngles(molecule, coords, ring, allRingAtomIds, hints) {
+  if (!molecule?.atoms || !molecule?.bonds || ring.length < 3) {
+    return 0;
+  }
+  const ringAtomIds = new Set(ring);
+  let cx = 0;
+  let cy = 0;
+  for (const atomId of ring) {
+    const position = coords.get(atomId);
+    if (!position) {
+      return 0;
+    }
+    cx += position.x;
+    cy += position.y;
+  }
+  cx /= ring.length;
+  cy /= ring.length;
+
+  let movedCount = 0;
+  for (const anchorAtomId of ring) {
+    const anchor = coords.get(anchorAtomId);
+    if (!anchor) {
+      continue;
+    }
+    const substituentIds = [];
+    for (const bond of molecule.bonds.values()) {
+      if (!bond.atoms?.includes(anchorAtomId)) {
+        continue;
+      }
+      const neighborId = bond.atoms[0] === anchorAtomId ? bond.atoms[1] : bond.atoms[0];
+      if (ringAtomIds.has(neighborId)) {
+        continue;
+      }
+      if (allRingAtomIds.has(neighborId)) {
+        continue;
+      }
+      const neighbor = molecule.atoms.get(neighborId);
+      if (!neighbor || neighbor.name === 'H' || neighbor.visible === false || !coords.has(neighborId)) {
+        continue;
+      }
+      substituentIds.push(neighborId);
+    }
+    if (substituentIds.length !== 1) {
+      continue;
+    }
+
+    const rootAtomId = substituentIds[0];
+    const root = coords.get(rootAtomId);
+    const currentAngle = Math.atan2(root.y - anchor.y, root.x - anchor.x);
+    const targetAngle = Math.atan2(anchor.y - cy, anchor.x - cx);
+    const delta = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+    if (Math.abs(delta) < CLEAN_RING_SUBSTITUENT_MIN_ANGLE_DELTA) {
+      continue;
+    }
+    const movedAtomIds = collectMovableRingSubstituent(molecule, anchorAtomId, rootAtomId, allRingAtomIds);
+    if (!movedAtomIds) {
+      continue;
+    }
+    const cos = Math.cos(delta);
+    const sin = Math.sin(delta);
+    for (const atomId of movedAtomIds) {
+      const position = coords.get(atomId);
+      const atom = molecule.atoms.get(atomId);
+      if (!position || !atom) {
+        continue;
+      }
+      const dx = position.x - anchor.x;
+      const dy = position.y - anchor.y;
+      const x = anchor.x + dx * cos - dy * sin;
+      const y = anchor.y + dx * sin + dy * cos;
+      position.x = x;
+      position.y = y;
+      atom.x = x;
+      atom.y = y;
+      hints.snappedAtoms.add(atomId);
+    }
+    hints.snappedAtoms.add(anchorAtomId);
+    const anchorBond = bondBetween(molecule, anchorAtomId, rootAtomId);
+    if (anchorBond?.id != null) {
+      hints.snappedBonds.add(anchorBond.id);
+    }
+    movedCount++;
+  }
+
+  return movedCount;
+}
+
 function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT_BOND_LENGTH } = {}) {
   const snappedAtoms = new Set();
   const snappedBonds = new Set();
@@ -235,7 +394,10 @@ function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT
     coords.set(atomId, { x: atom.x, y: atom.y });
   }
 
-  for (const ring of molecule.getRings()) {
+  const rings = molecule.getRings();
+  const allRingAtomIds = new Set(rings.flat());
+
+  for (const ring of rings) {
     if (ring.length < CLEAN_RING_SNAP_MIN_SIZE || ring.length > CLEAN_RING_SNAP_MAX_SIZE || !ring.every(atomId => coords.has(atomId))) {
       continue;
     }
@@ -283,6 +445,18 @@ function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT
     }
     atom.x = sum.x / sum.count;
     atom.y = sum.y / sum.count;
+    coords.set(atomId, { x: atom.x, y: atom.y });
+  }
+
+  let snappedSubstituentCount = 0;
+  for (const ring of rings) {
+    if (ring.length < CLEAN_RING_SNAP_MIN_SIZE || ring.length > CLEAN_RING_SNAP_MAX_SIZE || !ring.every(atomId => coords.has(atomId))) {
+      continue;
+    }
+    snappedSubstituentCount += snapRingSubstituentAngles(molecule, coords, ring, allRingAtomIds, {
+      snappedAtoms,
+      snappedBonds
+    });
   }
 
   if (snappedAtoms.size > 0) {
@@ -291,7 +465,7 @@ function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT
     }
   }
 
-  return { snappedAtoms, snappedBonds, snappedCount: targetSums.size };
+  return { snappedAtoms, snappedBonds, snappedCount: targetSums.size + snappedSubstituentCount };
 }
 
 function forcePatchEntryForNode(node) {
@@ -450,10 +624,16 @@ export function createNavigationActions(context) {
           suppressH: true,
           bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
           maxPasses: 12,
+          ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
           touchedAtoms: refinementHints.touchedAtoms,
           touchedBonds: refinementHints.touchedBonds
         })
       : null;
+    if (refinedCoords instanceof Map) {
+      snapCleanRingsToRegularGeometry(relayoutMol, {
+        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      });
+    }
     const preserveGeometry = ringSnapHints.snappedCount > 0 || (refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
@@ -497,8 +677,12 @@ export function createNavigationActions(context) {
         suppressH: true,
         bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
         maxPasses: 12,
+        ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
         touchedAtoms: refinementHints.touchedAtoms,
         touchedBonds: refinementHints.touchedBonds
+      });
+      snapCleanRingsToRegularGeometry(relayoutMol, {
+        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
       });
     }
     reapplyReactionPreviewForceLayout(relayoutMol, context.overlays);
@@ -558,9 +742,12 @@ export function createNavigationActions(context) {
         bondLength: DEFAULT_LAYOUT_BOND_LENGTH
       });
       const appliedCount = applyLineLayoutCoords(mol, converted.coords);
+      const ringSnapHints = snapCleanRingsToRegularGeometry(mol, {
+        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      });
       context.renderers.renderMol(mol, {
         preserveHistory: true,
-        preserveGeometry: appliedCount > 0
+        preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0
       });
       return;
     }

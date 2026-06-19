@@ -854,7 +854,7 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(hasSharedEdgeDouble, true);
   });
 
-  it('previews only two benzene double bonds when a full Kekule preview would overload the anchor', () => {
+  it('previews two benzene double bonds when that avoids overloading the anchor', () => {
     const listeners = new Map();
     const svgRoot = makeSvgRoot();
     const documentMock = {
@@ -1834,6 +1834,49 @@ describe('createPrimitiveEventHandlers', () => {
     const mol = { id: 'mol' };
 
     handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, atom, mol, { message: 'warn' });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['a1'], []],
+      ['setSelectionValenceTooltipAtomId', 'a1'],
+      ['showImmediate', 'atom-tooltip', { clientX: 5, clientY: 6 }]
+    ]);
+  });
+
+  it('shows immediate valence-warning tooltip for 2D atoms in ring-template mode', () => {
+    const { context, calls, setRingTemplateMode, setMode } = makeContext();
+    setMode('2d');
+    setRingTemplateMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    const atom = { id: 'a1' };
+    const mol = { id: 'mol' };
+
+    handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, atom, mol, { message: 'warn' });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['a1'], []],
+      ['setSelectionValenceTooltipAtomId', 'a1'],
+      ['showImmediate', 'atom-tooltip', { clientX: 5, clientY: 6 }]
+    ]);
+  });
+
+  it('keeps normal 2D atom tooltips suppressed in ring-template mode without a valence warning', () => {
+    const { context, calls, setRingTemplateMode, setMode } = makeContext();
+    setMode('2d');
+    setRingTemplateMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1' }, { id: 'mol' }, null);
+
+    assert.deepEqual(calls, [['showPrimitiveHover', ['a1'], []]]);
+  });
+
+  it('shows immediate valence-warning tooltip for force atoms in ring-template mode', () => {
+    const { context, calls, setRingTemplateMode } = makeContext();
+    setRingTemplateMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    const molecule = { atoms: new Map([['a1', { id: 'a1', name: 'C' }]]) };
+
+    handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1', name: 'C' }, molecule, { message: 'warn' });
 
     assert.deepEqual(calls, [
       ['showPrimitiveHover', ['a1'], []],

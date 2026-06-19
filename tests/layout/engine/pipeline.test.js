@@ -941,14 +941,25 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(elapsed < 2000, `expected the large unmatched bridged cage to finish comfortably under 2s, got ${elapsed}ms`);
   });
 
-  it('keeps compact bridged cages off the dense-cage tidy hook', () => {
-    const result = runPipeline(parseSMILES('C1(CC2(CC3(CC1CC(C2)C3)))'), { suppressH: true });
+  it('uses the homoadamantane template instead of leaving compact bridged cages sloppy', () => {
+    const smiles = 'C1(CC2(CC3(CC1CC(C2)C3)))';
+    const graph = createLayoutGraphFromNormalized(parseSMILES(smiles), normalizeOptions({ suppressH: true }));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true });
+    const c4Angle = ringAngles(result.coords, ['C10', 'C9', 'C11', 'C5', 'C4', 'C3'])[4];
+    const c8Angle = ringAngles(result.coords, ['C7', 'C8', 'C9', 'C10', 'C3', 'C2', 'C1'])[1];
 
+    assert.ok(bugMolecules.includes(smiles), 'expected homoadamantane bridge regression molecule to be registered');
+    assert.equal(plan.rootScaffold.templateId, 'homoadamantane-core');
     assert.equal(result.metadata.primaryFamily, 'bridged');
     assert.equal(result.metadata.mixedMode, false);
     assert.equal(result.metadata.cleanupPostHookNudges, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.3, `expected homoadamantane cage bonds to stay tight, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`);
+    assert.ok(c4Angle > 80 && c4Angle < 150, `expected C4 to avoid flat or pinched cage placement, got ${c4Angle.toFixed(2)}`);
+    assert.ok(c8Angle > 80 && c8Angle < 150, `expected C8 to avoid flat or pinched cage placement, got ${c8Angle.toFixed(2)}`);
   });
 
   it('uses the noradamantane template instead of flattening compact tricyclic nonane bridges', () => {
@@ -6627,6 +6638,24 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(maxAngleDeviation(c43Angles, 120) < 8, `expected the C43 amide fan to stay near trigonal, got ${c43Angles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
+  it('keeps aromatic peptide side-chain exits on their trigonal fan without creating carbonyl contacts', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CNCC(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](<C(C)C>)C(=O)N[C@@H](<Cc1ccc(O)cc1>)C(=O)N[C@@H]2CSS[C@@H]3C[C@@H](<N(C3)C(=O)[C@@H](Cc4c[nH]cn4)NC2=O>)C(=O)N[C@@H](Cc5ccccc5)C(=O)O'
+      ),
+      {
+        suppressH: true
+      }
+    );
+    const c30ExitAngles = [bondAngleAtAtom(result.coords, 'C30', 'C36', 'C29'), bondAngleAtAtom(result.coords, 'C30', 'C29', 'C31')];
+    const c30RingAngle = bondAngleAtAtom(result.coords, 'C30', 'C36', 'C31');
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(maxAngleDeviation([...c30ExitAngles, c30RingAngle], 120) < 1e-6, `expected C30 phenyl side-chain fan to stay trigonal, got ${[...c30ExitAngles, c30RingAngle].map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
   it('uses balanced dense partitions for ring-decorated peptide chains to stay horizontal', () => {
     const result = runPipeline(
       parseSMILES(
@@ -6656,6 +6685,34 @@ stressDescribe('layout/engine/pipeline', () => {
       trigonalDistortion.totalDeviation + divalentDistortion.totalDeviation + threeHeavyDistortion.totalDeviation < 0.75,
       'expected dense partitioning to avoid the compact peptide angle collapse'
     );
+  });
+
+  it('uses dense partitions for medium ring-decorated peptide chains without collapsed junction angles', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CCNC(NCC)=NCCCC[C@@H](<NC(=O)[C@H](CC1=CC=C(O)C=C1)NC(=O)[C@H](CO)NC(=O)[C@@H](CC1=CC=CN=C1)NC(=O)[C@@H](CC1=CC=C(Cl)C=C1)NC(=O)[C@@H](CC1=CC2=CC=CC=C2C=C1)NC(C)=O>)C(=O)N[C@@H](<CC(C)C>)C(=O)N[C@@H](<CCCCN=C(NCC)NCC>)C(=O)N1CCC[C@H]1C(=O)N[C@H](C)C(N)=O'
+      ),
+      {
+        suppressH: true
+      }
+    );
+    const trigonalDistortion = measureTrigonalDistortion(result.layoutGraph, result.coords);
+    const divalentDistortion = measureDivalentContinuationDistortion(result.layoutGraph, result.coords);
+    const threeHeavyDistortion = measureThreeHeavyContinuationDistortion(result.layoutGraph, result.coords);
+    const c13Angles = [bondAngleAtAtom(result.coords, 'C13', 'N15', 'C80'), bondAngleAtAtom(result.coords, 'C13', 'N15', 'C12'), bondAngleAtAtom(result.coords, 'C13', 'C80', 'C12')];
+    const c50Angles = [bondAngleAtAtom(result.coords, 'C50', 'C48', 'C52'), bondAngleAtAtom(result.coords, 'C50', 'C48', 'N60'), bondAngleAtAtom(result.coords, 'C50', 'C52', 'N60')];
+    const n47Angle = bondAngleAtAtom(result.coords, 'N47', 'C38', 'C48');
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(Math.min(...c13Angles, ...c50Angles, n47Angle) > 100, `expected peptide junctions to stay open, got ${[...c13Angles, ...c50Angles, n47Angle].map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(trigonalDistortion.maxDeviation < 0.35, `expected trigonal fan distortion to stay bounded, got ${trigonalDistortion.maxDeviation}`);
+    assert.ok(divalentDistortion.maxDeviation < 0.25, `expected divalent continuation distortion to stay bounded, got ${divalentDistortion.maxDeviation}`);
+    assert.ok(threeHeavyDistortion.maxDeviation < 0.25, `expected hidden-h three-heavy fan distortion to stay bounded, got ${threeHeavyDistortion.maxDeviation}`);
   });
 
   stressIt('keeps peptide timeout regressions well under the stress-test budget after large-molecule partitioning', () => {

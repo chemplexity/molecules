@@ -45,6 +45,11 @@ const STRICT_BRIDGED_SMALL_RING_MIN_ANGLE_DEVIATION = Math.PI / 12;
 const STRICT_BRIDGED_SMALL_RING_MAX_BOND_DEVIATION_FACTOR = 0.24;
 const STRICT_BRIDGED_SMALL_RING_MAX_PASSES = 10;
 const STRICT_BRIDGED_SMALL_RING_DAMPING_FACTORS = Object.freeze([0.85, 0.65, 0.45, 0.3, 0.18, 0.1]);
+const FLATTENED_SATURATED_BRIDGE_LANE_MIN_ANGLE = (150 * Math.PI) / 180;
+const FLATTENED_SATURATED_BRIDGE_LANE_TARGET_ANGLE = (140 * Math.PI) / 180;
+const FLATTENED_SATURATED_BRIDGE_LANE_MAX_BOND_DEVIATION_FACTOR = 0.42;
+const FLATTENED_SATURATED_BRIDGE_LANE_MAX_PASSES = 3;
+const FLATTENED_SATURATED_BRIDGE_LANE_DAMPING_FACTORS = Object.freeze([1, 0.85, 0.7, 0.55]);
 const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_RING_COUNT = 8;
 const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ATOM_COUNT = BRIDGED_KK_LIMITS.mediumAtomLimit + 20;
 const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_ANGLE_DEVIATION = Math.PI / 15;
@@ -2290,6 +2295,197 @@ function regularizeStrictSmallBridgedRings(layoutGraph, rings, atomIds, coords, 
   return bestCoords;
 }
 
+function bridgedRingVertexAngle(ring, coords, atomId) {
+  const index = ring.atomIds.indexOf(atomId);
+  if (index < 0) {
+    return null;
+  }
+  const atomPosition = coords.get(atomId);
+  const previousPosition = coords.get(ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length]);
+  const nextPosition = coords.get(ring.atomIds[(index + 1) % ring.atomIds.length]);
+  if (!atomPosition || !previousPosition || !nextPosition) {
+    return null;
+  }
+  return angularDifference(angleOf(sub(previousPosition, atomPosition)), angleOf(sub(nextPosition, atomPosition)));
+}
+
+function flattenedSaturatedBridgeLaneDescriptors(layoutGraph, rings, coords) {
+  const bestDescriptorByAtomId = new Map();
+  for (const ring of strictSmallBridgedRings(rings)) {
+    if (ring.aromatic) {
+      continue;
+    }
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const atomId = ring.atomIds[index];
+      if (layoutGraph.fixedCoords.has(atomId)) {
+        continue;
+      }
+      const atom = layoutGraph.atoms.get(atomId);
+      if (!atom || atom.element !== 'C' || (atom.heavyDegree ?? 0) > 2) {
+        continue;
+      }
+      const angle = bridgedRingVertexAngle(ring, coords, atomId);
+      if (angle == null || angle <= FLATTENED_SATURATED_BRIDGE_LANE_MIN_ANGLE) {
+        continue;
+      }
+      const descriptor = {
+        ring,
+        atomId,
+        previousAtomId: ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length],
+        nextAtomId: ring.atomIds[(index + 1) % ring.atomIds.length],
+        angle
+      };
+      const incumbent = bestDescriptorByAtomId.get(atomId);
+      if (!incumbent || descriptor.angle > incumbent.angle) {
+        bestDescriptorByAtomId.set(atomId, descriptor);
+      }
+    }
+  }
+  return [...bestDescriptorByAtomId.values()].sort((first, second) => second.angle - first.angle);
+}
+
+function flattenedSaturatedBridgeLaneScore(layoutGraph, rings, coords) {
+  const descriptors = flattenedSaturatedBridgeLaneDescriptors(layoutGraph, rings, coords);
+  let maxAngle = 0;
+  let totalExcess = 0;
+  for (const descriptor of descriptors) {
+    maxAngle = Math.max(maxAngle, descriptor.angle);
+    totalExcess += Math.max(0, descriptor.angle - FLATTENED_SATURATED_BRIDGE_LANE_TARGET_ANGLE);
+  }
+  return {
+    count: descriptors.length,
+    maxAngle,
+    totalExcess
+  };
+}
+
+function flattenedSaturatedBridgeLaneScoreImproves(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateScore.maxAngle < incumbentScore.maxAngle - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxAngle > incumbentScore.maxAngle + 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalExcess < incumbentScore.totalExcess - 1e-9) {
+    return true;
+  }
+  if (candidateScore.totalExcess > incumbentScore.totalExcess + 1e-9) {
+    return false;
+  }
+  return candidateScore.count < incumbentScore.count;
+}
+
+function shouldAcceptFlattenedSaturatedBridgeLaneCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  const maxAllowedBondDeviation = bondLength * FLATTENED_SATURATED_BRIDGE_LANE_MAX_BOND_DEVIATION_FACTOR;
+  if (candidateAudit.maxBondLengthDeviation > Math.max(incumbentAudit.maxBondLengthDeviation + bondLength * 0.08, maxAllowedBondDeviation)) {
+    return false;
+  }
+  return flattenedSaturatedBridgeLaneScoreImproves(candidateScore, incumbentScore);
+}
+
+function flattenedSaturatedBridgeLaneTargetPositions(descriptor, coords, bondLength) {
+  const previousPosition = coords.get(descriptor.previousAtomId);
+  const currentPosition = coords.get(descriptor.atomId);
+  const nextPosition = coords.get(descriptor.nextAtomId);
+  if (!previousPosition || !currentPosition || !nextPosition) {
+    return [];
+  }
+  const dx = nextPosition.x - previousPosition.x;
+  const dy = nextPosition.y - previousPosition.y;
+  const chordLength = Math.hypot(dx, dy);
+  if (chordLength <= 1e-9) {
+    return [];
+  }
+  const maxAllowedBondLength = bondLength * BRIDGED_VALIDATION.maxBondLengthFactor;
+  if (chordLength >= maxAllowedBondLength * 2) {
+    return [];
+  }
+  const minimumAngleForBondLimit = 2 * Math.asin(Math.min(1, chordLength / (2 * maxAllowedBondLength)));
+  const targetAngle = Math.max(FLATTENED_SATURATED_BRIDGE_LANE_TARGET_ANGLE, minimumAngleForBondLimit);
+  if (targetAngle >= descriptor.angle - 1e-9 || targetAngle >= Math.PI - 1e-9) {
+    return [];
+  }
+
+  const midpoint = {
+    x: (previousPosition.x + nextPosition.x) / 2,
+    y: (previousPosition.y + nextPosition.y) / 2
+  };
+  const normal = {
+    x: -dy / chordLength,
+    y: dx / chordLength
+  };
+  const signedDistance = (currentPosition.x - midpoint.x) * normal.x + (currentPosition.y - midpoint.y) * normal.y;
+  const preferredSigns = Math.abs(signedDistance) > 1e-6 ? [Math.sign(signedDistance), -Math.sign(signedDistance)] : [1, -1];
+  const height = chordLength / (2 * Math.tan(targetAngle / 2));
+  return preferredSigns.map(sign => ({
+    x: midpoint.x + normal.x * height * sign,
+    y: midpoint.y + normal.y * height * sign
+  }));
+}
+
+function retouchFlattenedSaturatedBridgeLaneVertices(layoutGraph, rings, atomIds, coords, bondLength) {
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, bestCoords, bondLength);
+  let bestScore = flattenedSaturatedBridgeLaneScore(layoutGraph, rings, bestCoords);
+  if (!bestAudit || bestScore.count === 0 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  for (let pass = 0; pass < FLATTENED_SATURATED_BRIDGE_LANE_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    const descriptors = flattenedSaturatedBridgeLaneDescriptors(layoutGraph, rings, bestCoords);
+    for (const descriptor of descriptors) {
+      const currentPosition = bestCoords.get(descriptor.atomId);
+      if (!currentPosition) {
+        continue;
+      }
+      for (const targetPosition of flattenedSaturatedBridgeLaneTargetPositions(descriptor, bestCoords, bondLength)) {
+        for (const damping of FLATTENED_SATURATED_BRIDGE_LANE_DAMPING_FACTORS) {
+          const candidateCoords = cloneCoords(bestCoords);
+          moveAtomAndAttachedHydrogens(layoutGraph, candidateCoords, descriptor.atomId, {
+            x: currentPosition.x * (1 - damping) + targetPosition.x * damping,
+            y: currentPosition.y * (1 - damping) + targetPosition.y * damping
+          });
+          const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+          const candidateScore = flattenedSaturatedBridgeLaneScore(layoutGraph, rings, candidateCoords);
+          if (shouldAcceptFlattenedSaturatedBridgeLaneCoords(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+            bestCoords = candidateCoords;
+            bestAudit = candidateAudit;
+            bestScore = candidateScore;
+            acceptedInPass = true;
+          }
+        }
+      }
+    }
+    if (!acceptedInPass || bestScore.count === 0) {
+      break;
+    }
+  }
+
+  return bestCoords;
+}
+
 /**
  * Returns whether a medium-sized bridged ring system is within the bounded
  * specialist budget for additional local relaxation passes.
@@ -4143,6 +4339,7 @@ export function regularizeBridgedRingSystemGeometry(layoutGraph, rings, atomIds,
   selectedCoords = resolveCollapsedFourMemberedBridgeApexes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = spreadCompactSharedBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = retouchCollapsedSaturatedThreeAtomBridgeLanes(layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = retouchFlattenedSaturatedBridgeLaneVertices(layoutGraph, rings, atomIds, selectedCoords, bondLength);
   const selectedAudit = selectedCoords === coords ? baseAudit : auditBridgedPlacementCandidate(layoutGraph, atomIds, selectedCoords, bondLength);
   const canRetouchMarginalStretch = atomIds.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_ATOMS && rings.length >= MARGINAL_STRETCHED_BRIDGED_RING_BOND_RETOUCH_MIN_RINGS;
   if (canRetouchMarginalStretch && compareBridgedProjectionAudits(selectedAudit, baseAudit) > 0) {

@@ -1291,17 +1291,18 @@ export function createPrimitiveEventHandlers(context) {
     }
     maybeRefreshDrawBondHover(atom.id, 'atom');
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
+    const valenceWarningHoverMode =
+      context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
     if (
       chargeTool ||
-      isRingTemplateMode() ||
       suppressPaintModeTooltip() ||
       !showAtomTooltips ||
       (context.state.overlayState.getEraseMode() && !valenceWarning) ||
-      ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)
+      (valenceWarningHoverMode && !valenceWarning)
     ) {
       return;
     }
-    if ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) && valenceWarning) {
+    if (valenceWarningHoverMode && valenceWarning) {
       context.tooltipState.setSelectionValenceTooltipAtomId(atom.id);
       context.tooltip.showImmediate(context.formatters.atomTooltipHtml(atom, mol, valenceWarning, '2d'), event);
       return;
@@ -1527,17 +1528,18 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
+    const valenceWarningHoverMode =
+      context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
     if (
       chargeTool ||
-      isRingTemplateMode() ||
       suppressPaintModeTooltip() ||
       !showAtomTooltips ||
       (context.state.overlayState.getEraseMode() && !valenceWarning) ||
-      ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)
+      (valenceWarningHoverMode && !valenceWarning)
     ) {
       return;
     }
-    if ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) && valenceWarning) {
+    if (valenceWarningHoverMode && valenceWarning) {
       context.tooltipState.setSelectionValenceTooltipAtomId(atomNode.id);
       context.tooltip.showImmediate(context.formatters.atomTooltipHtml(atom, molecule, valenceWarning, 'force'), event);
       return;

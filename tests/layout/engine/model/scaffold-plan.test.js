@@ -531,6 +531,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.rootScaffold.atomCount, 10);
   });
 
+  it('uses the homoadamantane template for compact saturated undecane cages', () => {
+    const graph = createLayoutGraph(parseSMILES('C1(CC2(CC3(CC1CC(C2)C3)))'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'homoadamantane-core');
+    assert.equal(plan.rootScaffold.atomCount, 11);
+  });
+
   it('promotes exact cage-template matches over a misleading fused heuristic family', () => {
     const graph = createLayoutGraph(parseSMILES('C12C3C4C1C5C4C3C25'));
     const plan = buildScaffoldPlan(graph, graph.components[0]);

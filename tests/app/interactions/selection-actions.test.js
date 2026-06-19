@@ -1041,7 +1041,7 @@ describe('createSelectionActions', () => {
     const periodicButton = makeButton();
     periodicButton.getBoundingClientRect = () => ({ top: 300, left: 512, width: 32, height: 32, bottom: 332 });
     const periodicPopover = makeNode({ hidden: true });
-    periodicPopover.getBoundingClientRect = () => ({ width: 501, height: 301 });
+    periodicPopover.getBoundingClientRect = () => ({ width: 497, height: 297 });
     const periodicGrid = makeNode();
     const doc = {
       defaultView: {
@@ -1133,7 +1133,7 @@ describe('createSelectionActions', () => {
 
     assert.equal(periodicPopover.hidden, false);
     assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-top'), '8px');
-    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-left'), '277.5px');
+    assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-left'), '279.5px');
     assert.equal(periodicGrid.children.length, 143);
     assert.equal(columnLabels.length, 18);
     assert.equal(rowLabels.length, 7);

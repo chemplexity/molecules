@@ -262,6 +262,20 @@ describe('createDrawBondPreviewActions', () => {
     assert.equal(getDrawBondState().ex, 240);
   });
 
+  it('keeps line-mode hydrogen placement preview strokes clear of the H label', () => {
+    const { actions, g } = makeActions({
+      drawBondElement: 'H'
+    });
+
+    actions.start(null, 200, 150);
+    actions.update([260, 150]);
+
+    const segment = g.nodes.find(node => !node.removed && node.attrs.class === 'draw-bond-preview-segment');
+    assert.ok(segment);
+    assert.equal(segment.attrs.x1, 208);
+    assert.equal(segment.attrs.x2, 252);
+  });
+
   it('updates a 2D preview and snaps to a nearby atom', () => {
     const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
     const dest = { id: 'a2', x: 1, y: 0, visible: true, name: 'N' };

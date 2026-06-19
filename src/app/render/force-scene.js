@@ -1058,7 +1058,13 @@ export function createForceSceneRenderer(ctx) {
     }
     _updateForceAtomNumberLabels();
 
-    ctx.simulation.on('tick', () => {
+    /**
+     * Updates all force-rendered scene layers from the current simulation node
+     * positions. This is called once before overlay/highlight rendering so no
+     * reaction preview layer can flash ahead of the main molecule.
+     * @returns {void}
+     */
+    function _updateForceScenePositions() {
       ctx.helpers.renderReactionPreviewArrowForce(graph.nodes);
 
       singleBond
@@ -1169,7 +1175,10 @@ export function createForceSceneRenderer(ctx) {
           ctx.state.disableKeepInView();
         }
       }
-    });
+    }
+
+    ctx.simulation.on('tick', _updateForceScenePositions);
+    _updateForceScenePositions();
 
     if (preserveView && previousZoomTransform) {
       ctx.svg.call(ctx.zoom.transform, previousZoomTransform);

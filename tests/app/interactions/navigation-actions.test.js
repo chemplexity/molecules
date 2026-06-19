@@ -2,10 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createNavigationActions } from '../../../src/app/interactions/navigation.js';
+import { convertLineCoordsToForceLayout } from '../../../src/app/render/force-helpers.js';
 import { Molecule } from '../../../src/core/Molecule.js';
+import { parseSMILES } from '../../../src/io/smiles.js';
+import { generateCoords, refineExistingCoords } from '../../../src/layout/index.js';
 
 function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
+}
+
+function maxRingBondLengthDeviation(molecule, expectedLength = 1.5) {
+  return Math.max(
+    0,
+    ...molecule.getRings().flatMap(ring =>
+      ring.map((atomId, index) => {
+        const first = molecule.atoms.get(atomId);
+        const second = molecule.atoms.get(ring[(index + 1) % ring.length]);
+        return Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - expectedLength);
+      })
+    )
+  );
 }
 
 test('autoZoom recenters and fits the 2d molecule viewport', () => {
@@ -328,6 +344,195 @@ test('cleanLayout2d snaps slightly distorted rings back to regular geometry befo
     {
       touchedAtoms: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'],
       touchedBonds: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']
+    }
+  ]);
+});
+
+test('cleanLayout2d snaps single ring substituent exits back to the local exterior angle', () => {
+  const radius = 1.5;
+  const atomEntries = Array.from({ length: 6 }, (_, index) => {
+    const angle = (2 * Math.PI * index) / 6;
+    const id = `a${index + 1}`;
+    return [
+      id,
+      {
+        id,
+        name: 'C',
+        x: radius * Math.cos(angle),
+        y: radius * Math.sin(angle),
+        visible: true
+      }
+    ];
+  });
+  atomEntries.push([
+    's1',
+    {
+      id: 's1',
+      name: 'C',
+      x: radius + 1.5 * Math.cos(Math.PI / 4),
+      y: 1.5 * Math.sin(Math.PI / 4),
+      visible: true
+    }
+  ]);
+  const bondEntries = Array.from({ length: 6 }, (_, index) => {
+    const firstId = `a${index + 1}`;
+    const secondId = `a${((index + 1) % 6) + 1}`;
+    return [
+      `b${index + 1}`,
+      {
+        id: `b${index + 1}`,
+        atoms: [firstId, secondId],
+        isInRing: () => true
+      }
+    ];
+  });
+  bondEntries.push(['b7', { id: 'b7', atoms: ['a1', 's1'], isInRing: () => false }]);
+  const clonedMol = {
+    atoms: new Map(atomEntries),
+    bonds: new Map(bondEntries),
+    getRings: () => [['a1', 'a2', 'a3', 'a4', 'a5', 'a6']],
+    getBond(firstId, secondId) {
+      return [...this.bonds.values()].find(bond => bond.atoms.includes(firstId) && bond.atoms.includes(secondId)) ?? null;
+    }
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map([...clonedMol.atoms].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]));
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  const anchor = clonedMol.atoms.get('a1');
+  const substituent = clonedMol.atoms.get('s1');
+  approxEqual(Math.atan2(substituent.y - anchor.y, substituent.x - anchor.x), 0, 1e-9);
+  approxEqual(Math.hypot(substituent.x - anchor.x, substituent.y - anchor.y), 1.5, 1e-9);
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: ['a1', 'a2', 'a6', 's1'],
+      touchedBonds: ['b1', 'b6', 'b7']
+    }
+  ]);
+});
+
+test('cleanLayout2d does not rotate attached rings as substituent angle repairs', () => {
+  const radius = 1.5;
+  const atomEntries = [];
+  const bondEntries = [];
+  const addAtom = (id, x, y) => {
+    atomEntries.push([id, { id, name: 'C', x, y, visible: true }]);
+  };
+  const addBond = (id, firstId, secondId, inRing) => {
+    bondEntries.push([id, { id, atoms: [firstId, secondId], isInRing: () => inRing }]);
+  };
+
+  const firstRingIds = Array.from({ length: 6 }, (_, index) => `a${index + 1}`);
+  for (let index = 0; index < firstRingIds.length; index++) {
+    const angle = (2 * Math.PI * index) / firstRingIds.length;
+    addAtom(firstRingIds[index], radius * Math.cos(angle), radius * Math.sin(angle));
+    addBond(`ra${index + 1}`, firstRingIds[index], firstRingIds[(index + 1) % firstRingIds.length], true);
+  }
+
+  const attachedRoot = {
+    x: radius + radius * Math.cos(Math.PI / 4),
+    y: radius * Math.sin(Math.PI / 4)
+  };
+  const secondCenter = { x: attachedRoot.x + radius, y: attachedRoot.y };
+  const secondRingIds = Array.from({ length: 6 }, (_, index) => `b${index + 1}`);
+  for (let index = 0; index < secondRingIds.length; index++) {
+    const angle = Math.PI + (2 * Math.PI * index) / secondRingIds.length;
+    addAtom(secondRingIds[index], secondCenter.x + radius * Math.cos(angle), secondCenter.y + radius * Math.sin(angle));
+    addBond(`rb${index + 1}`, secondRingIds[index], secondRingIds[(index + 1) % secondRingIds.length], true);
+  }
+  addBond('link', 'a1', 'b1', false);
+
+  const clonedMol = {
+    atoms: new Map(atomEntries),
+    bonds: new Map(bondEntries),
+    getRings: () => [firstRingIds, secondRingIds],
+    getBond(firstId, secondId) {
+      return [...this.bonds.values()].find(bond => bond.atoms.includes(firstId) && bond.atoms.includes(secondId)) ?? null;
+    }
+  };
+  const originalB1 = { x: clonedMol.atoms.get('b1').x, y: clonedMol.atoms.get('b1').y };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map([...clonedMol.atoms].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]));
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  approxEqual(clonedMol.atoms.get('b1').x, originalB1.x, 1e-9);
+  approxEqual(clonedMol.atoms.get('b1').y, originalB1.y, 1e-9);
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: [],
+      touchedBonds: []
     }
   ]);
 });
@@ -945,6 +1150,160 @@ test('toggleMode writes converted force coordinates before rendering line mode',
   approxEqual(renderedMol.atoms.get('c1').y, 0);
   approxEqual(renderedMol.atoms.get('c2').x, 0.75);
   approxEqual(renderedMol.atoms.get('c2').y, 0);
+});
+
+test('toggleMode regularizes small force-mode ring drift before rendering line mode', () => {
+  const mol = new Molecule();
+  const ringIds = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+  for (const atomId of ringIds) {
+    mol.addAtom(atomId, 'C');
+  }
+  for (let index = 0; index < ringIds.length; index++) {
+    mol.addBond(`b${index + 1}`, ringIds[index], ringIds[(index + 1) % ringIds.length], { order: 1 }, false);
+  }
+  const forceCenter = { x: 100, y: 100 };
+  const nodes = ringIds.map((atomId, index) => {
+    const angle = (2 * Math.PI * index) / ringIds.length;
+    return {
+      id: atomId,
+      name: 'C',
+      x: forceCenter.x + 41 * Math.cos(angle),
+      y: forceCenter.y + 41 * Math.sin(angle)
+    };
+  });
+  nodes[2].x += 6;
+  nodes[2].y -= 3;
+  const calls = [];
+  let mode = 'force';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+          calls.push(['setMode', nextMode]);
+        },
+        setRotationDeg: value => calls.push(['setRotationDeg', value]),
+        setFlipH: value => calls.push(['setFlipH', value]),
+        setFlipV: value => calls.push(['setFlipV', value])
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => null,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView: source => calls.push(['resetActiveResonanceView', source]),
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop: () => calls.push(['stopSimulation']),
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome: nextMode => calls.push(['updateModeChrome', nextMode])
+    },
+    view: {
+      clearPrimitiveHover: () => calls.push(['clearPrimitiveHover']),
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    renderers: {
+      renderMol: (renderedMol, options) => calls.push(['renderMol', renderedMol, options])
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  const renderedMol = calls.find(call => call[0] === 'renderMol')[1];
+  for (let index = 0; index < ringIds.length; index++) {
+    const first = renderedMol.atoms.get(ringIds[index]);
+    const second = renderedMol.atoms.get(ringIds[(index + 1) % ringIds.length]);
+    approxEqual(Math.hypot(first.x - second.x, first.y - second.y), 1.5, 1e-9);
+  }
+});
+
+test('repeated clean after force perturbation preserves regular ring geometry', () => {
+  const smiles = 'Cc1cc(C)cc(NC(=O)c2cc(NC(=O)c3ccc(cc3Cl)S(=O)(=O)C)ccc2Cl)c1';
+  let mol2d = parseSMILES(smiles);
+  generateCoords(mol2d, { suppressH: true, bondLength: 1.5 });
+  let currentMol = mol2d;
+  let mode = 'force';
+  const converted = convertLineCoordsToForceLayout(currentMol, {
+    bondLength: 1.5,
+    forceCenter: { x: 400, y: 300 }
+  });
+  const nodes = converted.nodes.map(node => ({ ...node }));
+  const movedNode = nodes.find(node => node.id === 'C15');
+  assert.ok(movedNode);
+  movedNode.x += 12;
+  movedNode.y -= 8;
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => currentMol,
+        getMol2d: () => mol2d,
+        getCurrentSmiles: () => smiles,
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {},
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome() {},
+      clean2dButton: null,
+      plotEl: { clientWidth: 800, clientHeight: 600 }
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol: renderedMol => {
+        currentMol = renderedMol;
+        if (mode === '2d') {
+          mol2d = renderedMol;
+        }
+      }
+    },
+    helpers: {
+      refineExistingCoords
+    },
+    parsers: {
+      parseSMILES
+    }
+  });
+
+  actions.toggleMode();
+  for (let cleanIndex = 0; cleanIndex < 8; cleanIndex++) {
+    actions.cleanLayout2d();
+    assert.ok(maxRingBondLengthDeviation(mol2d) < 1e-6, `ring geometry drifted after clean ${cleanIndex + 1}`);
+  }
 });
 
 test('force flip refits the viewport when a reaction preview is active', () => {

@@ -944,11 +944,11 @@ div.tooltip td:first-child {
 .periodic-table-grid {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(19, 23px) 12px;
-  grid-template-rows: repeat(11, 23px) 12px;
+  grid-template-columns: repeat(19, 23px) 8px;
+  grid-template-rows: repeat(11, 23px) 8px;
   grid-auto-rows: 23px;
   gap: 2px;
-  width: calc(19 * 23px + 12px + 19 * 2px);
+  width: calc(19 * 23px + 8px + 19 * 2px);
 }
 
 .periodic-table-column-label,
@@ -983,10 +983,19 @@ div.tooltip td:first-child {
   font-size: 9px;
   line-height: 1;
   cursor: pointer;
+  position: relative;
+  transform-origin: center;
+  transition:
+    box-shadow 0.12s ease,
+    filter 0.12s ease,
+    transform 0.12s ease;
 }
 
 #atom-selector .periodic-element-cell:hover {
   filter: brightness(1.08);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28);
+  transform: scale(1.32);
+  z-index: 2;
 }
 
 #atom-selector .periodic-element-cell.active {

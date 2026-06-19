@@ -118,6 +118,24 @@ function bridgedRingShapeMetrics(graph, coords) {
   };
 }
 
+/**
+ * Returns the angle at the center atom between two neighboring atoms.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} firstAtomId - First neighboring atom ID.
+ * @param {string} secondAtomId - Second neighboring atom ID.
+ * @returns {number} Angle in degrees.
+ */
+function angleAtAtom(coords, centerAtomId, firstAtomId, secondAtomId) {
+  return (
+    angularDifference(
+      angleOf(sub(coords.get(firstAtomId), coords.get(centerAtomId))),
+      angleOf(sub(coords.get(secondAtomId), coords.get(centerAtomId)))
+    ) *
+    (180 / Math.PI)
+  );
+}
+
 describe('layout/engine/families/bridged', () => {
   it('places a matched bridged scaffold through template coordinates', () => {
     const graph = createLayoutGraph(makeNorbornane());
@@ -216,6 +234,37 @@ describe('layout/engine/families/bridged', () => {
       assert.ok(Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - graph.options.bondLength) < 1e-6, `expected ${atomId}-${nextAtomId} to keep target bond length`);
       assert.ok(Math.abs(ringInternalAngle(sixRing, result.coords, atomId) - (2 * Math.PI) / 3) < 1e-6, `expected ${atomId} to keep a regular six-ring angle`);
     }
+  });
+
+  it('uses the homoadamantane template for compact saturated cages', () => {
+    const smiles = 'C1(CC2(CC3(CC1CC(C2)C3)))';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const scaffoldPlan = buildScaffoldPlan(graph, graph.components[0]);
+    const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: scaffoldPlan.rootScaffold.templateId
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertLaneAnglesReadable = (coords, label) => {
+      const laneAngles = [angleAtAtom(coords, 'C4', 'C3', 'C5'), angleAtAtom(coords, 'C8', 'C7', 'C9')];
+      assert.ok(Math.min(...laneAngles) > 80, `expected ${label} bridge-lane vertices to stay open, got ${laneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+      assert.ok(Math.max(...laneAngles) < 150, `expected ${label} bridge-lane vertices to avoid flat corners, got ${laneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    };
+
+    assert.equal(scaffoldPlan.rootScaffold.templateId, 'homoadamantane-core');
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assertLaneAnglesReadable(result.coords, 'bridged placement');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(pipelineResult.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(pipelineResult.metadata.audit.maxBondLengthDeviation < graph.options.bondLength * 0.18);
+    assertLaneAnglesReadable(pipelineResult.coords, 'pipeline layout');
   });
 
   it('regularizes compact saturated fused-spiro bridged rings after KK placement', () => {

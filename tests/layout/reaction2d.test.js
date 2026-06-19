@@ -1271,6 +1271,41 @@ test('reaction preview preserves the retained sugar scaffold for ether cleavage'
   }
 });
 
+test('reaction preview keeps force-mode ether-cleavage reactant geometry aligned with line mode', () => {
+  const smiles = '[H][C@]1(CO[C@]2([H])[C@]([H])(CO[C@]12[H])OC1=CC=C(C=C1)C(N)=N)OC1=CC=C(C=C1)C(N)=N';
+  const smirks = reactionTemplates.etherCleavage.smirks;
+  const lineSourceMol = parseSMILES(smiles);
+  generateAndRefine2dCoords(lineSourceMol, { suppressH: true, bondLength: 1.5 });
+
+  const forceSourceMol = lineSourceMol.clone();
+  for (const atom of forceSourceMol.atoms.values()) {
+    if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    atom.x = atom.x * 28 + 420;
+    atom.y = atom.y * 28 + 240;
+  }
+
+  const mappings = [...findSMARTSRaw(lineSourceMol, smirks.split('>>')[0])];
+  assert.ok(mappings.length >= 2, 'expected at least two ether-cleavage sites');
+
+  for (const mapping of mappings.slice(0, 2)) {
+    const linePreview = buildReaction2dMol(lineSourceMol, smirks, mapping);
+    const forcePreview = buildReaction2dMol(forceSourceMol, smirks, mapping);
+    assert.ok(linePreview, 'expected line-mode ether-cleavage preview to build');
+    assert.ok(forcePreview, 'expected force-mode ether-cleavage preview to build');
+
+    const lineSnapshot = new Map(
+      [...linePreview.reactantAtomIds]
+        .map(id => linePreview.mol.atoms.get(id))
+        .filter(atom => atom && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y))
+        .map(atom => [atom.id, { x: atom.x, y: atom.y }])
+    );
+    const drift = maxPairDistanceDeltaFromSnapshot(forcePreview.mol, forcePreview.reactantAtomIds, lineSnapshot);
+    assert.ok(drift < 1e-6, `expected force-mode reactant geometry to match line mode, got max pair-distance drift ${drift.toExponential(3)} Å`);
+  }
+});
+
 test('reaction preview keeps ether-cleavage ring-opening product leveled (landscape)', () => {
   // Glucose (ring form): ether cleavage opens the ring to an open-chain hexitol.
   // After alignment to the reactant scaffold, the open-chain backbone should be

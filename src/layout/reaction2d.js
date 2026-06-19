@@ -144,6 +144,28 @@ function prepareReaction2dLayoutReferenceMol(mol, bondLength = 1.5) {
 }
 
 /**
+ * Copies chemistry-space reaction reference coordinates into another molecule
+ * with matching atom IDs.
+ * @param {import('../core/Molecule.js').Molecule} targetMol - Molecule to update.
+ * @param {import('../core/Molecule.js').Molecule} referenceMol - Coordinate reference.
+ * @returns {void}
+ */
+function copyReaction2dReferenceCoords(targetMol, referenceMol) {
+  if (!targetMol || !referenceMol) {
+    return;
+  }
+  for (const [atomId, referenceAtom] of referenceMol.atoms) {
+    const atom = targetMol.atoms.get(atomId);
+    if (!atom || !Number.isFinite(referenceAtom.x) || !Number.isFinite(referenceAtom.y)) {
+      continue;
+    }
+    atom.x = referenceAtom.x;
+    atom.y = referenceAtom.y;
+    atom.z = referenceAtom.z;
+  }
+}
+
+/**
  * @param {import('../core/Molecule.js').Molecule} sourceMol - The source molecule.
  * @param {string} smirks - SMIRKS reaction string.
  * @param {Map.<string, string>} mapping - Atom-to-atom mapping (query ID → target ID).
@@ -165,6 +187,8 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   const reactantAffectedAtomIds = new Set(mapping ? [...mapping.values()] : []);
   const productAffectedAtomIds = new Set();
   const layoutReferenceMol = prepareReaction2dLayoutReferenceMol(sourceMol.clone());
+  copyReaction2dReferenceCoords(reactantMol, layoutReferenceMol);
+  copyReaction2dReferenceCoords(productMol, layoutReferenceMol);
   const reactantReferenceCoords = snapshotReaction2dCoords(layoutReferenceMol, new Set(layoutReferenceMol.atoms.keys()));
   const sourceStereoReferenceMol = prepareReaction2dStereoReferenceMol(layoutReferenceMol.clone());
   const sourceStereoBondTypes = new Map(pickStereoWedges(sourceStereoReferenceMol));

@@ -168,6 +168,9 @@ export function atomColor(sym, layout = '2d') {
   if (layout === '2d' && _renderOptions.twoDColorStyle === 'bw') {
     return '#333333';
   }
+  if (layout === '2d' && (sym === 'H' || sym === 'D')) {
+    return '#333333';
+  }
   return baseAtomColor(sym);
 }
 

@@ -572,6 +572,82 @@ describe('initPlotInteractions', () => {
     mousemoveHandler({ clientX: 10, clientY: 20, dummy: true });
   });
 
+  it('shows a valence tooltip for hovered atoms while ring-template mode is active', () => {
+    const records = [];
+    const warningMap = new Map([['a1', { atomId: 'a1', code: 'warn' }]]);
+    const atom = { id: 'a1', name: 'C' };
+    let mousemoveHandler = null;
+    let selectionTooltipAtomId = null;
+
+    initPlotInteractions({
+      plotEl: {
+        addEventListener() {}
+      },
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'mousemove') {
+            mousemoveHandler = handler;
+          }
+        },
+        elementsFromPoint() {
+          return [
+            {
+              classList: {
+                contains(value) {
+                  return value === 'atom-hit';
+                }
+              },
+              closest(selector) {
+                return selector === '[data-atom-id]' ? { getAttribute: () => 'a1' } : null;
+              }
+            }
+          ];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getPaintMode: () => false,
+        getRingTemplateMode: () => true,
+        isRenderableMode: () => true,
+        getActiveMolecule: () => ({ atoms: new Map([['a1', atom]]) }),
+        getTooltipMode: () => '2d'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => warningMap
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => selectionTooltipAtomId,
+        setSelectionValenceTooltipAtomId(value) {
+          selectionTooltipAtomId = value;
+          records.push(['setSelectionTooltipAtomId', value]);
+        }
+      },
+      tooltip: makeTooltip(records),
+      helpers: {
+        getNodeDatum: () => null
+      },
+      molecule: {
+        getAtomById: atomId => (atomId === 'a1' ? atom : null)
+      },
+      formatters: {
+        atomTooltipHtml: (hoveredAtom, mol, warning, mode) => `${hoveredAtom.id}:${warning.code}:${mode}:${mol.atoms.size}`
+      }
+    });
+
+    mousemoveHandler({ clientX: 10, clientY: 20 });
+
+    assert.deepEqual(records, [
+      ['setSelectionTooltipAtomId', 'a1'],
+      ['show', 'a1:warn:2d:1', 10, 20]
+    ]);
+  });
+
   it('hides the tooltip when there is no hovered warning target', () => {
     const records = [];
     let mousemoveHandler = null;

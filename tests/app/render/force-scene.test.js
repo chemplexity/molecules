@@ -45,7 +45,7 @@ class FakeSelection {
   }
 
   attr(name, value) {
-    if (['class', 'data-ring-fill-id', 'd', 'fill-rule', 'fill', 'fill-opacity', 'points', 'stroke'].includes(name)) {
+    if (['class', 'data-ring-fill-id', 'd', 'fill-rule', 'fill', 'fill-opacity', 'points', 'stroke', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy'].includes(name)) {
       const resolved = typeof value === 'function' && this.dataValue.length > 0 ? this.dataValue.map(d => value(d)) : value;
       this.records.push(['attr', name, resolved]);
     }
@@ -515,6 +515,33 @@ describe('createForceSceneRenderer', () => {
     assert.ok(restartIndex > restartAlphaIndex);
     assert.deepEqual(records[tickIndex], ['simulation.tick', 7]);
     assert.deepEqual(records[reseatIndex], ['reseatForceGraphHydrogens', graph, { resetVelocity: true }]);
+  });
+
+  it('positions the force scene before applying highlight overlays', () => {
+    const graph = {
+      nodes: [
+        { id: 'c1', name: 'C', protons: 6, charge: 0, x: 80, y: 100 },
+        { id: 'c2', name: 'C', protons: 6, charge: 0, x: 120, y: 100 }
+      ],
+      links: []
+    };
+    graph.links.push({ id: 'b1', source: graph.nodes[0], target: graph.nodes[1], order: 1 });
+    const mol = parseSMILES('CC');
+    const { renderer, records } = makeRenderer({
+      hasHighlights: true,
+      convertMolecule: () => graph
+    });
+
+    renderer.updateForce(mol);
+
+    const firstAtomPositionIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'cx');
+    const firstBondPositionIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'x1');
+    const highlightIndex = records.findIndex(entry => entry[0] === 'applyForceHighlights');
+
+    assert.ok(firstAtomPositionIndex >= 0, 'expected atom positions to be written on the initial render pass');
+    assert.ok(firstBondPositionIndex >= 0, 'expected bond positions to be written on the initial render pass');
+    assert.ok(highlightIndex > firstAtomPositionIndex, 'expected highlights after atom positioning');
+    assert.ok(highlightIndex > firstBondPositionIndex, 'expected highlights after bond positioning');
   });
 
   it('keeps preserved-position force updates from running the initial settle pass', () => {

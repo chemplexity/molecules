@@ -669,6 +669,21 @@ function _applyActiveReactionPreviewMetadata(mol, entry) {
 }
 
 /**
+ * Applies the same product orientation and reaction-pair centering used by the
+ * 2D renderer before a reaction preview is handed to another display mode.
+ * @param {object} mol - Reaction preview molecule whose coordinates will be updated.
+ * @returns {void}
+ */
+export function _applyReactionPreviewDisplayGeometry(mol) {
+  if (!_hasReactionPreview() || !mol) {
+    return;
+  }
+  _alignReaction2dProductOrientation(mol);
+  _spreadReaction2dProductComponents(mol, 1.5);
+  _centerReaction2dPairCoords(mol, 1.5);
+}
+
+/**
  * Clears the reaction preview and re-renders the source molecule, optionally restoring the entry zoom and display state.
  * @param {object} [options] - Options controlling what entry state is restored.
  * @param {boolean} [options.restoreEntryZoom] - Whether to restore the zoom transform captured at preview entry.
@@ -1771,6 +1786,7 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true, 
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
     _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
     _applyActiveReactionPreviewMetadata(preview.mol, entry);
+    _applyReactionPreviewDisplayGeometry(preview.mol);
     _applyRingFillEntriesForAtomScope(preview.mol, productRingFills, _reactionPreviewProductAtomIds);
     const renderOptions = {
       recomputeResonance: false,

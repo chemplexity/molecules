@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Atom } from '../../../src/core/index.js';
-import { atomTooltipHtml, getHighlightStyleVariant, HIGHLIGHT_STYLE_PALETTES } from '../../../src/app/render/helpers.js';
+import { atomColor, atomTooltipHtml, getHighlightStyleVariant, HIGHLIGHT_STYLE_PALETTES } from '../../../src/app/render/helpers.js';
 
 describe('getHighlightStyleVariant', () => {
   it('starts the default rainbow with the existing green highlight', () => {
@@ -20,6 +20,14 @@ describe('getHighlightStyleVariant', () => {
 
   it('falls back to the default palette for unknown styles', () => {
     assert.deepEqual(getHighlightStyleVariant('missing-style', 2), HIGHLIGHT_STYLE_PALETTES.default[2]);
+  });
+});
+
+describe('atomColor', () => {
+  it('uses dark hydrogen text in 2D while preserving the white force/CPK hydrogen swatch', () => {
+    assert.equal(atomColor('H', '2d'), '#333333');
+    assert.equal(atomColor('D', '2d'), '#333333');
+    assert.equal(atomColor('H', 'force'), '#FFFFFF');
   });
 });
 

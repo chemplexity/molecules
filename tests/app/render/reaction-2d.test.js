@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 
 import { generateResonanceStructures } from '../../../src/algorithms/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
+import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
+import { alignReaction2dProductOrientation, buildReaction2dMol, centerReaction2dPairCoords, spreadReaction2dProductComponents } from '../../../src/layout/reaction2d.js';
 import {
+  _applyReactionPreviewDisplayGeometry,
   _captureReactionPreviewSnapshot,
   _forceInitialPatchFromAnchorCoords,
   _paintReactionPreviewReactantSource,
@@ -12,6 +15,7 @@ import {
   _restoreReactionPreviewSource,
   initReaction2d
 } from '../../../src/app/render/reaction-2d.js';
+import { findSMARTSRaw } from '../../../src/smarts/search.js';
 import { reactionTemplates } from '../../../src/smirks/index.js';
 
 function serializePreviewMol(mol) {
@@ -101,6 +105,23 @@ function makePreviewSnapshot({ sourceMol, entryDisplayMol, entryZoomTransform = 
   };
 }
 
+function maxPairDistanceDelta(molA, molB, atomIds) {
+  const ids = [...atomIds].filter(id => molA.atoms.get(id)?.name !== 'H' && molB.atoms.get(id)?.name !== 'H');
+  let maxDelta = 0;
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      const a1 = molA.atoms.get(ids[i]);
+      const b1 = molA.atoms.get(ids[j]);
+      const a2 = molB.atoms.get(ids[i]);
+      const b2 = molB.atoms.get(ids[j]);
+      const d1 = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+      const d2 = Math.hypot(a2.x - b2.x, a2.y - b2.y);
+      maxDelta = Math.max(maxDelta, Math.abs(d1 - d2));
+    }
+  }
+  return maxDelta;
+}
+
 afterEach(() => {
   _restoreReactionPreviewSnapshot(null);
 });
@@ -168,6 +189,54 @@ describe('reaction preview restore', () => {
     assert.ok(Number.isFinite(oxoPos?.y));
     assert.ok(oxoPos.x > carbonylPos.x, 'expected oxo oxygen to seed away from the ring neighbor');
     assert.ok(Math.hypot(oxoPos.x - carbonylPos.x, oxoPos.y - carbonylPos.y) < Math.hypot(oxoPos.x - ringPos.x, oxoPos.y - ringPos.y));
+  });
+
+  it('applies line-mode product geometry before force reaction preview seeding', () => {
+    const smiles = '[H][C@]1(CO[C@]2([H])[C@]([H])(CO[C@]12[H])OC1=CC=C(C=C1)C(N)=N)OC1=CC=C(C=C1)C(N)=N';
+    const smirks = reactionTemplates.etherCleavage.smirks;
+    const sourceMol = parseSMILES(smiles);
+    generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
+    const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][1];
+    assert.ok(mapping, 'expected second ether-cleavage mapping for the bridged ether example');
+    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+    assert.ok(preview, 'expected ether-cleavage preview to build');
+
+    _restoreReactionPreviewSnapshot({
+      sourceMol: serializePreviewMol(sourceMol),
+      displayMol: serializePreviewMol(preview.mol),
+      activeReactionSmirks: smirks,
+      activeReactionMatchIndex: 1,
+      reactionPreviewLocked: true,
+      reactantAtomIds: [...preview.reactantAtomIds],
+      productAtomIds: [...preview.productAtomIds],
+      productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+      mappedAtomPairs: preview.mappedAtomPairs,
+      editedProductAtomIds: [...preview.editedProductAtomIds],
+      preservedReactantStereoByCenter: [...preview.preservedReactantStereoByCenter],
+      preservedReactantStereoBondTypes: [...preview.preservedReactantStereoBondTypes],
+      preservedProductStereoByCenter: [...preview.preservedProductStereoByCenter],
+      preservedProductStereoBondTypes: [...preview.preservedProductStereoBondTypes],
+      forcedStereoByCenter: [...preview.forcedStereoByCenter],
+      forcedStereoBondTypes: [...preview.forcedStereoBondTypes],
+      forcedStereoBondCenters: [...preview.forcedStereoBondCenters],
+      reactantReferenceCoords: [...preview.reactantReferenceCoords],
+      reactionPreviewHighlightMappings: [],
+      entryZoomTransform: null,
+      entryDisplayMol: serializePreviewMol(sourceMol),
+      entryMode: 'force',
+      entryForceNodePositions: null
+    });
+
+    const expected = preview.mol.clone();
+    alignReaction2dProductOrientation(expected, preview, 1.5);
+    spreadReaction2dProductComponents(expected, preview, 1.5);
+    centerReaction2dPairCoords(expected, preview, 1.5);
+
+    const actual = preview.mol.clone();
+    _applyReactionPreviewDisplayGeometry(actual);
+    const drift = maxPairDistanceDelta(actual, expected, preview.productAtomIds);
+
+    assert.ok(drift < 1e-6, `expected force preview product geometry to match line display geometry, got ${drift.toExponential(3)} Å`);
   });
 
   it('keeps the live source molecule properties when restoring the saved 2d entry display', () => {
