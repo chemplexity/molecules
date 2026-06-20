@@ -466,7 +466,13 @@ describe('createPrimitiveEventHandlers', () => {
     };
 
     handlers.handle2dAtomMouseDownDrawBond(event, 'a1');
-    assert.deepEqual(calls, [['showPrimitiveHover', ['a1'], []]]);
+    const initialPreview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(initialPreview);
+    assert.equal(initialPreview.children.length, 4);
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['a1'], []],
+      ['showPrimitiveHover', ['a1'], []]
+    ]);
     assert.equal(typeof listeners.get('mousemove'), 'function');
     assert.equal(typeof listeners.get('mouseup'), 'function');
 
@@ -1943,7 +1949,7 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(typeof listeners.get('mouseup'), 'function');
     assert.deepEqual(calls, [
       ['clearArtifacts'],
-      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double' }]
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }]
     ]);
 
     listeners.get('mouseup')({
@@ -1956,7 +1962,7 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(listeners.has('mouseup'), false);
     assert.deepEqual(calls, [
       ['clearArtifacts'],
-      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double' }],
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }],
       ['clearArtifacts'],
       ['promoteBondOrder', 'b1', { drawBondType: 'single' }]
     ]);
@@ -1977,14 +1983,15 @@ describe('createPrimitiveEventHandlers', () => {
     setDrawBondMode(true);
     setDrawBondType('triple');
     const handlers = createPrimitiveEventHandlers(context);
+    const event = {
+      currentTarget: { ownerDocument: documentMock },
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    };
 
     handlers.handle2dBondMouseDownDrawBond(
-      {
-        currentTarget: { ownerDocument: documentMock },
-        preventDefault() {},
-        stopPropagation() {},
-        stopImmediatePropagation() {}
-      },
+      event,
       { id: 'b1', properties: { order: 1 } },
       { x: 10, y: 20 },
       { x: 70, y: 20 }
@@ -1992,7 +1999,45 @@ describe('createPrimitiveEventHandlers', () => {
 
     assert.deepEqual(calls, [
       ['clearArtifacts'],
-      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'triple' }]
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'triple', sourceElement: event.currentTarget }]
+    ]);
+  });
+
+  it('previews a held 2D bond even if the view mode is not the strict 2d token', () => {
+    const listeners = new Map();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener() {}
+    };
+    const { context, calls, setMode, setDrawBondMode, setDrawBondType } = makeContext({
+      document: documentMock
+    });
+    setMode('line');
+    setDrawBondMode(true);
+    setDrawBondType('single');
+    const handlers = createPrimitiveEventHandlers(context);
+    const event = {
+      currentTarget: { ownerDocument: documentMock },
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    };
+
+    assert.equal(
+      handlers.handle2dBondMouseDownDrawBond(
+        event,
+        { id: 'b1', properties: { order: 1 } },
+        { x: 10, y: 20 },
+        { x: 70, y: 20 }
+      ),
+      true
+    );
+
+    assert.deepEqual(calls, [
+      ['clearArtifacts'],
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }]
     ]);
   });
 

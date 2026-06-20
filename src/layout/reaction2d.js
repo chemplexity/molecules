@@ -169,12 +169,15 @@ function copyReaction2dReferenceCoords(targetMol, referenceMol) {
  * @param {import('../core/Molecule.js').Molecule} sourceMol - The source molecule.
  * @param {string} smirks - SMIRKS reaction string.
  * @param {Map.<string, string>} mapping - Atom-to-atom mapping (query ID → target ID).
+ * @param {object} [options] - Reaction layout options.
+ * @param {number} [options.bondLength] - Target 2D bond length used for product coordinate generation and spacing.
  * @returns {import('../core/Molecule.js').Molecule|null} The reaction 2D scaffold, or null if inputs are invalid.
  */
-export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
+export function buildReaction2dMol(sourceMol, smirks, mapping = undefined, options = {}) {
   if (!sourceMol || !smirks) {
     return null;
   }
+  const bondLength = Number.isFinite(Number(options.bondLength)) && Number(options.bondLength) > 0 ? Number(options.bondLength) : 1.5;
   const reactantMol = sourceMol.clone();
   const productMol = applySMIRKS(sourceMol, smirks, { mode: 'first', skipCoordGen: true, ...(mapping ? { mapping } : {}) });
   if (!productMol) {
@@ -186,11 +189,11 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   const mappedAtomPairs = [];
   const reactantAffectedAtomIds = new Set(mapping ? [...mapping.values()] : []);
   const productAffectedAtomIds = new Set();
-  const layoutReferenceMol = prepareReaction2dLayoutReferenceMol(sourceMol.clone());
+  const layoutReferenceMol = prepareReaction2dLayoutReferenceMol(sourceMol.clone(), bondLength);
   copyReaction2dReferenceCoords(reactantMol, layoutReferenceMol);
   copyReaction2dReferenceCoords(productMol, layoutReferenceMol);
   const reactantReferenceCoords = snapshotReaction2dCoords(layoutReferenceMol, new Set(layoutReferenceMol.atoms.keys()));
-  const sourceStereoReferenceMol = prepareReaction2dStereoReferenceMol(layoutReferenceMol.clone());
+  const sourceStereoReferenceMol = prepareReaction2dStereoReferenceMol(layoutReferenceMol.clone(), bondLength);
   const sourceStereoBondTypes = new Map(pickStereoWedges(sourceStereoReferenceMol));
   const sourceStereoByCenter = new Map();
   for (const [bondId, type] of sourceStereoBondTypes) {
@@ -300,7 +303,8 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
     const reactantMaxX = Math.max(...reactantHeavy.map(a => a.x));
     const reactantMinX = Math.min(...reactantHeavy.map(a => a.x));
     const reactantWidth = reactantMaxX - reactantMinX;
-    let cursor = reactantMaxX + reactantWidth * 0.5 + 3.0;
+    const componentGap = bondLength * 2;
+    let cursor = reactantMaxX + reactantWidth * 0.5 + componentGap;
     for (const componentAtomIds of productComponentAtomIdSets) {
       const productHeavy = [...componentAtomIds].map(id => previewMol.atoms.get(id)).filter(a => a && a.name !== 'H' && Number.isFinite(a.x));
       if (productHeavy.length === 0) {
@@ -315,7 +319,7 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
           atom.x += dx;
         }
       }
-      cursor += pMaxX - pMinX + 3.0;
+      cursor += pMaxX - pMinX + componentGap;
     }
   }
 
@@ -957,6 +961,7 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
   idealizeReaction2dTerminalReducedAlkynePairs(mol, componentAtomIds, bondLength);
   idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength);
   preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLength);
+  idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bondLength);
   idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bondLength);
   idealizeReaction2dEditedTwoHeavyImineCenters(mol, componentAtomIds, bondLength);
   idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bondLength);
@@ -2129,6 +2134,85 @@ function idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength 
         placement.atom.y = placement.y;
       }
     }
+  }
+}
+
+/**
+ * Bends terminal alkene-hydrogenation products back onto a saturated zig-zag.
+ * The retained terminal alkene carbon can otherwise be copied from the source
+ * layout onto the straight continuation when very short bond lengths are used.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
+function idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+  const ringAtomIds = new Set(mol.getRings().flat());
+
+  for (const bond of mol.bonds.values()) {
+    const [aId, bId] = bond.atoms;
+    if (!componentAtomIds.has(aId) || !componentAtomIds.has(bId) || ringAtomIds.has(aId) || ringAtomIds.has(bId)) {
+      continue;
+    }
+    if ((bond.properties.order ?? 1) !== 1 || !mol.__reactionPreview.editedProductAtomIds.has(aId) || !mol.__reactionPreview.editedProductAtomIds.has(bId)) {
+      continue;
+    }
+
+    const sourceAId = sourceAtomId(aId);
+    const sourceBId = sourceAtomId(bId);
+    if ((mol.getBond(sourceAId, sourceBId)?.properties.order ?? 1) !== 2) {
+      continue;
+    }
+
+    const atomA = mol.atoms.get(aId);
+    const atomB = mol.atoms.get(bId);
+    if (!atomA || !atomB || atomA.name !== 'C' || atomB.name !== 'C') {
+      continue;
+    }
+    const heavyNeighborsA = atomA.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighborsB = atomB.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const descriptor =
+      heavyNeighborsA.length === 1 && heavyNeighborsB.length === 2
+        ? { terminal: atomA, internal: atomB, outer: heavyNeighborsB.find(nb => nb.id !== atomA.id) }
+        : heavyNeighborsB.length === 1 && heavyNeighborsA.length === 2
+          ? { terminal: atomB, internal: atomA, outer: heavyNeighborsA.find(nb => nb.id !== atomB.id) }
+          : null;
+    if (!descriptor?.outer || descriptor.terminal.x == null || descriptor.terminal.y == null || descriptor.internal.x == null || descriptor.internal.y == null || descriptor.outer.x == null || descriptor.outer.y == null) {
+      continue;
+    }
+
+    const currentAngle = reaction2dBondAngle(descriptor.outer, descriptor.internal, descriptor.terminal);
+    if (currentAngle != null && currentAngle < (5 * Math.PI) / 6) {
+      continue;
+    }
+
+    const targetLength = scaledReaction2dBondLength(1, bondLength);
+    const baseAngle = Math.atan2(descriptor.outer.y - descriptor.internal.y, descriptor.outer.x - descriptor.internal.x);
+    const idealAngle = (2 * Math.PI) / 3;
+    const currentScore =
+      reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: descriptor.terminal.x, y: descriptor.terminal.y }], bondLength) +
+      (currentAngle == null ? 0 : 200 * (currentAngle - idealAngle) ** 2);
+    let best = { score: currentScore, x: descriptor.terminal.x, y: descriptor.terminal.y };
+
+    for (const candidateAngle of [baseAngle + idealAngle, baseAngle - idealAngle]) {
+      const candidate = {
+        x: descriptor.internal.x + Math.cos(candidateAngle) * targetLength,
+        y: descriptor.internal.y + Math.sin(candidateAngle) * targetLength
+      };
+      const candidateBend = reaction2dBondAngle(descriptor.outer, descriptor.internal, candidate);
+      const anglePenalty = candidateBend == null ? 0 : 200 * (candidateBend - idealAngle) ** 2;
+      const movePenalty = 0.08 * ((candidate.x - descriptor.terminal.x) ** 2 + (candidate.y - descriptor.terminal.y) ** 2);
+      const score = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: descriptor.terminal, x: candidate.x, y: candidate.y }], bondLength) + anglePenalty + movePenalty;
+      if (score < best.score) {
+        best = { score, x: candidate.x, y: candidate.y };
+      }
+    }
+
+    descriptor.terminal.x = best.x;
+    descriptor.terminal.y = best.y;
   }
 }
 
@@ -4124,6 +4208,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAtomIds, bondLength);
     restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
+    idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bondLength);
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
     reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
 
@@ -4183,6 +4268,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     }
     idealizeReaction2dTerminalAlkyneContinuations(mol, componentAtomIds, bondLength);
     idealizeReaction2dTerminalReducedAlkynePairs(mol, componentAtomIds, bondLength);
+    idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bondLength);
     reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
   }
 }

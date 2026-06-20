@@ -45,7 +45,9 @@ export function createPrimitiveEventHandlers(context) {
 
   function getRingTemplateBondLength() {
     const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
-    return context.state.viewState.getMode() === 'force' ? (context.constants?.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR : (context.constants?.scale ?? 40) * layoutBondLength;
+    return context.state.viewState.getMode() === 'force'
+      ? (context.constants?.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR * (layoutBondLength / 1.5)
+      : (context.constants?.scale ?? 40) * layoutBondLength;
   }
 
   function forcePreviewBondAnchorPoints(anchorA, anchorB) {
@@ -80,6 +82,25 @@ export function createPrimitiveEventHandlers(context) {
     return normalizePreviewAngle(Math.round(angle / RING_TEMPLATE_ROTATION_SNAP) * RING_TEMPLATE_ROTATION_SNAP);
   }
 
+  function largestAngularGapMidpoint(angles, fallbackAngle) {
+    if (!angles.length) {
+      return normalizePreviewAngle(fallbackAngle);
+    }
+    const sorted = [...angles].map(normalizePreviewAngle).sort((a, b) => a - b);
+    let bestStart = sorted[0];
+    let bestGap = -Infinity;
+    for (let index = 0; index < sorted.length; index++) {
+      const start = sorted[index];
+      const end = index === sorted.length - 1 ? sorted[0] + TAU : sorted[index + 1];
+      const gap = end - start;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestStart = start;
+      }
+    }
+    return normalizePreviewAngle(bestStart + bestGap / 2);
+  }
+
   function ringTemplateFreeRotation(event) {
     return event?.ctrlKey === true || event?.metaKey === true;
   }
@@ -104,6 +125,27 @@ export function createPrimitiveEventHandlers(context) {
     const atom = context.helpers?.get2DAtomById?.(atomId);
     const point = atom ? context.helpers?.toSelectionSVGPt2d?.(atom) : null;
     return isFinitePoint(point) ? { x: point.x, y: point.y } : pointerPoint(event);
+  }
+
+  function defaultRingTemplateGraphCenterAngle(atomId, anchorPoint) {
+    const mode = context.state.viewState.getMode();
+    const mol = mode === 'force' ? context.state.documentState.getCurrentMol?.() : context.state.documentState.getMol2d?.();
+    const atom = mol?.atoms?.get?.(atomId);
+    const angles = [];
+    for (const neighbor of atom?.getNeighbors?.(mol) ?? []) {
+      if (!neighbor || neighbor.visible === false || neighbor.name === 'H') {
+        continue;
+      }
+      const point =
+        mode === 'force'
+          ? context.helpers?.getForceNodeById?.(neighbor.id)
+          : context.helpers?.toSelectionSVGPt2d?.(neighbor);
+      if (!isFinitePoint(point) || pointDistance(point, anchorPoint) <= GEOMETRY_EPSILON) {
+        continue;
+      }
+      angles.push(Math.atan2(point.y - anchorPoint.y, point.x - anchorPoint.x));
+    }
+    return largestAngularGapMidpoint(angles, mode === 'force' ? -Math.PI / 2 : Math.PI / 2);
   }
 
   function previewRingPositions(size, anchorPoint, bondLength, centerAngle) {
@@ -877,6 +919,11 @@ export function createPrimitiveEventHandlers(context) {
     );
   }
 
+  function canRenderRingTemplatePreview() {
+    const gNode = context.dom.gNode?.();
+    return !!(gNode?.appendChild && gNode.ownerDocument);
+  }
+
   function clearPendingRingTemplateListeners(state) {
     state?.document?.removeEventListener?.('mousemove', state.handleMove, true);
     state?.document?.removeEventListener?.('mouseup', state.handleUp, true);
@@ -940,6 +987,8 @@ export function createPrimitiveEventHandlers(context) {
     context.view.showPrimitiveHover([atomId], []);
     const doc = event.currentTarget?.ownerDocument ?? context.document ?? globalThis.document ?? null;
     const template = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    clearPendingRingTemplateListeners(pendingRingTemplate);
+    removeRingTemplatePreview();
     const state = {
       atomId,
       template,
@@ -951,6 +1000,10 @@ export function createPrimitiveEventHandlers(context) {
       handleMove: null,
       handleUp: null
     };
+    if (canRenderRingTemplatePreview()) {
+      state.currentGraphAngle = defaultRingTemplateGraphCenterAngle(atomId, anchorPoint);
+      renderRingTemplatePreview(state, state.currentGraphAngle);
+    }
     state.handleMove = moveEvent => {
       if (pendingRingTemplate !== state) {
         return;
@@ -973,8 +1026,6 @@ export function createPrimitiveEventHandlers(context) {
         suppressNextRingTemplateClick = false;
       }, 0);
     };
-    clearPendingRingTemplateListeners(pendingRingTemplate);
-    removeRingTemplatePreview();
     pendingRingTemplate = state;
     doc?.addEventListener?.('mousemove', state.handleMove, true);
     doc?.addEventListener?.('mouseup', state.handleUp, true);
@@ -1247,8 +1298,8 @@ export function createPrimitiveEventHandlers(context) {
     return 'single';
   }
 
-  function handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB) {
-    if (!context.state.overlayState.getDrawBondMode() || context.state.viewState.getMode() !== '2d') {
+  function handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB, options = {}) {
+    if (!context.state.overlayState.getDrawBondMode() && options.drawBondModeActive !== true) {
       return false;
     }
     if (event.button != null && event.button !== 0) {
@@ -1268,7 +1319,8 @@ export function createPrimitiveEventHandlers(context) {
       handleUp: null
     };
     context.drawBond.previewBond?.(anchorA, anchorB, {
-      drawBondType: previewDrawBondTypeForBond(bond)
+      drawBondType: previewDrawBondTypeForBond(bond),
+      sourceElement: event.currentTarget ?? null
     });
     state.handleUp = upEvent => {
       if (pendingDrawBondPreview !== state) {

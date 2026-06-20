@@ -159,7 +159,11 @@ export function createEditorActions(deps) {
         deps.view.sync2dDerivedState(mol);
       }
       twoDResult.preRender?.(context);
-      deps.renderers.draw2d();
+      if (twoDResult.preserveGeometry && typeof deps.renderers.render2d === 'function') {
+        deps.renderers.render2d(mol, { preserveGeometry: true });
+      } else {
+        deps.renderers.draw2d();
+      }
       if (options.viewportPolicy === ViewportPolicy.restoreEdit) {
         deps.view.restore2dEditViewport(zoomSnapshot, {
           reactionRestored: reactionEdit?.restored,

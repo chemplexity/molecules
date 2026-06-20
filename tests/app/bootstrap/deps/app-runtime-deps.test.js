@@ -120,6 +120,7 @@ describe('app-runtime dependency builder', () => {
       restoreHighlightSnapshot() {},
       restorePhyschemHighlightSnapshot() {},
       restorePersistentHighlight() {},
+      getRenderOptions: () => ({ layoutBondLength: 0.5 }),
       takeSnapshot() {},
       updateModeChrome() {},
       restoreZoomTransformSnapshot() {},
@@ -153,5 +154,6 @@ describe('app-runtime dependency builder', () => {
     deps.force.disableKeepInView();
     assert.equal(artifactsCleared, true);
     assert.equal(keepInViewDisabled, true);
+    assert.deepEqual(deps.options.getRenderOptions(), { layoutBondLength: 0.5 });
   });
 });

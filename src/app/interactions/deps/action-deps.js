@@ -20,7 +20,7 @@ export function createNavigationActionDeps(ctx) {
       hasReactionPreview: () => ctx.hasReactionPreview(),
       reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
       resetActiveResonanceView: mol => ctx.resetActiveResonanceView(mol),
-      alignReaction2dProductOrientation: mol => ctx.alignReaction2dProductOrientation(mol),
+      alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength),
       spreadReaction2dProductComponents: (mol, bondLength) => ctx.spreadReaction2dProductComponents(mol, bondLength),
       centerReaction2dPairCoords: (mol, bondLength) => ctx.centerReaction2dPairCoords(mol, bondLength),
       viewportFitPadding: pad => ctx.viewportFitPadding(pad)
@@ -28,7 +28,8 @@ export function createNavigationActionDeps(ctx) {
     helpers: {
       refineExistingCoords: ctx.refineExistingCoords,
       atomBBox: ctx.atomBBox,
-      flipDisplayStereo: mol => ctx.flipDisplayStereo(mol)
+      flipDisplayStereo: mol => ctx.flipDisplayStereo(mol),
+      getLayoutBondLength: () => ctx.getLayoutBondLength?.() ?? 1.5
     },
     view: {
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),

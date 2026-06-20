@@ -10,6 +10,10 @@ export function createRenderRuntime(deps) {
     return deps.scene.draw2d();
   }
 
+  function render2d(mol, options = {}) {
+    return deps.scene.render2d(mol, options);
+  }
+
   function updateForce(mol, options = {}) {
     return deps.scene.updateForce(mol, options);
   }
@@ -123,6 +127,7 @@ export function createRenderRuntime(deps) {
 
   return {
     draw2d,
+    render2d,
     updateForce,
     renderMol
   };

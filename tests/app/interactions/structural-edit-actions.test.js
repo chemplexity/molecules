@@ -262,6 +262,50 @@ describe('createStructuralEditActions', () => {
     assert.ok(Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - 2) < 1e-9);
   });
 
+  it('uses the configured layout bond length for 2D bond-anchored ring-template placement', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom(null, 'C');
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom(null, 'C');
+    atomB.x = 2;
+    atomB.y = 0;
+    const anchorBond = mol.addBond(null, atomA.id, atomB.id, { order: 1 });
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        options: {
+          getRenderOptions: () => ({ layoutBondLength: 2 })
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 300, 200, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
+
+    const ringAtomIds = new Set(result.result.ringAtomIds);
+    const ringBonds = [...mol.bonds.values()].filter(bond => ringAtomIds.has(bond.atoms[0]) && ringAtomIds.has(bond.atoms[1]));
+    for (const bond of ringBonds) {
+      const [first, second] = bond.getAtomObjects(mol);
+      assert.ok(Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - 2) < 1e-9);
+    }
+    assert.equal(result.result.ringAtomIds.length, 6);
+  });
+
   it('places the benzene ring template as an alternating six-member ring', () => {
     const mol = new Molecule();
     const { context, calls } = makeBaseContext({

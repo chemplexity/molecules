@@ -65,6 +65,19 @@ function makeRuntime({ mode = '2d' } = {}) {
 }
 
 describe('createRenderRuntime', () => {
+  it('exposes direct draw2d and render2d delegates', () => {
+    const { runtime, calls } = makeRuntime({ mode: '2d' });
+    const mol = { id: 'mol-direct' };
+
+    runtime.draw2d();
+    runtime.render2d(mol, { preserveGeometry: true });
+
+    assert.deepEqual(calls, [
+      ['draw2d'],
+      ['render2d', mol, { preserveGeometry: true }]
+    ]);
+  });
+
   it('routes 2D renders through the shared policy layer', () => {
     const { runtime, calls } = makeRuntime({ mode: '2d' });
     const mol = { id: 'mol-2d' };

@@ -44,6 +44,9 @@ function makeDeps({ mode = '2d', hasReactionPreview = false } = {}) {
         draw2d() {
           calls.push(['draw2d']);
         },
+        render2d(nextMol, options) {
+          calls.push(['render2d', nextMol, options]);
+        },
         updateForce(nextMol, options) {
           calls.push(['updateForce', nextMol, options]);
         }
@@ -214,6 +217,35 @@ describe('createEditorActions', () => {
       ['updateForce', mol, { preservePositions: true, preserveView: true }],
       ['afterRender', 'aux'],
       ['enableForceKeepInView']
+    ]);
+  });
+
+  it('uses render2d with preserved geometry when a 2D edit requests it', () => {
+    const { deps, calls, mol } = makeDeps();
+    const actions = createEditorActions(deps);
+
+    const result = actions.performStructuralEdit(
+      'place-ring-template',
+      {
+        resonancePolicy: ResonancePolicy.preserve,
+        snapshotPolicy: SnapshotPolicy.skip
+      },
+      () => ({
+        twoD: {
+          preserveGeometry: true
+        }
+      })
+    );
+
+    assert.equal(result.performed, true);
+    assert.deepEqual(calls, [
+      ['setActiveMolecule', mol],
+      ['syncInputField', mol],
+      ['updateFormula', mol],
+      ['updateDescriptors', mol],
+      ['updatePanels', mol],
+      ['sync2dDerivedState', mol],
+      ['render2d', mol, { preserveGeometry: true }]
     ]);
   });
 

@@ -510,6 +510,8 @@ describe('createDrawBondPreviewActions', () => {
     const handled = actions.previewBond({ x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'triple' });
 
     assert.equal(handled, true);
+    const maskSegments = g.nodes.filter(node => !node.removed && node.attrs.class === 'draw-bond-preview-mask');
+    assert.equal(maskSegments.length, 0);
     const liveSegments = g.nodes.filter(node => !node.removed && node.attrs.class === 'draw-bond-preview-segment');
     assert.equal(liveSegments.length, 3);
   });

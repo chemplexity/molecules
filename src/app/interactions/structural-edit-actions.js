@@ -16,6 +16,12 @@ const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
 
+function forceRingTemplateBondLength(baseForceBondLength, layoutBondLength = DEFAULT_2D_BOND_LENGTH) {
+  const parsed = Number(layoutBondLength);
+  const scale = Number.isFinite(parsed) && parsed > 0 ? parsed / DEFAULT_2D_BOND_LENGTH : 1;
+  return baseForceBondLength * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR * scale;
+}
+
 function normalizeRingTemplateSize(size) {
   if (size === BENZENE_RING_TEMPLATE) {
     return {
@@ -514,7 +520,7 @@ function chooseBondAnchoredRingPositions(anchorA, anchorB, size, occupiedPoints 
   return firstScore <= secondScore ? first : second;
 }
 
-function bondAnchoredRingPositionsForBond(mol, anchorBond, size, sideSign = null) {
+function bondAnchoredRingPositionsForBond(mol, anchorBond, size, sideSign = null, targetBondLength = null) {
   const [anchorA, anchorB] = anchorBond?.getAtomObjects?.(mol) ?? [];
   if (!anchorA || !anchorB || anchorA.name === 'H' || anchorB.name === 'H' || !Number.isFinite(anchorA.x) || !Number.isFinite(anchorA.y) || !Number.isFinite(anchorB.x) || !Number.isFinite(anchorB.y)) {
     return null;
@@ -523,7 +529,8 @@ function bondAnchoredRingPositionsForBond(mol, anchorBond, size, sideSign = null
   const occupiedPoints = [...mol.atoms.values()]
     .filter(atom => !anchorIds.has(atom.id) && atom.name !== 'H' && atom.visible !== false && Number.isFinite(atom.x) && Number.isFinite(atom.y))
     .map(atom => ({ x: atom.x, y: atom.y }));
-  return chooseBondAnchoredRingPositions({ x: anchorA.x, y: anchorA.y }, { x: anchorB.x, y: anchorB.y }, size, occupiedPoints, sideSign);
+  const [placementAnchorA, placementAnchorB] = bondAnchorPointsWithLength(anchorA, anchorB, targetBondLength);
+  return chooseBondAnchoredRingPositions(placementAnchorA, placementAnchorB, size, occupiedPoints, sideSign);
 }
 
 function findReusableRingTemplateAtomId(mol, position, usedAtomIds, tolerance) {
@@ -715,7 +722,7 @@ function findAutoFuseBondPositionReuseSide(mol, anchorBond, size, editMode, curr
       continue;
     }
 
-    const positions = bondAnchoredRingPositionsForBond(mol, anchorBond, size, placementSide);
+    const positions = bondAnchoredRingPositionsForBond(mol, anchorBond, size, placementSide, bondLength);
     if (positions && shouldAutoFuseBondPositionReuse(mol, anchorBond, positions, bondLength)) {
       return -placementSide;
     }
@@ -1215,9 +1222,9 @@ export function createStructuralEditActions(context) {
           return { cancelled: true };
         }
 
-        const forceBondLength = (context.constants.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR;
         const currentForceNodes = editMode === 'force' ? (context.force.getSimulation?.()?.nodes?.() ?? []) : [];
         const bondLength = context.options?.getRenderOptions?.().layoutBondLength ?? DEFAULT_2D_BOND_LENGTH;
+        const forceBondLength = forceRingTemplateBondLength(context.constants.forceBondLength ?? 30, bondLength);
         const requestedAnchorBond = anchorBondId ? mol.bonds.get(anchorBondId) : null;
         const hydrogenRingAnchor = !anchorAtomId ? terminalHydrogenRingAnchor(mol, requestedAnchorBond, currentForceNodes, bondLength) : null;
         const anchorBond = hydrogenRingAnchor ? null : requestedAnchorBond;
@@ -1266,7 +1273,7 @@ export function createStructuralEditActions(context) {
             )
           : null;
         const positions = anchorBond
-          ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && effectiveAnchorBondSide !== null ? -effectiveAnchorBondSide : effectiveAnchorBondSide)
+          ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && effectiveAnchorBondSide !== null ? -effectiveAnchorBondSide : effectiveAnchorBondSide, bondLength)
           : anchorAtom
             ? isFinitePoint(anchorPoint)
               ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle ?? hydrogenRingAnchor?.centerAngle)
@@ -1277,6 +1284,16 @@ export function createStructuralEditActions(context) {
               })();
         if (!positions || anchorAtom?.name === 'H') {
           return { cancelled: true };
+        }
+        if (anchorBond && editMode === '2d') {
+          const anchorA = mol.atoms.get(anchorBond.atoms[0]);
+          const anchorB = mol.atoms.get(anchorBond.atoms[1]);
+          if (anchorA && anchorB) {
+            anchorA.x = positions[0].x;
+            anchorA.y = positions[0].y;
+            anchorB.x = positions[1].x;
+            anchorB.y = positions[1].y;
+          }
         }
 
         const newAtomIds = [];
@@ -1373,6 +1390,7 @@ export function createStructuralEditActions(context) {
           clearPrimitiveHover: true,
           ringAtomIds,
           twoD: {
+            preserveGeometry: editMode === '2d',
             zoomToFit: true
           }
         };

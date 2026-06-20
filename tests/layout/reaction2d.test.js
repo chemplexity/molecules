@@ -602,6 +602,25 @@ test('reaction preview keeps terminal alkene hydrogenation in a zig-zag for C=CC
   assert.ok(angle > 100 && angle < 140, `expected new saturated chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`);
 });
 
+test('reaction preview keeps substituted terminal alkene hydrogenation out of a straight chain', () => {
+  const sourceMol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
+  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 0.5 });
+  const mapping = [...findSMARTSRaw(sourceMol, reactionTemplates.alkeneHydrogenation.smirks.split('>>')[0])][0];
+  assert.ok(mapping, 'expected alkene hydrogenation mapping');
+  const preview = buildReaction2dMol(sourceMol, reactionTemplates.alkeneHydrogenation.smirks, mapping, { bondLength: 0.5 });
+  generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 0.5 });
+  alignReaction2dProductOrientation(preview.mol, preview, 0.5);
+  spreadReaction2dProductComponents(preview.mol, preview, 0.5);
+  centerReaction2dPairCoords(preview.mol, preview, 0.5);
+  const chainIds = ['__rxn_product__0:C6', '__rxn_product__0:C7', '__rxn_product__0:C11', '__rxn_product__0:C12'];
+  const chainAtoms = chainIds.map(atomId => preview.mol.atoms.get(atomId));
+  assert.ok(chainAtoms.every(Boolean), 'expected substituted terminal alkene product chain atoms');
+  const internalBend = angleDeg(chainAtoms[0], chainAtoms[1], chainAtoms[2]);
+  const terminalBend = angleDeg(chainAtoms[1], chainAtoms[2], chainAtoms[3]);
+  assert.ok(internalBend > 100 && internalBend < 140, `expected internal product chain bend to stay zig-zag-like, got ${internalBend.toFixed(1)}°`);
+  assert.ok(terminalBend > 100 && terminalBend < 140, `expected terminal product chain bend to stay zig-zag-like, got ${terminalBend.toFixed(1)}°`);
+});
+
 test('reaction preview stays valence-clean for ethanol dehydration', () => {
   const preview = preparePreview('CCO', reactionTemplates.alcoholDehydration.smirks);
   assert.deepEqual(validateValence(preview.mol), []);
@@ -1219,6 +1238,27 @@ test('reaction preview opens imine-hydrolysis ester ether tails', () => {
   assert.ok(carbonylAngle > 105 && carbonylAngle < 140, `expected edited carbonyl fan to stay open, got ${carbonylAngle.toFixed(1)}°`);
   assert.ok(Math.abs(distance(carbonyl, etherOxygen) - 1.5) < 1e-6, `expected ester C-O bond to stay compact, got ${distance(carbonyl, etherOxygen).toFixed(3)} Å`);
   assert.ok(Math.abs(distance(etherOxygen, terminalMethyl) - 1.5) < 1e-6, `expected ether O-C bond to stay compact, got ${distance(etherOxygen, terminalMethyl).toFixed(3)} Å`);
+});
+
+test('reaction preview product geometry uses the requested layout bond length', () => {
+  const sourceMol = parseSMILES('CC(=O)N(C)C');
+  const smirks = reactionTemplates.amideHydrolysis.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  assert.ok(mapping, 'expected amide hydrolysis mapping');
+
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping, { bondLength: 0.5 });
+  assert.ok(preview, 'expected amide hydrolysis preview to build');
+  alignReaction2dProductOrientation(preview.mol, preview, 0.5);
+  spreadReaction2dProductComponents(preview.mol, preview, 0.5);
+  centerReaction2dPairCoords(preview.mol, preview, 0.5);
+
+  const carbon = preview.mol.atoms.get('__rxn_product__0:C2');
+  const hydroxylOxygen = preview.mol.atoms.get('__rxn_product__0:O4');
+  const methylCarbon = preview.mol.atoms.get('__rxn_product__1:C5');
+  const amineNitrogen = preview.mol.atoms.get('__rxn_product__1:N4');
+  assert.ok(carbon && hydroxylOxygen && methylCarbon && amineNitrogen, 'expected scaled product atoms');
+  assert.ok(Math.abs(distance(carbon, hydroxylOxygen) - 0.5) < 1e-6, `expected acid C-O product bond to use 0.5 Å, got ${distance(carbon, hydroxylOxygen).toFixed(3)} Å`);
+  assert.ok(Math.abs(distance(amineNitrogen, methylCarbon) - 0.5) < 1e-6, `expected amine N-C product bond to use 0.5 Å, got ${distance(amineNitrogen, methylCarbon).toFixed(3)} Å`);
 });
 
 test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {

@@ -2,6 +2,13 @@
 
 ## 2026-06-20
 
+- Keep terminal alkene hydrogenation products zig-zagged when Global "Bond Length" is very short.
+- Apply Global "Bond Length" to reaction product scaffold generation, orientation, and force-preview seeding.
+- Hide the original 2D bond while holding the line tool on an existing bond so the preview shows the exact promoted result without drawing a white cover rectangle.
+
+## 2026-06-19
+
+- Show atom-anchored ring-template previews immediately on mouse down and preserve the active Global "Bond Length" for final ring-template placement in both 2D and force modes.
 - Schedule a follow-up Auto Zoom after changing Global "Bond Length" in force mode so the viewport refits once the compact force layout has settled.
 - Scale force-mode auto-fit zoom allowance for short Global "Bond Length" values so compact force layouts do not stay overly zoomed out.
 - Make the 2D Auto Zoom button use the same rendered-bounds fit as post-render auto fitting, so short Global "Bond Length" values do not zoom out differently.

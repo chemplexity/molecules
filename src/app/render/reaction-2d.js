@@ -497,7 +497,9 @@ function _cloneWithPrefixedIds(mol, prefix) {
 }
 
 function _buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
-  return buildReaction2dMolShared(sourceMol, smirks, mapping);
+  return buildReaction2dMolShared(sourceMol, smirks, mapping, {
+    bondLength: getRenderOptions().layoutBondLength ?? 1.5
+  });
 }
 
 /**
@@ -680,7 +682,7 @@ export function _applyReactionPreviewDisplayGeometry(mol) {
     return;
   }
   const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
-  _alignReaction2dProductOrientation(mol);
+  _alignReaction2dProductOrientation(mol, layoutBondLength);
   _spreadReaction2dProductComponents(mol, layoutBondLength);
   _centerReaction2dPairCoords(mol, layoutBondLength);
 }
@@ -1863,8 +1865,9 @@ export function _reapplyActiveReactionPreview() {
 /**
  * Aligns the 2D orientation of product atoms to best match the reactant reference frame.
  * @param {object} mol - Molecule whose product atom coordinates will be rotated or reflected.
+ * @param {number} [bondLength] - Target layout bond length used by product geometry repairs.
  */
-export function _alignReaction2dProductOrientation(mol) {
+export function _alignReaction2dProductOrientation(mol, bondLength = 1.5) {
   if (!_hasReactionPreview() || !_reactionPreviewMappedAtomPairs?.length) {
     return;
   }
@@ -1885,7 +1888,7 @@ export function _alignReaction2dProductOrientation(mol) {
       forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
       reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
     },
-    1.5
+    bondLength
   );
 }
 

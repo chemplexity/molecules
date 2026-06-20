@@ -570,15 +570,16 @@ function derive2dCleanRefinementHints(molecule, { bondLength = DEFAULT_LAYOUT_BO
  * of returning to the canonical reactant-left/product-right layout.
  * @param {object} molecule - Working molecule clone being cleaned.
  * @param {object} overlays - Overlay helpers that know how to arrange previews.
+ * @param {number} [bondLength] - Target layout bond length for reaction geometry.
  * @returns {void}
  */
-function reapplyReactionPreviewForceLayout(molecule, overlays) {
+function reapplyReactionPreviewForceLayout(molecule, overlays, bondLength = DEFAULT_LAYOUT_BOND_LENGTH) {
   if (!molecule?.__reactionPreview?.mappedAtomPairs?.length || !overlays) {
     return;
   }
-  overlays.alignReaction2dProductOrientation?.(molecule);
-  overlays.spreadReaction2dProductComponents?.(molecule, DEFAULT_LAYOUT_BOND_LENGTH);
-  overlays.centerReaction2dPairCoords?.(molecule, DEFAULT_LAYOUT_BOND_LENGTH);
+  overlays.alignReaction2dProductOrientation?.(molecule, bondLength);
+  overlays.spreadReaction2dProductComponents?.(molecule, bondLength);
+  overlays.centerReaction2dPairCoords?.(molecule, bondLength);
 }
 
 /**
@@ -590,6 +591,10 @@ export function createNavigationActions(context) {
   let rotateInterval = null;
   let clean2dBtnTimer = null;
   let cleanForceBtnTimer = null;
+
+  function currentLayoutBondLength() {
+    return context.helpers.getLayoutBondLength?.() ?? DEFAULT_LAYOUT_BOND_LENGTH;
+  }
 
   function stopRotate() {
     if (rotateInterval !== null) {
@@ -606,12 +611,13 @@ export function createNavigationActions(context) {
     const mol = context.state.documentState.getMol2d();
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
+    const bondLength = currentLayoutBondLength();
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
-      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      bondLength
     });
     const hasRefinementRelayout = typeof context.helpers.refineExistingCoords === 'function';
     const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
-      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      bondLength
     });
     for (const atomId of ringSnapHints.snappedAtoms) {
       refinementHints.touchedAtoms.add(atomId);
@@ -622,7 +628,7 @@ export function createNavigationActions(context) {
     const refinedCoords = hasRefinementRelayout
       ? context.helpers.refineExistingCoords(relayoutMol, {
           suppressH: true,
-          bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+          bondLength,
           maxPasses: 12,
           ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
           touchedAtoms: refinementHints.touchedAtoms,
@@ -631,7 +637,7 @@ export function createNavigationActions(context) {
       : null;
     if (refinedCoords instanceof Map) {
       snapCleanRingsToRegularGeometry(relayoutMol, {
-        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+        bondLength
       });
     }
     const preserveGeometry = ringSnapHints.snappedCount > 0 || (refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout);
@@ -659,12 +665,13 @@ export function createNavigationActions(context) {
     const mol = context.state.documentState.getCurrentMol();
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
-    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), DEFAULT_LAYOUT_BOND_LENGTH);
+    const bondLength = currentLayoutBondLength();
+    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
-      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      bondLength
     });
     const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
-      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+      bondLength
     });
     for (const atomId of ringSnapHints.snappedAtoms) {
       refinementHints.touchedAtoms.add(atomId);
@@ -675,17 +682,17 @@ export function createNavigationActions(context) {
     if (typeof context.helpers.refineExistingCoords === 'function') {
       context.helpers.refineExistingCoords(relayoutMol, {
         suppressH: true,
-        bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+        bondLength,
         maxPasses: 12,
         ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
         touchedAtoms: refinementHints.touchedAtoms,
         touchedBonds: refinementHints.touchedBonds
       });
       snapCleanRingsToRegularGeometry(relayoutMol, {
-        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+        bondLength
       });
     }
-    reapplyReactionPreviewForceLayout(relayoutMol, context.overlays);
+    reapplyReactionPreviewForceLayout(relayoutMol, context.overlays, bondLength);
     const forceAnchorLayout = buildForceAnchorLayoutFromPlacedCoords(relayoutMol);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
@@ -737,13 +744,14 @@ export function createNavigationActions(context) {
     }
 
     const mol = resonanceResetMol ? resonanceResetMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
+    const bondLength = currentLayoutBondLength();
     if (previousMode === 'force') {
       const converted = convertForceCoordsToLineLayout(mol, context.simulation.nodes?.(), {
-        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+        bondLength
       });
       const appliedCount = applyLineLayoutCoords(mol, converted.coords);
       const ringSnapHints = snapCleanRingsToRegularGeometry(mol, {
-        bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+        bondLength
       });
       context.renderers.renderMol(mol, {
         preserveHistory: true,
@@ -755,7 +763,7 @@ export function createNavigationActions(context) {
     const plotWidth = context.dom.plotEl?.clientWidth || 600;
     const plotHeight = context.dom.plotEl?.clientHeight || 400;
     const converted = convertLineCoordsToForceLayout(mol, {
-      bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+      bondLength,
       forceCenter: { x: plotWidth / 2, y: plotHeight / 2 }
     });
     context.renderers.renderMol(mol, {

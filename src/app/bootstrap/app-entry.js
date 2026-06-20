@@ -274,7 +274,7 @@ const forceHelpers = createForceHelpers({
   viewportFitPadding: pad => _viewportFitPadding(pad),
   generate2dCoords: generateActive2dCoords,
   getLayoutBondLength: () => getRenderOptions().layoutBondLength ?? 1.5,
-  alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
+  alignReaction2dProductOrientation: (mol, bondLength) => _alignReaction2dProductOrientation(mol, bondLength),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
   centerReaction2dPairCoords: (mol, bondLength) => _centerReaction2dPairCoords(mol, bondLength)
 });
@@ -439,7 +439,7 @@ const forceSceneRenderer = createForceSceneRenderer(
     enLabelColor: value => enLabelColor(value),
     renderReactionPreviewArrowForce: nodes => _renderReactionPreviewArrowForce(nodes),
     generate2dCoords: (mol, options = {}) => generateActive2dCoords(mol, options),
-    alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
+    alignReaction2dProductOrientation: (mol, bondLength) => _alignReaction2dProductOrientation(mol, bondLength),
     handleForceBondClick: (event, bondId, molecule) => primitiveEventHandlers.handleForceBondClick(event, bondId, molecule),
     handleForceBondMouseDownRingTemplate: (event, linkDatum) => primitiveEventHandlers.handleForceBondMouseDownRingTemplate(event, linkDatum),
     handleForceBondDblClick: (event, atomIds) => primitiveEventHandlers.handleForceBondDblClick(event, atomIds),
@@ -516,6 +516,8 @@ const scene2DRenderer = create2DSceneRenderer(
     handle2dBondClick: (event, bondId) => primitiveEventHandlers.handle2dBondClick(event, bondId),
     handle2dBondMouseDownRingTemplate: (event, bondId, anchorA, anchorB, anchorAtomIds = []) =>
       primitiveEventHandlers.handle2dBondMouseDownRingTemplate(event, bondId, anchorA, anchorB, anchorAtomIds),
+    handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB, options = {}) =>
+      primitiveEventHandlers.handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB, options),
     handle2dBondDblClick: (event, atomIds) => primitiveEventHandlers.handle2dBondDblClick(event, atomIds),
     handle2dBondMouseOver: (event, bond, a1, a2) => primitiveEventHandlers.handle2dBondMouseOver(event, bond, a1, a2),
     handle2dBondMouseMove: event => primitiveEventHandlers.handle2dBondMouseMove(event),
@@ -698,6 +700,7 @@ const { navigationActions, selectionActions, editingActions, dragGestureActions,
       refineExistingCoords: refineActive2dCoords,
       atomBBox,
       flipDisplayStereo,
+      getLayoutBondLength: () => getRenderOptions().layoutBondLength ?? 1.5,
       clearPrimitiveHover: () => _clearPrimitiveHover(),
       restorePersistentHighlight: () => _restorePersistentHighlight(),
       getFitCurrent2dView: () => fitCurrent2dView,
@@ -1059,6 +1062,7 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     restoreHighlightSnapshot: (snapshot, mol) => restoreHighlightSnapshot(snapshot, mol),
     restorePhyschemHighlightSnapshot: snapshot => runtimeState.restorePhyschemHighlightSnapshot(snapshot),
     restorePersistentHighlight: () => _restorePersistentHighlight(),
+    getRenderOptions,
     takeSnapshot: options => _takeSnapshot(options),
     updateModeChrome: nextMode => _updateModeChrome(nextMode),
     restoreZoomTransformSnapshot: snapshot => _restoreZoomTransformSnapshot(snapshot),

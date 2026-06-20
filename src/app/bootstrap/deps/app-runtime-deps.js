@@ -155,6 +155,7 @@ export function createAppRuntimeDeps(ctx) {
         ctx.g.selectAll('*').remove();
       },
       draw2d: () => ctx.getDraw2D()(),
+      render2d: (mol, options = {}) => ctx.getRender2D()(mol, options),
       updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options)
     },
     cache: {
@@ -217,6 +218,9 @@ export function createAppRuntimeDeps(ctx) {
       restoreFunctionalGroupHighlightSnapshot: (snapshot, mol) => ctx.restoreHighlightSnapshot(snapshot, mol),
       restorePhyschemHighlightSnapshot: snapshot => ctx.restorePhyschemHighlightSnapshot(snapshot),
       restorePersistentHighlight: () => ctx.restorePersistentHighlight()
+    },
+    options: {
+      getRenderOptions: () => ctx.getRenderOptions?.() ?? {}
     },
     history: {
       takeSnapshot: ctx.takeSnapshot

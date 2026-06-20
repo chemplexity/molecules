@@ -141,7 +141,7 @@ export function createForceSceneRendererDeps(ctx) {
       enLabelColor: value => ctx.enLabelColor(value),
       renderReactionPreviewArrowForce: nodes => ctx.renderReactionPreviewArrowForce(nodes),
       generate2dCoords: (mol, options = {}) => ctx.generate2dCoords(mol, options),
-      alignReaction2dProductOrientation: mol => ctx.alignReaction2dProductOrientation(mol)
+      alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength)
     },
     events: {
       handleForceBondClick: (event, bondId, molecule) => ctx.handleForceBondClick(event, bondId, molecule),
@@ -219,7 +219,7 @@ export function create2DSceneRendererDeps(ctx) {
       redrawHighlights: () => ctx.redrawHighlights(),
       redrawSelection: () => ctx.redrawSelection(),
       generate2dCoords: (mol, options = {}) => ctx.generate2dCoords(mol, options),
-      alignReaction2dProductOrientation: mol => ctx.alignReaction2dProductOrientation(mol),
+      alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength),
       spreadReaction2dProductComponents: (mol, spacing) => ctx.spreadReaction2dProductComponents(mol, spacing),
       centerReaction2dPairCoords: (mol, spacing) => ctx.centerReaction2dPairCoords(mol, spacing),
       drawReactionPreviewArrow2d: (toSVGPt, atoms) => ctx.drawReactionPreviewArrow2d(toSVGPt, atoms),
@@ -231,7 +231,7 @@ export function create2DSceneRendererDeps(ctx) {
       handle2dBondClick: (event, bondId) => ctx.handle2dBondClick(event, bondId),
       handle2dBondMouseDownRingTemplate: (event, bondId, anchorA, anchorB, anchorAtomIds = []) =>
         ctx.handle2dBondMouseDownRingTemplate?.(event, bondId, anchorA, anchorB, anchorAtomIds) ?? false,
-      handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB) => ctx.handle2dBondMouseDownDrawBond?.(event, bond, anchorA, anchorB) ?? false,
+      handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB, options = {}) => ctx.handle2dBondMouseDownDrawBond?.(event, bond, anchorA, anchorB, options) ?? false,
       handle2dBondDblClick: (event, atomIds) => ctx.handle2dBondDblClick(event, atomIds),
       handle2dBondMouseOver: (event, bond, a1, a2) => ctx.handle2dBondMouseOver(event, bond, a1, a2),
       handle2dBondMouseMove: event => ctx.handle2dBondMouseMove(event),

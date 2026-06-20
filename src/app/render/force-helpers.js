@@ -758,7 +758,7 @@ export function createForceHelpers(context) {
       suppressH: true,
       bondLength: layoutBondLength
     });
-    context.alignReaction2dProductOrientation(seedMol);
+    context.alignReaction2dProductOrientation(seedMol, layoutBondLength);
     context.spreadReaction2dProductComponents(seedMol, layoutBondLength);
     context.centerReaction2dPairCoords(seedMol, layoutBondLength);
     const anchors = new Map();

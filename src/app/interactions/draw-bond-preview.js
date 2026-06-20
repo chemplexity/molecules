@@ -11,7 +11,38 @@ const DRAW_BOND_ROTATION_SNAP = Math.PI / 6;
  * @returns {object} Object with `clearArtifacts`, `start`, `update`, `resetHover`, `cancel`, and `markDragged`.
  */
 export function createDrawBondPreviewActions(context) {
+  const hiddenPreviewSources = [];
+
+  function restoreHiddenPreviewSources() {
+    while (hiddenPreviewSources.length > 0) {
+      const { element, previousVisibility, previousOpacity } = hiddenPreviewSources.pop();
+      if (!element?.style) {
+        continue;
+      }
+      element.style.visibility = previousVisibility;
+      element.style.opacity = previousOpacity;
+    }
+  }
+
+  function hideExistingBondForPreview(sourceElement) {
+    const container = sourceElement?.closest?.('[data-bond-id]') ?? sourceElement?.parentNode ?? null;
+    const bondLines = [...(container?.querySelectorAll?.('line.bond') ?? [])].filter(element => !element.classList?.contains?.('bond-hit'));
+    for (const element of bondLines) {
+      if (hiddenPreviewSources.some(entry => entry.element === element)) {
+        continue;
+      }
+      hiddenPreviewSources.push({
+        element,
+        previousVisibility: element.style.visibility,
+        previousOpacity: element.style.opacity
+      });
+      element.style.visibility = 'hidden';
+      element.style.opacity = '0';
+    }
+  }
+
   function removePreviewGeometry() {
+    restoreHiddenPreviewSources();
     context.g.select('g.draw-bond-preview').remove();
   }
 
@@ -55,7 +86,6 @@ export function createDrawBondPreviewActions(context) {
     const ny = dx / length;
     const parallelOffset = isForce ? 3 : (context.constants.bondOffset2d ?? 7);
     const wedgeHalfWidth = isForce ? 5 : 6;
-
     if (drawBondType === 'wedge') {
       group
         .append('polygon')
@@ -614,6 +644,7 @@ export function createDrawBondPreviewActions(context) {
       return false;
     }
     renderPreviewGeometry(start.x, start.y, end.x, end.y, options);
+    hideExistingBondForPreview(options.sourceElement);
     return true;
   }
 

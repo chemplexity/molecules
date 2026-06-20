@@ -670,7 +670,24 @@ export function create2DSceneRenderer(ctx) {
 
       const p1 = toSVGPt(sa1);
       const p2 = toSVGPt(sa2);
-      bg.append('line')
+      const getDrawBondModeActiveForEvent = event =>
+        ctx.overlay.getDrawBondMode?.() === true ||
+        event.currentTarget?.ownerDocument?.getElementById?.('draw-bond-btn')?.classList?.contains?.('active') === true;
+      const getBondHitEndpointsForEvent = event => {
+        const target = event.currentTarget;
+        const start = {
+          x: Number(target?.getAttribute?.('x1')),
+          y: Number(target?.getAttribute?.('y1'))
+        };
+        const end = {
+          x: Number(target?.getAttribute?.('x2')),
+          y: Number(target?.getAttribute?.('y2'))
+        };
+        return Number.isFinite(start.x) && Number.isFinite(start.y) && Number.isFinite(end.x) && Number.isFinite(end.y)
+          ? [start, end]
+          : [p1, p2];
+      };
+      const hitLine = bg.append('line')
         .attr('class', 'bond-hit')
         .attr('x1', p1.x)
         .attr('y1', p1.y)
@@ -690,7 +707,10 @@ export function create2DSceneRenderer(ctx) {
           if (ctx.events.handle2dBondMouseDownRingTemplate(event, bi.bond.id, p1, p2, bi.bond.atoms)) {
             return;
           }
-          ctx.events.handle2dBondMouseDownDrawBond(event, bi.bond, p1, p2);
+          const [previewStart, previewEnd] = getBondHitEndpointsForEvent(event);
+          ctx.events.handle2dBondMouseDownDrawBond(event, bi.bond, previewStart, previewEnd, {
+            drawBondModeActive: getDrawBondModeActiveForEvent(event)
+          });
         })
         .on('click', event => {
           ctx.events.handle2dBondClick(event, bi.bond.id);
@@ -715,6 +735,19 @@ export function create2DSceneRenderer(ctx) {
             draw: () => draw2d()
           })
         );
+      hitLine.node?.()?.addEventListener?.(
+        'mousedown',
+        event => {
+          if (ctx.events.handle2dBondMouseDownRingTemplate(event, bi.bond.id, p1, p2, bi.bond.atoms)) {
+            return;
+          }
+          const [previewStart, previewEnd] = getBondHitEndpointsForEvent(event);
+          ctx.events.handle2dBondMouseDownDrawBond(event, bi.bond, previewStart, previewEnd, {
+            drawBondModeActive: getDrawBondModeActiveForEvent(event)
+          });
+        },
+        true
+      );
     }
 
     ctx.helpers.drawReactionPreviewArrow2d(toSVGPt, atoms);
@@ -956,7 +989,7 @@ export function create2DSceneRenderer(ctx) {
     if (!preserveGeometry) {
       ctx.helpers.generate2dCoords(mol, { suppressH: true, bondLength: layoutBondLength });
     }
-    ctx.helpers.alignReaction2dProductOrientation(mol);
+    ctx.helpers.alignReaction2dProductOrientation(mol, layoutBondLength);
     ctx.helpers.spreadReaction2dProductComponents(mol, layoutBondLength);
     ctx.helpers.centerReaction2dPairCoords(mol, layoutBondLength);
 
