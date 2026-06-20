@@ -626,13 +626,24 @@ describe('Molecule', () => {
     assert.equal(atom.properties.charge, -1);
   });
 
-  it('auto-generated atom ids restart per molecule', () => {
+  it('auto-generated atom ids use element-number ids and restart per molecule', () => {
     const mol1 = new Molecule();
     const mol2 = new Molecule();
-    assert.equal(mol1.addAtom(null, 'C').id, '0');
-    assert.equal(mol1.addAtom(null, 'O').id, '1');
-    assert.equal(mol2.addAtom(null, 'N').id, '0');
-    assert.equal(mol2.addAtom(null, 'S').id, '1');
+    assert.equal(mol1.addAtom(null, 'C').id, 'C1');
+    assert.equal(mol1.addAtom(null, 'O').id, 'O1');
+    assert.equal(mol1.addAtom(null, 'C').id, 'C2');
+    assert.equal(mol2.addAtom(null, 'N').id, 'N1');
+    assert.equal(mol2.addAtom(null, 'S').id, 'S1');
+  });
+
+  it('auto-generated atom ids skip existing element-number ids', () => {
+    const mol = new Molecule();
+    mol.addAtom('C1', 'C');
+    mol.addAtom('C5', 'C');
+    mol.addAtom('Cl5', 'Cl');
+    assert.equal(mol.addAtom(null, 'C').id, 'C6');
+    assert.equal(mol.addAtom(null, 'Cl').id, 'Cl6');
+    assert.equal(mol.addAtom(null, 'O').id, 'O1');
   });
 
   it('throws when adding duplicate atom id', () => {

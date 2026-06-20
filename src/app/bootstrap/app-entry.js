@@ -179,9 +179,10 @@ function readPlacedCoords(molecule, options = {}) {
 }
 
 function buildComputedLayoutOptions(options = {}) {
+  const renderOptions = getRenderOptions();
   return {
     suppressH: options.suppressH ?? true,
-    bondLength: options.bondLength ?? 1.5,
+    bondLength: options.bondLength ?? renderOptions.layoutBondLength ?? 1.5,
     maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6,
     finalLandscapeOrientation: options.finalLandscapeOrientation ?? true
   };
@@ -254,7 +255,10 @@ function _isAdditiveSelectionEvent(event) {
 const simulation = initForceSimulation({
   d3,
   isHydrogenNode,
-  forceLinkDistance,
+  forceLinkDistance: link =>
+    forceLinkDistance(link, {
+      layoutBondLength: getRenderOptions().layoutBondLength
+    }),
   createForceAnchorRadiusForce,
   createForceHydrogenRepulsionForce,
   constants: {
@@ -269,6 +273,7 @@ const forceHelpers = createForceHelpers({
   simulation,
   viewportFitPadding: pad => _viewportFitPadding(pad),
   generate2dCoords: generateActive2dCoords,
+  getLayoutBondLength: () => getRenderOptions().layoutBondLength ?? 1.5,
   alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
   centerReaction2dPairCoords: (mol, bondLength) => _centerReaction2dPairCoords(mol, bondLength)

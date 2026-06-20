@@ -35,6 +35,10 @@ function makeZoomIdentity() {
   };
 }
 
+function approxEqual(actual, expected, epsilon = 1e-9) {
+  assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
+}
+
 describe('force-helpers', () => {
   it('converts line coordinates to force coordinates while reseating hydrogens in stable slots', () => {
     const mol = new Molecule();
@@ -119,6 +123,33 @@ describe('force-helpers', () => {
     assert.equal(forceLinkDistance({ source: { name: 'H' }, target: { name: 'C' }, order: 1 }), FORCE_LAYOUT_H_BOND_LENGTH);
     assert.equal(forceLinkDistance({ source: { name: 'C' }, target: { name: 'C' }, order: 2 }), FORCE_LAYOUT_BOND_LENGTH * FORCE_LAYOUT_MULTIPLE_BOND_FACTOR);
     assert.equal(forceLinkDistance({ source: { name: 'C' }, target: { name: 'C' }, order: 1.5 }), FORCE_LAYOUT_BOND_LENGTH * FORCE_LAYOUT_AROMATIC_BOND_FACTOR);
+    assert.equal(forceLinkDistance({ source: { name: 'C' }, target: { name: 'C' }, order: 1 }, { layoutBondLength: 2.5 }), FORCE_LAYOUT_BOND_LENGTH * (2.5 / 1.5));
+    assert.equal(forceLinkDistance({ source: { name: 'H' }, target: { name: 'C' }, order: 1 }, { layoutBondLength: 2.5 }), FORCE_LAYOUT_H_BOND_LENGTH * (2.5 / 1.5));
+  });
+
+  it('allows force auto-fit to zoom closer for short layout bond lengths', () => {
+    const nodes = [
+      { id: 'c1', name: 'C', protons: 6, x: 100, y: 100 },
+      { id: 'c2', name: 'C', protons: 6, x: 140, y: 100 }
+    ];
+    const makeHelpers = layoutBondLength =>
+      createForceHelpers({
+        d3: { zoomIdentity: makeZoomIdentity() },
+        plotEl: { clientWidth: 600, clientHeight: 400 },
+        simulation: {
+          nodes: () => [],
+          force: () => ({ links: () => [] })
+        },
+        viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad }),
+        getLayoutBondLength: () => layoutBondLength,
+        generate2dCoords: () => {},
+        alignReaction2dProductOrientation: () => {},
+        spreadReaction2dProductComponents: () => {},
+        centerReaction2dPairCoords: () => {}
+    });
+
+    assert.equal(makeHelpers(1.5).forceFitTransform(nodes, 40, { scaleMultiplier: 1.3 }).k, 1.3);
+    approxEqual(makeHelpers(0.5).forceFitTransform(nodes, 40, { scaleMultiplier: 1.3 }).k, 3.9);
   });
 
   it('places hydrogens into open angles around the parent atom', () => {

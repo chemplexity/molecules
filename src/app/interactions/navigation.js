@@ -785,6 +785,10 @@ export function createNavigationActions(context) {
     if (mode !== '2d' || !mol) {
       return;
     }
+    if (context.view.fitCurrent2dView) {
+      context.view.fitCurrent2dView();
+      return;
+    }
     const atoms = [...mol.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
     if (!atoms.length) {
       return;

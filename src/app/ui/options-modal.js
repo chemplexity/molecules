@@ -11,6 +11,7 @@ export function initOptionsModal(context) {
   const overlayEl = context.dom.getOverlayElement();
   const showValenceWarningsEl = context.dom.getShowValenceWarningsElement();
   const showAtomTooltipsEl = context.dom.getShowAtomTooltipsElement();
+  const layoutBondLengthEl = context.dom.getLayoutBondLengthElement();
   const twoDAtomColoringEl = context.dom.get2DAtomColoringElement();
   const twoDAtomFontSizeEl = context.dom.get2DAtomFontSizeElement();
   const atomNumberingFontSizeEl = context.dom.getAtomNumberingFontSizeElement();
@@ -41,6 +42,7 @@ export function initOptionsModal(context) {
   function syncForm(options = context.options.getRenderOptions()) {
     showValenceWarningsEl.checked = options.showValenceWarnings;
     showAtomTooltipsEl.checked = options.showAtomTooltips;
+    layoutBondLengthEl.value = formatOptionNumber(options.layoutBondLength);
     twoDAtomColoringEl.value = options.twoDColorStyle ?? 'color-atoms';
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
     atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
@@ -62,9 +64,12 @@ export function initOptionsModal(context) {
 
   function apply() {
     const currentOptions = context.options.getRenderOptions();
+    const layoutBondLength = clampOptionInputValue(layoutBondLengthEl, context.options.limits.layoutBondLength, currentOptions.layoutBondLength);
+    const layoutBondLengthChanged = Math.abs(layoutBondLength - currentOptions.layoutBondLength) > 1e-6;
     const nextOptions = context.options.updateRenderOptions({
       showValenceWarnings: showValenceWarningsEl.checked,
       showAtomTooltips: showAtomTooltipsEl.checked,
+      layoutBondLength,
       twoDColorStyle: twoDAtomColoringEl.value,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
       atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),
@@ -80,9 +85,25 @@ export function initOptionsModal(context) {
     }
 
     if (context.state.getMode() === 'force' && context.state.getCurrentMol()) {
-      context.renderers.updateForce(context.state.getCurrentMol(), { preservePositions: true, preserveView: true });
+      context.renderers.updateForce(
+        context.state.getCurrentMol(),
+        layoutBondLengthChanged
+          ? { preservePositions: false, preserveView: false }
+          : { preservePositions: true, preserveView: true }
+      );
+      if (layoutBondLengthChanged) {
+        context.navigation?.autoZoom?.();
+        context.navigation?.autoZoomAfterRender?.();
+      }
     } else if (context.state.getMode() === '2d' && context.state.getMol2d()) {
-      context.renderers.draw2d();
+      if (layoutBondLengthChanged) {
+        context.renderers.renderMol(context.state.getMol2d(), {
+          preserveHistory: true
+        });
+        context.navigation?.autoZoom?.();
+      } else {
+        context.renderers.draw2d();
+      }
     }
 
     syncForm(nextOptions);

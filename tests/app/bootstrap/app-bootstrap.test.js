@@ -220,6 +220,9 @@ describe('finalizeAppBootstrap', () => {
         getShowAtomTooltipsElement() {
           return {};
         },
+        getLayoutBondLengthElement() {
+          return {};
+        },
         get2DAtomColoringElement() {
           return {};
         },

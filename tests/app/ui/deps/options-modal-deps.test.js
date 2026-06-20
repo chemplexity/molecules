@@ -11,6 +11,7 @@ describe('createOptionsModalDeps', () => {
         getOverlayElement: () => 'overlay',
         getShowValenceWarningsElement: () => 'valence',
         getShowAtomTooltipsElement: () => 'tooltips',
+        getLayoutBondLengthElement: () => 'layoutBondLength',
         get2DAtomColoringElement: () => 'atomColoring',
         get2DAtomFontSizeElement: () => 'fontSize',
         getAtomNumberingFontSizeElement: () => 'atomNumberingFontSize',
@@ -39,6 +40,10 @@ describe('createOptionsModalDeps', () => {
         setFontSize: value => value,
         hideTooltip: () => 'hidden'
       },
+      navigation: {
+        autoZoom: () => 'autoZoom',
+        autoZoomAfterRender: () => 'autoZoomAfterRender'
+      },
       renderers: {
         draw2d: () => 'draw2d',
         render2d: () => 'render2d',
@@ -53,6 +58,7 @@ describe('createOptionsModalDeps', () => {
 
     assert.equal(deps.doc.id, 'doc');
     assert.equal(deps.dom.getOverlayElement(), 'overlay');
+    assert.equal(deps.dom.getLayoutBondLengthElement(), 'layoutBondLength');
     assert.equal(deps.dom.getAtomNumberingFontSizeElement(), 'atomNumberingFontSize');
     assert.equal(deps.options.getRenderOptions(), 'renderOptions');
     assert.deepEqual(deps.options.updateRenderOptions('x'), { next: 'x' });
@@ -63,6 +69,8 @@ describe('createOptionsModalDeps', () => {
     assert.equal(deps.state.getCurrentSmiles(), 'smiles');
     assert.equal(deps.state.getCurrentInchi(), 'inchi');
     assert.equal(deps.view.hideTooltip(), 'hidden');
+    assert.equal(deps.navigation.autoZoom(), 'autoZoom');
+    assert.equal(deps.navigation.autoZoomAfterRender(), 'autoZoomAfterRender');
     assert.equal(deps.renderers.draw2d(), 'draw2d');
     assert.equal(deps.renderers.render2d(), 'render2d');
     assert.equal(deps.renderers.renderMol(), 'renderMol');

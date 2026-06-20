@@ -1,8 +1,30 @@
 # Change Log
 
+## 2026-06-20
+
+- Schedule a follow-up Auto Zoom after changing Global "Bond Length" in force mode so the viewport refits once the compact force layout has settled.
+- Scale force-mode auto-fit zoom allowance for short Global "Bond Length" values so compact force layouts do not stay overly zoomed out.
+- Make the 2D Auto Zoom button use the same rendered-bounds fit as post-render auto fitting, so short Global "Bond Length" values do not zoom out differently.
+- Apply the shared Auto Zoom action after changing Global "Bond Length" so relayouts use the same final viewport behavior as the toolbar fit button.
+- Fit 2D viewports from the rendered SVG bounds after drawing so atom labels and other visible geometry do not clip at small Global "Bond Length" values, with extra zoom only when shorter bond lengths need it.
+- Fit the viewport tightly from the actual rendered coordinates after applying a changed Global "Bond Length", bypassing overlay gutters so the window lands closer to molecule bounds.
+- Expand the Global "Bond Length" range to allow values from 0.5 through 3.0.
+- Recompute the active 2D molecule or rebuild and rescale the active force layout when applying a changed Global "Bond Length" setting.
+- Add a Global "Bond Length" option that controls the 2D layout engine's target bond length for recompute/refine, reaction spacing, and interactive line/ring placement.
+- Remove the white atom-replacement preview cover when holding the line tool on an atom whose element would change.
+- Snap atom-anchored line-tool previews to 30-degree increments while dragging, with Ctrl/Cmd allowing freeform placement.
+- Generate new interactive atom IDs with the ElementNumber convention (`C1`, `Cl5`, `O3`, etc.) instead of bare numeric IDs.
+
 ## 2026-06-18
 
-- Choose benzene ring-template double-bond phases with at least two displayed double bonds while avoiding placed-ring valence warnings when possible.
+- Fix SMARTS operator-precedence bug in `alcoholOxidation` and `amineAlkylation` reaction templates: `[C;X4;H1,H2]` and `[C;X4;H2,H3]` parsed as `(C AND X4 AND H1) OR H2` (etc.) due to `,` having lower precedence than `;`, allowing the H-count-only OR branch to match any non-carbon atom. Changed to `[C;X4&(H1,H2)]` / `[C;X4&(H2,H3)]` so the OR is scoped inside the high-precedence AND.
+- Fix `azide` SMARTS functional-group pattern: `[NX2-]=[NX2+]=[NX1-]` required the first nitrogen to carry a −1 charge, but the standard organic azide representation `R-N=[N+]=[N-]` has the proximal nitrogen at charge 0. Corrected to `[NX2]=[NX2+]=[NX1-]`.
+- Fix `dielsAlder` SMIRKS reactant: the implicit SMARTS bond between the diene C2 and C3 atoms matched single OR aromatic bonds. Replaced with an explicit `-` token so only a true single bond (not an aromatic bond) connects the two double-bond carbons of the diene.
+- Fix `_stripProductAtomMaps` in the SMIRKS parser to scan for the closing `]` with paren-depth tracking (matching the logic in the SMARTS parser) rather than using a plain `indexOf`, making it consistent and robust against future product templates that contain parenthesized sub-expressions inside bracket atoms.
+- Preview the resulting bond style when holding the line tool on a 2D bond, then commit it on mouseup.
+- Preview the auto-placed line direction when holding the line tool on an atom, or the replacement atom state when no-drag mouseup would change that atom's element.
+- Let Ctrl/Cmd bypass atom-anchored ring-template angle snapping while dragging.
+- Choose benzene ring-template double-bond phases that keep placed ring carbons sp2 while avoiding placed-ring valence warnings when possible.
 - Split medium ring-decorated peptide layouts into denser blocks so side-chain junction angles stay open.
 - Snap generic aromatic peptide side-chain exits back to a trigonal ring fan while clearing nearby carbonyl leaf contacts.
 - Position force-rendered atoms and bonds before applying highlights so reaction previews do not flash overlays first.

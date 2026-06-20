@@ -87,22 +87,49 @@ function projectHiddenStereoHydrogens(molecule, bondLength, stereoMap = null) {
   return projectedCoords;
 }
 
-function _compute2dFitTransform(ctx, atoms) {
+function _compute2dFitTransform(ctx, atoms, options = {}) {
   const { minX, maxX, minY, maxY } = atomBBox(atoms);
   const W = ctx.plotEl.clientWidth || 600;
   const H = ctx.plotEl.clientHeight || 400;
-  const PAD = ctx.helpers.hasReactionPreview() ? 12 : 18;
-  const pads = ctx.helpers.viewportFitPadding(PAD);
+  const PAD = options.fitPad ?? (ctx.helpers.hasReactionPreview() ? 12 : 18);
+  const pads = options.ignoreOverlayPadding ? { left: PAD, right: PAD, top: PAD, bottom: PAD } : ctx.helpers.viewportFitPadding(PAD);
   const horizontalPad = Math.max(PAD, (pads.left + pads.right) / 2);
   const verticalPad = Math.max(PAD, (pads.top + pads.bottom) / 2);
   const scale = ctx.constants.scale;
   const molSVGW = (maxX - minX) * scale || 1;
   const molSVGH = (maxY - minY) * scale || 1;
-  const fitCap = ctx.helpers.hasReactionPreview() ? 1.28 : 1;
+  const fitCap = options.fitMaxScale ?? (ctx.helpers.hasReactionPreview() ? 1.28 : 1);
   const fitScale = Math.min(Math.max(1, W - horizontalPad * 2) / molSVGW, Math.max(1, H - verticalPad * 2) / molSVGH, fitCap);
   const fitTx = W / 2 - (W / 2) * fitScale;
   const fitTy = H / 2 - (H / 2) * fitScale;
   return ctx.d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale);
+}
+
+function _compute2dBBoxFitTransform(ctx, bbox, options = {}) {
+  if (!bbox || !(bbox.width > 0) || !(bbox.height > 0)) {
+    return null;
+  }
+  const W = ctx.plotEl.clientWidth || 600;
+  const H = ctx.plotEl.clientHeight || 400;
+  const PAD = options.fitPad ?? (ctx.helpers.hasReactionPreview() ? 12 : 18);
+  const pads = options.ignoreOverlayPadding ? { left: PAD, right: PAD, top: PAD, bottom: PAD } : ctx.helpers.viewportFitPadding(PAD);
+  const horizontalPad = Math.max(PAD, (pads.left + pads.right) / 2);
+  const verticalPad = Math.max(PAD, (pads.top + pads.bottom) / 2);
+  const fitWidth = Math.max(1, W - horizontalPad * 2);
+  const fitHeight = Math.max(1, H - verticalPad * 2);
+  const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
+  const smallBondLengthScaleCap = Math.max(1, Math.min(3, 1.5 / Math.max(0.5, layoutBondLength)));
+  const fitCap = options.fitMaxScale ?? (ctx.helpers.hasReactionPreview() ? 1.28 : smallBondLengthScaleCap);
+  const fitScale = Math.min(fitWidth / bbox.width, fitHeight / bbox.height, fitCap);
+  const fitTx = W / 2 - (bbox.x + bbox.width / 2) * fitScale;
+  const fitTy = H / 2 - (bbox.y + bbox.height / 2) * fitScale;
+  return ctx.d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale);
+}
+
+function _fitRendered2dView(ctx, fitPoints, options = {}) {
+  const bbox = ctx.g?.node?.()?.getBBox?.();
+  const transform = _compute2dBBoxFitTransform(ctx, bbox, options) ?? _compute2dFitTransform(ctx, fitPoints, options);
+  ctx.svg.call(ctx.zoom.transform, transform);
 }
 
 /**
@@ -663,11 +690,7 @@ export function create2DSceneRenderer(ctx) {
           if (ctx.events.handle2dBondMouseDownRingTemplate(event, bi.bond.id, p1, p2, bi.bond.atoms)) {
             return;
           }
-          if (!ctx.overlay.getDrawBondMode()) {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
+          ctx.events.handle2dBondMouseDownDrawBond(event, bi.bond, p1, p2);
         })
         .on('click', event => {
           ctx.events.handle2dBondClick(event, bi.bond.id);
@@ -914,7 +937,8 @@ export function create2DSceneRenderer(ctx) {
   }
 
   function render2d(mol, options = {}) {
-    const { recomputeResonance = true, refreshResonancePanel = true, preserveGeometry = false, preserveAnalysis = false } = options;
+    const { recomputeResonance = true, refreshResonancePanel = true, preserveGeometry = false, preserveAnalysis = false, fitPad, fitMaxScale, ignoreOverlayPadding = false } = options;
+    const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
 
     const hCounts = new Map();
     for (const [, atom] of mol.atoms) {
@@ -930,11 +954,11 @@ export function create2DSceneRenderer(ctx) {
     prepareAromaticBondRendering(mol);
 
     if (!preserveGeometry) {
-      ctx.helpers.generate2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      ctx.helpers.generate2dCoords(mol, { suppressH: true, bondLength: layoutBondLength });
     }
     ctx.helpers.alignReaction2dProductOrientation(mol);
-    ctx.helpers.spreadReaction2dProductComponents(mol, 1.5);
-    ctx.helpers.centerReaction2dPairCoords(mol, 1.5);
+    ctx.helpers.spreadReaction2dProductComponents(mol, layoutBondLength);
+    ctx.helpers.centerReaction2dPairCoords(mol, layoutBondLength);
 
     const { rotationDeg, flipH, flipV } = ctx.view.getOrientation();
     if (rotationDeg !== 0 || flipH || flipV) {
@@ -1001,8 +1025,6 @@ export function create2DSceneRenderer(ctx) {
     }
 
     const { cx, cy } = atomBBox(fitPoints);
-    ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, fitPoints));
-
     ctx.state.setScene({ mol, hCounts, cx, cy, stereoMap });
     if (ctx.state.getPreserveSelectionOnNextRender()) {
       ctx.selection.syncSelectionToMolecule(mol);
@@ -1012,6 +1034,7 @@ export function create2DSceneRenderer(ctx) {
     ctx.state.setPreserveSelectionOnNextRender(false);
 
     draw2d();
+    _fitRendered2dView(ctx, fitPoints, { fitPad, fitMaxScale, ignoreOverlayPadding });
 
     if (!preserveAnalysis) {
       ctx.analysis.updateFormula(mol);
@@ -1033,7 +1056,8 @@ export function create2DSceneRenderer(ctx) {
     }
     const { cx, cy } = atomBBox(fitPoints);
     ctx.state.setCenter(cx, cy);
-    ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, fitPoints));
+    draw2d();
+    _fitRendered2dView(ctx, fitPoints);
   }
 
   return {

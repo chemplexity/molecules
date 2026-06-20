@@ -134,6 +134,35 @@ function aromaticRingTemplateLocalizedValenceOverflow(mol, ringAtomIds, doubleBo
   return overflow;
 }
 
+function aromaticRingTemplateUnsaturatedCarbonCount(mol, ringAtomIds, doubleBondIndices) {
+  let count = 0;
+  for (let index = 0; index < ringAtomIds.length; index++) {
+    const atomId = ringAtomIds[index];
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name !== 'C') {
+      continue;
+    }
+    const previousRingEdgeIndex = (index - 1 + ringAtomIds.length) % ringAtomIds.length;
+    const hasRingDoubleBond = doubleBondIndices.has(previousRingEdgeIndex) || doubleBondIndices.has(index);
+    const hasExternalDoubleBond = (atom.bonds ?? []).some(bondId => {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) {
+        return false;
+      }
+      const otherAtomId = bond.getOtherAtom(atomId);
+      if (ringAtomIds.includes(otherAtomId)) {
+        return false;
+      }
+      const otherAtom = mol.atoms.get(otherAtomId);
+      return otherAtom?.name !== 'H' && localizedBondOrderForValence(bond) >= 2;
+    });
+    if (!hasRingDoubleBond && !hasExternalDoubleBond) {
+      count++;
+    }
+  }
+  return count;
+}
+
 function scoreAromaticRingTemplateDoubleBondSet(mol, ringAtomIds, doubleBondIndices, anchorBondId = null) {
   let score = 0;
   for (let index = 0; index < ringAtomIds.length; index++) {
@@ -153,6 +182,7 @@ function scoreAromaticRingTemplateDoubleBondSet(mol, ringAtomIds, doubleBondIndi
       score += 10;
     }
   }
+  score += aromaticRingTemplateUnsaturatedCarbonCount(mol, ringAtomIds, doubleBondIndices) * 10000;
   score += aromaticRingTemplateLocalizedValenceOverflow(mol, ringAtomIds, doubleBondIndices) * 1000;
   score += (ringAtomIds.length / 2 - doubleBondIndices.size) * 100;
   return score;
@@ -1187,7 +1217,7 @@ export function createStructuralEditActions(context) {
 
         const forceBondLength = (context.constants.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR;
         const currentForceNodes = editMode === 'force' ? (context.force.getSimulation?.()?.nodes?.() ?? []) : [];
-        const bondLength = DEFAULT_2D_BOND_LENGTH;
+        const bondLength = context.options?.getRenderOptions?.().layoutBondLength ?? DEFAULT_2D_BOND_LENGTH;
         const requestedAnchorBond = anchorBondId ? mol.bonds.get(anchorBondId) : null;
         const hydrogenRingAnchor = !anchorAtomId ? terminalHydrogenRingAnchor(mol, requestedAnchorBond, currentForceNodes, bondLength) : null;
         const anchorBond = hydrogenRingAnchor ? null : requestedAnchorBond;

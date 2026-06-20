@@ -28,6 +28,12 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.forceKeepInView] - When true for force renders, preserves the current viewport first but refits if the graph settles outside it.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceAnchorLayout] - Optional force-anchor layout override keyed by atom id.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceInitialPatchPos] - Optional force-pixel positions applied before the first force tick.
+   * @param {number} [options.fitPad] - Optional 2D viewport fit padding.
+   * @param {number} [options.fitMaxScale] - Optional 2D viewport fit zoom cap.
+   * @param {boolean} [options.ignoreOverlayPadding] - When true, fits 2D viewport against molecule bounds without reserving overlay gutters.
+   * @param {number} [options.forceFitPad] - Optional force viewport fit padding.
+   * @param {number} [options.forceFitScaleMultiplier] - Optional force viewport fit scale multiplier.
+   * @param {boolean} [options.forceIgnoreOverlayPadding] - When true, fits force viewport against molecule bounds without reserving overlay gutters.
    */
   function renderMol(mol, options = {}) {
     const {
@@ -40,7 +46,13 @@ export function createRenderRuntime(deps) {
       forcePreservePositions = false,
       forceKeepInView = false,
       forceAnchorLayout = null,
-      forceInitialPatchPos = null
+      forceInitialPatchPos = null,
+      fitPad,
+      fitMaxScale,
+      ignoreOverlayPadding,
+      forceFitPad,
+      forceFitScaleMultiplier,
+      forceIgnoreOverlayPadding
     } = options;
 
     if (!preserveAnalysis) {
@@ -69,6 +81,15 @@ export function createRenderRuntime(deps) {
       if (forceKeepInView) {
         forceOptions.keepInView = true;
       }
+      if (forceFitPad !== undefined) {
+        forceOptions.fitPad = forceFitPad;
+      }
+      if (forceFitScaleMultiplier !== undefined) {
+        forceOptions.fitScaleMultiplier = forceFitScaleMultiplier;
+      }
+      if (forceIgnoreOverlayPadding !== undefined) {
+        forceOptions.ignoreOverlayPadding = forceIgnoreOverlayPadding;
+      }
       updateForce(mol, forceOptions);
       if (!preserveAnalysis) {
         deps.analysis.updateFormula(mol);
@@ -79,12 +100,22 @@ export function createRenderRuntime(deps) {
     }
 
     deps.simulation.stop();
-    deps.scene.render2d(mol, {
+    const render2dOptions = {
       recomputeResonance,
       refreshResonancePanel,
       preserveGeometry,
       preserveAnalysis
-    });
+    };
+    if (fitPad !== undefined) {
+      render2dOptions.fitPad = fitPad;
+    }
+    if (fitMaxScale !== undefined) {
+      render2dOptions.fitMaxScale = fitMaxScale;
+    }
+    if (ignoreOverlayPadding !== undefined) {
+      render2dOptions.ignoreOverlayPadding = ignoreOverlayPadding;
+    }
+    deps.scene.render2d(mol, render2dOptions);
     if (previous2dZoom) {
       deps.view.restoreZoomTransform?.(previous2dZoom);
     }

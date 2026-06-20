@@ -3,21 +3,11 @@
 import { ReactionPreviewPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
-
-const TAU = Math.PI * 2;
-
-function _normalizeAngle(angle) {
-  const normalized = angle % TAU;
-  return normalized < 0 ? normalized + TAU : normalized;
-}
-
-function _angularDifference(firstAngle, secondAngle) {
-  let diff = Math.abs(_normalizeAngle(firstAngle) - _normalizeAngle(secondAngle));
-  if (diff > Math.PI) {
-    diff = TAU - diff;
-  }
-  return diff;
-}
+import {
+  angularDifference as _angularDifference,
+  chooseAutoPlacedBondAngle as _chooseAutoPlacedBondAngle,
+  normalizeAngle as _normalizeAngle
+} from './draw-bond-placement.js';
 
 /**
  * Removes all display-stereo properties (as, centerId, manual) from a bond,
@@ -128,55 +118,6 @@ function _applyBondDrawType(mol, bond, drawBondType, preferredCenterId = null) {
       manual: true
     });
   }
-}
-
-/**
- * Chooses a no-drag bond auto-placement angle from visible heavy-neighbor
- * directions. A terminal atom uses the zigzag side opposite its existing bond
- * instead of capping both bonds onto the same side of the source atom.
- * @param {number[]} existingAngles - Angles from source atom to existing heavy neighbors.
- * @param {number} [steps] - Number of compass samples for crowded multi-neighbor placement.
- * @returns {number} Placement angle in radians normalized to [0, 2pi).
- */
-function _chooseAutoPlacedBondAngle(existingAngles, steps = 12) {
-  if (existingAngles.length === 0) {
-    return (11 / 12) * TAU;
-  }
-  if (existingAngles.length === 1) {
-    const back = existingAngles[0];
-    const opt1 = back + (2 * Math.PI) / 3;
-    const opt2 = back - (2 * Math.PI) / 3;
-    const sBack = Math.sin(back);
-    const s1 = Math.sin(opt1);
-    const s2 = Math.sin(opt2);
-    if (Math.abs(sBack) > 1e-6) {
-      const opposite1 = s1 * sBack < 0;
-      const opposite2 = s2 * sBack < 0;
-      if (opposite1 && !opposite2) {
-        return _normalizeAngle(opt1);
-      }
-      if (opposite2 && !opposite1) {
-        return _normalizeAngle(opt2);
-      }
-      return _normalizeAngle(Math.cos(opt1) >= Math.cos(opt2) ? opt1 : opt2);
-    }
-    return _normalizeAngle(s1 <= s2 ? opt1 : opt2);
-  }
-
-  let bestAngle = 0;
-  let bestMinSep = -1;
-  for (let i = 0; i < steps; i++) {
-    const candidate = (i / steps) * TAU;
-    let minSep = Math.PI;
-    for (const angle of existingAngles) {
-      minSep = Math.min(minSep, _angularDifference(candidate, angle));
-    }
-    if (minSep > bestMinSep) {
-      bestMinSep = minSep;
-      bestAngle = candidate;
-    }
-  }
-  return bestAngle;
 }
 
 /**
@@ -542,8 +483,9 @@ export function createDrawBondCommitActions(context) {
     _removeSourceHydrogenNearestAngle(mol, srcAtom, { x: srcRX, y: srcRY }, bestAngle, atom =>
       Number.isFinite(atom.x) && Number.isFinite(atom.y) ? { x: atom.x, y: atom.y } : null
     );
-    newAtom.x = srcRX + Math.cos(bestAngle) * 1.5;
-    newAtom.y = srcRY + Math.sin(bestAngle) * 1.5;
+    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? 1.5;
+    newAtom.x = srcRX + Math.cos(bestAngle) * layoutBondLength;
+    newAtom.y = srcRY + Math.sin(bestAngle) * layoutBondLength;
 
     mol.clearStereoAnnotations(affected);
     if (drawBondType !== 'aromatic') {

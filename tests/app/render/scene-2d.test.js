@@ -381,10 +381,10 @@ describe('create2DSceneRenderer', () => {
       ),
       [
         ['generate2dCoords'],
-        ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }],
         ['setScene', 'mol-2d', 0, 0],
         ['clearSelection'],
         ['setPreserveSelectionOnNextRender', false],
+        ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }],
         ['updateFormula', 'mol-2d'],
         ['updateDescriptors', 'mol-2d']
       ]
@@ -515,8 +515,8 @@ describe('create2DSceneRenderer', () => {
     assert.deepEqual(
       records.filter(entry => ['syncSelectionToMolecule', 'setCenter'].includes(entry[0]) || (entry[0] === 'call' && entry[1] === 'zoomTransform')),
       [
-        ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }],
         ['syncSelectionToMolecule', 'mol-refit'],
+        ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }],
         ['setCenter', 1, -1],
         ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }]
       ]

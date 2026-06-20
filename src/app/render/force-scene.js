@@ -242,13 +242,14 @@ function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
     return;
   }
 
+  const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
   const seededMolecule = molecule.clone();
   seededMolecule.hideHydrogens();
-  ctx.helpers.generate2dCoords(seededMolecule, { suppressH: true, bondLength: 1.5 });
+  ctx.helpers.generate2dCoords(seededMolecule, { suppressH: true, bondLength: layoutBondLength });
   ctx.helpers.alignReaction2dProductOrientation(seededMolecule);
 
   if (hasChiralCenters) {
-    placeHiddenHydrogensForForceStereoSeed(seededMolecule, 1.5);
+    placeHiddenHydrogensForForceStereoSeed(seededMolecule, layoutBondLength);
     syncDisplayStereo(seededMolecule);
   }
 
@@ -294,9 +295,24 @@ export function createForceSceneRenderer(ctx) {
    * @param {boolean} [options.keepInView] - When true, keeps the graph inside the viewport after restoring a preserved transform.
    * @param {Map<string, {x: number, y: number}>|null} [options.anchorLayout] - Optional precomputed heavy-atom anchors keyed by atom id.
    * @param {Map<string, {x: number, y: number}>|null} [options.initialPatchPos] - Optional initial patch positions applied before the first restarted tick.
+   * @param {number} [options.fitPad] - Optional padding for the initial viewport fit.
+   * @param {number} [options.fitScaleMultiplier] - Optional zoom multiplier for the initial viewport fit.
+   * @param {boolean} [options.ignoreOverlayPadding] - When true, fits without reserving UI overlay gutters.
    * @returns {void}
    */
-  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, keepInView = false, anchorLayout = null, initialPatchPos = null } = {}) {
+  function updateForce(
+    molecule,
+    {
+      preservePositions = false,
+      preserveView = preservePositions,
+      keepInView = false,
+      anchorLayout = null,
+      initialPatchPos = null,
+      fitPad = null,
+      fitScaleMultiplier = null,
+      ignoreOverlayPadding = false
+    } = {}
+  ) {
     prepareAromaticBondRendering(molecule);
     const { showLonePairs } = getRenderOptions();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(molecule);
@@ -1147,9 +1163,10 @@ export function createForceSceneRenderer(ctx) {
       }
 
       if (ctx.state.isForceAutoFitEnabled()) {
-        const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, ctx.constants.forceLayoutInitialFitPad, {
+        const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, fitPad ?? ctx.constants.forceLayoutInitialFitPad, {
           hydrogenRadiusScale: ctx.constants.forceLayoutInitialHRadiusScale,
-          scaleMultiplier: ctx.constants.forceLayoutInitialZoomMultiplier
+          scaleMultiplier: fitScaleMultiplier ?? ctx.constants.forceLayoutInitialZoomMultiplier,
+          ignoreOverlayPadding
         });
         if (fitTransform) {
           ctx.svg.call(ctx.zoom.transform, fitTransform);

@@ -178,7 +178,7 @@ export class Molecule {
 
   /**
    * Adds an atom to the molecule.
-   * @param {string|null} [id]  - Unique atom identifier. Auto-generated when omitted or null.
+   * @param {string|null} [id]  - Unique atom identifier. Auto-generated as ElementNumber when omitted or null.
    * @param {string} name       - Element symbol (e.g. 'C', 'N').
    * @param {object} [properties] - Initial atom properties (charge, aromatic, protons, …).
    * Missing periodic-table fields are derived automatically from `name`.
@@ -190,7 +190,7 @@ export class Molecule {
    * @returns {Atom} The newly created atom.
    */
   addAtom(id, name, properties = {}, { recompute = true } = {}) {
-    const atom = new Atom(id ?? this._generateAutoAtomId(), name, properties);
+    const atom = new Atom(id ?? this._generateAutoAtomId(name), name, properties);
     const el = elements[atom.name];
     if (el) {
       const hasOwn = key => Object.prototype.hasOwnProperty.call(properties, key);
@@ -426,7 +426,7 @@ export class Molecule {
     // Add the required number of new H atoms (invisible — kept in graph for
     // correct SMARTS X/H-count semantics but hidden from 2D layout/rendering).
     for (let i = pendantHIds.length; i < neededH; i++) {
-      const hAtom = new Atom(this._generateAutoAtomId(), 'H');
+      const hAtom = new Atom(this._generateAutoAtomId('H'), 'H');
       hAtom.resolveElement();
       hAtom.visible = false;
       this.atoms.set(hAtom.id, hAtom);
@@ -560,13 +560,26 @@ export class Molecule {
   /**
    * Generates the next unused auto atom ID for this molecule.
    * @private
+   * @param {string} element - Element symbol for the atom being created.
    * @returns {string} The result string.
    */
-  _generateAutoAtomId() {
-    let id;
-    do {
-      id = `${this._nextAtomId++}`;
-    } while (this.atoms.has(id));
+  _generateAutoAtomId(element = 'A') {
+    const prefix = String(element || 'A');
+    const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`^${escapedPrefix}(\\d+)$`);
+    let nextNumber = 1;
+    for (const id of this.atoms.keys()) {
+      const match = pattern.exec(id);
+      if (match) {
+        nextNumber = Math.max(nextNumber, Number(match[1]) + 1);
+      }
+    }
+    let id = `${prefix}${nextNumber}`;
+    while (this.atoms.has(id)) {
+      nextNumber++;
+      id = `${prefix}${nextNumber}`;
+    }
+    this._nextAtomId = Math.max(this._nextAtomId, nextNumber);
     return id;
   }
 
@@ -1394,7 +1407,7 @@ export class Molecule {
     for (const atom of other.atoms.values()) {
       let nextId = atom.id;
       if (combined.atoms.has(nextId)) {
-        nextId = combined._generateAutoAtomId();
+        nextId = combined._generateAutoAtomId(atom.name);
       }
       atomIdMap.set(atom.id, nextId);
       const copy = other._copyAtom(atom);

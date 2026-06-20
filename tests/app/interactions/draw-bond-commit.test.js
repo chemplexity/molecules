@@ -52,15 +52,21 @@ function bondAngleDegrees(coords, centerAtomId, firstAtomId, secondAtomId) {
 }
 
 function makeEditableMol(atom = null) {
-  let atomCounter = 1;
   let bondCounter = 0;
   const atoms = atom ? new Map([[atom.id, atom]]) : new Map();
   const mol = {
     atoms,
     bonds: new Map(),
     addAtom(_id, name) {
-      atomCounter += 1;
-      const newAtom = makeAtom(`a${atomCounter}`, name);
+      const pattern = new RegExp(`^${name}(\\d+)$`);
+      let nextNumber = 1;
+      for (const atomId of this.atoms.keys()) {
+        const match = pattern.exec(atomId);
+        if (match) {
+          nextNumber = Math.max(nextNumber, Number(match[1]) + 1);
+        }
+      }
+      const newAtom = makeAtom(`${name}${nextNumber}`, name);
       this.atoms.set(newAtom.id, newAtom);
       return newAtom;
     },
@@ -147,6 +153,9 @@ function makeActions(overrides = {}) {
     constants: {
       scale: 40,
       forceScale: 25
+    },
+    options: {
+      getRenderOptions: () => ({ layoutBondLength: overrides.layoutBondLength ?? 1.5 })
     },
     snapshot: {
       capture: () => overrides.capturedSnapshot ?? { id: 'captured-snapshot' },
@@ -295,6 +304,7 @@ describe('createDrawBondCommitActions', () => {
     assert.equal(mol.atoms.size, 1);
     assert.equal(mol.bonds.size, 0);
     const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.id, 'N1');
     assert.equal(atom.name, 'N');
     assert.equal(atom.x, 1);
     assert.equal(atom.y, 1);
@@ -481,10 +491,38 @@ describe('createDrawBondCommitActions', () => {
 
     actions.commit();
 
-    const newAtom = mol.atoms.get('a2');
+    const newAtom = mol.atoms.get('C1');
     assert.ok(newAtom);
     assert.equal(newAtom.x, 1.5);
     assert.equal(newAtom.y, 1.5);
+  });
+
+  it('uses the configured layout bond length for dragged 2d bond placement', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions } = makeActions({
+      activeMol: mol,
+      drawBondElement: 'C',
+      layoutBondLength: 2,
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 300,
+        oy: 200,
+        ex: 380,
+        ey: 200,
+        snapAtomId: null,
+        dragged: true
+      }
+    });
+
+    actions.commit();
+
+    const newAtom = mol.atoms.get('C1');
+    assert.ok(newAtom);
+    assert.equal(newAtom.x, 2);
+    assert.equal(newAtom.y, 0);
   });
 
   it('creates a line from blank space when the blank-space gesture is dragged', () => {

@@ -418,6 +418,38 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(started, { atomId: null, x: 12, y: 34 });
   });
 
+  it('passes draw-bond free-rotation modifiers through mousemove updates', () => {
+    let update = null;
+    let marked = false;
+    const { context, listeners } = makeBaseContext({
+      drawBond: {
+        hasDrawBondState: () => true,
+        start() {},
+        markDragged() {
+          marked = true;
+        },
+        updatePreview(point, options) {
+          update = { point, options };
+        },
+        commit() {}
+      }
+    });
+
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      ctrlKey: true,
+      metaKey: false,
+      target: { closest: () => null }
+    });
+
+    assert.equal(marked, true);
+    assert.deepEqual(update, {
+      point: [12, 34],
+      options: { ctrlKey: true, metaKey: false }
+    });
+  });
+
   it('places the selected ring template on a blank-space click', () => {
     const { context, svg, calls, state } = makeBaseContext();
     state.setRingTemplateMode(true);

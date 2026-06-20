@@ -419,6 +419,9 @@ export function createAppRuntime(deps) {
     },
     chemistry: deps.chemistry,
     force: deps.force.structuralEdit,
+    options: {
+      getRenderOptions: () => deps.options?.getRenderOptions?.() ?? {}
+    },
     constants: deps.constants
   });
 

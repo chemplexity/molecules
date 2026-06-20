@@ -117,6 +117,57 @@ describe('createRenderRuntime', () => {
     ]);
   });
 
+  it('passes tight viewport fit options through the shared policy layer', () => {
+    const mol2d = { id: 'mol-2d-tight' };
+    const twoD = makeRuntime({ mode: '2d' });
+
+    twoD.runtime.renderMol(mol2d, {
+      preserveHistory: true,
+      fitPad: 4,
+      fitMaxScale: 4,
+      ignoreOverlayPadding: true
+    });
+
+    assert.deepEqual(
+      twoD.calls.find(call => call[0] === 'render2d'),
+      [
+        'render2d',
+        mol2d,
+        {
+          recomputeResonance: true,
+          refreshResonancePanel: true,
+          preserveGeometry: false,
+          preserveAnalysis: false,
+          fitPad: 4,
+          fitMaxScale: 4,
+          ignoreOverlayPadding: true
+        }
+      ]
+    );
+
+    const molForce = { id: 'mol-force-tight' };
+    const force = makeRuntime({ mode: 'force' });
+
+    force.runtime.renderMol(molForce, {
+      preserveHistory: true,
+      forceFitPad: 4,
+      forceFitScaleMultiplier: 4,
+      forceIgnoreOverlayPadding: true
+    });
+
+    assert.deepEqual(force.calls.find(call => call[0] === 'updateForce'), [
+      'updateForce',
+      molForce,
+      {
+        preserveView: false,
+        anchorLayout: null,
+        fitPad: 4,
+        fitScaleMultiplier: 4,
+        ignoreOverlayPadding: true
+      }
+    ]);
+  });
+
   it('passes initial force coordinate patches through the shared policy layer', () => {
     const { runtime, calls } = makeRuntime({ mode: 'force' });
     const mol = { id: 'mol-force-patch' };

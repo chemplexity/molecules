@@ -1441,7 +1441,10 @@ export function initGestureInteractions(context) {
     context.view.setDrawBondHoverSuppressed(false);
     if (context.drawBond.hasDrawBondState()) {
       context.drawBond.markDragged();
-      context.drawBond.updatePreview(context.pointer(event, g.node()));
+      context.drawBond.updatePreview(context.pointer(event, g.node()), {
+        ctrlKey: event.ctrlKey === true,
+        metaKey: event.metaKey === true
+      });
       return;
     }
     if (!selectionDragging) {

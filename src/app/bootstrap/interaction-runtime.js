@@ -192,6 +192,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       getDrawBondType: () => ctx.getDrawBondType(),
       getDrawElemProtons: () => ctx.getDrawElemProtons(),
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
+      getActiveMolecule: () => ctx.getActiveMolecule(),
       getDrawBondState: () => ctx.getDrawBondState(),
       setDrawBondState: value => {
         ctx.setDrawBondState(value);
@@ -211,6 +212,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       get2DCenterY: () => ctx.get2DCenterY(),
       scale: ctx.scale,
       forceBondLength: ctx.forceBondLength,
+      getRenderOptions: () => ctx.getRenderOptions(),
       bondOffset2d: ctx.bondOffset2d,
       strokeWidth: ctx.strokeWidth,
       fontSize: ctx.fontSize,
@@ -243,6 +245,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       getPlotSize: () => ctx.getPlotSize(),
       scale: ctx.scale,
       forceScale: ctx.forceScale,
+      getRenderOptions: () => ctx.getRenderOptions(),
       captureSnapshot: options => ctx.captureSnapshot(options),
       restoreSnapshot: snap => ctx.restoreSnapshot(snap),
       takeSnapshot: options => ctx.takeSnapshot(options),
@@ -290,6 +293,8 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
       getDrawBondState: () => ctx.getDrawBondState(),
       startDrawBond: (atomId, gX, gY) => drawBondPreviewActions.start(atomId, gX, gY),
+      previewDrawBond: (start, end, previewOptions = {}) => drawBondPreviewActions.previewBond(start, end, previewOptions),
+      clearDrawBondArtifacts: () => drawBondPreviewActions.clearArtifacts(),
       resetDrawBondHover: () => drawBondPreviewActions.resetHover(),
       getDrawBondElement: () => ctx.getDrawBondElement(),
       getDrawBondType: () => ctx.getDrawBondType(),

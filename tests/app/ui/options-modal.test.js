@@ -34,12 +34,13 @@ function makeOverlay() {
 }
 
 describe('initOptionsModal', () => {
-  it('opens with current values and applies updated 2d options through draw2d', () => {
+  it('opens with current values and reapplies changed 2d bond length through renderMol', () => {
     const calls = [];
     const overlayEl = makeOverlay();
     const docListeners = new Map();
     const showValenceWarningsEl = makeCheckbox();
     const showAtomTooltipsEl = makeCheckbox();
+    const layoutBondLengthEl = makeInput();
     const twoDAtomColoringEl = makeCheckbox();
     const twoDAtomFontSizeEl = makeInput();
     const atomNumberingFontSizeEl = makeInput();
@@ -51,9 +52,11 @@ describe('initOptionsModal', () => {
     const resetBtnEl = makeButton();
     const cancelBtnEl = makeButton();
     const applyBtnEl = makeButton();
+    const mol2d = { id: 'mol2d' };
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
+      layoutBondLength: 1.5,
       twoDColorStyle: 'color-atoms',
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
@@ -66,6 +69,7 @@ describe('initOptionsModal', () => {
     const defaultOptions = {
       ...currentOptions,
       twoDAtomFontSize: 18,
+      layoutBondLength: 1.7,
       atomNumberingFontSize: 12,
       bondEnFontSize: 11,
       bondLengthFontSize: 12
@@ -81,6 +85,7 @@ describe('initOptionsModal', () => {
         getOverlayElement: () => overlayEl,
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
+        getLayoutBondLengthElement: () => layoutBondLengthEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
@@ -95,6 +100,7 @@ describe('initOptionsModal', () => {
       },
       options: {
         limits: {
+          layoutBondLength: { min: 0.5, max: 3 },
           twoDAtomFontSize: { min: 10, max: 24 },
           atomNumberingFontSize: { min: 8, max: 24 },
           bondEnFontSize: { min: 8, max: 24 },
@@ -113,16 +119,20 @@ describe('initOptionsModal', () => {
       state: {
         getMode: () => '2d',
         getCurrentMol: () => null,
-        getMol2d: () => ({ id: 'mol2d' })
+        getMol2d: () => mol2d
       },
       view: {
         setFontSize: value => calls.push(['setFontSize', value]),
         hideTooltip: () => calls.push(['hideTooltip'])
       },
+      navigation: {
+        autoZoom: () => calls.push(['autoZoom']),
+        autoZoomAfterRender: () => calls.push(['autoZoomAfterRender'])
+      },
       renderers: {
         draw2d: () => calls.push(['draw2d']),
-        render2d() {},
-        renderMol() {},
+        render2d: mol => calls.push(['render2d', mol]),
+        renderMol: (mol, options = {}) => calls.push(['renderMol', mol, options]),
         updateForce() {}
       },
       parsers: {}
@@ -132,18 +142,21 @@ describe('initOptionsModal', () => {
     assert.equal(overlayEl.hidden, false);
     assert.equal(showValenceWarningsEl.checked, true);
     assert.equal(showAtomTooltipsEl.checked, true);
+    assert.equal(layoutBondLengthEl.value, '1.5');
     assert.equal(twoDAtomFontSizeEl.value, '14');
     assert.equal(atomNumberingFontSizeEl.value, '10');
     assert.equal(bondEnFontSizeEl.value, '10');
     assert.equal(bondLengthFontSizeEl.value, '10');
 
     resetBtnEl.trigger('click');
+    assert.equal(layoutBondLengthEl.value, '1.7');
     assert.equal(twoDAtomFontSizeEl.value, '18');
     assert.equal(atomNumberingFontSizeEl.value, '12');
     assert.equal(bondEnFontSizeEl.value, '11');
     assert.equal(bondLengthFontSizeEl.value, '12');
 
     showAtomTooltipsEl.checked = false;
+    layoutBondLengthEl.value = '3';
     twoDAtomFontSizeEl.value = '30';
     atomNumberingFontSizeEl.value = '30';
     bondEnFontSizeEl.value = '30';
@@ -157,6 +170,7 @@ describe('initOptionsModal', () => {
         {
           showValenceWarnings: true,
           showAtomTooltips: false,
+          layoutBondLength: 3,
           twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 24,
           atomNumberingFontSize: 24,
@@ -169,7 +183,8 @@ describe('initOptionsModal', () => {
       ],
       ['setFontSize', 24],
       ['hideTooltip'],
-      ['draw2d']
+      ['renderMol', mol2d, { preserveHistory: true }],
+      ['autoZoom']
     ]);
 
     modal.open();
@@ -190,6 +205,7 @@ describe('initOptionsModal', () => {
     const overlayEl = makeOverlay();
     const showValenceWarningsEl = makeCheckbox(true);
     const showAtomTooltipsEl = makeCheckbox(true);
+    const layoutBondLengthEl = makeInput('1.5');
     const twoDAtomColoringEl = makeCheckbox(true);
     const twoDAtomFontSizeEl = makeInput('14');
     const atomNumberingFontSizeEl = makeInput('10');
@@ -204,6 +220,7 @@ describe('initOptionsModal', () => {
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
+      layoutBondLength: 1.5,
       twoDColorStyle: 'color-atoms',
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
@@ -222,6 +239,7 @@ describe('initOptionsModal', () => {
         getOverlayElement: () => overlayEl,
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
+        getLayoutBondLengthElement: () => layoutBondLengthEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
@@ -236,6 +254,7 @@ describe('initOptionsModal', () => {
       },
       options: {
         limits: {
+          layoutBondLength: { min: 0.5, max: 3 },
           twoDAtomFontSize: { min: 10, max: 24 },
           atomNumberingFontSize: { min: 8, max: 24 },
           bondEnFontSize: { min: 8, max: 24 },
@@ -260,6 +279,10 @@ describe('initOptionsModal', () => {
         setFontSize: value => calls.push(['setFontSize', value]),
         hideTooltip() {}
       },
+      navigation: {
+        autoZoom: () => calls.push(['autoZoom']),
+        autoZoomAfterRender: () => calls.push(['autoZoomAfterRender'])
+      },
       renderers: {
         draw2d() {},
         render2d() {},
@@ -270,6 +293,7 @@ describe('initOptionsModal', () => {
     });
 
     modal.open();
+    layoutBondLengthEl.value = '2';
     forceAtomSizeEl.value = '2.8';
     forceBondThicknessEl.value = '0.4';
 
@@ -281,6 +305,7 @@ describe('initOptionsModal', () => {
         {
           showValenceWarnings: true,
           showAtomTooltips: true,
+          layoutBondLength: 2,
           twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 14,
           atomNumberingFontSize: 10,
@@ -292,7 +317,9 @@ describe('initOptionsModal', () => {
         }
       ],
       ['setFontSize', 14],
-      ['updateForce', currentMol, { preservePositions: true, preserveView: true }]
+      ['updateForce', currentMol, { preservePositions: false, preserveView: false }],
+      ['autoZoom'],
+      ['autoZoomAfterRender']
     ]);
   });
 });

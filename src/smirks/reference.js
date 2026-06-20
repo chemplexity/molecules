@@ -25,7 +25,7 @@ export const reactionTemplates = {
 
   alcoholOxidation: {
     name: 'Alcohol Oxidation',
-    smirks: '[C;X4;H1,H2:1][OH:2]>>[C:1]=[O:2]'
+    smirks: '[C;X4&(H1,H2):1][OH:2]>>[C:1]=[O:2]'
   },
   aldehydeOxidation: {
     name: 'Aldehyde Oxidation',
@@ -82,7 +82,7 @@ export const reactionTemplates = {
   },
   amineAlkylation: {
     name: 'Amine Alkylation',
-    smirks: '[C;X4;H2,H3:1][Cl:2].[N+0;!H0;!$([N]-[C](=O)):3]>>[C:1][N+0:3].[ClH0-:2]'
+    smirks: '[C;X4&(H2,H3):1][Cl:2].[N+0;!H0;!$([N]-[C](=O)):3]>>[C:1][N+0:3].[ClH0-:2]'
   },
   imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C:1]=[N:2]>>[C:1]=O.[N:2]' },
   nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C:1]#[N:2]>>[C:1](=O)[N:2]' },
@@ -126,6 +126,6 @@ export const reactionTemplates = {
 
   dielsAlder: {
     name: 'Diels-Alder [4+2]',
-    smirks: '[C:1]=[C:2][C:3]=[C:4].[C:5]=[C:6]>>[C:1]1[C:2]=[C:3][C:4][C:5][C:6]1'
+    smirks: '[C:1]=[C:2]-[C:3]=[C:4].[C:5]=[C:6]>>[C:1]1[C:2]=[C:3][C:4][C:5][C:6]1'
   }
 };

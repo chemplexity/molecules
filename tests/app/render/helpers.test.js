@@ -10,16 +10,22 @@ afterEach(() => {
 describe('app/render/helpers', () => {
   it('defaults 2d render styling without a renderer version toggle', () => {
     assert.equal(getDefaultRenderOptions().twoDAtomFontSize, 14);
+    assert.equal(getDefaultRenderOptions().layoutBondLength, 1.5);
     assert.equal(getDefaultRenderOptions().bondEnFontSize, 10);
     assert.equal(getRenderOptions().twoDAtomFontSize, 14);
+    assert.equal(getRenderOptions().layoutBondLength, 1.5);
     assert.equal(getRenderOptions().bondEnFontSize, 10);
     assert.equal('legacy2dRendererToggle' in getDefaultRenderOptions(), false);
   });
 
   it('ignores unknown render options', () => {
-    const updated = updateRenderOptions({ legacy2dRendererToggle: 'v1', twoDAtomFontSize: 18 });
+    const updated = updateRenderOptions({ legacy2dRendererToggle: 'v1', layoutBondLength: 3.5, twoDAtomFontSize: 18 });
 
     assert.equal(updated.twoDAtomFontSize, 18);
+    assert.equal(updated.layoutBondLength, 3);
     assert.equal('legacy2dRendererToggle' in updated, false);
+
+    const lowClamped = updateRenderOptions({ layoutBondLength: 0.1 });
+    assert.equal(lowClamped.layoutBondLength, 0.5);
   });
 });

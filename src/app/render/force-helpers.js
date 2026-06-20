@@ -28,6 +28,16 @@ const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.14;
 const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
 
 /**
+ * Returns the force-layout scale factor implied by a line-layout bond length.
+ * @param {number} [layoutBondLength] - Line-layout bond length in molecule units.
+ * @returns {number} Force-layout scale relative to the default 1.5 unit bond length.
+ */
+export function forceLayoutBondScale(layoutBondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH) {
+  const parsed = Number(layoutBondLength);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed / FORCE_LAYOUT_REFERENCE_BOND_LENGTH : 1;
+}
+
+/**
  * Converts a Molecule instance into a plain graph object with node and link arrays suitable for D3 force simulation.
  * @param {object} molecule - Molecule instance with `atoms` and `bonds` Maps.
  * @returns {{nodes: Array<object>, links: Array<object>}} Graph with D3-compatible nodes and links.
@@ -69,12 +79,15 @@ export function isHydrogenNode(node) {
 /**
  * Returns the ideal link distance (in pixels) for a force-simulation bond based on whether either endpoint is hydrogen and the bond order.
  * @param {{source: object, target: object, order: number}} link - A force-simulation link with resolved source/target node objects.
+ * @param {object} [options] - Optional distance controls.
+ * @param {number} [options.layoutBondLength] - Active line-layout bond length used to scale force distances.
  * @returns {number} Distance in pixels.
  */
-export function forceLinkDistance(link) {
+export function forceLinkDistance(link, options = {}) {
   const source = typeof link.source === 'object' ? link.source : null;
   const target = typeof link.target === 'object' ? link.target : null;
-  let distance = isHydrogenNode(source) || isHydrogenNode(target) ? FORCE_LAYOUT_H_BOND_LENGTH : FORCE_LAYOUT_BOND_LENGTH;
+  const scale = forceLayoutBondScale(options.layoutBondLength);
+  let distance = (isHydrogenNode(source) || isHydrogenNode(target) ? FORCE_LAYOUT_H_BOND_LENGTH : FORCE_LAYOUT_BOND_LENGTH) * scale;
 
   if (link.order === 3) {
     distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR * 0.92;
@@ -695,7 +708,7 @@ export function reseatForceGraphHydrogens(graph, { resetVelocity = true } = {}) 
  * @returns {object} Object with `buildForceAnchorLayout`, `convertMolecule`, `seedForceNodePositions`, `forceLinkDistance`, `forceAnchorRadius`, `forceHydrogenRepulsion`, `forceHydrogenPlacement`, `forceFitTransform`, `isHydrogenNode`, `zoomTransformsDiffer`, `placeHydrogensAroundParent`, `reseatForceGraphHydrogens`, `patchForceNodePositions`, and `reseatHydrogensAroundPatched`.
  */
 export function createForceHelpers(context) {
-  function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30 } = {}) {
+  function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30, ignoreOverlayPadding = false } = {}) {
     if (!nodes?.length) {
       return null;
     }
@@ -720,13 +733,16 @@ export function createForceHelpers(context) {
     }
     const width = context.plotEl.clientWidth || 600;
     const height = context.plotEl.clientHeight || 400;
-    const pads = context.viewportFitPadding(pad);
+    const pads = ignoreOverlayPadding ? { left: pad, right: pad, top: pad, bottom: pad } : context.viewportFitPadding(pad);
     const horizontalPad = Math.max(pad, (pads.left + pads.right) / 2);
     const verticalPad = Math.max(pad, (pads.top + pads.bottom) / 2);
     const fitWidth = Math.max(1, width - horizontalPad * 2);
     const fitHeight = Math.max(1, height - verticalPad * 2);
     const exactFitScale = Math.min(fitWidth / (maxX - minX || 1), fitHeight / (maxY - minY || 1), maxScale);
-    const scale = exactFitScale < 1 ? exactFitScale : Math.min(scaleMultiplier, exactFitScale, maxScale);
+    const layoutBondScale = forceLayoutBondScale(context.getLayoutBondLength?.());
+    const shortBondZoomScale = Math.max(1, Math.min(3, 1 / layoutBondScale));
+    const adjustedScaleMultiplier = scaleMultiplier * shortBondZoomScale;
+    const scale = exactFitScale < 1 ? exactFitScale : Math.min(adjustedScaleMultiplier, exactFitScale, maxScale);
     const centerX = width / 2;
     const centerY = height / 2;
     const tx = centerX - ((minX + maxX) / 2) * scale;
@@ -735,15 +751,16 @@ export function createForceHelpers(context) {
   }
 
   function buildForceAnchorLayout(molecule) {
+    const layoutBondLength = context.getLayoutBondLength?.() ?? 1.5;
     const seedMol = molecule.clone();
     seedMol.hideHydrogens();
     context.generate2dCoords(seedMol, {
       suppressH: true,
-      bondLength: 1.5
+      bondLength: layoutBondLength
     });
     context.alignReaction2dProductOrientation(seedMol);
-    context.spreadReaction2dProductComponents(seedMol, 1.5);
-    context.centerReaction2dPairCoords(seedMol, 1.5);
+    context.spreadReaction2dProductComponents(seedMol, layoutBondLength);
+    context.centerReaction2dPairCoords(seedMol, layoutBondLength);
     const anchors = new Map();
     for (const [id, atom] of seedMol.atoms) {
       if (atom.name === 'H' || atom.visible === false) {
@@ -773,13 +790,15 @@ export function createForceHelpers(context) {
       cx2d /= anchorEntries.length;
       cy2d /= anchorEntries.length;
 
+      const layoutBondLength = context.getLayoutBondLength?.() ?? FORCE_LAYOUT_REFERENCE_BOND_LENGTH;
+      const forceBondLength = FORCE_LAYOUT_BOND_LENGTH * forceLayoutBondScale(layoutBondLength);
       for (const [id, pos] of anchorLayout) {
         const node = idToNode.get(id);
         if (!node) {
           continue;
         }
-        node.anchorX = width / 2 + (pos.x - cx2d) * (FORCE_LAYOUT_BOND_LENGTH / 1.5);
-        node.anchorY = height / 2 - (pos.y - cy2d) * (FORCE_LAYOUT_BOND_LENGTH / 1.5);
+        node.anchorX = width / 2 + (pos.x - cx2d) * (forceBondLength / layoutBondLength);
+        node.anchorY = height / 2 - (pos.y - cy2d) * (forceBondLength / layoutBondLength);
         node.x = node.anchorX;
         node.y = node.anchorY;
       }
@@ -805,7 +824,7 @@ export function createForceHelpers(context) {
     for (const [parentId, hydrogens] of hydrogenGroups) {
       const parentNode = idToNode.get(parentId);
       placeHydrogensAroundParent(parentNode, hydrogens, graph.links, {
-        distance: FORCE_LAYOUT_H_BOND_LENGTH,
+        distance: FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(context.getLayoutBondLength?.()),
         excludeIds: new Set(hydrogens.map(node => node.id)),
         nodes: graph.nodes
       });
@@ -908,7 +927,7 @@ export function createForceHelpers(context) {
         .filter(Boolean);
       if (hChildren.length > 0) {
         placeHydrogensAroundParent(parentNode, hChildren, allLinks, {
-          distance: FORCE_LAYOUT_H_BOND_LENGTH,
+          distance: FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(context.getLayoutBondLength?.()),
           excludeIds: new Set(hChildren.map(node => node.id))
         });
         if (resetVelocity) {
@@ -925,10 +944,13 @@ export function createForceHelpers(context) {
     buildForceAnchorLayout,
     convertMolecule,
     seedForceNodePositions,
-    forceLinkDistance,
+    forceLinkDistance: link => forceLinkDistance(link, { layoutBondLength: context.getLayoutBondLength?.() }),
     forceAnchorRadius: createForceAnchorRadiusForce,
     forceHydrogenRepulsion: createForceHydrogenRepulsionForce,
-    forceHydrogenPlacement: createForceHydrogenPlacementForce,
+    forceHydrogenPlacement: links =>
+      createForceHydrogenPlacementForce(links, {
+        distance: FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(context.getLayoutBondLength?.())
+      }),
     forceFitTransform,
     isHydrogenNode,
     zoomTransformsDiffer,

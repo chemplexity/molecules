@@ -233,6 +233,9 @@ export function createDrawBondPreviewActionDeps(ctx) {
     overlays: {
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id)
     },
+    molecule: {
+      getActive: () => ctx.getActiveMolecule?.() ?? null
+    },
     state: {
       getDrawBondState: () => ctx.getDrawBondState(),
       setDrawBondState: value => {
@@ -268,6 +271,9 @@ export function createDrawBondPreviewActionDeps(ctx) {
       bondOffset2d: ctx.bondOffset2d,
       strokeWidth: ctx.strokeWidth,
       fontSize: ctx.fontSize
+    },
+    options: {
+      getRenderOptions: () => ctx.getRenderOptions?.() ?? {}
     },
     helpers: {
       atomRadius: ctx.atomRadius,
@@ -317,6 +323,9 @@ export function createDrawBondCommitActionDeps(ctx) {
     constants: {
       scale: ctx.scale,
       forceScale: ctx.forceScale
+    },
+    options: {
+      getRenderOptions: () => ctx.getRenderOptions?.() ?? {}
     },
     snapshot: {
       capture: options => ctx.captureSnapshot(options),
@@ -411,6 +420,8 @@ export function createPrimitiveEventHandlerDeps(ctx) {
     drawBond: {
       hasDrawBondState: () => !!ctx.getDrawBondState(),
       start: (atomId, gX, gY) => ctx.startDrawBond(atomId, gX, gY),
+      previewBond: (start, end, options = {}) => ctx.previewDrawBond(start, end, options),
+      clearArtifacts: () => ctx.clearDrawBondArtifacts(),
       resetHover: () => ctx.resetDrawBondHover(),
       getElement: () => ctx.getDrawBondElement(),
       getType: () => ctx.getDrawBondType()

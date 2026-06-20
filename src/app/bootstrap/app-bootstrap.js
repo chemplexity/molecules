@@ -242,8 +242,10 @@ export function finalizeAppBootstrap(ctx) {
     drawBond: {
       hasDrawBondState: () => ctx.state.hasDrawBondState(),
       start: (atomId, gX, gY) => ctx.actions.drawBondPreviewActions.start(atomId, gX, gY),
+      previewBond: (start, end, previewOptions = {}) => ctx.actions.drawBondPreviewActions.previewBond(start, end, previewOptions),
+      clearArtifacts: () => ctx.actions.drawBondPreviewActions.clearArtifacts(),
       markDragged: () => ctx.actions.drawBondPreviewActions.markDragged(),
-      updatePreview: point => ctx.actions.drawBondPreviewActions.update(point),
+      updatePreview: (point, previewOptions = {}) => ctx.actions.drawBondPreviewActions.update(point, previewOptions),
       commit: () => commitDrawBond()
     },
     actions: {
@@ -282,6 +284,7 @@ export function finalizeAppBootstrap(ctx) {
         getOverlayElement: () => ctx.dom.getOptionsOverlayElement(),
         getShowValenceWarningsElement: () => ctx.dom.getShowValenceWarningsElement(),
         getShowAtomTooltipsElement: () => ctx.dom.getShowAtomTooltipsElement(),
+        getLayoutBondLengthElement: () => ctx.dom.getLayoutBondLengthElement?.() ?? null,
         get2DAtomColoringElement: () => ctx.dom.get2DAtomColoringElement(),
         get2DAtomFontSizeElement: () => ctx.dom.get2DAtomFontSizeElement(),
         getAtomNumberingFontSizeElement: () => ctx.dom.getAtomNumberingFontSizeElement(),
@@ -311,6 +314,12 @@ export function finalizeAppBootstrap(ctx) {
       view: {
         setFontSize: value => ctx.state.setFontSize(value),
         hideTooltip: () => ctx.view.hideTooltip()
+      },
+      navigation: {
+        autoZoom: () => ctx.controller.performViewAction('auto-zoom'),
+        autoZoomAfterRender: () => {
+          globalThis.setTimeout(() => ctx.controller.performViewAction('auto-zoom'), 600);
+        }
       },
       renderers: {
         draw2d: () => draw2d(),

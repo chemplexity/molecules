@@ -87,6 +87,7 @@ function makeContext(overrides = {}) {
   let paintOpacity = 1;
   let ringTemplateMode = false;
   let ringTemplateSize = 6;
+  let drawBondType = 'triple';
   let mode = 'force';
   let selectionValenceTooltipAtomId = null;
   let primitiveHoverSuppressed = false;
@@ -141,11 +142,17 @@ function makeContext(overrides = {}) {
       start(...args) {
         calls.push(['start', ...args]);
       },
+      previewBond(...args) {
+        calls.push(['previewBond', ...args]);
+      },
+      clearArtifacts() {
+        calls.push(['clearArtifacts']);
+      },
       resetHover() {
         calls.push(['resetHover']);
       },
       getElement: () => 'N',
-      getType: () => 'triple'
+      getType: () => drawBondType
     },
     actions: {
       promoteBondOrder(...args) {
@@ -260,6 +267,9 @@ function makeContext(overrides = {}) {
     },
     setRingTemplateSize: value => {
       ringTemplateSize = value;
+    },
+    setDrawBondType: value => {
+      drawBondType = value;
     },
     setMode: value => {
       mode = value;
@@ -485,6 +495,50 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(placement[4].anchorForceCenterAngle, Math.PI / 2);
     assert.equal(placement[4].anchorCenterAngle, -Math.PI / 2);
   });
+
+  for (const modifierKey of ['ctrlKey', 'metaKey']) {
+    it(`commits anchored ring template placement with free rotation when ${modifierKey} is held`, () => {
+      const listeners = new Map();
+      const svgRoot = makeSvgRoot();
+      const documentMock = {
+        addEventListener(type, handler) {
+          listeners.set(type, handler);
+        },
+        removeEventListener(type, handler) {
+          if (listeners.get(type) === handler) {
+            listeners.delete(type);
+          }
+        }
+      };
+      let pointer = [10, 20];
+      const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+        document: documentMock,
+        pointer: () => pointer,
+        dom: {
+          gNode: () => svgRoot
+        }
+      });
+      setMode('2d');
+      setRingTemplateMode(true);
+      setRingTemplateSize(4);
+      const handlers = createPrimitiveEventHandlers(context);
+
+      handlers.handle2dAtomMouseDownDrawBond({ preventDefault() {}, stopPropagation() {} }, 'a1');
+      pointer = [50, 50];
+      listeners.get('mousemove')({ preventDefault() {}, [modifierKey]: true });
+      listeners.get('mouseup')({
+        preventDefault() {},
+        stopPropagation() {}
+      });
+
+      const freeAngle = Math.atan2(30, 40);
+      const placement = calls.find(call => call[0] === 'placeRingTemplate');
+      assert.ok(placement);
+      assert.equal(placement[4].anchorAtomId, 'a1');
+      assert.equal(placement[4].anchorForceCenterAngle, freeAngle);
+      assert.equal(placement[4].anchorCenterAngle, -freeAngle);
+    });
+  }
 
   it('uses the rendered 2D atom center as the ring rotation pivot and final anchor', () => {
     const listeners = new Map();
@@ -854,7 +908,61 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(hasSharedEdgeDouble, true);
   });
 
-  it('previews two benzene double bonds when that avoids overloading the anchor', () => {
+  it('previews two benzene double bonds when fused double bonds keep every ring carbon sp2', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const pointer = [50, 20];
+    const mol2d = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'C' }],
+        ['x1', { id: 'x1', name: 'C' }],
+        ['x2', { id: 'x2', name: 'C' }]
+      ]),
+      bonds: new Map([
+        ['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1.5, aromatic: true, localizedOrder: 1 } }],
+        ['b2', { id: 'b2', atoms: ['a1', 'x1'], properties: { order: 1.5, aromatic: true, localizedOrder: 2 } }],
+        ['b3', { id: 'b3', atoms: ['a2', 'x2'], properties: { order: 1.5, aromatic: true, localizedOrder: 2 } }]
+      ])
+    };
+    const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      mol2d,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize('benzene');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dBondMouseDownRingTemplate(
+      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
+      'b1',
+      { x: 10, y: 20 },
+      { x: 100, y: 20 },
+      ['a1', 'a2']
+    );
+
+    const preview = svgRoot.querySelector('g.ring-template-preview');
+    assert.ok(preview);
+    const doubleLines = preview.children.filter(child => child.tagName === 'line' && child.getAttribute('class') === 'bond ring-template-double-bond');
+    assert.equal(doubleLines.length, 2);
+  });
+
+  it('previews three benzene double bonds instead of leaving one fused ring carbon sp3', () => {
     const listeners = new Map();
     const svgRoot = makeSvgRoot();
     const documentMock = {
@@ -905,7 +1013,7 @@ describe('createPrimitiveEventHandlers', () => {
     const preview = svgRoot.querySelector('g.ring-template-preview');
     assert.ok(preview);
     const doubleLines = preview.children.filter(child => child.tagName === 'line' && child.getAttribute('class') === 'bond ring-template-double-bond');
-    assert.equal(doubleLines.length, 2);
+    assert.equal(doubleLines.length, 3);
   });
 
   it('does not highlight incidental single force atom-pivot overlaps in the preview', () => {
@@ -1802,6 +1910,90 @@ describe('createPrimitiveEventHandlers', () => {
     });
 
     assert.deepEqual(calls, [['promoteBondOrder', 'b1', { drawBondType: 'triple' }]]);
+  });
+
+  it('previews and commits the draw-bond mouseup state when holding a 2D bond', () => {
+    const listeners = new Map();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const { context, calls, setMode, setDrawBondMode, setDrawBondType } = makeContext({
+      document: documentMock
+    });
+    setMode('2d');
+    setDrawBondMode(true);
+    setDrawBondType('single');
+    const handlers = createPrimitiveEventHandlers(context);
+    const event = {
+      currentTarget: { ownerDocument: documentMock },
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    };
+    const bond = { id: 'b1', properties: { order: 1 } };
+
+    assert.equal(handlers.handle2dBondMouseDownDrawBond(event, bond, { x: 10, y: 20 }, { x: 70, y: 20 }), true);
+    assert.equal(typeof listeners.get('mouseup'), 'function');
+    assert.deepEqual(calls, [
+      ['clearArtifacts'],
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double' }]
+    ]);
+
+    listeners.get('mouseup')({
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    });
+    handlers.handle2dBondClick({}, 'b1');
+
+    assert.equal(listeners.has('mouseup'), false);
+    assert.deepEqual(calls, [
+      ['clearArtifacts'],
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double' }],
+      ['clearArtifacts'],
+      ['promoteBondOrder', 'b1', { drawBondType: 'single' }]
+    ]);
+  });
+
+  it('previews explicit draw-bond type when holding a 2D bond', () => {
+    const listeners = new Map();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener() {}
+    };
+    const { context, calls, setMode, setDrawBondMode, setDrawBondType } = makeContext({
+      document: documentMock
+    });
+    setMode('2d');
+    setDrawBondMode(true);
+    setDrawBondType('triple');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dBondMouseDownDrawBond(
+      {
+        currentTarget: { ownerDocument: documentMock },
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {}
+      },
+      { id: 'b1', properties: { order: 1 } },
+      { x: 10, y: 20 },
+      { x: 70, y: 20 }
+    );
+
+    assert.deepEqual(calls, [
+      ['clearArtifacts'],
+      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'triple' }]
+    ]);
   });
 
   it('routes force hydrogen click in draw-bond mode to element replacement', () => {

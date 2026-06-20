@@ -10,6 +10,7 @@ export const BOND_MULT = 3;
 export const BOND_OFFSET = 2;
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 export const RENDER_OPTION_LIMITS = Object.freeze({
+  layoutBondLength: { min: 0.5, max: 3, step: 0.1 },
   twoDAtomFontSize: { min: 10, max: 24, step: 1 },
   atomNumberingFontSize: { min: 8, max: 24, step: 1 },
   bondEnFontSize: { min: 8, max: 24, step: 1 },
@@ -22,6 +23,7 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showValenceWarnings: true,
   showAtomTooltips: true,
   showLonePairs: false,
+  layoutBondLength: 1.5,
   twoDColorStyle: 'color-atoms',
   twoDAtomFontSize: 14,
   atomNumberingFontSize: 10,
@@ -85,6 +87,12 @@ export function updateRenderOptions(nextOptions = {}) {
   }
   if (typeof nextOptions.twoDColorStyle === 'string' && ['bw', 'color-atoms', 'color-atoms-bonds'].includes(nextOptions.twoDColorStyle)) {
     merged.twoDColorStyle = nextOptions.twoDColorStyle;
+  }
+  if (nextOptions.layoutBondLength !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.layoutBondLength), RENDER_OPTION_LIMITS.layoutBondLength);
+    if (clamped !== null) {
+      merged.layoutBondLength = clamped;
+    }
   }
   if (nextOptions.twoDAtomFontSize !== undefined) {
     const clamped = _clampOptionValue(Number(nextOptions.twoDAtomFontSize), RENDER_OPTION_LIMITS.twoDAtomFontSize);

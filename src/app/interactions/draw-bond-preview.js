@@ -1,6 +1,9 @@
 /** @module app/interactions/draw-bond-preview */
 
+import { angularDifference, chooseAutoPlacedBondAngle, TAU } from './draw-bond-placement.js';
+
 const BLANK_SPACE_DRAW_DISTANCE_THRESHOLD = 30;
+const DRAW_BOND_ROTATION_SNAP = Math.PI / 6;
 
 /**
  * Creates draw-bond preview action handlers that manage the transient preview geometry shown while the user drags to place a new bond.
@@ -40,10 +43,10 @@ export function createDrawBondPreviewActions(context) {
     }
   }
 
-  function renderPreviewGeometry(x1, y1, x2, y2) {
+  function renderPreviewGeometry(x1, y1, x2, y2, options = {}) {
     removePreviewGeometry();
     const group = context.g.insert('g', ':scope > circle').attr('class', 'draw-bond-preview').attr('pointer-events', 'none');
-    const drawBondType = context.getDrawBondType?.() ?? 'single';
+    const drawBondType = options.drawBondType ?? context.getDrawBondType?.() ?? 'single';
     const isForce = context.getMode() === 'force';
     const dx = x2 - x1;
     const dy = y2 - y1;
@@ -142,6 +145,180 @@ export function createDrawBondPreviewActions(context) {
     }
   }
 
+  function getAtomBondEntries(mol, atom) {
+    const bondIds = atom?.bonds ?? [];
+    return [...bondIds].map(bondId => mol?.bonds?.get?.(bondId)).filter(Boolean);
+  }
+
+  function getBondOtherAtomId(bond, atomId) {
+    return bond?.getOtherAtom?.(atomId) ?? bond?.atoms?.find?.(id => id !== atomId) ?? null;
+  }
+
+  function getPreviewSourceAtom(atomId) {
+    const mol = context.molecule?.getActive?.() ?? null;
+    return mol?.atoms?.get?.(atomId) ?? (context.getMode() === '2d' ? context.view2D.getAtomById(atomId) : null);
+  }
+
+  function noDragWouldReplaceAtom(atomId) {
+    const atom = getPreviewSourceAtom(atomId);
+    return Boolean(atom && atom.name !== context.getDrawBondElement());
+  }
+
+  function getAutoPlacedPreviewEndpoint(atomId, ox, oy) {
+    const mode = context.getMode();
+    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? 1.5;
+    const bondLength = mode === 'force' ? context.constants.forceBondLength : layoutBondLength * context.constants.scale;
+    const fallbackAngle = chooseAutoPlacedBondAngle([]);
+    const fallbackEndpoint = mode === 'force'
+      ? { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy + Math.sin(fallbackAngle) * bondLength }
+      : { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy - Math.sin(fallbackAngle) * bondLength };
+    const mol = context.molecule?.getActive?.() ?? null;
+    const srcAtom = mol?.atoms?.get?.(atomId) ?? null;
+    if (!srcAtom) {
+      return fallbackEndpoint;
+    }
+
+    let srcRX;
+    let srcRY;
+    if (mode === 'force') {
+      const srcNode = context.force.getNodeById(atomId);
+      srcRX = srcNode ? srcNode.x : ox;
+      srcRY = srcNode ? srcNode.y : oy;
+    } else {
+      srcRX = srcAtom.x;
+      srcRY = srcAtom.y;
+    }
+    if (!Number.isFinite(srcRX) || !Number.isFinite(srcRY)) {
+      return fallbackEndpoint;
+    }
+
+    const existingAngles = [];
+    for (const bond of getAtomBondEntries(mol, srcAtom)) {
+      const otherId = getBondOtherAtomId(bond, atomId);
+      const otherAtom = mol.atoms.get(otherId);
+      if (!otherAtom || otherAtom.name === 'H') {
+        continue;
+      }
+      if (mode === 'force') {
+        const otherNode = context.force.getNodeById(otherId);
+        if (otherNode) {
+          existingAngles.push(Math.atan2(otherNode.y - srcRY, otherNode.x - srcRX));
+        }
+      } else if (otherAtom.x != null && otherAtom.visible !== false) {
+        existingAngles.push(Math.atan2(otherAtom.y - srcRY, otherAtom.x - srcRX));
+      }
+    }
+
+    let angle = chooseAutoPlacedBondAngle(existingAngles);
+    const sourceHydrogenIds = new Set((srcAtom.getNeighbors?.(mol) ?? []).filter(neighbor => neighbor.name === 'H').map(neighbor => neighbor.id));
+    const modelBondLength = mode === 'force' ? bondLength : layoutBondLength;
+    const thresholdSq = (modelBondLength * 0.7) ** 2;
+    const overlaps = candidate => {
+      const px = srcRX + Math.cos(candidate) * modelBondLength;
+      const py = srcRY + Math.sin(candidate) * modelBondLength;
+      if (mode === 'force') {
+        for (const node of context.force.getNodes()) {
+          if (node.id === atomId || sourceHydrogenIds.has(node.id)) {
+            continue;
+          }
+          const dx = node.x - px;
+          const dy = node.y - py;
+          if (dx * dx + dy * dy < thresholdSq) {
+            return true;
+          }
+        }
+        return false;
+      }
+      for (const [id, atom] of mol.atoms) {
+        if (id === atomId || sourceHydrogenIds.has(id) || atom.x == null || atom.visible === false) {
+          continue;
+        }
+        const dx = atom.x - px;
+        const dy = atom.y - py;
+        if (dx * dx + dy * dy < thresholdSq) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (overlaps(angle)) {
+      let fallback = angle;
+      let bestSep = -1;
+      for (let i = 0; i < 12; i++) {
+        const candidate = (i / 12) * TAU;
+        if (overlaps(candidate)) {
+          continue;
+        }
+        let minSep = Math.PI;
+        for (const existingAngle of existingAngles) {
+          minSep = Math.min(minSep, angularDifference(candidate, existingAngle));
+        }
+        if (minSep > bestSep) {
+          bestSep = minSep;
+          fallback = candidate;
+        }
+      }
+      angle = fallback;
+    }
+
+    return mode === 'force'
+      ? { x: ox + Math.cos(angle) * bondLength, y: oy + Math.sin(angle) * bondLength }
+      : { x: ox + Math.cos(angle) * bondLength, y: oy - Math.sin(angle) * bondLength };
+  }
+
+  function renderPreviewFromState(drawBondState, snapAtomId = null) {
+    const { ox, oy, ex, ey } = drawBondState;
+    if (context.getMode() !== 'force') {
+      const dx = ex - ox;
+      const dy = ey - oy;
+      const dist = Math.hypot(dx, dy);
+      let lx1 = ox;
+      let ly1 = oy;
+      let lx2 = ex;
+      let ly2 = ey;
+      if (dist > 1) {
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const sourceName = drawBondState.atomId ? (context.view2D.getAtomById(drawBondState.atomId)?.name ?? 'C') : context.getDrawBondElement();
+        if (sourceName !== 'C') {
+          const gap = context.helpers.labelHalfW(sourceName, context.constants.fontSize) + 3;
+          lx1 = ox + ux * gap;
+          ly1 = oy + uy * gap;
+        }
+        const destName = snapAtomId ? (context.view2D.getAtomById(snapAtomId)?.name ?? 'C') : context.getDrawBondElement();
+        if (destName !== 'C') {
+          const gap = context.helpers.labelHalfW(destName, context.constants.fontSize) + 3;
+          lx2 = ex - ux * gap;
+          ly2 = ey - uy * gap;
+        }
+      }
+      renderPreviewGeometry(lx1, ly1, lx2, ly2);
+      return;
+    }
+    renderPreviewGeometry(ox, oy, ex, ey);
+  }
+
+  function renderAtomReplacementPreview(atomId, x, y) {
+    removePreviewGeometry();
+    const group = context.g.insert('g', ':scope > circle').attr('class', 'draw-bond-preview').attr('pointer-events', 'none');
+    const targetElement = context.getDrawBondElement();
+    if (targetElement !== 'C') {
+      group
+        .append('text')
+        .attr('class', 'draw-bond-replacement-label')
+        .attr('x', x)
+        .attr('y', y)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('fill', context.helpers.atomColor(targetElement, '2d'))
+        .attr('font-size', context.constants.fontSize)
+        .attr('font-weight', 'bold')
+        .attr('pointer-events', 'none')
+        .text(targetElement);
+    }
+  }
+
   function start(atomId, gX, gY) {
     if (!context.overlays.isReactionPreviewEditableAtomId(atomId)) {
       return;
@@ -172,11 +349,15 @@ export function createDrawBondPreviewActions(context) {
       }
     }
 
-    const ex = ox;
-    const ey = oy;
+    const suppressInitialPlacementPreview = atomId !== null && noDragWouldReplaceAtom(atomId);
+    const endpoint = atomId === null || suppressInitialPlacementPreview ? { x: ox, y: oy } : getAutoPlacedPreviewEndpoint(atomId, ox, oy);
+    const ex = endpoint.x;
+    const ey = endpoint.y;
     context.state.setDrawBondState({ atomId, ox, oy, ex, ey, dragged: false });
-    if (atomId !== null) {
-      renderPreviewGeometry(ox, oy, ex, ey);
+    if (atomId !== null && !suppressInitialPlacementPreview) {
+      renderPreviewFromState({ atomId, ox, oy, ex, ey, dragged: false });
+    } else if (atomId !== null && suppressInitialPlacementPreview && context.getMode() === '2d') {
+      renderAtomReplacementPreview(atomId, ox, oy);
     }
 
     if (context.getMode() === 'force') {
@@ -196,12 +377,12 @@ export function createDrawBondPreviewActions(context) {
           .attr('stroke-width', 1)
           .attr('pointer-events', 'none');
       }
-      if (atomId !== null) {
+      if (atomId !== null && !suppressInitialPlacementPreview) {
         context.g
           .append('circle')
           .attr('class', 'draw-bond-dest-node')
-          .attr('cx', ox)
-          .attr('cy', oy)
+          .attr('cx', ex)
+          .attr('cy', ey)
           .attr('r', radius)
           .attr('fill', fill)
           .attr('stroke', stroke)
@@ -224,12 +405,12 @@ export function createDrawBondPreviewActions(context) {
           .attr('pointer-events', 'none')
           .text(context.getDrawBondElement());
       }
-      if (atomId !== null && context.getDrawBondElement() !== 'C') {
+      if (atomId !== null && !suppressInitialPlacementPreview && context.getDrawBondElement() !== 'C') {
         context.g
           .append('text')
           .attr('class', 'draw-bond-dest-label')
-          .attr('x', ox)
-          .attr('y', oy)
+          .attr('x', ex)
+          .attr('y', ey)
           .attr('text-anchor', 'middle')
           .attr('dominant-baseline', 'central')
           .attr('fill', fill)
@@ -241,7 +422,31 @@ export function createDrawBondPreviewActions(context) {
     }
   }
 
-  function update([mx, my]) {
+  function isFreeRotation(options = {}) {
+    return options.ctrlKey === true || options.metaKey === true;
+  }
+
+  function snappedPreviewEndpoint(ox, oy, mx, my, bondLength, options = {}) {
+    const dist = Math.hypot(mx - ox, my - oy);
+    if (dist < 1e-6) {
+      return { x: ox + bondLength, y: oy };
+    }
+    const clamped = Math.min(dist, bondLength);
+    if (isFreeRotation(options)) {
+      return {
+        x: ox + ((mx - ox) / dist) * clamped,
+        y: oy + ((my - oy) / dist) * clamped
+      };
+    }
+    const graphAngle = Math.atan2(oy - my, mx - ox);
+    const snappedAngle = Math.round(graphAngle / DRAW_BOND_ROTATION_SNAP) * DRAW_BOND_ROTATION_SNAP;
+    return {
+      x: ox + Math.cos(snappedAngle) * clamped,
+      y: oy - Math.sin(snappedAngle) * clamped
+    };
+  }
+
+  function update([mx, my], options = {}) {
     const drawBondState = context.state.getDrawBondState();
     if (!drawBondState) {
       return;
@@ -262,7 +467,8 @@ export function createDrawBondPreviewActions(context) {
       return;
     }
 
-    const bondLength = context.getMode() === 'force' ? context.constants.forceBondLength : 1.5 * context.constants.scale;
+    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? 1.5;
+    const bondLength = context.getMode() === 'force' ? context.constants.forceBondLength : layoutBondLength * context.constants.scale;
     const { width, height } = context.plot.getSize();
     const snapRadius = 30;
     let ex;
@@ -298,15 +504,21 @@ export function createDrawBondPreviewActions(context) {
     }
 
     if (snapAtomId === null) {
-      const dist = Math.hypot(mx - ox, my - oy);
-      if (dist < 1e-6) {
-        ex = ox + bondLength;
-        ey = oy;
-      } else {
-        const clamped = Math.min(dist, bondLength);
-        ex = ox + ((mx - ox) / dist) * clamped;
-        ey = oy + ((my - oy) / dist) * clamped;
-      }
+      const endpoint = drawBondState.atomId !== null && context.getMode() === '2d'
+        ? snappedPreviewEndpoint(ox, oy, mx, my, bondLength, options)
+        : (() => {
+            const dist = Math.hypot(mx - ox, my - oy);
+            if (dist < 1e-6) {
+              return { x: ox + bondLength, y: oy };
+            }
+            const clamped = Math.min(dist, bondLength);
+            return {
+              x: ox + ((mx - ox) / dist) * clamped,
+              y: oy + ((my - oy) / dist) * clamped
+            };
+          })();
+      ex = endpoint.x;
+      ey = endpoint.y;
     }
 
     context.state.setDrawBondState({
@@ -316,34 +528,7 @@ export function createDrawBondPreviewActions(context) {
       snapAtomId
     });
 
-    if (context.getMode() !== 'force') {
-      const dx = ex - ox;
-      const dy = ey - oy;
-      const dist = Math.hypot(dx, dy);
-      let lx1 = ox;
-      let ly1 = oy;
-      let lx2 = ex;
-      let ly2 = ey;
-      if (dist > 1) {
-        const ux = dx / dist;
-        const uy = dy / dist;
-        const sourceName = drawBondState.atomId ? (context.view2D.getAtomById(drawBondState.atomId)?.name ?? 'C') : context.getDrawBondElement();
-        if (sourceName !== 'C') {
-          const gap = context.helpers.labelHalfW(sourceName, context.constants.fontSize) + 3;
-          lx1 = ox + ux * gap;
-          ly1 = oy + uy * gap;
-        }
-        const destName = snapAtomId ? (context.view2D.getAtomById(snapAtomId)?.name ?? 'C') : context.getDrawBondElement();
-        if (destName !== 'C') {
-          const gap = context.helpers.labelHalfW(destName, context.constants.fontSize) + 3;
-          lx2 = ex - ux * gap;
-          ly2 = ey - uy * gap;
-        }
-      }
-      renderPreviewGeometry(lx1, ly1, lx2, ly2);
-    } else {
-      renderPreviewGeometry(ox, oy, ex, ey);
-    }
+    renderPreviewFromState({ ...drawBondState, ex, ey }, snapAtomId);
 
     const destCircle = context.g.select('circle.draw-bond-dest-node');
     if (destCircle.empty() && snapAtomId === null && context.getMode() === 'force') {
@@ -424,12 +609,21 @@ export function createDrawBondPreviewActions(context) {
     });
   }
 
+  function previewBond(start, end, options = {}) {
+    if (!Number.isFinite(start?.x) || !Number.isFinite(start?.y) || !Number.isFinite(end?.x) || !Number.isFinite(end?.y)) {
+      return false;
+    }
+    renderPreviewGeometry(start.x, start.y, end.x, end.y, options);
+    return true;
+  }
+
   return {
     clearArtifacts,
     start,
     update,
     resetHover,
     cancel,
-    markDragged
+    markDragged,
+    previewBond
   };
 }

@@ -91,7 +91,7 @@ export const functionalGroups = {
   nitroso: { name: 'Nitroso', smarts: '[NX2](=O)[#6]' },
   hydroxylamine: { name: 'Hydroxylamine', smarts: '[NX3][OX2H]' },
   hydrazine: { name: 'Hydrazine', smarts: '[NX3][NX3]' },
-  azide: { name: 'Azide', smarts: '[NX2-]=[NX2+]=[NX1-]' },
+  azide: { name: 'Azide', smarts: '[NX2]=[NX2+]=[NX1-]' },
   diazo: { name: 'Diazo', smarts: '[CX3]=[NX2+]=[NX1-]' },
   cyanate: { name: 'Cyanate', smarts: '[OX2][CX2]#N' },
 

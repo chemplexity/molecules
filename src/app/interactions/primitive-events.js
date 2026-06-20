@@ -19,7 +19,9 @@ const RING_TEMPLATE_PREVIEW_VIEWPORT_PAD = 36;
 export function createPrimitiveEventHandlers(context) {
   let pendingRingTemplate = null;
   let pendingBondRingTemplatePreview = null;
+  let pendingDrawBondPreview = null;
   let suppressNextRingTemplateClick = false;
+  let suppressNextDrawBondClick = false;
   let pendingViewportReadjustment = null;
 
   function getChargeTool() {
@@ -42,7 +44,8 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function getRingTemplateBondLength() {
-    return context.state.viewState.getMode() === 'force' ? (context.constants?.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR : (context.constants?.scale ?? 40) * 1.5;
+    const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
+    return context.state.viewState.getMode() === 'force' ? (context.constants?.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR : (context.constants?.scale ?? 40) * layoutBondLength;
   }
 
   function forcePreviewBondAnchorPoints(anchorA, anchorB) {
@@ -75,6 +78,10 @@ export function createPrimitiveEventHandlers(context) {
 
   function snapRingTemplateAngle(angle) {
     return normalizePreviewAngle(Math.round(angle / RING_TEMPLATE_ROTATION_SNAP) * RING_TEMPLATE_ROTATION_SNAP);
+  }
+
+  function ringTemplateFreeRotation(event) {
+    return event?.ctrlKey === true || event?.metaKey === true;
   }
 
   function isFinitePoint(point) {
@@ -243,6 +250,31 @@ export function createPrimitiveEventHandlers(context) {
     return overflow;
   }
 
+  function ringTemplateUnsaturatedCarbonCount(mol, ringAtomIds, doubleBondIndices) {
+    let count = 0;
+    for (let index = 0; index < ringAtomIds.length; index++) {
+      const atomId = ringAtomIds[index];
+      const atom = mol?.atoms?.get?.(atomId);
+      if (atom && atom.name !== 'C') {
+        continue;
+      }
+      const previousRingEdgeIndex = (index - 1 + ringAtomIds.length) % ringAtomIds.length;
+      const hasRingDoubleBond = doubleBondIndices.has(previousRingEdgeIndex) || doubleBondIndices.has(index);
+      const hasExternalDoubleBond = atom && atomBondEntries(mol, atomId).some(bond => {
+        const otherAtomId = bond.getOtherAtom?.(atomId) ?? bond.atoms?.find?.(id => id !== atomId);
+        if (ringAtomIds.includes(otherAtomId)) {
+          return false;
+        }
+        const otherAtom = mol?.atoms?.get?.(otherAtomId);
+        return otherAtom?.name !== 'H' && localizedBondOrderForValence(bond) >= 2;
+      });
+      if (!hasRingDoubleBond && !hasExternalDoubleBond) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   function scoreRingTemplateDoubleBondSet(mol, ringAtomIds, doubleBondIndices, anchorBondId = null) {
     let score = 0;
     for (let index = 0; index < ringAtomIds.length; index++) {
@@ -265,6 +297,7 @@ export function createPrimitiveEventHandlers(context) {
         score += 10;
       }
     }
+    score += ringTemplateUnsaturatedCarbonCount(mol, ringAtomIds, doubleBondIndices) * 10000;
     score += ringTemplateLocalizedValenceOverflow(mol, ringAtomIds, doubleBondIndices) * 1000;
     score += (ringAtomIds.length / 2 - doubleBondIndices.size) * 100;
     return score;
@@ -858,6 +891,14 @@ export function createPrimitiveEventHandlers(context) {
     }
   }
 
+  function clearPendingDrawBondPreview(state) {
+    state?.document?.removeEventListener?.('mouseup', state.handleUp, true);
+    if (!state || pendingDrawBondPreview === state) {
+      pendingDrawBondPreview = null;
+      context.drawBond.clearArtifacts?.();
+    }
+  }
+
   function commitPendingRingTemplate(state) {
     const options = { anchorAtomId: state.atomId };
     if (state.dragged && Number.isFinite(state.currentGraphAngle)) {
@@ -876,7 +917,8 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     state.dragged = true;
-    state.currentGraphAngle = snapRingTemplateAngle(Math.atan2(dy, dx));
+    const graphAngle = normalizePreviewAngle(Math.atan2(dy, dx));
+    state.currentGraphAngle = ringTemplateFreeRotation(event) ? graphAngle : snapRingTemplateAngle(graphAngle);
     renderRingTemplatePreview(state, state.currentGraphAngle);
   }
 
@@ -1151,6 +1193,10 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handle2dBondClick(event, bondId) {
+    if (suppressNextDrawBondClick) {
+      suppressNextDrawBondClick = false;
+      return;
+    }
     if (placeRingTemplateOnBondClick(event, bondId)) {
       return;
     }
@@ -1180,6 +1226,67 @@ export function createPrimitiveEventHandlers(context) {
       return true;
     }
     return startRingTemplatePreviewOnBond(event, bondId, anchorA, anchorB, anchorAtomIds);
+  }
+
+  function previewDrawBondTypeForBond(bond) {
+    const drawBondType = context.drawBond.getType?.() ?? 'single';
+    if (drawBondType && drawBondType !== 'single') {
+      return drawBondType;
+    }
+    if (bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash') {
+      return 'single';
+    }
+    const currentOrder = Math.round(Number(bond?.properties?.order ?? 1));
+    const nextOrder = currentOrder >= 3 ? 1 : currentOrder + 1;
+    if (nextOrder >= 3) {
+      return 'triple';
+    }
+    if (nextOrder === 2) {
+      return 'double';
+    }
+    return 'single';
+  }
+
+  function handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB) {
+    if (!context.state.overlayState.getDrawBondMode() || context.state.viewState.getMode() !== '2d') {
+      return false;
+    }
+    if (event.button != null && event.button !== 0) {
+      return false;
+    }
+    if (!isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
+      return false;
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    clearPendingDrawBondPreview(pendingDrawBondPreview);
+    const doc = event.currentTarget?.ownerDocument ?? context.document ?? globalThis.document ?? null;
+    const state = {
+      bondId: bond?.id ?? bond,
+      document: doc,
+      handleUp: null
+    };
+    context.drawBond.previewBond?.(anchorA, anchorB, {
+      drawBondType: previewDrawBondTypeForBond(bond)
+    });
+    state.handleUp = upEvent => {
+      if (pendingDrawBondPreview !== state) {
+        return;
+      }
+      upEvent.preventDefault?.();
+      upEvent.stopPropagation?.();
+      upEvent.stopImmediatePropagation?.();
+      clearPendingDrawBondPreview(state);
+      suppressNextDrawBondClick = true;
+      context.actions.promoteBondOrder(state.bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
+      setTimeout(() => {
+        suppressNextDrawBondClick = false;
+      }, 0);
+    };
+    pendingDrawBondPreview = state;
+    doc?.addEventListener?.('mouseup', state.handleUp, true);
+    return true;
   }
 
   function handle2dBondDblClick(event, atomIds) {
@@ -1562,6 +1669,7 @@ export function createPrimitiveEventHandlers(context) {
   return {
     handle2dBondClick,
     handle2dBondMouseDownRingTemplate,
+    handle2dBondMouseDownDrawBond,
     handle2dBondDblClick,
     handle2dBondMouseOver,
     handle2dBondMouseMove,

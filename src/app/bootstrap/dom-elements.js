@@ -55,6 +55,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const optionsOverlay = document.getElementById('options-overlay');
   const showValenceWarnings = document.getElementById('options-show-valence-warnings');
   const showAtomTooltips = document.getElementById('options-show-atom-tooltips');
+  const layoutBondLength = document.getElementById('options-layout-bond-length');
   const atomColoring2d = document.getElementById('options-2d-color-style');
   const atomFontSize2d = document.getElementById('options-2d-atom-font-size');
   const atomNumberingFontSize = document.getElementById('options-atom-numbering-font-size');
@@ -138,6 +139,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getOptionsOverlayElement: () => optionsOverlay,
     getShowValenceWarningsElement: () => showValenceWarnings,
     getShowAtomTooltipsElement: () => showAtomTooltips,
+    getLayoutBondLengthElement: () => layoutBondLength,
     get2DAtomColoringElement: () => atomColoring2d,
     get2DAtomFontSizeElement: () => atomFontSize2d,
     getAtomNumberingFontSizeElement: () => atomNumberingFontSize,

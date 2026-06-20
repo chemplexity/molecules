@@ -72,8 +72,8 @@ export function createAppDelegates(deps) {
     startDrawBond(atomId, gX, gY) {
       return deps.drawBondPreviewActions.start(atomId, gX, gY);
     },
-    updateDrawBondPreview(point) {
-      return deps.drawBondPreviewActions.update(point);
+    updateDrawBondPreview(point, options = {}) {
+      return deps.drawBondPreviewActions.update(point, options);
     },
     resetDrawBondHover() {
       return deps.drawBondPreviewActions.resetHover();

@@ -13,6 +13,7 @@ export function createOptionsModalDeps(deps) {
       getOverlayElement: deps.dom.getOverlayElement,
       getShowValenceWarningsElement: deps.dom.getShowValenceWarningsElement,
       getShowAtomTooltipsElement: deps.dom.getShowAtomTooltipsElement,
+      getLayoutBondLengthElement: deps.dom.getLayoutBondLengthElement,
       get2DAtomColoringElement: deps.dom.get2DAtomColoringElement,
       get2DAtomFontSizeElement: deps.dom.get2DAtomFontSizeElement,
       getAtomNumberingFontSizeElement: deps.dom.getAtomNumberingFontSizeElement,
@@ -42,6 +43,10 @@ export function createOptionsModalDeps(deps) {
     view: {
       setFontSize: deps.view.setFontSize,
       hideTooltip: deps.view.hideTooltip
+    },
+    navigation: {
+      autoZoom: deps.navigation?.autoZoom,
+      autoZoomAfterRender: deps.navigation?.autoZoomAfterRender
     },
     renderers: {
       draw2d: deps.renderers.draw2d,

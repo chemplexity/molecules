@@ -194,7 +194,19 @@ function _stripProductAtomMaps(template) {
       stripped += template[pos++];
       continue;
     }
-    const closeIdx = template.indexOf(']', pos + 1);
+    let closeIdx = -1;
+    let parenDepth = 0;
+    for (let i = pos + 1; i < template.length; i++) {
+      const c = template[i];
+      if (c === '(') {
+        parenDepth++;
+      } else if (c === ')') {
+        parenDepth--;
+      } else if (c === ']' && parenDepth === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
     if (closeIdx < 0) {
       throw new Error(`parseSMIRKS: unclosed '[' at pos ${pos}`);
     }

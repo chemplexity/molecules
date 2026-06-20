@@ -9,7 +9,7 @@ import {
   spreadReaction2dProductComponents as spreadReaction2dProductComponentsShared,
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
-import { atomRadius } from './helpers.js';
+import { atomRadius, getRenderOptions } from './helpers.js';
 import { FORCE_LAYOUT_BOND_LENGTH } from './force-helpers.js';
 import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
 import { morganRanks } from '../../algorithms/morgan.js';
@@ -627,7 +627,8 @@ export function _forceInitialPatchFromAnchorCoords(mol, anchorLayout, { width = 
 
   const viewportWidth = Number.isFinite(width) && width > 0 ? width : 600;
   const viewportHeight = Number.isFinite(height) && height > 0 ? height : 400;
-  const scale = FORCE_LAYOUT_BOND_LENGTH / 1.5;
+  const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
+  const scale = FORCE_LAYOUT_BOND_LENGTH / layoutBondLength;
   const toForcePixels = pos => ({
     x: viewportWidth / 2 + (pos.x - cx) * scale,
     y: viewportHeight / 2 - (pos.y - cy) * scale
@@ -678,9 +679,10 @@ export function _applyReactionPreviewDisplayGeometry(mol) {
   if (!_hasReactionPreview() || !mol) {
     return;
   }
+  const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
   _alignReaction2dProductOrientation(mol);
-  _spreadReaction2dProductComponents(mol, 1.5);
-  _centerReaction2dPairCoords(mol, 1.5);
+  _spreadReaction2dProductComponents(mol, layoutBondLength);
+  _centerReaction2dPairCoords(mol, layoutBondLength);
 }
 
 /**

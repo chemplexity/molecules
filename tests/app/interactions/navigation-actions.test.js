@@ -44,40 +44,14 @@ test('autoZoom recenters and fits the 2d molecule viewport', () => {
         getMol2d: () => mol
       }
     },
-    helpers: {
-      atomBBox: atoms => ({
-        minX: Math.min(...atoms.map(atom => atom.x)),
-        maxX: Math.max(...atoms.map(atom => atom.x)),
-        minY: Math.min(...atoms.map(atom => atom.y)),
-        maxY: Math.max(...atoms.map(atom => atom.y)),
-        cx: atoms.reduce((sum, atom) => sum + atom.x, 0) / atoms.length,
-        cy: atoms.reduce((sum, atom) => sum + atom.y, 0) / atoms.length
-      })
-    },
-    dom: {
-      plotEl: { clientWidth: 600, clientHeight: 400 }
-    },
-    overlays: {
-      viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad })
-    },
-    force: {
-      fitPad: 40,
-      initialZoomMultiplier: 1.3
-    },
     view: {
-      scale: 40,
-      makeZoomIdentity: (x, y, k) => ({ x, y, k }),
-      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+      fitCurrent2dView: () => calls.push(['fitCurrent2dView'])
     }
   });
 
   actions.autoZoom();
 
-  assert.deepEqual(calls, [
-    ['setCx2d', 1],
-    ['setCy2d', 0.5],
-    ['setZoomTransform', { x: -90, y: -60, k: 1.3 }]
-  ]);
+  assert.deepEqual(calls, [['fitCurrent2dView']]);
 });
 
 test('autoZoom fits the force molecule viewport', () => {
