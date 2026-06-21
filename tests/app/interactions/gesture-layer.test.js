@@ -882,6 +882,43 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(calls, []);
   });
 
+  it('refreshes the current brush hover preview when paint settings change', () => {
+    const atomHit = makeHitElement('atom', 'a1');
+    const { context, g, listeners, calls, state } = makeBaseContext();
+    const atomGroup = g.append('g').attr('data-atom-id', 'a1');
+    const atomLabel = atomGroup.append('text').attr('class', 'atom-label').style('fill', '#111111').style('opacity', '1');
+    state.setPaintMode(true);
+    state.setPaintColor('#ff6633');
+    state.setPaintOpacity(0.45);
+    context.doc.elementsFromPoint = x => (x === 10 ? [atomHit] : []);
+
+    const gestureControls = initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      clientX: 10,
+      clientY: 10,
+      buttons: 0
+    });
+
+    assert.equal(atomLabel.node().style.fill, '#ff6633');
+    assert.equal(atomLabel.node().style.opacity, '0.45');
+
+    state.setPaintColor('#66ccff');
+    state.setPaintOpacity(0.7);
+    listeners.get('molecules:paint-settings-changed')({});
+
+    assert.equal(atomLabel.node().style.fill, '#66ccff');
+    assert.equal(atomLabel.node().style.opacity, '0.7');
+    assert.deepEqual(calls, []);
+
+    state.setPaintColor('#00aa44');
+    state.setPaintOpacity(0.35);
+    gestureControls.refreshPaintPreview();
+
+    assert.equal(atomLabel.node().style.fill, '#00aa44');
+    assert.equal(atomLabel.node().style.opacity, '0.35');
+  });
+
   it('previews brush color on force atom and bond hover without committing', () => {
     const atomHit = makeHitElement('force-atom', 'a1');
     const bondHit = makeHitElement('force-bond', 'b1', { x1: 20, y1: 10, x2: 40, y2: 10 });

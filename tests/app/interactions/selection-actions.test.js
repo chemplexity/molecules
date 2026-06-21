@@ -737,7 +737,14 @@ describe('createSelectionActions', () => {
     buttons.brush2d.innerHTML = '<svg>brush</svg>';
     buttons.bucket2d.innerHTML = '<svg>bucket</svg>';
     buttons.eraser2d.innerHTML = '<svg>eraser</svg>';
-    const plotElement = makeButton();
+    const paintSettingEvents = [];
+    const plotElement = {
+      ...makeButton(),
+      dispatchEvent(event) {
+        paintSettingEvents.push(event.type);
+        return true;
+      }
+    };
 
     const actions = createSelectionActions({
       state: {
@@ -884,6 +891,7 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.colorForce.style.backgroundColor, 'rgba(255, 102, 51, 1)');
     assert.equal(buttons.colorForce.style.getPropertyValue('--paint-swatch-color'), 'rgba(255, 102, 51, 1)');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /%23ff6633/);
+    assert.equal(paintSettingEvents.at(-1), 'molecules:paint-settings-changed');
 
     buttons.brushSize2d.dispatchInput('18');
 
@@ -892,6 +900,7 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.brushSizeForce.value, '18');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /width='36' height='36'/);
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /r='17'/);
+    assert.equal(paintSettingEvents.at(-1), 'molecules:paint-settings-changed');
 
     buttons.opacity2d.dispatchInput('0.4');
 
@@ -902,6 +911,7 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.color2d.style.backgroundColor, 'rgba(255, 102, 51, 0.4)');
     assert.equal(buttons.colorForce.style.getPropertyValue('--paint-swatch-color'), 'rgba(255, 102, 51, 0.4)');
     assert.match(plotElement.style.getPropertyValue('--paint-mode-cursor'), /fill-opacity='0.4'/);
+    assert.equal(paintSettingEvents.at(-1), 'molecules:paint-settings-changed');
 
     actions.setPaintTool('bucket');
 
@@ -915,6 +925,7 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.eraser2d.classList.contains('active'), false);
     assert.equal(buttons.eraserForce.classList.contains('active'), false);
     assert.equal(buttons.paint2d.classList.contains('paint-eraser-tool'), false);
+    assert.equal(paintSettingEvents.at(-1), 'molecules:paint-settings-changed');
 
     actions.setPaintTool('eraser');
 
@@ -1128,13 +1139,16 @@ describe('createSelectionActions', () => {
     const deuteriumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'D');
     const lanthanumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'La');
     const actiniumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Ac');
+    const magnesiumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Mg');
+    const rutherfordiumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Rf');
+    const preview = periodicGrid.children.find(child => child.className === 'periodic-element-preview');
     const columnLabels = periodicGrid.children.filter(child => child.className === 'periodic-table-column-label');
     const rowLabels = periodicGrid.children.filter(child => child.className === 'periodic-table-row-label');
 
     assert.equal(periodicPopover.hidden, false);
     assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-top'), '8px');
     assert.equal(periodicPopover.style.getPropertyValue('--periodic-table-popover-left'), '279.5px');
-    assert.equal(periodicGrid.children.length, 143);
+    assert.equal(periodicGrid.children.length, 144);
     assert.equal(columnLabels.length, 18);
     assert.equal(rowLabels.length, 7);
     assert.equal(columnLabels[0].textContent, '1');
@@ -1153,6 +1167,10 @@ describe('createSelectionActions', () => {
     assert.equal(carbonButton.title, 'C (Carbon)');
     assert.equal(carbonButton.style.backgroundColor, '#333333');
     assert.equal(carbonButton.style.color, '#ffffff');
+    assert.ok(preview);
+    assert.equal(preview.hidden, true);
+    assert.equal(preview.style.gridRow, '2 / span 3');
+    assert.equal(preview.style.gridColumn, '8 / span 3');
     assert.equal(ironButton.style.gridRow, '5');
     assert.equal(ironButton.style.gridColumn, '9');
     assert.equal(lanthanumButton.style.gridRow, '10');
@@ -1160,6 +1178,33 @@ describe('createSelectionActions', () => {
     assert.equal(lanthanumButton.classList.contains('periodic-f-block-cell'), true);
     assert.equal(actiniumButton.style.gridRow, '11');
     assert.equal(actiniumButton.style.gridColumn, '5');
+
+    ironButton.dispatch('mouseenter');
+
+    assert.equal(preview.hidden, false);
+    assert.equal(preview.dataset.periodicElement, 'Fe');
+    assert.equal(preview.__periodicPreviewNumber.textContent, '26');
+    assert.equal(preview.__periodicPreviewSymbol.textContent, 'Fe');
+    assert.equal(preview.__periodicPreviewName.textContent, 'Iron');
+    assert.equal(preview.__periodicPreviewWeight.textContent, '55.845');
+
+    ironButton.dispatch('mouseleave');
+
+    assert.equal(preview.hidden, true);
+
+    rutherfordiumButton.dispatch('mouseenter');
+
+    assert.equal(preview.__periodicPreviewName.textContent, 'Rutherfordium');
+    assert.equal(preview.__periodicPreviewName.style.fontSize, '8px');
+
+    rutherfordiumButton.dispatch('mouseleave');
+
+    magnesiumButton.dispatch('mouseenter');
+
+    assert.equal(preview.__periodicPreviewName.textContent, 'Magnesium');
+    assert.equal(preview.__periodicPreviewName.style.fontSize, '9px');
+
+    magnesiumButton.dispatch('mouseleave');
 
     ironButton.dispatch('click');
 

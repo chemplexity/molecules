@@ -5,6 +5,8 @@ import { ringFillDomId } from '../../core/style.js';
 import { atomColor } from '../render/helpers.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 
+const PAINT_SETTINGS_CHANGED_EVENT = 'molecules:paint-settings-changed';
+
 /**
  * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
  * @param {MouseEvent} event - The mouse event to test.
@@ -17,6 +19,7 @@ export function isAdditiveSelectionEvent(event) {
 /**
  * Attaches all SVG and document-level gesture event listeners for selection drag, draw-bond, and erase-paint interactions.
  * @param {object} context - Dependency context providing svg, g, state, simulation, view, drawBond, selection, renderers, actions, helpers, overlays, pointer, schedule, and dom.
+ * @returns {{refreshPaintPreview: () => void}} Gesture controls for refreshing transient hover previews.
  */
 export function initGestureInteractions(context) {
   const { svg, g, doc = document } = context;
@@ -50,6 +53,7 @@ export function initGestureInteractions(context) {
   let paintBucketStrokeTargetKeys = new Set();
   let paintBucketStrokeRings = [];
   let paintBrushPreviewStyles = new Map();
+  let lastPaintPreviewEvent = null;
 
   const DEFAULT_PAINT_R = 12;
   const ERASE_R = 14;
@@ -1065,6 +1069,15 @@ export function initGestureInteractions(context) {
     }
   }
 
+  function refreshPaintPreview() {
+    if (!lastPaintPreviewEvent) {
+      return;
+    }
+    updatePaintBrushPreview(lastPaintPreviewEvent);
+    updatePaintBucketPreview(lastPaintPreviewEvent);
+    updatePaintEraserPreview(lastPaintPreviewEvent);
+  }
+
   function finishSelectionDrag(event) {
     if (!selectionDragging) {
       return;
@@ -1438,6 +1451,7 @@ export function initGestureInteractions(context) {
   });
 
   doc.addEventListener('mousemove', event => {
+    lastPaintPreviewEvent = event;
     context.view.setDrawBondHoverSuppressed(false);
     if (context.drawBond.hasDrawBondState()) {
       context.drawBond.markDragged();
@@ -1461,6 +1475,7 @@ export function initGestureInteractions(context) {
   doc.addEventListener('mousemove', applyPaintBucketStroke);
   doc.addEventListener('mousemove', updatePaintBucketPreview);
   doc.addEventListener('mousemove', updatePaintEraserPreview);
+  doc.addEventListener(PAINT_SETTINGS_CHANGED_EVENT, refreshPaintPreview);
 
   doc.addEventListener('mouseup', event => {
     if (event.button === 0) {
@@ -1486,4 +1501,8 @@ export function initGestureInteractions(context) {
     }
     finishSelectionDrag(event);
   });
+
+  return {
+    refreshPaintPreview
+  };
 }

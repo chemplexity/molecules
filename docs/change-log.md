@@ -2,6 +2,11 @@
 
 ## 2026-06-20
 
+- Split terminal chlorides across generic four-coordinate zirconium chelate pockets without stretching metal-ligand bonds.
+- Open imino bis-oxo sulfur centers onto exact trigonal visible fans so S=N and terminal oxo ligands keep readable angles.
+- Refresh paint brush cursor styling and hover previews immediately after color, opacity, size, or paint-tool changes.
+- Make 2D rotate buttons use the same rendered-bounds Auto Zoom fit as the toolbar Auto Zoom button.
+- Add a hover preview tile to the periodic-table picker with atomic number, symbol, name, and average atomic weight.
 - Keep terminal alkene hydrogenation products zig-zagged when Global "Bond Length" is very short.
 - Apply Global "Bond Length" to reaction product scaffold generation, orientation, and force-preview seeding.
 - Hide the original 2D bond while holding the line tool on an existing bond so the preview shows the exact promoted result without drawing a white cover rectangle.

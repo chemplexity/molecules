@@ -13,7 +13,6 @@ const CLEAN_RING_SUBSTITUENT_MIN_ANGLE_DELTA = (1 * Math.PI) / 180;
 const ROTATE_FIT_FALLBACK_PAD = 40;
 const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
 const ROTATE_FIT_MAX_SCALE = 30;
-const ZOOM_TRANSFORM_EPSILON = 0.001;
 
 /**
  * Preserves reaction-preview metadata on a working molecule clone so clean and
@@ -479,13 +478,6 @@ function forcePatchEntryForNode(node) {
   return entry;
 }
 
-function zoomTransformsDiffer(a, b, epsilon = ZOOM_TRANSFORM_EPSILON) {
-  if (!a || !b) {
-    return true;
-  }
-  return Math.abs(a.k - b.k) > epsilon || Math.abs(a.x - b.x) > epsilon || Math.abs(a.y - b.y) > epsilon;
-}
-
 function lineRotateFitTransform(context, bbox) {
   if (!bbox || !Number.isFinite(bbox.minX) || !Number.isFinite(bbox.maxX) || !Number.isFinite(bbox.minY) || !Number.isFinite(bbox.maxY)) {
     return null;
@@ -508,6 +500,21 @@ function lineRotateFitTransform(context, bbox) {
     y: height / 2 - (height / 2) * scale,
     k: scale
   };
+}
+
+function fit2dViewportLikeAutoZoom(context, atoms) {
+  if (context.view.fitCurrent2dView) {
+    context.view.fitCurrent2dView();
+    return;
+  }
+  if (!atoms?.length) {
+    return;
+  }
+  const bbox = context.helpers.atomBBox(atoms);
+  const fitTransform = lineRotateFitTransform(context, bbox);
+  if (fitTransform) {
+    context.view.setZoomTransform(fitTransform);
+  }
 }
 
 /**
@@ -593,7 +600,7 @@ export function createNavigationActions(context) {
   let cleanForceBtnTimer = null;
 
   function currentLayoutBondLength() {
-    return context.helpers.getLayoutBondLength?.() ?? DEFAULT_LAYOUT_BOND_LENGTH;
+    return context.helpers?.getLayoutBondLength?.() ?? DEFAULT_LAYOUT_BOND_LENGTH;
   }
 
   function stopRotate() {
@@ -804,10 +811,7 @@ export function createNavigationActions(context) {
     const bbox = context.helpers.atomBBox(atoms);
     context.state.viewState.setCx2d?.(bbox.cx);
     context.state.viewState.setCy2d?.(bbox.cy);
-    const fitTransform = lineRotateFitTransform(context, bbox);
-    if (fitTransform) {
-      context.view.setZoomTransform(fitTransform);
-    }
+    fit2dViewportLikeAutoZoom(context, atoms);
   }
 
   function startRotate(delta) {
@@ -896,13 +900,8 @@ export function createNavigationActions(context) {
       const bbox = context.helpers.atomBBox(allAtoms);
       context.state.viewState.setCx2d(bbox.cx);
       context.state.viewState.setCy2d(bbox.cy);
-      const fitTransform = lineRotateFitTransform(context, bbox);
-      const currentTransform = context.view.getZoomTransform();
-      const differs = context.force?.zoomTransformsDiffer?.(fitTransform, currentTransform, ZOOM_TRANSFORM_EPSILON) ?? zoomTransformsDiffer(fitTransform, currentTransform);
-      if (fitTransform && differs) {
-        context.view.setZoomTransform(fitTransform);
-      }
       context.renderers.draw2d();
+      fit2dViewportLikeAutoZoom(context, allAtoms);
     };
     step();
     rotateInterval = setInterval(step, 40);

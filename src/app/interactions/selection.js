@@ -16,6 +16,7 @@ const DEFAULT_PAINT_BRUSH_SIZE = 12;
 const MIN_PAINT_BRUSH_SIZE = 4;
 const MAX_PAINT_BRUSH_SIZE = 32;
 const PAINT_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const PAINT_SETTINGS_CHANGED_EVENT = 'molecules:paint-settings-changed';
 const LANTHANIDES = ['La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu'];
 const ACTINIDES = ['Ac', 'Th', 'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md', 'No', 'Lr'];
 const ELEMENT_NAMES = {
@@ -154,8 +155,37 @@ function readableTextColor(background) {
   return luminance < 0.56 ? '#ffffff' : '#111827';
 }
 
+function rgbaFromHex(hex, alpha) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) {
+    return `rgba(255, 255, 255, ${alpha})`;
+  }
+  const red = colorChannelFromHex(hex, 1);
+  const green = colorChannelFromHex(hex, 3);
+  const blue = colorChannelFromHex(hex, 5);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
 function elementTooltip(symbol) {
   return `${symbol} (${ELEMENT_NAMES[symbol] ?? symbol})`;
+}
+
+function averageAtomicWeight(symbol) {
+  const data = elements[symbol];
+  if (!data) {
+    return null;
+  }
+  const weight = data.protons + data.neutrons;
+  return Number.isFinite(weight) ? weight : null;
+}
+
+function previewElementNameFontSize(name) {
+  if (name.length >= 13) {
+    return '8px';
+  }
+  if (name.length >= 11) {
+    return '8.5px';
+  }
+  return '9px';
 }
 
 function periodicTablePosition(symbol) {
@@ -504,12 +534,74 @@ export function createSelectionActions(context) {
     if (!popover) {
       return;
     }
+    if (!open) {
+      hidePeriodicTablePreview();
+    }
     popover.hidden = !open;
     syncPeriodicTableButton();
   }
 
   function closePeriodicTablePicker() {
     setPeriodicTablePickerOpen(false);
+  }
+
+  function hidePeriodicTablePreview() {
+    const grid = context.dom.getPeriodicTableGrid?.();
+    const preview = grid?.__periodicTablePreview;
+    if (!preview) {
+      return;
+    }
+    preview.hidden = true;
+    preview.dataset.periodicElement = '';
+  }
+
+  function showPeriodicTablePreview(symbol) {
+    const grid = context.dom.getPeriodicTableGrid?.();
+    const preview = grid?.__periodicTablePreview;
+    const data = elements[symbol];
+    if (!preview || !data) {
+      return;
+    }
+    const color = atomColor(symbol);
+    const weight = averageAtomicWeight(symbol);
+    const name = ELEMENT_NAMES[symbol] ?? symbol;
+    preview.hidden = false;
+    preview.dataset.periodicElement = symbol;
+    preview.style.backgroundColor = rgbaFromHex(color, 0.72);
+    preview.style.color = readableTextColor(color);
+    preview.__periodicPreviewNumber.textContent = String(data.protons);
+    preview.__periodicPreviewSymbol.textContent = symbol;
+    preview.__periodicPreviewName.textContent = name;
+    preview.__periodicPreviewName.style.fontSize = previewElementNameFontSize(name);
+    preview.__periodicPreviewWeight.textContent = weight == null ? '' : weight.toFixed(3);
+  }
+
+  function createPeriodicTablePreview(createElement) {
+    const preview = createElement('div');
+    preview.className = 'periodic-element-preview';
+    preview.hidden = true;
+    preview.setAttribute?.('aria-hidden', 'true');
+    preview.style.gridRow = '2 / span 3';
+    preview.style.gridColumn = '8 / span 3';
+
+    const atomicNumber = createElement('div');
+    atomicNumber.className = 'periodic-preview-number';
+    const symbol = createElement('div');
+    symbol.className = 'periodic-preview-symbol';
+    const name = createElement('div');
+    name.className = 'periodic-preview-name';
+    const weight = createElement('div');
+    weight.className = 'periodic-preview-weight';
+
+    preview.appendChild(atomicNumber);
+    preview.appendChild(symbol);
+    preview.appendChild(name);
+    preview.appendChild(weight);
+    preview.__periodicPreviewNumber = atomicNumber;
+    preview.__periodicPreviewSymbol = symbol;
+    preview.__periodicPreviewName = name;
+    preview.__periodicPreviewWeight = weight;
+    return preview;
   }
 
   function ensurePeriodicTablePicker() {
@@ -537,6 +629,9 @@ export function createSelectionActions(context) {
       label.style.gridColumn = '1';
       grid.appendChild(label);
     }
+    const preview = createPeriodicTablePreview(createElement);
+    grid.__periodicTablePreview = preview;
+    grid.appendChild(preview);
     for (const symbol of PERIODIC_TABLE_ELEMENTS) {
       const position = periodicTablePosition(symbol);
       if (!position) {
@@ -556,6 +651,18 @@ export function createSelectionActions(context) {
       button.style.color = readableTextColor(color);
       button.style.gridRow = String(position.row);
       button.style.gridColumn = String(position.column);
+      button.addEventListener('mouseenter', () => {
+        showPeriodicTablePreview(symbol);
+      });
+      button.addEventListener('focus', () => {
+        showPeriodicTablePreview(symbol);
+      });
+      button.addEventListener('mouseleave', () => {
+        hidePeriodicTablePreview();
+      });
+      button.addEventListener('blur', () => {
+        hidePeriodicTablePreview();
+      });
       button.addEventListener('click', () => {
         selectPeriodicElement(symbol);
       });
@@ -664,6 +771,13 @@ export function createSelectionActions(context) {
     context.dom.plotElement?.style?.setProperty?.('--paint-mode-cursor', paintCursorValue(color, opacity, tool, brushSize));
     context.dom.plotElement?.classList?.toggle?.('paint-mode-cursor', active);
   }
+  function notifyPaintSettingsChanged() {
+    const EventCtor = context.document?.defaultView?.Event ?? globalThis.Event;
+    if (typeof EventCtor !== 'function' || typeof context.dom.plotElement?.dispatchEvent !== 'function') {
+      return;
+    }
+    context.dom.plotElement.dispatchEvent(new EventCtor(PAINT_SETTINGS_CHANGED_EVENT, { bubbles: true }));
+  }
   function syncPaintButtonIcon(tool = context.state.overlayState.getPaintTool?.() ?? 'brush') {
     const sourceButtons = context.dom.getPaintToolButtons?.(tool) ?? [];
     const sourceButton = Array.isArray(sourceButtons) ? sourceButtons.find(button => typeof button?.innerHTML === 'string') : sourceButtons;
@@ -722,6 +836,7 @@ export function createSelectionActions(context) {
     const normalizedColor = normalizePaintColor(color);
     context.state.overlayState.setPaintColor?.(normalizedColor);
     syncPaintColorSelectors(normalizedColor);
+    notifyPaintSettingsChanged();
   }
   function syncPaintBrushSizeSelectors(size = normalizePaintBrushSize(context.state.overlayState.getPaintBrushSize?.() ?? DEFAULT_PAINT_BRUSH_SIZE)) {
     const normalizedSize = normalizePaintBrushSize(size);
@@ -745,6 +860,7 @@ export function createSelectionActions(context) {
     const normalizedSize = normalizePaintBrushSize(size);
     context.state.overlayState.setPaintBrushSize?.(normalizedSize);
     syncPaintBrushSizeSelectors(normalizedSize);
+    notifyPaintSettingsChanged();
   }
   function syncPaintOpacitySelectors(opacity = normalizePaintOpacity(context.state.overlayState.getPaintOpacity?.() ?? DEFAULT_PAINT_OPACITY)) {
     const normalizedOpacity = normalizePaintOpacity(opacity);
@@ -779,6 +895,7 @@ export function createSelectionActions(context) {
     const normalizedOpacity = normalizePaintOpacity(opacity);
     context.state.overlayState.setPaintOpacity?.(normalizedOpacity);
     syncPaintOpacitySelectors(normalizedOpacity);
+    notifyPaintSettingsChanged();
   }
   function bindPaintColorSelectors() {
     for (const selector of context.dom.getPaintColorSelectors?.() ?? []) {
@@ -973,6 +1090,7 @@ export function createSelectionActions(context) {
     syncPaintToolStyles(tool);
     syncPaintColorSelectors();
     syncPaintOpacitySelectors();
+    notifyPaintSettingsChanged();
   }
 
   function toggleDrawBondMode() {

@@ -1,14 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { runLigandAngleTidy } from '../../../../src/layout/engine/cleanup/ligand-angle-tidy.js';
 import { layoutOrganometallicFamily } from '../../../../src/layout/engine/families/organometallic.js';
 import { angleOf, distance, fromAngle, sub, wrapAngleUnsigned } from '../../../../src/layout/engine/geometry/vec2.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
+import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { makeSquarePlanarPlatinumComplex } from '../support/molecules.js';
 
 const PLATINUM_CHELATE_SMILES = '[H][N]([H])([H])[Pt]1(OCC(=O)O1)[N]([H])([H])[H]';
+const ZIRCONIUM_MIXED_CHELATE_SMILES =
+  'CCC1=CC=C2C(C(CC(C)C)=CC2=C1C1=CC(=CC(=C1)C(C)C)C(C)C)[Zr](Cl)(Cl)C1=CC=CC2=C1[SiH2]C1=CC=CC=C21';
 
 /**
  * Returns whether all direct platinum ligands sit on the axis-aligned square-planar cross.
@@ -88,5 +92,24 @@ describe('layout/engine/cleanup/ligand-angle-tidy', () => {
     assert.ok(Math.max(...separations) < (115 * Math.PI) / 180, `expected chelate fan to stay balanced, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
     assert.ok(Math.abs(distance(corrected.coords.get('Pt5'), corrected.coords.get('N2')) - graph.options.bondLength) < 1e-9);
     assert.ok(Math.abs(distance(corrected.coords.get('Pt5'), corrected.coords.get('N11')) - graph.options.bondLength) < 1e-9);
+  });
+
+  it('opens generic four-coordinate zirconium terminal ligands without stretching metal bonds', () => {
+    const result = runPipeline(parseSMILES(ZIRCONIUM_MIXED_CHELATE_SMILES), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const ligandAtomIds = ['C7', 'Cl29', 'Cl30', 'C31'];
+    const separations = metalLigandSeparations(result.coords, 'Zr28', ligandAtomIds);
+    const ligandDistances = ligandAtomIds.map(atomId => distance(result.coords.get('Zr28'), result.coords.get(atomId)));
+
+    assert.ok(bugMolecules.includes(ZIRCONIUM_MIXED_CHELATE_SMILES), 'expected zirconium mixed chelate regression molecule to be registered');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(Math.min(...separations) > (70 * Math.PI) / 180, `expected Zr chlorides to clear the acute fan, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...separations) < (140 * Math.PI) / 180, `expected Zr ligand fan to stay bounded, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`);
+    assert.ok(ligandDistances.every(ligandDistance => Math.abs(ligandDistance - result.layoutGraph.options.bondLength) < 1e-9));
   });
 });

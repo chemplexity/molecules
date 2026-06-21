@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { measureTerminalMultipleBondLeafFanPenalty, runTerminalMultipleBondLeafFanTidy } from '../../../../src/layout/engine/cleanup/presentation/ring-terminal-hetero.js';
@@ -69,5 +70,22 @@ describe('layout/engine/cleanup/ring-terminal-hetero', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'O8', 'N6') - (2 * Math.PI) / 3) < 1e-9);
     assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'O8', 'C9') - (2 * Math.PI) / 3) < 1e-9);
     assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'N6', 'C9') - (2 * Math.PI) / 3) < 1e-9);
+  });
+
+  it('opens imino bis-oxo sulfur centers onto exact visible trigonal slots', () => {
+    const smiles = 'O=C1CN=NN1N=S(=O)=O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.ok(bugMolecules.includes(smiles), 'expected imino bis-oxo sulfur regression molecule to be registered');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(Math.abs(bondAngle(result.coords, 'S8', 'N7', 'O9') - (2 * Math.PI) / 3) < 1e-9);
+    assert.ok(Math.abs(bondAngle(result.coords, 'S8', 'N7', 'O10') - (2 * Math.PI) / 3) < 1e-9);
+    assert.ok(Math.abs(bondAngle(result.coords, 'S8', 'O9', 'O10') - (2 * Math.PI) / 3) < 1e-9);
   });
 });

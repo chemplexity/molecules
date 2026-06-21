@@ -22,6 +22,7 @@ import { measureTerminalRingCarbonylLeafContactPenalty } from './presentation/ri
 import { measurePhosphateArylTailPresentationPenalty } from './presentation/phosphate-aryl-tail.js';
 import { measureTerminalCationRingProximityPenalty } from './presentation/terminal-cation-ring-clearance.js';
 import { hasSpecialistCleanupNeed, runSpecialistCleanup } from './specialists/specialist-cleanup.js';
+import { measureLigandAngleDeviation } from './ligand-angle-tidy.js';
 import { runProjectedTetrahedralBranchClearance } from './presentation/projected-tetrahedral-clearance.js';
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 import { isPreferredCleanupGeometryStage, isPreferredFinalStereoStage, isPreferredProtectedCleanupStage } from './stage-comparators.js';
@@ -225,6 +226,7 @@ export function buildCleanupStageGraph(context) {
     const metrics = {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
       hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
+      ligandAngleDeviation: measureLigandAngleDeviation(layoutGraph, coords),
       divalentContinuationPenalty: divalentContinuationPenalty.totalDeviation,
       divalentContinuationMaxPenalty: divalentContinuationPenalty.maxDeviation,
       terminalAlkeneContinuationPenalty: terminalAlkeneContinuationPenalty.totalDeviation,
@@ -277,6 +279,7 @@ export function buildCleanupStageGraph(context) {
     return {
       presentationPenalty: metrics?.presentationPenalty ?? 0,
       hypervalentDeviation: metrics?.hypervalentDeviation ?? 0,
+      ligandAngleDeviation: metrics?.ligandAngleDeviation ?? 0,
       divalentContinuationPenalty: metrics?.divalentContinuationPenalty ?? 0,
       terminalAlkeneContinuationPenalty: metrics?.terminalAlkeneContinuationPenalty ?? 0,
       terminalAlkeneContinuationMaxPenalty: metrics?.terminalAlkeneContinuationMaxPenalty ?? 0,
@@ -362,6 +365,11 @@ export function buildCleanupStageGraph(context) {
    */
   const specialistCleanupComparator = (candidate, incumbent) => {
     if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
+      return true;
+    }
+    const ligandAnglesImprove =
+      (candidate.ligandAngleDeviation ?? Number.POSITIVE_INFINITY) < (incumbent?.ligandAngleDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON;
+    if (ligandAnglesImprove && auditCountsDoNotWorsen(candidate.audit, incumbent?.audit, { maxLabelOverlapIncrease: 1 })) {
       return true;
     }
     return (

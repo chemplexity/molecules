@@ -1402,7 +1402,7 @@ test('force flip preserves the current viewport when no reaction preview is acti
   );
 });
 
-test('line rotate fits the viewport with the force-style zoom cap', () => {
+test('line rotate uses the rendered auto zoom fit after drawing', () => {
   const mol = {
     atoms: new Map([
       ['c1', { id: 'c1', name: 'C', x: 0, y: 0 }],
@@ -1459,7 +1459,8 @@ test('line rotate fits the viewport with the force-style zoom cap', () => {
       restorePersistentHighlight: () => calls.push(['restorePersistentHighlight']),
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       makeZoomIdentity: (x, y, k) => ({ x, y, k }),
-      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform]),
+      fitCurrent2dView: () => calls.push(['fitCurrent2dView'])
     },
     renderers: {
       draw2d: () => calls.push(['draw2d'])
@@ -1469,11 +1470,14 @@ test('line rotate fits the viewport with the force-style zoom cap', () => {
   actions.startRotate(90);
   actions.stopRotate();
 
-  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', { x: -90, y: -60, k: 1.3 }]);
-  assert.ok(calls.some(([name]) => name === 'draw2d'));
+  const drawIndex = calls.findIndex(([name]) => name === 'draw2d');
+  const fitIndex = calls.findIndex(([name]) => name === 'fitCurrent2dView');
+  assert.ok(drawIndex >= 0);
+  assert.ok(fitIndex > drawIndex);
+  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
 });
 
-test('line rotate skips applying a fit when the viewport is already fitted', () => {
+test('line rotate falls back to the math fit when rendered auto zoom is unavailable', () => {
   const mol = {
     atoms: new Map([
       ['c1', { id: 'c1', name: 'C', x: 0, y: 0 }],
@@ -1481,7 +1485,6 @@ test('line rotate skips applying a fit when the viewport is already fitted', () 
     ])
   };
   const calls = [];
-  const fittedTransform = { x: -90, y: -60, k: 1.3 };
   const actions = createNavigationActions({
     state: {
       viewState: {
@@ -1518,11 +1521,7 @@ test('line rotate skips applying a fit when the viewport is already fitted', () 
     },
     force: {
       fitPad: 40,
-      initialZoomMultiplier: 1.3,
-      zoomTransformsDiffer: (a, b) => {
-        calls.push(['zoomTransformsDiffer', a, b]);
-        return false;
-      }
+      initialZoomMultiplier: 1.3
     },
     overlays: {
       viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad })
@@ -1533,7 +1532,6 @@ test('line rotate skips applying a fit when the viewport is already fitted', () 
     view: {
       scale: 60,
       restorePersistentHighlight: () => calls.push(['restorePersistentHighlight']),
-      getZoomTransform: () => fittedTransform,
       makeZoomIdentity: (x, y, k) => ({ x, y, k }),
       setZoomTransform: transform => calls.push(['setZoomTransform', transform])
     },
@@ -1545,8 +1543,7 @@ test('line rotate skips applying a fit when the viewport is already fitted', () 
   actions.startRotate(90);
   actions.stopRotate();
 
-  assert.deepEqual(calls.find(([name]) => name === 'zoomTransformsDiffer'), ['zoomTransformsDiffer', fittedTransform, fittedTransform]);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', { x: -90, y: -60, k: 1.3 }]);
   assert.ok(calls.some(([name]) => name === 'draw2d'));
 });
 

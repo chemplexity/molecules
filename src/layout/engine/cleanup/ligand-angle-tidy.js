@@ -135,7 +135,20 @@ function ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords) {
 }
 
 /**
- * Returns terminal-ligand target angles for a square-planar metal with one
+ * Returns whether a four-coordinate metal can use open-pocket terminal ligand spreading.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} metalAtomId - Metal atom ID.
+ * @param {number} ligandCount - Number of direct ligands.
+ * @returns {boolean} True when two terminal ligands may be spread across the chelate pocket.
+ */
+function supportsChelatedTerminalLigandSpread(layoutGraph, metalAtomId, ligandCount) {
+  const element = layoutGraph.sourceMolecule.atoms.get(metalAtomId)?.name ?? '';
+  const geometryKind = organometallicGeometryKind(element, ligandCount);
+  return ligandCount === 4 && (geometryKind === 'square-planar' || geometryKind === 'generic');
+}
+
+/**
+ * Returns terminal-ligand target angles for a four-coordinate metal with one
  * fixed two-anchor chelate pocket and two movable simple ligands.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} metalAtomId - Metal atom ID.
@@ -146,8 +159,7 @@ function ligandAnglesAroundMetal(ligandAtomIds, metalPosition, coords) {
  * @returns {Map<string, number>|null} Target angle by terminal ligand atom ID.
  */
 function chelatedTerminalLigandTargets(layoutGraph, metalAtomId, ligandAtomIds, metalPosition, coords, minOpenGap = CHELATE_TERMINAL_MIN_OPEN_GAP) {
-  const element = layoutGraph.sourceMolecule.atoms.get(metalAtomId)?.name ?? '';
-  if (ligandAtomIds.length !== 4 || organometallicGeometryKind(element, ligandAtomIds.length) !== 'square-planar') {
+  if (!supportsChelatedTerminalLigandSpread(layoutGraph, metalAtomId, ligandAtomIds.length)) {
     return null;
   }
 
@@ -296,10 +308,6 @@ export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
     const metalPosition = coords.get(metalAtomId);
     const ligandAtomIds = directLigandAtomIds(layoutGraph, metalAtomId, coords);
     const idealAngles = idealLigandAngles(layoutGraph, metalAtomId, ligandAtomIds.length);
-    const centerCandidate = centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold);
-    if (centerCandidate) {
-      return true;
-    }
     const chelatedTargets = chelatedTerminalLigandTargets(layoutGraph, metalAtomId, ligandAtomIds, metalPosition, coords, Math.PI + angleThreshold);
     if (chelatedTargets) {
       for (const [ligandAtomId, targetAngle] of chelatedTargets) {
@@ -308,6 +316,11 @@ export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
           return true;
         }
       }
+      continue;
+    }
+    const centerCandidate = centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold);
+    if (centerCandidate) {
+      return true;
     }
     if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
       continue;
@@ -354,13 +367,6 @@ export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
       let metalPosition = coords.get(metalAtomId);
       const ligandAtomIds = directLigandAtomIds(layoutGraph, metalAtomId, coords);
       const idealAngles = idealLigandAngles(layoutGraph, metalAtomId, ligandAtomIds.length);
-      const centerCandidate = centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold);
-      if (centerCandidate) {
-        coords.set(metalAtomId, centerCandidate.position);
-        metalPosition = centerCandidate.position;
-        nudges++;
-        moved = true;
-      }
       const chelatedTargets = chelatedTerminalLigandTargets(layoutGraph, metalAtomId, ligandAtomIds, metalPosition, coords, Math.PI + angleThreshold);
       if (chelatedTargets) {
         for (const [ligandAtomId, targetAngle] of chelatedTargets) {
@@ -374,6 +380,13 @@ export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
           moved = true;
         }
         continue;
+      }
+      const centerCandidate = centeredMetalPositionCandidate(layoutGraph, ligandAtomIds, metalPosition, coords, bondLength, angleThreshold);
+      if (centerCandidate) {
+        coords.set(metalAtomId, centerCandidate.position);
+        metalPosition = centerCandidate.position;
+        nudges++;
+        moved = true;
       }
       if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
         continue;

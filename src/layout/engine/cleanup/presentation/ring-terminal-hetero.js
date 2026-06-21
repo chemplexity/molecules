@@ -17,6 +17,7 @@ import { isExactVisibleTrigonalBisectorEligible } from '../../placement/branch-p
 import { visibleHeavyCovalentBonds } from '../bond-utils.js';
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
+const TERMINAL_MULTIPLE_BOND_HYPERVALENT_SUPPORT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const TERMINAL_HETERO_OUTWARD_NEED_TRIGGER = Math.PI / 9;
 const TERMINAL_HETERO_BOND_LENGTH_NEED_FACTOR = 0.02;
 const TERMINAL_HETERO_BLOCKER_RELIEF_OFFSETS = Object.freeze([
@@ -1355,6 +1356,30 @@ function pairedTerminalMultipleBondLeafFanDescriptor(coords, centerAtomId, heavy
 }
 
 /**
+ * Returns whether a nonterminal multiple-bond hetero can anchor a visible
+ * trigonal fan while terminal oxo leaves move around it.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Candidate fan center atom id.
+ * @param {{bond: object, neighborAtomId: string}} fixedBond - The non-leaf fixed support bond.
+ * @returns {boolean} True when the support can be treated as the fixed fan arm.
+ */
+function isMultipleBondHeteroFanSupport(layoutGraph, centerAtomId, fixedBond) {
+  const centerAtom = layoutGraph.atoms.get(centerAtomId);
+  const neighborAtom = layoutGraph.atoms.get(fixedBond?.neighborAtomId);
+  return (
+    !!centerAtom &&
+    TERMINAL_MULTIPLE_BOND_HYPERVALENT_SUPPORT_ELEMENTS.has(centerAtom.element) &&
+    !!fixedBond?.bond &&
+    !fixedBond.bond.aromatic &&
+    (fixedBond.bond.order ?? 1) >= 2 &&
+    !!neighborAtom &&
+    neighborAtom.element !== 'C' &&
+    neighborAtom.element !== 'H' &&
+    (neighborAtom.heavyDegree ?? 0) > 1
+  );
+}
+
+/**
  * Builds a terminal hetero fan descriptor for trigonal acid-like centers with
  * one terminal multiple-bond hetero leaf and one terminal single-bond hetero
  * leaf. Both terminal leaves are moved around the fixed support atom so
@@ -1474,7 +1499,10 @@ function terminalMultipleBondLeafFanDescriptor(layoutGraph, coords, centerAtomId
   }
 
   const fixedBonds = heavyBonds.filter(({ neighborAtomId }) => !terminalMultipleBondLeaves.some(leaf => leaf.neighborAtomId === neighborAtomId));
-  if (fixedBonds.length !== 1 || fixedBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)) {
+  if (
+    fixedBonds.length !== 1 ||
+    fixedBonds.some(fixedBond => fixedBond.bond.aromatic || ((fixedBond.bond.order ?? 1) !== 1 && !isMultipleBondHeteroFanSupport(layoutGraph, centerAtomId, fixedBond)))
+  ) {
     return null;
   }
   return pairedTerminalMultipleBondLeafFanDescriptor(coords, centerAtomId, heavyBonds, terminalMultipleBondLeaves);
