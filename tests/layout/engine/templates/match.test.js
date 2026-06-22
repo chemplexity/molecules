@@ -383,6 +383,16 @@ describe('layout/engine/templates/match', () => {
     assert.notEqual(withoutCarbonylMatch?.id, 'dihydroxy-oxabicyclic-lactone-core');
   });
 
+  it('matches hydroxyalkyl oxatricyclic lactones only with carbonyl and alkyl exit context', () => {
+    const graph = createLayoutGraph(parseSMILES('OCCC12OC3CC1C3C2=O'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'hydroxyalkyl-oxatricyclic-lactone-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('OCCC12OC3CC1C3C2'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutCarbonylMatch?.id, 'hydroxyalkyl-oxatricyclic-lactone-core');
+  });
+
   it('matches azabicyclo ketone oxadiazole cages only with carbonyl and heteroaryl exit context', () => {
     const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));

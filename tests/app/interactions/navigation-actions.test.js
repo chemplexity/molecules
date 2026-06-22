@@ -1203,6 +1203,92 @@ test('toggleMode regularizes small force-mode ring drift before rendering line m
   }
 });
 
+test('line force line conversion preserves manual 1.5 aromatic bond state', () => {
+  let mol2d = parseSMILES('CC');
+  generateCoords(mol2d, { suppressH: true, bondLength: 1.5 });
+  const manualBond = [...mol2d.bonds.values()].find(bond => bond.atoms.every(atomId => mol2d.atoms.get(atomId)?.name === 'C'));
+  assert.ok(manualBond);
+  manualBond.setAromatic(true);
+  delete manualBond.properties.localizedOrder;
+
+  let currentMol = null;
+  let mode = '2d';
+  let nodes = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => (mode === 'force' ? currentMol : mol2d),
+        getMol2d: () => mol2d,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {},
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome() {},
+      plotEl: { clientWidth: 800, clientHeight: 600 }
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol: (renderedMol, options = {}) => {
+        currentMol = renderedMol;
+        if (mode === 'force') {
+          nodes = [...(options.forceInitialPatchPos ?? new Map()).entries()].map(([id, position]) => ({
+            id,
+            name: renderedMol.atoms.get(id)?.name,
+            x: position.x,
+            y: position.y
+          }));
+          return;
+        }
+        mol2d = renderedMol;
+      }
+    },
+    helpers: {
+      getLayoutBondLength: () => 1.5,
+      refineExistingCoords
+    },
+    parsers: {
+      parseSMILES
+    }
+  });
+
+  actions.toggleMode();
+  const forceBond = [...currentMol.bonds.values()].find(bond => bond.atoms.every(atomId => currentMol.atoms.get(atomId)?.name === 'C'));
+  assert.equal(forceBond.properties.aromatic, true);
+  assert.equal(forceBond.properties.order, 1.5);
+  assert.equal(forceBond.properties.localizedOrder, undefined);
+
+  actions.toggleMode();
+  const returnedBond = [...mol2d.bonds.values()].find(bond => bond.atoms.every(atomId => mol2d.atoms.get(atomId)?.name === 'C'));
+  assert.equal(returnedBond.properties.aromatic, true);
+  assert.equal(returnedBond.properties.order, 1.5);
+  assert.equal(returnedBond.properties.localizedOrder, undefined);
+});
+
 test('repeated clean after force perturbation preserves regular ring geometry', () => {
   const smiles = 'Cc1cc(C)cc(NC(=O)c2cc(NC(=O)c3ccc(cc3Cl)S(=O)(=O)C)ccc2Cl)c1';
   let mol2d = parseSMILES(smiles);

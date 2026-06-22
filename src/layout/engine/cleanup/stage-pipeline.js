@@ -1,7 +1,7 @@
 /** @module cleanup/stage-pipeline */
 
 import { auditCleanupStage, auditFinalStereoStage, measureCleanupStagePresentationPenalty } from '../audit/stage-metrics.js';
-import { measureDivalentContinuationDistortion, measureThreeHeavyContinuationDistortion, measureTrigonalDistortion } from '../audit/invariants.js';
+import { measureDivalentContinuationDistortion, measureTetrahedralDistortion, measureThreeHeavyContinuationDistortion, measureTrigonalDistortion } from '../audit/invariants.js';
 import { collectProtectedEZAtomIds } from '../stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { mergeFrozenAtomIds } from './frozen-atoms.js';
@@ -23,7 +23,7 @@ import { measurePhosphateArylTailPresentationPenalty } from './presentation/phos
 import { measureTerminalCationRingProximityPenalty } from './presentation/terminal-cation-ring-clearance.js';
 import { hasSpecialistCleanupNeed, runSpecialistCleanup } from './specialists/specialist-cleanup.js';
 import { measureLigandAngleDeviation } from './ligand-angle-tidy.js';
-import { runProjectedTetrahedralBranchClearance } from './presentation/projected-tetrahedral-clearance.js';
+import { hasProjectedTetrahedralBranchClearanceNeed, runProjectedTetrahedralBranchClearance } from './presentation/projected-tetrahedral-clearance.js';
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 import { isPreferredCleanupGeometryStage, isPreferredFinalStereoStage, isPreferredProtectedCleanupStage } from './stage-comparators.js';
 import { DISTANCE_EPSILON, PRESENTATION_METRIC_EPSILON } from '../constants.js';
@@ -110,6 +110,12 @@ function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
         ? options.hasAromaticMovableAttachedRingFn(coords)
         : collectMovableAttachedRingDescriptors(layoutGraph, coords, options.frozenAtomIds ?? null).some(descriptor => layoutGraph.atoms.get(descriptor.anchorAtomId)?.aromatic === true)
       : false;
+  const hasProjectedTetrahedralBranchClearanceWork = () =>
+    coords instanceof Map
+      ? typeof options.projectedTetrahedralBranchClearanceNeedFn === 'function'
+        ? options.projectedTetrahedralBranchClearanceNeedFn(coords)
+        : hasProjectedTetrahedralBranchClearanceNeed(layoutGraph, coords)
+      : false;
   return (
     (audit?.labelOverlapCount ?? 0) > 0 ||
     (audit?.stereoContradiction ?? false) === true ||
@@ -117,6 +123,7 @@ function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
     (options.includeRingSubstituent === true && getTerminalHeteroOutwardMaxPenalty() > DISTANCE_EPSILON) ||
     hasOutstandingRingPresentationNeed(layoutGraph, getEnrichedStageResult()) ||
     (options.includeAttachedRingFallback === true && hasAromaticMovableAttachedRing()) ||
+    (options.includeProjectedTetrahedralBranchClearance === true && hasProjectedTetrahedralBranchClearanceWork()) ||
     (options.includeSymmetry === true &&
       hasSymmetryTidyNeed(stageResult?.coords, {
         epsilon: options.symmetryEpsilon,
@@ -222,6 +229,7 @@ export function buildCleanupStageGraph(context) {
       frozenAtomIds: placement.frozenAtomIds
     });
     const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, coords);
+    const tetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, coords);
     const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords);
     const metrics = {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
@@ -232,6 +240,7 @@ export function buildCleanupStageGraph(context) {
       terminalAlkeneContinuationPenalty: terminalAlkeneContinuationPenalty.totalDeviation,
       terminalAlkeneContinuationMaxPenalty: terminalAlkeneContinuationPenalty.maxDeviation,
       trigonalDistortionPenalty: trigonalDistortionPenalty.totalDeviation,
+      tetrahedralDistortionPenalty: tetrahedralDistortionPenalty.totalDeviation,
       omittedHydrogenTrigonalPenalty: omittedHydrogenTrigonalPenalty.totalDeviation,
       omittedHydrogenDirectRingHubCollateralRootMaxPenalty: omittedHydrogenCollateralRootPenalty.maxDeviation,
       omittedHydrogenDirectRingHubCollateralRootPenalty: omittedHydrogenCollateralRootPenalty.totalDeviation,
@@ -274,6 +283,18 @@ export function buildCleanupStageGraph(context) {
     aromaticMovableAttachedRingCache.set(coords, result);
     return result;
   };
+  const projectedTetrahedralBranchClearanceNeedCache = new WeakMap();
+  const projectedTetrahedralBranchClearanceNeedFor = coords => {
+    if (!(coords instanceof Map)) {
+      return false;
+    }
+    if (projectedTetrahedralBranchClearanceNeedCache.has(coords)) {
+      return projectedTetrahedralBranchClearanceNeedCache.get(coords);
+    }
+    const result = hasProjectedTetrahedralBranchClearanceNeed(layoutGraph, coords);
+    projectedTetrahedralBranchClearanceNeedCache.set(coords, result);
+    return result;
+  };
   const scorePresentationTieBreakMetrics = coords => {
     const metrics = presentationMetricsFor(coords);
     return {
@@ -284,6 +305,7 @@ export function buildCleanupStageGraph(context) {
       terminalAlkeneContinuationPenalty: metrics?.terminalAlkeneContinuationPenalty ?? 0,
       terminalAlkeneContinuationMaxPenalty: metrics?.terminalAlkeneContinuationMaxPenalty ?? 0,
       trigonalDistortionPenalty: metrics?.trigonalDistortionPenalty ?? 0,
+      tetrahedralDistortionPenalty: metrics?.tetrahedralDistortionPenalty ?? 0,
       omittedHydrogenTrigonalPenalty: metrics?.omittedHydrogenTrigonalPenalty ?? 0,
       omittedHydrogenDirectRingHubCollateralRootMaxPenalty: metrics?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0,
       omittedHydrogenDirectRingHubCollateralRootPenalty: metrics?.omittedHydrogenDirectRingHubCollateralRootPenalty ?? 0,
@@ -645,7 +667,8 @@ export function buildCleanupStageGraph(context) {
       (metrics?.divalentContinuationMaxPenalty ?? 0) > DISTANCE_EPSILON ||
       (metrics?.smallRingExteriorFanExactMaxPenalty ?? 0) > DISTANCE_EPSILON ||
       (metrics?.attachedRingRootOutwardPenalty ?? 0) > DISTANCE_EPSILON ||
-      (metrics?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0) > DISTANCE_EPSILON
+      (metrics?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0) > DISTANCE_EPSILON ||
+      projectedTetrahedralBranchClearanceNeedFor(incumbent.coords)
     );
   };
 
@@ -756,12 +779,14 @@ export function buildCleanupStageGraph(context) {
           includeTerminalMultipleBondLeaf: !skipDirtyGenericTerminalMultipleBondLeaf,
           includeTerminalHetero: hasRingTerminalHeteroHook,
           includeAttachedRingFallback,
+          includeProjectedTetrahedralBranchClearance: true,
           frozenAtomIds: placement.frozenAtomIds,
           includeSymmetry: familySummary.primaryFamily === 'fused' && familySummary.mixedMode !== true,
           symmetryEpsilon: bondLength * 0.01,
           getPresentationMetrics: presentationMetricsFor,
           ringTerminalHeteroTidyNeedFn: ringTerminalHeteroTidyNeedFor,
-          hasAromaticMovableAttachedRingFn: hasAromaticMovableAttachedRing
+          hasAromaticMovableAttachedRingFn: hasAromaticMovableAttachedRing,
+          projectedTetrahedralBranchClearanceNeedFn: projectedTetrahedralBranchClearanceNeedFor
         });
       },
       transformFn(parentCoords, inputContext, _stageResults, incumbent) {

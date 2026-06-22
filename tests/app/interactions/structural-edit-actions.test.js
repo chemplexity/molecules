@@ -1960,6 +1960,85 @@ describe('createStructuralEditActions', () => {
     assert.equal(bond.properties.aromatic, true);
   });
 
+  it('promotes a manually aromatic cyclohexane ring to aromatic atoms once all ring bonds are aromatic', () => {
+    const mol = parseSMILES('C1CCCCC1');
+    const ringAtomIds = mol.getRings()[0];
+    const ringBonds = ringAtomIds.map((atomId, index) => mol.getBond(atomId, ringAtomIds[(index + 1) % ringAtomIds.length]));
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    for (const bond of ringBonds.slice(0, -1)) {
+      actions.promoteBondOrder(bond.id, {
+        drawBondType: 'aromatic',
+        skipReactionPreviewPrep: true,
+        skipResonancePrep: true,
+        skipSnapshot: true,
+        zoomSnapshot: 'zoom-snapshot'
+      });
+    }
+    assert.equal(ringAtomIds.some(atomId => mol.atoms.get(atomId)?.properties.aromatic === true), false);
+
+    actions.promoteBondOrder(ringBonds.at(-1).id, {
+      drawBondType: 'aromatic',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(ringBonds.every(bond => bond.properties.aromatic === true && bond.properties.order === 1.5), true);
+    assert.equal(ringAtomIds.every(atomId => mol.atoms.get(atomId)?.properties.aromatic === true), true);
+  });
+
+  it('applies the aromatic 1.5 bond type to existing force-mode bonds', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      mode: 'force',
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1', {
+      drawBondType: 'aromatic',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(bond.properties.aromatic, true);
+    assert.equal(bond.properties.order, 1.5);
+    assert.equal(bond.properties.localizedOrder, undefined);
+    assert.deepEqual(result.force.options, { preservePositions: true });
+  });
+
   it('clears a manual wedge or dash display when single bond mode is selected', () => {
     const atom1 = makeAtom('a1', 'C');
     const atom2 = makeAtom('a2', 'C');

@@ -1,5 +1,16 @@
 # Change Log
 
+## 2026-06-21
+
+- Preserve manual 1.5 aromatic bond edits through line/force mode switches while rendering localized aromatic rings in force mode as single/double bonds.
+- Treat a fully manually aromatic ring from the line tool as aromatic atoms once every ring bond has been drawn aromatic.
+- Snap mixed-ring glycosidic ether bridges to consistent publication-style continuation angles.
+- Open crowded terminal carbon leaf fans around suppressed-hydrogen three-heavy centers.
+- Restore hidden-H vinylic enamine tails to exact trigonal fans after trioxazole macrolide placement.
+- Add a trioxazole macrolide template so embedded oxazole rings render as exact five-member pentagons.
+- Add a bridged oxatricyclic lactone template so compact ether-lactone cages avoid crossed fallback geometry.
+- Open phosphate-bridged quaternary aryl branch fans so saturated centers avoid pinched or straight-through carbon angles.
+
 ## 2026-06-20
 
 - Split terminal chlorides across generic four-coordinate zirconium chelate pockets without stretching metal-ligand bonds.

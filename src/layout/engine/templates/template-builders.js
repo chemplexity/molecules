@@ -420,6 +420,18 @@ function createTransPolyeneMacrolideTemplate() {
 }
 
 /**
+ * Creates the trioxazole macrolide scaffold whose three oxazole rings sit in
+ * the macrocycle perimeter.
+ * @returns {Molecule} Trioxazole macrolide scaffold template molecule.
+ */
+function createTrioxazoleMacrolideTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'trioxazole-macrolide',
+    String.raw`CO[C@H](<C[C@H]1OC(=O)C[C@H](O)CCCC(=O)C[C@H](C)C2=COC(=N2)C2=COC(=N2)C2=COC(\C=C\C[C@@H](OC)[C@@H]1C)=N2>)[C@H](C)CCC(=O)[C@H](C)[C@@H](<OC(C)=O>)[C@H](C)\C=C\N(C)CO`
+  );
+}
+
+/**
  * Creates an unsaturated steroid nucleus template shared by testosterone-like cores.
  * @returns {Molecule} Unsaturated steroid scaffold template molecule.
  */
@@ -833,6 +845,15 @@ function createAminonitrileAcetalBridgedCoreTemplate() {
  */
 function createCyanoFormylAcetalBridgedCoreTemplate() {
   return createRingSystemTemplateFromSmiles('cyano-formyl-acetal-bridged-core', 'CC1CC2CC1(C#N)C1(COC(CO2)O1)C=O');
+}
+
+/**
+ * Creates the compact hydroxyalkyl oxatricyclic lactone scaffold graph found in
+ * small cyclobutane-bridged lactones like `OCCC12OC3CC1C3C2=O`.
+ * @returns {Molecule} Hydroxyalkyl oxatricyclic lactone scaffold template molecule.
+ */
+function createHydroxyalkylOxatricyclicLactoneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('hydroxyalkyl-oxatricyclic-lactone-core', 'OCCC12OC3CC1C3C2=O');
 }
 
 /**
@@ -2033,6 +2054,47 @@ function createTransPolyeneMacrolideGeometry() {
 }
 
 /**
+ * Creates a trioxazole macrolide projection with all three oxazole rings kept
+ * as exact pentagons and the macrocycle return path opened into a broad arc.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createTrioxazoleMacrolideGeometry() {
+  return createCenteredFrozenGeometry([
+    ['N28', { x: 0.809017, y: -0.587785 }],
+    ['C27', { x: 1.618034, y: 0 }],
+    ['O26', { x: 1.309017, y: 0.951057 }],
+    ['C25', { x: 0.309017, y: 0.951057 }],
+    ['C24', { x: 0, y: 0 }],
+    ['N33', { x: 3.427051, y: -0.587785 }],
+    ['C32', { x: 4.236068, y: 0 }],
+    ['O31', { x: 3.927051, y: 0.951057 }],
+    ['C30', { x: 2.927051, y: 0.951057 }],
+    ['C29', { x: 2.618034, y: 0 }],
+    ['N48', { x: 6.045085, y: -0.587785 }],
+    ['C37', { x: 6.854102, y: 0 }],
+    ['O36', { x: 6.545085, y: 0.951057 }],
+    ['C35', { x: 5.545085, y: 0.951057 }],
+    ['C34', { x: 5.236068, y: 0 }],
+    ['C21', { x: -0.412273, y: -0.91106 }],
+    ['C20', { x: -0.586863, y: -1.895701 }],
+    ['C18', { x: -0.512961, y: -2.892967 }],
+    ['C17', { x: -0.195142, y: -3.841118 }],
+    ['C16', { x: 0.346919, y: -4.681458 }],
+    ['C15', { x: 1.079664, y: -5.361962 }],
+    ['C12', { x: 1.957729, y: -5.840502 }],
+    ['C11', { x: 2.926757, y: -6.087453 }],
+    ['C9', { x: 3.926757, y: -6.087526 }],
+    ['O8', { x: 4.895822, y: -5.840718 }],
+    ['C6', { x: 5.773958, y: -5.362307 }],
+    ['C45', { x: 6.506802, y: -4.681911 }],
+    ['C41', { x: 7.048987, y: -3.841652 }],
+    ['C40', { x: 7.366946, y: -2.893547 }],
+    ['C39', { x: 7.440995, y: -1.896293 }],
+    ['C38', { x: 7.26655, y: -0.911626 }]
+  ]);
+}
+
+/**
  * Creates normalized coordinates for the unsaturated steroid nucleus with the D ring on the right.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -2602,6 +2664,25 @@ function createCyanoFormylAcetalBridgedCoreGeometry() {
     ['O14', { x: -0.164834, y: -1.320022 }],
     ['O11', { x: 1.403531, y: 1.038351 }],
     ['O15', { x: 0.427252, y: 0.28405 }]
+  ]);
+}
+
+/**
+ * Creates a strict-pentagon projection for hydroxyalkyl oxatricyclic lactones.
+ * The five-member ether ring stays regular, while the cyclobutane and lactone
+ * bridge atoms sit outside the pentagon so the cage reads without stacked
+ * short bonds.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createHydroxyalkylOxatricyclicLactoneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['O5', { x: -0.75237, y: -0.24459 }],
+    ['C6', { x: 0, y: -0.79143 }],
+    ['C7', { x: 0.75237, y: -0.24459 }],
+    ['C8', { x: 0.465, y: 0.63984 }],
+    ['C4', { x: -0.465, y: 0.63984 }],
+    ['C9', { x: 1.3, y: -0.3 }],
+    ['C10', { x: 0.882, y: 1.01 }]
   ]);
 }
 
@@ -4722,6 +4803,21 @@ export function buildTemplateLibrary() {
       }
     ),
     createTemplate(
+      'hydroxyalkyl-oxatricyclic-lactone-core',
+      'bridged',
+      53.87076,
+      createHydroxyalkylOxatricyclicLactoneCoreTemplate(),
+      geometrySpec('normalized-xy', createHydroxyalkylOxatricyclicLactoneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C4', element: 'C', bondOrder: 1, neighborDegree: 4, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C10', element: 'O', bondOrder: 2, neighborDegree: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'formyl-acetal-cyclobutane-core',
       'bridged',
       53.87075,
@@ -5648,6 +5744,7 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createCalixareneGuanidineCoreGeometry(), PLANAR_VALIDATION)
     ),
     createTemplate('porphine', 'macrocycle', 40.985, createPorphineTemplate(), geometrySpec('normalized-xy', createPorphineGeometry(), PLANAR_VALIDATION)),
+    createTemplate('trioxazole-macrolide', 'macrocycle', 40.984, createTrioxazoleMacrolideTemplate(), geometrySpec('normalized-xy', createTrioxazoleMacrolideGeometry(), PLANAR_VALIDATION)),
     createTemplate('trans-polyene-macrolide', 'macrocycle', 40.982, createTransPolyeneMacrolideTemplate(), geometrySpec('normalized-xy', createTransPolyeneMacrolideGeometry(), PLANAR_VALIDATION), {
       matchContext: {
         mappedBonds: [

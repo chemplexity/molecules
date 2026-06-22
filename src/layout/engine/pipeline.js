@@ -14,6 +14,7 @@ import { visibleHeavyCovalentBonds } from './cleanup/bond-utils.js';
 import { collectCutSubtree } from './cleanup/subtree-utils.js';
 import { resolveMixedAcylBranchSevereContacts, resolveRingSubstituentBoundedReadability, resolveRingSubstituentBranchCrossings } from './families/mixed.js';
 import {
+  LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION,
   measureRingAdjacentTerminalDivalentContinuationDistortion,
   runDivalentContinuationTidy,
   runLargeAcyclicEtherLinkerContinuationTidy,
@@ -351,6 +352,14 @@ const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_GAIN = Math.PI / 18;
 const FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MIN_MAX_GAIN = Math.PI / 45;
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_TOTAL_INCREASE = 0.05;
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS = Object.freeze([15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const FINAL_HIDDEN_H_VINYLIC_FAN_MIN_DEVIATION = Math.PI / 12;
+const FINAL_HIDDEN_H_VINYLIC_FAN_MAX_MOVED_HEAVY_ATOMS = 12;
+const FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_GAIN = (5 * Math.PI) / 180;
+const FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_ACCEPTED_ANGLE = (95 * Math.PI) / 180;
+const FINAL_THREE_HEAVY_LEAF_SPREAD_MAX_ACCEPTED_ANGLE = (165 * Math.PI) / 180;
+const FINAL_THREE_HEAVY_LEAF_SPREAD_ROTATIONS = Object.freeze([-80, -75, -70, -65, -60, -55, -50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_THREE_HEAVY_SUPPORT_RELIEF_ROTATIONS = Object.freeze([-30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_THREE_HEAVY_SUPPORT_RELIEF_MAX_HEAVY_ATOMS = 120;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_MAX_DEVIATION = 0.06;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MAX_TOTAL_INCREASE = 0.08;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_DEVIATION_GAIN = 0.04;
@@ -807,7 +816,7 @@ function snapTinyCoordinateNoise(coords, epsilon = 1e-12) {
   }
 }
 
-function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) {
+function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit, options = {}) {
   if (!candidateAudit || !baseAudit || (baseAudit.ok === true && candidateAudit.ok !== true)) {
     return false;
   }
@@ -821,7 +830,7 @@ function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) {
     'outwardAxisRingSubstituentFailureCount',
     'severeOverlapCount',
     'visibleHeavyBondCrossingCount',
-    'labelOverlapCount'
+    ...(options.allowLabelOverlapIncrease === true ? [] : ['labelOverlapCount'])
   ]) {
     if ((candidateAudit[key] ?? 0) > (baseAudit[key] ?? 0)) {
       return false;
@@ -4470,6 +4479,318 @@ function finalThreeHeavyFanCandidateAssignments(neighbors, fixedNeighbor, direct
 }
 
 /**
+ * Scores the visual spread of the three heavy branches around a suppressed-H
+ * saturated carbon.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, neighbors: Array<{atomId: string}>}} descriptor - Three-heavy fan descriptor.
+ * @returns {{minAngle: number, maxAngle: number, spread: number}} Angular spread score in radians.
+ */
+function finalThreeHeavyFanSpreadScore(coords, descriptor) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition || descriptor.neighbors.length !== 3) {
+    return { minAngle: 0, maxAngle: Math.PI, spread: Math.PI };
+  }
+  const angles = [];
+  for (let firstIndex = 0; firstIndex < descriptor.neighbors.length; firstIndex++) {
+    const firstPosition = coords.get(descriptor.neighbors[firstIndex].atomId);
+    if (!firstPosition) {
+      continue;
+    }
+    for (let secondIndex = firstIndex + 1; secondIndex < descriptor.neighbors.length; secondIndex++) {
+      const secondPosition = coords.get(descriptor.neighbors[secondIndex].atomId);
+      if (!secondPosition) {
+        continue;
+      }
+      angles.push(angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition))));
+    }
+  }
+  if (angles.length !== 3) {
+    return { minAngle: 0, maxAngle: Math.PI, spread: Math.PI };
+  }
+  const minAngle = Math.min(...angles);
+  const maxAngle = Math.max(...angles);
+  return { minAngle, maxAngle, spread: maxAngle - minAngle };
+}
+
+/**
+ * Returns terminal carbon leaf branches that can be rotated around a distorted
+ * suppressed-H three-heavy carbon without moving the larger scaffold.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{centerAtomId: string, neighbors: Array<{atomId: string}>}} descriptor - Three-heavy fan descriptor.
+ * @returns {Array<{atomId: string, angle: number}>} Terminal carbon leaf neighbors.
+ */
+function finalThreeHeavyTerminalCarbonLeaves(layoutGraph, descriptor) {
+  return descriptor.neighbors.filter(neighbor => {
+    const atom = layoutGraph.atoms.get(neighbor.atomId);
+    return atom && atom.element === 'C' && !atom.aromatic && atom.heavyDegree === 1;
+  });
+}
+
+/**
+ * Builds a bounded terminal-leaf spread candidate for a distorted suppressed-H
+ * three-heavy carbon when exact trigonal repair is blocked by overlaps.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {{centerAtomId: string, centerPosition: {x: number, y: number}, neighbors: Array<{atomId: string}>}} descriptor - Three-heavy fan descriptor.
+ * @param {Array<{atomId: string, rotation: number}>} rotations - Leaf rotations in radians.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[]}|null} Candidate or null.
+ */
+function finalThreeHeavyLeafSpreadCandidate(layoutGraph, coords, descriptor, rotations) {
+  const candidateCoords = cloneCoords(coords);
+  const movedAtomIds = new Set();
+  for (const { atomId, rotation } of rotations) {
+    if (Math.abs(rotation) <= PRESENTATION_METRIC_EPSILON) {
+      continue;
+    }
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, atomId, descriptor.centerAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+    if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(descriptor.centerAtomId) || subtreeAtomIds.some(subtreeAtomId => layoutGraph.fixedCoords?.has(subtreeAtomId))) {
+      return null;
+    }
+    for (const subtreeAtomId of subtreeAtomIds) {
+      const position = coords.get(subtreeAtomId);
+      if (!position) {
+        continue;
+      }
+      candidateCoords.set(subtreeAtomId, add(descriptor.centerPosition, rotate(sub(position, descriptor.centerPosition), rotation)));
+      movedAtomIds.add(subtreeAtomId);
+    }
+  }
+  return movedAtomIds.size > 0 ? { coords: candidateCoords, movedAtomIds: [...movedAtomIds] } : null;
+}
+
+/**
+ * Collects sibling branch rotations around an adjacent three-heavy center that
+ * may clear overlaps created by a preferred fan repair.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{centerAtomId: string, neighbors: Array<{atomId: string}>}} descriptor - Three-heavy fan descriptor.
+ * @returns {Array<{pivotAtomId: string, rootAtomId: string, fixedAtomId: string, neighborAtomIds: string[]}>} Support branch descriptors.
+ */
+function finalThreeHeavySupportReliefBranches(layoutGraph, descriptor) {
+  const branches = [];
+  const centerNeighborIds = new Set(descriptor.neighbors.map(neighbor => neighbor.atomId));
+  for (const neighbor of descriptor.neighbors) {
+    const neighborAtom = layoutGraph.atoms.get(neighbor.atomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.heavyDegree <= 1) {
+      continue;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(neighbor.atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const pivotAtomId = bond.a === neighbor.atomId ? bond.b : bond.a;
+      if (pivotAtomId === descriptor.centerAtomId) {
+        continue;
+      }
+      const pivotAtom = layoutGraph.atoms.get(pivotAtomId);
+      if (!pivotAtom || pivotAtom.element === 'H') {
+        continue;
+      }
+      const supportNeighborIds = [];
+      for (const pivotBond of layoutGraph.bondsByAtomId.get(pivotAtomId) ?? []) {
+        if (!pivotBond || pivotBond.kind !== 'covalent') {
+          continue;
+        }
+        const rootAtomId = pivotBond.a === pivotAtomId ? pivotBond.b : pivotBond.a;
+        const rootAtom = layoutGraph.atoms.get(rootAtomId);
+        if (!rootAtom || rootAtom.element === 'H') {
+          continue;
+        }
+        supportNeighborIds.push(rootAtomId);
+      }
+      if (supportNeighborIds.length !== 3 || !supportNeighborIds.includes(neighbor.atomId)) {
+        continue;
+      }
+      for (const rootAtomId of supportNeighborIds) {
+        if (rootAtomId === neighbor.atomId || rootAtomId === descriptor.centerAtomId || centerNeighborIds.has(rootAtomId)) {
+          continue;
+        }
+        branches.push({
+          pivotAtomId,
+          rootAtomId,
+          fixedAtomId: neighbor.atomId,
+          neighborAtomIds: supportNeighborIds
+        });
+      }
+    }
+  }
+  return branches;
+}
+
+/**
+ * Builds a support-branch rotation candidate around a neighboring three-heavy
+ * center after an exact suppressed-H fan repair has introduced a local contact.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates before support relief.
+ * @param {{pivotAtomId: string, rootAtomId: string, neighborAtomIds: string[]}} branch - Support branch descriptor.
+ * @param {number} rotation - Support rotation in radians.
+ * @param {Iterable<string>} baseMovedAtomIds - Atom ids already moved by the fan repair.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], supportScore: object}|null} Candidate or null.
+ */
+function finalThreeHeavySupportReliefCandidate(layoutGraph, coords, branch, rotation, baseMovedAtomIds) {
+  const pivotPosition = coords.get(branch.pivotAtomId);
+  if (!pivotPosition || Math.abs(rotation) <= PRESENTATION_METRIC_EPSILON) {
+    return null;
+  }
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, branch.rootAtomId, branch.pivotAtomId)].filter(atomId => coords.has(atomId));
+  if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(branch.pivotAtomId) || subtreeAtomIds.some(atomId => layoutGraph.fixedCoords?.has(atomId))) {
+    return null;
+  }
+  const candidateCoords = cloneCoords(coords);
+  const movedAtomIds = new Set(baseMovedAtomIds);
+  for (const atomId of subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, add(pivotPosition, rotate(sub(position, pivotPosition), rotation)));
+    movedAtomIds.add(atomId);
+  }
+  const supportScore = finalThreeHeavyFanSpreadScore(candidateCoords, {
+    centerAtomId: branch.pivotAtomId,
+    neighbors: branch.neighborAtomIds.map(atomId => ({ atomId }))
+  });
+  if (supportScore.minAngle < FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_ACCEPTED_ANGLE || supportScore.maxAngle > FINAL_THREE_HEAVY_LEAF_SPREAD_MAX_ACCEPTED_ANGLE) {
+    return null;
+  }
+  return { coords: candidateCoords, movedAtomIds: [...movedAtomIds], supportScore };
+}
+
+/**
+ * Searches for a neighboring support-branch move that makes an exact
+ * suppressed-H three-heavy fan repair audit-clean.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} currentCoords - Current coordinates before fan repair.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @param {{centerAtomId: string, neighbors: Array<{atomId: string}>}} descriptor - Three-heavy fan descriptor.
+ * @param {{coords: Map<string, {x: number, y: number}>, movedAtomIds: Iterable<string>}} candidate - Exact fan candidate that needs support relief.
+ * @param {object} currentAudit - Current audited layout quality.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object, penalty: object, move: number}|null} Best support-relieved candidate or null.
+ */
+function bestFinalThreeHeavySupportReliefCandidate(molecule, layoutGraph, currentCoords, placement, bondLength, descriptor, candidate, currentAudit) {
+  if ((layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0) > FINAL_THREE_HEAVY_SUPPORT_RELIEF_MAX_HEAVY_ATOMS) {
+    return null;
+  }
+  const descriptorSpreadScore = finalThreeHeavyFanSpreadScore(candidate.coords, descriptor);
+  if (descriptorSpreadScore.minAngle < FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_ACCEPTED_ANGLE || descriptorSpreadScore.maxAngle > FINAL_THREE_HEAVY_LEAF_SPREAD_MAX_ACCEPTED_ANGLE) {
+    return null;
+  }
+  let bestCandidate = null;
+  for (const branch of finalThreeHeavySupportReliefBranches(layoutGraph, descriptor)) {
+    for (const rotation of FINAL_THREE_HEAVY_SUPPORT_RELIEF_ROTATIONS) {
+      const supportCandidate = finalThreeHeavySupportReliefCandidate(layoutGraph, candidate.coords, branch, rotation, candidate.movedAtomIds);
+      if (!supportCandidate) {
+        continue;
+      }
+      const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, supportCandidate.coords, placement, bondLength);
+      if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+        continue;
+      }
+      const candidatePenalty = measureThreeHeavyContinuationDistortion(layoutGraph, supportCandidate.coords);
+      const candidateMove = supportCandidate.movedAtomIds.reduce((total, atomId) => {
+        const before = currentCoords.get(atomId);
+        const after = supportCandidate.coords.get(atomId);
+        return before && after ? total + Math.hypot(after.x - before.x, after.y - before.y) : total;
+      }, 0);
+      const snapshot = {
+        coords: supportCandidate.coords,
+        movedAtomIds: supportCandidate.movedAtomIds,
+        audit: candidateAudit,
+        penalty: candidatePenalty,
+        move: candidateMove,
+        supportScore: supportCandidate.supportScore
+      };
+      if (
+        !bestCandidate ||
+        candidatePenalty.maxDeviation < bestCandidate.penalty.maxDeviation - PRESENTATION_METRIC_EPSILON ||
+        (Math.abs(candidatePenalty.maxDeviation - bestCandidate.penalty.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+          snapshot.supportScore.spread < bestCandidate.supportScore.spread - PRESENTATION_METRIC_EPSILON) ||
+        (Math.abs(candidatePenalty.maxDeviation - bestCandidate.penalty.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+          Math.abs(snapshot.supportScore.spread - bestCandidate.supportScore.spread) <= PRESENTATION_METRIC_EPSILON &&
+          candidateMove < bestCandidate.move)
+      ) {
+        bestCandidate = snapshot;
+      }
+    }
+  }
+  return bestCandidate;
+}
+
+/**
+ * Searches for a clean terminal-leaf spread improvement for a distorted
+ * suppressed-H three-heavy carbon.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @param {{centerAtomId: string, centerPosition: {x: number, y: number}, neighbors: Array<{atomId: string}>}} descriptor - Three-heavy fan descriptor.
+ * @param {object} currentAudit - Current audited layout quality.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object, spreadScore: object, move: number}|null} Best candidate or null.
+ */
+function bestFinalThreeHeavyLeafSpreadCandidate(molecule, layoutGraph, coords, placement, bondLength, descriptor, currentAudit) {
+  const leaves = finalThreeHeavyTerminalCarbonLeaves(layoutGraph, descriptor);
+  if (leaves.length < 2) {
+    return null;
+  }
+  const baseScore = finalThreeHeavyFanSpreadScore(coords, descriptor);
+  let bestCandidate = null;
+  for (let firstLeafIndex = 0; firstLeafIndex < leaves.length; firstLeafIndex++) {
+    for (let secondLeafIndex = firstLeafIndex + 1; secondLeafIndex < leaves.length; secondLeafIndex++) {
+      const firstLeaf = leaves[firstLeafIndex];
+      const secondLeaf = leaves[secondLeafIndex];
+      for (const firstRotation of FINAL_THREE_HEAVY_LEAF_SPREAD_ROTATIONS) {
+        for (const secondRotation of FINAL_THREE_HEAVY_LEAF_SPREAD_ROTATIONS) {
+          const candidate = finalThreeHeavyLeafSpreadCandidate(layoutGraph, coords, descriptor, [
+            { atomId: firstLeaf.atomId, rotation: firstRotation },
+            { atomId: secondLeaf.atomId, rotation: secondRotation }
+          ]);
+          if (!candidate) {
+            continue;
+          }
+          const spreadScore = finalThreeHeavyFanSpreadScore(candidate.coords, descriptor);
+          if (
+            spreadScore.minAngle < FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_ACCEPTED_ANGLE ||
+            spreadScore.maxAngle > FINAL_THREE_HEAVY_LEAF_SPREAD_MAX_ACCEPTED_ANGLE ||
+            spreadScore.minAngle < baseScore.minAngle + FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_GAIN
+          ) {
+            continue;
+          }
+          const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+          if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+            continue;
+          }
+          const candidateMove = candidate.movedAtomIds.reduce((total, atomId) => {
+            const before = coords.get(atomId);
+            const after = candidate.coords.get(atomId);
+            return before && after ? total + Math.hypot(after.x - before.x, after.y - before.y) : total;
+          }, 0);
+          const snapshot = {
+            ...candidate,
+            audit: candidateAudit,
+            spreadScore,
+            move: candidateMove
+          };
+          if (
+            !bestCandidate ||
+            spreadScore.minAngle > bestCandidate.spreadScore.minAngle + PRESENTATION_METRIC_EPSILON ||
+            (Math.abs(spreadScore.minAngle - bestCandidate.spreadScore.minAngle) <= PRESENTATION_METRIC_EPSILON &&
+              spreadScore.spread < bestCandidate.spreadScore.spread - PRESENTATION_METRIC_EPSILON) ||
+            (Math.abs(spreadScore.minAngle - bestCandidate.spreadScore.minAngle) <= PRESENTATION_METRIC_EPSILON &&
+              Math.abs(spreadScore.spread - bestCandidate.spreadScore.spread) <= PRESENTATION_METRIC_EPSILON &&
+              candidateMove < bestCandidate.move)
+          ) {
+            bestCandidate = snapshot;
+          }
+        }
+      }
+    }
+  }
+  return bestCandidate;
+}
+
+/**
  * Scores one suppressed-hydrogen three-heavy fan descriptor so the worst local
  * fans claim shared movable subtrees before lower-priority centers.
  * @param {object} layoutGraph - Layout graph shell.
@@ -4519,6 +4840,28 @@ function maybeRetouchFinalThreeHeavyContinuationFans(molecule, layoutGraph, fina
           let candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength);
           let candidatePenaltyAfterCleanup = candidatePenalty;
           if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+            const supportReliefCandidate = bestFinalThreeHeavySupportReliefCandidate(molecule, layoutGraph, currentCoords, placement, bondLength, descriptor, candidate, currentAudit);
+            if (supportReliefCandidate) {
+              candidateCoords = supportReliefCandidate.coords;
+              candidateAudit = supportReliefCandidate.audit;
+              candidatePenaltyAfterCleanup = supportReliefCandidate.penalty;
+              const candidateSnapshot = {
+                ...candidate,
+                movedAtomIds: supportReliefCandidate.movedAtomIds,
+                coords: candidateCoords,
+                penalty: candidatePenaltyAfterCleanup,
+                audit: candidateAudit,
+                move: supportReliefCandidate.move
+              };
+              if (
+                !bestCandidate ||
+                candidatePenaltyAfterCleanup.maxDeviation < bestCandidate.penalty.maxDeviation - PRESENTATION_METRIC_EPSILON ||
+                (Math.abs(candidatePenaltyAfterCleanup.maxDeviation - bestCandidate.penalty.maxDeviation) <= PRESENTATION_METRIC_EPSILON && supportReliefCandidate.move < bestCandidate.move)
+              ) {
+                bestCandidate = candidateSnapshot;
+              }
+              continue;
+            }
             const frozenAtomIds = new Set([...(placement.frozenAtomIds ?? []), descriptor.centerAtomId, ...descriptor.neighbors.map(neighbor => neighbor.atomId)]);
             for (const neighbor of descriptor.neighbors) {
               for (const bond of layoutGraph.bondsByAtomId.get(neighbor.atomId) ?? []) {
@@ -4569,6 +4912,15 @@ function maybeRetouchFinalThreeHeavyContinuationFans(molecule, layoutGraph, fina
             bestCandidate = candidateSnapshot;
           }
         }
+      }
+    }
+    if (!bestCandidate) {
+      const leafSpreadCandidate = bestFinalThreeHeavyLeafSpreadCandidate(molecule, layoutGraph, currentCoords, placement, bondLength, descriptor, currentAudit);
+      if (leafSpreadCandidate && !leafSpreadCandidate.movedAtomIds.some(atomId => movedAtomIds.has(atomId))) {
+        bestCandidate = {
+          ...leafSpreadCandidate,
+          penalty: measureThreeHeavyContinuationDistortion(layoutGraph, leafSpreadCandidate.coords)
+        };
       }
     }
     if (bestCandidate) {
@@ -4622,6 +4974,225 @@ function finalVisibleThreeHeavyFanScore(coords, centerAtomId, neighborAtomIds) {
     }
   }
   return { maxDeviation, totalDeviation, angles };
+}
+
+/**
+ * Scores a vinylic carbon fan where one hydrogen may be hidden by the drawing
+ * style but still needs a clean trigonal slot.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Vinylic carbon atom ID.
+ * @param {string} parentAtomId - Multiple-bond neighbor atom ID.
+ * @param {string} childAtomId - Single-bond branch atom ID.
+ * @param {string|null} hydrogenAtomId - Direct hydrogen atom ID when present.
+ * @returns {{maxDeviation: number, totalDeviation: number}|null} Fan score in radians.
+ */
+function finalHiddenHydrogenVinylicFanScore(coords, centerAtomId, parentAtomId, childAtomId, hydrogenAtomId = null) {
+  const centerPosition = coords.get(centerAtomId);
+  const parentPosition = coords.get(parentAtomId);
+  const childPosition = coords.get(childAtomId);
+  if (!centerPosition || !parentPosition || !childPosition) {
+    return null;
+  }
+  const parentAngle = angleOf(sub(parentPosition, centerPosition));
+  const childAngle = angleOf(sub(childPosition, centerPosition));
+  const deviations = [Math.abs(angularDifference(parentAngle, childAngle) - EXACT_TRIGONAL_CONTINUATION_ANGLE)];
+  const hydrogenPosition = hydrogenAtomId ? coords.get(hydrogenAtomId) : null;
+  if (hydrogenPosition) {
+    const hydrogenAngle = angleOf(sub(hydrogenPosition, centerPosition));
+    deviations.push(Math.abs(angularDifference(parentAngle, hydrogenAngle) - EXACT_TRIGONAL_CONTINUATION_ANGLE));
+    deviations.push(Math.abs(angularDifference(childAngle, hydrogenAngle) - EXACT_TRIGONAL_CONTINUATION_ANGLE));
+  }
+  return {
+    maxDeviation: Math.max(...deviations),
+    totalDeviation: deviations.reduce((sum, deviation) => sum + deviation, 0)
+  };
+}
+
+/**
+ * Collects distorted hidden-H vinylic fan descriptors.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @returns {Array<{centerAtomId: string, parentAtomId: string, childAtomId: string, hydrogenAtomId: string|null, targetPairs: Array<{childAngle: number, hydrogenAngle: number}>, score: object}>} Descriptors.
+ */
+function finalHiddenHydrogenVinylicFanDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  for (const centerAtomId of coords.keys()) {
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (!centerAtom || centerAtom.element !== 'C' || centerAtom.aromatic || centerAtom.heavyDegree !== 2 || centerAtom.degree !== 3) {
+      continue;
+    }
+    const covalentBonds = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? []).filter(bond => bond?.kind === 'covalent');
+    const heavyBonds = covalentBonds
+      .map(bond => {
+        const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+        return { bond, neighborAtomId, neighborAtom: layoutGraph.atoms.get(neighborAtomId) };
+      })
+      .filter(({ neighborAtomId, neighborAtom }) => coords.has(neighborAtomId) && neighborAtom && neighborAtom.element !== 'H');
+    if (heavyBonds.length !== 2) {
+      continue;
+    }
+    const multipleBonds = heavyBonds.filter(({ bond }) => !bond.aromatic && (bond.order ?? 1) >= 2);
+    const singleBonds = heavyBonds.filter(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1);
+    if (multipleBonds.length !== 1 || singleBonds.length !== 1) {
+      continue;
+    }
+    const hydrogenBond = covalentBonds.find(bond => {
+      const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+      return coords.has(neighborAtomId) && layoutGraph.atoms.get(neighborAtomId)?.element === 'H';
+    });
+    const hydrogenAtomId = hydrogenBond ? (hydrogenBond.a === centerAtomId ? hydrogenBond.b : hydrogenBond.a) : null;
+    const parentAtomId = multipleBonds[0].neighborAtomId;
+    const childAtomId = singleBonds[0].neighborAtomId;
+    const score = finalHiddenHydrogenVinylicFanScore(coords, centerAtomId, parentAtomId, childAtomId, hydrogenAtomId);
+    if (!score || score.maxDeviation <= FINAL_HIDDEN_H_VINYLIC_FAN_MIN_DEVIATION) {
+      continue;
+    }
+    const centerPosition = coords.get(centerAtomId);
+    const parentPosition = coords.get(parentAtomId);
+    const parentAngle = angleOf(sub(parentPosition, centerPosition));
+    descriptors.push({
+      centerAtomId,
+      parentAtomId,
+      childAtomId,
+      hydrogenAtomId,
+      targetPairs: [
+        { childAngle: parentAngle + EXACT_TRIGONAL_CONTINUATION_ANGLE, hydrogenAngle: parentAngle - EXACT_TRIGONAL_CONTINUATION_ANGLE },
+        { childAngle: parentAngle - EXACT_TRIGONAL_CONTINUATION_ANGLE, hydrogenAngle: parentAngle + EXACT_TRIGONAL_CONTINUATION_ANGLE }
+      ],
+      score
+    });
+  }
+  return descriptors.sort((first, second) => second.score.maxDeviation - first.score.maxDeviation);
+}
+
+/**
+ * Builds a rigid branch rotation that restores a hidden-H vinylic fan to exact
+ * trigonal slots.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} descriptor - Hidden-H vinylic fan descriptor.
+ * @param {{childAngle: number, hydrogenAngle: number}} targetPair - Target child/H angles.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], movedHeavyAtomCount: number, totalMove: number}|null} Candidate or null.
+ */
+function finalHiddenHydrogenVinylicFanCandidate(layoutGraph, coords, descriptor, targetPair) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const childPosition = coords.get(descriptor.childAtomId);
+  if (!centerPosition || !childPosition) {
+    return null;
+  }
+  const rotation = targetPair.childAngle - angleOf(sub(childPosition, centerPosition));
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, descriptor.childAtomId, descriptor.centerAtomId)].filter(atomId => coords.has(atomId));
+  if (
+    subtreeAtomIds.length === 0 ||
+    subtreeAtomIds.includes(descriptor.centerAtomId) ||
+    subtreeAtomIds.includes(descriptor.parentAtomId) ||
+    subtreeAtomIds.some(atomId => layoutGraph.fixedCoords?.has(atomId))
+  ) {
+    return null;
+  }
+  const movedHeavyAtomCount = subtreeAtomIds.reduce((count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1), 0);
+  if (movedHeavyAtomCount > FINAL_HIDDEN_H_VINYLIC_FAN_MAX_MOVED_HEAVY_ATOMS) {
+    return null;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  let totalMove = 0;
+  for (const atomId of subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const rotatedPosition = add(centerPosition, rotate(sub(position, centerPosition), rotation));
+    candidateCoords.set(atomId, rotatedPosition);
+    totalMove += distance(position, rotatedPosition);
+  }
+  const movedAtomIds = new Set(subtreeAtomIds);
+  if (descriptor.hydrogenAtomId && coords.has(descriptor.hydrogenAtomId) && !layoutGraph.fixedCoords?.has(descriptor.hydrogenAtomId)) {
+    const hydrogenPosition = coords.get(descriptor.hydrogenAtomId);
+    const radius = distance(centerPosition, hydrogenPosition);
+    const targetPosition = add(centerPosition, fromAngle(targetPair.hydrogenAngle, radius));
+    candidateCoords.set(descriptor.hydrogenAtomId, targetPosition);
+    movedAtomIds.add(descriptor.hydrogenAtomId);
+    totalMove += distance(hydrogenPosition, targetPosition);
+  }
+
+  return totalMove > PRESENTATION_METRIC_EPSILON
+    ? {
+        coords: candidateCoords,
+        movedAtomIds: [...movedAtomIds],
+        movedHeavyAtomCount,
+        totalMove
+      }
+    : null;
+}
+
+/**
+ * Retouches distorted hidden-H vinylic fans after late cleanup passes.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object|null, maxDeviationBefore: number, maxDeviationAfter: number}} Retouch result.
+ */
+function maybeRetouchFinalHiddenHydrogenVinylicFans(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  let currentCoords = finalCoords;
+  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
+  const scoreBefore = finalHiddenHydrogenVinylicFanDescriptors(layoutGraph, currentCoords)[0]?.score ?? { maxDeviation: 0, totalDeviation: 0 };
+  const movedAtomIds = new Set();
+  let changed = false;
+
+  for (const descriptor of finalHiddenHydrogenVinylicFanDescriptors(layoutGraph, currentCoords)) {
+    const currentScore = finalHiddenHydrogenVinylicFanScore(currentCoords, descriptor.centerAtomId, descriptor.parentAtomId, descriptor.childAtomId, descriptor.hydrogenAtomId);
+    if (!currentScore) {
+      continue;
+    }
+    let bestCandidate = null;
+    for (const targetPair of descriptor.targetPairs) {
+      const candidate = finalHiddenHydrogenVinylicFanCandidate(layoutGraph, currentCoords, descriptor, targetPair);
+      if (!candidate) {
+        continue;
+      }
+      const candidateScore = finalHiddenHydrogenVinylicFanScore(candidate.coords, descriptor.centerAtomId, descriptor.parentAtomId, descriptor.childAtomId, descriptor.hydrogenAtomId);
+      if (!candidateScore || candidateScore.maxDeviation > currentScore.maxDeviation - PRESENTATION_METRIC_EPSILON) {
+        continue;
+      }
+      const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+      if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit, { allowLabelOverlapIncrease: true })) {
+        continue;
+      }
+      const snapshot = { ...candidate, score: candidateScore, audit: candidateAudit };
+      if (
+        !bestCandidate ||
+        snapshot.score.maxDeviation < bestCandidate.score.maxDeviation - PRESENTATION_METRIC_EPSILON ||
+        (Math.abs(snapshot.score.maxDeviation - bestCandidate.score.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+          snapshot.score.totalDeviation < bestCandidate.score.totalDeviation - PRESENTATION_METRIC_EPSILON) ||
+        (Math.abs(snapshot.score.maxDeviation - bestCandidate.score.maxDeviation) <= PRESENTATION_METRIC_EPSILON &&
+          Math.abs(snapshot.score.totalDeviation - bestCandidate.score.totalDeviation) <= PRESENTATION_METRIC_EPSILON &&
+          snapshot.totalMove < bestCandidate.totalMove)
+      ) {
+        bestCandidate = snapshot;
+      }
+    }
+    if (bestCandidate) {
+      currentCoords = bestCandidate.coords;
+      currentAudit = bestCandidate.audit;
+      for (const atomId of bestCandidate.movedAtomIds) {
+        movedAtomIds.add(atomId);
+      }
+      changed = true;
+    }
+  }
+
+  const scoreAfter = finalHiddenHydrogenVinylicFanDescriptors(layoutGraph, currentCoords)[0]?.score ?? { maxDeviation: 0, totalDeviation: 0 };
+  return {
+    changed,
+    coords: currentCoords,
+    movedAtomIds: [...movedAtomIds],
+    audit: currentAudit,
+    maxDeviationBefore: scoreBefore.maxDeviation,
+    maxDeviationAfter: scoreAfter.maxDeviation
+  };
 }
 
 /**
@@ -14315,11 +14886,17 @@ export function runPipeline(molecule, options = {}) {
           }
         );
       }
+    }
+    if (familySummary.primaryFamily === 'large-molecule' || familySummary.mixedMode === true) {
       const largeAcyclicEtherLinkerContinuationRetouch = timeFinalRetouch('largeAcyclicEtherLinkerContinuationRetouch', () =>
         runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, finalCoords, {
           bondLength: normalizedOptions.bondLength,
           bondValidationClasses: placement.bondValidationClasses,
-          frozenAtomIds: placement.frozenAtomIds
+          frozenAtomIds: placement.frozenAtomIds,
+          minDeviation:
+            familySummary.primaryFamily === 'large-molecule'
+              ? undefined
+              : LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION
         })
       );
       if (largeAcyclicEtherLinkerContinuationRetouch.changed) {
@@ -15319,6 +15896,18 @@ export function runPipeline(molecule, options = {}) {
         maxBondLengthDeviationAfter: postBranchExactBridgedRingPathOverlapRetouch.audit?.maxBondLengthDeviation ?? null
       }
     );
+  }
+  const finalHiddenHydrogenVinylicFanRetouch = timeFinalRetouch('finalHiddenHydrogenVinylicFanRetouch', () => {
+    return maybeRetouchFinalHiddenHydrogenVinylicFans(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
+  });
+  if (finalHiddenHydrogenVinylicFanRetouch.changed) {
+    finalCoords = finalHiddenHydrogenVinylicFanRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Hidden-H Vinylic Fan Retouch', 'Hidden-hydrogen vinylic single-bond branches restored to exact trigonal slots after late cleanup.', cloneCoords(finalCoords), {
+      movedAtomCount: finalHiddenHydrogenVinylicFanRetouch.movedAtomIds.length,
+      maxDeviationBefore: finalHiddenHydrogenVinylicFanRetouch.maxDeviationBefore,
+      maxDeviationAfter: finalHiddenHydrogenVinylicFanRetouch.maxDeviationAfter
+    });
   }
   if (
     shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) &&

@@ -597,6 +597,38 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.max(...carbocycleRingAngles) < 110);
   });
 
+  it('places hydroxyalkyl oxatricyclic lactones without crossing the cyclobutane core', () => {
+    const graph = createLayoutGraph(parseSMILES('OCCC12OC3CC1C3C2=O'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'hydroxyalkyl-oxatricyclic-lactone-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const etherRingAtomIds = ['O5', 'C6', 'C7', 'C8', 'C4'];
+    const etherRingAngles = ringAngles(coords, etherRingAtomIds);
+    const etherRingBondLengths = etherRingAtomIds.map((atomId, index) => distance(coords.get(atomId), coords.get(etherRingAtomIds[(index + 1) % etherRingAtomIds.length])));
+    const meanEtherRingBondLength = etherRingBondLengths.reduce((sum, length) => sum + length, 0) / etherRingBondLengths.length;
+    const cyclobutaneAngles = ringAngles(coords, ['C9', 'C8', 'C7', 'C6']);
+    const coreAtomIds = graph.ringSystems[0].atomIds;
+    const coreAtomIdSet = new Set(coreAtomIds);
+    const coreBondLengths = [...graph.bonds.values()]
+      .filter(bond => coreAtomIdSet.has(bond.a) && coreAtomIdSet.has(bond.b))
+      .map(bond => distance(coords.get(bond.a), coords.get(bond.b)));
+
+    assert.equal(coords.size, 7);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(coords.get('C9').x > coords.get('C8').x);
+    assert.ok(coords.get('C10').x > coords.get('C4').x);
+    assert.ok(Math.max(...etherRingAngles.map(angle => Math.abs(angle - 108))) < 0.1);
+    assert.ok(Math.max(...etherRingBondLengths.map(length => Math.abs(length - meanEtherRingBondLength))) < graph.options.bondLength * 0.002);
+    assert.ok(Math.min(...coreBondLengths) > graph.options.bondLength * 0.9);
+    assert.ok(Math.max(...coreBondLengths) < graph.options.bondLength * 1.4);
+    assert.ok(Math.max(...cyclobutaneAngles) < 155);
+  });
+
   it('places the azabicyclo ketone oxadiazole cage with separated theta lanes', () => {
     const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'azabicyclo-ketone-oxadiazole-core', graph.ringSystems[0].atomIds, graph.options.bondLength);

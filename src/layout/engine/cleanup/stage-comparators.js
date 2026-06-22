@@ -175,6 +175,9 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if ((r = comparePenalty(candidate, incumbent, 'trigonalDistortionPenalty')) !== null) {
     return r;
   }
+  if ((r = comparePenalty(candidate, incumbent, 'tetrahedralDistortionPenalty')) !== null) {
+    return r;
+  }
   if ((r = comparePenalty(candidate, incumbent, 'terminalHeteroOutwardMaxPenalty')) !== null) {
     return r;
   }

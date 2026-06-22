@@ -1067,6 +1067,55 @@ function moleculeHasRingAtomSet(mol, atomIds) {
   return mol.getRings().some(ringAtomIds => ringAtomKey(ringAtomIds) === key);
 }
 
+/**
+ * Promotes atoms in fully manually-aromatic rings after the line tool has
+ * explicitly marked every ring edge aromatic. This lets the aromatic bond tool
+ * act as an override for aliphatic ring drawings instead of waiting for normal
+ * Hückel perception to infer the ring from bond orders alone.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule being edited.
+ * @param {string} bondId - Bond just marked aromatic.
+ * @returns {Set<string>} Atom ids whose aromatic flag was changed.
+ */
+function promoteFullyAromaticManualRings(mol, bondId) {
+  const promotedAtomIds = new Set();
+  const activeBond = mol?.bonds?.get(bondId);
+  if (!activeBond?.properties?.aromatic || !mol?.getRings || typeof mol.getBond !== 'function') {
+    return promotedAtomIds;
+  }
+  for (const ringAtomIds of mol.getRings()) {
+    if (!Array.isArray(ringAtomIds) || ringAtomIds.length < 3 || !ringAtomIds.every(atomId => mol.atoms.has(atomId))) {
+      continue;
+    }
+    if (!activeBond.atoms.every(atomId => ringAtomIds.includes(atomId))) {
+      continue;
+    }
+    const ringBonds = [];
+    let completeRing = true;
+    for (let index = 0; index < ringAtomIds.length; index++) {
+      const firstAtomId = ringAtomIds[index];
+      const secondAtomId = ringAtomIds[(index + 1) % ringAtomIds.length];
+      const bond = mol.getBond(firstAtomId, secondAtomId);
+      if (!bond) {
+        completeRing = false;
+        break;
+      }
+      ringBonds.push(bond);
+    }
+    if (!completeRing || ringBonds.some(bond => bond.properties?.aromatic !== true)) {
+      continue;
+    }
+    for (const atomId of ringAtomIds) {
+      const atom = mol.atoms.get(atomId);
+      if (atom && atom.properties?.aromatic !== true) {
+        atom.properties ??= {};
+        atom.properties.aromatic = true;
+        promotedAtomIds.add(atomId);
+      }
+    }
+  }
+  return promotedAtomIds;
+}
+
 function reactionPreviewReactantAtomIds(mol) {
   const atomIds = mol?.__reactionPreview?.reactantAtomIds;
   if (!atomIds) {
@@ -1559,6 +1608,11 @@ export function createStructuralEditActions(context) {
 
         const [atom1, atom2] = bond.getAtomObjects(mol);
         const affected = new Set([atom1?.id, atom2?.id].filter(Boolean));
+        if (explicitDrawBondType === 'aromatic') {
+          for (const atomId of promoteFullyAromaticManualRings(mol, activeBondId)) {
+            affected.add(atomId);
+          }
+        }
         mol.clearStereoAnnotations(affected);
         if (!wasAromatic && explicitDrawBondType !== 'aromatic') {
           context.chemistry.kekulize(mol);

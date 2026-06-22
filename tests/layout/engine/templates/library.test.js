@@ -7,6 +7,7 @@ describe('layout/engine/templates/library', () => {
     const templateIds = listTemplates().map(template => template.id);
     assert.deepEqual(templateIds, [
       'adamantane',
+      'homoadamantane-core',
       'noradamantane-core',
       'bicyclo-2-2-2',
       'hydroxy-diformyl-bicyclooctadiene-core',
@@ -33,6 +34,7 @@ describe('layout/engine/templates/library', () => {
       'cyanoacyl-azabicyclo-core',
       'aminonitrile-acetal-bridged-core',
       'cyano-formyl-acetal-bridged-core',
+      'hydroxyalkyl-oxatricyclic-lactone-core',
       'formyl-acetal-cyclobutane-core',
       'aminonitrile-oxabicyclobutane-core',
       'alkynyl-dicyano-oxabicyclobutane-core',
@@ -125,6 +127,7 @@ describe('layout/engine/templates/library', () => {
       'acridine',
       'calixarene-guanidine-core',
       'porphine',
+      'trioxazole-macrolide',
       'trans-polyene-macrolide',
       'steroid-core-unsaturated',
       'steroid-core-saturated',
@@ -404,6 +407,16 @@ describe('layout/engine/templates/library', () => {
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 2);
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C9');
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[1]?.neighborDegree, 3);
+
+    const hydroxyalkylOxatricyclicLactone = getTemplateById('hydroxyalkyl-oxatricyclic-lactone-core');
+    assert.equal(hydroxyalkylOxatricyclicLactone.family, 'bridged');
+    assert.equal(hydroxyalkylOxatricyclicLactone.atomCount, 7);
+    assert.equal(hydroxyalkylOxatricyclicLactone.bondCount, 9);
+    assert.equal(hydroxyalkylOxatricyclicLactone.ringCount, 3);
+    assert.equal(hydroxyalkylOxatricyclicLactone.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C4');
+    assert.equal(hydroxyalkylOxatricyclicLactone.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 4);
+    assert.equal(hydroxyalkylOxatricyclicLactone.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C10');
+    assert.equal(hydroxyalkylOxatricyclicLactone.matchContext?.exocyclicNeighbors?.[1]?.bondOrder, 2);
 
     const formylAcetalCyclobutane = getTemplateById('formyl-acetal-cyclobutane-core');
     assert.equal(formylAcetalCyclobutane.family, 'bridged');
@@ -1020,6 +1033,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(porphine.atomCount, 24);
     assert.equal(porphine.bondCount, 28);
     assert.equal(porphine.ringCount, 5);
+
+    const trioxazoleMacrolide = getTemplateById('trioxazole-macrolide');
+    assert.equal(trioxazoleMacrolide.family, 'macrocycle');
+    assert.equal(trioxazoleMacrolide.atomCount, 31);
+    assert.equal(trioxazoleMacrolide.bondCount, 34);
+    assert.equal(trioxazoleMacrolide.ringCount, 4);
 
     const transPolyeneMacrolide = getTemplateById('trans-polyene-macrolide');
     assert.equal(transPolyeneMacrolide.family, 'macrocycle');

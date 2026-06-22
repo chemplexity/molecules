@@ -56,13 +56,18 @@ export function convertMolecule(molecule) {
     anchorY: null
   }));
 
-  const links = [...molecule.bonds.values()].map(bond => ({
-    id: bond.id,
-    source: idToIndex.get(bond.atoms[0]),
-    target: idToIndex.get(bond.atoms[1]),
-    order: renderBondOrder(bond),
-    aromatic: bond.properties.aromatic ?? false
-  }));
+  const links = [...molecule.bonds.values()].map(bond => {
+    const aromatic = bond.properties.aromatic ?? false;
+    const renderOrder = renderBondOrder(bond);
+    return {
+      id: bond.id,
+      source: idToIndex.get(bond.atoms[0]),
+      target: idToIndex.get(bond.atoms[1]),
+      order: aromatic ? 1.5 : renderOrder,
+      renderOrder,
+      aromatic
+    };
+  });
 
   return { nodes, links };
 }
@@ -552,7 +557,9 @@ export function convertLineCoordsToForceLayout(
     const source = nodeById.get(bond.atoms?.[0]);
     const target = nodeById.get(bond.atoms?.[1]);
     if (source && target) {
-      links.push({ id: bond.id, source, target, order: renderBondOrder(bond), aromatic: bond.properties?.aromatic === true });
+      const aromatic = bond.properties?.aromatic === true;
+      const renderOrder = renderBondOrder(bond);
+      links.push({ id: bond.id, source, target, order: aromatic ? 1.5 : renderOrder, renderOrder, aromatic });
     }
   }
 

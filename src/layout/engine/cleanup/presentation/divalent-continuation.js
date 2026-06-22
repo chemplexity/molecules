@@ -18,6 +18,7 @@ const MAX_LARGE_PHOSPHATE_LINKER_PASSES = 8;
 const MAX_LARGE_ACYCLIC_ETHER_LINKER_PASSES = 6;
 const LARGE_PHOSPHATE_LINKER_MIN_DEVIATION = Math.PI / 18;
 const LARGE_ACYCLIC_ETHER_LINKER_MIN_DEVIATION = Math.PI / 9;
+export const LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION = Math.PI / 15;
 const LARGE_PHOSPHATE_LINKER_MAX_ROTATION = Math.PI / 6;
 const LARGE_ACYCLIC_ETHER_LINKER_MAX_ROTATION = Math.PI / 4;
 const IDEAL_DIVALENT_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
@@ -245,7 +246,8 @@ function largePhosphateLinkerDescriptors(layoutGraph, coords) {
   return descriptors;
 }
 
-function largeAcyclicEtherLinkerDescriptors(layoutGraph, coords) {
+function largeAcyclicEtherLinkerDescriptors(layoutGraph, coords, options = {}) {
+  const minDeviation = options.minDeviation ?? LARGE_ACYCLIC_ETHER_LINKER_MIN_DEVIATION;
   const descriptors = [];
   for (const [atomId, atom] of layoutGraph.atoms) {
     if (!atom || atom.element !== 'O' || atom.aromatic || layoutGraph.ringAtomIdSet.has(atomId) || !coords.has(atomId)) {
@@ -264,7 +266,7 @@ function largeAcyclicEtherLinkerDescriptors(layoutGraph, coords) {
     }
     const angle = phosphateLinkerAngle(coords, atomId, neighborAtomIds);
     const deviation = Math.abs(angle - IDEAL_DIVALENT_CONTINUATION_ANGLE);
-    if (deviation <= LARGE_ACYCLIC_ETHER_LINKER_MIN_DEVIATION) {
+    if (deviation <= minDeviation) {
       continue;
     }
     descriptors.push({
@@ -918,7 +920,7 @@ export function runLargePhosphateLinkerContinuationTidy(layoutGraph, inputCoords
  * linear after large-molecule compaction.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
- * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null, bondValidationClasses?: Map<string, string>|null, maxPasses?: number}} [options] - Retouch options.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null, bondValidationClasses?: Map<string, string>|null, maxPasses?: number, minDeviation?: number}} [options] - Retouch options.
  * @returns {{coords: Map<string, {x: number, y: number}>, changed: boolean, nudges: number, movedAtomIds: string[], maxDeviationBefore: number, maxDeviationAfter: number, totalDeviationBefore: number, totalDeviationAfter: number}} Retouch result.
  */
 export function runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, inputCoords, options = {}) {
@@ -926,6 +928,7 @@ export function runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, inputCoo
   const frozenAtomIds = options.frozenAtomIds ?? null;
   const bondValidationClasses = options.bondValidationClasses ?? null;
   const maxPasses = options.maxPasses ?? MAX_LARGE_ACYCLIC_ETHER_LINKER_PASSES;
+  const minDeviation = options.minDeviation ?? LARGE_ACYCLIC_ETHER_LINKER_MIN_DEVIATION;
   const baseMetric = measureDivalentContinuationDistortion(layoutGraph, inputCoords);
   let coords = inputCoords;
   let audit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
@@ -935,7 +938,7 @@ export function runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, inputCoo
 
   for (let pass = 0; pass < maxPasses; pass++) {
     let bestCandidate = null;
-    for (const descriptor of largeAcyclicEtherLinkerDescriptors(layoutGraph, coords).slice(0, 12)) {
+    for (const descriptor of largeAcyclicEtherLinkerDescriptors(layoutGraph, coords, { minDeviation }).slice(0, 12)) {
       const [firstNeighborAtomId, secondNeighborAtomId] = descriptor.neighborAtomIds;
       for (const [rootAtomId, parentAtomId] of [
         [firstNeighborAtomId, secondNeighborAtomId],
@@ -968,7 +971,7 @@ export function runLargeAcyclicEtherLinkerContinuationTidy(layoutGraph, inputCoo
             if (candidateMetric.totalDeviation >= metric.totalDeviation - CLEANUP_EPSILON) {
               continue;
             }
-            const candidateDescriptor = largeAcyclicEtherLinkerDescriptors(layoutGraph, candidateCoords).find(({ centerAtomId }) => centerAtomId === descriptor.centerAtomId);
+            const candidateDescriptor = largeAcyclicEtherLinkerDescriptors(layoutGraph, candidateCoords, { minDeviation }).find(({ centerAtomId }) => centerAtomId === descriptor.centerAtomId);
             const candidate = {
               coords: candidateCoords,
               audit: candidateAudit,

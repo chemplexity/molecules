@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   convertForceCoordsToLineLayout,
+  convertMolecule,
   convertLineCoordsToForceLayout,
   FORCE_LAYOUT_BOND_LENGTH,
   FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS,
@@ -125,6 +126,47 @@ describe('force-helpers', () => {
     assert.equal(forceLinkDistance({ source: { name: 'C' }, target: { name: 'C' }, order: 1.5 }), FORCE_LAYOUT_BOND_LENGTH * FORCE_LAYOUT_AROMATIC_BOND_FACTOR);
     assert.equal(forceLinkDistance({ source: { name: 'C' }, target: { name: 'C' }, order: 1 }, { layoutBondLength: 2.5 }), FORCE_LAYOUT_BOND_LENGTH * (2.5 / 1.5));
     assert.equal(forceLinkDistance({ source: { name: 'H' }, target: { name: 'C' }, order: 1 }, { layoutBondLength: 2.5 }), FORCE_LAYOUT_H_BOND_LENGTH * (2.5 / 1.5));
+  });
+
+  it('keeps force aromatic links at 1.5 while rendering localized ring orders when available', () => {
+    const mol = new Molecule();
+    const c1 = mol.addAtom('c1', 'C', { aromatic: true });
+    const c2 = mol.addAtom('c2', 'C', { aromatic: true });
+    c1.x = 0;
+    c1.y = 0;
+    c2.x = 1.5;
+    c2.y = 0;
+    const bond = mol.addBond('b1', 'c1', 'c2', { aromatic: true }, false);
+    bond.properties.localizedOrder = 2;
+
+    const graph = convertMolecule(mol);
+    const forceLayout = convertLineCoordsToForceLayout(mol);
+
+    assert.equal(graph.links[0].order, 1.5);
+    assert.equal(graph.links[0].renderOrder, 2);
+    assert.equal(graph.links[0].aromatic, true);
+    assert.equal(forceLayout.links[0].order, 1.5);
+    assert.equal(forceLayout.links[0].renderOrder, 2);
+    assert.equal(forceLayout.links[0].aromatic, true);
+  });
+
+  it('renders standalone force 1.5 bonds as 1.5 when no localized order exists', () => {
+    const mol = new Molecule();
+    const c1 = mol.addAtom('c1', 'C');
+    const c2 = mol.addAtom('c2', 'C');
+    c1.x = 0;
+    c1.y = 0;
+    c2.x = 1.5;
+    c2.y = 0;
+    mol.addBond('b1', 'c1', 'c2', { order: 1 }, false).setAromatic(true);
+
+    const graph = convertMolecule(mol);
+    const forceLayout = convertLineCoordsToForceLayout(mol);
+
+    assert.equal(graph.links[0].order, 1.5);
+    assert.equal(graph.links[0].renderOrder, 1.5);
+    assert.equal(forceLayout.links[0].order, 1.5);
+    assert.equal(forceLayout.links[0].renderOrder, 1.5);
   });
 
   it('allows force auto-fit to zoom closer for short layout bond lengths', () => {

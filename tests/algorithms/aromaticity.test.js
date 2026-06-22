@@ -207,6 +207,19 @@ describe('perceiveAromaticity — SMARTS matching after perception', () => {
 });
 
 describe('refreshAromaticity — graph edits', () => {
+  it('does not localize a manually aromatic bond until both endpoint atoms are aromatic', () => {
+    const mol = parseSMILES('CC');
+    const bond = [...mol.bonds.values()].find(candidate => candidate.atoms.every(atomId => mol.atoms.get(atomId)?.name === 'C'));
+    assert.ok(bond);
+    bond.setAromatic(true);
+
+    kekulize(mol);
+
+    assert.equal(bond.properties.aromatic, true);
+    assert.equal(bond.properties.order, 1.5);
+    assert.equal(bond.properties.localizedOrder, undefined);
+  });
+
   it('dearomatizes a broken benzene fragment before hydrogen repair', () => {
     const mol = parseSMILES('c1ccccc1');
     kekulize(mol);

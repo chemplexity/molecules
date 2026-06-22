@@ -2319,6 +2319,40 @@ export function hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) {
 }
 
 /**
+ * Returns whether an atom has a single-bond hetero bridge into a cross-like
+ * hypervalent branch, such as C-O-P(=O). These branches are bulky projected
+ * slot occupants even though the immediate neighbor is only divalent oxygen.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom ID.
+ * @returns {boolean} True when a neighboring hetero bridge leads to a cross-like center.
+ */
+function hasCrossLikeHypervalentBridgeBranch(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const bridgeAtomId = bond.a === atomId ? bond.b : bond.a;
+    const bridgeAtom = layoutGraph.atoms.get(bridgeAtomId);
+    if (!bridgeAtom || bridgeAtom.element === 'H' || !['O', 'S', 'Se'].includes(bridgeAtom.element)) {
+      continue;
+    }
+    for (const bridgeBond of layoutGraph.bondsByAtomId.get(bridgeAtomId) ?? []) {
+      if (!bridgeBond || bridgeBond.kind !== 'covalent' || bridgeBond.aromatic || (bridgeBond.order ?? 1) !== 1) {
+        continue;
+      }
+      const remoteAtomId = bridgeBond.a === bridgeAtomId ? bridgeBond.b : bridgeBond.a;
+      if (remoteAtomId !== atomId && describeCrossLikeHypervalentCenter(layoutGraph, remoteAtomId)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Returns whether an atom should use projected-tetrahedral branch geometry in
  * 2D. This is limited to non-ring four-heavy single-bond centers so ring
  * readability heuristics and trigonal/linear centers keep their dedicated
@@ -2383,6 +2417,7 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
       hasConjugatedTrigonalNeighbor = true;
     }
   }
+  const hasCrossLikeHypervalentBridgeNeighbor = hasCrossLikeHypervalentBridgeBranch(layoutGraph, atomId);
 
   if (heavySingleBondCount !== 4) {
     cache.set(atomId, false);
@@ -2396,7 +2431,8 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
     (attachedRingRootCount >= 2 && hasConjugatedTrigonalNeighbor) ||
     attachedRingRootCount >= 3 ||
     hasLinearNeighbor ||
-    (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0);
+    (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0) ||
+    (hasCrossLikeHypervalentBridgeNeighbor && terminalHeavyLeafCount > 0 && (attachedRingRootCount > 0 || hasConjugatedTrigonalNeighbor));
   cache.set(atomId, supported);
   return supported;
 }
@@ -2803,9 +2839,12 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     return [];
   }
   const hasCrossLikeNeighbor = hasCrossLikeHypervalentNeighbor(layoutGraph, anchorAtomId);
+  const hasCrossLikeBridgeNeighbor = hasCrossLikeHypervalentBridgeBranch(layoutGraph, anchorAtomId);
   const isFourCoordinateHeteroSlotCenter = isAcyclicFourCoordinateHeteroSlotCenter(layoutGraph, anchorAtomId);
   if (placedNeighborIds.length === 0) {
-    return (hasCrossLikeNeighbor || isFourCoordinateHeteroSlotCenter) && inBatchNeighborIds.length === 4 && deferredHeavyNeighborIds.length === 0 ? rootProjectedTetrahedralAngleSets() : [];
+    return (hasCrossLikeNeighbor || hasCrossLikeBridgeNeighbor || isFourCoordinateHeteroSlotCenter) && inBatchNeighborIds.length === 4 && deferredHeavyNeighborIds.length === 0
+      ? rootProjectedTetrahedralAngleSets()
+      : [];
   }
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   const allInBatchNeighborsAreTerminalCarbonLeaves = inBatchNeighborIds.every(neighborAtomId => {
@@ -3283,6 +3322,44 @@ function preferredOmittedHydrogenTrigonalChildAngles(layoutGraph, coords, anchor
 
   const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
   if (!childBond || childBond.aromatic || (childBond.order ?? 1) !== 1) {
+    return [];
+  }
+  return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedNeighborIdsList);
+}
+
+/**
+ * Returns exact 120-degree slots for single-bond children attached to a
+ * hidden-H vinylic carbon after its multiple-bond parent has already been
+ * placed. This prevents enamine/alkene tails from inheriting a linear chain
+ * continuation through the double bond.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Vinylic carbon atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {string[]} placedNeighborIdsList - Already placed neighbor atom IDs.
+ * @returns {number[]} Candidate trigonal child angles.
+ */
+function preferredHiddenHydrogenVinylicChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
+  if (!layoutGraph || !childAtomId || placedNeighborIdsList.length !== 1) {
+    return [];
+  }
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || anchorAtom.element !== 'C' || anchorAtom.aromatic || anchorAtom.heavyDegree !== 2 || anchorAtom.degree !== 3) {
+    return [];
+  }
+  const parentAtomId = placedNeighborIdsList[0];
+  const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (
+    !parentBond ||
+    !childBond ||
+    parentBond.kind !== 'covalent' ||
+    childBond.kind !== 'covalent' ||
+    parentBond.aromatic ||
+    childBond.aromatic ||
+    (parentBond.order ?? 1) < 2 ||
+    (childBond.order ?? 1) !== 1
+  ) {
     return [];
   }
   return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedNeighborIdsList);
@@ -3970,6 +4047,10 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   const forwardAngle = angleOf(sub(anchorPosition, coords.get(resolvedParentAtomId)));
   if (prefersLinearContinuation(layoutGraph, anchorAtomId, resolvedParentAtomId, childAtomId)) {
     return [forwardAngle];
+  }
+  const hiddenHydrogenVinylicAngles = preferredHiddenHydrogenVinylicChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
+  if (hiddenHydrogenVinylicAngles.length > 0) {
+    return hiddenHydrogenVinylicAngles;
   }
   const omittedHydrogenTrigonalAngles = preferredOmittedHydrogenTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
   if (omittedHydrogenTrigonalAngles.length > 0) {

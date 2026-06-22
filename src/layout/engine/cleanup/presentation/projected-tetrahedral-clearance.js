@@ -65,6 +65,85 @@ function projectedCenterPenalty(coords, centerAtomId, neighborAtomIds) {
   return { maxDeviation, totalDeviation };
 }
 
+/**
+ * Returns whether a ligand is a divalent hetero bridge to a cross-like
+ * hypervalent center, such as a phosphate oxygen on C-O-P(=O).
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Projected center atom ID.
+ * @param {string} bridgeAtomId - Candidate ligand atom ID.
+ * @returns {boolean} True when the ligand leads to a cross-like center.
+ */
+function isCrossLikeHypervalentBridgeBranch(layoutGraph, centerAtomId, bridgeAtomId) {
+  const bridgeAtom = layoutGraph.atoms.get(bridgeAtomId);
+  if (!bridgeAtom || !['O', 'S', 'Se'].includes(bridgeAtom.element)) {
+    return false;
+  }
+  for (const bond of layoutGraph.bondsByAtomId.get(bridgeAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const remoteAtomId = bond.a === bridgeAtomId ? bond.b : bond.a;
+    if (remoteAtomId === centerAtomId) {
+      continue;
+    }
+    const remoteAtom = layoutGraph.atoms.get(remoteAtomId);
+    if (!remoteAtom || !['P', 'S', 'Se', 'As'].includes(remoteAtom.element)) {
+      continue;
+    }
+    const hasMultipleTerminalHetero = (layoutGraph.bondsByAtomId.get(remoteAtomId) ?? []).some(remoteBond => {
+      if (!remoteBond || remoteBond.kind !== 'covalent' || remoteBond.aromatic || (remoteBond.order ?? 1) < 2) {
+        return false;
+      }
+      const terminalAtomId = remoteBond.a === remoteAtomId ? remoteBond.b : remoteBond.a;
+      const terminalAtom = layoutGraph.atoms.get(terminalAtomId);
+      return Boolean(terminalAtom && ['O', 'S', 'Se', 'N'].includes(terminalAtom.element));
+    });
+    if (hasMultipleTerminalHetero) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Penalizes direct-slot assignments where a terminal carbon leaf is opposite
+ * another carbon ligand, which reads as an accidental straight chain.
+ * @param {{centerAtomId: string, records: Array<{atomId: string, element: string, heavyDegree: number}>}} descriptor - Direct slot descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {number} Opposite-terminal-carbon penalty.
+ */
+function terminalCarbonOppositeCarbonPenalty(descriptor, coords) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition) {
+    return 0;
+  }
+  let penalty = 0;
+  for (let firstIndex = 0; firstIndex < descriptor.records.length; firstIndex++) {
+    const first = descriptor.records[firstIndex];
+    const firstPosition = coords.get(first.atomId);
+    if (!firstPosition) {
+      continue;
+    }
+    const firstAngle = angleOf(sub(firstPosition, centerPosition));
+    for (let secondIndex = firstIndex + 1; secondIndex < descriptor.records.length; secondIndex++) {
+      const second = descriptor.records[secondIndex];
+      const hasTerminalCarbonLeaf =
+        (first.element === 'C' && first.heavyDegree === 1 && second.element === 'C') ||
+        (second.element === 'C' && second.heavyDegree === 1 && first.element === 'C');
+      if (!hasTerminalCarbonLeaf) {
+        continue;
+      }
+      const secondPosition = coords.get(second.atomId);
+      if (!secondPosition) {
+        continue;
+      }
+      const oppositeCloseness = Math.max(0, angularDifference(firstAngle, angleOf(sub(secondPosition, centerPosition))) - (Math.PI * 5) / 6);
+      penalty += (oppositeCloseness / (Math.PI / 6)) ** 2;
+    }
+  }
+  return penalty;
+}
+
 function isProjectedTetrahedralCenter(layoutGraph, coords, centerAtomId) {
   const centerAtom = layoutGraph.atoms.get(centerAtomId);
   if (!centerAtom || centerAtom.element === 'H' || centerAtom.aromatic || layoutGraph.ringAtomIdSet.has(centerAtomId)) {
@@ -118,6 +197,7 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
       element: neighborAtom.element,
       heavyDegree: neighborAtom.heavyDegree ?? 0,
       isAttachedRingRoot: layoutGraph.ringAtomIdSet.has(neighborAtomId),
+      isCrossLikeHypervalentBridgeBranch: isCrossLikeHypervalentBridgeBranch(layoutGraph, centerAtomId, neighborAtomId),
       subtreeAtomIds,
       heavyAtomCount,
       angle: wrapAngle(angleOf(sub(coords.get(neighborAtomId), centerPosition)))
@@ -127,7 +207,11 @@ function collectDirectSlotCenterDescriptor(layoutGraph, coords, centerAtomId, fr
   const attachedRingRootCount = records.filter(record => record.isAttachedRingRoot).length;
   const hasCationDialkylNitrogenBranch = records.some(record => !record.isAttachedRingRoot && record.element === 'N' && record.heavyDegree === 2);
   const acyclicCarbonContinuationCount = records.filter(record => !record.isAttachedRingRoot && record.element === 'C' && record.heavyDegree > 1).length;
-  if (attachedRingRootCount < 2 || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)) {
+  const hasCrossLikeBridgeBranch = records.some(record => record.isCrossLikeHypervalentBridgeBranch);
+  const hasTerminalCarbonLeaf = records.some(record => record.element === 'C' && record.heavyDegree === 1);
+  const hasStandardDirectSlotContext = attachedRingRootCount >= 2 && (hasCationDialkylNitrogenBranch || acyclicCarbonContinuationCount >= 2);
+  const hasPhosphateBridgeSlotContext = attachedRingRootCount >= 1 && hasCrossLikeBridgeBranch && hasTerminalCarbonLeaf && acyclicCarbonContinuationCount >= 1;
+  if (!hasStandardDirectSlotContext && !hasPhosphateBridgeSlotContext) {
     return null;
   }
 
@@ -315,6 +399,7 @@ function auditCountsAcceptCleanCandidate(candidateAudit, baseAudit) {
 function scoreCandidate(candidate) {
   return (
     (candidate.resolvedOverlapClearancePenalty ?? 0) * 100 +
+    (candidate.terminalCarbonOppositePenalty ?? 0) * 500 +
     candidate.centerPenalty.maxDeviation * 1000 +
     candidate.centerPenalty.totalDeviation * 100 +
     candidate.totalRotation +
@@ -447,12 +532,14 @@ function findDirectProjectedSlotClearanceCandidate(layoutGraph, inputCoords, opt
           if (!finalCenterPenalty || finalCenterPenalty.maxDeviation > MAX_PROJECTED_CENTER_DEVIATION) {
             return;
           }
+          const terminalCarbonOppositePenalty = terminalCarbonOppositeCarbonPenalty(descriptor, candidateCoords);
           const totalRotation = assignments.reduce((total, assignment) => total + Math.abs(assignment.rotation), 0) + (branchCandidate?.totalRotation ?? 0);
           const movedHeavyAtomCount = descriptor.records.reduce((total, record) => total + record.heavyAtomCount, 0) + (branchCandidate?.movedHeavyAtomCount ?? 0);
           const candidate = {
             coords: candidateCoords,
             audit: candidateAudit,
             centerPenalty: finalCenterPenalty,
+            terminalCarbonOppositePenalty,
             descriptors: [
               ...descriptor.records.map(record => ({
                 subtreeAtomIds: record.subtreeAtomIds
@@ -760,6 +847,8 @@ function hasProjectedFanReliefNeed(layoutGraph, coords) {
     let attachedRingRootCount = 0;
     let acyclicCarbonContinuationCount = 0;
     let hasCationDialkylNitrogenBranch = false;
+    let hasCrossLikeBridgeBranch = false;
+    let hasTerminalCarbonLeaf = false;
     for (const { neighborAtomId } of heavyBonds) {
       const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
       if (layoutGraph.ringAtomIdSet.has(neighborAtomId)) {
@@ -769,8 +858,16 @@ function hasProjectedFanReliefNeed(layoutGraph, coords) {
       } else if (neighborAtom?.element === 'N' && neighborAtom.heavyDegree === 2) {
         hasCationDialkylNitrogenBranch = true;
       }
+      if (neighborAtom?.element === 'C' && neighborAtom.heavyDegree === 1) {
+        hasTerminalCarbonLeaf = true;
+      }
+      if (isCrossLikeHypervalentBridgeBranch(layoutGraph, centerAtomId, neighborAtomId)) {
+        hasCrossLikeBridgeBranch = true;
+      }
     }
-    if (attachedRingRootCount < 2 || (!hasCationDialkylNitrogenBranch && acyclicCarbonContinuationCount < 2)) {
+    const hasStandardDirectSlotContext = attachedRingRootCount >= 2 && (hasCationDialkylNitrogenBranch || acyclicCarbonContinuationCount >= 2);
+    const hasPhosphateBridgeSlotContext = attachedRingRootCount >= 1 && hasCrossLikeBridgeBranch && hasTerminalCarbonLeaf && acyclicCarbonContinuationCount >= 1;
+    if (!hasStandardDirectSlotContext && !hasPhosphateBridgeSlotContext) {
       continue;
     }
     const penalty = projectedCenterPenalty(
@@ -784,6 +881,17 @@ function hasProjectedFanReliefNeed(layoutGraph, coords) {
   }
 
   return false;
+}
+
+/**
+ * Returns whether projected-tetrahedral branch clearance has visible work to
+ * do for a coordinate set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Starting coordinates.
+ * @returns {boolean} True when branch-clearance retouch should run.
+ */
+export function hasProjectedTetrahedralBranchClearanceNeed(layoutGraph, coords) {
+  return coords instanceof Map && hasProjectedFanReliefNeed(layoutGraph, coords);
 }
 
 /**

@@ -1656,7 +1656,11 @@ export function flipDisplayStereo(mol, previousStereoMap = null) {
 export function kekulize(mol) {
   const aroBonds = [];
   for (const bond of mol.bonds.values()) {
-    if (bond.properties.aromatic && bond.properties.localizedOrder == null) {
+    if (
+      bond.properties.aromatic &&
+      bond.properties.localizedOrder == null &&
+      bond.atoms.every(atomId => mol.atoms.get(atomId)?.properties?.aromatic === true)
+    ) {
       aroBonds.push(bond);
     }
   }

@@ -915,6 +915,19 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.coords.size, 7);
   });
 
+  it('uses a compact oxatricyclic lactone template without falling back to crossed cage geometry', () => {
+    const molecule = parseSMILES('OCCC12OC3CC1C3C2=O');
+    const result = runPipeline(molecule, { suppressH: true, auditTelemetry: true });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.coords.size, molecule.atoms.size);
+  });
+
   it('also advances unmatched bridged cages through the KK fallback path', () => {
     const result = runPipeline(makeUnmatchedBridgedCage());
     assert.equal(result.metadata.primaryFamily, 'bridged');
@@ -4084,6 +4097,33 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
   });
 
+  it('keeps linked aminoglycoside ether bridges on consistent publication-style angles', () => {
+    const smiles = bugMolecules.find(candidate =>
+      candidate.startsWith('NC[C@@H]1O[C@H](<O[C@@H]2[C@@H](CO)O[C@@H](O[C@@H]3')
+    );
+    assert.ok(smiles, 'expected linked aminoglycoside ether bridge regression molecule to be registered');
+
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    for (const [centerAtomId, firstNeighborAtomId, secondNeighborAtomId] of [
+      ['O8', 'C6', 'C9'],
+      ['O18', 'C16', 'C19'],
+      ['O33', 'C31', 'C34']
+    ]) {
+      const angle = bondAngleAtAtom(result.coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${centerAtomId} ether angle to stay at 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    const divalentDistortion = measureDivalentContinuationDistortion(result.layoutGraph, result.coords);
+    assert.ok(divalentDistortion.maxDeviation < 1e-12, `expected exact divalent ether continuations, got ${divalentDistortion.maxDeviation}`);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+  });
+
   it('keeps diaryl ether bridges on the same clean publication-style ether angle after cleanup', () => {
     const smiles = 'c1ccccc1Oc1ccccc1';
     const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles);
@@ -6039,6 +6079,48 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.stereo.ezResolvedBondCount, 3);
   });
 
+  it('uses the trioxazole macrolide template so oxazole rings keep exact pentagon geometry', () => {
+    const smiles = String.raw`CO[C@H](<C[C@H]1OC(=O)C[C@H](O)CCCC(=O)C[C@H](C)C2=COC(=N2)C2=COC(=N2)C2=COC(\C=C\C[C@@H](OC)[C@@H]1C)=N2>)[C@H](C)CCC(=O)[C@H](C)[C@@H](<OC(C)=O>)[C@H](C)\C=C\N(C)CO`;
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const plan = buildScaffoldPlan(result.layoutGraph, result.layoutGraph.components[0]);
+    const oxazoleRings = result.layoutGraph.rings.filter(ring => ring.atomIds.length === 5 && ring.aromatic);
+
+    assert.equal(plan.rootScaffold.templateId, 'trioxazole-macrolide');
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.stereo.ezViolationCount, 0);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C69', 'C68', 'N70') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C69', 'C68', 'H123') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C69', 'N70', 'H123') - 120) < 1e-6);
+    assert.equal(oxazoleRings.length, 3);
+    for (const ring of oxazoleRings) {
+      const angles = ringAngles(result.coords, ring.atomIds);
+      assert.ok(maxAngleDeviation(angles, 108) < 1e-4, `expected oxazole ring ${ring.atomIds.join('-')} to stay pentagonal, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`);
+    }
+  });
+
+  it('opens terminal carbon leaves around crowded suppressed-hydrogen three-heavy centers', () => {
+    const result = runPipeline(parseSMILES('CC(C)CN(C1CC(CN(C1C(C)(C)C)C([O-])=O)C(=O)N1CCOCC1)C(=O)C1=CC2=CC=CC=C2N1CCC1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const c2Angles = [bondAngleAtAtom(result.coords, 'C2', 'C3', 'C4'), bondAngleAtAtom(result.coords, 'C2', 'C4', 'C1'), bondAngleAtAtom(result.coords, 'C2', 'C3', 'C1')];
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(maxAngleDeviation(c2Angles, 120) < 1e-6, `expected C2 terminal-leaf fan to stay trigonal, got ${c2Angles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
   it('does not report cyclic E/Z contradictions from partial mixed macrocycle coordinates', () => {
     const result = runPipeline(
       parseSMILES(
@@ -7643,6 +7725,38 @@ stressDescribe('layout/engine/pipeline', () => {
       assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0, `expected ${label} to avoid visible crossings`);
       assert.equal(result.metadata.audit.fallback.mode, null, `expected ${label} to avoid audit fallback`);
     }
+  });
+
+  it('keeps phosphate-bridged quaternary aryl branches from pinching the saturated center', () => {
+    const result = runPipeline(parseSMILES('CC(CC1=CC=CC=C1)(OP(=O)OC(C)(CC1=CC=CC=C1)C1=CC=CC=C1)C1=CC=CC=C1'), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const centerAtomId = 'C2';
+    const centerPosition = result.coords.get(centerAtomId);
+    const heavyNeighborIds = (result.layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
+      .map(bond => (bond.a === centerAtomId ? bond.b : bond.a))
+      .filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H');
+    const neighborAngles = heavyNeighborIds.map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
+    const sortedNeighborAngles = [...neighborAngles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+    const gaps = sortedNeighborAngles.map((angle, index) => {
+      const nextAngle = sortedNeighborAngles[(index + 1) % sortedNeighborAngles.length];
+      const gap = nextAngle - angle;
+      return gap > 0 ? gap : gap + Math.PI * 2;
+    });
+    const terminalMethylAngle = angleOf(sub(result.coords.get('C1'), centerPosition));
+    const terminalMethylToCarbonAngles = ['C3', 'C29'].map(atomId => angularDifference(terminalMethylAngle, angleOf(sub(result.coords.get(atomId), centerPosition))));
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(Math.min(...gaps) >= (4 * Math.PI) / 9 - 1e-6, `expected C2 branch gaps to stay at least 80 degrees, got ${gaps.map(gap => ((gap * 180) / Math.PI).toFixed(2)).join(', ')}`);
+    assert.ok(
+      Math.max(...terminalMethylToCarbonAngles) < (17 * Math.PI) / 18 + 1e-6,
+      `expected terminal methyl not to sit directly opposite another carbon ligand, got ${terminalMethylToCarbonAngles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
+    );
   });
 
   it('accepts compact bridged-fused angular terminal methyl leaves inside tiny incident rings', () => {

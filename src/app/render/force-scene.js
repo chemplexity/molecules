@@ -26,6 +26,10 @@ import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 
 const FORCE_STANDARD_UNLABELED_ATOMS = new Set(['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']);
 
+function forceLinkRenderOrder(link) {
+  return link?.renderOrder ?? link?.order ?? 1;
+}
+
 /**
  * Returns whether a force-mode atom should keep its symbol visible even when
  * normal atom labels are hidden.
@@ -400,17 +404,20 @@ export function createForceSceneRenderer(ctx) {
 
     const singleBond = bondEnter
       .append('line')
-      .filter(d => d.order === 1 || d.order === 2 || d.order === 3)
+      .filter(d => {
+        const order = forceLinkRenderOrder(d);
+        return order === 1 || order === 2 || order === 3;
+      })
       .attr('class', 'link')
       .attr('data-bond-id', d => d.id)
-      .style('stroke-width', d => singleBondWidth(d.order))
+      .style('stroke-width', d => singleBondWidth(forceLinkRenderOrder(d)))
       .style('stroke', d => bondDisplayColor(bondForLink(d)))
       .style('stroke-opacity', d => bondDisplayOpacity(bondForLink(d)))
       .style('pointer-events', 'none');
 
     const doubleSep = bondEnter
       .append('line')
-      .filter(d => d.order === 2)
+      .filter(d => forceLinkRenderOrder(d) === 2)
       .attr('class', 'separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
@@ -420,7 +427,7 @@ export function createForceSceneRenderer(ctx) {
 
     const aroBond1 = bondEnter
       .append('line')
-      .filter(d => d.order === 1.5)
+      .filter(d => forceLinkRenderOrder(d) === 1.5)
       .attr('class', 'link separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', ARO_STROKE.stroke)
@@ -430,7 +437,7 @@ export function createForceSceneRenderer(ctx) {
 
     const aroBond2 = bondEnter
       .append('line')
-      .filter(d => d.order === 1.5)
+      .filter(d => forceLinkRenderOrder(d) === 1.5)
       .attr('class', 'link separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', ARO_STROKE.stroke)
@@ -441,7 +448,7 @@ export function createForceSceneRenderer(ctx) {
 
     const tripleSep1 = bondEnter
       .append('line')
-      .filter(d => d.order === 3)
+      .filter(d => forceLinkRenderOrder(d) === 3)
       .attr('class', 'separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
@@ -451,7 +458,7 @@ export function createForceSceneRenderer(ctx) {
 
     const tripleSep2 = bondEnter
       .append('line')
-      .filter(d => d.order === 3)
+      .filter(d => forceLinkRenderOrder(d) === 3)
       .attr('class', 'separator')
       .attr('data-bond-id', d => d.id)
       .style('stroke', PI_STROKE.stroke)
@@ -833,12 +840,13 @@ export function createForceSceneRenderer(ctx) {
         const end = { x: d.link.target.x, y: d.link.target.y };
         const atomA = molecule.atoms.get(d.link.source.id);
         const atomB = molecule.atoms.get(d.link.target.id);
-        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        const order = forceLinkRenderOrder(d.link);
+        const preferredSide = order === 2 || order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
         return buildBondOverlayBlockerSegments({
           start,
           end,
           bond: d.bond,
-          order: d.link.order,
+          order,
           stereoType: d.bond.properties.display?.as ?? null,
           preferredSide,
           bondOffset,
@@ -868,7 +876,8 @@ export function createForceSceneRenderer(ctx) {
           placements.push(placement);
           return `translate(${placement.cx},${placement.cy})`;
         }
-        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        const order = forceLinkRenderOrder(d.link);
+        const preferredSide = order === 2 || order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
         const placement = pickBondOverlayLabelPlacement({
           start,
           end,
@@ -879,7 +888,7 @@ export function createForceSceneRenderer(ctx) {
           blockerSegments,
           baseOffset: defaultBondOverlayBaseOffset({
             bond: d.bond,
-            order: d.link.order,
+            order,
             stereoType: d.bond.properties.display?.as ?? null,
             fontSize,
             bondOffset,
@@ -925,12 +934,13 @@ export function createForceSceneRenderer(ctx) {
         const end = { x: d.link.target.x, y: d.link.target.y };
         const atomA = molecule.atoms.get(d.link.source.id);
         const atomB = molecule.atoms.get(d.link.target.id);
-        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        const order = forceLinkRenderOrder(d.link);
+        const preferredSide = order === 2 || order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
         return buildBondOverlayBlockerSegments({
           start,
           end,
           bond: d.bond,
-          order: d.link.order,
+          order,
           stereoType: d.bond.properties.display?.as ?? null,
           preferredSide,
           bondOffset,
@@ -960,7 +970,8 @@ export function createForceSceneRenderer(ctx) {
           placements.push(placement);
           return `translate(${placement.cx},${placement.cy})`;
         }
-        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        const order = forceLinkRenderOrder(d.link);
+        const preferredSide = order === 2 || order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
         const placement = pickBondOverlayLabelPlacement({
           start,
           end,
@@ -971,7 +982,7 @@ export function createForceSceneRenderer(ctx) {
           blockerSegments,
           baseOffset: defaultBondOverlayBaseOffset({
             bond: d.bond,
-            order: d.link.order,
+            order,
             stereoType: d.bond.properties.display?.as ?? null,
             fontSize,
             bondOffset,
@@ -1030,7 +1041,7 @@ export function createForceSceneRenderer(ctx) {
         const blockedSectors = neighbors.map(nb => {
           const angle = Math.atan2(nb.y - node.y, nb.x - node.x);
           const link = links.find(candidate => candidate.source.id === nb.id || candidate.target.id === nb.id);
-          const spread = (link?.order ?? 1) >= 2 ? 0.52 : 0.4;
+          const spread = forceLinkRenderOrder(link) >= 2 ? 0.52 : 0.4;
           return { angle, spread };
         });
         const chargeAngle = forceChargeAngleByAtomId.get(node.id) ?? null;
@@ -1046,7 +1057,8 @@ export function createForceSceneRenderer(ctx) {
         }
         if (atom) {
           for (const link of links) {
-            if (link.order !== 2 && link.order !== 1.5 && link.order !== 3) {
+            const order = forceLinkRenderOrder(link);
+            if (order !== 2 && order !== 1.5 && order !== 3) {
               continue;
             }
             const otherNode = link.source.id === node.id ? link.target : link.source;
@@ -1055,9 +1067,9 @@ export function createForceSceneRenderer(ctx) {
               continue;
             }
             const dir = secondaryDir(atom, otherAtom, molecule, pointForForceAtom);
-            const terminal = link.order === 2 && (heavyDegree(atom, molecule) === 1 || heavyDegree(otherAtom, molecule) === 1);
-            for (const sideAngle of multipleBondAnnotationBlockerAngles(node, otherNode, { order: link.order, side: dir, terminal })) {
-              blockedSectors.push({ angle: sideAngle, spread: link.order >= 3 ? 0.56 : 0.5 });
+            const terminal = order === 2 && (heavyDegree(atom, molecule) === 1 || heavyDegree(otherAtom, molecule) === 1);
+            for (const sideAngle of multipleBondAnnotationBlockerAngles(node, otherNode, { order, side: dir, terminal })) {
+              blockedSectors.push({ angle: sideAngle, spread: order >= 3 ? 0.56 : 0.5 });
             }
           }
         }

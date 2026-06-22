@@ -79,6 +79,19 @@ describe('layout/engine/render-helpers', () => {
     assert.equal(localizedDoubleCount, 6);
   });
 
+  it('leaves manual aromatic bonds unlocalized until both endpoint atoms are aromatic', () => {
+    const molecule = parseSMILES('CC');
+    const bond = [...molecule.bonds.values()].find(candidate => candidate.atoms.every(atomId => molecule.atoms.get(atomId)?.name === 'C'));
+    assert.ok(bond);
+    bond.setAromatic(true);
+
+    kekulize(molecule);
+
+    assert.equal(bond.properties.aromatic, true);
+    assert.equal(bond.properties.order, 1.5);
+    assert.equal(bond.properties.localizedOrder, undefined);
+  });
+
   it('pushes terminal carbonyl hetero labels outward along the bond axis', () => {
     const molecule = parseSMILES('CC=O');
     const layoutResult = generateCoords(molecule, { suppressH: true });
