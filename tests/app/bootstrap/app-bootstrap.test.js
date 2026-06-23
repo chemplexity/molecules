@@ -258,6 +258,18 @@ describe('finalizeAppBootstrap', () => {
         },
         getLabelToggleElement() {
           return {};
+        },
+        getDocument() {
+          return {};
+        },
+        getContentMainElement() {
+          return {};
+        },
+        getSidebarElement() {
+          return {};
+        },
+        getMainSidebarSplitterElement() {
+          return {};
         }
       },
       view: {

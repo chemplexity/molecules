@@ -1141,6 +1141,8 @@ describe('createSelectionActions', () => {
     const actiniumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Ac');
     const magnesiumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Mg');
     const rutherfordiumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Rf');
+    const praseodymiumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Pr');
+    const darmstadtiumButton = periodicGrid.children.find(child => child.dataset.periodicElement === 'Ds');
     const preview = periodicGrid.children.find(child => child.className === 'periodic-element-preview');
     const columnLabels = periodicGrid.children.filter(child => child.className === 'periodic-table-column-label');
     const rowLabels = periodicGrid.children.filter(child => child.className === 'periodic-table-row-label');
@@ -1163,6 +1165,8 @@ describe('createSelectionActions', () => {
     assert.ok(carbonButton);
     assert.ok(lanthanumButton);
     assert.ok(actiniumButton);
+    assert.ok(praseodymiumButton);
+    assert.ok(darmstadtiumButton);
     assert.equal(deuteriumButton, undefined);
     assert.equal(carbonButton.title, 'C (Carbon)');
     assert.equal(carbonButton.style.backgroundColor, '#333333');
@@ -1195,9 +1199,23 @@ describe('createSelectionActions', () => {
     rutherfordiumButton.dispatch('mouseenter');
 
     assert.equal(preview.__periodicPreviewName.textContent, 'Rutherfordium');
-    assert.equal(preview.__periodicPreviewName.style.fontSize, '8px');
+    assert.equal(preview.__periodicPreviewName.style.fontSize, '7.6px');
 
     rutherfordiumButton.dispatch('mouseleave');
+
+    darmstadtiumButton.dispatch('mouseenter');
+
+    assert.equal(preview.__periodicPreviewName.textContent, 'Darmstadtium');
+    assert.equal(preview.__periodicPreviewName.style.fontSize, '7.6px');
+
+    darmstadtiumButton.dispatch('mouseleave');
+
+    praseodymiumButton.dispatch('mouseenter');
+
+    assert.equal(preview.__periodicPreviewName.textContent, 'Praseodymium');
+    assert.equal(preview.__periodicPreviewName.style.fontSize, '7.6px');
+
+    praseodymiumButton.dispatch('mouseleave');
 
     magnesiumButton.dispatch('mouseenter');
 

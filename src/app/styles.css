@@ -49,6 +49,8 @@ body {
   bottom: 50px;
   width: 100%;
   padding: 1px;
+  --sidebar-width: 29%;
+  --main-sidebar-splitter-width: 7px;
 }
 
 #plot {
@@ -56,8 +58,55 @@ body {
   top: 8px;
   bottom: 0;
   left: 0;
-  width: 70%;
+  width: calc(100% - var(--sidebar-width) - var(--main-sidebar-splitter-width));
   overflow: hidden;
+}
+
+#main-sidebar-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--sidebar-width);
+  width: var(--main-sidebar-splitter-width);
+  z-index: 9;
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(to right, transparent 0, transparent 2px, #e4e4e4 2px, #e4e4e4 5px, transparent 5px);
+}
+
+#main-sidebar-splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 38px;
+  transform: translate(-50%, -50%);
+  border-left: 1px solid #bbb;
+  border-right: 1px solid #bbb;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+#main-sidebar-splitter:hover::after,
+#main-sidebar-splitter:focus-visible::after,
+body.resizing-main-sidebar #main-sidebar-splitter::after {
+  opacity: 1;
+}
+
+#main-sidebar-splitter:focus-visible {
+  outline: 2px solid #4c8bf5;
+  outline-offset: -2px;
+}
+
+body.resizing-main-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.resizing-main-sidebar #plot,
+body.resizing-main-sidebar #sidebar {
+  pointer-events: none;
 }
 
 #sidebar {
@@ -65,7 +114,7 @@ body {
   top: 0;
   bottom: 0;
   right: 0;
-  width: 29%;
+  width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   border-left: 1px solid #eee;
@@ -1015,14 +1064,22 @@ div.tooltip td:first-child {
   overflow: hidden;
   font-size: 9px;
   font-weight: 700;
-  line-height: 1.15;
   text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.periodic-preview-name {
+  display: -webkit-box;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .periodic-preview-weight {
   font-size: 10px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #atom-selector .periodic-element-cell {

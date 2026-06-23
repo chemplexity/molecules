@@ -179,10 +179,10 @@ function averageAtomicWeight(symbol) {
 }
 
 function previewElementNameFontSize(name) {
-  if (name.length >= 13) {
-    return '8px';
+  if (name.length >= 12) {
+    return '7.6px';
   }
-  if (name.length >= 11) {
+  if (name.length >= 10) {
     return '8.5px';
   }
   return '9px';

@@ -8,8 +8,12 @@ describe('createAppShellDeps', () => {
     const deps = createAppShellDeps({
       win: { id: 'window' },
       dom: {
+        getDocument: () => 'document',
         getPlotElement: () => 'plot',
-        getLabelToggleElement: () => 'labelToggle'
+        getLabelToggleElement: () => 'labelToggle',
+        getContentMainElement: () => 'contentMain',
+        getSidebarElement: () => 'sidebar',
+        getMainSidebarSplitterElement: () => 'splitter'
       },
       history: {
         undo: () => 'undo',
@@ -80,7 +84,11 @@ describe('createAppShellDeps', () => {
     });
 
     assert.equal(deps.win.id, 'window');
+    assert.equal(deps.dom.getDocument(), 'document');
     assert.equal(deps.dom.getPlotElement(), 'plot');
+    assert.equal(deps.dom.getContentMainElement(), 'contentMain');
+    assert.equal(deps.dom.getSidebarElement(), 'sidebar');
+    assert.equal(deps.dom.getMainSidebarSplitterElement(), 'splitter');
     assert.equal(deps.history.undo(), 'undo');
     assert.equal(deps.exportActions.copyForceSvg(), 'copyForceSvg');
     assert.equal(deps.options.open(), 'open');

@@ -85,6 +85,9 @@ describe('dom-elements bootstrap helpers', () => {
       'pc-table': createElement(),
       'label-toggle': createElement(),
       'erase-cursor': createElement(),
+      'content-main': createElement(),
+      sidebar: createElement(),
+      'main-sidebar-splitter': createElement(),
       'elem-btn-C': createElement()
     };
     const document = {
@@ -122,6 +125,9 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(inputEl.value, 'InChI=1S/CH4/h1H4');
     assert.equal(dom.getExamplesElement(), examplesList);
     assert.equal(dom.getSvgPlotElement(), svgPlot);
+    assert.equal(dom.getContentMainElement(), elements['content-main']);
+    assert.equal(dom.getSidebarElement(), elements.sidebar);
+    assert.equal(dom.getMainSidebarSplitterElement(), elements['main-sidebar-splitter']);
     assert.equal(dom.getElementButtonElement('C'), elements['elem-btn-C']);
     assert.deepEqual(dom.getElementButtonElements('C'), [elements['elem-btn-C']]);
     assert.deepEqual(dom.getElementButtonElements('Fe'), [periodicFeButton]);

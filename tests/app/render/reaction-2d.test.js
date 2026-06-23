@@ -5,6 +5,7 @@ import { generateResonanceStructures } from '../../../src/algorithms/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
 import { alignReaction2dProductOrientation, buildReaction2dMol, centerReaction2dPairCoords, spreadReaction2dProductComponents } from '../../../src/layout/reaction2d.js';
+import { hasPersistentHighlightFallback, setPersistentHighlightFallback } from '../../../src/app/render/highlights.js';
 import {
   _applyReactionPreviewDisplayGeometry,
   _captureReactionPreviewSnapshot,
@@ -127,6 +128,20 @@ afterEach(() => {
 });
 
 describe('reaction preview restore', () => {
+  it('keeps locked reaction previews out of persistent highlight restoration', () => {
+    try {
+      setPersistentHighlightFallback(null, { key: 'physchem' });
+      setPersistentHighlightFallback(() => true, { key: 'reaction-preview', isActive: () => true });
+      assert.equal(hasPersistentHighlightFallback(), true);
+
+      makeReaction2dContext();
+
+      assert.equal(hasPersistentHighlightFallback(), false);
+    } finally {
+      setPersistentHighlightFallback(null, { key: 'reaction-preview' });
+    }
+  });
+
   it('keeps acid/base previews off the full functional-group refresh path', () => {
     assert.equal(_reactionPreviewSkipsFunctionalGroupRefresh(reactionTemplates.amineProtonation), true);
     assert.equal(_reactionPreviewSkipsFunctionalGroupRefresh(reactionTemplates.carboxylicAcidDeprotonation), true);

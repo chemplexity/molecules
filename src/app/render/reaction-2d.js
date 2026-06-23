@@ -19,21 +19,12 @@ import { ringAtomKey } from '../../core/style.js';
 let ctx = {};
 
 /**
- * Initializes the reaction-2d module with the shared app context and registers the reaction-preview highlight fallback.
+ * Initializes the reaction-2d module with the shared app context.
  * @param {object} context - Context providing `mode`, `currentMol`, `_mol2d`, `renderMol`, `takeSnapshot`, and related helpers.
  */
 export function initReaction2d(context) {
   ctx = context;
-  setPersistentHighlightFallback(
-    () => {
-      if (_reactionPreviewLocked && _reactionPreviewHighlightMappings?.length) {
-        _setHighlight(_reactionPreviewHighlightMappings.map(mapping => new Map(mapping)));
-        return true;
-      }
-      return false;
-    },
-    { key: 'reaction-preview', isActive: () => _reactionPreviewLocked && !!_reactionPreviewHighlightMappings?.length }
-  );
+  setPersistentHighlightFallback(null, { key: 'reaction-preview' });
 }
 
 let _reactionPreviewSourceMol = null;
@@ -1816,11 +1807,20 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true, 
       updateFunctionalGroups(preview.mol);
     }
     updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
-    _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
     return;
   }
   _reactionPreviewHighlightMappings = [new Map(site.highlightMapping)];
-  _setHighlight([site.highlightMapping]);
+}
+
+function _highlightMappingsForReactionRow(entry) {
+  if (_reactionPreviewLocked && entry.smirks === _activeReactionSmirks && _reactionPreviewHighlightMappings?.length) {
+    return _reactionPreviewHighlightMappings.map(mapping => new Map(mapping));
+  }
+  return entry.matchGroups.map(group => group.highlightMapping);
+}
+
+function _keepReactionHighlightUntilPanelLeave(tbody) {
+  tbody?.addEventListener?.('mouseleave', () => _restorePersistentHighlight(), { once: true });
 }
 
 /**
@@ -1954,6 +1954,8 @@ export function updateReactionTemplatesPanel() {
         }
         _activateReactionEntry(sourceMol, entry, siteIndex);
         updateReactionTemplatesPanel();
+        _setHighlight(_highlightMappingsForReactionRow(entry));
+        _keepReactionHighlightUntilPanelLeave(tbody);
       };
       const nav = document.createElement('div');
       nav.className = 'reaction-nav';
@@ -1977,15 +1979,9 @@ export function updateReactionTemplatesPanel() {
     tr.appendChild(nameCell);
     tr.appendChild(countCell);
     tr.addEventListener('mouseenter', () => {
-      if (_reactionPreviewLocked) {
-        return;
-      }
-      _setHighlight(entry.matchGroups.map(group => group.highlightMapping));
+      _setHighlight(_highlightMappingsForReactionRow(entry));
     });
     tr.addEventListener('mouseleave', () => {
-      if (_reactionPreviewLocked) {
-        return;
-      }
       _restorePersistentHighlight();
     });
     tr.addEventListener('click', event => {
@@ -2008,6 +2004,8 @@ export function updateReactionTemplatesPanel() {
       _takeReactionPreviewHistoryStep();
       _activateReactionEntry(sourceMol, entry, 0, { lock: true });
       updateReactionTemplatesPanel();
+      _setHighlight(_highlightMappingsForReactionRow(entry));
+      _keepReactionHighlightUntilPanelLeave(tbody);
     });
     tbody.appendChild(tr);
   }

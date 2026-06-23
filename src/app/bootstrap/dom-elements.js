@@ -71,6 +71,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const svgPlot = document.querySelector('.svg-plot');
   const labelToggle = document.getElementById('label-toggle');
   const eraseCursor = document.getElementById('erase-cursor');
+  const contentMain = document.getElementById('content-main');
+  const sidebar = document.getElementById('sidebar');
+  const mainSidebarSplitter = document.getElementById('main-sidebar-splitter');
 
   function clearFormula() {
     molecularFormula.innerHTML = '';
@@ -155,6 +158,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getSvgPlotElement: () => svgPlot,
     getLabelToggleElement: () => labelToggle,
     getEraseCursorElement: () => eraseCursor,
+    getContentMainElement: () => contentMain,
+    getSidebarElement: () => sidebar,
+    getMainSidebarSplitterElement: () => mainSidebarSplitter,
     setInputValue: value => {
       inputEl.value = value;
     },

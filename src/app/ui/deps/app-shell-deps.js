@@ -10,8 +10,12 @@ export function createAppShellDeps(deps) {
   return {
     win: deps.win,
     dom: {
+      getDocument: deps.dom.getDocument,
       getPlotElement: deps.dom.getPlotElement,
-      getLabelToggleElement: deps.dom.getLabelToggleElement
+      getLabelToggleElement: deps.dom.getLabelToggleElement,
+      getContentMainElement: deps.dom.getContentMainElement,
+      getSidebarElement: deps.dom.getSidebarElement,
+      getMainSidebarSplitterElement: deps.dom.getMainSidebarSplitterElement
     },
     history: {
       undo: deps.history.undo,

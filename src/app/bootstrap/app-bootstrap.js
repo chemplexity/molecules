@@ -398,8 +398,12 @@ export function finalizeAppBootstrap(ctx) {
     ctx.factories.createAppShellDeps({
       win: ctx.dom.window,
       dom: {
+        getDocument: () => ctx.dom.getDocument(),
         getPlotElement: () => ctx.dom.getSvgPlotElement(),
-        getLabelToggleElement: () => ctx.dom.getLabelToggleElement()
+        getLabelToggleElement: () => ctx.dom.getLabelToggleElement(),
+        getContentMainElement: () => ctx.dom.getContentMainElement(),
+        getSidebarElement: () => ctx.dom.getSidebarElement(),
+        getMainSidebarSplitterElement: () => ctx.dom.getMainSidebarSplitterElement()
       },
       history: {
         undo: () => ctx.history.undoAction(),

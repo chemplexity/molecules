@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-06-22
+
+- Limit reaction-template highlights to row hover/click interactions while preserving product-side highlights for locked previews.
+- Let long periodic-table preview element names wrap tightly so names like Darmstadtium and Praseodymium are not cut off.
+- Keep the sidebar splitter below the periodic-table popover layer.
+- Keep the draggable sidebar splitter's initial width at the original descriptor-panel proportion.
+- Add a draggable main/sidebar splitter so the drawing window and descriptor panels can be resized.
+
 ## 2026-06-21
 
 - Preserve manual 1.5 aromatic bond edits through line/force mode switches while rendering localized aromatic rings in force mode as single/double bonds.
