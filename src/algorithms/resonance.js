@@ -1952,7 +1952,11 @@ export function generateResonanceStructures(molecule, options = {}) {
         includeIndependentComponentPermutations ||
         _changedComponentCount(state, canonicalComponentState.canonicalBondOrders, canonicalComponentState.canonicalAtomCharges, canonicalComponentState.canonicalAtomRadicals, components) <= 1
     )
-    .filter(state => _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude))
+    .filter(
+      state =>
+        (!includeIndependentComponentPermutations && components.length > 1) ||
+        _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude)
+    )
     .slice(0, maxContributors);
 
   // Score each state

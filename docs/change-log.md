@@ -1,7 +1,19 @@
 # Change Log
 
+## 2026-06-23
+
+- Allow localized amide resonance contributors to appear in molecules that already contain spectator formal charges, such as nitro-substituted tertiary amides, without reopening multi-component permutation noise.
+- Keep resonance electron-flow arrows visible when active resonance navigation steps into or out of contributor 1, while still clearing arrows when resonance mode is reset.
+- Source resonance electron-flow arrows from the currently displayed contributor while stepping through resonance structures, so navigation shows local state-to-state moves instead of always jumping from contributor 1.
+- Prevent the sidebar from loading at its minimum width (220 px) across sessions: stored values at or below the minimum are discarded on load and not written to storage, so the CSS 29% default is always restored after clearing preferences.
+- Use a min-cost resonance arrow matching pass so fused aromatic systems keep every possible adjacent bond-move arrow instead of dropping arrows after local pairing conflicts.
+- Move charge badges away from active resonance arrow sectors in both 2D and force renderers so charge icons do not cover electron-flow arrows.
+
 ## 2026-06-22
 
+- Use textbook-style line-mode resonance arrows with atom-target arrowheads placed outside the target label.
+- Render resonance electron-flow arrows in black, offset them from bond centerlines, and aim bond-target arrows into endpoint midpoints.
+- Add base-contributor electron-flow arrows for active resonance structures in 2D and force renderers.
 - Limit reaction-template highlights to row hover/click interactions while preserving product-side highlights for locked previews.
 - Let long periodic-table preview element names wrap tightly so names like Darmstadtium and Praseodymium are not cut off.
 - Keep the sidebar splitter below the periodic-table popover layer.

@@ -22,6 +22,7 @@ import {
 import { ringFillDomId } from '../../core/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
+import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 
 /**
  * Returns the placed incident ring polygons for one atom.
@@ -671,8 +672,7 @@ export function create2DSceneRenderer(ctx) {
       const p1 = toSVGPt(sa1);
       const p2 = toSVGPt(sa2);
       const getDrawBondModeActiveForEvent = event =>
-        ctx.overlay.getDrawBondMode?.() === true ||
-        event.currentTarget?.ownerDocument?.getElementById?.('draw-bond-btn')?.classList?.contains?.('active') === true;
+        ctx.overlay.getDrawBondMode?.() === true || event.currentTarget?.ownerDocument?.getElementById?.('draw-bond-btn')?.classList?.contains?.('active') === true;
       const getBondHitEndpointsForEvent = event => {
         const target = event.currentTarget;
         const start = {
@@ -683,11 +683,10 @@ export function create2DSceneRenderer(ctx) {
           x: Number(target?.getAttribute?.('x2')),
           y: Number(target?.getAttribute?.('y2'))
         };
-        return Number.isFinite(start.x) && Number.isFinite(start.y) && Number.isFinite(end.x) && Number.isFinite(end.y)
-          ? [start, end]
-          : [p1, p2];
+        return Number.isFinite(start.x) && Number.isFinite(start.y) && Number.isFinite(end.x) && Number.isFinite(end.y) ? [start, end] : [p1, p2];
       };
-      const hitLine = bg.append('line')
+      const hitLine = bg
+        .append('line')
         .attr('class', 'bond-hit')
         .attr('x1', p1.x)
         .attr('y1', p1.y)
@@ -751,6 +750,25 @@ export function create2DSceneRenderer(ctx) {
     }
 
     ctx.helpers.drawReactionPreviewArrow2d(toSVGPt, atoms);
+    const resonanceArrowOptions = {
+      atomStartPad: (_endpoint, atom) => (atom?.visible !== false && atom?.name !== 'C' ? 11 : 20),
+      atomEndPad: 24,
+      bondStartPad: 8,
+      bondEndPad: 8,
+      bondTargetOffsetSign: (_endpoint, bond, a1, a2) => {
+        const order = renderBondOrder(bond);
+        return order >= 1.5 ? -ctx.helpers.secondaryDir(a1, a2, mol, toSVGPt) : null;
+      },
+      atomToBondSourceOffset: 15,
+      atomToBondTargetOffset: 6,
+      atomTargetOutside: true,
+      curveScale: 0.49,
+      minCurve: 17,
+      maxCurve: 38,
+      chargeAvoidanceRadius: 48,
+      chargeAvoidanceSpread: 0.64
+    };
+    drawResonanceElectronFlow2d(ctx.g, mol, toSVGPt, resonanceArrowOptions);
 
     bgLayer = ctx.g.append('g').attr('class', 'atom-bgs');
     for (const atom of atoms) {
@@ -799,13 +817,17 @@ export function create2DSceneRenderer(ctx) {
         if (charge !== 0) {
           const sign = formatChargeLabel(charge);
           const lonePairDots = _get2dLonePairDots(atom, label);
+          const arrowOccupiedAngles = resonanceArrowOccupiedAnglesForAtom(mol, atom, toSVGPt, resonanceArrowOptions);
           const placement = computeChargeBadgePlacement(atom, mol, {
             pointForAtom: toSVGPt,
             label,
             labelOffset: { dx: labelDx, dy: labelDy },
             fontSize,
             chargeLabel: sign,
-            extraOccupiedAngles: lonePairDots.map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite)
+            extraOccupiedAngles: [
+              ...lonePairDots.map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite),
+              ...arrowOccupiedAngles
+            ]
           });
           if (placement) {
             hitGroup

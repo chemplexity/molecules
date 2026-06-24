@@ -488,6 +488,30 @@ describe('generateResonanceStructures — development regressions', () => {
     assert.equal(sawCarbonylOxygenAnion, true);
   });
 
+  it('keeps tertiary-amide donation even when a separate nitro group is already charge-separated', () => {
+    const mol = parseSMILES('[O-][N+](=O)c1ccc(cc1)N2CCN(CC2)C(=O)C3CCCCN3Cc4cccc(Cl)c4Cl');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+
+    let sawPiperazineAmideDonation = false;
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      if (
+        mol.bonds.get('7')?.properties.order === 2 &&
+        mol.bonds.get('8')?.properties.order === 1 &&
+        (mol.atoms.get('N13')?.properties.charge ?? 0) === 1 &&
+        (mol.atoms.get('O17')?.properties.charge ?? 0) === -1
+      ) {
+        sawPiperazineAmideDonation = true;
+        break;
+      }
+    }
+
+    assert.equal(sawPiperazineAmideDonation, true);
+  });
+
   it('finds both carbonyl and ring contributors in histidine-like imidazole amides', () => {
     const mol = parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN');
     generateResonanceStructures(mol, {

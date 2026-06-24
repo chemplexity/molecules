@@ -3,6 +3,7 @@
 import { generateResonanceStructures } from '../../algorithms/index.js';
 import { createModeAwareHelpers } from './render-mode-helpers.js';
 import { createNavButton } from './panel-row.js';
+import { clearMoleculeResonanceElectronFlow, setMoleculeResonanceElectronFlow } from './resonance-arrows.js';
 
 let ctx = {};
 const modeHelpers = createModeAwareHelpers(() => ctx);
@@ -80,10 +81,12 @@ export function resetActiveResonanceView(mol = _currentResonanceMolecule()) {
   if (!_resonanceLocked || !mol?.properties?.resonance) {
     _resonanceLocked = false;
     _activeResonanceState = 1;
+    clearMoleculeResonanceElectronFlow(mol);
     _renderResonancePanel(mol);
     return false;
   }
   mol.setResonanceState(1);
+  clearMoleculeResonanceElectronFlow(mol);
   _resonanceLocked = false;
   _activeResonanceState = 1;
   _redrawResonanceMolecule(mol);
@@ -105,6 +108,7 @@ export function prepareResonanceStateForStructuralEdit(mol = _currentResonanceMo
   }
   const resonanceReset = _resonanceLocked;
   mol.setResonanceState(1);
+  clearMoleculeResonanceElectronFlow(mol);
   mol.clearResonanceStates();
   _resonanceLocked = false;
   _activeResonanceState = 1;
@@ -145,9 +149,16 @@ export function prepareResonanceUndoSnapshot(mol = _currentResonanceMolecule()) 
     return { mol, resonanceView: null };
   }
   const previousState = resonanceView.activeState;
+  const previousFlow = mol.properties?.resonanceElectronFlow;
   mol.setResonanceState(1);
+  clearMoleculeResonanceElectronFlow(mol);
   const snapshotMol = mol.clone();
   mol.setResonanceState(previousState);
+  if (previousFlow) {
+    mol.properties.resonanceElectronFlow = previousFlow;
+  } else {
+    setMoleculeResonanceElectronFlow(mol, previousState);
+  }
   return { mol: snapshotMol, resonanceView };
 }
 
@@ -161,6 +172,7 @@ export function restoreResonanceViewSnapshot(mol, snapshot = null) {
   if (!snapshot?.locked || !mol?.properties?.resonance) {
     _resonanceLocked = false;
     _activeResonanceState = 1;
+    clearMoleculeResonanceElectronFlow(mol);
     _renderResonancePanel(mol);
     return false;
   }
@@ -168,6 +180,7 @@ export function restoreResonanceViewSnapshot(mol, snapshot = null) {
   _resonanceLocked = true;
   _activeResonanceState = nextState;
   mol.setResonanceState(nextState);
+  setMoleculeResonanceElectronFlow(mol, nextState);
   _renderResonancePanel(mol);
   return true;
 }
@@ -243,9 +256,12 @@ function _activateResonanceState(mol, state) {
   if (!mol?.properties?.resonance) {
     return;
   }
+  const previousState = Math.max(1, Math.min(mol.properties.resonance.currentState ?? _activeResonanceState ?? 1, mol.resonanceCount));
+  const referenceState = previousState === state ? 1 : previousState;
   _resonanceLocked = true;
   _activeResonanceState = state;
   mol.setResonanceState(state);
+  setMoleculeResonanceElectronFlow(mol, state, { fromState: referenceState, toState: state });
   _redrawResonanceMolecule(mol);
   _renderResonancePanel(mol);
 }
@@ -293,6 +309,7 @@ function _renderResonancePanel(mol) {
       event.preventDefault();
       event.stopPropagation();
       generateResonanceStructures(mol, RESONANCE_PANEL_OPTIONS);
+      clearMoleculeResonanceElectronFlow(mol);
       _resonanceLocked = false;
       _activeResonanceState = 1;
       _renderResonancePanel(mol);
@@ -352,7 +369,7 @@ function _renderResonancePanel(mol) {
       resetActiveResonanceView(mol);
       return;
     }
-    _activateResonanceState(mol, 2);
+    _activateResonanceState(mol, 1);
   });
 
   tbody.appendChild(tr);

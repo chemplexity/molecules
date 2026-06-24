@@ -562,6 +562,22 @@ function labelOccupiedAngles(label) {
   return [];
 }
 
+function expandedOccupiedAngles(angles) {
+  const expanded = [];
+  for (const entry of angles) {
+    const angle = Number.isFinite(entry) ? entry : Number.isFinite(entry?.angle) ? entry.angle : null;
+    if (!Number.isFinite(angle)) {
+      continue;
+    }
+    expanded.push(angle);
+    const spread = Number.isFinite(entry?.spread) ? Math.max(0, entry.spread) : 0;
+    if (spread > 0) {
+      expanded.push(angle - spread, angle + spread);
+    }
+  }
+  return expanded;
+}
+
 function displayedValenceElectrons(atom) {
   const group = atom?.properties?.group;
   if (!group || group >= 18 || (group >= 3 && group <= 12)) {
@@ -776,7 +792,7 @@ export function computeChargeBadgePlacement(
   }
 
   const center = pointForAtom(atom);
-  const occupiedAngles = [...occupiedNeighborAngles(atom, molecule, pointForAtom), ...labelOccupiedAngles(label), ...extraOccupiedAngles];
+  const occupiedAngles = expandedOccupiedAngles([...occupiedNeighborAngles(atom, molecule, pointForAtom), ...labelOccupiedAngles(label), ...extraOccupiedAngles]);
   const candidates = [preferredAngle, -Math.PI / 4, Math.PI / 4, (-3 * Math.PI) / 4, (3 * Math.PI) / 4, -Math.PI / 2, Math.PI / 2, 0, Math.PI].map(wrapAngleUnsigned);
 
   let bestAngle = candidates[0];

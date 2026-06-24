@@ -939,6 +939,22 @@ function rayDistanceToLabelBox(angle, label, fontSize, labelOffset = null) {
   return rayDistanceToShiftedBox(angle, centerX, centerY, halfWidth, halfHeight);
 }
 
+function expandedOccupiedAngles(angles) {
+  const expanded = [];
+  for (const entry of angles) {
+    const angle = Number.isFinite(entry) ? entry : Number.isFinite(entry?.angle) ? entry.angle : null;
+    if (!Number.isFinite(angle)) {
+      continue;
+    }
+    expanded.push(angle);
+    const spread = Number.isFinite(entry?.spread) ? Math.max(0, entry.spread) : 0;
+    if (spread > 0) {
+      expanded.push(angle - spread, angle + spread);
+    }
+  }
+  return expanded;
+}
+
 /**
  * Computes a non-overlapping position for a circled charge badge near an atom.
  * @param {import('../core/Atom.js').Atom} atom - The atom object.
@@ -952,7 +968,7 @@ function rayDistanceToLabelBox(angle, label, fontSize, labelOffset = null) {
  * @param {number} [options.baseRadius] - Configuration sub-option.
  * @param {number} [options.offsetFromBoundary] - Configuration sub-option.
  * @param {string} [options.chargeLabel] - Configuration sub-option.
- * @param {number[]} [options.extraOccupiedAngles] - Additional blocked angular directions.
+ * @param {(number|{angle:number,spread?:number})[]} [options.extraOccupiedAngles] - Additional blocked angular directions or sectors.
  * @param {number} [options.preferredAngle] - preferred angle for badge placement in radians
  * @param {number|null} [options.stickyAngle] - if set, locks badge to this angle
  * @param {number} [options.stickyTolerance] - angular tolerance for sticky snapping
@@ -1002,7 +1018,7 @@ export function computeChargeBadgePlacement(
     }
     occupiedAngles.push(Math.atan2(dy, dx));
   }
-  occupiedAngles.push(...extraOccupiedAngles);
+  occupiedAngles.push(...expandedOccupiedAngles(extraOccupiedAngles));
 
   let bestAngle = preferredAngle;
   let bestScore = -1;

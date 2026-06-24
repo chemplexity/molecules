@@ -23,6 +23,7 @@ import { getAtomNumberMap, multipleBondAnnotationBlockerAngles, pickAtomAnnotati
 import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
 import { ringAtomKey, ringFillDomId } from '../../core/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
+import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 
 const FORCE_STANDARD_UNLABELED_ATOMS = new Set(['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']);
 
@@ -657,6 +658,19 @@ export function createForceSceneRenderer(ctx) {
 
     const forceLonePairDotsByAtomId = new Map();
     const forceChargeAngleByAtomId = new Map();
+    const forceResonanceArrowOptions = {
+      atomEndPad: 0,
+      atomToBondSourceOffset: ({ atom }) => atomRadius(atom?.properties?.protons, 'force') + 3,
+      atomTargetCenterTangent: true,
+      atomTargetCircleRadius: (_endpoint, atom) => atomRadius(atom?.properties?.protons, 'force'),
+      atomTargetCircleAngle: Math.PI / 4,
+      atomTargetCircleClearance: 3,
+      atomTargetMinBend: 20,
+      minArrowLength: 8,
+      strokeWidth: 2,
+      chargeAvoidanceRadius: 40,
+      chargeAvoidanceSpread: 0.72
+    };
     const pointForForceAtom = atom => {
       const node = forceNodeById.get(atom?.id);
       if (!node || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
@@ -752,6 +766,7 @@ export function createForceSceneRenderer(ctx) {
         if (!center) {
           return 'translate(-9999,-9999)';
         }
+        const arrowOccupiedAngles = resonanceArrowOccupiedAnglesForAtom(molecule, atom, pointForForceAtom, forceResonanceArrowOptions);
         const placement = computeChargeBadgePlacement(atom, molecule, {
           pointForAtom: pointForForceAtom,
           orientationPointForAtom: orientationPointForForceAtom,
@@ -759,9 +774,12 @@ export function createForceSceneRenderer(ctx) {
           fontSize: forceChargeFontSize,
           chargeLabel: formatChargeLabel(d.charge),
           stickyAngle: forceChargeAngleByAtomId.get(atom.id) ?? null,
-          extraOccupiedAngles: _forceLonePairDotsForAtom(atom)
-            .map(dot => Math.atan2(dot.y - center.y, dot.x - center.x))
-            .filter(Number.isFinite)
+          extraOccupiedAngles: [
+            ..._forceLonePairDotsForAtom(atom)
+              .map(dot => Math.atan2(dot.y - center.y, dot.x - center.x))
+              .filter(Number.isFinite),
+            ...arrowOccupiedAngles
+          ]
         });
         if (placement) {
           forceChargeAngleByAtomId.set(atom.id, placement.angle);
@@ -810,11 +828,12 @@ export function createForceSceneRenderer(ctx) {
     const forceEnData = getBondEnOverlayData(molecule);
     const forceLinkById = new Map(graph.links.map(link => [link.id, link]));
     let forceBondEnPlacementBoxes = [];
+    let forceBondEnLayer = null;
     let forceBondEnLabels = null;
     if (forceEnData) {
-      const enLayer = ctx.g.append('g').attr('class', 'force-bond-en').style('pointer-events', 'none');
+      forceBondEnLayer = ctx.g.append('g').attr('class', 'force-bond-en').style('pointer-events', 'none');
       const labelData = forceEnData.map(({ bondId, label, t }) => ({ link: forceLinkById.get(bondId), bond: molecule.bonds.get(bondId), label, t })).filter(d => d.link && d.bond);
-      forceBondEnLabels = enLayer
+      forceBondEnLabels = forceBondEnLayer
         .selectAll('text.force-bond-en-label')
         .data(labelData)
         .enter()
@@ -905,11 +924,12 @@ export function createForceSceneRenderer(ctx) {
 
     const forceBondLengthsData = getBondLengthsOverlayData(molecule);
     let forceBondLengthPlacementBoxes = [];
+    let forceBondLengthLayer = null;
     let forceBondLengthLabels = null;
     if (forceBondLengthsData) {
-      const blLayer = ctx.g.append('g').attr('class', 'force-bond-lengths').style('pointer-events', 'none');
+      forceBondLengthLayer = ctx.g.append('g').attr('class', 'force-bond-lengths').style('pointer-events', 'none');
       const blLabelData = forceBondLengthsData.map(({ bondId, label }) => ({ link: forceLinkById.get(bondId), bond: molecule.bonds.get(bondId), label })).filter(d => d.link && d.bond);
-      forceBondLengthLabels = blLayer
+      forceBondLengthLabels = forceBondLengthLayer
         .selectAll('text.force-bond-length-label')
         .data(blLabelData)
         .enter()
@@ -999,6 +1019,7 @@ export function createForceSceneRenderer(ctx) {
 
     const forceNumberMap = getAtomNumberMap(molecule);
     const forceNodeById2 = forceNodeById;
+    let forceAtomNumberLayer = null;
     let forceAtomNumberLabels = null;
     if (forceNumberMap) {
       const nodeNeighbors = new Map(graph.nodes.map(n => [n.id, []]));
@@ -1009,7 +1030,7 @@ export function createForceSceneRenderer(ctx) {
         nodeLinks.get(link.source.id)?.push(link);
         nodeLinks.get(link.target.id)?.push(link);
       }
-      const numLayer = ctx.g.append('g').attr('class', 'force-atom-numbering').style('pointer-events', 'none');
+      forceAtomNumberLayer = ctx.g.append('g').attr('class', 'force-atom-numbering').style('pointer-events', 'none');
       const numData = [...forceNumberMap.entries()]
         .map(([id, num]) => ({
           node: forceNodeById2.get(id),
@@ -1018,7 +1039,7 @@ export function createForceSceneRenderer(ctx) {
           links: nodeLinks.get(id) ?? []
         }))
         .filter(d => d.node);
-      forceAtomNumberLabels = numLayer
+      forceAtomNumberLabels = forceAtomNumberLayer
         .selectAll('text.force-atom-num')
         .data(numData)
         .enter()
@@ -1086,6 +1107,15 @@ export function createForceSceneRenderer(ctx) {
     }
     _updateForceAtomNumberLabels();
 
+    function _raiseForceAnnotationLayers() {
+      atomSymbol.raise?.();
+      forceLonePairLayer?.raise?.();
+      chargeLabel.raise?.();
+      forceBondEnLayer?.raise?.();
+      forceBondLengthLayer?.raise?.();
+      forceAtomNumberLayer?.raise?.();
+    }
+
     /**
      * Updates all force-rendered scene layers from the current simulation node
      * positions. This is called once before overlay/highlight rendering so no
@@ -1152,6 +1182,8 @@ export function createForceSceneRenderer(ctx) {
       _updateForceBondLengthLabels();
       _updateForceAtomNumberLabels();
       _updateForceStereoDisplay();
+      drawResonanceElectronFlow2d(ctx.g, molecule, atom => forceNodeById.get(atom.id) ?? atom, forceResonanceArrowOptions);
+      _raiseForceAnnotationLayers();
 
       const highlightLines = ctx.cache.getHighlightLines();
       const highlightCircles = ctx.cache.getHighlightCircles();

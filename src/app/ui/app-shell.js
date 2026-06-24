@@ -107,12 +107,14 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
     hasCustomWidth = true;
     contentMain.style?.setProperty?.('--sidebar-width', `${Math.round(clamped)}px`);
     syncSplitterA11y(clamped, rect.width);
-    if (persist) {
+    if (persist && clamped > MIN_SIDEBAR_WIDTH_PX) {
       try {
         storage?.setItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY, String(Math.round(clamped)));
       } catch {
         // Ignore storage failures; resizing should keep working for the session.
       }
+    } else if (persist) {
+      try { storage?.removeItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY); } catch {}
     }
     if (notify) {
       onResize();
@@ -181,9 +183,12 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
   }
 
   const storedWidth = finiteNumber(storage?.getItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY));
-  if (storedWidth != null) {
+  if (storedWidth != null && storedWidth > MIN_SIDEBAR_WIDTH_PX) {
     applyWidth(storedWidth);
   } else {
+    if (storedWidth != null) {
+      try { storage?.removeItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY); } catch {}
+    }
     syncSplitterA11y(currentSidebarWidth(), containerRect().width);
   }
 
