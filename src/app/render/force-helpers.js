@@ -490,6 +490,18 @@ function shouldIncludeLineHydrogen(atom, hydrogenMode) {
   return atom.visible !== false;
 }
 
+function isStereoDisplayBond(bond) {
+  const displayAs = bond?.properties?.display?.as;
+  return displayAs === 'wedge' || displayAs === 'dash';
+}
+
+function finiteForcePointFromNode(node, xKey = 'x', yKey = 'y') {
+  if (!node || !Number.isFinite(node[xKey]) || !Number.isFinite(node[yKey])) {
+    return null;
+  }
+  return { x: node[xKey], y: node[yKey] };
+}
+
 /**
  * Converts stored 2D/line molecule coordinates into force-layout pixel coordinates.
  *
@@ -645,19 +657,66 @@ export function convertForceCoordsToLineLayout(
     .filter(isFinitePoint);
   const forceCenter = centroid(heavyNodes, centroid([...nodeById.values()]));
   const scale = bondLength / forceBondLength;
+  const toLinePoint = point => ({
+    x: lineCenter.x + (point.x - forceCenter.x) * scale,
+    y: lineCenter.y - (point.y - forceCenter.y) * scale
+  });
+  const stereoEndpointCoords = new Map();
+
+  for (const bond of molecule?.bonds?.values?.() ?? []) {
+    if (!isStereoDisplayBond(bond)) {
+      continue;
+    }
+    const centerId = bond.properties?.display?.centerId;
+    if (!centerId || !bond.atoms?.includes(centerId)) {
+      continue;
+    }
+    const endpointId = bond.atoms[0] === centerId ? bond.atoms[1] : bond.atoms[0];
+    const endpointAtom = molecule.atoms.get(endpointId);
+    const centerNode = nodeById.get(centerId);
+    const endpointNode = nodeById.get(endpointId);
+    const centerPoint = finiteForcePointFromNode(centerNode);
+    if (!endpointAtom || !centerPoint) {
+      continue;
+    }
+    const centerLinePoint = toLinePoint(centerPoint);
+    if (endpointAtom.name === 'H') {
+      stereoEndpointCoords.set(endpointId, centerLinePoint);
+      continue;
+    }
+    const centerAnchorPoint = finiteForcePointFromNode(centerNode, 'anchorX', 'anchorY');
+    const endpointAnchorPoint = finiteForcePointFromNode(endpointNode, 'anchorX', 'anchorY');
+    if (centerAnchorPoint && endpointAnchorPoint) {
+      const centerAnchorLinePoint = toLinePoint(centerAnchorPoint);
+      const endpointAnchorLinePoint = toLinePoint(endpointAnchorPoint);
+      stereoEndpointCoords.set(endpointId, {
+        x: centerLinePoint.x + (endpointAnchorLinePoint.x - centerAnchorLinePoint.x),
+        y: centerLinePoint.y + (endpointAnchorLinePoint.y - centerAnchorLinePoint.y)
+      });
+      continue;
+    }
+    if (endpointAnchorPoint) {
+      stereoEndpointCoords.set(endpointId, toLinePoint(endpointAnchorPoint));
+    }
+  }
 
   for (const atom of atoms) {
-    if (!shouldIncludeLineHydrogen(atom, hydrogenMode)) {
+    const stereoEndpointCoord = stereoEndpointCoords.get(atom.id);
+    if (!stereoEndpointCoord && !shouldIncludeLineHydrogen(atom, hydrogenMode)) {
+      continue;
+    }
+    if (stereoEndpointCoord && atom.name === 'H' && hydrogenMode === 'omit') {
+      continue;
+    }
+    if (stereoEndpointCoord) {
+      coords.set(atom.id, stereoEndpointCoord);
       continue;
     }
     const node = nodeById.get(atom.id);
     if (!isFinitePoint(node)) {
       continue;
     }
-    coords.set(atom.id, {
-      x: lineCenter.x + (node.x - forceCenter.x) * scale,
-      y: lineCenter.y - (node.y - forceCenter.y) * scale
-    });
+    coords.set(atom.id, toLinePoint(node));
   }
 
   return { coords, scale, forceCenter, lineCenter };
@@ -715,7 +774,7 @@ export function reseatForceGraphHydrogens(graph, { resetVelocity = true } = {}) 
  * @returns {object} Object with `buildForceAnchorLayout`, `convertMolecule`, `seedForceNodePositions`, `forceLinkDistance`, `forceAnchorRadius`, `forceHydrogenRepulsion`, `forceHydrogenPlacement`, `forceFitTransform`, `isHydrogenNode`, `zoomTransformsDiffer`, `placeHydrogensAroundParent`, `reseatForceGraphHydrogens`, `patchForceNodePositions`, and `reseatHydrogensAroundPatched`.
  */
 export function createForceHelpers(context) {
-  function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30, ignoreOverlayPadding = false } = {}) {
+  function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30, ignoreOverlayPadding = false, reactionLike = false } = {}) {
     if (!nodes?.length) {
       return null;
     }
@@ -740,7 +799,7 @@ export function createForceHelpers(context) {
     }
     const width = context.plotEl.clientWidth || 600;
     const height = context.plotEl.clientHeight || 400;
-    const pads = ignoreOverlayPadding ? { left: pad, right: pad, top: pad, bottom: pad } : context.viewportFitPadding(pad);
+    const pads = ignoreOverlayPadding ? { left: pad, right: pad, top: pad, bottom: pad } : context.viewportFitPadding(pad, { reactionLike });
     const horizontalPad = Math.max(pad, (pads.left + pads.right) / 2);
     const verticalPad = Math.max(pad, (pads.top + pads.bottom) / 2);
     const fitWidth = Math.max(1, width - horizontalPad * 2);
@@ -760,6 +819,9 @@ export function createForceHelpers(context) {
   function buildForceAnchorLayout(molecule) {
     const layoutBondLength = context.getLayoutBondLength?.() ?? 1.5;
     const seedMol = molecule.clone();
+    if (molecule.__reactionPreview) {
+      seedMol.__reactionPreview = molecule.__reactionPreview;
+    }
     seedMol.hideHydrogens();
     context.generate2dCoords(seedMol, {
       suppressH: true,

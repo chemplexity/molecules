@@ -303,6 +303,7 @@ export function createForceSceneRenderer(ctx) {
    * @param {number} [options.fitPad] - Optional padding for the initial viewport fit.
    * @param {number} [options.fitScaleMultiplier] - Optional zoom multiplier for the initial viewport fit.
    * @param {boolean} [options.ignoreOverlayPadding] - When true, fits without reserving UI overlay gutters.
+   * @param {boolean} [options.fitReactionLike] - When true, uses reaction-preview overlay padding for the initial viewport fit.
    * @returns {void}
    */
   function updateForce(
@@ -315,7 +316,8 @@ export function createForceSceneRenderer(ctx) {
       initialPatchPos = null,
       fitPad = null,
       fitScaleMultiplier = null,
-      ignoreOverlayPadding = false
+      ignoreOverlayPadding = false,
+      fitReactionLike = false
     } = {}
   ) {
     prepareAromaticBondRendering(molecule);
@@ -663,7 +665,7 @@ export function createForceSceneRenderer(ctx) {
       atomToBondSourceOffset: ({ atom }) => atomRadius(atom?.properties?.protons, 'force') + 3,
       atomTargetCenterTangent: true,
       atomTargetCircleRadius: (_endpoint, atom) => atomRadius(atom?.properties?.protons, 'force'),
-      atomTargetCircleAngle: Math.PI / 4,
+      atomTargetCircleAngle: Math.PI / 6,
       atomTargetCircleClearance: 3,
       atomTargetMinBend: 20,
       minArrowLength: 8,
@@ -1123,7 +1125,7 @@ export function createForceSceneRenderer(ctx) {
      * @returns {void}
      */
     function _updateForceScenePositions() {
-      ctx.helpers.renderReactionPreviewArrowForce(graph.nodes);
+      ctx.helpers.renderReactionPreviewArrowForce(graph.nodes, molecule);
 
       singleBond
         .attr('x1', d => d.source.x)
@@ -1210,7 +1212,8 @@ export function createForceSceneRenderer(ctx) {
         const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, fitPad ?? ctx.constants.forceLayoutInitialFitPad, {
           hydrogenRadiusScale: ctx.constants.forceLayoutInitialHRadiusScale,
           scaleMultiplier: fitScaleMultiplier ?? ctx.constants.forceLayoutInitialZoomMultiplier,
-          ignoreOverlayPadding
+          ignoreOverlayPadding,
+          reactionLike: fitReactionLike === true || molecule?.__reactionPreview?.resonancePair === true
         });
         if (fitTransform) {
           ctx.svg.call(ctx.zoom.transform, fitTransform);

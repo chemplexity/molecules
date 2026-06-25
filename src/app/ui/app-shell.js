@@ -114,7 +114,11 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
         // Ignore storage failures; resizing should keep working for the session.
       }
     } else if (persist) {
-      try { storage?.removeItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY); } catch {}
+      try {
+        storage?.removeItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures; resizing should keep working for the session.
+      }
     }
     if (notify) {
       onResize();
@@ -187,7 +191,11 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
     applyWidth(storedWidth);
   } else {
     if (storedWidth != null) {
-      try { storage?.removeItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY); } catch {}
+      try {
+        storage?.removeItem?.(MAIN_SIDEBAR_WIDTH_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures; the default sidebar width is still usable.
+      }
     }
     syncSplitterA11y(currentSidebarWidth(), containerRect().width);
   }

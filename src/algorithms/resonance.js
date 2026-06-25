@@ -273,11 +273,10 @@ function _hasExocyclicPositiveDonorPiBond(atom, ringAtomSet, molecule, bondOrder
  * still take one localized ring pi bond.
  * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
- * @param {number} formalCharge - Formal charge value.
  * @returns {boolean} `true` if the nitrogen is a lone-pair donor.
  */
-function _isNeutralAromaticNLonePairDonor(atom, molecule, formalCharge) {
-  if (atom.name !== 'N' || formalCharge !== 0) {
+function _isAromaticNLonePairDonorTopology(atom, molecule) {
+  if (atom.name !== 'N') {
     return false;
   }
 
@@ -301,6 +300,10 @@ function _isNeutralAromaticNLonePairDonor(atom, molecule, formalCharge) {
   }
 
   return aromaticBondCount === 2 && hasNonAromaticAttachment;
+}
+
+function _isNeutralAromaticNLonePairDonor(atom, molecule, formalCharge) {
+  return formalCharge === 0 && _isAromaticNLonePairDonorTopology(atom, molecule);
 }
 
 /**
@@ -944,7 +947,7 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge, 
           atom.name === 'S' ||
           atom.name === 'Se' ||
           atom.name === 'Te' ||
-          (atom.name === 'N' && atom.getHydrogenNeighbors(molecule).length > 0 && ring.length === 5 && ring.every(atomId => (aromaticRingMembershipCounts.get(atomId) ?? 0) === 1))
+          (atom.name === 'N' && _isAromaticNLonePairDonorTopology(atom, molecule) && ring.length === 5 && ring.every(atomId => (aromaticRingMembershipCounts.get(atomId) ?? 0) === 1))
       );
       if (!supportsChargeSeparatedAromaticState) {
         return false;
@@ -1620,6 +1623,67 @@ function _isSingleChargeShiftState(state, atomIds, canonicalAbsoluteChargeMagnit
 }
 
 /**
+ * Returns true for the low-value formal contributor made by polarizing an
+ * otherwise neutral carbon-carbon pi bond into C+--C- without any accompanying
+ * bond shift. These are valid bookkeeping structures for isolated alkenes, but
+ * they are too misleading to show as resonance contributors.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number> }} state - Candidate state.
+ * @param {Map<string, number>} canonicalBondOrders - Canonical bond orders.
+ * @param {Map<string, number>} canonicalAtomCharges - Canonical atom charges.
+ * @param {Set<string>} atomIds - Pi-system atom IDs.
+ * @param {Set<string>} bondIds - Pi-system bond IDs.
+ * @returns {boolean} `true` when the state should be hidden.
+ */
+function _isUnstabilizedAlkenePolarizationState(molecule, state, canonicalBondOrders, canonicalAtomCharges, atomIds, bondIds) {
+  const changedChargeIds = [...atomIds].filter(atomId => (state.atomCharges.get(atomId) ?? canonicalAtomCharges.get(atomId) ?? 0) !== (canonicalAtomCharges.get(atomId) ?? 0));
+  if (changedChargeIds.length !== 2) {
+    return false;
+  }
+
+  const chargedAtoms = changedChargeIds.map(atomId => molecule.atoms.get(atomId));
+  if (chargedAtoms.some(atom => !atom || atom.name !== 'C' || atom.properties?.aromatic)) {
+    return false;
+  }
+  if (changedChargeIds.some(atomId => (canonicalAtomCharges.get(atomId) ?? 0) !== 0)) {
+    return false;
+  }
+
+  const stateCharges = changedChargeIds.map(atomId => state.atomCharges.get(atomId) ?? 0).sort((a, b) => a - b);
+  if (stateCharges[0] !== -1 || stateCharges[1] !== 1) {
+    return false;
+  }
+
+  let polarizedBondId = null;
+  for (const bondId of bondIds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond || bond.properties?.aromatic) {
+      continue;
+    }
+    const canonicalOrder = canonicalBondOrders.get(bondId) ?? bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+    const stateOrder = state.bondOrders.get(bondId) ?? canonicalOrder;
+    const isChargedEndpointBond = changedChargeIds.every(atomId => bond.atoms.includes(atomId));
+    if (isChargedEndpointBond && canonicalOrder >= 2 && stateOrder === 1 && bond.atoms.every(atomId => molecule.atoms.get(atomId)?.name === 'C')) {
+      polarizedBondId = bondId;
+      break;
+    }
+  }
+  if (!polarizedBondId) {
+    return false;
+  }
+
+  for (const bondId of bondIds) {
+    const canonicalOrder = canonicalBondOrders.get(bondId) ?? molecule.bonds.get(bondId)?.properties.localizedOrder ?? molecule.bonds.get(bondId)?.properties.order ?? 1;
+    const stateOrder = state.bondOrders.get(bondId) ?? canonicalOrder;
+    if (stateOrder !== canonicalOrder && bondId !== polarizedBondId) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Returns the internal search budget used while enumerating raw contributors.
  *
  * The public `maxContributors` limit is applied only after charge/permutation
@@ -1956,6 +2020,17 @@ export function generateResonanceStructures(molecule, options = {}) {
       state =>
         (!includeIndependentComponentPermutations && components.length > 1) ||
         _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude)
+    )
+    .filter(
+      state =>
+        !_isUnstabilizedAlkenePolarizationState(
+          molecule,
+          state,
+          canonicalComponentState.canonicalBondOrders,
+          canonicalComponentState.canonicalAtomCharges,
+          atomIds,
+          bondIds
+        )
     )
     .slice(0, maxContributors);
 

@@ -98,6 +98,7 @@ describe('interaction runtime bootstrap', () => {
         patchForceNodePositions() {},
         forceFitTransform() {},
         forceFitPad: 12,
+        forceInitialFitPad: 5,
         forceInitialZoomMultiplier: 1.2,
         zoomTransformsDiffer() {},
         parseSMILES() {},

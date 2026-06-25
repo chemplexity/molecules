@@ -523,6 +523,51 @@ describe('create2DSceneRenderer', () => {
     );
   });
 
+  it('fits resonance pair renders and auto zoom with the reaction-preview zoom cap', () => {
+    const paddingCalls = [];
+    const { renderer, records } = makeRenderer({
+      helperOverrides: {
+        viewportFitPadding: (pad, options = {}) => {
+          paddingCalls.push({ pad, options });
+          return { left: pad, right: pad, top: pad, bottom: pad };
+        }
+      }
+    });
+    const atom1 = makeAtom('a1', 0, 0);
+    const atom2 = makeAtom('a2', 1.5, 0);
+    const mol = {
+      id: 'mol-resonance-pair',
+      atoms: new Map([
+        [atom1.id, atom1],
+        [atom2.id, atom2]
+      ]),
+      bonds: new Map(),
+      __reactionPreview: {
+        resonancePair: true
+      },
+      hideHydrogens() {},
+      getChiralCenters() {
+        return [];
+      }
+    };
+
+    renderer.render2d(mol, { preserveGeometry: true });
+    const renderTransform = latestZoomTransform(records);
+    renderer.fitCurrent2dView();
+    const autoZoomTransform = latestZoomTransform(records);
+
+    assert.equal(renderTransform?.k, 1.28);
+    assert.equal(autoZoomTransform?.k, 1.28);
+    assert.deepEqual(
+      paddingCalls.map(call => call.options),
+      [{ reactionLike: true }, { reactionLike: true }]
+    );
+    assert.deepEqual(
+      paddingCalls.map(call => call.pad),
+      [12, 12]
+    );
+  });
+
   it('does not mutate hidden stereo hydrogen coordinates during 2D rendering', () => {
     const { renderer } = makeRenderer();
     const mol = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');

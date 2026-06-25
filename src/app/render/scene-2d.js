@@ -24,6 +24,9 @@ import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 
+const REACTION_PAIR_2D_FIT_PAD = 12;
+const REACTION_PAIR_2D_FIT_MAX_SCALE = 1.28;
+
 /**
  * Returns the placed incident ring polygons for one atom.
  * @param {object} molecule - Molecule graph.
@@ -92,14 +95,15 @@ function _compute2dFitTransform(ctx, atoms, options = {}) {
   const { minX, maxX, minY, maxY } = atomBBox(atoms);
   const W = ctx.plotEl.clientWidth || 600;
   const H = ctx.plotEl.clientHeight || 400;
-  const PAD = options.fitPad ?? (ctx.helpers.hasReactionPreview() ? 12 : 18);
-  const pads = options.ignoreOverlayPadding ? { left: PAD, right: PAD, top: PAD, bottom: PAD } : ctx.helpers.viewportFitPadding(PAD);
+  const reactionLike = options.reactionLike === true || ctx.helpers.hasReactionPreview?.() === true;
+  const PAD = options.fitPad ?? (reactionLike ? REACTION_PAIR_2D_FIT_PAD : 18);
+  const pads = options.ignoreOverlayPadding ? { left: PAD, right: PAD, top: PAD, bottom: PAD } : ctx.helpers.viewportFitPadding(PAD, { reactionLike });
   const horizontalPad = Math.max(PAD, (pads.left + pads.right) / 2);
   const verticalPad = Math.max(PAD, (pads.top + pads.bottom) / 2);
   const scale = ctx.constants.scale;
   const molSVGW = (maxX - minX) * scale || 1;
   const molSVGH = (maxY - minY) * scale || 1;
-  const fitCap = options.fitMaxScale ?? (ctx.helpers.hasReactionPreview() ? 1.28 : 1);
+  const fitCap = options.fitMaxScale ?? (reactionLike ? REACTION_PAIR_2D_FIT_MAX_SCALE : 1);
   const fitScale = Math.min(Math.max(1, W - horizontalPad * 2) / molSVGW, Math.max(1, H - verticalPad * 2) / molSVGH, fitCap);
   const fitTx = W / 2 - (W / 2) * fitScale;
   const fitTy = H / 2 - (H / 2) * fitScale;
@@ -112,15 +116,16 @@ function _compute2dBBoxFitTransform(ctx, bbox, options = {}) {
   }
   const W = ctx.plotEl.clientWidth || 600;
   const H = ctx.plotEl.clientHeight || 400;
-  const PAD = options.fitPad ?? (ctx.helpers.hasReactionPreview() ? 12 : 18);
-  const pads = options.ignoreOverlayPadding ? { left: PAD, right: PAD, top: PAD, bottom: PAD } : ctx.helpers.viewportFitPadding(PAD);
+  const reactionLike = options.reactionLike === true || ctx.helpers.hasReactionPreview?.() === true;
+  const PAD = options.fitPad ?? (reactionLike ? REACTION_PAIR_2D_FIT_PAD : 18);
+  const pads = options.ignoreOverlayPadding ? { left: PAD, right: PAD, top: PAD, bottom: PAD } : ctx.helpers.viewportFitPadding(PAD, { reactionLike });
   const horizontalPad = Math.max(PAD, (pads.left + pads.right) / 2);
   const verticalPad = Math.max(PAD, (pads.top + pads.bottom) / 2);
   const fitWidth = Math.max(1, W - horizontalPad * 2);
   const fitHeight = Math.max(1, H - verticalPad * 2);
   const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
   const smallBondLengthScaleCap = Math.max(1, Math.min(3, 1.5 / Math.max(0.5, layoutBondLength)));
-  const fitCap = options.fitMaxScale ?? (ctx.helpers.hasReactionPreview() ? 1.28 : smallBondLengthScaleCap);
+  const fitCap = options.fitMaxScale ?? (reactionLike ? REACTION_PAIR_2D_FIT_MAX_SCALE : smallBondLengthScaleCap);
   const fitScale = Math.min(fitWidth / bbox.width, fitHeight / bbox.height, fitCap);
   const fitTx = W / 2 - (bbox.x + bbox.width / 2) * fitScale;
   const fitTy = H / 2 - (bbox.y + bbox.height / 2) * fitScale;
@@ -131,6 +136,19 @@ function _fitRendered2dView(ctx, fitPoints, options = {}) {
   const bbox = ctx.g?.node?.()?.getBBox?.();
   const transform = _compute2dBBoxFitTransform(ctx, bbox, options) ?? _compute2dFitTransform(ctx, fitPoints, options);
   ctx.svg.call(ctx.zoom.transform, transform);
+}
+
+function _reactionLike2dFitOptions(ctx, mol, options = {}) {
+  const reactionLike = ctx.helpers.hasReactionPreview?.() === true || mol?.__reactionPreview?.resonancePair === true;
+  if (!reactionLike) {
+    return options;
+  }
+  return {
+    ...options,
+    reactionLike: true,
+    fitPad: options.fitPad ?? REACTION_PAIR_2D_FIT_PAD,
+    fitMaxScale: options.fitMaxScale ?? REACTION_PAIR_2D_FIT_MAX_SCALE
+  };
 }
 
 /**
@@ -749,19 +767,23 @@ export function create2DSceneRenderer(ctx) {
       );
     }
 
-    ctx.helpers.drawReactionPreviewArrow2d(toSVGPt, atoms);
+    ctx.helpers.drawReactionPreviewArrow2d(toSVGPt, atoms, mol);
     const resonanceArrowOptions = {
       atomStartPad: (_endpoint, atom) => (atom?.visible !== false && atom?.name !== 'C' ? 11 : 20),
-      atomEndPad: 24,
-      bondStartPad: 8,
+      atomEndPad: 18,
+      bondStartPad: 2,
       bondEndPad: 8,
+      bondMultipleBondStartOffset: 14,
       bondTargetOffsetSign: (_endpoint, bond, a1, a2) => {
         const order = renderBondOrder(bond);
         return order >= 1.5 ? -ctx.helpers.secondaryDir(a1, a2, mol, toSVGPt) : null;
       },
       atomToBondSourceOffset: 15,
-      atomToBondTargetOffset: 6,
+      atomToBondTargetOffset: 12,
       atomTargetOutside: true,
+      atomTargetOutsideAngle: Math.PI / 6,
+      atomTargetCenterTangent: true,
+      atomTargetMinBend: 17,
       curveScale: 0.49,
       minCurve: 17,
       maxCurve: 38,
@@ -1089,7 +1111,7 @@ export function create2DSceneRenderer(ctx) {
     ctx.state.setPreserveSelectionOnNextRender(false);
 
     draw2d();
-    _fitRendered2dView(ctx, fitPoints, { fitPad, fitMaxScale, ignoreOverlayPadding });
+    _fitRendered2dView(ctx, fitPoints, _reactionLike2dFitOptions(ctx, mol, { fitPad, fitMaxScale, ignoreOverlayPadding }));
 
     if (!preserveAnalysis) {
       ctx.analysis.updateFormula(mol);
@@ -1112,7 +1134,7 @@ export function create2DSceneRenderer(ctx) {
     const { cx, cy } = atomBBox(fitPoints);
     ctx.state.setCenter(cx, cy);
     draw2d();
-    _fitRendered2dView(ctx, fitPoints);
+    _fitRendered2dView(ctx, fitPoints, _reactionLike2dFitOptions(ctx, mol));
   }
 
   return {

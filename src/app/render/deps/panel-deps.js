@@ -24,7 +24,7 @@ export function createBondEnPanelDeps(deps) {
 
 /**
  * Builds the structured dependency object for the ResonancePanel factory,
- * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, draw2d, updateForce, hasReactionPreview, restoreReactionPreviewSource, takeSnapshot).
+ * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, molecule setters, renderers, overlays, and history hooks).
  * @param {object} deps - Flat app context providing ResonancePanel-related methods and values.
  * @returns {object} Dependency object consumed by `createResonancePanel`.
  */
@@ -39,8 +39,12 @@ export function createResonancePanelDeps(deps) {
     get _mol2d() {
       return deps.state.getMol2d();
     },
+    setCurrentMol: deps.state.setCurrentMol,
+    setMol2d: deps.state.setMol2d,
     draw2d: deps.renderers.draw2d,
+    render2d: deps.renderers.render2d,
     updateForce: deps.renderers.updateForce,
+    plotEl: deps.dom?.plotEl,
     hasReactionPreview: deps.overlays.hasReactionPreview,
     restoreReactionPreviewSource: deps.overlays.restoreReactionPreviewSource,
     takeSnapshot: deps.history.takeSnapshot

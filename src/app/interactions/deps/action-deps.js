@@ -20,10 +20,12 @@ export function createNavigationActionDeps(ctx) {
       hasReactionPreview: () => ctx.hasReactionPreview(),
       reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
       resetActiveResonanceView: mol => ctx.resetActiveResonanceView(mol),
+      hasActiveResonanceView: () => ctx.hasActiveResonanceView?.() ?? false,
+      getActiveResonanceSourceMolecule: mol => ctx.getActiveResonanceSourceMolecule?.(mol) ?? mol,
       alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength),
       spreadReaction2dProductComponents: (mol, bondLength) => ctx.spreadReaction2dProductComponents(mol, bondLength),
       centerReaction2dPairCoords: (mol, bondLength) => ctx.centerReaction2dPairCoords(mol, bondLength),
-      viewportFitPadding: pad => ctx.viewportFitPadding(pad)
+      viewportFitPadding: (pad, options = {}) => ctx.viewportFitPadding(pad, options)
     },
     helpers: {
       refineExistingCoords: ctx.refineExistingCoords,
@@ -53,6 +55,7 @@ export function createNavigationActionDeps(ctx) {
       patchForceNodePositions: (patchPos, options = {}) => ctx.patchForceNodePositions(patchPos, options),
       forceFitTransform: (nodes, pad, options = {}) => ctx.forceFitTransform(nodes, pad, options),
       fitPad: ctx.forceFitPad,
+      initialFitPad: ctx.forceInitialFitPad,
       initialZoomMultiplier: ctx.forceInitialZoomMultiplier,
       zoomTransformsDiffer: (a, b, epsilon) => ctx.zoomTransformsDiffer(a, b, epsilon)
     },

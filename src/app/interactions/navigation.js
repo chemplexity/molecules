@@ -1,6 +1,6 @@
 /** @module app/interactions/navigation */
 
-import { convertForceCoordsToLineLayout, convertLineCoordsToForceLayout, FORCE_LAYOUT_BOND_LENGTH } from '../render/force-helpers.js';
+import { convertForceCoordsToLineLayout, convertLineCoordsToForceLayout, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../render/force-helpers.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
 const CLEAN_2D_BOND_LENGTH_TOLERANCE = 0.18;
@@ -79,10 +79,9 @@ function addTouchedHeavyNeighborhood(molecule, atom, touchedAtoms, touchedBonds,
  * Seeds molecule atom coordinates from the live force-simulation node positions.
  * @param {object} molecule - Molecule clone that will receive temporary 2D coordinates.
  * @param {Array<object>} nodes - Force-simulation nodes with finite `x`/`y` positions.
- * @param {number} [bondLength] - Target 2D bond length used to normalize force pixels.
  * @returns {Map<string, {x: number, y: number}>} Centered 2D coordinates keyed by atom id.
  */
-function seedMoleculeFromForcePositions(molecule, nodes, bondLength = DEFAULT_LAYOUT_BOND_LENGTH) {
+function seedMoleculeFromForcePositions(molecule, nodes) {
   const placedCoords = new Map();
   if (!molecule?.atoms || !Array.isArray(nodes) || nodes.length === 0) {
     return placedCoords;
@@ -102,7 +101,7 @@ function seedMoleculeFromForcePositions(molecule, nodes, bondLength = DEFAULT_LA
   cx /= finiteNodes.length;
   cy /= finiteNodes.length;
 
-  const scale = bondLength / FORCE_LAYOUT_BOND_LENGTH;
+  const scale = DEFAULT_LAYOUT_BOND_LENGTH / FORCE_LAYOUT_BOND_LENGTH;
   for (const node of finiteNodes) {
     const atom = molecule.atoms.get(node.id);
     const x = (node.x - cx) * scale;
@@ -377,6 +376,68 @@ function snapRingSubstituentAngles(molecule, coords, ring, allRingAtomIds, hints
   return movedCount;
 }
 
+function measureMedianHeavyBondLength(molecule) {
+  if (!molecule?.atoms || !molecule?.bonds) {
+    return 0;
+  }
+  const lengths = [];
+  for (const bond of molecule.bonds.values()) {
+    const [firstId, secondId] = bond.atoms ?? [];
+    const firstAtom = molecule.atoms.get(firstId);
+    const secondAtom = molecule.atoms.get(secondId);
+    if (!firstAtom || !secondAtom || firstAtom.name === 'H' || secondAtom.name === 'H') {
+      continue;
+    }
+    if (firstAtom.visible === false || secondAtom.visible === false) {
+      continue;
+    }
+    if (!Number.isFinite(firstAtom.x) || !Number.isFinite(firstAtom.y) || !Number.isFinite(secondAtom.x) || !Number.isFinite(secondAtom.y)) {
+      continue;
+    }
+    lengths.push(Math.hypot(firstAtom.x - secondAtom.x, firstAtom.y - secondAtom.y));
+  }
+  if (lengths.length === 0) {
+    return 0;
+  }
+  lengths.sort((a, b) => a - b);
+  const mid = Math.floor(lengths.length / 2);
+  return lengths.length % 2 === 1 ? lengths[mid] : (lengths[mid - 1] + lengths[mid]) / 2;
+}
+
+function normalizeCoordsToBondLength(molecule, bondLength) {
+  const medianBondLength = measureMedianHeavyBondLength(molecule);
+  if (medianBondLength <= 0) {
+    return;
+  }
+  const scale = bondLength / medianBondLength;
+  if (Math.abs(scale - 1) < 0.05) {
+    return;
+  }
+  let cx = 0;
+  let cy = 0;
+  let count = 0;
+  for (const atom of molecule.atoms.values()) {
+    if (atom.name === 'H' || atom.visible === false || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    cx += atom.x;
+    cy += atom.y;
+    count++;
+  }
+  if (count === 0) {
+    return;
+  }
+  cx /= count;
+  cy /= count;
+  for (const atom of molecule.atoms.values()) {
+    if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    atom.x = cx + (atom.x - cx) * scale;
+    atom.y = cy + (atom.y - cy) * scale;
+  }
+}
+
 function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT_BOND_LENGTH } = {}) {
   const snappedAtoms = new Set();
   const snappedBonds = new Set();
@@ -619,6 +680,7 @@ export function createNavigationActions(context) {
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
+    normalizeCoordsToBondLength(relayoutMol, bondLength);
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
       bondLength
     });
@@ -636,7 +698,7 @@ export function createNavigationActions(context) {
       ? context.helpers.refineExistingCoords(relayoutMol, {
           suppressH: true,
           bondLength,
-          maxPasses: 12,
+          maxPasses: 6,
           ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
           touchedAtoms: refinementHints.touchedAtoms,
           touchedBonds: refinementHints.touchedBonds
@@ -673,7 +735,7 @@ export function createNavigationActions(context) {
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
-    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
+    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.());
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
       bondLength
     });
@@ -690,7 +752,7 @@ export function createNavigationActions(context) {
       context.helpers.refineExistingCoords(relayoutMol, {
         suppressH: true,
         bondLength,
-        maxPasses: 12,
+        maxPasses: 6,
         ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
         touchedAtoms: refinementHints.touchedAtoms,
         touchedBonds: refinementHints.touchedBonds
@@ -730,14 +792,17 @@ export function createNavigationActions(context) {
     }
     context.history.takeSnapshot({ clearReactionPreview: false });
 
-    const resonanceResetMol = previousMode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    const displayedMol = previousMode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    const activeResonanceView = context.overlays.hasActiveResonanceView?.() === true;
+    const resonanceSourceMol = context.overlays.getActiveResonanceSourceMolecule?.(displayedMol) ?? displayedMol;
+    const modeSwitchMol = activeResonanceView ? displayedMol : resonanceSourceMol;
     const hadReactionPreview = context.overlays.hasReactionPreview();
     const nextMode = previousMode === 'force' ? '2d' : 'force';
     context.state.viewState.setMode(nextMode);
     context.dom.updateModeChrome(nextMode);
 
-    if (!hadReactionPreview) {
-      context.overlays.resetActiveResonanceView(resonanceResetMol);
+    if (!hadReactionPreview && !activeResonanceView) {
+      context.overlays.resetActiveResonanceView(resonanceSourceMol);
     }
     context.simulation.stop();
     context.state.viewState.setRotationDeg(0);
@@ -750,11 +815,13 @@ export function createNavigationActions(context) {
       return;
     }
 
-    const mol = resonanceResetMol ? resonanceResetMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
+    const mol = modeSwitchMol ? modeSwitchMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
+    preserveReactionPreviewMetadata(modeSwitchMol, mol);
     const bondLength = currentLayoutBondLength();
     if (previousMode === 'force') {
       const converted = convertForceCoordsToLineLayout(mol, context.simulation.nodes?.(), {
-        bondLength
+        bondLength,
+        forceBondLength: FORCE_LAYOUT_BOND_LENGTH * (bondLength / DEFAULT_LAYOUT_BOND_LENGTH)
       });
       const appliedCount = applyLineLayoutCoords(mol, converted.coords);
       const ringSnapHints = snapCleanRingsToRegularGeometry(mol, {
@@ -762,7 +829,14 @@ export function createNavigationActions(context) {
       });
       context.renderers.renderMol(mol, {
         preserveHistory: true,
-        preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0
+        preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0,
+        ...(activeResonanceView
+          ? {
+              recomputeResonance: false,
+              refreshResonancePanel: false,
+              preserveAnalysis: true
+            }
+          : {})
       });
       return;
     }
@@ -775,6 +849,13 @@ export function createNavigationActions(context) {
     });
     context.renderers.renderMol(mol, {
       preserveHistory: true,
+      ...(activeResonanceView
+        ? {
+            recomputeResonance: false,
+            refreshResonancePanel: false,
+            preserveAnalysis: true
+          }
+        : {}),
       forceAnchorLayout: converted.lineAnchorCoords.size > 0 ? converted.lineAnchorCoords : null,
       forceInitialPatchPos: converted.coords.size > 0 ? converted.coords : null
     });
@@ -787,8 +868,11 @@ export function createNavigationActions(context) {
       if (!nodes.length) {
         return;
       }
-      const fitTransform = context.force.forceFitTransform(nodes, context.force.fitPad, {
-        scaleMultiplier: context.force.initialZoomMultiplier
+      const currentMol = context.state.documentState.getCurrentMol?.();
+      const isResonancePair = context.overlays?.hasActiveResonanceView?.() === true && currentMol?.__reactionPreview?.resonancePair === true;
+      const fitTransform = context.force.forceFitTransform(nodes, isResonancePair ? (context.force.initialFitPad ?? FORCE_LAYOUT_INITIAL_FIT_PAD) : context.force.fitPad, {
+        scaleMultiplier: isResonancePair ? (context.force.initialZoomMultiplier ?? FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER) : context.force.initialZoomMultiplier,
+        ...(isResonancePair ? { reactionLike: true } : {})
       });
       if (fitTransform) {
         context.view.setZoomTransform(fitTransform);

@@ -26,6 +26,10 @@ describe('createReaction2dDeps', () => {
       history: {
         captureAppSnapshot: options => ({ captured: options }),
         takeSnapshot: options => records.push(['takeSnapshot', options])
+      },
+      overlays: {
+        hasActiveResonanceView: () => true,
+        getActiveResonanceSourceMolecule: mol => ({ source: mol })
       }
     });
 
@@ -36,6 +40,8 @@ describe('createReaction2dDeps', () => {
     assert.equal(deps._mol2d, 'mol2d');
     assert.deepEqual(deps.captureAppSnapshot({ foo: 'bar' }), { captured: { foo: 'bar' } });
     assert.deepEqual(deps.captureZoomTransform(), { x: 1, y: 2, k: 3 });
+    assert.equal(deps.hasActiveResonanceView(), true);
+    assert.deepEqual(deps.getActiveResonanceSourceMolecule('display-mol'), { source: 'display-mol' });
 
     deps.draw2d();
     deps.restoreZoomTransform({ x: 0, y: 0, k: 1 });

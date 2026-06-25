@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createNavigationActions } from '../../../src/app/interactions/navigation.js';
-import { convertLineCoordsToForceLayout } from '../../../src/app/render/force-helpers.js';
+import { convertLineCoordsToForceLayout, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../../../src/app/render/force-helpers.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { generateCoords, refineExistingCoords } from '../../../src/layout/index.js';
@@ -93,6 +93,54 @@ test('autoZoom fits the force molecule viewport', () => {
   ]);
 });
 
+test('autoZoom fits active force resonance pairs with the initial reaction-like padding', () => {
+  const nodes = [
+    { id: 'a1', x: 10, y: 20 },
+    { id: 'a2', x: 40, y: 30 }
+  ];
+  const fitTransform = { x: 20, y: 30, k: 1.2 };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => ({
+          __reactionPreview: {
+            resonancePair: true
+          }
+        })
+      }
+    },
+    overlays: {
+      hasActiveResonanceView: () => true
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    force: {
+      fitPad: 40,
+      initialFitPad: FORCE_LAYOUT_INITIAL_FIT_PAD,
+      initialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+      forceFitTransform: (fitNodes, pad, options) => {
+        calls.push(['forceFitTransform', fitNodes.map(node => node.id), pad, options]);
+        return fitTransform;
+      }
+    },
+    view: {
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.autoZoom();
+
+  assert.deepEqual(calls, [
+    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
+    ['setZoomTransform', fitTransform]
+  ]);
+});
+
 test('cleanLayout2d rerenders from a cloned molecule with preserved history', () => {
   const clonedMol = {
     atoms: new Map([
@@ -162,9 +210,9 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
       {
         suppressH: true,
         bondLength: 1.5,
-        maxPasses: 12,
-        touchedAtoms: ['a1', 'a2'],
-        touchedBonds: ['b1']
+        maxPasses: 6,
+        touchedAtoms: [],
+        touchedBonds: []
       }
     ],
     ['preserveSelection', true],
@@ -837,7 +885,7 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
       {
         suppressH: true,
         bondLength: 1.5,
-        maxPasses: 12,
+        maxPasses: 6,
         touchedAtoms: [],
         touchedBonds: []
       }
@@ -1057,6 +1105,200 @@ test('toggleMode seeds force mode from converted line coordinates', () => {
   approxEqual(renderCall[2].forceInitialPatchPos.get('c1').y, 300);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').x, 420.5);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').y, 300);
+});
+
+test('toggleMode preserves an active resonance pair when switching line mode to force mode', () => {
+  const sourceMol = new Molecule();
+  const c1 = sourceMol.addAtom('c1', 'C');
+  const c2 = sourceMol.addAtom('c2', 'O');
+  c1.x = 0;
+  c1.y = 0;
+  c2.x = 1.5;
+  c2.y = 0;
+  sourceMol.addBond('b1', 'c1', 'c2', { order: 2 }, false);
+
+  const displayMol = sourceMol.clone();
+  const p1 = displayMol.addAtom('__resonance_product__:c1', 'C');
+  const p2 = displayMol.addAtom('__resonance_product__:c2', 'O');
+  p1.x = 4;
+  p1.y = 0;
+  p2.x = 5.5;
+  p2.y = 0;
+  displayMol.addBond('__resonance_product__:b1', p1.id, p2.id, { order: 1 }, false);
+  displayMol.__reactionPreview = {
+    resonancePair: true,
+    reactantAtomIds: new Set(['c1', 'c2']),
+    productAtomIds: new Set([p1.id, p2.id]),
+    productComponentAtomIdSets: [new Set([p1.id, p2.id])]
+  };
+  displayMol.properties.resonanceElectronFlow = { arrows: [{ from: { kind: 'bond', bondId: 'b1' }, to: { kind: 'atom', atomId: 'c2' } }] };
+
+  const calls = [];
+  let mode = '2d';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+          calls.push(['setMode', nextMode]);
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => displayMol,
+        getMol2d: () => displayMol,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      hasActiveResonanceView: () => true,
+      getActiveResonanceSourceMolecule: mol => {
+        calls.push(['getActiveResonanceSourceMolecule', mol]);
+        return sourceMol;
+      },
+      resetActiveResonanceView: source => calls.push(['resetActiveResonanceView', source]),
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop: () => calls.push(['stopSimulation'])
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome: nextMode => calls.push(['updateModeChrome', nextMode])
+    },
+    view: {
+      clearPrimitiveHover: () => calls.push(['clearPrimitiveHover']),
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    renderers: {
+      renderMol: (renderedMol, options) => calls.push(['renderMol', renderedMol, options])
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  const renderCall = calls.find(call => call[0] === 'renderMol');
+  assert.equal(mode, 'force');
+  assert.ok(renderCall);
+  assert.notEqual(renderCall[1], displayMol);
+  assert.equal(renderCall[1].atomCount, 4);
+  assert.equal(renderCall[1].__reactionPreview, displayMol.__reactionPreview);
+  assert.ok(renderCall[1].atoms.has('__resonance_product__:c1'));
+  assert.ok(renderCall[1].properties.resonanceElectronFlow?.arrows?.length);
+  assert.ok(renderCall[2].forceInitialPatchPos.has('__resonance_product__:c1'));
+  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+});
+
+test('toggleMode preserves an active resonance pair when switching force mode to line mode', () => {
+  const sourceMol = new Molecule();
+  const c1 = sourceMol.addAtom('c1', 'C');
+  const c2 = sourceMol.addAtom('c2', 'O');
+  c1.x = 0;
+  c1.y = 0;
+  c2.x = 1.5;
+  c2.y = 0;
+  sourceMol.addBond('b1', 'c1', 'c2', { order: 2 }, false);
+
+  const displayMol = sourceMol.clone();
+  const p1 = displayMol.addAtom('__resonance_product__:c1', 'C');
+  const p2 = displayMol.addAtom('__resonance_product__:c2', 'O');
+  p1.x = 4;
+  p1.y = 0;
+  p2.x = 5.5;
+  p2.y = 0;
+  displayMol.addBond('__resonance_product__:b1', p1.id, p2.id, { order: 1 }, false);
+  displayMol.__reactionPreview = {
+    resonancePair: true,
+    reactantAtomIds: new Set(['c1', 'c2']),
+    productAtomIds: new Set([p1.id, p2.id]),
+    productComponentAtomIdSets: [new Set([p1.id, p2.id])]
+  };
+  displayMol.properties.resonanceElectronFlow = { arrows: [{ from: { kind: 'bond', bondId: 'b1' }, to: { kind: 'atom', atomId: 'c2' } }] };
+
+  const calls = [];
+  let mode = 'force';
+  const nodes = [
+    { id: 'c1', name: 'C', x: 100, y: 200 },
+    { id: 'c2', name: 'O', x: 141, y: 200 },
+    { id: '__resonance_product__:c1', name: 'C', x: 260, y: 200 },
+    { id: '__resonance_product__:c2', name: 'O', x: 301, y: 200 }
+  ];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+          calls.push(['setMode', nextMode]);
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => displayMol,
+        getMol2d: () => null,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      hasActiveResonanceView: () => true,
+      getActiveResonanceSourceMolecule: mol => {
+        calls.push(['getActiveResonanceSourceMolecule', mol]);
+        return sourceMol;
+      },
+      resetActiveResonanceView: source => calls.push(['resetActiveResonanceView', source]),
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop: () => calls.push(['stopSimulation']),
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome: nextMode => calls.push(['updateModeChrome', nextMode])
+    },
+    view: {
+      clearPrimitiveHover: () => calls.push(['clearPrimitiveHover']),
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    renderers: {
+      renderMol: (renderedMol, options) => calls.push(['renderMol', renderedMol, options])
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  const renderCall = calls.find(call => call[0] === 'renderMol');
+  assert.equal(mode, '2d');
+  assert.ok(renderCall);
+  assert.notEqual(renderCall[1], displayMol);
+  assert.equal(renderCall[1].atomCount, 4);
+  assert.equal(renderCall[1].__reactionPreview, displayMol.__reactionPreview);
+  assert.ok(renderCall[1].atoms.has('__resonance_product__:c1'));
+  assert.ok(renderCall[1].properties.resonanceElectronFlow?.arrows?.length);
+  assert.deepEqual(renderCall[2], {
+    preserveHistory: true,
+    preserveGeometry: true,
+    recomputeResonance: false,
+    refreshResonancePanel: false,
+    preserveAnalysis: true
+  });
+  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
 });
 
 test('toggleMode writes converted force coordinates before rendering line mode', () => {

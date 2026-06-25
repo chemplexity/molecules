@@ -14,7 +14,8 @@ import {
   _reactionPreviewSkipsFunctionalGroupRefresh,
   _restoreReactionPreviewSnapshot,
   _restoreReactionPreviewSource,
-  initReaction2d
+  initReaction2d,
+  updateReactionTemplatesPanel
 } from '../../../src/app/render/reaction-2d.js';
 import { findSMARTSRaw } from '../../../src/smarts/search.js';
 import { reactionTemplates } from '../../../src/smirks/index.js';
@@ -146,6 +147,64 @@ describe('reaction preview restore', () => {
     assert.equal(_reactionPreviewSkipsFunctionalGroupRefresh(reactionTemplates.amineProtonation), true);
     assert.equal(_reactionPreviewSkipsFunctionalGroupRefresh(reactionTemplates.carboxylicAcidDeprotonation), true);
     assert.equal(_reactionPreviewSkipsFunctionalGroupRefresh(reactionTemplates.carbonylReduction), false);
+  });
+
+  it('matches force reaction rows against the resonance source while a resonance view is active', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    const tbody = {
+      innerHTML: '',
+      appendChild(child) {
+        rows.push(child);
+        return child;
+      }
+    };
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'reaction-body' ? tbody : null;
+      },
+      createElement(tag) {
+        return {
+          tagName: tag.toUpperCase(),
+          className: '',
+          textContent: '',
+          children: [],
+          classList: {
+            add() {}
+          },
+          appendChild(child) {
+            this.children.push(child);
+            return child;
+          },
+          addEventListener() {},
+          querySelectorAll() {
+            return [];
+          }
+        };
+      }
+    };
+    try {
+      const sourceMol = parseSMILES('CC=O');
+      generateResonanceStructures(sourceMol);
+      sourceMol.setResonanceState(2);
+      initReaction2d({
+        mode: 'force',
+        currentMol: parseSMILES('CC'),
+        _mol2d: null,
+        hasActiveResonanceView: () => true,
+        getActiveResonanceSourceMolecule: () => sourceMol
+      });
+
+      updateReactionTemplatesPanel();
+
+      const rowText = rows
+        .map(row => row.children?.map(cell => cell.textContent || cell.children?.map(child => child.textContent).join('')).join(' '))
+        .join(' ');
+      assert.match(rowText, /Aldehyde Oxidation/);
+      assert.match(rowText, /Carbonyl Reduction/);
+    } finally {
+      globalThis.document = previousDocument;
+    }
   });
 
   it('seeds force-preview reactant and product atoms in one shared preview frame', () => {

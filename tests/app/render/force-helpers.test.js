@@ -21,6 +21,10 @@ import {
   zoomTransformsDiffer
 } from '../../../src/app/render/force-helpers.js';
 import { Molecule } from '../../../src/core/Molecule.js';
+import { parseSMILES } from '../../../src/io/smiles.js';
+import { applyCoords } from '../../../src/layout/engine/apply.js';
+import { generateCoords } from '../../../src/layout/engine/api.js';
+import { syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 
 function makeZoomIdentity() {
   return {
@@ -95,6 +99,51 @@ describe('force-helpers', () => {
     assert.equal(lineLayout.coords.get('c1').y, 0);
     assert.equal(lineLayout.coords.get('c2').x, 0.75);
     assert.equal(lineLayout.coords.get('c2').y, 0);
+  });
+
+  it('restores stereo substituent anchors and stereo hydrogens when converting force back to line', () => {
+    const mol = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+    syncDisplayStereo(mol);
+
+    const originalC1Vector = {
+      x: mol.atoms.get('C1').x - mol.atoms.get('C2').x,
+      y: mol.atoms.get('C1').y - mol.atoms.get('C2').y
+    };
+    const originalC19Vector = {
+      x: mol.atoms.get('C19').x - mol.atoms.get('C18').x,
+      y: mol.atoms.get('C19').y - mol.atoms.get('C18').y
+    };
+    const forceLayout = convertLineCoordsToForceLayout(mol, {
+      forceCenter: { x: 300, y: 200 }
+    });
+    const nodeById = new Map(forceLayout.nodes.map(node => [node.id, node]));
+    nodeById.get('C1').x -= 70;
+    nodeById.get('C1').y += 45;
+    nodeById.get('C19').x += 55;
+    nodeById.get('C19').y -= 50;
+    nodeById.get('H6').x += 80;
+    nodeById.get('H6').y += 80;
+
+    const lineLayout = convertForceCoordsToLineLayout(mol, forceLayout.nodes);
+    const c1 = lineLayout.coords.get('C1');
+    const c2 = lineLayout.coords.get('C2');
+    const c19 = lineLayout.coords.get('C19');
+    const c18 = lineLayout.coords.get('C18');
+    const h6 = lineLayout.coords.get('H6');
+    const c5 = lineLayout.coords.get('C5');
+
+    approxEqual(c1.x - c2.x, originalC1Vector.x);
+    approxEqual(c1.y - c2.y, originalC1Vector.y);
+    approxEqual(c19.x - c18.x, originalC19Vector.x);
+    approxEqual(c19.y - c18.y, originalC19Vector.y);
+    approxEqual(h6.x, c5.x);
+    approxEqual(h6.y, c5.y);
   });
 
   it('can preserve force hydrogen coordinates when converting back to line coordinates', () => {
@@ -192,6 +241,83 @@ describe('force-helpers', () => {
 
     assert.equal(makeHelpers(1.5).forceFitTransform(nodes, 40, { scaleMultiplier: 1.3 }).k, 1.3);
     approxEqual(makeHelpers(0.5).forceFitTransform(nodes, 40, { scaleMultiplier: 1.3 }).k, 3.9);
+  });
+
+  it('passes reaction-like force fits through to overlay padding', () => {
+    const paddingCalls = [];
+    const helpers = createForceHelpers({
+      d3: { zoomIdentity: makeZoomIdentity() },
+      plotEl: { clientWidth: 600, clientHeight: 400 },
+      simulation: {
+        nodes: () => [],
+        force: () => ({ links: () => [] })
+      },
+      viewportFitPadding: (pad, options = {}) => {
+        paddingCalls.push({ pad, options });
+        return { left: pad, right: pad, top: pad, bottom: pad };
+      },
+      getLayoutBondLength: () => 1.5,
+      generate2dCoords: () => {},
+      alignReaction2dProductOrientation: () => {},
+      spreadReaction2dProductComponents: () => {},
+      centerReaction2dPairCoords: () => {}
+    });
+
+    helpers.forceFitTransform([{ id: 'a1', name: 'C', protons: 6, x: 0, y: 0 }], 14, { reactionLike: true });
+
+    assert.deepEqual(paddingCalls, [{ pad: 14, options: { reactionLike: true } }]);
+  });
+
+  it('preserves resonance pair metadata while building force anchors', () => {
+    const mol = new Molecule();
+    mol.addAtom('c1', 'C');
+    mol.addAtom('c2', 'O');
+    const p1 = mol.addAtom('__resonance_product__:c1', 'C');
+    const p2 = mol.addAtom('__resonance_product__:c2', 'O');
+    mol.addBond('b1', 'c1', 'c2', { order: 2 }, false);
+    mol.addBond('__resonance_product__:b1', p1.id, p2.id, { order: 1 }, false);
+    mol.__reactionPreview = {
+      resonancePair: true,
+      reactantAtomIds: new Set(['c1', 'c2']),
+      productAtomIds: new Set([p1.id, p2.id]),
+      productComponentAtomIdSets: [new Set([p1.id, p2.id])]
+    };
+
+    const helpers = createForceHelpers({
+      d3: { zoomIdentity: makeZoomIdentity() },
+      plotEl: { clientWidth: 600, clientHeight: 400 },
+      simulation: {
+        nodes: () => [],
+        force: () => ({ links: () => [] })
+      },
+      viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad }),
+      generate2dCoords: seedMol => {
+        seedMol.atoms.get('c1').x = 0;
+        seedMol.atoms.get('c1').y = 0;
+        seedMol.atoms.get('c2').x = 1.5;
+        seedMol.atoms.get('c2').y = 0;
+        seedMol.atoms.get('__resonance_product__:c1').x = 0;
+        seedMol.atoms.get('__resonance_product__:c1').y = 0;
+        seedMol.atoms.get('__resonance_product__:c2').x = 1.5;
+        seedMol.atoms.get('__resonance_product__:c2').y = 0;
+      },
+      alignReaction2dProductOrientation: () => {},
+      spreadReaction2dProductComponents: () => {},
+      centerReaction2dPairCoords: seedMol => {
+        if (!seedMol.__reactionPreview?.resonancePair) {
+          return;
+        }
+        for (const atomId of seedMol.__reactionPreview.productAtomIds) {
+          seedMol.atoms.get(atomId).x += 6;
+        }
+      }
+    });
+
+    const anchors = helpers.buildForceAnchorLayout(mol);
+    const reactantCx = (anchors.get('c1').x + anchors.get('c2').x) / 2;
+    const productCx = (anchors.get('__resonance_product__:c1').x + anchors.get('__resonance_product__:c2').x) / 2;
+
+    assert.ok(productCx > reactantCx + 5, `expected product anchors to stay separated, got reactant ${reactantCx} product ${productCx}`);
   });
 
   it('places hydrogens into open angles around the parent atom', () => {

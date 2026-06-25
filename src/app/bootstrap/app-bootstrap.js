@@ -71,7 +71,9 @@ export function finalizeAppBootstrap(ctx) {
       state: {
         getMode: ctx.state.getMode,
         getCurrentMol: ctx.state.getCurrentMol,
-        getMol2d: ctx.state.getMol2d
+        setCurrentMol: ctx.state.setCurrentMol,
+        getMol2d: ctx.state.getMol2d,
+        setMol2d: ctx.state.setMol2d
       },
       renderers: {
         draw2d: () => draw2d(),
@@ -117,6 +119,10 @@ export function finalizeAppBootstrap(ctx) {
       history: {
         captureAppSnapshot: options => ctx.controller.captureAppSnapshot(options),
         takeSnapshot: options => ctx.history.takeSnapshot(options)
+      },
+      overlays: {
+        hasActiveResonanceView: () => ctx.overlays.hasActiveResonanceView?.() ?? false,
+        getActiveResonanceSourceMolecule: mol => ctx.overlays.getActiveResonanceSourceMolecule?.(mol) ?? mol
       }
     })
   );
@@ -126,10 +132,13 @@ export function finalizeAppBootstrap(ctx) {
       state: {
         getMode: ctx.state.getMode,
         getCurrentMol: ctx.state.getCurrentMol,
-        getMol2d: ctx.state.getMol2d
+        setCurrentMol: ctx.state.setCurrentMol,
+        getMol2d: ctx.state.getMol2d,
+        setMol2d: ctx.state.setMol2d
       },
       renderers: {
         draw2d: () => draw2d(),
+        render2d: (mol, options = {}) => render2d(mol, options),
         updateForce: ctx.render.renderRuntime.updateForce
       },
       options: {
@@ -139,6 +148,9 @@ export function finalizeAppBootstrap(ctx) {
       overlays: {
         hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
         restoreReactionPreviewSource: options => ctx.overlays.restoreReactionPreviewSource(options)
+      },
+      dom: {
+        plotEl: ctx.dom.plotEl
       },
       history: {
         takeSnapshot: options => ctx.history.takeSnapshot(options)

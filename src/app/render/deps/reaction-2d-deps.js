@@ -28,6 +28,8 @@ export function createReaction2dDeps(deps) {
     restoreForceNodePositions: deps.force?.restoreNodePositions,
     restartForceSimulation: deps.force?.restart,
     captureAppSnapshot: deps.history.captureAppSnapshot,
-    takeSnapshot: deps.history.takeSnapshot
+    takeSnapshot: deps.history.takeSnapshot,
+    hasActiveResonanceView: deps.overlays?.hasActiveResonanceView,
+    getActiveResonanceSourceMolecule: deps.overlays?.getActiveResonanceSourceMolecule
   };
 }

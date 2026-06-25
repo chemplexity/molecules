@@ -258,6 +258,24 @@ describe('generateResonanceStructures — charge-separated toggle', () => {
     assert.deepEqual(mol.getResonanceStates(), [{ id: 1, weight: 100 }]);
   });
 
+  it('suppresses bare carbon-carbon alkene polarization contributors', () => {
+    for (const smiles of ['C=C', 'CC=C', 'C=CC=C']) {
+      const mol = parse(smiles);
+      generateResonanceStructures(mol, { includeChargeSeparatedStates: true });
+      assert.equal(mol.resonanceCount, 1, `expected no bare C+/C- alkene contributor for ${smiles}`);
+    }
+  });
+
+  it('keeps stabilized pi-system contributors while suppressing bare alkene polarization', () => {
+    const carbonyl = parse('CC=O');
+    generateResonanceStructures(carbonyl, { includeChargeSeparatedStates: true });
+    assert.equal(carbonyl.resonanceCount, 2);
+
+    const allylicCation = parse('C=C[CH2+]');
+    generateResonanceStructures(allylicCation, { includeChargeSeparatedStates: true });
+    assert.equal(allylicCation.resonanceCount, 2);
+  });
+
   it('keeps neutral aromatic alternates when charge-separated states are disabled', () => {
     const mol = parse('c1ccccc1');
     generateResonanceStructures(mol, { includeChargeSeparatedStates: false });
@@ -371,6 +389,22 @@ describe('generateResonanceStructures — fused aromatic heterocycles', () => {
       [...Array(mol.resonanceCount).keys()].some(index => {
         mol.setResonanceState(index + 1);
         return [...mol.atoms.values()].some(atom => atom.name === 'N' && (atom.properties.charge ?? 0) === 1);
+      })
+    );
+  });
+
+  it('includes charge-separated contributors for N-substituted imidazole-like aromatic rings', () => {
+    const mol = parseSMILES('CC([NH3+])C1(CO)CN2C=NC=C2O1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+
+    assert.ok(mol.resonanceCount > 1, `expected N-substituted imidazole-like ring resonance, got ${mol.resonanceCount}`);
+    assert.ok(
+      [...Array(mol.resonanceCount).keys()].some(index => {
+        mol.setResonanceState(index + 1);
+        return (mol.atoms.get('N9')?.properties.charge ?? 0) === 1;
       })
     );
   });

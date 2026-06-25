@@ -90,11 +90,13 @@ export function _isReactionPreviewEditableAtomId(atomId) {
 /**
  * Computes the per-side viewport padding needed to avoid overlap with visible UI overlays during a fit-to-view operation.
  * @param {number} [basePad] - Minimum padding in pixels applied to all sides before overlay adjustments (defaults to 40).
+ * @param {object} [options] - Optional fit controls.
+ * @param {boolean} [options.reactionLike] - Whether to use reaction-preview overlay padding even when the global reaction preview state is inactive.
  * @returns {{left: number, right: number, top: number, bottom: number}} Object with per-side padding values in pixels.
  */
-export function _plotOverlayFitPadding(basePad = 40) {
+export function _plotOverlayFitPadding(basePad = 40, options = {}) {
   const pads = { left: basePad, right: basePad, top: basePad, bottom: basePad };
-  const reactionPreview = _hasReactionPreview();
+  const reactionPreview = options.reactionLike === true || _hasReactionPreview();
   const plotRect = ctx.plotEl.getBoundingClientRect();
   const visibleRect = id => {
     const el = document.getElementById(id);
@@ -434,7 +436,17 @@ function _getReactionTemplateSourceMol() {
   if (_reactionPreviewSourceMol) {
     return _reactionPreviewSourceMol;
   }
-  return ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
+  const displayedMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
+  if (ctx.hasActiveResonanceView?.() === true) {
+    const sourceMol = ctx.getActiveResonanceSourceMolecule?.(displayedMol) ?? displayedMol;
+    if (sourceMol?.properties?.resonance && typeof sourceMol.clone === 'function') {
+      const baseMol = sourceMol.clone();
+      baseMol.setResonanceState?.(1);
+      return baseMol;
+    }
+    return sourceMol;
+  }
+  return displayedMol;
 }
 
 /**
@@ -842,7 +854,8 @@ export function _reaction2dSourceAtomId(productAtomId) {
  * @returns {Array<object>} Array of geometry objects (one per product component) with `minX`, `maxX`, `minY`, `maxY`, `cx`, and `cy`.
  */
 export function _reaction2dProductGeometries(items, options = {}) {
-  return (_reactionPreviewProductComponentAtomIdSets ?? []).map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, options)).filter(Boolean);
+  const productComponentAtomIdSets = options.previewState?.productComponentAtomIdSets ?? _reactionPreviewProductComponentAtomIdSets;
+  return (productComponentAtomIdSets ?? []).map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, options)).filter(Boolean);
 }
 
 /**
@@ -1065,18 +1078,17 @@ export function _chooseReactionPreviewForceArrow(
  * @param {number} [bondLength] - Target bond length used for scaling.
  */
 export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
-  if (!_hasReactionPreview() || !mol) {
+  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
+    ? {
+        reactantAtomIds: _reactionPreviewReactantAtomIds,
+        productAtomIds: _reactionPreviewProductAtomIds,
+        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+      }
+    : null);
+  if (!previewState || !mol) {
     return;
   }
-  centerReaction2dPairCoordsShared(
-    mol,
-    {
-      reactantAtomIds: _reactionPreviewReactantAtomIds,
-      productAtomIds: _reactionPreviewProductAtomIds,
-      productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-    },
-    bondLength
-  );
+  centerReaction2dPairCoordsShared(mol, previewState, bondLength);
 }
 
 /**
@@ -1085,16 +1097,15 @@ export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
  * @param {number} [bondLength] - Target bond length used for spacing calculations.
  */
 export function _spreadReaction2dProductComponents(mol, bondLength = 1.5) {
-  if (!_hasReactionPreview() || !mol || (_reactionPreviewProductComponentAtomIdSets?.length ?? 0) < 2) {
+  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
+    ? {
+        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+      }
+    : null);
+  if (!previewState || !mol || (previewState.productComponentAtomIdSets?.length ?? 0) < 2) {
     return;
   }
-  spreadReaction2dProductComponentsShared(
-    mol,
-    {
-      productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-    },
-    bondLength
-  );
+  spreadReaction2dProductComponentsShared(mol, previewState, bondLength);
 }
 
 function _reaction2dMappedAtomLocallyAnchored(reactant, product, mol, componentAtomIds) {
@@ -1535,14 +1546,27 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
  * Draws the reaction arrow and product-plus signs onto the 2D structure SVG layer.
  * @param {(pt: object) => object} toSVGPt - Converts a molecule-space point to SVG viewport coordinates.
  * @param {Array} atoms - Array of atom objects used for bounding-box geometry.
+ * @param {import('../../core/Molecule.js').Molecule|null} [mol] - Optional rendered molecule carrying preview metadata.
  */
-export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
-  if (_reactionPreviewReactantAtomIds.size === 0 || _reactionPreviewProductAtomIds.size === 0) {
+export function _drawReactionPreviewArrow2d(toSVGPt, atoms, mol = null) {
+  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
+    ? {
+        reactantAtomIds: _reactionPreviewReactantAtomIds,
+        productAtomIds: _reactionPreviewProductAtomIds,
+        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+      }
+    : null);
+  const reactantAtomIds = previewState?.reactantAtomIds;
+  const productAtomIds = previewState?.productAtomIds;
+  if (!reactantAtomIds?.size || !productAtomIds?.size) {
     return;
   }
-  const reactant = _reaction2dArrowGeometryPreferHeavy(atoms, _reactionPreviewReactantAtomIds);
-  const product = _reaction2dArrowGeometryPreferHeavy(atoms, _reactionPreviewProductAtomIds);
-  const arrow = _reaction2dArrowEndpoints(reactant, product);
+  const reverseArrow = previewState?.resonancePair === true && previewState?.resonanceDirection === 'reverse';
+  const sourceAtomIds = reverseArrow ? productAtomIds : reactantAtomIds;
+  const targetAtomIds = reverseArrow ? reactantAtomIds : productAtomIds;
+  const source = _reaction2dArrowGeometryPreferHeavy(atoms, sourceAtomIds);
+  const target = _reaction2dArrowGeometryPreferHeavy(atoms, targetAtomIds);
+  const arrow = _reaction2dArrowEndpoints(source, target);
   if (!arrow) {
     return;
   }
@@ -1577,7 +1601,7 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
     .attr('stroke-linecap', 'round')
     .attr('stroke-linejoin', 'round');
 
-  const productGeometries = _reaction2dProductGeometries(atoms);
+  const productGeometries = _reaction2dProductGeometries(atoms, { previewState });
   for (let i = 0; i < productGeometries.length - 1; i++) {
     const left = productGeometries[i];
     const right = productGeometries[i + 1];
@@ -1598,22 +1622,35 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
 /**
  * Clears and redraws the reaction arrow overlay on the force-layout SVG using current node positions.
  * @param {Array} nodes - Force-simulation node array providing current x/y positions and atom metadata.
+ * @param {object|null} [mol] - Optional molecule carrying reaction-preview metadata.
  */
-export function _renderReactionPreviewArrowForce(nodes) {
+export function _renderReactionPreviewArrowForce(nodes, mol = null) {
   ctx.g.selectAll('g.reaction-preview-arrow').remove();
-  if (_reactionPreviewReactantAtomIds.size === 0 || _reactionPreviewProductAtomIds.size === 0) {
+  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
+    ? {
+        reactantAtomIds: _reactionPreviewReactantAtomIds,
+        productAtomIds: _reactionPreviewProductAtomIds,
+        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+      }
+    : null);
+  const reactantAtomIds = previewState?.reactantAtomIds;
+  const productAtomIds = previewState?.productAtomIds;
+  if (!reactantAtomIds?.size || !productAtomIds?.size) {
     return;
   }
 
-  const reactant = _reaction2dArrowGeometryPreferHeavy(nodes, _reactionPreviewReactantAtomIds, {
+  const reverseArrow = previewState?.resonancePair === true && previewState?.resonanceDirection === 'reverse';
+  const sourceAtomIds = reverseArrow ? productAtomIds : reactantAtomIds;
+  const targetAtomIds = reverseArrow ? reactantAtomIds : productAtomIds;
+  const source = _reaction2dArrowGeometryPreferHeavy(nodes, sourceAtomIds, {
     radiusForItem: node => atomRadius(node.protons),
     hydrogenRadiusScale: 0.75
   });
-  const product = _reaction2dArrowGeometryPreferHeavy(nodes, _reactionPreviewProductAtomIds, {
+  const target = _reaction2dArrowGeometryPreferHeavy(nodes, targetAtomIds, {
     radiusForItem: node => atomRadius(node.protons),
     hydrogenRadiusScale: 0.75
   });
-  const arrow = _chooseReactionPreviewForceArrow(reactant, product, nodes, {
+  const arrow = _chooseReactionPreviewForceArrow(source, target, nodes, {
     pad: 16,
     radiusForItem: node => atomRadius(node.protons),
     hydrogenRadiusScale: 0.75,
@@ -1653,6 +1690,7 @@ export function _renderReactionPreviewArrowForce(nodes) {
     .attr('stroke-linejoin', 'round');
 
   const productGeometries = _reaction2dProductGeometries(nodes, {
+    previewState,
     radiusForItem: node => atomRadius(node.protons),
     hydrogenRadiusScale: 0.75
   });
@@ -1868,28 +1906,27 @@ export function _reapplyActiveReactionPreview() {
  * @param {number} [bondLength] - Target layout bond length used by product geometry repairs.
  */
 export function _alignReaction2dProductOrientation(mol, bondLength = 1.5) {
-  if (!_hasReactionPreview() || !_reactionPreviewMappedAtomPairs?.length) {
+  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
+    ? {
+        reactantAtomIds: _reactionPreviewReactantAtomIds,
+        productAtomIds: _reactionPreviewProductAtomIds,
+        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
+        mappedAtomPairs: _reactionPreviewMappedAtomPairs,
+        editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
+        preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
+        preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
+        preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
+        preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
+        forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
+        forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
+        forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
+        reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
+      }
+    : null);
+  if (!previewState?.mappedAtomPairs?.length) {
     return;
   }
-  alignReaction2dProductOrientationShared(
-    mol,
-    {
-      reactantAtomIds: _reactionPreviewReactantAtomIds,
-      productAtomIds: _reactionPreviewProductAtomIds,
-      productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
-      mappedAtomPairs: _reactionPreviewMappedAtomPairs,
-      editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
-      preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
-      preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
-      preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
-      preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
-      forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
-      forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
-      forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
-      reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
-    },
-    bondLength
-  );
+  alignReaction2dProductOrientationShared(mol, previewState, bondLength);
 }
 
 /**

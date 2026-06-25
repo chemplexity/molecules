@@ -115,7 +115,9 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       isReactionPreviewEditableAtomId: ctx.isReactionPreviewEditableAtomId,
       getReactionPreviewSourceMol: ctx.getReactionPreviewSourceMol,
       getReactionPreviewMappedAtomPairs: ctx.getReactionPreviewMappedAtomPairs,
-      getReactionPreviewReactantAtomIds: ctx.getReactionPreviewReactantAtomIds
+      getReactionPreviewReactantAtomIds: ctx.getReactionPreviewReactantAtomIds,
+      hasActiveResonanceView: ctx.hasActiveResonanceView,
+      getActiveResonanceSourceMolecule: ctx.getActiveResonanceSourceMolecule
     },
     history: {
       takeSnapshot: ctx.takeSnapshot,

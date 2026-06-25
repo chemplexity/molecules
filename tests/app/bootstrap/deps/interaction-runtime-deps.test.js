@@ -39,6 +39,7 @@ describe('interaction-runtime dependency builder', () => {
       patchForceNodePositions() {},
       forceFitTransform() {},
       forceFitPad: 12,
+      forceInitialFitPad: 5,
       forceInitialZoomMultiplier: 1.1,
       zoomTransformsDiffer() {},
       parseSMILES() {},

@@ -46,6 +46,7 @@ describe('interaction action deps builders', () => {
       patchForceNodePositions: () => {},
       forceFitTransform: () => ({}),
       forceFitPad: 10,
+      forceInitialFitPad: 4,
       forceInitialZoomMultiplier: 1.1,
       zoomTransformsDiffer: () => false,
       parseSMILES: () => {},
@@ -61,6 +62,7 @@ describe('interaction action deps builders', () => {
 
     assert.equal(fitCalls, 1);
     assert.equal(deps.force.fitPad, 10);
+    assert.equal(deps.force.initialFitPad, 4);
     assert.equal(deps.view.scale, 40);
   });
 

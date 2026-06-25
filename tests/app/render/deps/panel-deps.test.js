@@ -40,7 +40,11 @@ describe('createResonancePanelDeps', () => {
       },
       renderers: {
         draw2d: () => records.push(['draw2d']),
+        render2d: (mol, options) => records.push(['render2d', mol, options]),
         updateForce: (mol, options) => records.push(['updateForce', mol, options])
+      },
+      dom: {
+        plotEl: { id: 'plot' }
       },
       overlays: {
         hasReactionPreview: () => true,
@@ -54,6 +58,7 @@ describe('createResonancePanelDeps', () => {
     assert.equal(deps.mode, 'force');
     assert.equal(deps.currentMol, 'current-mol');
     assert.equal(deps._mol2d, 'mol2d');
+    assert.deepEqual(deps.plotEl, { id: 'plot' });
     assert.equal(deps.hasReactionPreview(), true);
     assert.deepEqual(deps.restoreReactionPreviewSource({ restoreEntryZoom: true }), { restored: { restoreEntryZoom: true } });
 

@@ -3,6 +3,7 @@
 export const RESONANCE_ELECTRON_FLOW_PROPERTY = 'resonanceElectronFlow';
 const RESONANCE_ARROW_COLOR = '#111111';
 const BOND_ENDPOINT_OFFSET = 8;
+const ATOM_TO_BOND_TARGET_OFFSET = 12;
 const ATOM_LABEL_CLEARANCE = 16;
 
 function stateBondOrder(bond, state) {
@@ -252,7 +253,7 @@ function bestFlowPairs(sources, sinks, molecule) {
     }
   }
 
-  while (true) {
+  for (;;) {
     const prev = shortestAugmentingPath(graph, sourceNode, targetNode);
     if (!prev) {
       break;
@@ -340,6 +341,8 @@ export function buildResonanceElectronFlow(molecule, targetState, options = {}) 
       to: endpoints.to,
       sourceKind: pair.source.kind,
       sinkKind: pair.sink.kind,
+      referenceState: fromState,
+      targetState: toState,
       score: pair.score
     });
   }
@@ -347,6 +350,15 @@ export function buildResonanceElectronFlow(molecule, targetState, options = {}) 
   return { state, referenceState: fromState, targetState: toState, arrows };
 }
 
+/**
+ * Stores inferred resonance electron-flow arrows on a molecule.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule with resonance state tables.
+ * @param {number} targetState - 1-based target resonance state.
+ * @param {object} [options] - Flow inference options.
+ * @param {number} [options.fromState] - Source contributor state.
+ * @param {number} [options.toState] - Target contributor state.
+ * @returns {{state: number, referenceState: number, targetState: number, arrows: Array<object>}|null} Stored flow descriptor, or null when no arrows are available.
+ */
 export function setMoleculeResonanceElectronFlow(molecule, targetState, options = {}) {
   if (!molecule?.properties?.resonance) {
     clearMoleculeResonanceElectronFlow(molecule);
@@ -368,6 +380,11 @@ export function setMoleculeResonanceElectronFlow(molecule, targetState, options 
   return flow;
 }
 
+/**
+ * Removes stored resonance electron-flow arrows from a molecule.
+ * @param {import('../../core/Molecule.js').Molecule|null} molecule - Molecule to clear.
+ * @returns {void}
+ */
 export function clearMoleculeResonanceElectronFlow(molecule) {
   if (molecule?.properties) {
     delete molecule.properties[RESONANCE_ELECTRON_FLOW_PROPERTY];
@@ -403,13 +420,13 @@ function visibleAtomLabelClearance(point, molecule, pointForAtom) {
   return minClearance;
 }
 
-function chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom) {
+function chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom, offset = BOND_ENDPOINT_OFFSET) {
   const towardDot = towardPoint ? (towardPoint.x - mid.x) * nx + (towardPoint.y - mid.y) * ny : 0;
   if (Math.abs(towardDot) > 0.75) {
     return towardDot >= 0 ? 1 : -1;
   }
-  const positive = { x: mid.x + nx * BOND_ENDPOINT_OFFSET, y: mid.y + ny * BOND_ENDPOINT_OFFSET };
-  const negative = { x: mid.x - nx * BOND_ENDPOINT_OFFSET, y: mid.y - ny * BOND_ENDPOINT_OFFSET };
+  const positive = { x: mid.x + nx * offset, y: mid.y + ny * offset };
+  const negative = { x: mid.x - nx * offset, y: mid.y - ny * offset };
   const positiveClearance = visibleAtomLabelClearance(positive, molecule, pointForAtom);
   const negativeClearance = visibleAtomLabelClearance(negative, molecule, pointForAtom);
   if (Math.abs(positiveClearance - negativeClearance) > 0.5) {
@@ -418,7 +435,7 @@ function chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointF
   return positive.y >= negative.y ? 1 : -1;
 }
 
-function endpointPoint(endpoint, molecule, pointForAtom, towardPoint = null) {
+function endpointPoint(endpoint, molecule, pointForAtom, towardPoint = null, bondOffset = BOND_ENDPOINT_OFFSET) {
   if (endpoint.kind === 'atom') {
     const atom = molecule.atoms.get(endpoint.atomId);
     return atom ? pointForAtom(atom) : null;
@@ -442,8 +459,9 @@ function endpointPoint(endpoint, molecule, pointForAtom, towardPoint = null) {
   }
   const nx = -dy / len;
   const ny = dx / len;
-  const sign = Number.isFinite(endpoint.sideSign) && endpoint.sideSign !== 0 ? Math.sign(endpoint.sideSign) : chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom);
-  return { x: mid.x + nx * BOND_ENDPOINT_OFFSET * sign, y: mid.y + ny * BOND_ENDPOINT_OFFSET * sign };
+  const offset = Number.isFinite(bondOffset) ? Math.max(0, bondOffset) : BOND_ENDPOINT_OFFSET;
+  const sign = Number.isFinite(endpoint.sideSign) && endpoint.sideSign !== 0 ? Math.sign(endpoint.sideSign) : chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom, offset);
+  return { x: mid.x + nx * offset * sign, y: mid.y + ny * offset * sign };
 }
 
 function bondEndpointPointWithSign(endpoint, molecule, pointForAtom, sign) {
@@ -509,6 +527,28 @@ function resolveArrowOffset(option, fallback, context) {
   return Number.isFinite(resolved) ? Math.max(0, resolved) : 0;
 }
 
+function bondNormalOffset(endpoint, molecule, pointForAtom, options, role, arrow) {
+  if (endpoint.kind !== 'bond') {
+    return BOND_ENDPOINT_OFFSET;
+  }
+  const bond = molecule?.bonds?.get?.(endpoint.bondId) ?? null;
+  const flow = molecule?.properties?.[RESONANCE_ELECTRON_FLOW_PROPERTY] ?? null;
+  const state =
+    role === 'start'
+      ? (flow?.referenceState ?? arrow?.referenceState ?? molecule?.properties?.resonance?.currentState ?? 1)
+      : (flow?.targetState ?? arrow?.targetState ?? molecule?.properties?.resonance?.currentState ?? 1);
+  const order = stateBondOrder(bond, state);
+  const context = { endpoint, bond, order, molecule, pointForAtom, arrow, role };
+  const baseOption = role === 'start' ? options.bondStartOffset : options.bondEndOffset;
+  const multipleOption = role === 'start' ? options.bondMultipleBondStartOffset : options.bondMultipleBondEndOffset;
+  let offset = resolveArrowOffset(baseOption, BOND_ENDPOINT_OFFSET, context);
+  const shouldUseMultipleBondOffset = role !== 'start' || arrow?.to?.kind === 'bond';
+  if (order >= 1.5 && multipleOption !== undefined && shouldUseMultipleBondOffset) {
+    offset = Math.max(offset, resolveArrowOffset(multipleOption, offset, context));
+  }
+  return offset;
+}
+
 function atomToBondCurvePoints(arrow, molecule, pointForAtom, options) {
   if (arrow.from.kind !== 'atom' || arrow.to.kind !== 'bond') {
     return null;
@@ -531,13 +571,15 @@ function atomToBondCurvePoints(arrow, molecule, pointForAtom, options) {
     molecule,
     pointForAtom
   });
-  let targetOffset = resolveArrowOffset(options.atomToBondTargetOffset, options.atomToBondEndpointOffset ?? 6, {
+  const targetOffsetContext = {
     arrow,
     bond,
     atoms,
     molecule,
     pointForAtom
-  });
+  };
+  let targetOffset = resolveArrowOffset(options.atomToBondTargetOffset, options.atomToBondEndpointOffset ?? 6, targetOffsetContext);
+  targetOffset = Math.max(targetOffset, resolveArrowOffset(options.atomToBondTargetMinOffset, ATOM_TO_BOND_TARGET_OFFSET, targetOffsetContext));
   if (Number.isFinite(avoidSign) && Math.sign(avoidSign) !== sign) {
     targetOffset = Math.max(
       targetOffset,
@@ -615,6 +657,13 @@ function outsideAtomTargetPoint(atomCenter, startPoint, curveSign, distance) {
   };
 }
 
+function angledOutsideAtomTargetPoint(atomCenter, startPoint, curveSign, distance, angle) {
+  if (!Number.isFinite(angle)) {
+    return outsideAtomTargetPoint(atomCenter, startPoint, curveSign, distance);
+  }
+  return angledAtomTargetPoint(atomCenter, startPoint, curveSign, distance, angle, 0);
+}
+
 function offsetAtomTargetPoint(atomCenter, startPoint, curveSign, radius, radialRatio, sideRatio) {
   const dx = atomCenter.x - startPoint.x;
   const dy = atomCenter.y - startPoint.y;
@@ -674,14 +723,26 @@ function controlPointForAtomTargetCenter(shortened, atomCenter, fallbackControl,
   const ux = dx / len;
   const uy = dy / len;
   const projectedDistance = (shortened.end.x - fallbackControl.x) * ux + (shortened.end.y - fallbackControl.y) * uy;
-  const minDistance = Math.max(12, Math.min(22, shortened.len * 0.22));
+  const minDistance = Math.max(18, Math.min(36, shortened.len * 0.52));
   const normalDot = Math.abs(ux * -shortened.uy + uy * shortened.ux);
   const requiredBendDistance = Number.isFinite(minBend) && minBend > 0 && normalDot > 1e-3 ? minBend / normalDot : 0;
-  const maxDistance = Math.max(minDistance, requiredBendDistance, Math.min(shortened.len * 1.15, fallbackCurveMagnitude * 3.4));
-  const distance = Math.max(minDistance, requiredBendDistance, Math.min(maxDistance, projectedDistance));
+  const maxDistance = Math.max(minDistance, requiredBendDistance, Math.min(shortened.len * 1.25, fallbackCurveMagnitude * 3.4));
+  const preferredDistance = Math.max(projectedDistance, shortened.len * 0.55);
+  const distance = Math.max(minDistance, requiredBendDistance, Math.min(maxDistance, preferredDistance));
   return {
     x: shortened.end.x - ux * distance,
     y: shortened.end.y - uy * distance
+  };
+}
+
+function blendControlPoint(first, second, strength = 1) {
+  if (!first || !second) {
+    return first ?? second ?? null;
+  }
+  const t = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : 1;
+  return {
+    x: first.x + (second.x - first.x) * t,
+    y: first.y + (second.y - first.y) * t
   };
 }
 
@@ -793,8 +854,8 @@ export function computeResonanceArrowPath(arrow, index, molecule, pointForAtom, 
   if (!startBase || !endBase) {
     return null;
   }
-  let startRaw = endpointPoint(arrow.from, molecule, pointForAtom, endBase);
-  let endRaw = endpointPoint(arrow.to, molecule, pointForAtom, startBase);
+  let startRaw = endpointPoint(arrow.from, molecule, pointForAtom, endBase, bondNormalOffset(arrow.from, molecule, pointForAtom, resolvedOptions, 'start', arrow));
+  let endRaw = endpointPoint(arrow.to, molecule, pointForAtom, startBase, bondNormalOffset(arrow.to, molecule, pointForAtom, resolvedOptions, 'end', arrow));
   const atomToBondPoints = atomToBondCurvePoints(arrow, molecule, pointForAtom, resolvedOptions);
   if (atomToBondPoints) {
     startRaw = atomToBondPoints.start;
@@ -830,7 +891,7 @@ export function computeResonanceArrowPath(arrow, index, molecule, pointForAtom, 
     endPad = 0;
   }
   if (resolvedOptions.atomTargetOutside && arrow.to.kind === 'atom') {
-    endRaw = outsideAtomTargetPoint(endBase, startRaw, curveSign, endPad);
+    endRaw = angledOutsideAtomTargetPoint(endBase, startRaw, curveSign, endPad, resolvedOptions.atomTargetOutsideAngle);
     endPad = 0;
   }
   const shortened = shortenedEndpoints(startRaw, endRaw, startPad, endPad);
@@ -844,7 +905,7 @@ export function computeResonanceArrowPath(arrow, index, molecule, pointForAtom, 
     : { x: (shortened.start.x + shortened.end.x) / 2 - shortened.uy * curve, y: (shortened.start.y + shortened.end.y) / 2 + shortened.ux * curve };
   const atomTargetControl = resolvedOptions.atomTargetCenterTangent && arrow.to.kind === 'atom' ? controlPointForAtomTargetCenter(shortened, endBase, defaultControl, curveMagnitude, resolvedOptions.atomTargetMinBend) : null;
   const control = atomTargetControl
-    ? atomTargetControl
+    ? blendControlPoint(defaultControl, atomTargetControl, resolvedOptions.atomTargetCenterTangentStrength)
     : defaultControl;
   return {
     d: quadraticPathData(shortened.start, control, shortened.end),
@@ -882,18 +943,25 @@ function ensureArrowMarker(root) {
  * @param {import('../../core/Molecule.js').Molecule} molecule - Rendered molecule.
  * @param {(atom: object) => {x: number, y: number}} pointForAtom - Atom-to-SVG point function.
  * @param {object} [options] - Rendering options.
- * @param {number|Function} [options.atomStartPad] - Atom-source shortening distance.
- * @param {number|Function} [options.atomEndPad] - Atom-target shortening distance.
- * @param {number|Function} [options.bondStartPad] - Bond-source shortening distance.
- * @param {number|Function} [options.bondEndPad] - Bond-target shortening distance.
- * @param {Function} [options.bondTargetOffsetSign] - Optional override for atom-to-bond target offset side.
- * @param {number|Function} [options.atomToBondEndpointOffset] - Atom-to-bond source/target offset distance.
- * @param {number|Function} [options.atomToBondSourceOffset] - Atom-to-bond source atom offset distance.
- * @param {number|Function} [options.atomToBondTargetOffset] - Atom-to-bond target bond offset distance.
- * @param {number|Function} [options.atomToBondMultipleBondOffset] - Atom-to-bond target offset when avoiding a multiple-bond stroke.
+ * @param {number|function(object): number} [options.atomStartPad] - Atom-source shortening distance.
+ * @param {number|function(object): number} [options.atomEndPad] - Atom-target shortening distance.
+ * @param {number|function(object): number} [options.bondStartPad] - Bond-source shortening distance.
+ * @param {number|function(object): number} [options.bondEndPad] - Bond-target shortening distance.
+ * @param {number|function(object): number} [options.bondStartOffset] - Bond-source normal offset from the bond centerline.
+ * @param {number|function(object): number} [options.bondEndOffset] - Bond-target normal offset from the bond centerline.
+ * @param {number|function(object): number} [options.bondMultipleBondStartOffset] - Minimum bond-to-bond source normal offset for double/triple-bond sources.
+ * @param {number|function(object): number} [options.bondMultipleBondEndOffset] - Minimum bond-target normal offset for double/triple-bond targets.
+ * @param {function(object, object, object, object): (number|null)} [options.bondTargetOffsetSign] - Optional override for atom-to-bond target offset side.
+ * @param {number|function(object): number} [options.atomToBondEndpointOffset] - Atom-to-bond source/target offset distance.
+ * @param {number|function(object): number} [options.atomToBondSourceOffset] - Atom-to-bond source atom offset distance.
+ * @param {number|function(object): number} [options.atomToBondTargetOffset] - Atom-to-bond target bond offset distance.
+ * @param {number|function(object): number} [options.atomToBondTargetMinOffset] - Minimum atom-to-bond target distance from the bond centerline.
+ * @param {number|function(object): number} [options.atomToBondMultipleBondOffset] - Atom-to-bond target offset when avoiding a multiple-bond stroke.
  * @param {boolean} [options.atomTargetOutside] - Place atom-target arrowheads outside the atom label instead of on the source-to-center line.
+ * @param {number} [options.atomTargetOutsideAngle] - Atom-target angle around line-mode labels from near edge toward the curve side.
  * @param {boolean} [options.atomTargetCenterTangent] - Point atom-target arrowhead tangents toward atom centers.
- * @param {number|Function} [options.atomTargetCircleRadius] - Atom-circle radius used to place atom-target arrowheads around force atoms.
+ * @param {number} [options.atomTargetCenterTangentStrength] - Blend amount from the ordinary curve control toward the atom-center tangent control.
+ * @param {number|function(object): number} [options.atomTargetCircleRadius] - Atom-circle radius used to place atom-target arrowheads around force atoms.
  * @param {number} [options.atomTargetCircleAngle] - Atom-target angle around the atom circle from near edge toward the curve side.
  * @param {number} [options.atomTargetCircleClearance] - Extra distance outside the atom circle for atom-target arrowheads.
  * @param {number} [options.atomTargetCircleRadialRatio] - Fraction of target radius between the arrowhead and atom center along the source radial.

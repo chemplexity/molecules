@@ -139,7 +139,7 @@ export function createForceSceneRendererDeps(ctx) {
       forceFitTransform: (nodes, pad, options) => ctx.forceFitTransform(nodes, pad, options),
       isHydrogenNode: node => ctx.isHydrogenNode(node),
       enLabelColor: value => ctx.enLabelColor(value),
-      renderReactionPreviewArrowForce: nodes => ctx.renderReactionPreviewArrowForce(nodes),
+      renderReactionPreviewArrowForce: (nodes, mol = null) => ctx.renderReactionPreviewArrowForce(nodes, mol),
       generate2dCoords: (mol, options = {}) => ctx.generate2dCoords(mol, options),
       alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength)
     },
@@ -222,8 +222,8 @@ export function create2DSceneRendererDeps(ctx) {
       alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength),
       spreadReaction2dProductComponents: (mol, spacing) => ctx.spreadReaction2dProductComponents(mol, spacing),
       centerReaction2dPairCoords: (mol, spacing) => ctx.centerReaction2dPairCoords(mol, spacing),
-      drawReactionPreviewArrow2d: (toSVGPt, atoms) => ctx.drawReactionPreviewArrow2d(toSVGPt, atoms),
-      viewportFitPadding: pad => ctx.viewportFitPadding(pad),
+      drawReactionPreviewArrow2d: (toSVGPt, atoms, mol = null) => ctx.drawReactionPreviewArrow2d(toSVGPt, atoms, mol),
+      viewportFitPadding: (pad, options = {}) => ctx.viewportFitPadding(pad, options),
       hasReactionPreview: () => ctx.hasReactionPreview(),
       enLabelColor: value => ctx.enLabelColor(value)
     },

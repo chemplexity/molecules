@@ -1,7 +1,21 @@
 # Change Log
 
+## 2026-06-24
+
+- Preserve stereo-display substituent geometry when switching from force mode back to line mode: wedge/dash heavy substituent roots rebuild from their original line anchor vectors, and stereo hydrogens reset to parent-coincident 2D coordinates so the renderer can project normal-length H bonds.
+- Aim resonance bond-to-atom arrows more inward toward target atoms: line mode now gently bends atom-target curves inward without a hard radial arrowhead turn, and force mode places arrow tips closer to the near side of the atom circle while keeping them outside the atom radius.
+- Display active resonance navigation as paired contributor steps, with reaction-style spacing between the source and target structures and electron-flow arrows only on the source side.
+- Preserve active resonance pair displays when switching between line and force modes, keeping the electron-flow arrows visible and preventing temporary pair molecules from being nested into later resonance views.
+- Separate resonance-pair structures immediately when activating resonance from force mode, so the source and target contributors do not spawn overlapped on top of each other.
+
 ## 2026-06-23
 
+- Fix clean mode (🧹) in force mode: correct the pixel-to-Angstrom scale factor in `seedMoleculeFromForcePositions` so seeded bond lengths match the configured "Bond Length" regardless of its value, preventing spurious "all bonds touched" detection and the consequent full re-layout or dramatic coordinate changes.
+- Fix mode-switch (force → 2D) coordinate conversion to pass the correct active force bond length to `convertForceCoordsToLineLayout` so switching modes at non-default "Bond Length" values does not produce wrongly scaled 2D coordinates.
+- Add a pre-normalization step in 2D clean mode that scales the molecule's coordinates to the configured "Bond Length" before running ring-snap and refinement-hint detection; this prevents imported or pasted molecules whose bonds are at a different scale from being fully re-laid out by clean, which users perceived as dramatic shrinking.
+- Reduce the cleanup pass limit in both clean-mode paths from 12 to 6 (matching the layout default) to cap worst-case clean duration on structurally complex molecules.
+- Suppress bare carbon-carbon alkene `C+/C-` polarization contributors while keeping stabilized carbonyl and allylic charge resonance states.
+- Treat N-substituted five-member aromatic nitrogens as pyrrole-like lone-pair donors for resonance validation, so imidazole-like rings such as `CC([NH3+])C1(CO)CN2C=NC=C2O1` produce charge-separated contributors.
 - Allow localized amide resonance contributors to appear in molecules that already contain spectator formal charges, such as nitro-substituted tertiary amides, without reopening multi-component permutation noise.
 - Keep resonance electron-flow arrows visible when active resonance navigation steps into or out of contributor 1, while still clearing arrows when resonance mode is reset.
 - Source resonance electron-flow arrows from the currently displayed contributor while stepping through resonance structures, so navigation shows local state-to-state moves instead of always jumping from contributor 1.

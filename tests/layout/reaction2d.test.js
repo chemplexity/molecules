@@ -70,6 +70,19 @@ function angleDeg(a, b, c) {
   return (Math.acos(dot) * 180) / Math.PI;
 }
 
+function productAtomForSource(preview, sourceAtomId) {
+  const pair = preview.mappedAtomPairs.find(([reactantId]) => reactantId === sourceAtomId);
+  return pair ? preview.mol.atoms.get(pair[1]) : null;
+}
+
+function heavyNeighbors(atom, mol) {
+  return atom.getNeighbors(mol).filter(neighbor => neighbor.name !== 'H');
+}
+
+function oxygenNeighbor(atom, mol, predicate = () => true) {
+  return atom.getNeighbors(mol).find(neighbor => neighbor.name === 'O' && predicate(neighbor, mol.getBond(atom.id, neighbor.id)));
+}
+
 function ringInternalAngles(mol, atomIds) {
   return atomIds.map((atomId, index) => {
     const previous = mol.atoms.get(atomIds[(index - 1 + atomIds.length) % atomIds.length]);
@@ -241,6 +254,30 @@ function findProductCarbonylCenters(preview, predicate) {
     return predicate ? predicate(atom) : true;
   });
 }
+
+test('resonance pair centering uses the same spacing as reaction previews', () => {
+  const sourceMol = parseSMILES('CCO');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  assert.ok(mapping, 'expected alcohol dehydration mapping');
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected reaction preview');
+  generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+  alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+  spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+
+  const reactionMol = preview.mol.clone();
+  const resonanceMol = preview.mol.clone();
+  centerReaction2dPairCoords(reactionMol, preview, 1.5);
+  centerReaction2dPairCoords(resonanceMol, { ...preview, resonancePair: true }, 1.5);
+
+  for (const [atomId, reactionAtom] of reactionMol.atoms) {
+    const resonanceAtom = resonanceMol.atoms.get(atomId);
+    assert.ok(resonanceAtom, `expected resonance atom ${atomId}`);
+    assert.ok(Math.abs(resonanceAtom.x - reactionAtom.x) < 1e-9, `expected matching x for ${atomId}`);
+    assert.ok(Math.abs(resonanceAtom.y - reactionAtom.y) < 1e-9, `expected matching y for ${atomId}`);
+  }
+});
 
 test('reaction preview preserves source ring fills on reactant and retained product rings', () => {
   const sourceMol = parseSMILES('OCc1ccccc1');
@@ -806,10 +843,10 @@ test('reaction preview keeps amide hydrolysis acid center compact on the preserv
   spreadReaction2dProductComponents(preview.mol, preview, 1.5);
   centerReaction2dPairCoords(preview.mol, preview, 1.5);
 
-  const acidCenter = preview.mol.atoms.get('__rxn_product__0:C8');
-  const scaffoldNeighbor = preview.mol.atoms.get('__rxn_product__0:C7');
-  const oDouble = preview.mol.atoms.get('__rxn_product__0:O9');
-  const oSingle = preview.mol.atoms.get('__rxn_product__0:0');
+  const acidCenter = productAtomForSource(preview, 'C8');
+  const scaffoldNeighbor = productAtomForSource(preview, 'C7');
+  const oDouble = productAtomForSource(preview, 'O9');
+  const oSingle = oxygenNeighbor(acidCenter, preview.mol, (neighbor, bond) => neighbor.id !== scaffoldNeighbor?.id && (bond?.properties.order ?? 1) === 1);
   assert.ok(acidCenter && scaffoldNeighbor && oDouble && oSingle, 'expected mapped scaffold acid center in amide hydrolysis preview');
   assert.ok(distance(acidCenter, scaffoldNeighbor) < 1.85, `expected scaffold-to-acid bond to stay compact, got ${distance(acidCenter, scaffoldNeighbor).toFixed(3)} Å`);
   assert.ok(distance(acidCenter, oDouble) < 1.4, `expected carbonyl bond to stay short, got ${distance(acidCenter, oDouble).toFixed(3)} Å`);
@@ -820,10 +857,10 @@ test('reaction preview keeps ester cleavage alcohol centers locally trigonal aft
   const smiles = 'CC(CN(C([O-])=O)[C](CCCCC#C)=C=C)OC(=O)C(C)=C';
   for (const template of [reactionTemplates.esterHydrolysis, reactionTemplates.saponification]) {
     const preview = preparePreview(smiles, template.smirks);
-    const center = preview.mol.atoms.get('__rxn_product__0:C2');
-    const carbonLeft = preview.mol.atoms.get('__rxn_product__0:C1');
-    const carbonRight = preview.mol.atoms.get('__rxn_product__0:C3');
-    const alcoholOxygen = preview.mol.atoms.get('__rxn_product__0:0');
+    const center = productAtomForSource(preview, 'C2');
+    const carbonLeft = productAtomForSource(preview, 'C1');
+    const carbonRight = productAtomForSource(preview, 'C3');
+    const alcoholOxygen = oxygenNeighbor(center, preview.mol, (neighbor, bond) => neighbor.id !== carbonLeft?.id && neighbor.id !== carbonRight?.id && (bond?.properties.order ?? 1) === 1);
     assert.ok(center && carbonLeft && carbonRight && alcoholOxygen, `expected ${template.name} alcohol product center`);
 
     for (const neighbor of [carbonLeft, carbonRight, alcoholOxygen]) {
@@ -847,8 +884,10 @@ test('reaction preview keeps tert-butyl alcohol products open after ester cleava
   const smiles = 'CC(=O)OC(C)(C)C';
   for (const template of [reactionTemplates.esterHydrolysis, reactionTemplates.saponification]) {
     const preview = preparePreview(smiles, template.smirks);
-    const center = preview.mol.atoms.get('__rxn_product__0:C5');
-    const neighbors = ['__rxn_product__0:C6', '__rxn_product__0:C7', '__rxn_product__0:C8', '__rxn_product__0:0'].map(id => preview.mol.atoms.get(id));
+    const center = productAtomForSource(preview, 'C5');
+    const carbonNeighbors = ['C6', 'C7', 'C8'].map(id => productAtomForSource(preview, id));
+    const alcoholOxygen = oxygenNeighbor(center, preview.mol, (_, bond) => (bond?.properties.order ?? 1) === 1);
+    const neighbors = [...carbonNeighbors, alcoholOxygen];
     assert.ok(center && neighbors.every(Boolean), `expected ${template.name} tert-butyl alcohol product`);
 
     for (const neighbor of neighbors) {
@@ -876,7 +915,7 @@ test('reaction preview keeps ring sulfoxide products open after scaffold snappin
     const sulfur = preview.mol.atoms.get('__rxn_product__0:S11');
     const leftRingCarbon = preview.mol.atoms.get('__rxn_product__0:C10');
     const rightRingCarbon = preview.mol.atoms.get('__rxn_product__0:C12');
-    const oxo = preview.mol.atoms.get('__rxn_product__0:0');
+    const oxo = oxygenNeighbor(sulfur, preview.mol, (_, bond) => (bond?.properties.order ?? 1) >= 2);
     assert.ok(sulfur && leftRingCarbon && rightRingCarbon && oxo, 'expected ring sulfoxide preview atoms');
 
     for (const neighbor of [leftRingCarbon, rightRingCarbon, oxo]) {
@@ -921,12 +960,12 @@ test('reaction preview keeps saponification alcohol products on retained lactone
   assert.equal(mappings.length, 2, 'expected two saponification mappings');
 
   const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.saponification.smirks, mappings[1]);
-  const editedAlcoholCarbon = preview.mol.atoms.get('__rxn_product__0:C2');
-  const ringAnchor = preview.mol.atoms.get('__rxn_product__0:C7');
-  const ringOxygen = preview.mol.atoms.get('__rxn_product__0:O14');
-  const ringAlkeneCarbon = preview.mol.atoms.get('__rxn_product__0:C8');
-  const terminalMethyl = preview.mol.atoms.get('__rxn_product__0:C1');
-  const alcoholOxygen = preview.mol.atoms.get('__rxn_product__0:0');
+  const editedAlcoholCarbon = productAtomForSource(preview, 'C2');
+  const ringAnchor = productAtomForSource(preview, 'C7');
+  const ringOxygen = productAtomForSource(preview, 'O14');
+  const ringAlkeneCarbon = productAtomForSource(preview, 'C8');
+  const terminalMethyl = productAtomForSource(preview, 'C1');
+  const alcoholOxygen = oxygenNeighbor(editedAlcoholCarbon, preview.mol, (neighbor, bond) => neighbor.id !== ringAnchor?.id && neighbor.id !== terminalMethyl?.id && (bond?.properties.order ?? 1) === 1);
   assert.ok(editedAlcoholCarbon && ringAnchor && ringOxygen && ringAlkeneCarbon && terminalMethyl && alcoholOxygen, 'expected retained lactone-ring saponification product atoms');
 
   for (const [first, second] of [
@@ -950,9 +989,10 @@ test('reaction preview keeps saponification alcohol products on retained lactone
 
 test('reaction preview keeps amide hydrolysis carbonate-like centers locally trigonal after scaffold snapping', () => {
   const preview = preparePreview('CC(CN(C([O-])=O)[C](CCCCC#C)=C=C)OC(=O)C(C)=C', reactionTemplates.amideHydrolysis.smirks);
-  const center = preview.mol.atoms.get('__rxn_product__1:C5');
-  const oxygens = ['__rxn_product__1:O6', '__rxn_product__1:O7', '__rxn_product__1:0'].map(id => preview.mol.atoms.get(id));
+  const center = productAtomForSource(preview, 'C5');
+  const oxygens = heavyNeighbors(center, preview.mol).filter(neighbor => neighbor.name === 'O');
   assert.ok(center && oxygens.every(Boolean), 'expected carbonate-like amide-hydrolysis product center');
+  assert.equal(oxygens.length, 3, 'expected carbonate-like amide-hydrolysis center to have three oxygen neighbors');
 
   for (const oxygen of oxygens) {
     assert.ok(distance(center, oxygen) > 1.2 && distance(center, oxygen) < 1.7, `expected amide hydrolysis C5-O bond to stay compact, got ${distance(center, oxygen).toFixed(3)} Å`);
@@ -1226,10 +1266,10 @@ test('reaction preview keeps imine-hydrolysis edited carbonyl centers trigonal',
 
 test('reaction preview opens imine-hydrolysis ester ether tails', () => {
   const preview = preparePreview('CCC1(CC1CS(=O)(=O)CC=O)N=C(C)OC', reactionTemplates.imineHydrolysis.smirks);
-  const carbonyl = preview.mol.atoms.get('__rxn_product__1:C14');
-  const etherOxygen = preview.mol.atoms.get('__rxn_product__1:O16');
-  const terminalMethyl = preview.mol.atoms.get('__rxn_product__1:C17');
-  const carbonylOxygen = preview.mol.atoms.get('__rxn_product__1:0');
+  const carbonyl = productAtomForSource(preview, 'C14');
+  const etherOxygen = productAtomForSource(preview, 'O16');
+  const terminalMethyl = productAtomForSource(preview, 'C17');
+  const carbonylOxygen = oxygenNeighbor(carbonyl, preview.mol, (_, bond) => (bond?.properties.order ?? 1) >= 2);
   assert.ok(carbonyl && etherOxygen && terminalMethyl && carbonylOxygen, 'expected imine-hydrolysis ester product atoms');
 
   const etherAngle = angleDeg(carbonyl, etherOxygen, terminalMethyl);
