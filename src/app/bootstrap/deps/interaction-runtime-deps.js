@@ -40,6 +40,7 @@ export function createInteractionRuntimeDeps(ctx) {
     refineExistingCoords: ctx.refineExistingCoords,
     atomBBox: ctx.atomBBox,
     flipDisplayStereo: ctx.flipDisplayStereo,
+    getLayoutBondLength: () => ctx.getLayoutBondLength?.() ?? 1.5,
     clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
     restorePersistentHighlight: () => ctx.restorePersistentHighlight(),
     getFitCurrent2dView: () => ctx.getFitCurrent2dView(),

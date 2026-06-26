@@ -34,6 +34,77 @@ test('app boot does not hit unsupported module URLs', async ({ page }) => {
   expect(unsupportedConsoleErrors).toEqual([]);
 });
 
+test('cleaning 2d honors the active Global Bond Length option', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+
+  await expect.poll(async () => await atomDistance(page, 'C1', 'C2')).toBeCloseTo(30, 6);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(async () => await atomDistance(page, 'C1', 'C2')).toBeCloseTo(30, 6);
+});
+
+test('switching from 2d to force honors the active Global Bond Length option', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await expect.poll(async () => await atomDistance(page, 'C1', 'C2')).toBeCloseTo(30, 6);
+
+  await page.locator('#toggle-btn').click();
+
+  await expect.poll(async () => await averageForceHeavyBondDistance(page)).toBeLessThan(25);
+});
+
+test('force flip keeps compact Global Bond Length layouts from restarting and spreading', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#toggle-btn').click();
+  await expect.poll(async () => await averageForceHeavyBondDistance(page)).toBeLessThan(25);
+
+  await page.locator('#force-flip-h').click();
+  await page.waitForTimeout(1200);
+
+  await expect.poll(async () => await averageForceHeavyBondDistance(page)).toBeLessThan(25);
+});
+
+test('exiting force reaction preview keeps compact Global Bond Length layouts from restarting and spreading', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#toggle-btn').click();
+  await expect.poll(async () => await averageForceHeavyBondDistance(page)).toBeLessThan(25);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  for (let index = 0; index < 3; index += 1) {
+    await dehydrationRow.click();
+    await expect(dehydrationRow).toHaveClass(/reaction-active/);
+    await dehydrationRow.click();
+    await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+    await page.waitForTimeout(1200);
+    await expect.poll(async () => await averageForceHeavyBondDistance(page)).toBeLessThan(25);
+  }
+});
+
 async function loadSmiles(page, smiles) {
   const input = page.locator('#smiles-input');
   await input.fill(smiles);
@@ -125,6 +196,26 @@ async function atomDistance(page, firstAtomId, secondAtomId) {
     },
     { firstAtomId, secondAtomId }
   );
+}
+
+async function averageForceHeavyBondDistance(page) {
+  return await page.evaluate(() => {
+    const distances = [...document.querySelectorAll('line.link')]
+      .map(line => ({
+        x1: Number(line.getAttribute('x1')),
+        y1: Number(line.getAttribute('y1')),
+        x2: Number(line.getAttribute('x2')),
+        y2: Number(line.getAttribute('y2'))
+      }))
+      .filter(line => [line.x1, line.y1, line.x2, line.y2].every(Number.isFinite))
+      .map(line => Math.hypot(line.x1 - line.x2, line.y1 - line.y2))
+      .filter(distance => distance > 8);
+    if (!distances.length) {
+      return null;
+    }
+    const heavyDistances = distances.slice(0, 6);
+    return heavyDistances.reduce((sum, distance) => sum + distance, 0) / heavyDistances.length;
+  });
 }
 
 async function renderedHeavyLayoutAudit(page, smiles) {

@@ -22,6 +22,7 @@ describe('interaction-runtime dependency builder', () => {
       refineExistingCoords() {},
       atomBBox() {},
       flipDisplayStereo() {},
+      getLayoutBondLength: () => 0.5,
       clearPrimitiveHover() {},
       restorePersistentHighlight() {},
       getFitCurrent2dView() {
@@ -174,6 +175,7 @@ describe('interaction-runtime dependency builder', () => {
     assert.equal(deps.getPeriodicTablePopover(), 'periodic-popover');
     assert.equal(deps.getPeriodicTableGrid(), 'periodic-grid');
     assert.equal(deps.getFitCurrent2dView(), 'fit-current');
+    assert.equal(deps.getLayoutBondLength(), 0.5);
     deps.setAutoFitEnabled(true);
     assert.equal(autoFitEnabled, true);
     assert.deepEqual(deps.getSelectedDragAtomIds('mol'), new Set([1]));

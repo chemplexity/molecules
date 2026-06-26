@@ -495,6 +495,19 @@ function isStereoDisplayBond(bond) {
   return displayAs === 'wedge' || displayAs === 'dash';
 }
 
+function visibleHeavyNeighborCount(atom, molecule, excludedAtomId = null) {
+  return atom.getNeighbors(molecule).filter(neighbor => neighbor && neighbor.id !== excludedAtomId && neighbor.name !== 'H' && neighbor.visible !== false).length;
+}
+
+function shouldReanchorChiralTerminalNeighbor(atom, molecule, centerId) {
+  return (
+    atom?.name !== 'H' &&
+    atom?.visible !== false &&
+    !(typeof atom.isInRing === 'function' && atom.isInRing(molecule)) &&
+    visibleHeavyNeighborCount(atom, molecule, centerId) === 0
+  );
+}
+
 function finiteForcePointFromNode(node, xKey = 'x', yKey = 'y') {
   if (!node || !Number.isFinite(node[xKey]) || !Number.isFinite(node[yKey])) {
     return null;
@@ -521,10 +534,10 @@ export function convertLineCoordsToForceLayout(
   molecule,
   {
     bondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH,
-    forceBondLength = FORCE_LAYOUT_BOND_LENGTH,
+    forceBondLength = FORCE_LAYOUT_BOND_LENGTH * forceLayoutBondScale(bondLength),
     forceCenter = { x: 0, y: 0 },
     hydrogenMode = 'stable',
-    hydrogenDistance = FORCE_LAYOUT_H_BOND_LENGTH
+    hydrogenDistance = FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(bondLength)
   } = {}
 ) {
   const coords = new Map();
@@ -697,6 +710,43 @@ export function convertForceCoordsToLineLayout(
     }
     if (endpointAnchorPoint) {
       stereoEndpointCoords.set(endpointId, toLinePoint(endpointAnchorPoint));
+    }
+  }
+
+  for (const centerId of molecule?.getChiralCenters?.() ?? []) {
+    const centerAtom = molecule.atoms.get(centerId);
+    const centerNode = nodeById.get(centerId);
+    const centerPoint = finiteForcePointFromNode(centerNode);
+    if (!centerAtom || !centerPoint) {
+      continue;
+    }
+    const centerLinePoint = toLinePoint(centerPoint);
+    const centerAnchorPoint = finiteForcePointFromNode(centerNode, 'anchorX', 'anchorY');
+    for (const neighbor of centerAtom.getNeighbors(molecule)) {
+      if (!neighbor) {
+        continue;
+      }
+      if (neighbor.name === 'H') {
+        if (hydrogenMode !== 'omit') {
+          stereoEndpointCoords.set(neighbor.id, centerLinePoint);
+        }
+        continue;
+      }
+      if (!shouldReanchorChiralTerminalNeighbor(neighbor, molecule, centerId)) {
+        continue;
+      }
+      const endpointNode = nodeById.get(neighbor.id);
+      const endpointAnchorPoint = finiteForcePointFromNode(endpointNode, 'anchorX', 'anchorY');
+      if (centerAnchorPoint && endpointAnchorPoint) {
+        const centerAnchorLinePoint = toLinePoint(centerAnchorPoint);
+        const endpointAnchorLinePoint = toLinePoint(endpointAnchorPoint);
+        stereoEndpointCoords.set(neighbor.id, {
+          x: centerLinePoint.x + (endpointAnchorLinePoint.x - centerAnchorLinePoint.x),
+          y: centerLinePoint.y + (endpointAnchorLinePoint.y - centerAnchorLinePoint.y)
+        });
+      } else if (endpointAnchorPoint) {
+        stereoEndpointCoords.set(neighbor.id, toLinePoint(endpointAnchorPoint));
+      }
     }
   }
 

@@ -217,6 +217,21 @@ describe('createRenderRuntime', () => {
     );
   });
 
+  it('passes force simulation restart policy through the shared policy layer', () => {
+    const { runtime, calls } = makeRuntime({ mode: 'force' });
+    const mol = { id: 'mol-force-no-restart' };
+
+    runtime.renderMol(mol, {
+      preserveHistory: true,
+      forceRestartSimulation: false
+    });
+
+    assert.deepEqual(
+      calls.find(call => call[0] === 'updateForce'),
+      ['updateForce', mol, { preserveView: false, anchorLayout: null, restartSimulation: false }]
+    );
+  });
+
   it('preserves history and analysis when asked', () => {
     const { runtime, calls } = makeRuntime({ mode: '2d' });
     const mol = { id: 'mol-overlay' };

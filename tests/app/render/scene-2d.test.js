@@ -3,10 +3,15 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { create2DSceneRenderer } from '../../../src/app/render/scene-2d.js';
+import { updateRenderOptions } from '../../../src/app/render/helpers.js';
 import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords } from '../../../src/layout/engine/api.js';
 import { minimumSectorAngle } from '../../../src/layout/engine/stereo/wedge-geometry.js';
 import { syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
+
+function approxEqual(actual, expected, epsilon = 1e-9) {
+  assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
+}
 
 class FakeSelection {
   constructor(records, nodeRef = {}) {
@@ -693,6 +698,35 @@ describe('create2DSceneRenderer', () => {
     const parentPoint = renderer.toSVGPt(parent);
 
     assert.ok(Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y) > 1e-6, 'expected projected hydrogen SVG point to differ from the parent atom point');
+  });
+
+  it('scales projected stereo hydrogens with the configured layout bond length', () => {
+    const measureProjectedOffset = bondLength => {
+      updateRenderOptions({ layoutBondLength: bondLength });
+      const { renderer } = makeRenderer();
+      const mol = parseSMILES('C[C@H](O)F');
+      const layoutResult = generateCoords(mol, { suppressH: true, bondLength });
+      applyCoords(mol, layoutResult, {
+        clearUnplaced: true,
+        hiddenHydrogenMode: 'coincident',
+        syncStereoDisplay: true
+      });
+
+      renderer.render2d(mol, { preserveGeometry: true });
+
+      const center = mol.atoms.get(mol.getChiralCenters()[0]);
+      const hydrogen = center.getNeighbors(mol).find(atom => atom.name === 'H');
+      const hydrogenPoint = renderer.toSVGPt(hydrogen);
+      const parentPoint = renderer.toSVGPt(center);
+      return Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y);
+    };
+
+    try {
+      approxEqual(measureProjectedOffset(0.5), 0.5 * 0.75 * 60, 1e-6);
+      approxEqual(measureProjectedOffset(2.5), 2.5 * 0.75 * 60, 1e-6);
+    } finally {
+      updateRenderOptions({ layoutBondLength: 1.5 });
+    }
   });
 
   it('projects sharp bridged-ring stereo hydrogens into the open exterior sector', () => {

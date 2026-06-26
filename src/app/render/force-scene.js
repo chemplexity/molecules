@@ -304,6 +304,7 @@ export function createForceSceneRenderer(ctx) {
    * @param {number} [options.fitScaleMultiplier] - Optional zoom multiplier for the initial viewport fit.
    * @param {boolean} [options.ignoreOverlayPadding] - When true, fits without reserving UI overlay gutters.
    * @param {boolean} [options.fitReactionLike] - When true, uses reaction-preview overlay padding for the initial viewport fit.
+   * @param {boolean} [options.restartSimulation] - When false, redraws preserved force positions without restarting physics.
    * @returns {void}
    */
   function updateForce(
@@ -317,7 +318,8 @@ export function createForceSceneRenderer(ctx) {
       fitPad = null,
       fitScaleMultiplier = null,
       ignoreOverlayPadding = false,
-      fitReactionLike = false
+      fitReactionLike = false,
+      restartSimulation = true
     } = {}
   ) {
     prepareAromaticBondRendering(molecule);
@@ -821,7 +823,9 @@ export function createForceSceneRenderer(ctx) {
       ctx.simulation.tick(ctx.constants.forceLayoutInitialSettleTicks);
       ctx.helpers.reseatForceGraphHydrogens(graph, { resetVelocity: true });
     }
-    ctx.simulation.alpha(preservePositions || hasInitialPatch ? ctx.constants.forceLayoutEditRestartAlpha : ctx.constants.forceLayoutInitialRestartAlpha).restart();
+    if (restartSimulation) {
+      ctx.simulation.alpha(preservePositions || hasInitialPatch ? ctx.constants.forceLayoutEditRestartAlpha : ctx.constants.forceLayoutInitialRestartAlpha).restart();
+    }
     _updateForceRingFills();
     _updateForceLonePairs();
     _updateForceChargeLabels();

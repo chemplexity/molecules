@@ -76,6 +76,32 @@ describe('force-helpers', () => {
     assert.equal(converted.forceAnchorCoords.get('c1').x, c1Coords.x);
   });
 
+  it('scales line-to-force conversion from the active layout bond length', () => {
+    const mol = new Molecule();
+    const c1 = mol.addAtom('c1', 'C');
+    const c2 = mol.addAtom('c2', 'C');
+    const h1 = mol.addAtom('h1', 'H');
+    c1.x = -0.25;
+    c1.y = 0;
+    c2.x = 0.25;
+    c2.y = 0;
+    h1.visible = false;
+    mol.addBond('b1', 'c1', 'c2', { order: 1 }, false);
+    mol.addBond('b2', 'c1', 'h1', { order: 1 }, false);
+
+    const converted = convertLineCoordsToForceLayout(mol, {
+      bondLength: 0.5,
+      forceCenter: { x: 100, y: 50 }
+    });
+    const c1Coords = converted.coords.get('c1');
+    const c2Coords = converted.coords.get('c2');
+    const h1Coords = converted.coords.get('h1');
+
+    assert.equal(converted.scale, (FORCE_LAYOUT_BOND_LENGTH * (0.5 / 1.5)) / 0.5);
+    approxEqual(Math.hypot(c2Coords.x - c1Coords.x, c2Coords.y - c1Coords.y), FORCE_LAYOUT_BOND_LENGTH * (0.5 / 1.5));
+    approxEqual(Math.hypot(h1Coords.x - c1Coords.x, h1Coords.y - c1Coords.y), FORCE_LAYOUT_H_BOND_LENGTH * (0.5 / 1.5));
+  });
+
   it('converts force coordinates back to line coordinates and omits hidden hydrogens by default', () => {
     const mol = new Molecule();
     const c1 = mol.addAtom('c1', 'C');
@@ -144,6 +170,50 @@ describe('force-helpers', () => {
     approxEqual(c19.y - c18.y, originalC19Vector.y);
     approxEqual(h6.x, c5.x);
     approxEqual(h6.y, c5.y);
+  });
+
+  it('reanchors hidden stereo hydrogens even when the displayed stereobond is on a terminal methyl', () => {
+    const mol = parseSMILES('C[C@]1([H])CC(C)CCC1');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+    syncDisplayStereo(mol);
+
+    const centerId = mol.getChiralCenters()[0];
+    const center = mol.atoms.get(centerId);
+    const hydrogen = center.getNeighbors(mol).find(atom => atom.name === 'H');
+    const methyl = center.getNeighbors(mol).find(atom => atom.name === 'C' && atom.visible !== false && !atom.isInRing(mol));
+    assert.ok(hydrogen, 'expected hidden stereochemical hydrogen');
+    assert.ok(methyl, 'expected terminal stereo methyl');
+
+    const originalMethylVector = {
+      x: methyl.x - center.x,
+      y: methyl.y - center.y
+    };
+    const forceLayout = convertLineCoordsToForceLayout(mol, {
+      forceCenter: { x: 300, y: 200 }
+    });
+    const nodeById = new Map(forceLayout.nodes.map(node => [node.id, node]));
+    nodeById.get(center.id).x += 60;
+    nodeById.get(center.id).y -= 25;
+    nodeById.get(hydrogen.id).x -= 80;
+    nodeById.get(hydrogen.id).y += 80;
+    nodeById.get(methyl.id).x += 90;
+    nodeById.get(methyl.id).y += 50;
+
+    const lineLayout = convertForceCoordsToLineLayout(mol, forceLayout.nodes);
+    const returnedCenter = lineLayout.coords.get(center.id);
+    const returnedHydrogen = lineLayout.coords.get(hydrogen.id);
+    const returnedMethyl = lineLayout.coords.get(methyl.id);
+
+    assert.ok(returnedHydrogen, 'expected force-to-line conversion to include the stereo hydrogen');
+    approxEqual(returnedHydrogen.x, returnedCenter.x);
+    approxEqual(returnedHydrogen.y, returnedCenter.y);
+    approxEqual(returnedMethyl.x - returnedCenter.x, originalMethylVector.x);
+    approxEqual(returnedMethyl.y - returnedCenter.y, originalMethylVector.y);
   });
 
   it('can preserve force hydrogen coordinates when converting back to line coordinates', () => {

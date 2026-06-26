@@ -254,8 +254,8 @@ export function createAppRuntimeDeps(ctx) {
     },
     data: {
       exampleMolecules: ctx.exampleMolecules,
-      randomMolecule: ctx.window.randomMolecule ?? [],
-      randomMoleculeComplex: ctx.window.exampleMoleculeComplex ?? [],
+      randomMolecule: ctx.randomMolecule ?? ctx.window.randomMolecule ?? ctx.exampleMolecules ?? [],
+      randomMoleculeComplex: ctx.randomMoleculeComplex ?? ctx.window.exampleMoleculeComplex ?? [],
       moleculeCatalog: ctx.moleculeCatalog
     },
     constants: {

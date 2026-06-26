@@ -1,5 +1,14 @@
 # Change Log
 
+## 2026-06-25
+
+- Preserve painted ring fills on both left and right resonance contributors in line and force resonance views.
+- Preserve resonance and reaction preview rotations consistently when entering, navigating, rotating, flipping, and exiting paired-structure views in line and force modes, including non-default Global Bond Length values.
+- Use reaction-style autozoom for force-mode resonance and reaction previews, including toolbar Auto Zoom, rotate/flip actions, preview entry, and preview exit.
+- Keep line- and force-mode Clean, line-to-force mode switches, force flips, and force reaction-preview exits wired to the active Global Bond Length without restarting compact layouts, so rings do not restore to the default bond length, spread after flips/previews, or land off screen.
+- Preserve stereochemical hydrogen wedges and hidden-H display geometry when cloning resonance-pair structures or switching complex chiral ring systems from force mode back to line mode.
+- Scale projected line-mode stereochemical hydrogen bonds from the active Global Bond Length setting, so hidden/explicit stereo H displays shrink or grow with the rest of the 2D molecule.
+
 ## 2026-06-24
 
 - Preserve stereo-display substituent geometry when switching from force mode back to line mode: wedge/dash heavy substituent roots rebuild from their original line anchor vectors, and stereo hydrogens reset to parent-coincident 2D coordinates so the renderer can project normal-length H bonds.

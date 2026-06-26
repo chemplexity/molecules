@@ -43,6 +43,12 @@ describe('createResonancePanelDeps', () => {
         render2d: (mol, options) => records.push(['render2d', mol, options]),
         updateForce: (mol, options) => records.push(['updateForce', mol, options])
       },
+      view: {
+        resetOrientation: () => records.push(['resetOrientation'])
+      },
+      force: {
+        getNodes: () => [{ id: 'a1', x: 1, y: 2 }]
+      },
       dom: {
         plotEl: { id: 'plot' }
       },
@@ -59,13 +65,16 @@ describe('createResonancePanelDeps', () => {
     assert.equal(deps.currentMol, 'current-mol');
     assert.equal(deps._mol2d, 'mol2d');
     assert.deepEqual(deps.plotEl, { id: 'plot' });
+    assert.deepEqual(deps.getForceNodes(), [{ id: 'a1', x: 1, y: 2 }]);
     assert.equal(deps.hasReactionPreview(), true);
     assert.deepEqual(deps.restoreReactionPreviewSource({ restoreEntryZoom: true }), { restored: { restoreEntryZoom: true } });
 
+    deps.resetOrientation();
     deps.updateForce('mol', { preserveView: true });
     deps.takeSnapshot({ clearReactionPreview: false });
 
     assert.deepEqual(records, [
+      ['resetOrientation'],
       ['updateForce', 'mol', { preserveView: true }],
       ['takeSnapshot', { clearReactionPreview: false }]
     ]);

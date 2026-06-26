@@ -186,7 +186,10 @@ function fitPointsFor2dView(molecule, projectedCoords = new Map()) {
 export function create2DSceneRenderer(ctx) {
   const DRAW_MODE_ATOM_HIT_PAD = 6;
   let projectedHiddenStereoCoords = new Map();
-  const HIDDEN_STEREO_BOND_LENGTH = 1.5 * 0.75;
+
+  function hiddenStereoBondLength() {
+    return (getRenderOptions().layoutBondLength ?? 1.5) * 0.75;
+  }
 
   function shouldUseProjectedStereoHydrogenPosition(atom, molecule = ctx.state.getMol(), stereoMap = ctx.state.getStereoMap()) {
     if (!atom || atom.name !== 'H' || !molecule) {
@@ -264,7 +267,7 @@ export function create2DSceneRenderer(ctx) {
       return;
     }
     const stereoMap = ctx.state.getStereoMap();
-    projectedHiddenStereoCoords = projectHiddenStereoHydrogens(mol, HIDDEN_STEREO_BOND_LENGTH, stereoMap);
+    projectedHiddenStereoCoords = projectHiddenStereoHydrogens(mol, hiddenStereoBondLength(), stereoMap);
     const hCounts = ctx.state.getHCounts();
     const { showLonePairs } = getRenderOptions();
     const fontSize = ctx.constants.getFontSize();
@@ -1095,7 +1098,7 @@ export function create2DSceneRenderer(ctx) {
       }
     }
 
-    const projectedFitCoords = projectHiddenStereoHydrogens(mol, HIDDEN_STEREO_BOND_LENGTH, stereoMap);
+    const projectedFitCoords = projectHiddenStereoHydrogens(mol, hiddenStereoBondLength(), stereoMap);
     const fitPoints = fitPointsFor2dView(mol, projectedFitCoords);
     if (fitPoints.length === 0) {
       return;
@@ -1126,7 +1129,7 @@ export function create2DSceneRenderer(ctx) {
       return;
     }
     const stereoMap = ctx.state.getStereoMap();
-    const projectedFitCoords = projectHiddenStereoHydrogens(mol, HIDDEN_STEREO_BOND_LENGTH, stereoMap);
+    const projectedFitCoords = projectHiddenStereoHydrogens(mol, hiddenStereoBondLength(), stereoMap);
     const fitPoints = fitPointsFor2dView(mol, projectedFitCoords);
     if (fitPoints.length === 0) {
       return;

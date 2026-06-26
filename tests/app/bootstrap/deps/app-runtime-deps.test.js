@@ -155,5 +155,6 @@ describe('app-runtime dependency builder', () => {
     assert.equal(artifactsCleared, true);
     assert.equal(keepInViewDisabled, true);
     assert.deepEqual(deps.options.getRenderOptions(), { layoutBondLength: 0.5 });
+    assert.deepEqual(deps.data.randomMolecule, [{ smiles: 'CCO' }]);
   });
 });

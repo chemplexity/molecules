@@ -778,6 +778,22 @@ describe('createForceSceneRenderer', () => {
     assert.ok(records.some(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.005));
   });
 
+  it('can refresh preserved force positions without restarting the simulation', () => {
+    const { renderer, records } = makeRenderer();
+
+    renderer.updateForce(
+      { id: 'mol-no-restart', atoms: new Map(), bonds: new Map() },
+      {
+        preservePositions: true,
+        preserveView: true,
+        restartSimulation: false
+      }
+    );
+
+    assert.equal(records.some(entry => entry[0] === 'simulation.restart'), false);
+    assert.equal(records.some(entry => entry[0] === 'simulation.alpha.set'), false);
+  });
+
   it('honors a provided force anchor layout instead of regenerating one', () => {
     const { renderer, records } = makeRenderer();
     const anchorLayout = new Map([['a1', { x: 0, y: 0 }]]);

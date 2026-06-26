@@ -79,36 +79,33 @@ function addTouchedHeavyNeighborhood(molecule, atom, touchedAtoms, touchedBonds,
  * Seeds molecule atom coordinates from the live force-simulation node positions.
  * @param {object} molecule - Molecule clone that will receive temporary 2D coordinates.
  * @param {Array<object>} nodes - Force-simulation nodes with finite `x`/`y` positions.
+ * @param {number} [bondLength] - Active line-layout bond length in molecule coordinate units.
  * @returns {Map<string, {x: number, y: number}>} Centered 2D coordinates keyed by atom id.
  */
-function seedMoleculeFromForcePositions(molecule, nodes) {
+function seedMoleculeFromForcePositions(molecule, nodes, bondLength = DEFAULT_LAYOUT_BOND_LENGTH) {
   const placedCoords = new Map();
   if (!molecule?.atoms || !Array.isArray(nodes) || nodes.length === 0) {
     return placedCoords;
   }
 
-  const finiteNodes = nodes.filter(node => Number.isFinite(node?.x) && Number.isFinite(node?.y) && molecule.atoms.has(node.id));
-  if (finiteNodes.length === 0) {
+  const converted = convertForceCoordsToLineLayout(molecule, nodes, {
+    bondLength,
+    forceBondLength: FORCE_LAYOUT_BOND_LENGTH * (bondLength / DEFAULT_LAYOUT_BOND_LENGTH)
+  });
+  if (!converted.coords?.size) {
     return placedCoords;
   }
 
-  let cx = 0;
-  let cy = 0;
-  for (const node of finiteNodes) {
-    cx += node.x;
-    cy += node.y;
-  }
-  cx /= finiteNodes.length;
-  cy /= finiteNodes.length;
-
-  const scale = DEFAULT_LAYOUT_BOND_LENGTH / FORCE_LAYOUT_BOND_LENGTH;
-  for (const node of finiteNodes) {
-    const atom = molecule.atoms.get(node.id);
-    const x = (node.x - cx) * scale;
-    const y = (cy - node.y) * scale;
+  for (const [atomId, pos] of converted.coords) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || !Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) {
+      continue;
+    }
+    const x = pos.x;
+    const y = pos.y;
     atom.x = x;
     atom.y = y;
-    placedCoords.set(node.id, { x, y });
+    placedCoords.set(atomId, { x, y });
   }
 
   return placedCoords;
@@ -153,6 +150,65 @@ function applyLineLayoutCoords(molecule, coords) {
     applied++;
   }
   return applied;
+}
+
+function captureFiniteAtomCoords(molecule) {
+  const coords = new Map();
+  for (const [atomId, atom] of molecule?.atoms ?? []) {
+    if (!Number.isFinite(atom?.x) || !Number.isFinite(atom?.y)) {
+      continue;
+    }
+    coords.set(atomId, { x: atom.x, y: atom.y });
+  }
+  return coords;
+}
+
+function visibleHeavyNeighborCount(atom, molecule, excludedAtomId = null) {
+  return atom.getNeighbors(molecule).filter(neighbor => neighbor && neighbor.id !== excludedAtomId && neighbor.name !== 'H' && neighbor.visible !== false).length;
+}
+
+function reanchorStereoTerminalsToCenters(molecule, referenceCoords) {
+  if (!molecule?.atoms || !molecule?.bonds || !(referenceCoords instanceof Map)) {
+    return 0;
+  }
+
+  let movedCount = 0;
+  for (const centerId of molecule.getChiralCenters?.() ?? []) {
+    const center = molecule.atoms.get(centerId);
+    if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.y)) {
+      continue;
+    }
+    const centerReference = referenceCoords.get(centerId);
+    for (const neighbor of center.getNeighbors(molecule)) {
+      if (!neighbor) {
+        continue;
+      }
+      const previousX = neighbor.x;
+      const previousY = neighbor.y;
+      if (neighbor.name === 'H') {
+        neighbor.x = center.x;
+        neighbor.y = center.y;
+      } else if (
+        neighbor.visible !== false &&
+        !neighbor.isInRing(molecule) &&
+        visibleHeavyNeighborCount(neighbor, molecule, centerId) === 0 &&
+        centerReference
+      ) {
+        const neighborReference = referenceCoords.get(neighbor.id);
+        if (!neighborReference) {
+          continue;
+        }
+        neighbor.x = center.x + (neighborReference.x - centerReference.x);
+        neighbor.y = center.y + (neighborReference.y - centerReference.y);
+      } else {
+        continue;
+      }
+      if (Math.abs((neighbor.x ?? 0) - (previousX ?? 0)) > 1e-9 || Math.abs((neighbor.y ?? 0) - (previousY ?? 0)) > 1e-9) {
+        movedCount++;
+      }
+    }
+  }
+  return movedCount;
 }
 
 function ringBondIds(molecule, ring) {
@@ -539,6 +595,14 @@ function forcePatchEntryForNode(node) {
   return entry;
 }
 
+function isActiveForceResonancePair(context, mol = context.state.documentState.getCurrentMol?.()) {
+  return context.overlays?.hasActiveResonanceView?.() === true && mol?.__reactionPreview?.resonancePair === true;
+}
+
+function isActiveForcePreviewComplex(context, mol = context.state.documentState.getCurrentMol?.()) {
+  return context.overlays?.hasReactionPreview?.() === true || isActiveForceResonancePair(context, mol);
+}
+
 function lineRotateFitTransform(context, bbox) {
   if (!bbox || !Number.isFinite(bbox.minX) || !Number.isFinite(bbox.maxX) || !Number.isFinite(bbox.minY) || !Number.isFinite(bbox.maxY)) {
     return null;
@@ -705,6 +769,7 @@ export function createNavigationActions(context) {
         })
       : null;
     if (refinedCoords instanceof Map) {
+      normalizeCoordsToBondLength(relayoutMol, bondLength);
       snapCleanRingsToRegularGeometry(relayoutMol, {
         bondLength
       });
@@ -735,7 +800,8 @@ export function createNavigationActions(context) {
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
-    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.());
+    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
+    normalizeCoordsToBondLength(relayoutMol, bondLength);
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
       bondLength
     });
@@ -757,6 +823,7 @@ export function createNavigationActions(context) {
         touchedAtoms: refinementHints.touchedAtoms,
         touchedBonds: refinementHints.touchedBonds
       });
+      normalizeCoordsToBondLength(relayoutMol, bondLength);
       snapCleanRingsToRegularGeometry(relayoutMol, {
         bondLength
       });
@@ -767,8 +834,7 @@ export function createNavigationActions(context) {
     context.renderers.renderMol(relayoutMol, {
       preserveHistory: true,
       preserveAnalysis: true,
-      preserveView: true,
-      forceKeepInView: true,
+      preserveView: false,
       forceAnchorLayout: forceAnchorLayout.size > 0 ? forceAnchorLayout : null
     });
     const btn = context.dom.cleanForceButton;
@@ -824,12 +890,14 @@ export function createNavigationActions(context) {
         forceBondLength: FORCE_LAYOUT_BOND_LENGTH * (bondLength / DEFAULT_LAYOUT_BOND_LENGTH)
       });
       const appliedCount = applyLineLayoutCoords(mol, converted.coords);
+      const preSnapLineCoords = captureFiniteAtomCoords(mol);
       const ringSnapHints = snapCleanRingsToRegularGeometry(mol, {
         bondLength
       });
+      const reanchoredStereoCount = reanchorStereoTerminalsToCenters(mol, preSnapLineCoords);
       context.renderers.renderMol(mol, {
         preserveHistory: true,
-        preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0,
+        preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0 || reanchoredStereoCount > 0,
         ...(activeResonanceView
           ? {
               recomputeResonance: false,
@@ -868,11 +936,10 @@ export function createNavigationActions(context) {
       if (!nodes.length) {
         return;
       }
-      const currentMol = context.state.documentState.getCurrentMol?.();
-      const isResonancePair = context.overlays?.hasActiveResonanceView?.() === true && currentMol?.__reactionPreview?.resonancePair === true;
-      const fitTransform = context.force.forceFitTransform(nodes, isResonancePair ? (context.force.initialFitPad ?? FORCE_LAYOUT_INITIAL_FIT_PAD) : context.force.fitPad, {
-        scaleMultiplier: isResonancePair ? (context.force.initialZoomMultiplier ?? FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER) : context.force.initialZoomMultiplier,
-        ...(isResonancePair ? { reactionLike: true } : {})
+      const isPreviewComplex = isActiveForcePreviewComplex(context);
+      const fitTransform = context.force.forceFitTransform(nodes, isPreviewComplex ? (context.force.initialFitPad ?? FORCE_LAYOUT_INITIAL_FIT_PAD) : context.force.fitPad, {
+        scaleMultiplier: isPreviewComplex ? (context.force.initialZoomMultiplier ?? FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER) : context.force.initialZoomMultiplier,
+        ...(isPreviewComplex ? { reactionLike: true } : {})
       });
       if (fitTransform) {
         context.view.setZoomTransform(fitTransform);
@@ -939,8 +1006,10 @@ export function createNavigationActions(context) {
         }
         context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
         const currentTransform = context.view.getZoomTransform();
-        const fitTransform = context.force.forceFitTransform(nodes, context.force.fitPad, {
-          scaleMultiplier: context.force.initialZoomMultiplier
+        const isPreviewComplex = isActiveForcePreviewComplex(context, mol);
+        const fitTransform = context.force.forceFitTransform(nodes, isPreviewComplex ? (context.force.initialFitPad ?? FORCE_LAYOUT_INITIAL_FIT_PAD) : context.force.fitPad, {
+          scaleMultiplier: isPreviewComplex ? (context.force.initialZoomMultiplier ?? FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER) : context.force.initialZoomMultiplier,
+          ...(isPreviewComplex ? { reactionLike: true } : {})
         });
         if (fitTransform && context.force.zoomTransformsDiffer(fitTransform, currentTransform)) {
           context.view.setZoomTransform(fitTransform);
@@ -1066,11 +1135,12 @@ export function createNavigationActions(context) {
           }
         }
       }
-      context.renderers.updateForce(mol, { preservePositions: true, preserveView: true });
+      context.renderers.updateForce(mol, { preservePositions: true, preserveView: true, restartSimulation: false });
       if (context.overlays.hasReactionPreview()) {
         const renderedNodes = context.simulation.nodes().filter(node => Number.isFinite(node.x) && Number.isFinite(node.y));
-        const fitTransform = context.force.forceFitTransform(renderedNodes, context.force.fitPad, {
-          scaleMultiplier: context.force.initialZoomMultiplier
+        const fitTransform = context.force.forceFitTransform(renderedNodes, context.force.initialFitPad ?? FORCE_LAYOUT_INITIAL_FIT_PAD, {
+          scaleMultiplier: context.force.initialZoomMultiplier ?? FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+          reactionLike: true
         });
         if (fitTransform) {
           const currentTransform = context.view.getZoomTransform();

@@ -83,6 +83,7 @@ describe('interaction runtime bootstrap', () => {
         refineExistingCoords() {},
         atomBBox() {},
         flipDisplayStereo() {},
+        getLayoutBondLength: () => 0.5,
         clearPrimitiveHover() {},
         restorePersistentHighlight() {},
         getFitCurrent2dView() {
@@ -247,5 +248,6 @@ describe('interaction runtime bootstrap', () => {
     assert.equal(typeof runtime.primitiveEventHandlers.deps.paintStyleTargets, 'function');
     assert.equal(typeof runtime.primitiveEventHandlers.deps.placeRingTemplate, 'function');
     assert.equal(runtime.navigationActions.kind, 'navigation');
+    assert.equal(runtime.navigationActions.deps.getLayoutBondLength(), 0.5);
   });
 });

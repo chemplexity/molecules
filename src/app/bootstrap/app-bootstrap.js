@@ -145,6 +145,12 @@ export function finalizeAppBootstrap(ctx) {
         getRenderOptions: () => ctx.options.getRenderOptions(),
         updateRenderOptions: nextOptions => ctx.options.updateRenderOptions(nextOptions)
       },
+      view: {
+        resetOrientation: () => ctx.view.resetOrientation()
+      },
+      force: {
+        getNodes: () => ctx.dom.simulation.nodes()
+      },
       overlays: {
         hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
         restoreReactionPreviewSource: options => ctx.overlays.restoreReactionPreviewSource(options)

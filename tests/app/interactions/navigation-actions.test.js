@@ -5,7 +5,9 @@ import { createNavigationActions } from '../../../src/app/interactions/navigatio
 import { convertLineCoordsToForceLayout, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../../../src/app/render/force-helpers.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords, refineExistingCoords } from '../../../src/layout/index.js';
+import { syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 
 function approxEqual(actual, expected, epsilon = 1e-9) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
@@ -115,6 +117,54 @@ test('autoZoom fits active force resonance pairs with the initial reaction-like 
     },
     overlays: {
       hasActiveResonanceView: () => true
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    force: {
+      fitPad: 40,
+      initialFitPad: FORCE_LAYOUT_INITIAL_FIT_PAD,
+      initialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+      forceFitTransform: (fitNodes, pad, options) => {
+        calls.push(['forceFitTransform', fitNodes.map(node => node.id), pad, options]);
+        return fitTransform;
+      }
+    },
+    view: {
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.autoZoom();
+
+  assert.deepEqual(calls, [
+    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
+    ['setZoomTransform', fitTransform]
+  ]);
+});
+
+test('autoZoom fits active force reaction previews with the initial reaction-like padding', () => {
+  const nodes = [
+    { id: 'a1', x: 10, y: 20 },
+    { id: 'a2', x: 40, y: 30 }
+  ];
+  const fitTransform = { x: 20, y: 30, k: 1.2 };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => ({
+          __reactionPreview: {
+            mappedAtomPairs: [['a1', 'a2']]
+          }
+        })
+      }
+    },
+    overlays: {
+      hasReactionPreview: () => true
     },
     simulation: {
       nodes: () => nodes
@@ -368,6 +418,86 @@ test('cleanLayout2d snaps slightly distorted rings back to regular geometry befo
       touchedBonds: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']
     }
   ]);
+});
+
+test('cleanLayout2d scales old-size rings to the active bond length before snapping', () => {
+  const radius = 1.5;
+  const atomEntries = Array.from({ length: 6 }, (_, index) => {
+    const angle = (2 * Math.PI * index) / 6;
+    const id = `a${index + 1}`;
+    return [
+      id,
+      {
+        id,
+        name: 'C',
+        x: radius * Math.cos(angle),
+        y: radius * Math.sin(angle),
+        visible: true
+      }
+    ];
+  });
+  const bondEntries = Array.from({ length: 6 }, (_, index) => {
+    const firstId = `a${index + 1}`;
+    const secondId = `a${((index + 1) % 6) + 1}`;
+    return [
+      `b${index + 1}`,
+      {
+        id: `b${index + 1}`,
+        atoms: [firstId, secondId],
+        isInRing: () => true
+      }
+    ];
+  });
+  const clonedMol = {
+    atoms: new Map(atomEntries),
+    bonds: new Map(bondEntries),
+    getRings: () => [['a1', 'a2', 'a3', 'a4', 'a5', 'a6']],
+    getBond(firstId, secondId) {
+      return [...this.bonds.values()].find(bond => bond.atoms.includes(firstId) && bond.atoms.includes(secondId)) ?? null;
+    }
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  let renderedMol = null;
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol: mol => {
+        renderedMol = mol;
+      }
+    },
+    helpers: {
+      getLayoutBondLength: () => 0.5
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.equal(renderedMol, clonedMol);
+  for (const [, bond] of bondEntries) {
+    const first = clonedMol.atoms.get(bond.atoms[0]);
+    const second = clonedMol.atoms.get(bond.atoms[1]);
+    approxEqual(Math.hypot(first.x - second.x, first.y - second.y), 0.5, 1e-9);
+  }
 });
 
 test('cleanLayout2d snaps single ring substituent exits back to the local exterior angle', () => {
@@ -897,8 +1027,7 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
       {
         preserveHistory: true,
         preserveAnalysis: true,
-        preserveView: true,
-        forceKeepInView: true,
+        preserveView: false,
         forceAnchorLayout: [
           ['a1', { x: 0, y: 0 }],
           ['a2', { x: 1.5, y: 0 }]
@@ -906,6 +1035,129 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
       }
     ]
   ]);
+});
+
+test('cleanLayoutForce scales live force geometry from the active bond length and refits the viewport', () => {
+  const forceBondLength = 41 * (0.5 / 1.5);
+  const cloneAtoms = new Map([
+    ['a1', { id: 'a1', name: 'C', x: null, y: null }],
+    ['a2', { id: 'a2', name: 'C', x: null, y: null }]
+  ]);
+  const sourceMol = {
+    clone() {
+      return {
+        cloned: true,
+        atoms: cloneAtoms
+      };
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    simulation: {
+      nodes: () => [
+        { id: 'a1', x: 100, y: 100 },
+        { id: 'a2', x: 100 + forceBondLength, y: 100 }
+      ]
+    },
+    helpers: {
+      getLayoutBondLength: () => 0.5
+    },
+    renderers: {
+      renderMol: (_mol, options) => {
+        calls.push({
+          preserveView: options.preserveView,
+          forceKeepInView: options.forceKeepInView,
+          forceAnchorLayout: [...options.forceAnchorLayout.entries()]
+        });
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].preserveView, false);
+  assert.equal(calls[0].forceKeepInView, undefined);
+  assert.ok(Math.abs(calls[0].forceAnchorLayout[0][1].x + 0.25) < 1e-9);
+  assert.equal(calls[0].forceAnchorLayout[0][1].y, 0);
+  assert.ok(Math.abs(calls[0].forceAnchorLayout[1][1].x - 0.25) < 1e-9);
+  assert.equal(calls[0].forceAnchorLayout[1][1].y, 0);
+});
+
+test('cleanLayoutForce normalizes old-size force rings to the active bond length before snapping', () => {
+  const mol = parseSMILES('C1CCCCC1');
+  const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol, layoutResult, { clearUnplaced: true });
+  const originalCoords = new Map([...mol.atoms].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]));
+  const converted = convertLineCoordsToForceLayout(mol, {
+    bondLength: 1.5,
+    forceCenter: { x: 300, y: 200 }
+  });
+  const nodes = converted.nodes.map(node => ({ ...node }));
+  let renderedMol = null;
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => mol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    helpers: {
+      getLayoutBondLength: () => 0.5,
+      refineExistingCoords: refinedMol => {
+        for (const [atomId, coord] of originalCoords) {
+          const atom = refinedMol.atoms.get(atomId);
+          if (!atom) {
+            continue;
+          }
+          atom.x = coord.x;
+          atom.y = coord.y;
+        }
+        return originalCoords;
+      }
+    },
+    renderers: {
+      renderMol: nextMol => {
+        renderedMol = nextMol;
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.ok(renderedMol);
+  assert.ok(maxRingBondLengthDeviation(renderedMol, 0.5) < 1e-6);
 });
 
 test('cleanLayoutForce derives local refinement hints from distorted force geometry', () => {
@@ -1105,6 +1357,69 @@ test('toggleMode seeds force mode from converted line coordinates', () => {
   approxEqual(renderCall[2].forceInitialPatchPos.get('c1').y, 300);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').x, 420.5);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').y, 300);
+});
+
+test('toggleMode scales line-to-force seeds from the active bond length', () => {
+  const mol = new Molecule();
+  const c1 = mol.addAtom('c1', 'C');
+  const c2 = mol.addAtom('c2', 'C');
+  c1.x = -0.25;
+  c1.y = 0;
+  c2.x = 0.25;
+  c2.y = 0;
+  mol.addBond('b1', 'c1', 'c2', { order: 1 }, false);
+  const calls = [];
+  let mode = '2d';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => mol,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    helpers: {
+      getLayoutBondLength: () => 0.5
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {}
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome() {}
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol: (_renderedMol, options) => calls.push(options)
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  const options = calls[0];
+  approxEqual(Math.hypot(options.forceInitialPatchPos.get('c2').x - options.forceInitialPatchPos.get('c1').x, options.forceInitialPatchPos.get('c2').y - options.forceInitialPatchPos.get('c1').y), 41 * (0.5 / 1.5));
 });
 
 test('toggleMode preserves an active resonance pair when switching line mode to force mode', () => {
@@ -1445,6 +1760,95 @@ test('toggleMode regularizes small force-mode ring drift before rendering line m
   }
 });
 
+test('toggleMode reanchors stereo hydrogens and terminal methyls after force-to-line cleanup', () => {
+  const smiles = 'C[C@]1([H])CC(C)CCC1';
+  const mol = parseSMILES(smiles);
+  const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol, layoutResult, {
+    clearUnplaced: true,
+    hiddenHydrogenMode: 'coincident',
+    syncStereoDisplay: true
+  });
+  syncDisplayStereo(mol);
+
+  const centerId = mol.getChiralCenters()[0];
+  const center = mol.atoms.get(centerId);
+  const hydrogen = center.getNeighbors(mol).find(atom => atom.name === 'H');
+  const methyl = center.getNeighbors(mol).find(atom => atom.name === 'C' && atom.visible !== false && !atom.isInRing(mol));
+  assert.ok(hydrogen);
+  assert.ok(methyl);
+
+  const converted = convertLineCoordsToForceLayout(mol, {
+    bondLength: 1.5,
+    forceCenter: { x: 300, y: 200 }
+  });
+  const nodes = converted.nodes.map(node => ({ ...node }));
+  const nodeById = new Map(nodes.map(node => [node.id, node]));
+  nodeById.get(centerId).x += 7;
+  nodeById.get(centerId).y -= 5;
+  nodeById.get(hydrogen.id).x -= 70;
+  nodeById.get(hydrogen.id).y += 70;
+  nodeById.get(methyl.id).x += 65;
+  nodeById.get(methyl.id).y += 35;
+
+  const calls = [];
+  let mode = 'force';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => null,
+        getCurrentSmiles: () => smiles,
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {},
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome() {}
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol: (renderedMol, options) => calls.push(['renderMol', renderedMol, options])
+    },
+    parsers: {
+      parseSMILES
+    }
+  });
+
+  actions.toggleMode();
+
+  const renderedMol = calls.find(call => call[0] === 'renderMol')[1];
+  const renderedCenter = renderedMol.atoms.get(centerId);
+  const renderedHydrogen = renderedMol.atoms.get(hydrogen.id);
+  const renderedMethyl = renderedMol.atoms.get(methyl.id);
+  approxEqual(renderedHydrogen.x, renderedCenter.x);
+  approxEqual(renderedHydrogen.y, renderedCenter.y);
+  approxEqual(Math.hypot(renderedMethyl.x - renderedCenter.x, renderedMethyl.y - renderedCenter.y), 1.5, 1e-6);
+});
+
 test('line force line conversion preserves manual 1.5 aromatic bond state', () => {
   let mol2d = parseSMILES('CC');
   generateCoords(mol2d, { suppressH: true, bondLength: 1.5 });
@@ -1637,7 +2041,8 @@ test('force flip refits the viewport when a reaction preview is active', () => {
         return fitTransform;
       },
       fitPad: 40,
-      initialZoomMultiplier: 1.3,
+      initialFitPad: FORCE_LAYOUT_INITIAL_FIT_PAD,
+      initialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
       zoomTransformsDiffer: (a, b) => {
         calls.push(['zoomTransformsDiffer', a, b]);
         return true;
@@ -1669,8 +2074,8 @@ test('force flip refits the viewport when a reaction preview is active', () => {
       ],
       { setAnchors: true, alpha: 0 }
     ],
-    ['updateForce', {}, { preservePositions: true, preserveView: true }],
-    ['forceFitTransform', ['a1', 'a2'], 40, { scaleMultiplier: 1.3 }],
+    ['updateForce', {}, { preservePositions: true, preserveView: true, restartSimulation: false }],
+    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
     ['zoomTransformsDiffer', fitTransform, { x: 0, y: 0, k: 1 }],
     ['setZoomTransform', fitTransform],
     ['restorePersistentHighlight']
@@ -1935,6 +2340,128 @@ test('force rotate transforms hydrogen slots and fits the viewport outside react
   approxEqual(patchCall[1][1][1].forcePlacementAngle, 0);
   assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [['forceFitTransform', ['c1', 'h1'], 40, { scaleMultiplier: 1.3 }]]);
   assert.deepEqual(calls.find(([name]) => name === 'zoomTransformsDiffer'), ['zoomTransformsDiffer', fitTransform, { x: 0, y: 0, k: 1 }]);
+  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
+});
+
+test('force rotate fits active resonance pairs with the same reaction-like zoom as autoZoom', () => {
+  const nodes = [
+    { id: 'c1', name: 'C', x: 300, y: 200, vx: 0, vy: 0 },
+    { id: 'h1', name: 'H', x: 300, y: 220, vx: 0, vy: 0, forcePlacementParentId: 'c1', forcePlacementAngle: Math.PI / 2 }
+  ];
+  const calls = [];
+  const fitTransform = { x: 18, y: 24, k: 1.1 };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => ({
+          __reactionPreview: {
+            resonancePair: true
+          }
+        })
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    force: {
+      patchForceNodePositions: (patchPos, options) => calls.push(['patchForceNodePositions', [...patchPos.entries()], options]),
+      forceFitTransform: (fitNodes, pad, options) => {
+        calls.push(['forceFitTransform', fitNodes.map(node => node.id), pad, options]);
+        return fitTransform;
+      },
+      fitPad: 40,
+      initialFitPad: FORCE_LAYOUT_INITIAL_FIT_PAD,
+      initialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+      zoomTransformsDiffer: (a, b) => {
+        calls.push(['zoomTransformsDiffer', a, b]);
+        return true;
+      }
+    },
+    overlays: {
+      hasActiveResonanceView: () => true
+    },
+    dom: {
+      plotEl: { clientWidth: 600, clientHeight: 400 }
+    },
+    view: {
+      getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.startRotate(90);
+  actions.stopRotate();
+
+  assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [
+    ['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]
+  ]);
+  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
+});
+
+test('force rotate fits active reaction previews with the same reaction-like zoom as autoZoom', () => {
+  const nodes = [
+    { id: 'c1', name: 'C', x: 300, y: 200, vx: 0, vy: 0 },
+    { id: 'h1', name: 'H', x: 300, y: 220, vx: 0, vy: 0, forcePlacementParentId: 'c1', forcePlacementAngle: Math.PI / 2 }
+  ];
+  const calls = [];
+  const fitTransform = { x: 18, y: 24, k: 1.1 };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => ({
+          __reactionPreview: {
+            mappedAtomPairs: [['c1', 'h1']]
+          }
+        })
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    force: {
+      patchForceNodePositions: (patchPos, options) => calls.push(['patchForceNodePositions', [...patchPos.entries()], options]),
+      forceFitTransform: (fitNodes, pad, options) => {
+        calls.push(['forceFitTransform', fitNodes.map(node => node.id), pad, options]);
+        return fitTransform;
+      },
+      fitPad: 40,
+      initialFitPad: FORCE_LAYOUT_INITIAL_FIT_PAD,
+      initialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+      zoomTransformsDiffer: (a, b) => {
+        calls.push(['zoomTransformsDiffer', a, b]);
+        return true;
+      }
+    },
+    overlays: {
+      hasReactionPreview: () => true
+    },
+    dom: {
+      plotEl: { clientWidth: 600, clientHeight: 400 }
+    },
+    view: {
+      getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.startRotate(90);
+  actions.stopRotate();
+
+  assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [
+    ['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]
+  ]);
   assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
 });
 

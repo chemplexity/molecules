@@ -59,7 +59,11 @@ export function cloneWithPrefixedIds(mol, prefix) {
     copy.tags = [...(atom.tags ?? [])];
   }
   for (const bond of mol.bonds.values()) {
-    const copy = cloned.addBond(`${prefix}${bond.id}`, `${prefix}${bond.atoms[0]}`, `${prefix}${bond.atoms[1]}`, JSON.parse(JSON.stringify(bond.properties ?? {})), false);
+    const properties = JSON.parse(JSON.stringify(bond.properties ?? {}));
+    if (properties.display?.centerId != null) {
+      properties.display.centerId = `${prefix}${properties.display.centerId}`;
+    }
+    const copy = cloned.addBond(`${prefix}${bond.id}`, `${prefix}${bond.atoms[0]}`, `${prefix}${bond.atoms[1]}`, properties, false);
     copy.tags = [...(bond.tags ?? [])];
   }
   return cloned;

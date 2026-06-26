@@ -10,7 +10,7 @@ import {
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
 import { atomRadius, getRenderOptions } from './helpers.js';
-import { FORCE_LAYOUT_BOND_LENGTH } from './force-helpers.js';
+import { convertForceCoordsToLineLayout, forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH } from './force-helpers.js';
 import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
 import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
@@ -53,6 +53,13 @@ let _reactionPreviewEntryForceNodePositions = null;
 const _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH = 12;
 const _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH = 8;
 const _REACTION_PREVIEW_FORCE_ARROW_PAD_FALLBACKS = [12, 8, 4, 0];
+
+function _forcePixelsPerMoleculeUnit(layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5) {
+  const parsedBondLength = Number(layoutBondLength);
+  const moleculeBondLength = Number.isFinite(parsedBondLength) && parsedBondLength > 0 ? parsedBondLength : 1.5;
+  const forceBondLength = FORCE_LAYOUT_BOND_LENGTH * forceLayoutBondScale(moleculeBondLength);
+  return forceBondLength / moleculeBondLength;
+}
 
 /**
  * Returns whether a reaction preview can keep the existing functional-group analysis.
@@ -260,6 +267,88 @@ function _cloneEntryDisplayWithSourceState() {
   return restored;
 }
 
+function _heavyCentroidForAtomIds(mol, atomIds) {
+  let x = 0;
+  let y = 0;
+  let count = 0;
+  for (const atomId of atomIds ?? []) {
+    const atom = mol?.atoms?.get(atomId);
+    if (!atom || atom.name === 'H' || atom.visible === false || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    x += atom.x;
+    y += atom.y;
+    count++;
+  }
+  return count > 0 ? { x: x / count, y: y / count } : null;
+}
+
+function _currentReactantLineCoordsForSource(sourceMol) {
+  if (ctx.mode === 'force' || !sourceMol?.atoms?.size) {
+    return null;
+  }
+  const displayMol = _activeReactionPreviewDisplayMol();
+  if (!displayMol?.atoms?.size) {
+    return null;
+  }
+  const atomIds = [..._reactionPreviewReactantAtomIds].filter(atomId => sourceMol.atoms.has(atomId) && displayMol.atoms.has(atomId));
+  const currentCentroid = _heavyCentroidForAtomIds(displayMol, atomIds);
+  const targetCentroid = _heavyCentroidForAtomIds(sourceMol, atomIds);
+  if (!currentCentroid || !targetCentroid) {
+    return null;
+  }
+  const coords = new Map();
+  for (const atomId of atomIds) {
+    const atom = displayMol.atoms.get(atomId);
+    if (!Number.isFinite(atom?.x) || !Number.isFinite(atom?.y)) {
+      continue;
+    }
+    coords.set(atomId, {
+      x: targetCentroid.x + (atom.x - currentCentroid.x),
+      y: targetCentroid.y + (atom.y - currentCentroid.y)
+    });
+  }
+  return coords.size > 0 ? coords : null;
+}
+
+function _applyCoordsToSourceMol(sourceMol, coords) {
+  if (!sourceMol?.atoms || !coords?.size) {
+    return 0;
+  }
+  let applied = 0;
+  for (const [atomId, pos] of coords) {
+    const atom = sourceMol.atoms.get(atomId);
+    if (!atom || !Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) {
+      continue;
+    }
+    atom.x = pos.x;
+    atom.y = pos.y;
+    applied++;
+  }
+  return applied;
+}
+
+function _currentReactantForceNodePositionsForSource(sourceMol) {
+  if (ctx.mode !== 'force' || !sourceMol?.atoms?.size || typeof ctx.captureForceNodePositions !== 'function') {
+    return null;
+  }
+  const patch = new Map();
+  for (const node of _forceNodeObjectsFromCapturedPositions(ctx.captureForceNodePositions() ?? [])) {
+    if (!_reactionPreviewReactantAtomIds.has(node?.id) || !sourceMol.atoms.has(node.id) || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+      continue;
+    }
+    patch.set(node.id, {
+      x: node.x,
+      y: node.y,
+      vx: Number.isFinite(node.vx) ? node.vx : 0,
+      vy: Number.isFinite(node.vy) ? node.vy : 0,
+      ...(Number.isFinite(node.anchorX) ? { anchorX: node.anchorX } : {}),
+      ...(Number.isFinite(node.anchorY) ? { anchorY: node.anchorY } : {})
+    });
+  }
+  return patch.size > 0 ? patch : null;
+}
+
 /**
  * Captures the full reaction preview state as a serializable snapshot for undo/redo history.
  * @returns {object|null} Snapshot object containing all preview state, or null if no preview is active.
@@ -446,7 +535,50 @@ function _getReactionTemplateSourceMol() {
     }
     return sourceMol;
   }
-  return displayedMol;
+  return _cloneForceDisplayMolWithCurrentPose(displayedMol) ?? displayedMol;
+}
+
+function _cloneForceDisplayMolWithCurrentPose(mol) {
+  if (ctx.mode !== 'force' || !mol?.clone || typeof ctx.captureForceNodePositions !== 'function') {
+    return null;
+  }
+  const nodes = _forceNodeObjectsFromCapturedPositions(ctx.captureForceNodePositions() ?? []);
+  const bondLength = getRenderOptions().layoutBondLength ?? 1.5;
+  const converted = convertForceCoordsToLineLayout(mol, nodes, {
+    bondLength,
+    forceBondLength: FORCE_LAYOUT_BOND_LENGTH * forceLayoutBondScale(bondLength)
+  });
+  if (!converted.coords?.size) {
+    return null;
+  }
+  const displayMol = mol.clone();
+  let applied = 0;
+  for (const [atomId, pos] of converted.coords) {
+    const atom = displayMol.atoms.get(atomId);
+    if (!atom || !Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) {
+      continue;
+    }
+    atom.x = pos.x;
+    atom.y = pos.y;
+    applied++;
+  }
+  return applied > 0 ? displayMol : null;
+}
+
+function _forceNodeObjectsFromCapturedPositions(positions) {
+  if (positions instanceof Map) {
+    return [...positions].map(([id, pos]) => ({ id, ...pos }));
+  }
+  if (Array.isArray(positions)) {
+    return positions.map(entry => {
+      if (Array.isArray(entry)) {
+        const [id, pos] = entry;
+        return { id, ...(pos ?? {}) };
+      }
+      return entry;
+    });
+  }
+  return [];
 }
 
 /**
@@ -523,7 +655,7 @@ function _forceAnchorLayoutFromVisibleCoords(mol) {
 
 function _forcePreviewBondLength(mol, aId, bId) {
   const bond = mol?.getBond?.(aId, bId);
-  let length = FORCE_LAYOUT_BOND_LENGTH;
+  let length = FORCE_LAYOUT_BOND_LENGTH * forceLayoutBondScale(getRenderOptions().layoutBondLength);
   const order = bond?.properties?.order ?? 1;
   if (order === 2) {
     length *= 0.93;
@@ -632,8 +764,7 @@ export function _forceInitialPatchFromAnchorCoords(mol, anchorLayout, { width = 
 
   const viewportWidth = Number.isFinite(width) && width > 0 ? width : 600;
   const viewportHeight = Number.isFinite(height) && height > 0 ? height : 400;
-  const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
-  const scale = FORCE_LAYOUT_BOND_LENGTH / layoutBondLength;
+  const scale = _forcePixelsPerMoleculeUnit();
   const toForcePixels = pos => ({
     x: viewportWidth / 2 + (pos.x - cx) * scale,
     y: viewportHeight / 2 - (pos.y - cy) * scale
@@ -691,38 +822,40 @@ export function _applyReactionPreviewDisplayGeometry(mol) {
 }
 
 /**
- * Clears the reaction preview and re-renders the source molecule, optionally restoring the entry zoom and display state.
+ * Clears the reaction preview and re-renders the source molecule, optionally restoring the entry display state.
  * @param {object} [options] - Options controlling what entry state is restored.
- * @param {boolean} [options.restoreEntryZoom] - Whether to restore the zoom transform captured at preview entry.
  * @param {boolean} [options.restoreEntryDisplay] - Whether to restore the display molecule captured at preview entry.
  * @returns {boolean} True if the source was restored, false if no source mol was set.
  */
-export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restoreEntryDisplay = false } = {}) {
+export function _restoreReactionPreviewSource({ restoreEntryDisplay = false } = {}) {
   if (!_reactionPreviewSourceMol) {
     return false;
   }
   const canRestoreEntryState = !!_reactionPreviewEntryMode && _reactionPreviewEntryMode === ctx.mode;
   const shouldRestoreEntryDisplay = restoreEntryDisplay && canRestoreEntryState && !!_reactionPreviewEntryDisplayMol;
   const sourceMol = shouldRestoreEntryDisplay ? _cloneEntryDisplayWithSourceState() : _reactionPreviewSourceMol.clone();
-  const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
+  const currentReactantLineCoords = _currentReactantLineCoordsForSource(sourceMol);
+  _applyCoordsToSourceMol(sourceMol, currentReactantLineCoords);
+  const currentReactantForceNodePositions = _currentReactantForceNodePositionsForSource(sourceMol);
   const entryForceNodePositions = canRestoreEntryState && ctx.mode === 'force' && _reactionPreviewEntryForceNodePositions ? new Map(_reactionPreviewEntryForceNodePositions) : null;
+  const forceNodePositions = currentReactantForceNodePositions ?? entryForceNodePositions;
   _clearReactionPreviewState();
   const renderOptions = {
     preserveHistory: true,
-    preserveView: !!(restoreEntryZoom && canRestoreEntryState && entryZoomTransform),
+    preserveView: false,
     preserveGeometry: shouldRestoreEntryDisplay && ctx.mode === '2d'
   };
   if (canRestoreEntryState && ctx.mode === 'force') {
     renderOptions.forcePreservePositions = true;
+    renderOptions.forceRestartSimulation = false;
     renderOptions.forceAnchorLayout = _forceAnchorLayoutFromVisibleCoords(sourceMol);
+    if (forceNodePositions?.size) {
+      renderOptions.forceInitialPatchPos = forceNodePositions;
+    }
   }
   ctx.renderMol(sourceMol, renderOptions);
-  if (entryForceNodePositions?.size) {
-    ctx.restoreForceNodePositions?.(entryForceNodePositions);
-    ctx.restartForceSimulation?.();
-  }
-  if (restoreEntryZoom && canRestoreEntryState && entryZoomTransform) {
-    ctx.restoreZoomTransform?.(entryZoomTransform);
+  if (forceNodePositions?.size) {
+    ctx.restoreForceNodePositions?.(forceNodePositions);
   }
   return true;
 }

@@ -5,7 +5,9 @@ import { generateResonanceStructures } from '../../../src/algorithms/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
 import { alignReaction2dProductOrientation, buildReaction2dMol, centerReaction2dPairCoords, spreadReaction2dProductComponents } from '../../../src/layout/reaction2d.js';
-import { hasPersistentHighlightFallback, setPersistentHighlightFallback } from '../../../src/app/render/highlights.js';
+import { updateRenderOptions } from '../../../src/app/render/helpers.js';
+import { FORCE_LAYOUT_BOND_LENGTH } from '../../../src/app/render/force-helpers.js';
+import { hasPersistentHighlightFallback, initHighlights, setPersistentHighlightFallback } from '../../../src/app/render/highlights.js';
 import {
   _applyReactionPreviewDisplayGeometry,
   _captureReactionPreviewSnapshot,
@@ -124,8 +126,74 @@ function maxPairDistanceDelta(molA, molB, atomIds) {
   return maxDelta;
 }
 
+function patchBounds(patch, atomIds) {
+  const points = [...atomIds].map(atomId => patch.get(atomId)).filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys)
+  };
+}
+
+function collectText(node) {
+  let text = node?.textContent ?? '';
+  for (const child of node?.children ?? []) {
+    text += collectText(child);
+  }
+  return text;
+}
+
+function mockReactionPanelDocument(rows) {
+  const tbody = {
+    innerHTML: '',
+    appendChild(child) {
+      rows.push(child);
+      return child;
+    }
+  };
+  const makeElement = tag => {
+    const listeners = new Map();
+    return {
+      tagName: tag.toUpperCase(),
+      className: '',
+      textContent: '',
+      children: [],
+      classList: {
+        add() {}
+      },
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      dispatchEvent(event) {
+        listeners.get(event.type)?.(event);
+      },
+      querySelectorAll() {
+        return [];
+      }
+    };
+  };
+  return {
+    getElementById(id) {
+      if (id === 'reaction-body') {
+        return tbody;
+      }
+      if (id === 'fg-body') {
+        return makeElement('tbody');
+      }
+      return null;
+    },
+    createElement: makeElement
+  };
+}
+
 afterEach(() => {
   _restoreReactionPreviewSnapshot(null);
+  updateRenderOptions({ layoutBondLength: 1.5 });
 });
 
 describe('reaction preview restore', () => {
@@ -152,37 +220,7 @@ describe('reaction preview restore', () => {
   it('matches force reaction rows against the resonance source while a resonance view is active', () => {
     const previousDocument = globalThis.document;
     const rows = [];
-    const tbody = {
-      innerHTML: '',
-      appendChild(child) {
-        rows.push(child);
-        return child;
-      }
-    };
-    globalThis.document = {
-      getElementById(id) {
-        return id === 'reaction-body' ? tbody : null;
-      },
-      createElement(tag) {
-        return {
-          tagName: tag.toUpperCase(),
-          className: '',
-          textContent: '',
-          children: [],
-          classList: {
-            add() {}
-          },
-          appendChild(child) {
-            this.children.push(child);
-            return child;
-          },
-          addEventListener() {},
-          querySelectorAll() {
-            return [];
-          }
-        };
-      }
-    };
+    globalThis.document = mockReactionPanelDocument(rows);
     try {
       const sourceMol = parseSMILES('CC=O');
       generateResonanceStructures(sourceMol);
@@ -202,6 +240,146 @@ describe('reaction preview restore', () => {
         .join(' ');
       assert.match(rowText, /Aldehyde Oxidation/);
       assert.match(rowText, /Carbonyl Reduction/);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('builds force reaction previews from the current rotated force pose', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    globalThis.document = mockReactionPanelDocument(rows);
+    try {
+      const sourceMol = parseSMILES('CCC=O');
+      const atomIds = [...sourceMol.atoms.keys()];
+      for (const [index, atomId] of atomIds.entries()) {
+        const atom = sourceMol.atoms.get(atomId);
+        atom.x = index * 1.5;
+        atom.y = 0;
+      }
+      const forcePositions = atomIds.map((atomId, index) => [
+        atomId,
+        {
+          x: 300,
+          y: 200 + index * 41,
+          vx: 0,
+          vy: 0,
+          anchorX: 300,
+          anchorY: 200 + index * 41
+        }
+      ]);
+      const { renderCalls } = makeReaction2dContext({ mode: 'force' });
+      initReaction2d({
+        mode: 'force',
+        currentMol: sourceMol,
+        _mol2d: null,
+        plotEl: {
+          getBoundingClientRect() {
+            return { width: 800, height: 500 };
+          }
+        },
+        captureForceNodePositions: () => forcePositions,
+        captureZoomTransform: () => null,
+        renderMol(mol, options = {}) {
+          renderCalls.push({ mol, options });
+        },
+        applyForceHighlights() {},
+        takeSnapshot() {},
+        hasActiveResonanceView: () => false
+      });
+      initHighlights({
+        mode: 'force',
+        applyForceHighlights() {}
+      });
+
+      updateReactionTemplatesPanel();
+      const row = rows.find(candidate => /Carbonyl Reduction/.test(collectText(candidate))) ?? rows[0];
+      row.dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      const previewMol = renderCalls.at(-1)?.mol;
+      const reactantAtomIds = [...(previewMol?.__reactionPreview?.reactantAtomIds ?? [])];
+      const reactantAtoms = reactantAtomIds.map(atomId => previewMol.atoms.get(atomId)).filter(atom => atom?.name !== 'H');
+      const xs = reactantAtoms.map(atom => atom.x);
+      const ys = reactantAtoms.map(atom => atom.y);
+      const width = Math.max(...xs) - Math.min(...xs);
+      const height = Math.max(...ys) - Math.min(...ys);
+
+      assert.ok(previewMol?.__reactionPreview?.mappedAtomPairs?.length, 'expected reaction preview metadata');
+      assert.ok(height > width * 1.4, `expected force-rotated reactant pose to enter reaction preview, got width=${width} height=${height}`);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('keeps force reaction preview entry stable with non-default bond lengths', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    globalThis.document = mockReactionPanelDocument(rows);
+    updateRenderOptions({ layoutBondLength: 0.75 });
+    try {
+      const sourceMol = parseSMILES('CCC=O');
+      const atomIds = [...sourceMol.atoms.keys()];
+      for (const [index, atomId] of atomIds.entries()) {
+        const atom = sourceMol.atoms.get(atomId);
+        atom.x = index * 0.75;
+        atom.y = 0;
+      }
+      const forceBondLength = FORCE_LAYOUT_BOND_LENGTH * (0.75 / 1.5);
+      const forcePositions = atomIds.map((atomId, index) => [
+        atomId,
+        {
+          x: 300,
+          y: 200 + index * forceBondLength,
+          vx: 0,
+          vy: 0,
+          anchorX: 300,
+          anchorY: 200 + index * forceBondLength
+        }
+      ]);
+      const { renderCalls } = makeReaction2dContext({ mode: 'force' });
+      initReaction2d({
+        mode: 'force',
+        currentMol: sourceMol,
+        _mol2d: null,
+        plotEl: {
+          getBoundingClientRect() {
+            return { width: 800, height: 500 };
+          }
+        },
+        captureForceNodePositions: () => forcePositions,
+        captureZoomTransform: () => null,
+        renderMol(mol, options = {}) {
+          renderCalls.push({ mol, options });
+        },
+        applyForceHighlights() {},
+        takeSnapshot() {},
+        hasActiveResonanceView: () => false
+      });
+      initHighlights({
+        mode: 'force',
+        applyForceHighlights() {}
+      });
+
+      updateReactionTemplatesPanel();
+      const row = rows.find(candidate => /Carbonyl Reduction/.test(collectText(candidate))) ?? rows[0];
+      row.dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      const previewMol = renderCalls.at(-1)?.mol;
+      const initialPatch = renderCalls.at(-1)?.options.forceInitialPatchPos;
+      const reactantAtomIds = [...(previewMol?.__reactionPreview?.reactantAtomIds ?? [])];
+      const sourceBounds = patchBounds(new Map(forcePositions), atomIds);
+      const reactantBounds = patchBounds(initialPatch, reactantAtomIds);
+
+      assert.ok(initialPatch instanceof Map);
+      assert.ok(previewMol?.__reactionPreview?.mappedAtomPairs?.length, 'expected reaction preview metadata');
+      assert.ok(Math.abs(reactantBounds.width - sourceBounds.width) < 1e-6, `expected reaction entry width ${reactantBounds.width} to match source width ${sourceBounds.width}`);
+      assert.ok(Math.abs(reactantBounds.height - sourceBounds.height) < 1e-6, `expected reaction entry height ${reactantBounds.height} to match source height ${sourceBounds.height}`);
     } finally {
       globalThis.document = previousDocument;
     }
@@ -340,10 +518,10 @@ describe('reaction preview restore', () => {
 
     assert.equal(restored, true);
     assert.equal(renderCalls.length, 1);
-    assert.equal(zoomRestores.length, 1);
+    assert.equal(zoomRestores.length, 0);
     assert.deepEqual(renderCalls[0].options, {
       preserveHistory: true,
-      preserveView: true,
+      preserveView: false,
       preserveGeometry: true
     });
     assert.deepEqual(context._mol2d.properties.resonance, sourceMol.properties.resonance);
@@ -363,6 +541,46 @@ describe('reaction preview restore', () => {
 
     assert.equal(restoredCarbonyl.properties.order, 1);
     assert.equal(restoredOxygen.properties.charge, -1);
+  });
+
+  it('exits line reaction previews with the current rotated reactant pose', () => {
+    const { context, renderCalls } = makeReaction2dContext();
+    const sourceMol = parseSMILES('CCCC');
+    const entryDisplayMol = sourceMol.clone();
+    const atomIds = [...sourceMol.atoms.keys()];
+    for (const [index, atomId] of atomIds.entries()) {
+      const entryAtom = entryDisplayMol.atoms.get(atomId);
+      entryAtom.x = index * 1.5;
+      entryAtom.y = 0;
+    }
+    const previewDisplayMol = entryDisplayMol.clone();
+    for (const [index, atomId] of atomIds.entries()) {
+      const atom = previewDisplayMol.atoms.get(atomId);
+      atom.x = -4;
+      atom.y = index * 1.5;
+    }
+    context._mol2d = previewDisplayMol;
+
+    _restoreReactionPreviewSnapshot({
+      ...makePreviewSnapshot({
+        sourceMol,
+        entryDisplayMol,
+        entryZoomTransform: { x: 0, y: 0, k: 1 }
+      }),
+      reactantAtomIds: atomIds,
+      productAtomIds: ['__rxn_product__0:fake']
+    });
+
+    const restored = _restoreReactionPreviewSource({ restoreEntryZoom: true, restoreEntryDisplay: true });
+    const restoredAtoms = atomIds.map(atomId => renderCalls[0].mol.atoms.get(atomId));
+    const xs = restoredAtoms.map(atom => atom.x);
+    const ys = restoredAtoms.map(atom => atom.y);
+    const width = Math.max(...xs) - Math.min(...xs);
+    const height = Math.max(...ys) - Math.min(...ys);
+
+    assert.equal(restored, true);
+    assert.equal(renderCalls[0].options.preserveView, false);
+    assert.ok(height > width * 1.4, `expected line reaction exit to preserve rotated reactant pose, got width=${width} height=${height}`);
   });
 
   it('preserves source molecule properties when serializing reaction preview history', () => {
@@ -412,12 +630,54 @@ describe('reaction preview restore', () => {
     assert.equal(restored, true);
     assert.equal(renderCalls.length, 1);
     assert.equal(renderCalls[0].options.forcePreservePositions, true);
-    assert.equal(renderCalls[0].options.preserveView, true);
+    assert.equal(renderCalls[0].options.forceRestartSimulation, false);
+    assert.equal(renderCalls[0].options.preserveView, false);
     assert.ok(renderCalls[0].options.forceAnchorLayout instanceof Map);
     assert.ok(renderCalls[0].options.forceAnchorLayout.size > 0);
+    assert.deepEqual(renderCalls[0].options.forceInitialPatchPos, forcePositions);
     assert.deepEqual(forcePositionRestores, [forcePositions]);
-    assert.deepEqual(forceRestarts, [true]);
-    assert.deepEqual(zoomRestores, [{ x: 3, y: 4, k: 1.25 }]);
+    assert.deepEqual(forceRestarts, []);
+    assert.deepEqual(zoomRestores, []);
+  });
+
+  it('exits force reaction previews with the current rotated reactant force pose', () => {
+    const { context, renderCalls, forcePositionRestores } = makeReaction2dContext({ mode: 'force' });
+    const sourceMol = parseSMILES('CCCC');
+    const atomIds = [...sourceMol.atoms.keys()];
+    for (const [index, atom] of [...sourceMol.atoms.values()].entries()) {
+      atom.x = index * 1.5;
+      atom.y = 0;
+    }
+    const entryDisplayMol = sourceMol.clone();
+    const entryForcePositions = new Map(atomIds.map((atomId, index) => [atomId, { x: 120 + index * 41, y: 160 }]));
+    const currentForcePositions = new Map(atomIds.map((atomId, index) => [atomId, { x: 300, y: 160 + index * 41, vx: 0, vy: 0, anchorX: 300, anchorY: 160 + index * 41 }]));
+    currentForcePositions.set('__rxn_product__0:fake', { x: 500, y: 160 });
+    context.currentMol = entryDisplayMol.clone();
+    context.captureForceNodePositions = () => [...currentForcePositions];
+
+    _restoreReactionPreviewSnapshot({
+      ...makePreviewSnapshot({
+        sourceMol,
+        entryDisplayMol,
+        entryZoomTransform: { x: 3, y: 4, k: 1.25 }
+      }),
+      reactantAtomIds: atomIds,
+      productAtomIds: ['__rxn_product__0:fake'],
+      entryMode: 'force',
+      entryForceNodePositions: [...entryForcePositions]
+    });
+
+    const restored = _restoreReactionPreviewSource({ restoreEntryZoom: true, restoreEntryDisplay: true });
+    const restoredPatch = renderCalls[0].options.forceInitialPatchPos;
+
+    assert.equal(restored, true);
+    assert.equal(renderCalls[0].options.preserveView, false);
+    assert.equal(renderCalls[0].options.forceRestartSimulation, false);
+    assert.ok(restoredPatch instanceof Map);
+    assert.deepEqual([...restoredPatch.keys()], atomIds);
+    assert.deepEqual([...forcePositionRestores[0].keys()], atomIds);
+    assert.equal(restoredPatch.get(atomIds[0]).x, 300);
+    assert.equal(restoredPatch.get(atomIds.at(-1)).y, 160 + (atomIds.length - 1) * 41);
   });
 
   it('persists reactant paint edits into the stored reaction preview source', () => {

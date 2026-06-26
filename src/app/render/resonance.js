@@ -1,8 +1,9 @@
 /** @module app/render/resonance */
 
 import { generateResonanceStructures } from '../../algorithms/index.js';
+import { ringAtomKey } from '../../core/style.js';
 import { centerReaction2dPairCoords, cloneWithPrefixedIds } from '../../layout/reaction2d.js';
-import { FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from './force-helpers.js';
+import { forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from './force-helpers.js';
 import { getRenderOptions } from './helpers.js';
 import { createModeAwareHelpers } from './render-mode-helpers.js';
 import { createNavButton } from './panel-row.js';
@@ -39,6 +40,13 @@ const RESONANCE_NAV_CLICK_SUPPRESS_MS = 1500;
 
 const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#force-controls', '#clean-controls', '#draw-tools', '#atom-selector', '#toggle-controls'].join(', ');
 
+function forcePixelsPerMoleculeUnit(layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5) {
+  const parsedBondLength = Number(layoutBondLength);
+  const moleculeBondLength = Number.isFinite(parsedBondLength) && parsedBondLength > 0 ? parsedBondLength : 1.5;
+  const forceBondLength = FORCE_LAYOUT_BOND_LENGTH * forceLayoutBondScale(moleculeBondLength);
+  return forceBondLength / moleculeBondLength;
+}
+
 /**
  * Initializes the resonance-panel renderer with the app context it needs to
  * redraw the active molecule in either 2D or force mode.
@@ -47,6 +55,8 @@ const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#forc
  * @param {import('../../core/Molecule.js').Molecule|null} context.currentMol - Active molecule in force mode.
  * @param {import('../../core/Molecule.js').Molecule|null} context._mol2d - Active molecule in 2D mode.
  * @param {() => void} context.draw2d - Triggers a 2D redraw.
+ * @param {() => void} [context.resetOrientation] - Clears any active 2D rotate/flip view transform before drawing locked resonance pairs.
+ * @param {() => Array<object>} [context.getForceNodes] - Returns current force-simulation nodes for preserving force-mode pose.
  * @param {(mol: object, options?: object) => void} context.updateForce - Triggers a force-layout redraw.
  * @param {() => boolean} [context.hasReactionPreview] - Returns true when a reaction preview is active.
  * @param {(options?: object) => boolean} [context.restoreReactionPreviewSource] - Restores the reaction preview source molecule.
@@ -130,9 +140,10 @@ export function resetActiveResonanceView(mol = _currentResonanceMolecule()) {
   _activeResonanceState = 1;
   _activeResonancePairIndex = 0;
   _activeResonanceDirection = 'forward';
+  const forceInitialPatchPos = _forceInitialPatchFromCurrentSourceNodes(mol);
   _setDisplayedResonanceMolecule(mol);
   _resonanceSourceMol = null;
-  _redrawResonanceMolecule(mol, { forceAutoFit: true });
+  _redrawResonanceMolecule(mol, { forceAutoFit: true, forceInitialPatchPos });
   _renderResonancePanel(mol);
   return true;
 }
@@ -351,8 +362,7 @@ function _forceInitialPatchFromVisibleResonanceCoords(mol, anchorLayout) {
   const plotRect = ctx.plotEl?.getBoundingClientRect?.();
   const width = Number.isFinite(plotRect?.width) && plotRect.width > 0 ? plotRect.width : 600;
   const height = Number.isFinite(plotRect?.height) && plotRect.height > 0 ? plotRect.height : 400;
-  const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
-  const scale = FORCE_LAYOUT_BOND_LENGTH / layoutBondLength;
+  const scale = forcePixelsPerMoleculeUnit();
   const patch = new Map();
   for (const [id, pos] of anchors) {
     patch.set(id, {
@@ -363,9 +373,27 @@ function _forceInitialPatchFromVisibleResonanceCoords(mol, anchorLayout) {
   return patch.size > 0 ? patch : null;
 }
 
+function _forceInitialPatchFromCurrentSourceNodes(mol) {
+  if (ctx.mode !== 'force' || typeof ctx.getForceNodes !== 'function' || !mol?.atoms?.size) {
+    return null;
+  }
+  const patch = new Map();
+  for (const node of ctx.getForceNodes() ?? []) {
+    const atom = mol.atoms.get(node?.id);
+    if (!atom || atom.name === 'H' || atom.visible === false || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+      continue;
+    }
+    patch.set(node.id, { x: node.x, y: node.y });
+  }
+  return patch.size > 0 ? patch : null;
+}
+
 function _redrawResonanceMolecule(mol, options = {}) {
-  const { forceAutoFit = false, preserveForcePairLayout = false } = options;
+  const { forceAutoFit = false, preserveForcePairLayout = false, forceInitialPatchPos = null } = options;
   if (ctx.mode !== 'force' && typeof ctx.render2d === 'function') {
+    if (mol?.__reactionPreview?.resonancePair === true) {
+      ctx.resetOrientation?.();
+    }
     ctx.render2d(mol, {
       recomputeResonance: false,
       refreshResonancePanel: false,
@@ -385,7 +413,7 @@ function _redrawResonanceMolecule(mol, options = {}) {
       return;
     }
     const isResonancePair = mol?.__reactionPreview?.resonancePair === true;
-    const initialPatchPos = isResonancePair ? _forceInitialPatchFromVisibleResonanceCoords(mol, anchorLayout) : null;
+    const initialPatchPos = forceInitialPatchPos ?? (isResonancePair ? _forceInitialPatchFromVisibleResonanceCoords(mol, anchorLayout) : null);
     ctx.updateForce(mol, {
       preservePositions: false,
       preserveView: false,
@@ -397,7 +425,9 @@ function _redrawResonanceMolecule(mol, options = {}) {
             fitReactionLike: true,
             ...(initialPatchPos ? { initialPatchPos } : {})
           }
-        : {})
+        : initialPatchPos
+          ? { initialPatchPos }
+          : {})
     });
     return;
   }
@@ -474,6 +504,66 @@ function prefixResonanceElectronFlowIds(flow, prefix) {
   };
 }
 
+function cloneResonanceDisplaySourceWithCurrentPose(sourceMol) {
+  const displaySource = sourceMol.clone();
+  if (ctx.mode !== 'force' || typeof ctx.getForceNodes !== 'function') {
+    return displaySource;
+  }
+
+  const nodes = ctx.getForceNodes() ?? [];
+  const finiteHeavyNodes = nodes.filter(node => {
+    const atom = displaySource.atoms.get(node?.id);
+    return atom && atom.name !== 'H' && atom.visible !== false && Number.isFinite(node.x) && Number.isFinite(node.y);
+  });
+  if (finiteHeavyNodes.length === 0) {
+    return displaySource;
+  }
+
+  let cx = 0;
+  let cy = 0;
+  for (const node of finiteHeavyNodes) {
+    cx += node.x;
+    cy += node.y;
+  }
+  cx /= finiteHeavyNodes.length;
+  cy /= finiteHeavyNodes.length;
+
+  const scale = 1 / forcePixelsPerMoleculeUnit(ctx.getRenderOptions?.().layoutBondLength);
+  for (const node of nodes) {
+    const atom = displaySource.atoms.get(node?.id);
+    if (!atom || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+      continue;
+    }
+    atom.x = (node.x - cx) * scale;
+    atom.y = (cy - node.y) * scale;
+  }
+  return displaySource;
+}
+
+function preserveSourceRingFillsOnResonancePair(pairMol, sourceMol) {
+  if (!pairMol || !sourceMol || typeof sourceMol.getRingFills !== 'function' || typeof pairMol.setRingFill !== 'function') {
+    return;
+  }
+  const pairRingKeys = typeof pairMol.getRings === 'function'
+    ? new Set(pairMol.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds)))
+    : null;
+  const canFillRing = atomIds => atomIds.length > 0
+    && atomIds.every(atomId => pairMol.atoms.has(atomId))
+    && (!pairRingKeys || pairRingKeys.has(ringAtomKey(atomIds)));
+
+  for (const fill of sourceMol.getRingFills()) {
+    const atomIds = fill.atomIds ?? [];
+    if (canFillRing(atomIds)) {
+      pairMol.setRingFill(atomIds, fill);
+    }
+
+    const productAtomIds = atomIds.map(atomId => `${RESONANCE_PAIR_PRODUCT_PREFIX}${atomId}`);
+    if (canFillRing(productAtomIds)) {
+      pairMol.setRingFill(productAtomIds, { color: fill.color, opacity: fill.opacity });
+    }
+  }
+}
+
 function buildResonancePairDisplayMolecule(sourceMol, pair) {
   if (!sourceMol?.properties?.resonance) {
     return null;
@@ -484,8 +574,9 @@ function buildResonancePairDisplayMolecule(sourceMol, pair) {
   const sourceState = Math.max(1, Math.min(pair?.fromState ?? leftState, count));
   const targetState = Math.max(1, Math.min(pair?.toState ?? rightState, count));
   const sourceSide = pair?.sourceSide === 'right' ? 'right' : 'left';
-  const left = sourceMol.clone();
-  const rightSource = sourceMol.clone();
+  const displaySource = cloneResonanceDisplaySourceWithCurrentPose(sourceMol);
+  const left = displaySource.clone();
+  const rightSource = displaySource.clone();
   left.setResonanceState(leftState);
   rightSource.setResonanceState(rightState);
   const baseFlowSource = sourceSide === 'right' ? rightSource : left;
@@ -519,6 +610,7 @@ function buildResonancePairDisplayMolecule(sourceMol, pair) {
     rightState
   };
   centerReaction2dPairCoords(pairMol, pairMol.__reactionPreview, ctx.getRenderOptions?.().layoutBondLength ?? 1.5);
+  preserveSourceRingFillsOnResonancePair(pairMol, sourceMol);
   return pairMol;
 }
 

@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/index.js';
 import { generateResonanceStructures } from '../../../src/algorithms/index.js';
+import { ringAtomKey } from '../../../src/core/style.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
-import { computeChargeBadgePlacement, secondaryDir } from '../../../src/layout/mol2d-helpers.js';
-import { atomRadius, renderBondOrder } from '../../../src/app/render/helpers.js';
-import { FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../../../src/app/render/force-helpers.js';
+import { computeChargeBadgePlacement, secondaryDir, syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
+import { atomRadius, renderBondOrder, updateRenderOptions } from '../../../src/app/render/helpers.js';
+import { FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../../../src/app/render/force-helpers.js';
 import {
   captureResonanceViewSnapshot,
   clearResonancePanelState,
   initResonancePanel,
   prepareResonanceStateForStructuralEdit,
   prepareResonanceUndoSnapshot,
+  resetActiveResonanceView,
   restoreResonanceViewSnapshot,
   shouldPreserveResonanceForClickTarget,
   updateResonancePanel
@@ -240,6 +242,53 @@ function rotateMolecule(mol, angle) {
     atom.x = x * cos - y * sin;
     atom.y = x * sin + y * cos;
   }
+}
+
+function heavyBounds(mol, atomIds) {
+  const atoms = [...atomIds].map(atomId => mol.atoms.get(atomId)).filter(atom => atom && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+  const xs = atoms.map(atom => atom.x);
+  const ys = atoms.map(atom => atom.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys)
+  };
+}
+
+function patchBounds(patch, atomIds) {
+  const points = [...atomIds].map(atomId => patch.get(atomId)).filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys)
+  };
+}
+
+function forceNodesFromPatch(patch) {
+  return [...patch].map(([id, pos]) => ({ id, x: pos.x, y: pos.y }));
+}
+
+function rotatedForceNodesFromMolecule(mol, angle) {
+  const atoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+  const scale = FORCE_LAYOUT_BOND_LENGTH / 1.5;
+  const nodes = atoms.map(atom => ({ id: atom.id, x: atom.x * scale, y: -atom.y * scale }));
+  const cx = nodes.reduce((sum, node) => sum + node.x, 0) / nodes.length;
+  const cy = nodes.reduce((sum, node) => sum + node.y, 0) / nodes.length;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return nodes.map(node => {
+    const dx = node.x - cx;
+    const dy = node.y - cy;
+    return {
+      ...node,
+      x: cx + dx * cos - dy * sin,
+      y: cy + dx * sin + dy * cos
+    };
+  });
+}
+
+function ringFillKeys(mol) {
+  return mol.getRingFills().map(fill => ringAtomKey(fill.atomIds)).sort();
 }
 
 function rotatedPointForAtom(angle) {
@@ -840,6 +889,246 @@ describe('resonance undo snapshots', () => {
     }
   });
 
+  it('preserves stereochemical hydrogen display on the right-side resonance contributor', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+    clearResonancePanelState();
+
+    try {
+      const mol = parseSMILES('[H][C@@]12C[C@]1([H])[C@@]1(C)C(=CC2=O)C(Cl)=C[C@@]2([H])[C@]3([H])CC[C@](OC(C)=O)(C(C)=O)[C@@]3(C)CC[C@]12[H]');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      syncDisplayStereo(mol);
+      generateResonanceStructures(mol);
+      let displayedMol = mol;
+      initResonancePanel({
+        mode: '2d',
+        get _mol2d() {
+          return displayedMol;
+        },
+        setMol2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        currentMol: null,
+        draw2d() {},
+        render2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        updateForce() {}
+      });
+      updateResonancePanel(mol, { recompute: false });
+
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+
+      const prefix = '__resonance_product__:';
+      const stereoMap = syncDisplayStereo(displayedMol);
+      const stereoHydrogenBonds = [...stereoMap.keys()].filter(bondId => {
+        const bond = displayedMol.bonds.get(bondId);
+        return bond?.atoms?.some(atomId => displayedMol.atoms.get(atomId)?.name === 'H');
+      });
+      const leftStereoHydrogenBonds = stereoHydrogenBonds.filter(bondId => !bondId.startsWith(prefix));
+      const rightStereoHydrogenBonds = stereoHydrogenBonds.filter(bondId => bondId.startsWith(prefix));
+
+      assert.equal(displayedMol.__reactionPreview?.resonancePair, true);
+      assert.equal(leftStereoHydrogenBonds.length, 4);
+      assert.deepEqual(
+        rightStereoHydrogenBonds.map(bondId => displayedMol.bonds.get(bondId).properties.display?.centerId).sort(),
+        leftStereoHydrogenBonds.map(bondId => `${prefix}${displayedMol.bonds.get(bondId).properties.display?.centerId}`).sort()
+      );
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('preserves painted ring fills on both line-mode resonance contributors', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+    clearResonancePanelState();
+
+    try {
+      const mol = parseSMILES('c1ccccc1');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      const ringAtomIds = mol.getRings()[0];
+      mol.setRingFill(ringAtomIds, { color: '#ffcc00', opacity: 0.35 });
+      generateResonanceStructures(mol);
+      let displayedMol = mol;
+      initResonancePanel({
+        mode: 'line',
+        get _mol2d() {
+          return displayedMol;
+        },
+        setMol2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        render2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        draw2d() {},
+        updateForce() {}
+      });
+      updateResonancePanel(mol, { recompute: false });
+
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+
+      const prefix = '__resonance_product__:';
+      const expectedKeys = [
+        ringAtomKey(ringAtomIds),
+        ringAtomKey(ringAtomIds.map(atomId => `${prefix}${atomId}`))
+      ].sort();
+      const fills = displayedMol.getRingFills();
+      assert.equal(displayedMol.__reactionPreview?.resonancePair, true);
+      assert.deepEqual(ringFillKeys(displayedMol), expectedKeys);
+      assert.deepEqual(
+        fills.map(fill => ({ color: fill.color, opacity: fill.opacity })).sort((a, b) => a.color.localeCompare(b.color)),
+        [
+          { color: '#ffcc00', opacity: 0.35 },
+          { color: '#ffcc00', opacity: 0.35 }
+        ]
+      );
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('preserves painted ring fills on both force-mode resonance contributors', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+    clearResonancePanelState();
+
+    try {
+      const mol = parseSMILES('c1ccccc1');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      const ringAtomIds = mol.getRings()[0];
+      mol.setRingFill(ringAtomIds, { color: '#66ccff', opacity: 0.42 });
+      generateResonanceStructures(mol);
+      const forceNodes = rotatedForceNodesFromMolecule(mol, Math.PI / 8);
+      let displayedMol = mol;
+      let updateForceCall = null;
+      initResonancePanel({
+        mode: 'force',
+        get currentMol() {
+          return displayedMol;
+        },
+        setCurrentMol(nextMol) {
+          displayedMol = nextMol;
+        },
+        _mol2d: null,
+        draw2d() {},
+        updateForce(nextMol, options) {
+          updateForceCall = { mol: nextMol, options };
+        },
+        getForceNodes() {
+          return forceNodes;
+        },
+        plotEl: {
+          getBoundingClientRect() {
+            return { width: 800, height: 500 };
+          }
+        }
+      });
+      updateResonancePanel(mol, { recompute: false });
+
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+
+      const prefix = '__resonance_product__:';
+      const expectedKeys = [
+        ringAtomKey(ringAtomIds),
+        ringAtomKey(ringAtomIds.map(atomId => `${prefix}${atomId}`))
+      ].sort();
+      const fills = updateForceCall.mol.getRingFills();
+      assert.equal(displayedMol.__reactionPreview?.resonancePair, true);
+      assert.equal(updateForceCall.mol.__reactionPreview?.resonancePair, true);
+      assert.deepEqual(ringFillKeys(updateForceCall.mol), expectedKeys);
+      assert.deepEqual(
+        fills.map(fill => ({ color: fill.color, opacity: fill.opacity })).sort((a, b) => a.color.localeCompare(b.color)),
+        [
+          { color: '#66ccff', opacity: 0.42 },
+          { color: '#66ccff', opacity: 0.42 }
+        ]
+      );
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('resets stale 2D view rotation while preserving rotated resonance-pair coordinates', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+    clearResonancePanelState();
+
+    try {
+      const mol = parseSMILES('O=[N+]([O-])c1ccccc1');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      generateResonanceStructures(mol);
+      rotateMolecule(mol, Math.PI / 2);
+
+      let displayedMol = null;
+      const calls = [];
+      initResonancePanel({
+        mode: 'line',
+        get currentMol() {
+          return displayedMol ?? mol;
+        },
+        setMol2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        render2d(nextMol) {
+          calls.push(['render2d']);
+          displayedMol = nextMol;
+        },
+        resetOrientation() {
+          calls.push(['resetOrientation']);
+        }
+      });
+      updateResonancePanel(mol, { recompute: false });
+
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+
+      const preview = displayedMol?.__reactionPreview;
+      const leftBounds = heavyBounds(displayedMol, preview.reactantAtomIds);
+      const rightBounds = heavyBounds(displayedMol, preview.productAtomIds);
+
+      assert.equal(preview?.resonancePair, true);
+      assert.deepEqual(calls, [['resetOrientation'], ['render2d']]);
+      assert.ok(leftBounds.height > leftBounds.width * 1.4, `expected left resonance contributor to preserve rotated pose, got width=${leftBounds.width} height=${leftBounds.height}`);
+      assert.ok(rightBounds.height > rightBounds.width * 1.4, `expected right resonance contributor to preserve rotated pose, got width=${rightBounds.width} height=${rightBounds.height}`);
+    } finally {
+      clearResonancePanelState();
+      globalThis.document = previousDocument;
+    }
+  });
+
   it('separates resonance pair structures when activated from force mode', async () => {
     const previousDocument = globalThis.document;
     const resonanceBody = makeMockElement('tbody');
@@ -857,6 +1146,7 @@ describe('resonance undo snapshots', () => {
       const mol = parseSMILES('CC=O');
       generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
       generateResonanceStructures(mol);
+      let forceNodes = rotatedForceNodesFromMolecule(mol, Math.PI / 2);
       let displayedMol = mol;
       let updateForceCall = null;
       initResonancePanel({
@@ -871,6 +1161,9 @@ describe('resonance undo snapshots', () => {
         draw2d() {},
         updateForce(nextMol, options) {
           updateForceCall = { mol: nextMol, options };
+        },
+        getForceNodes() {
+          return forceNodes;
         },
         plotEl: {
           getBoundingClientRect() {
@@ -890,6 +1183,7 @@ describe('resonance undo snapshots', () => {
       };
       const reactantCx = centerX(preview.reactantAtomIds);
       const productCx = centerX(preview.productAtomIds);
+      const leftBounds = heavyBounds(pairMol, preview.reactantAtomIds);
 
       assert.equal(displayedMol, pairMol);
       assert.equal(preview?.resonancePair, true);
@@ -910,6 +1204,8 @@ describe('resonance undo snapshots', () => {
       assert.ok(Math.min(...patchYs) > 150, `expected initial resonance pair patch to start near viewport center, got min y ${Math.min(...patchYs)}`);
       assert.ok(Math.max(...patchYs) < 350, `expected initial resonance pair patch to start near viewport center, got max y ${Math.max(...patchYs)}`);
       assert.ok(productCx > reactantCx + 3, `expected force resonance pair product to be separated to the right, got reactant ${reactantCx} product ${productCx}`);
+      assert.ok(leftBounds.height > leftBounds.width * 1.4, `expected force resonance pair to preserve rotated pose, got width=${leftBounds.width} height=${leftBounds.height}`);
+      forceNodes = forceNodesFromPatch(updateForceCall.options.initialPatchPos);
 
       const activeRow = resonanceBody.children[0];
       const nav = activeRow.children[0].children.find(child => child.className === 'reaction-nav');
@@ -944,9 +1240,90 @@ describe('resonance undo snapshots', () => {
       assert.equal(updateForceCall.options.fitScaleMultiplier, undefined);
       assert.equal(updateForceCall.options.fitReactionLike, undefined);
       assert.equal(updateForceCall.options.ignoreOverlayPadding, undefined);
-      assert.equal(updateForceCall.options.initialPatchPos, undefined);
+      assert.ok(updateForceCall.options.initialPatchPos instanceof Map);
       assert.equal(updateForceCall.options.anchorLayout.size, [...mol.atoms.values()].filter(atom => atom.name !== 'H' && atom.visible !== false).length);
+      assert.equal(updateForceCall.options.initialPatchPos.size, updateForceCall.options.anchorLayout.size);
+      const exitBounds = patchBounds(updateForceCall.options.initialPatchPos, mol.atoms.keys());
+      assert.ok(exitBounds.height > exitBounds.width * 1.4, `expected force resonance exit to preserve rotated pose, got width=${exitBounds.width} height=${exitBounds.height}`);
     } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('keeps force resonance enter and exit stable with non-default bond lengths', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+    clearResonancePanelState();
+    updateRenderOptions({ layoutBondLength: 0.75 });
+
+    try {
+      const mol = parseSMILES('c1ccccc1');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 0.75 });
+      generateResonanceStructures(mol);
+      let forceNodes = rotatedForceNodesFromMolecule(mol, Math.PI / 7);
+      let displayedMol = mol;
+      let updateForceCall = null;
+      initResonancePanel({
+        mode: 'force',
+        get currentMol() {
+          return displayedMol;
+        },
+        setCurrentMol(nextMol) {
+          displayedMol = nextMol;
+        },
+        _mol2d: null,
+        draw2d() {},
+        updateForce(nextMol, options) {
+          updateForceCall = { mol: nextMol, options };
+        },
+        getForceNodes() {
+          return forceNodes;
+        },
+        getRenderOptions() {
+          return { layoutBondLength: 0.75 };
+        },
+        plotEl: {
+          getBoundingClientRect() {
+            return { width: 800, height: 500 };
+          }
+        }
+      });
+      updateResonancePanel(mol, { recompute: false });
+
+      const sourceBounds = patchBounds(new Map(forceNodes.map(node => [node.id, node])), mol.atoms.keys());
+      const enterResonance = () => {
+        resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+        const pairMol = updateForceCall.mol;
+        const leftBounds = patchBounds(updateForceCall.options.initialPatchPos, pairMol.__reactionPreview.reactantAtomIds);
+        assert.equal(pairMol.__reactionPreview?.resonancePair, true);
+        assert.ok(Math.abs(leftBounds.width - sourceBounds.width) < 1e-6, `expected resonance entry width ${leftBounds.width} to match source width ${sourceBounds.width}`);
+        assert.ok(Math.abs(leftBounds.height - sourceBounds.height) < 1e-6, `expected resonance entry height ${leftBounds.height} to match source height ${sourceBounds.height}`);
+        forceNodes = forceNodesFromPatch(updateForceCall.options.initialPatchPos);
+      };
+      const exitResonance = () => {
+        resetActiveResonanceView(mol);
+        const exitBounds = patchBounds(updateForceCall.options.initialPatchPos, mol.atoms.keys());
+        assert.equal(updateForceCall.mol, mol);
+        assert.ok(Math.abs(exitBounds.width - sourceBounds.width) < 1e-6, `expected resonance exit width ${exitBounds.width} to match source width ${sourceBounds.width}`);
+        assert.ok(Math.abs(exitBounds.height - sourceBounds.height) < 1e-6, `expected resonance exit height ${exitBounds.height} to match source height ${sourceBounds.height}`);
+        forceNodes = forceNodesFromPatch(updateForceCall.options.initialPatchPos);
+      };
+
+      enterResonance();
+      exitResonance();
+      enterResonance();
+      exitResonance();
+    } finally {
+      updateRenderOptions({ layoutBondLength: 1.5 });
+      clearResonancePanelState();
       globalThis.document = previousDocument;
     }
   });

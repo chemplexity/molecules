@@ -30,6 +30,7 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.preserveAnalysis] - When true, keeps existing analysis highlights.
    * @param {boolean} [options.forcePreservePositions] - When true for force renders, reuses current simulation positions where possible.
    * @param {boolean} [options.forceKeepInView] - When true for force renders, preserves the current viewport first but refits if the graph settles outside it.
+   * @param {boolean} [options.forceRestartSimulation] - When false for force renders, redraws preserved positions without restarting physics.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceAnchorLayout] - Optional force-anchor layout override keyed by atom id.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceInitialPatchPos] - Optional force-pixel positions applied before the first force tick.
    * @param {number} [options.fitPad] - Optional 2D viewport fit padding.
@@ -49,6 +50,7 @@ export function createRenderRuntime(deps) {
       preserveAnalysis = false,
       forcePreservePositions = false,
       forceKeepInView = false,
+      forceRestartSimulation,
       forceAnchorLayout = null,
       forceInitialPatchPos = null,
       fitPad,
@@ -84,6 +86,9 @@ export function createRenderRuntime(deps) {
       }
       if (forceKeepInView) {
         forceOptions.keepInView = true;
+      }
+      if (forceRestartSimulation !== undefined) {
+        forceOptions.restartSimulation = forceRestartSimulation;
       }
       if (forceFitPad !== undefined) {
         forceOptions.fitPad = forceFitPad;
