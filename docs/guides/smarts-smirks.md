@@ -244,7 +244,22 @@ const product = applySMIRKS(propanol, reactionTemplates.alcoholOxidation.smirks)
 console.log(toSMILES(product)); // CCC=O  (propanal)
 ```
 
-Each entry has `name` and `smirks`.
+Each entry keeps the executable `name` and `smirks` fields and also exposes
+descriptive chemistry metadata for API consumers:
+
+```js
+const template = reactionTemplates.dehalogenation;
+
+console.log(template.category); // substitution
+console.log(template.summary); // Alkyl halide -> alkane
+console.log(template.variants[0].label); // H2, Pd/C
+console.log(template.variants[0].conditions); // { temperature: 'rt', pressure: '1 atm H2' }
+console.log(template.byproducts); // [ 'halide-containing reagent products' ]
+console.log(template.selectivity.chemoselectivity); // strongly substrate- and halide-dependent
+```
+
+Metadata is informational. `applySMIRKS`, reaction matching, and the app's
+reaction preview still use the `smirks` string.
 
 ### Template categories
 

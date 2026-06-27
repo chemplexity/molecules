@@ -7,6 +7,11 @@
 - Prefer the currently highlighted atom when starting or snapping line-mode line-tool drags, so compact 0.5-bond-length targets no longer connect to a nearby unhighlighted atom.
 - Keep line-mode paint strokes centered on explicit non-carbon atom labels from also painting adjacent bond endpoint hit areas at compact 0.5 Global Bond Length settings, while leaving carbon-carbon bond intersections paintable.
 - Clear stale wedge/dash display metadata when alcohol dehydration converts a stereochemical single bond into an alkene or removes the stereocenter entirely, so the product no longer renders leftover stereochemical single bonds.
+- Add API-only reaction-template metadata for categories, summaries, reagent/condition variants, notes, limitations, and reference placeholders while keeping existing `name`/`smirks` usage unchanged.
+- Add API-only reaction-template byproduct and selectivity metadata so templates can describe common side products and regio/stereo/chemo caveats without changing SMIRKS execution.
+- Normalize HCl protonation variant labels to keep arrow-facing labels compact while retaining aqueous context in structured solvent metadata.
+- Add a shared chemistry-text tokenizer for renderer-neutral subscript/superscript display of plain ASCII reagent and condition labels.
+- Render standalone `heat` reagent/condition text as a delta symbol from the shared chemistry-text tokenizer while keeping metadata source strings plain ASCII.
 
 ## 2026-06-25
 

@@ -7,12 +7,50 @@ function sortDotSmiles(smiles) {
 }
 
 describe('reactionTemplates — schema', () => {
+  const allowedCategories = new Set(['oxidationReduction', 'substitution', 'acylChemistry', 'acidBase', 'bondConstruction', 'cycloaddition']);
+
   for (const [key, entry] of Object.entries(reactionTemplates)) {
-    it(`${key} has name and smirks`, () => {
+    it(`${key} has core fields and metadata`, () => {
       assert.equal(typeof entry.name, 'string');
       assert.equal(typeof entry.smirks, 'string');
       assert.ok(entry.name.length > 0, 'name is non-empty');
       assert.ok(entry.smirks.length > 0, 'smirks is non-empty');
+      assert.equal(typeof entry.category, 'string');
+      assert.ok(allowedCategories.has(entry.category), `category '${entry.category}' is recognized`);
+      assert.equal(typeof entry.summary, 'string');
+      assert.ok(entry.summary.length > 0, 'summary is non-empty');
+      assert.ok(Array.isArray(entry.variants), 'variants is an array');
+      assert.ok(entry.variants.length > 0, 'variants is non-empty');
+      assert.ok(Array.isArray(entry.byproducts), 'byproducts is an array');
+      assert.equal(typeof entry.selectivity, 'object', 'selectivity is an object');
+      assert.notEqual(entry.selectivity, null, 'selectivity is not null');
+      assert.equal(Array.isArray(entry.selectivity), false, 'selectivity is not an array');
+      assert.equal(typeof entry.selectivity.regioselectivity, 'string', 'selectivity regioselectivity is a string');
+      assert.equal(typeof entry.selectivity.stereochemistry, 'string', 'selectivity stereochemistry is a string');
+      assert.equal(typeof entry.selectivity.chemoselectivity, 'string', 'selectivity chemoselectivity is a string');
+      assert.ok(Array.isArray(entry.notes), 'notes is an array');
+      assert.ok(Array.isArray(entry.limitations), 'limitations is an array');
+      assert.ok(Array.isArray(entry.references), 'references is an array');
+
+      const variantIds = new Set();
+      for (const variant of entry.variants) {
+        assert.equal(typeof variant.id, 'string', 'variant id is a string');
+        assert.match(variant.id, /^[a-z0-9][a-z0-9-]*$/, 'variant id is stable kebab-case');
+        assert.equal(variantIds.has(variant.id), false, `variant id '${variant.id}' is unique within ${key}`);
+        variantIds.add(variant.id);
+        assert.equal(typeof variant.label, 'string', 'variant label is a string');
+        assert.ok(variant.label.length > 0, 'variant label is non-empty');
+        assert.equal(typeof variant.role, 'string', 'variant role is a string');
+        assert.ok(Array.isArray(variant.reagents), 'variant reagents is an array');
+        assert.ok(Array.isArray(variant.catalysts), 'variant catalysts is an array');
+        assert.ok(Array.isArray(variant.solvents), 'variant solvents is an array');
+        assert.equal(typeof variant.conditions, 'object', 'variant conditions is an object');
+        assert.notEqual(variant.conditions, null, 'variant conditions is not null');
+        assert.equal(Array.isArray(variant.conditions), false, 'variant conditions is not an array');
+        assert.ok(Array.isArray(variant.byproducts), 'variant byproducts is an array');
+        assert.ok(Array.isArray(variant.notes), 'variant notes is an array');
+        assert.ok(Array.isArray(variant.limitations), 'variant limitations is an array');
+      }
     });
   }
 });
@@ -32,6 +70,10 @@ describe('reactionTemplates — example applications', () => {
     const product = applySMIRKS(parseSMILES('CCl'), reactionTemplates.dehalogenation.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'C');
+    assert.equal(reactionTemplates.dehalogenation.category, 'substitution');
+    assert.ok(reactionTemplates.dehalogenation.byproducts.includes('halide-containing reagent products'));
+    assert.equal(reactionTemplates.dehalogenation.selectivity.chemoselectivity, 'strongly substrate- and halide-dependent');
+    assert.ok(reactionTemplates.dehalogenation.variants.some(variant => variant.id === 'h2-pd-c' && variant.reagents.includes('H2')));
   });
 
   it('halideHydrolysis converts an alkyl halide to an alcohol', () => {

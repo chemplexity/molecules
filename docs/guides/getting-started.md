@@ -178,6 +178,17 @@ reactions:
 | `halideHydrolysis`       | Alkyl halide → alcohol    |
 | `dehalogenation`         | Remove halide substituent |
 
+Template entries also include descriptive metadata such as `category`,
+`summary`, `variants`, `byproducts`, `selectivity`, `notes`, and `limitations`:
+
+```js
+const dehalogenation = reactionTemplates.dehalogenation;
+console.log(dehalogenation.variants.map(variant => variant.label));
+// [ 'H2, Pd/C', 'LiAlH4', 'Bu3SnH, AIBN' ]
+console.log(dehalogenation.selectivity.chemoselectivity);
+// strongly substrate- and halide-dependent
+```
+
 Use `parseSMIRKS` to compile your own transform string into a reusable object.
 
 ## Aromaticity

@@ -3,3 +3,4 @@
 export * from './matrix.js';
 export * from './combinatorics.js';
 export * from './eigenvalues.js';
+export * from './format-chem-text.js';
