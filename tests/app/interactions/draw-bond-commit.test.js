@@ -572,6 +572,34 @@ describe('createDrawBondCommitActions', () => {
     });
   });
 
+  it('uses the configured layout bond length for force-mode auto-placed bonds', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      mode: 'force',
+      drawBondElement: 'C',
+      layoutBondLength: 0.5,
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 300, y: 200 } : null),
+      forceNodes: [{ id: 'a1', name: 'C', x: 300, y: 200 }]
+    });
+
+    actions.autoPlaceBond('a1', 350, 200);
+
+    const newAtom = mol.atoms.get('C1');
+    assert.ok(newAtom);
+    assert.equal(newAtom.x, 0.5);
+    assert.equal(newAtom.y, 0);
+
+    const forceUpdate = calls.renderers.find(call => call[0] === 'updateForce');
+    assert.ok(forceUpdate);
+    const patchPos = forceUpdate[2].initialPatchPos;
+    assert.deepEqual(patchPos.get('a1'), { x: 300, y: 200 });
+    assert.deepEqual(patchPos.get('C1'), { x: 312.5, y: 200 });
+  });
+
   it('does not repair implicit hydrogens on charged atoms when manually adding a bond', () => {
     const srcAtom = makeAtom('a1', 'N');
     srcAtom.properties.charge = 1;

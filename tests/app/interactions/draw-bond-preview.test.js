@@ -86,6 +86,8 @@ function makeActions(overrides = {}) {
   let drawBondState = overrides.initialDrawBondState ?? null;
   const hoveredAtoms = new Set();
   const hoveredBonds = new Set();
+  const selectedAtoms = new Set();
+  const selectedBonds = new Set();
   const calls = [];
   const g = new FakeRootSelection();
 
@@ -108,7 +110,11 @@ function makeActions(overrides = {}) {
       },
       clearHoveredAtomIds: () => hoveredAtoms.clear(),
       clearHoveredBondIds: () => hoveredBonds.clear(),
-      addHoveredAtomId: atomId => hoveredAtoms.add(atomId)
+      addHoveredAtomId: atomId => hoveredAtoms.add(atomId),
+      getHoveredAtomIds: () => hoveredAtoms,
+      getSelectedAtomIds: () => selectedAtoms,
+      getSelectedBondIds: () => selectedBonds,
+      getSelectionModifierActive: () => false
     },
     view: {
       clearPrimitiveHover: () => {
@@ -163,6 +169,8 @@ function makeActions(overrides = {}) {
     getDrawBondState: () => drawBondState,
     hoveredAtoms,
     hoveredBonds,
+    selectedAtoms,
+    selectedBonds,
     calls,
     g
   };
@@ -320,6 +328,25 @@ describe('createDrawBondPreviewActions', () => {
     assert.ok(Math.abs(Number(g.select('circle.draw-bond-dest-node').attr('cy')) - getDrawBondState().ey) < 1e-9);
   });
 
+  it('uses the configured layout bond length for force auto-placement previews', () => {
+    const { actions, getDrawBondState, g } = makeActions({
+      mode: 'force',
+      layoutBondLength: 0.5,
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', x: 120, y: 120 } : null)
+    });
+
+    actions.start('a1', 0, 0);
+
+    const expectedAngle = (11 / 12) * Math.PI * 2;
+    const expectedBondLength = 25 * (0.5 / 1.5);
+    assert.equal(getDrawBondState().ox, 120);
+    assert.equal(getDrawBondState().oy, 120);
+    assert.ok(Math.abs(getDrawBondState().ex - (120 + Math.cos(expectedAngle) * expectedBondLength)) < 1e-9);
+    assert.ok(Math.abs(getDrawBondState().ey - (120 + Math.sin(expectedAngle) * expectedBondLength)) < 1e-9);
+    assert.ok(Math.abs(Number(g.select('circle.draw-bond-dest-node').attr('cx')) - getDrawBondState().ex) < 1e-9);
+    assert.ok(Math.abs(Number(g.select('circle.draw-bond-dest-node').attr('cy')) - getDrawBondState().ey) < 1e-9);
+  });
+
   it('starts a blank-space 2D preview with only the origin atom visible', () => {
     const { actions, getDrawBondState, g } = makeActions({
       drawBondElement: 'O'
@@ -408,6 +435,26 @@ describe('createDrawBondPreviewActions', () => {
 
     assert.equal(getDrawBondState().snapAtomId, 'a2');
     assert.equal(g.select('text.draw-bond-dest-label').attr('display'), 'none');
+  });
+
+  it('snaps atom-anchored 2D line previews to the blue-highlighted atom when compact targets overlap', () => {
+    const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
+    const nearby = { id: 'nearby', x: 1, y: 0, visible: true, name: 'C' };
+    const highlighted = { id: 'target', x: 0.5, y: 0, visible: true, name: 'C' };
+    const { actions, getDrawBondState, hoveredAtoms } = makeActions({
+      drawBondElement: 'C',
+      layoutBondLength: 0.5,
+      atomById: atomId => [source, nearby, highlighted].find(atom => atom.id === atomId) ?? null,
+      atoms: [source, nearby, highlighted]
+    });
+    hoveredAtoms.add('target');
+
+    actions.start('a1', 0, 0);
+    actions.update([320, 200]);
+
+    assert.equal(getDrawBondState().snapAtomId, 'target');
+    assert.equal(getDrawBondState().ex, 320);
+    assert.equal(getDrawBondState().ey, 200);
   });
 
   it('snaps atom-anchored 2D line previews to 30 degree increments', () => {

@@ -294,6 +294,16 @@ export function initGestureInteractions(context) {
     return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   }
 
+  function segmentProjectionParameter(px, py, ax, ay, bx, by) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-10) {
+      return null;
+    }
+    return Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  }
+
   function isPaintBrushMode() {
     return (context.state.overlayState.getPaintMode?.() ?? false) && (context.state.overlayState.getPaintTool?.() ?? 'brush') === 'brush';
   }
@@ -617,6 +627,37 @@ export function initGestureInteractions(context) {
     return false;
   }
 
+  function is2dBondEndpointPaintSpillover(element, x, y, paintRadius) {
+    if (!elementClassContains(element, 'bond-hit')) {
+      return false;
+    }
+    const p1 = svgPtToScreen(element, parseFloat(element.getAttribute('x1')), parseFloat(element.getAttribute('y1')));
+    const p2 = svgPtToScreen(element, parseFloat(element.getAttribute('x2')), parseFloat(element.getAttribute('y2')));
+    if (!p1 || !p2) {
+      return true;
+    }
+    const t = segmentProjectionParameter(x, y, p1.x, p1.y, p2.x, p2.y);
+    if (t == null) {
+      return true;
+    }
+    const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (!Number.isFinite(length) || length <= 0) {
+      return true;
+    }
+    const endpointPad = Math.min(paintRadius * 0.6, length * 0.35);
+    const endpointT = endpointPad / length;
+    return t <= endpointT || t >= 1 - endpointT;
+  }
+
+  function isProtective2dAtomPaintHit(element) {
+    if (!elementClassContains(element, 'atom-hit')) {
+      return false;
+    }
+    const atomId = element.closest?.('[data-atom-id]')?.getAttribute?.('data-atom-id') ?? null;
+    const atom = atomId ? getPaintMolecule('2d')?.atoms?.get?.(atomId) : null;
+    return !!atom && atom.visible !== false && atom.name !== 'C';
+  }
+
   function resolvePaintHitElement(element) {
     if (element.classList.contains('node')) {
       const datum = context.helpers.getDatum(element);
@@ -875,10 +916,18 @@ export function initGestureInteractions(context) {
     const seen = new Set();
     const candidates = [];
     const paintRadius = getPaintBrushRadius();
-    const forceAtomCircles = context.state.viewState.getMode() === 'force' ? collectForceAtomScreenCircles() : [];
-    const addIfTarget = element => {
+    const mode = context.state.viewState.getMode();
+    const centerElements = doc.elementsFromPoint(cx, cy);
+    const centerHasProtective2dAtomHit = mode === '2d' && centerElements.some(element => isProtective2dAtomPaintHit(element));
+    const forceAtomCircles = mode === 'force' ? collectForceAtomScreenCircles() : [];
+    const addIfTarget = (element, options = {}) => {
       if (!isPaintHitElement(element) || seen.has(element)) {
         return;
+      }
+      if (centerHasProtective2dAtomHit && elementClassContains(element, 'bond-hit')) {
+        if (!options.allow2dBondCenterHit || is2dBondEndpointPaintSpillover(element, cx, cy, paintRadius)) {
+          return;
+        }
       }
       if (!isForceBondWithinPaintRadius(element, cx, cy, paintRadius)) {
         return;
@@ -891,8 +940,8 @@ export function initGestureInteractions(context) {
     };
 
     const perimeterAngles = [0, 45, 90, 135, 180, 225, 270, 315];
-    for (const element of doc.elementsFromPoint(cx, cy)) {
-      addIfTarget(element);
+    for (const element of centerElements) {
+      addIfTarget(element, { allow2dBondCenterHit: true });
     }
     for (const angle of perimeterAngles) {
       const rad = (angle * Math.PI) / 180;
@@ -917,6 +966,9 @@ export function initGestureInteractions(context) {
 
     for (const element of context.dom.plotEl.querySelectorAll('.bond-hit, .bond-hover-target')) {
       if (seen.has(element)) {
+        continue;
+      }
+      if (centerHasProtective2dAtomHit && elementClassContains(element, 'bond-hit')) {
         continue;
       }
       const p1 = svgPtToScreen(element, parseFloat(element.getAttribute('x1')), parseFloat(element.getAttribute('y1')));

@@ -232,11 +232,46 @@ function _setBondState(bond, templateBond) {
   } else if (topologyChanged && before.stereo != null) {
     bond.setStereo(null);
   }
+  if (topologyChanged) {
+    _clearBondDisplayStereo(bond);
+  }
   delete bond.properties.localizedOrder;
   return {
     topologyChanged,
     stereoChanged: before.stereo !== (bond.properties.stereo ?? null)
   };
+}
+
+function _clearBondDisplayStereo(bond) {
+  if (bond.properties.display?.as !== 'wedge' && bond.properties.display?.as !== 'dash') {
+    return;
+  }
+  delete bond.properties.display.as;
+  delete bond.properties.display.centerId;
+  delete bond.properties.display.manual;
+  if (Object.keys(bond.properties.display).length === 0) {
+    delete bond.properties.display;
+  }
+}
+
+function _clearDisplayStereoForAtom(mol, atomId) {
+  const atom = mol.atoms.get(atomId);
+  if (!atom) {
+    return;
+  }
+
+  for (const bondId of atom.bonds) {
+    const bond = mol.bonds.get(bondId);
+    if (!bond || (bond.properties.display?.as !== 'wedge' && bond.properties.display?.as !== 'dash')) {
+      continue;
+    }
+    const displayCenterId = bond.properties.display?.centerId ?? null;
+    const otherAtomId = bond.getOtherAtom(atomId);
+    const otherAtomIsChiral = !!mol.atoms.get(otherAtomId)?.getChirality?.();
+    if (displayCenterId === atomId || (displayCenterId == null && !otherAtomIsChiral)) {
+      _clearBondDisplayStereo(bond);
+    }
+  }
 }
 
 function _pairKey(a, b) {
@@ -504,8 +539,12 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
   // equivalent O, so the stereocentre configuration is unchanged.
   // Exception: if the atom is in stereoForceCleanAtomIds (a neighbour actually
   // changed element, altering CIP priority), clear as before.
+  const dirtyChiralCenterIds = new Set();
   const preservedChiralities = new Map();
   for (const atomId of stereoDirtySeedIds) {
+    if (result.atoms.get(atomId)?.getChirality()) {
+      dirtyChiralCenterIds.add(atomId);
+    }
     if (keptTargetIds.has(atomId) && !explicitAtomStereoSpecs.has(atomId) && !stereoForceCleanAtomIds.has(atomId)) {
       const ch = result.atoms.get(atomId)?.getChirality();
       if (ch) {
@@ -555,6 +594,12 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
       atom.setChirality(chirality, result);
     } catch {
       // atom is no longer a tetrahedral stereocentre after the transform; skip
+    }
+  }
+  for (const atomId of dirtyChiralCenterIds) {
+    const atom = result.atoms.get(atomId);
+    if (atom && !atom.getChirality()) {
+      _clearDisplayStereoForAtom(result, atomId);
     }
   }
 

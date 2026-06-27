@@ -460,7 +460,9 @@ function endpointPoint(endpoint, molecule, pointForAtom, towardPoint = null, bon
   const nx = -dy / len;
   const ny = dx / len;
   const offset = Number.isFinite(bondOffset) ? Math.max(0, bondOffset) : BOND_ENDPOINT_OFFSET;
-  const sign = Number.isFinite(endpoint.sideSign) && endpoint.sideSign !== 0 ? Math.sign(endpoint.sideSign) : chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom, offset);
+  const towardDot = (towardPoint.x - mid.x) * nx + (towardPoint.y - mid.y) * ny;
+  const storedSign = Number.isFinite(endpoint.sideSign) && endpoint.sideSign !== 0 ? Math.sign(endpoint.sideSign) : 0;
+  const sign = Math.abs(towardDot) > 0.75 && (!storedSign || Math.sign(towardDot) !== storedSign) ? Math.sign(towardDot) : storedSign || chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom, offset);
   return { x: mid.x + nx * offset * sign, y: mid.y + ny * offset * sign };
 }
 

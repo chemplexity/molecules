@@ -1163,6 +1163,62 @@ test('reaction preview preserves product wedge or dash display for an untouched 
   assert.equal(productWedges.get(productBond.id), sourceStereo[1], 'expected product wedge/dash display to match the reactant');
 });
 
+test('reaction preview clears stale wedge display when dehydration makes the bond an alkene', () => {
+  const sourceMol = parseSMILES('CCO');
+  const alcoholCarbon = [...sourceMol.atoms.values()].find(atom => atom.name === 'C' && atom.getNeighbors(sourceMol).some(neighbor => neighbor.name === 'O'));
+  const betaCarbon = alcoholCarbon?.getNeighbors(sourceMol).find(neighbor => neighbor.name === 'C');
+  assert.ok(alcoholCarbon && betaCarbon, 'expected ethanol alcohol carbon and beta carbon');
+  const sourceBond = sourceMol.getBond(alcoholCarbon.id, betaCarbon.id);
+  assert.ok(sourceBond, 'expected dehydration source bond');
+  sourceBond.properties.display = { as: 'wedge', centerId: alcoholCarbon.id, manual: true };
+
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected dehydration preview');
+  const productIdBySourceId = new Map(preview.mappedAtomPairs);
+  const productAlcoholCarbonId = productIdBySourceId.get(alcoholCarbon.id);
+  const productBetaCarbonId = productIdBySourceId.get(betaCarbon.id);
+  assert.ok(productAlcoholCarbonId && productBetaCarbonId, 'expected mapped product alkene atoms');
+
+  const productBond = preview.mol.getBond(productAlcoholCarbonId, productBetaCarbonId);
+  assert.ok(productBond, 'expected product alkene bond');
+  assert.equal(productBond.properties.order, 2);
+  assert.equal(productBond.properties.display?.as, undefined);
+  assert.equal(pickStereoWedges(preview.mol).has(productBond.id), false);
+});
+
+test('reaction preview clears stereo display when dehydration removes the stereocenter', () => {
+  const sourceMol = parseSMILES('C[C@H](CC)O');
+  const alcoholCarbon = [...sourceMol.atoms.values()].find(atom => atom.getChirality());
+  assert.ok(alcoholCarbon, 'expected chiral alcohol center');
+  const sourceBonds = alcoholCarbon.getNeighbors(sourceMol)
+    .filter(neighbor => neighbor.name === 'C')
+    .map(neighbor => sourceMol.getBond(alcoholCarbon.id, neighbor.id))
+    .filter(Boolean);
+  assert.ok(sourceBonds.length >= 2, 'expected carbon substituent bonds on the alcohol center');
+  for (const bond of sourceBonds) {
+    bond.properties.display = { as: 'wedge', centerId: alcoholCarbon.id, manual: true };
+  }
+
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected dehydration preview');
+  const productIdBySourceId = new Map(preview.mappedAtomPairs);
+  const productCenterId = productIdBySourceId.get(alcoholCarbon.id);
+  assert.ok(productCenterId, 'expected mapped product center');
+
+  const productCenter = preview.mol.atoms.get(productCenterId);
+  assert.ok(productCenter, 'expected product center atom');
+  assert.equal(productCenter.getChirality(), null);
+  for (const bondId of productCenter.bonds) {
+    const bond = preview.mol.bonds.get(bondId);
+    assert.equal(bond?.properties.display?.as, undefined);
+    assert.equal(pickStereoWedges(preview.mol).has(bondId), false);
+  }
+});
+
 test('reaction preview keeps amine-protonation fused aza product valence-clean', () => {
   const preview = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.amineProtonation.smirks);
 

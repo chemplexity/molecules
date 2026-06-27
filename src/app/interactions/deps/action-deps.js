@@ -247,7 +247,11 @@ export function createDrawBondPreviewActionDeps(ctx) {
       },
       clearHoveredAtomIds: () => ctx.clearHoveredAtomIds(),
       clearHoveredBondIds: () => ctx.clearHoveredBondIds(),
-      addHoveredAtomId: atomId => ctx.addHoveredAtomId(atomId)
+      addHoveredAtomId: atomId => ctx.addHoveredAtomId(atomId),
+      getHoveredAtomIds: () => ctx.getHoveredAtomIds?.() ?? new Set(),
+      getSelectedAtomIds: () => ctx.getSelectedAtomIds?.() ?? new Set(),
+      getSelectedBondIds: () => ctx.getSelectedBondIds?.() ?? new Set(),
+      getSelectionModifierActive: () => ctx.getSelectionModifierActive?.() ?? false
     },
     view: {
       clearPrimitiveHover: () => ctx.clearPrimitiveHover()

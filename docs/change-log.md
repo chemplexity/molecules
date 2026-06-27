@@ -1,9 +1,18 @@
 # Change Log
 
+## 2026-06-26
+
+- Use the active Global Bond Length when previewing and auto-placing line-tool bonds in force mode, so short settings such as 0.5 no longer show or create default-length 1.5 bonds.
+- Start force-mode line-tool drags from the currently highlighted atom when compact hit targets overlap, preventing nearby atoms from stealing the new bond source at short Global Bond Length values.
+- Prefer the currently highlighted atom when starting or snapping line-mode line-tool drags, so compact 0.5-bond-length targets no longer connect to a nearby unhighlighted atom.
+- Keep line-mode paint strokes centered on explicit non-carbon atom labels from also painting adjacent bond endpoint hit areas at compact 0.5 Global Bond Length settings, while leaving carbon-carbon bond intersections paintable.
+- Clear stale wedge/dash display metadata when alcohol dehydration converts a stereochemical single bond into an alkene or removes the stereocenter entirely, so the product no longer renders leftover stereochemical single bonds.
+
 ## 2026-06-25
 
 - Preserve painted ring fills on both left and right resonance contributors in line and force resonance views.
 - Preserve resonance and reaction preview rotations consistently when entering, navigating, rotating, flipping, and exiting paired-structure views in line and force modes, including non-default Global Bond Length values.
+- Keep resonance bond-to-bond electron-flow arrows on the correct side of adjacent bonds after the first horizontal or vertical flip, including benzene-style contributors.
 - Use reaction-style autozoom for force-mode resonance and reaction previews, including toolbar Auto Zoom, rotate/flip actions, preview entry, and preview exit.
 - Keep line- and force-mode Clean, line-to-force mode switches, force flips, and force reaction-preview exits wired to the active Global Bond Length without restarting compact layouts, so rings do not restore to the default bond length, spread after flips/previews, or land off screen.
 - Preserve stereochemical hydrogen wedges and hidden-H display geometry when cloning resonance-pair structures or switching complex chiral ring systems from force mode back to line mode.

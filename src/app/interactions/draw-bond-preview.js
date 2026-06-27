@@ -4,6 +4,19 @@ import { angularDifference, chooseAutoPlacedBondAngle, TAU } from './draw-bond-p
 
 const BLANK_SPACE_DRAW_DISTANCE_THRESHOLD = 30;
 const DRAW_BOND_ROTATION_SNAP = Math.PI / 6;
+const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
+
+function currentLayoutBondLength(context) {
+  const parsed = Number(context.options?.getRenderOptions?.().layoutBondLength);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LAYOUT_BOND_LENGTH;
+}
+
+function currentForcePreviewBondLength(context, layoutBondLength = currentLayoutBondLength(context)) {
+  const baseForceBondLength = Number(context.constants.forceBondLength);
+  const fallbackForceBondLength = layoutBondLength * (context.constants.scale ?? 1);
+  const forceBondLength = Number.isFinite(baseForceBondLength) && baseForceBondLength > 0 ? baseForceBondLength : fallbackForceBondLength;
+  return forceBondLength * (layoutBondLength / DEFAULT_LAYOUT_BOND_LENGTH);
+}
 
 /**
  * Creates draw-bond preview action handlers that manage the transient preview geometry shown while the user drags to place a new bond.
@@ -194,10 +207,53 @@ export function createDrawBondPreviewActions(context) {
     return Boolean(atom && atom.name !== context.getDrawBondElement());
   }
 
+  function getRenderableAtomHighlightIds() {
+    const hoveredAtomIds = context.state.getHoveredAtomIds?.() ?? new Set();
+    const selectedAtomIds = context.state.getSelectedAtomIds?.() ?? new Set();
+    const selectedBondIds = context.state.getSelectedBondIds?.() ?? new Set();
+    if (selectedAtomIds.size === 0 && selectedBondIds.size === 0) {
+      return hoveredAtomIds;
+    }
+    if (!context.state.getSelectionModifierActive?.()) {
+      return selectedAtomIds;
+    }
+    return new Set([...selectedAtomIds, ...hoveredAtomIds]);
+  }
+
+  function atomScreenPoint2d(atom, width, height) {
+    const projectedPoint = context.helpers.toSelectionSVGPt2d?.(atom) ?? null;
+    if (projectedPoint && Number.isFinite(projectedPoint.x) && Number.isFinite(projectedPoint.y)) {
+      return projectedPoint;
+    }
+    if (atom?.x == null || atom.visible === false) {
+      return null;
+    }
+    return {
+      x: width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale,
+      y: height / 2 - (atom.y - context.view2D.getCenterY()) * context.constants.scale
+    };
+  }
+
+  function chooseSnapCandidate(candidates, mx, my, snapRadius, preferredAtomIds = null) {
+    let best = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      if (preferredAtomIds && !preferredAtomIds.has(candidate.id)) {
+        continue;
+      }
+      const distance = Math.hypot(mx - candidate.x, my - candidate.y);
+      if (distance <= snapRadius && distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
   function getAutoPlacedPreviewEndpoint(atomId, ox, oy) {
     const mode = context.getMode();
-    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? 1.5;
-    const bondLength = mode === 'force' ? context.constants.forceBondLength : layoutBondLength * context.constants.scale;
+    const layoutBondLength = currentLayoutBondLength(context);
+    const bondLength = mode === 'force' ? currentForcePreviewBondLength(context, layoutBondLength) : layoutBondLength * context.constants.scale;
     const fallbackAngle = chooseAutoPlacedBondAngle([]);
     const fallbackEndpoint = mode === 'force'
       ? { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy + Math.sin(fallbackAngle) * bondLength }
@@ -497,39 +553,51 @@ export function createDrawBondPreviewActions(context) {
       return;
     }
 
-    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? 1.5;
-    const bondLength = context.getMode() === 'force' ? context.constants.forceBondLength : layoutBondLength * context.constants.scale;
+    const layoutBondLength = currentLayoutBondLength(context);
+    const bondLength = context.getMode() === 'force' ? currentForcePreviewBondLength(context, layoutBondLength) : layoutBondLength * context.constants.scale;
     const { width, height } = context.plot.getSize();
     const snapRadius = 30;
     let ex;
     let ey;
     let snapAtomId = null;
+    const highlightedAtomIds = getRenderableAtomHighlightIds();
 
     if (context.getMode() === 'force') {
+      const candidates = [];
       for (const node of context.force.getNodes()) {
         if (node.id === drawBondState.atomId) {
           continue;
         }
-        if (Math.hypot(mx - node.x, my - node.y) <= snapRadius) {
-          ex = node.x;
-          ey = node.y;
-          snapAtomId = node.id;
-          break;
+        if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+          candidates.push({ id: node.id, x: node.x, y: node.y });
         }
       }
+      const snapCandidate =
+        chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ??
+        chooseSnapCandidate(candidates, mx, my, snapRadius);
+      if (snapCandidate) {
+        ex = snapCandidate.x;
+        ey = snapCandidate.y;
+        snapAtomId = snapCandidate.id;
+      }
     } else {
+      const candidates = [];
       for (const atom of context.view2D.getAtoms()) {
         if (atom.id === drawBondState.atomId || atom.x == null || atom.visible === false) {
           continue;
         }
-        const ax = width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale;
-        const ay = height / 2 - (atom.y - context.view2D.getCenterY()) * context.constants.scale;
-        if (Math.hypot(mx - ax, my - ay) <= snapRadius) {
-          ex = ax;
-          ey = ay;
-          snapAtomId = atom.id;
-          break;
+        const point = atomScreenPoint2d(atom, width, height);
+        if (point) {
+          candidates.push({ id: atom.id, x: point.x, y: point.y });
         }
+      }
+      const snapCandidate =
+        chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ??
+        chooseSnapCandidate(candidates, mx, my, snapRadius);
+      if (snapCandidate) {
+        ex = snapCandidate.x;
+        ey = snapCandidate.y;
+        snapAtomId = snapCandidate.id;
       }
     }
 

@@ -231,6 +231,46 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(applySMIRKS(parseSMILES('CC(C)(O)C'), reactionTemplates.alcoholDehydration.smirks)), 'C=C(C)C.O');
   });
 
+  it('alcoholDehydration clears stale wedge/dash display from the alkene bond', () => {
+    const reactant = parseSMILES('CCO');
+    const alcoholCarbon = [...reactant.atoms.values()].find(atom => atom.name === 'C' && atom.getNeighbors(reactant).some(neighbor => neighbor.name === 'O'));
+    const betaCarbon = alcoholCarbon?.getNeighbors(reactant).find(neighbor => neighbor.name === 'C');
+    assert.ok(alcoholCarbon && betaCarbon, 'expected alcohol carbon and beta carbon');
+    const dehydratingBond = reactant.getBond(alcoholCarbon.id, betaCarbon.id);
+    assert.ok(dehydratingBond, 'expected C-C dehydration bond');
+    dehydratingBond.properties.display = { as: 'wedge', centerId: alcoholCarbon.id, manual: true };
+
+    const product = applySMIRKS(reactant, reactionTemplates.alcoholDehydration.smirks);
+    assert.ok(product);
+    const productBond = product.getBond(alcoholCarbon.id, betaCarbon.id);
+    assert.ok(productBond, 'expected retained product alkene bond');
+    assert.equal(productBond.properties.order, 2);
+    assert.equal(productBond.properties.display?.as, undefined);
+  });
+
+  it('alcoholDehydration clears stereo display when the alcohol center is no longer chiral', () => {
+    const reactant = parseSMILES('C[C@H](CC)O');
+    const alcoholCarbon = [...reactant.atoms.values()].find(atom => atom.getChirality());
+    assert.ok(alcoholCarbon, 'expected chiral alcohol center');
+    const displayedBonds = alcoholCarbon.getNeighbors(reactant)
+      .filter(neighbor => neighbor.name === 'C')
+      .map(neighbor => reactant.getBond(alcoholCarbon.id, neighbor.id))
+      .filter(Boolean);
+    assert.ok(displayedBonds.length >= 2, 'expected carbon substituent bonds on the alcohol center');
+    for (const bond of displayedBonds) {
+      bond.properties.display = { as: 'wedge', centerId: alcoholCarbon.id, manual: true };
+    }
+
+    const product = applySMIRKS(reactant, reactionTemplates.alcoholDehydration.smirks);
+    assert.ok(product);
+    const productCenter = product.atoms.get(alcoholCarbon.id);
+    assert.ok(productCenter, 'expected retained alcohol carbon in product');
+    assert.equal(productCenter.getChirality(), null);
+    for (const bondId of productCenter.bonds) {
+      assert.equal(product.bonds.get(bondId)?.properties.display?.as, undefined);
+    }
+  });
+
   it('alcoholDehydration does not match alcohols without a beta hydrogen', () => {
     const product = applySMIRKS(parseSMILES('CC(C)(C)CO'), reactionTemplates.alcoholDehydration.smirks);
     assert.equal(product, null);

@@ -608,6 +608,40 @@ describe('resonance undo snapshots', () => {
     }
   });
 
+  it('keeps benzene bond-to-bond arrows facing adjacent bonds after a first flip', () => {
+    const mol = parseSMILES('C1=CC=CC=C1');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+    generateResonanceStructures(mol);
+    mol.setResonanceState(2);
+    const flow = setMoleculeResonanceElectronFlow(mol, 2);
+    const bondToBondArrows = flow.arrows.filter(arrow => arrow.from.kind === 'bond' && arrow.to.kind === 'bond');
+    const atoms = [...mol.atoms.values()].filter(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y));
+    const mx = atoms.reduce((sum, atom) => sum + atom.x, 0) / atoms.length;
+
+    for (const atom of atoms) {
+      atom.x = 2 * mx - atom.x;
+    }
+
+    assert.ok(bondToBondArrows.length > 0, 'expected benzene bond-to-bond resonance arrows');
+    for (let index = 0; index < bondToBondArrows.length; index++) {
+      const arrow = bondToBondArrows[index];
+      const sourceBond = mol.bonds.get(arrow.from.bondId);
+      const targetBond = mol.bonds.get(arrow.to.bondId);
+      const path = computeResonanceArrowPath(arrow, index, mol, toRenderPoint, lineModeArrowOptions(mol));
+      assert.ok(path);
+
+      const targetMid = bondMidpoint(targetBond, mol);
+      const sourceMid = bondMidpoint(sourceBond, mol);
+      const sourceStartSide = Math.sign(signedBondDistance(path.start, sourceBond, mol));
+      const targetFacingSide = Math.sign(signedBondDistance(targetMid, sourceBond, mol));
+      const targetEndSide = Math.sign(signedBondDistance(path.end, targetBond, mol));
+      const sourceFacingSide = Math.sign(signedBondDistance(sourceMid, targetBond, mol));
+
+      assert.equal(sourceStartSide, targetFacingSide, `expected source arrow ${arrow.from.bondId}->${arrow.to.bondId} to face target bond after flip`);
+      assert.equal(targetEndSide, sourceFacingSide, `expected target arrow ${arrow.from.bondId}->${arrow.to.bondId} to face source bond after flip`);
+    }
+  });
+
   it('keeps coronene resonance bond arrows on adjacent bonds', () => {
     const mol = parseSMILES('C1=CC2=C3C4=C1C=CC5=C4C6=C(C=C5)C=CC7=C6C3=C(C=C2)C=C7');
     generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });

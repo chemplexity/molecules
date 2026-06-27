@@ -9,6 +9,13 @@ import {
   normalizeAngle as _normalizeAngle
 } from './draw-bond-placement.js';
 
+const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
+
+function _currentLayoutBondLength(context) {
+  const parsed = Number(context.options?.getRenderOptions?.().layoutBondLength);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LAYOUT_BOND_LENGTH;
+}
+
 /**
  * Removes all display-stereo properties (as, centerId, manual) from a bond,
  * deleting the `display` object entirely if it becomes empty.
@@ -285,6 +292,7 @@ export function createDrawBondCommitActions(context) {
     const mol = structuralEdit.mol ?? context.molecule.ensureActive();
 
     const forceScale = context.constants.forceScale;
+    const layoutBondLength = _currentLayoutBondLength(context);
     const steps = 12;
     const { width: plotWidth, height: plotHeight } = context.plot.getSize();
 
@@ -373,7 +381,7 @@ export function createDrawBondCommitActions(context) {
     let bestAngle = _chooseAutoPlacedBondAngle(existingAngles, steps);
 
     {
-      const bondLength = mode === 'force' ? 1.5 * forceScale : 1.5;
+      const bondLength = mode === 'force' ? layoutBondLength * forceScale : layoutBondLength;
       const thresholdSq = (bondLength * 0.7) ** 2;
       const sourceHydrogenIds = new Set(srcAtom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').map(neighbor => neighbor.id));
       const overlaps = angle => {
@@ -431,7 +439,7 @@ export function createDrawBondCommitActions(context) {
     const affected = new Set([resolvedId, newAtom.id]);
 
     if (mode === 'force') {
-      const bondLengthPx = 1.5 * forceScale;
+      const bondLengthPx = layoutBondLength * forceScale;
       const angle = forcedAngle !== null ? forcedAngle : bestAngle;
       _removeSourceHydrogenNearestAngle(
         mol,
@@ -483,7 +491,6 @@ export function createDrawBondCommitActions(context) {
     _removeSourceHydrogenNearestAngle(mol, srcAtom, { x: srcRX, y: srcRY }, bestAngle, atom =>
       Number.isFinite(atom.x) && Number.isFinite(atom.y) ? { x: atom.x, y: atom.y } : null
     );
-    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? 1.5;
     newAtom.x = srcRX + Math.cos(bestAngle) * layoutBondLength;
     newAtom.y = srcRY + Math.sin(bestAngle) * layoutBondLength;
 

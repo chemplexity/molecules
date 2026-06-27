@@ -93,6 +93,9 @@ function makeContext(overrides = {}) {
   let primitiveHoverSuppressed = false;
   const hoveredAtomIds = new Set();
   const hoveredBondIds = new Set();
+  const selectedAtomIds = new Set();
+  const selectedBondIds = new Set();
+  let selectionModifierActive = false;
   const calls = [];
 
   const context = {
@@ -117,7 +120,10 @@ function makeContext(overrides = {}) {
         getRingTemplateSize: () => ringTemplateSize,
         getChargeTool: () => chargeTool,
         getHoveredAtomIds: () => hoveredAtomIds,
-        getHoveredBondIds: () => hoveredBondIds
+        getHoveredBondIds: () => hoveredBondIds,
+        getSelectedAtomIds: () => selectedAtomIds,
+        getSelectedBondIds: () => selectedBondIds,
+        getSelectionModifierActive: () => selectionModifierActive
       }
     },
     selection: {
@@ -219,7 +225,13 @@ function makeContext(overrides = {}) {
       atomTooltipHtml: () => 'atom-tooltip',
       bondTooltipHtml: () => 'bond-tooltip'
     },
-    pointer: () => [10, 20],
+    pointer: () => overrides.pointer?.() ?? [10, 20],
+    helpers: {
+      getForceNodeById: atomId => overrides.forceNodes?.find(node => node.id === atomId) ?? null,
+      getForceNodes: () => overrides.forceNodes ?? [],
+      get2DAtomById: atomId => overrides.atoms2d?.find(atom => atom.id === atomId) ?? null,
+      toSelectionSVGPt2d: atom => atom
+    },
     dom: {
       gNode: () => ({})
     }
@@ -273,6 +285,13 @@ function makeContext(overrides = {}) {
     },
     setMode: value => {
       mode = value;
+    },
+    hoveredAtomIds,
+    hoveredBondIds,
+    selectedAtomIds,
+    selectedBondIds,
+    setSelectionModifierActive: value => {
+      selectionModifierActive = value;
     },
     setPrimitiveHoverSuppressed: value => {
       primitiveHoverSuppressed = value;
@@ -1916,6 +1935,61 @@ describe('createPrimitiveEventHandlers', () => {
     });
 
     assert.deepEqual(calls, [['promoteBondOrder', 'b1', { drawBondType: 'triple' }]]);
+  });
+
+  it('starts force draw-bond drags from the selected blue-highlight atom when compact hit targets overlap', () => {
+    const { context, calls, setDrawBondMode, selectedAtomIds } = makeContext({
+      currentMol: { atoms: new Map(), bonds: new Map() },
+      pointer: () => [121, 100],
+      forceNodes: [
+        { id: 'target', name: 'C', protons: 6, x: 100, y: 100 },
+        { id: 'nearby', name: 'C', protons: 6, x: 124, y: 100 }
+      ]
+    });
+    setDrawBondMode(true);
+    selectedAtomIds.add('target');
+    const handlers = createPrimitiveEventHandlers(context);
+    let stopped = false;
+
+    handlers.handleForceAtomMouseDownDrawBond(
+      {
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      { id: 'nearby', name: 'C', protons: 6, x: 124, y: 100 }
+    );
+
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, [['start', 'target', 121, 100]]);
+  });
+
+  it('starts 2D line draw-bond drags from the selected blue-highlight atom when compact hit targets overlap', () => {
+    const { context, calls, setMode, setDrawBondMode, selectedAtomIds } = makeContext({
+      mol2d: { atoms: new Map(), bonds: new Map() },
+      pointer: () => [121, 100],
+      atoms2d: [
+        { id: 'target', name: 'C', x: 100, y: 100 },
+        { id: 'nearby', name: 'C', x: 124, y: 100 }
+      ]
+    });
+    setMode('2d');
+    setDrawBondMode(true);
+    selectedAtomIds.add('target');
+    const handlers = createPrimitiveEventHandlers(context);
+    let stopped = false;
+
+    handlers.handle2dAtomMouseDownDrawBond(
+      {
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      'nearby'
+    );
+
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, [['start', 'target', 121, 100]]);
   });
 
   it('previews and commits the draw-bond mouseup state when holding a 2D bond', () => {

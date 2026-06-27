@@ -687,6 +687,91 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(calls, [['paintStyleTargets', ['a1'], [], null, { skipSnapshot: false }]]);
   });
 
+  it('does not paint adjacent 2D bonds when the brush center is on an atom hit', () => {
+    const atomHit = makeHitElement('atom', 'cl1');
+    const bondHit = makeHitElement('bond', 'b1', { x1: 10, y1: 10, x2: 30, y2: 10 });
+    const mol = {
+      atoms: new Map([['cl1', { id: 'cl1', name: 'Cl', visible: true }]]),
+      bonds: new Map()
+    };
+    const { context, svg, calls, state } = makeBaseContext();
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    state.setPaintBrushSize(20);
+    context.doc.elementsFromPoint = (x, y) => {
+      if (x === 10 && y === 10) {
+        return [bondHit, atomHit];
+      }
+      if (x === 30 && y === 10) {
+        return [bondHit];
+      }
+      return [];
+    };
+    context.dom.plotEl.querySelectorAll = selector => (selector === '.bond-hit, .bond-hover-target' ? [bondHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['cl1'], [], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
+  it('does not protect carbon atom hit circles from direct 2D bond painting', () => {
+    const atomHit = makeHitElement('atom', 'c1');
+    const bondHit = makeHitElement('bond', 'b1', { x1: 10, y1: 10, x2: 30, y2: 10 });
+    const mol = {
+      atoms: new Map([['c1', { id: 'c1', name: 'C', visible: true }]]),
+      bonds: new Map()
+    };
+    const { context, svg, calls, state } = makeBaseContext();
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    context.doc.elementsFromPoint = (x, y) => (x === 10 && y === 10 ? [bondHit, atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['c1'], ['b1'], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
+  it('still paints a 2D bond body when an overlapping atom hit is also under the brush center', () => {
+    const atomHit = makeHitElement('atom', 'cl1');
+    const bondHit = makeHitElement('bond', 'b1', { x1: 0, y1: 10, x2: 40, y2: 10 });
+    const mol = {
+      atoms: new Map([['cl1', { id: 'cl1', name: 'Cl', visible: true }]]),
+      bonds: new Map()
+    };
+    const { context, svg, calls, state } = makeBaseContext();
+    context.state.documentState.getMol2d = () => mol;
+    state.setPaintMode(true);
+    context.doc.elementsFromPoint = (x, y) => (x === 20 && y === 10 ? [bondHit, atomHit] : []);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.paint')({
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [['paintStyleTargets', ['cl1'], ['b1'], { color: '#3366ff', opacity: 1 }, { skipSnapshot: false }]]);
+  });
+
   it('does not paint force bonds underneath the force atom being painted', () => {
     const atomHit = makeHitElement('force-atom', 'a1');
     const bondHit = makeHitElement('force-bond', 'b1', { x1: 2, y1: 5, x2: 8, y2: 5 });

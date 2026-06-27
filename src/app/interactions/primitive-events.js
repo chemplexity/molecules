@@ -114,6 +114,98 @@ export function createPrimitiveEventHandlers(context) {
     return { x: gX, y: gY };
   }
 
+  function forceAtomHitRadius(node) {
+    const radius = atomRadius(node?.protons ?? 6, 'force');
+    return Number.isFinite(radius) && radius > 0 ? radius : 6;
+  }
+
+  function forceSelectionHitRadius(node) {
+    return forceAtomHitRadius(node) + 15;
+  }
+
+  function getRenderableAtomHighlightIds() {
+    const overlayState = context.state.overlayState;
+    const hoveredAtomIds = overlayState.getHoveredAtomIds?.() ?? new Set();
+    const selectedAtomIds = overlayState.getSelectedAtomIds?.() ?? new Set();
+    const selectedBondIds = overlayState.getSelectedBondIds?.() ?? new Set();
+
+    if (getChargeTool()) {
+      return hoveredAtomIds;
+    }
+    if (selectedAtomIds.size === 0 && selectedBondIds.size === 0) {
+      return overlayState.getSelectMode?.() || overlayState.getDrawBondMode?.() || overlayState.getRingTemplateMode?.() || overlayState.getEraseMode?.() ? hoveredAtomIds : new Set();
+    }
+    if (!overlayState.getSelectionModifierActive?.()) {
+      return selectedAtomIds;
+    }
+    return new Set([...selectedAtomIds, ...hoveredAtomIds]);
+  }
+
+  function getRenderableForceAtomHighlightIds() {
+    return getRenderableAtomHighlightIds();
+  }
+
+  function lineModeSelectionHitRadius() {
+    return 30;
+  }
+
+  function resolve2dDrawBondSourceAtomId(event, atomId) {
+    const highlightedAtomIds = getRenderableAtomHighlightIds();
+    if (!highlightedAtomIds || highlightedAtomIds.size === 0) {
+      return atomId;
+    }
+    const point = pointerPoint(event);
+    if (!isFinitePoint(point)) {
+      return atomId;
+    }
+    let bestAtomId = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const highlightedAtomId of highlightedAtomIds) {
+      if (highlightedAtomId === atomId) {
+        return atomId;
+      }
+      const atom = context.helpers?.get2DAtomById?.(highlightedAtomId);
+      const atomPoint = atom ? context.helpers?.toSelectionSVGPt2d?.(atom) : null;
+      if (!atom || atom.name === 'H' || !isFinitePoint(atomPoint)) {
+        continue;
+      }
+      const distance = pointDistance(point, atomPoint);
+      if (distance <= lineModeSelectionHitRadius() && distance < bestDistance) {
+        bestAtomId = highlightedAtomId;
+        bestDistance = distance;
+      }
+    }
+    return bestAtomId ?? atomId;
+  }
+
+  function resolveForceDrawBondSourceAtom(event, atom) {
+    const highlightedAtomIds = getRenderableForceAtomHighlightIds();
+    if (!highlightedAtomIds || highlightedAtomIds.size === 0) {
+      return atom;
+    }
+    const point = pointerPoint(event);
+    if (!isFinitePoint(point)) {
+      return atom;
+    }
+    let bestHoveredNode = null;
+    let bestHoveredDistance = Number.POSITIVE_INFINITY;
+    for (const atomId of highlightedAtomIds) {
+      if (atomId === atom?.id) {
+        return atom;
+      }
+      const node = context.helpers?.getForceNodeById?.(atomId);
+      if (!node || node.name === 'H' || !isFinitePoint(node)) {
+        continue;
+      }
+      const distance = pointDistance(point, node);
+      if (distance <= forceSelectionHitRadius(node) && distance < bestHoveredDistance) {
+        bestHoveredNode = node;
+        bestHoveredDistance = distance;
+      }
+    }
+    return bestHoveredNode ?? atom;
+  }
+
   function getRingTemplateAnchorPoint(event, atomId, atomDatum = null) {
     if (context.state.viewState.getMode() === 'force') {
       const node = isFinitePoint(atomDatum) ? atomDatum : context.helpers?.getForceNodeById?.(atomId);
@@ -1378,18 +1470,19 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handle2dAtomMouseDownDrawBond(event, atomId) {
-    if (startRingTemplateOnAtom(event, atomId)) {
+    const sourceAtomId = resolve2dDrawBondSourceAtomId(event, atomId);
+    if (startRingTemplateOnAtom(event, sourceAtomId)) {
       return;
     }
     if (!context.state.overlayState.getDrawBondMode() || context.state.viewState.getMode() !== '2d' || !context.state.documentState.getMol2d()) {
       return;
     }
-    if (!context.overlays.isReactionPreviewEditableAtomId(atomId)) {
+    if (!context.overlays.isReactionPreviewEditableAtomId(sourceAtomId)) {
       return;
     }
     event.stopPropagation();
     const [gX, gY] = context.pointer(event, context.dom.gNode());
-    context.drawBond.start(atomId, gX, gY);
+    context.drawBond.start(sourceAtomId, gX, gY);
   }
 
   function handle2dAtomClick(event, atomId) {
@@ -1581,15 +1674,16 @@ export function createPrimitiveEventHandlers(context) {
     if (!context.state.overlayState.getDrawBondMode() || context.state.viewState.getMode() !== 'force' || !context.state.documentState.getCurrentMol()) {
       return;
     }
-    if (atom.name === 'H') {
+    const sourceAtom = resolveForceDrawBondSourceAtom(event, atom);
+    if (sourceAtom.name === 'H') {
       return;
     }
-    if (!context.overlays.isReactionPreviewEditableAtomId(atom.id)) {
+    if (!context.overlays.isReactionPreviewEditableAtomId(sourceAtom.id)) {
       return;
     }
     event.stopPropagation();
     const [gX, gY] = context.pointer(event, context.dom.gNode());
-    context.drawBond.start(atom.id, gX, gY);
+    context.drawBond.start(sourceAtom.id, gX, gY);
   }
 
   function handleForceAtomClick(event, atom, molecule) {
