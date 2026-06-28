@@ -79,6 +79,9 @@ describe('dom-elements bootstrap helpers', () => {
       'options-2d-bond-thickness': createElement(),
       'options-force-atom-size': createElement(),
       'options-force-bond-thickness': createElement(),
+      'options-show-reaction-reagents': createElement(),
+      'options-show-reaction-conditions': createElement(),
+      'options-reaction-font-size': createElement(),
       'options-reset-btn': createElement(),
       'options-cancel-btn': createElement(),
       'options-apply-btn': createElement(),
@@ -128,6 +131,9 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(dom.getContentMainElement(), elements['content-main']);
     assert.equal(dom.getSidebarElement(), elements.sidebar);
     assert.equal(dom.getMainSidebarSplitterElement(), elements['main-sidebar-splitter']);
+    assert.equal(dom.getShowReactionReagentsElement(), elements['options-show-reaction-reagents']);
+    assert.equal(dom.getShowReactionConditionsElement(), elements['options-show-reaction-conditions']);
+    assert.equal(dom.getReactionFontSizeElement(), elements['options-reaction-font-size']);
     assert.equal(dom.getElementButtonElement('C'), elements['elem-btn-C']);
     assert.deepEqual(dom.getElementButtonElements('C'), [elements['elem-btn-C']]);
     assert.deepEqual(dom.getElementButtonElements('Fe'), [periodicFeButton]);

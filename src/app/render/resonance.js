@@ -38,7 +38,7 @@ const RESONANCE_PAIR_FORCE_FIT_PAD = FORCE_LAYOUT_INITIAL_FIT_PAD;
 const RESONANCE_PAIR_FORCE_FIT_SCALE_MULTIPLIER = FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER;
 const RESONANCE_NAV_CLICK_SUPPRESS_MS = 1500;
 
-const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#force-controls', '#clean-controls', '#draw-tools', '#atom-selector', '#toggle-controls'].join(', ');
+const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#force-controls', '#clean-controls', '#draw-tools', '#atom-selector', '#toggle-controls', '#smarts-panel'].join(', ');
 
 function forcePixelsPerMoleculeUnit(layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5) {
   const parsedBondLength = Number(layoutBondLength);
@@ -388,6 +388,10 @@ function _forceInitialPatchFromCurrentSourceNodes(mol) {
   return patch.size > 0 ? patch : null;
 }
 
+function _takeResonanceViewSnapshot() {
+  ctx.takeSnapshot?.({ clearReactionPreview: false });
+}
+
 function _redrawResonanceMolecule(mol, options = {}) {
   const { forceAutoFit = false, preserveForcePairLayout = false, forceInitialPatchPos = null } = options;
   if (ctx.mode !== 'force' && typeof ctx.render2d === 'function') {
@@ -622,9 +626,6 @@ function buildResonancePairDisplayMolecule(sourceMol, pair) {
  * @param {'forward'|'reverse'} [direction] - Direction to display between adjacent structures.
  */
 function _activateResonancePair(mol, pairIndex, direction = 'forward') {
-  if (ctx.hasReactionPreview?.()) {
-    ctx.takeSnapshot?.({ clearReactionPreview: false });
-  }
   mol = _resonanceSourceMol ?? _resolveResonanceTargetMolecule(mol);
   if (!mol?.properties?.resonance) {
     return;
@@ -735,6 +736,7 @@ function _renderResonancePanel(mol) {
       _resonanceNavButton('‹', 'Previous resonance pair', () => {
         suppressResonanceResetClick();
         const previousIndex = activePair?.direction === 'reverse' ? activePairIndex - 1 : activePairIndex;
+        _takeResonanceViewSnapshot();
         _activateResonancePair(mol, previousIndex, 'reverse');
       })
     );
@@ -743,6 +745,7 @@ function _renderResonancePanel(mol) {
       _resonanceNavButton('›', 'Next resonance pair', () => {
         suppressResonanceResetClick();
         const nextIndex = activePair?.direction === 'reverse' ? activePairIndex : activePairIndex + 1;
+        _takeResonanceViewSnapshot();
         _activateResonancePair(mol, nextIndex, 'forward');
       })
     );
@@ -762,9 +765,11 @@ function _renderResonancePanel(mol) {
       return;
     }
     if (_resonanceLocked) {
+      _takeResonanceViewSnapshot();
       resetActiveResonanceView(mol);
       return;
     }
+    _takeResonanceViewSnapshot();
     _activateResonancePair(mol, 0, 'forward');
   });
 
@@ -787,6 +792,7 @@ if (typeof document !== 'undefined') {
       if (!_resonanceLocked) {
         return;
       }
+      _takeResonanceViewSnapshot();
       resetActiveResonanceView();
     },
     true

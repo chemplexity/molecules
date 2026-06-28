@@ -2072,7 +2072,7 @@ test('force flip refits the viewport when a reaction preview is active', () => {
         ['a1', { x: 40, y: 20 }],
         ['a2', { x: 10, y: 20 }]
       ],
-      { setAnchors: true, alpha: 0 }
+      { setAnchors: true, alpha: 0, restart: false }
     ],
     ['updateForce', {}, { preservePositions: true, preserveView: true, restartSimulation: false }],
     ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
@@ -2321,6 +2321,9 @@ test('force rotate transforms hydrogen slots and fits the viewport outside react
     dom: {
       plotEl: { clientWidth: 600, clientHeight: 400 }
     },
+    renderers: {
+      updateForce: (nextMol, options) => calls.push(['updateForce', nextMol, options])
+    },
     view: {
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform: transform => calls.push(['setZoomTransform', transform])
@@ -2331,13 +2334,14 @@ test('force rotate transforms hydrogen slots and fits the viewport outside react
   actions.stopRotate();
 
   const patchCall = calls.find(([name]) => name === 'patchForceNodePositions');
-  assert.deepEqual(patchCall[2], { setAnchors: true, alpha: 0 });
+  assert.deepEqual(patchCall[2], { setAnchors: true, alpha: 0, restart: false });
   approxEqual(patchCall[1][0][1].x, 290);
   approxEqual(patchCall[1][0][1].y, 210);
   approxEqual(patchCall[1][1][1].x, 310);
   approxEqual(patchCall[1][1][1].y, 210);
   assert.equal(patchCall[1][1][1].forcePlacementParentId, 'c1');
   approxEqual(patchCall[1][1][1].forcePlacementAngle, 0);
+  assert.deepEqual(calls.find(([name]) => name === 'updateForce'), ['updateForce', {}, { preservePositions: true, preserveView: true, restartSimulation: false }]);
   assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [['forceFitTransform', ['c1', 'h1'], 40, { scaleMultiplier: 1.3 }]]);
   assert.deepEqual(calls.find(([name]) => name === 'zoomTransformsDiffer'), ['zoomTransformsDiffer', fitTransform, { x: 0, y: 0, k: 1 }]);
   assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
@@ -2389,6 +2393,9 @@ test('force rotate fits active resonance pairs with the same reaction-like zoom 
     dom: {
       plotEl: { clientWidth: 600, clientHeight: 400 }
     },
+    renderers: {
+      updateForce: (nextMol, options) => calls.push(['updateForce', nextMol, options])
+    },
     view: {
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform: transform => calls.push(['setZoomTransform', transform])
@@ -2401,6 +2408,7 @@ test('force rotate fits active resonance pairs with the same reaction-like zoom 
   assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [
     ['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]
   ]);
+  assert.deepEqual(calls.find(([name]) => name === 'updateForce'), ['updateForce', { __reactionPreview: { resonancePair: true } }, { preservePositions: true, preserveView: true, restartSimulation: false }]);
   assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
 });
 
@@ -2450,6 +2458,9 @@ test('force rotate fits active reaction previews with the same reaction-like zoo
     dom: {
       plotEl: { clientWidth: 600, clientHeight: 400 }
     },
+    renderers: {
+      updateForce: (nextMol, options) => calls.push(['updateForce', nextMol, options])
+    },
     view: {
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform: transform => calls.push(['setZoomTransform', transform])
@@ -2462,6 +2473,7 @@ test('force rotate fits active reaction previews with the same reaction-like zoo
   assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [
     ['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]
   ]);
+  assert.deepEqual(calls.find(([name]) => name === 'updateForce'), ['updateForce', { __reactionPreview: { mappedAtomPairs: [['c1', 'h1']] } }, { preservePositions: true, preserveView: true, restartSimulation: false }]);
   assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
 });
 
@@ -2560,7 +2572,7 @@ test('force flip mirrors hydrogen slot angles with the hydrogen nodes', () => {
   actions.flip('h');
 
   const patchCall = calls.find(([name]) => name === 'patchForceNodePositions');
-  assert.deepEqual(patchCall[2], { setAnchors: true, alpha: 0 });
+  assert.deepEqual(patchCall[2], { setAnchors: true, alpha: 0, restart: false });
   assert.deepEqual(patchCall[1][0], ['c1', { x: 30, y: 20 }]);
   assert.equal(patchCall[1][1][0], 'h1');
   approxEqual(patchCall[1][1][1].x, 10);

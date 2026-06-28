@@ -116,6 +116,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       getReactionPreviewSourceMol: ctx.getReactionPreviewSourceMol,
       getReactionPreviewMappedAtomPairs: ctx.getReactionPreviewMappedAtomPairs,
       getReactionPreviewReactantAtomIds: ctx.getReactionPreviewReactantAtomIds,
+      resetActiveResonanceView: ctx.resetActiveResonanceView,
       hasActiveResonanceView: ctx.hasActiveResonanceView,
       getActiveResonanceSourceMolecule: ctx.getActiveResonanceSourceMolecule
     },

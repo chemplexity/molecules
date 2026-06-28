@@ -139,7 +139,7 @@ export function initializeRuntimeBridges(deps) {
     serializeSnapshotMol: mol => runtimeUi.serializeSnapshotMol(mol),
     captureAppSnapshot: options => runtimeUi.captureAppSnapshot(options),
     updateAnalysisPanels: (mol, options = {}) => runtimeUi.updateAnalysisPanels(mol, options),
-    restorePanelState: panelState => runtimeUi.restorePanelState(panelState),
+    restorePanelState: (panelState, options) => runtimeUi.restorePanelState(panelState, options),
     restoreInteractionState: snap => runtimeUi.restoreInteractionState(snap),
     restoreSnapshot: snap => runtimeUi.restoreSnapshot(snap),
     updateModeChrome: nextMode => runtimeUi.updateModeChrome(nextMode)

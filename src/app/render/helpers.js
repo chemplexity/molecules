@@ -15,6 +15,7 @@ export const RENDER_OPTION_LIMITS = Object.freeze({
   atomNumberingFontSize: { min: 8, max: 24, step: 1 },
   bondEnFontSize: { min: 8, max: 24, step: 1 },
   bondLengthFontSize: { min: 8, max: 24, step: 1 },
+  reactionFontSize: { min: 8, max: 24, step: 1 },
   twoDBondThickness: { min: 0.8, max: 4, step: 0.1 },
   forceAtomSizeMultiplier: { min: 0.5, max: 2.5, step: 0.1 },
   forceBondThicknessMultiplier: { min: 0.5, max: 2.5, step: 0.1 }
@@ -23,12 +24,15 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showValenceWarnings: true,
   showAtomTooltips: true,
   showLonePairs: false,
+  showReactionReagents: true,
+  showReactionConditions: false,
   layoutBondLength: 1.5,
   twoDColorStyle: 'color-atoms',
   twoDAtomFontSize: 14,
   atomNumberingFontSize: 10,
   bondEnFontSize: 10,
   bondLengthFontSize: 10,
+  reactionFontSize: 14,
   twoDBondThickness: 1.8,
   forceAtomSizeMultiplier: 1,
   forceBondThicknessMultiplier: 1
@@ -85,6 +89,12 @@ export function updateRenderOptions(nextOptions = {}) {
   if (typeof nextOptions.showLonePairs === 'boolean') {
     merged.showLonePairs = nextOptions.showLonePairs;
   }
+  if (typeof nextOptions.showReactionReagents === 'boolean') {
+    merged.showReactionReagents = nextOptions.showReactionReagents;
+  }
+  if (typeof nextOptions.showReactionConditions === 'boolean') {
+    merged.showReactionConditions = nextOptions.showReactionConditions;
+  }
   if (typeof nextOptions.twoDColorStyle === 'string' && ['bw', 'color-atoms', 'color-atoms-bonds'].includes(nextOptions.twoDColorStyle)) {
     merged.twoDColorStyle = nextOptions.twoDColorStyle;
   }
@@ -116,6 +126,12 @@ export function updateRenderOptions(nextOptions = {}) {
     const clamped = _clampOptionValue(Number(nextOptions.bondLengthFontSize), RENDER_OPTION_LIMITS.bondLengthFontSize);
     if (clamped !== null) {
       merged.bondLengthFontSize = Math.round(clamped);
+    }
+  }
+  if (nextOptions.reactionFontSize !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.reactionFontSize), RENDER_OPTION_LIMITS.reactionFontSize);
+    if (clamped !== null) {
+      merged.reactionFontSize = Math.round(clamped);
     }
   }
   if (nextOptions.twoDBondThickness !== undefined) {

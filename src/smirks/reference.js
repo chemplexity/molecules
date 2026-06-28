@@ -227,9 +227,25 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Alcohol -> carbonyl',
     variants: [
-      variant({ id: 'pcc', label: 'PCC', reagents: ['PCC'], solvents: ['CH2Cl2'], conditions: { temperature: 'rt' }, byproducts: ['reduced chromium salts'], notes: ['Common mild oxidation for primary alcohols to aldehydes and secondary alcohols to ketones.'] }),
-      variant({ id: 'dess-martin', label: 'Dess-Martin periodinane', role: 'alternative', reagents: ['Dess-Martin periodinane'], solvents: ['CH2Cl2'], conditions: { temperature: 'rt' } }),
-      variant({ id: 'swern', label: 'Swern oxidation', role: 'alternative', reagents: ['DMSO', 'oxalyl chloride', 'Et3N'], solvents: ['CH2Cl2'], conditions: { temperature: '-78 C to rt', atmosphere: 'dry inert atmosphere' }, byproducts: ['Me2S', 'CO', 'CO2', 'Et3NHCl'] })
+      variant({
+        id: 'pcc',
+        label: 'PCC',
+        reagents: ['PCC'],
+        solvents: ['CH2Cl2'],
+        conditions: { temperature: '25 °C' },
+        byproducts: ['reduced chromium salts'],
+        notes: ['Common mild oxidation for primary alcohols to aldehydes and secondary alcohols to ketones.']
+      }),
+      variant({ id: 'dess-martin', label: 'Dess-Martin periodinane', role: 'alternative', reagents: ['Dess-Martin periodinane'], solvents: ['CH2Cl2'], conditions: { temperature: '25 °C' } }),
+      variant({
+        id: 'swern',
+        label: 'Swern oxidation',
+        role: 'alternative',
+        reagents: ['DMSO', 'oxalyl chloride', 'Et3N'],
+        solvents: ['CH2Cl2'],
+        conditions: { temperature: '-78 °C to 25 °C', atmosphere: 'dry inert atmosphere' },
+        byproducts: ['Me2S', 'CO', 'CO2', 'Et3NHCl']
+      })
     ],
     byproducts: ['oxidant-derived reduced species'],
     selectivity: selectivity({ chemoselectivity: 'primary and secondary alcohols; tertiary alcohols excluded' }),
@@ -240,9 +256,16 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Aldehyde -> carboxylic acid',
     variants: [
-      variant({ id: 'jones', label: 'Jones oxidation', reagents: ['CrO3', 'H2SO4'], solvents: ['acetone', 'water'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'pinnick', label: 'NaClO2 (Pinnick)', role: 'alternative', reagents: ['NaClO2', 'NaH2PO4', '2-methyl-2-butene'], solvents: ['t-BuOH', 'water'], conditions: { temperature: 'rt', pH: 'buffered acidic' } }),
-      variant({ id: 'kmno4', label: 'KMnO4', role: 'alternative', reagents: ['KMnO4'], solvents: ['water'], conditions: { temperature: 'rt to heat' } })
+      variant({ id: 'jones', label: 'Jones oxidation', reagents: ['CrO3', 'H2SO4'], solvents: ['acetone', 'water'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({
+        id: 'pinnick',
+        label: 'NaClO2 (Pinnick)',
+        role: 'alternative',
+        reagents: ['NaClO2', 'NaH2PO4', '2-methyl-2-butene'],
+        solvents: ['t-BuOH', 'water'],
+        conditions: { temperature: '25 °C', pH: 'buffered acidic' }
+      }),
+      variant({ id: 'kmno4', label: 'KMnO4', role: 'alternative', reagents: ['KMnO4'], solvents: ['water'], conditions: { temperature: '25 °C to heat' } })
     ],
     notes: ['The template represents formal oxidation of aldehydes to acids.'],
     limitations: ['Does not model hydrate formation or oxidant stoichiometry.']
@@ -251,9 +274,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Carbonyl -> alcohol',
     variants: [
-      variant({ id: 'nabh4', label: 'NaBH4', reagents: ['NaBH4'], solvents: ['MeOH', 'EtOH'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'lialh4', label: 'LiAlH4', role: 'alternative', reagents: ['LiAlH4'], solvents: ['Et2O', 'THF'], conditions: { temperature: '0 C to rt', workup: 'aqueous workup' } }),
-      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: '1 atm H2' } })
+      variant({ id: 'nabh4', label: 'NaBH4', reagents: ['NaBH4'], solvents: ['MeOH', 'EtOH'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({ id: 'lialh4', label: 'LiAlH4', role: 'alternative', reagents: ['LiAlH4'], solvents: ['Et2O', 'THF'], conditions: { temperature: '0 °C to 25 °C', workup: 'aqueous workup' } }),
+      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: '1 atm H2' } })
     ],
     notes: ['The template reduces aldehydes and ketones to alcohols.'],
     limitations: ['Acyl derivatives are excluded by the SMARTS guard.', 'Chemoselectivity depends on substrate and reagent.']
@@ -262,9 +285,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Imine -> amine',
     variants: [
-      variant({ id: 'nabh3cn', label: 'NaBH3CN', reagents: ['NaBH3CN'], solvents: ['MeOH'], conditions: { pH: 'mildly acidic', temperature: 'rt' } }),
-      variant({ id: 'nabh-oac3', label: 'NaBH(OAc)3', role: 'alternative', reagents: ['NaBH(OAc)3'], solvents: ['CH2Cl2', 'DCE'], conditions: { temperature: 'rt' } }),
-      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: '1 atm H2' } })
+      variant({ id: 'nabh3cn', label: 'NaBH3CN', reagents: ['NaBH3CN'], solvents: ['MeOH'], conditions: { pH: 'mildly acidic', temperature: '25 °C' } }),
+      variant({ id: 'nabh-oac3', label: 'NaBH(OAc)3', role: 'alternative', reagents: ['NaBH(OAc)3'], solvents: ['CH2Cl2', 'DCE'], conditions: { temperature: '25 °C' } }),
+      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: '1 atm H2' } })
     ],
     notes: ['Useful for reductive amination-style imine reduction.'],
     limitations: ['The template does not represent imine formation or equilibrium with carbonyl precursors.']
@@ -273,9 +296,17 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Alkene -> alkane',
     variants: [
-      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH', 'EtOAc'], conditions: { temperature: 'rt', pressure: '1 atm H2' } }),
-      variant({ id: 'h2-pt', label: 'H2, PtO2', role: 'alternative', reagents: ['H2'], catalysts: ['PtO2'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: '1 atm H2' } }),
-      variant({ id: 'h2-raney-ni', label: 'H2, Raney Ni', role: 'alternative', reagents: ['H2'], catalysts: ['Raney Ni'], solvents: ['EtOH'], conditions: { temperature: 'rt to heat', pressure: 'H2' } })
+      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH', 'EtOAc'], conditions: { temperature: '25 °C', pressure: '1 atm H2' } }),
+      variant({ id: 'h2-pt', label: 'H2, PtO2', role: 'alternative', reagents: ['H2'], catalysts: ['PtO2'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: '1 atm H2' } }),
+      variant({
+        id: 'h2-raney-ni',
+        label: 'H2, Raney Ni',
+        role: 'alternative',
+        reagents: ['H2'],
+        catalysts: ['Raney Ni'],
+        solvents: ['EtOH'],
+        conditions: { temperature: '25 °C to heat', pressure: 'H2' }
+      })
     ],
     byproducts: [],
     selectivity: selectivity({ stereochemistry: 'syn addition is common experimentally, but not encoded by this template' }),
@@ -286,8 +317,24 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Alkyne -> alkene',
     variants: [
-      variant({ id: 'lindlar', label: 'H2, Lindlar catalyst', reagents: ['H2'], catalysts: ['Lindlar catalyst'], solvents: ['EtOH', 'quinoline'], conditions: { temperature: 'rt', pressure: '1 atm H2' }, notes: ['Typically gives cis alkenes; the current template does not encode alkene stereochemistry.'] }),
-      variant({ id: 'dissolving-metal', label: 'Na, NH3(l)', role: 'alternative', reagents: ['Na'], solvents: ['NH3(l)'], conditions: { temperature: '-78 C' }, notes: ['Typically gives trans alkenes; the current template does not encode alkene stereochemistry.'] })
+      variant({
+        id: 'lindlar',
+        label: 'H2, Lindlar catalyst',
+        reagents: ['H2'],
+        catalysts: ['Lindlar catalyst'],
+        solvents: ['EtOH', 'quinoline'],
+        conditions: { temperature: '25 °C', pressure: '1 atm H2' },
+        notes: ['Typically gives cis alkenes; the current template does not encode alkene stereochemistry.']
+      }),
+      variant({
+        id: 'dissolving-metal',
+        label: 'Na, NH3(l)',
+        role: 'alternative',
+        reagents: ['Na'],
+        solvents: ['NH3(l)'],
+        conditions: { temperature: '-78 °C' },
+        notes: ['Typically gives trans alkenes; the current template does not encode alkene stereochemistry.']
+      })
     ],
     byproducts: [],
     selectivity: selectivity({ stereochemistry: 'Lindlar gives Z (cis), dissolving metal gives E (trans); E/Z outcome not encoded in product SMIRKS' }),
@@ -298,8 +345,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Alkyne -> alkane',
     variants: [
-      variant({ id: 'h2-pd-c-excess', label: 'excess H2, Pd/C', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: 'H2' } }),
-      variant({ id: 'h2-pt', label: 'H2, Pt', role: 'alternative', reagents: ['H2'], catalysts: ['Pt'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: 'H2' } })
+      variant({ id: 'h2-pd-c-excess', label: 'excess H2, Pd/C', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: 'H2' } }),
+      variant({ id: 'h2-pt', label: 'H2, Pt', role: 'alternative', reagents: ['H2'], catalysts: ['Pt'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: 'H2' } })
     ],
     notes: ['Represents complete catalytic hydrogenation of an alkyne.'],
     limitations: ['Does not model intermediate alkene accumulation.']
@@ -308,7 +355,7 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Benzylic methyl -> benzaldehyde',
     variants: [
-      variant({ id: 'etard', label: 'CrO2Cl2 (Etard)', reagents: ['CrO2Cl2'], solvents: ['CS2', 'CH2Cl2'], conditions: { temperature: '0 C to rt', workup: 'aqueous workup' } }),
+      variant({ id: 'etard', label: 'CrO2Cl2 (Etard)', reagents: ['CrO2Cl2'], solvents: ['CS2', 'CH2Cl2'], conditions: { temperature: '0 °C to 25 °C', workup: 'aqueous workup' } }),
       variant({ id: 'seo2', label: 'SeO2', role: 'alternative', reagents: ['SeO2'], solvents: ['dioxane', 'water'], conditions: { temperature: 'heat' } })
     ],
     notes: ['The template is intentionally aldehyde-directed rather than the stronger oxidation to benzoic acid.'],
@@ -318,9 +365,26 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.substitution,
     summary: 'Alkyl halide -> alkane',
     variants: [
-      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: '1 atm H2' } }),
-      variant({ id: 'lialh4', label: 'LiAlH4', role: 'alternative', reagents: ['LiAlH4'], solvents: ['Et2O', 'THF'], conditions: { temperature: '0 C to rt', workup: 'aqueous workup' }, byproducts: ['aluminum salts', 'halide salts'] }),
-      variant({ id: 'bu3snh-aibn', label: 'Bu3SnH, AIBN', role: 'alternative', reagents: ['Bu3SnH'], catalysts: ['AIBN'], solvents: ['benzene', 'toluene'], conditions: { temperature: 'heat', atmosphere: 'inert atmosphere' }, byproducts: ['Bu3SnX'] })
+      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: '1 atm H2' } }),
+      variant({
+        id: 'lialh4',
+        label: 'LiAlH4',
+        role: 'alternative',
+        reagents: ['LiAlH4'],
+        solvents: ['Et2O', 'THF'],
+        conditions: { temperature: '0 °C to 25 °C', workup: 'aqueous workup' },
+        byproducts: ['aluminum salts', 'halide salts']
+      }),
+      variant({
+        id: 'bu3snh-aibn',
+        label: 'Bu3SnH, AIBN',
+        role: 'alternative',
+        reagents: ['Bu3SnH'],
+        catalysts: ['AIBN'],
+        solvents: ['benzene', 'toluene'],
+        conditions: { temperature: 'heat', atmosphere: 'inert atmosphere' },
+        byproducts: ['Bu3SnX']
+      })
     ],
     byproducts: ['halide-containing reagent products'],
     selectivity: selectivity({ chemoselectivity: 'strongly substrate- and halide-dependent' }),
@@ -331,8 +395,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.substitution,
     summary: 'Alkyl halide -> alcohol',
     variants: [
-      variant({ id: 'aqueous-hydroxide', label: 'aq. NaOH or KOH', reagents: ['NaOH'], solvents: ['water', 'ethanol'], conditions: { temperature: 'rt to reflux' } }),
-      variant({ id: 'silver-water', label: 'AgNO3, H2O', role: 'alternative', reagents: ['AgNO3', 'H2O'], solvents: ['acetone', 'water'], conditions: { temperature: 'rt to heat' } })
+      variant({ id: 'aqueous-hydroxide', label: 'aq. NaOH', reagents: ['NaOH'], solvents: ['water', 'ethanol'], conditions: { temperature: '25 °C to reflux' } }),
+      variant({ id: 'silver-water', label: 'AgNO3, H2O', role: 'alternative', reagents: ['AgNO3', 'H2O'], solvents: ['acetone', 'water'], conditions: { temperature: '25 °C to heat' } })
     ],
     selectivity: selectivity({ stereochemistry: 'SN2 substrates invert; SN1 substrates racemize; not encoded' }),
     notes: ['Represents substitution of Cl, Br, or I by OH.'],
@@ -342,9 +406,25 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.substitution,
     summary: 'Aryl halide -> phenol',
     variants: [
-      variant({ id: 'dow-process', label: 'NaOH, high temperature', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: 'heat', pressure: 'pressure' } }),
-      variant({ id: 'copper-hydroxylation', label: 'Cu-catalyzed hydroxylation', role: 'alternative', reagents: ['base'], catalysts: ['Cu catalyst'], solvents: ['DMSO', 'water'], conditions: { temperature: 'heat' } }),
-      variant({ id: 'palladium-hydroxylation', label: 'Pd-catalyzed hydroxylation', role: 'alternative', reagents: ['base'], catalysts: ['Pd catalyst'], solvents: ['dioxane', 'water'], conditions: { temperature: 'heat' } })
+      variant({ id: 'dow-process', label: 'NaOH, heat', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: 'heat', pressure: 'pressure' } }),
+      variant({
+        id: 'copper-hydroxylation',
+        label: 'Cu-catalyzed hydroxylation',
+        role: 'alternative',
+        reagents: ['base'],
+        catalysts: ['Cu catalyst'],
+        solvents: ['DMSO', 'water'],
+        conditions: { temperature: 'heat' }
+      }),
+      variant({
+        id: 'palladium-hydroxylation',
+        label: 'Pd-catalyzed hydroxylation',
+        role: 'alternative',
+        reagents: ['base'],
+        catalysts: ['Pd catalyst'],
+        solvents: ['dioxane', 'water'],
+        conditions: { temperature: 'heat' }
+      })
     ],
     notes: ['The template is a formal aryl halide to phenol conversion.'],
     limitations: ['Unactivated aryl chlorides typically require forcing or catalyzed conditions.']
@@ -353,9 +433,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.substitution,
     summary: 'Alcohol -> alkyl chloride',
     variants: [
-      variant({ id: 'socl2', label: 'SOCl2', reagents: ['SOCl2'], solvents: ['CH2Cl2'], conditions: { temperature: '0 C to rt' }, byproducts: ['SO2', 'HCl'] }),
-      variant({ id: 'pcl3', label: 'PCl3', role: 'alternative', reagents: ['PCl3'], solvents: ['Et2O'], conditions: { temperature: '0 C to rt' }, byproducts: ['H3PO3'] }),
-      variant({ id: 'lucas', label: 'HCl, ZnCl2', role: 'alternative', reagents: ['HCl'], catalysts: ['ZnCl2'], solvents: ['water'], conditions: { temperature: 'rt' } })
+      variant({ id: 'socl2', label: 'SOCl2', reagents: ['SOCl2'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['SO2', 'HCl'] }),
+      variant({ id: 'pcl3', label: 'PCl3', role: 'alternative', reagents: ['PCl3'], solvents: ['Et2O'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['H3PO3'] }),
+      variant({ id: 'lucas', label: 'HCl, ZnCl2', role: 'alternative', reagents: ['HCl'], catalysts: ['ZnCl2'], solvents: ['water'], conditions: { temperature: '25 °C' } })
     ],
     byproducts: ['reagent-derived oxygen byproducts'],
     selectivity: selectivity({ stereochemistry: 'inversion, retention, or racemization depends on reagent and substrate; not encoded' }),
@@ -366,8 +446,16 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Nitrile -> imine',
     variants: [
-      variant({ id: 'dibal-low-temp', label: 'DIBAL-H, low temperature', reagents: ['DIBAL-H'], solvents: ['toluene', 'CH2Cl2'], conditions: { temperature: '-78 C', workup: 'controlled quench' } }),
-      variant({ id: 'partial-hydrogenation', label: 'partial catalytic hydrogenation', role: 'alternative', reagents: ['H2'], catalysts: ['poisoned metal catalyst'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: 'H2' } })
+      variant({ id: 'dibal-low-temp', label: 'DIBAL-H, low temperature', reagents: ['DIBAL-H'], solvents: ['toluene', 'CH2Cl2'], conditions: { temperature: '-78 °C', workup: 'controlled quench' } }),
+      variant({
+        id: 'partial-hydrogenation',
+        label: 'partial catalytic hydrogenation',
+        role: 'alternative',
+        reagents: ['H2'],
+        catalysts: ['poisoned metal catalyst'],
+        solvents: ['EtOH'],
+        conditions: { temperature: '25 °C', pressure: 'H2' }
+      })
     ],
     notes: ['Represents partial reduction at the nitrile carbon-nitrogen bond.'],
     limitations: ['Many practical conditions continue to aldehydes or amines after workup; the imine product is a formal template product.']
@@ -387,7 +475,14 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Ester -> carboxylic acid + alcohol',
     variants: [
       variant({ id: 'acid-hydrolysis', label: 'H3O+, heat', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'acidic' } }),
-      variant({ id: 'base-hydrolysis-workup', label: 'NaOH, then acid workup', role: 'alternative', reagents: ['NaOH', 'H3O+'], solvents: ['water', 'ethanol'], conditions: { temperature: 'rt to heat', workup: 'acid workup' } })
+      variant({
+        id: 'base-hydrolysis-workup',
+        label: 'NaOH, then acid workup',
+        role: 'alternative',
+        reagents: ['NaOH', 'H3O+'],
+        solvents: ['water', 'ethanol'],
+        conditions: { temperature: '25 °C to heat', workup: 'acid workup' }
+      })
     ],
     notes: ['The template returns the neutral acid and alcohol products.'],
     limitations: ['Base-promoted saponification has a separate carboxylate template.']
@@ -397,7 +492,15 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Carboxylic acid + alcohol -> ester',
     variants: [
       variant({ id: 'fischer', label: 'cat. H2SO4, heat', reagents: ['alcohol'], catalysts: ['H2SO4'], solvents: [], conditions: { temperature: 'reflux', pH: 'acidic' } }),
-      variant({ id: 'ptsoh-dean-stark', label: 'p-TsOH, Dean-Stark', role: 'alternative', reagents: ['alcohol'], catalysts: ['p-TsOH'], solvents: ['toluene'], conditions: { temperature: 'reflux', workup: 'remove water' } })
+      variant({
+        id: 'ptsoh-dean-stark',
+        label: 'p-TsOH, Dean-Stark',
+        role: 'alternative',
+        reagents: ['alcohol'],
+        catalysts: ['p-TsOH'],
+        solvents: ['toluene'],
+        conditions: { temperature: 'reflux', workup: 'remove water' }
+      })
     ],
     byproducts: ['H2O'],
     selectivity: selectivity({ chemoselectivity: 'acid/alcohol condensation; other nucleophilic functional groups not distinguished' }),
@@ -408,8 +511,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acylChemistry,
     summary: 'Ester -> carboxylate + alcohol',
     variants: [
-      variant({ id: 'naoh-aq', label: 'NaOH, H2O/EtOH', reagents: ['NaOH'], solvents: ['water', 'ethanol'], conditions: { temperature: 'rt to reflux', pH: 'basic' } }),
-      variant({ id: 'koh-meoh', label: 'KOH, MeOH', role: 'alternative', reagents: ['KOH'], solvents: ['MeOH'], conditions: { temperature: 'rt to reflux', pH: 'basic' } })
+      variant({ id: 'naoh-aq', label: 'NaOH, H2O/EtOH', reagents: ['NaOH'], solvents: ['water', 'ethanol'], conditions: { temperature: '25 °C to reflux', pH: 'basic' } }),
+      variant({ id: 'koh-meoh', label: 'KOH, MeOH', role: 'alternative', reagents: ['KOH'], solvents: ['MeOH'], conditions: { temperature: '25 °C to reflux', pH: 'basic' } })
     ],
     notes: ['The template gives the carboxylate salt form.'],
     limitations: ['Counterions are not represented explicitly.']
@@ -418,8 +521,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acylChemistry,
     summary: 'Anhydride -> carboxylic acids',
     variants: [
-      variant({ id: 'water', label: 'H2O', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: 'rt' } }),
-      variant({ id: 'acid-or-base', label: 'aq. acid or base', role: 'alternative', reagents: ['H2O'], catalysts: ['acid or base'], solvents: ['water'], conditions: { temperature: 'rt to heat' } })
+      variant({ id: 'water', label: 'H2O', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: '25 °C' } }),
+      variant({ id: 'acid-or-base', label: 'aq. acid or base', role: 'alternative', reagents: ['H2O'], catalysts: ['acid or base'], solvents: ['water'], conditions: { temperature: '25 °C to heat' } })
     ],
     notes: ['Represents hydrolytic cleavage of an anhydride.'],
     limitations: ['Mixed anhydrides may produce regioisomeric product sets not distinguished here.']
@@ -429,7 +532,14 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Amide -> carboxylic acid + amine',
     variants: [
       variant({ id: 'acid-heat', label: 'H3O+, heat', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'acidic' } }),
-      variant({ id: 'base-heat-workup', label: 'NaOH, heat; acid workup', role: 'alternative', reagents: ['NaOH', 'H3O+'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'basic then acidic', workup: 'acid workup' } })
+      variant({
+        id: 'base-heat-workup',
+        label: 'NaOH, heat; acid workup',
+        role: 'alternative',
+        reagents: ['NaOH', 'H3O+'],
+        solvents: ['water'],
+        conditions: { temperature: 'heat', pH: 'basic then acidic', workup: 'acid workup' }
+      })
     ],
     notes: ['The neutral product template abstracts acid/base speciation after workup.'],
     limitations: ['Amide hydrolysis often requires forcing conditions.']
@@ -438,9 +548,16 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acylChemistry,
     summary: 'Acid chloride + amine -> amide',
     variants: [
-      variant({ id: 'amine-base', label: 'acid chloride, amine base', reagents: ['acid chloride', 'amine'], solvents: ['CH2Cl2'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'pyridine', label: 'pyridine', role: 'alternative', reagents: ['acid chloride', 'amine'], solvents: ['pyridine'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'schotten-baumann', label: 'Schotten-Baumann', role: 'alternative', reagents: ['acid chloride', 'amine', 'NaOH'], solvents: ['water', 'organic cosolvent'], conditions: { temperature: '0 C to rt', pH: 'basic' } })
+      variant({ id: 'amine-base', label: 'acid chloride, amine base', reagents: ['acid chloride', 'amine'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({ id: 'pyridine', label: 'pyridine', role: 'alternative', reagents: ['acid chloride', 'amine'], solvents: ['pyridine'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({
+        id: 'schotten-baumann',
+        label: 'Schotten-Baumann',
+        role: 'alternative',
+        reagents: ['acid chloride', 'amine', 'NaOH'],
+        solvents: ['water', 'organic cosolvent'],
+        conditions: { temperature: '0 °C to 25 °C', pH: 'basic' }
+      })
     ],
     byproducts: ['Cl- or HCl salt'],
     selectivity: selectivity({ chemoselectivity: 'primary and secondary amines; amide nitrogens excluded' }),
@@ -451,9 +568,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.substitution,
     summary: 'Alkyl chloride + amine -> alkylated amine',
     variants: [
-      variant({ id: 'k2co3-mecn', label: 'K2CO3, MeCN', reagents: ['K2CO3'], solvents: ['MeCN'], conditions: { temperature: 'rt to reflux' } }),
+      variant({ id: 'k2co3-mecn', label: 'K2CO3, MeCN', reagents: ['K2CO3'], solvents: ['MeCN'], conditions: { temperature: '25 °C to reflux' } }),
       variant({ id: 'excess-amine', label: 'excess amine', role: 'alternative', reagents: ['amine'], solvents: ['EtOH'], conditions: { temperature: 'heat' } }),
-      variant({ id: 'nai-finkelstein', label: 'NaI, base', role: 'alternative', reagents: ['NaI', 'base'], solvents: ['acetone', 'MeCN'], conditions: { temperature: 'rt to heat' } })
+      variant({ id: 'nai-finkelstein', label: 'NaI, base', role: 'alternative', reagents: ['NaI', 'base'], solvents: ['acetone', 'MeCN'], conditions: { temperature: '25 °C to heat' } })
     ],
     notes: ['Represents substitution of a primary alkyl chloride by a neutral amine.'],
     limitations: ['Overalkylation and elimination are not modeled.']
@@ -462,8 +579,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.substitution,
     summary: 'Imine -> carbonyl + amine',
     variants: [
-      variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'rt to heat', pH: 'acidic' } }),
-      variant({ id: 'water', label: 'H2O', role: 'alternative', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: 'rt' } })
+      variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
+      variant({ id: 'water', label: 'H2O', role: 'alternative', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: '25 °C' } })
     ],
     notes: ['Represents hydrolysis of an imine C=N bond.'],
     limitations: ['Equilibrium and amine protonation states are not modeled.']
@@ -472,8 +589,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acylChemistry,
     summary: 'Nitrile -> amide',
     variants: [
-      variant({ id: 'acid-controlled', label: 'controlled aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'rt to heat', pH: 'acidic' } }),
-      variant({ id: 'h2o2-base', label: 'H2O2, base', role: 'alternative', reagents: ['H2O2', 'NaOH'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'basic' } })
+      variant({ id: 'acid-controlled', label: 'controlled aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
+      variant({ id: 'h2o2-base', label: 'H2O2, base', role: 'alternative', reagents: ['H2O2', 'NaOH'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'basic' } })
     ],
     notes: ['Represents partial hydrolysis of a nitrile to an amide.'],
     limitations: ['Further hydrolysis to acid competes under stronger conditions.']
@@ -483,7 +600,14 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Nitrile -> carboxylic acid',
     variants: [
       variant({ id: 'acid-heat', label: 'H3O+, heat', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'acidic' } }),
-      variant({ id: 'base-heat-workup', label: 'NaOH, heat; acid workup', role: 'alternative', reagents: ['NaOH', 'H3O+'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'basic then acidic', workup: 'acid workup' } })
+      variant({
+        id: 'base-heat-workup',
+        label: 'NaOH, heat; acid workup',
+        role: 'alternative',
+        reagents: ['NaOH', 'H3O+'],
+        solvents: ['water'],
+        conditions: { temperature: 'heat', pH: 'basic then acidic', workup: 'acid workup' }
+      })
     ],
     notes: ['Represents complete hydrolysis of a nitrile to the acid oxidation state.'],
     limitations: ['Amide intermediates and salt forms are not represented.']
@@ -492,7 +616,7 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acylChemistry,
     summary: 'Lactone -> hydroxy acid',
     variants: [
-      variant({ id: 'base-opening', label: 'NaOH, H2O', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: 'rt to heat', pH: 'basic', workup: 'acid workup for neutral acid' } }),
+      variant({ id: 'base-opening', label: 'NaOH, H2O', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'basic', workup: 'acid workup for neutral acid' } }),
       variant({ id: 'acid-opening', label: 'H3O+', role: 'alternative', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'acidic' } })
     ],
     notes: ['Represents ring-opening hydrolysis of a lactone.'],
@@ -503,7 +627,14 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Lactam -> amino acid',
     variants: [
       variant({ id: 'acid-heat', label: 'H3O+, heat', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'acidic' } }),
-      variant({ id: 'base-heat-workup', label: 'NaOH, heat; acid workup', role: 'alternative', reagents: ['NaOH', 'H3O+'], solvents: ['water'], conditions: { temperature: 'heat', pH: 'basic then acidic', workup: 'acid workup' } })
+      variant({
+        id: 'base-heat-workup',
+        label: 'NaOH, heat; acid workup',
+        role: 'alternative',
+        reagents: ['NaOH', 'H3O+'],
+        solvents: ['water'],
+        conditions: { temperature: 'heat', pH: 'basic then acidic', workup: 'acid workup' }
+      })
     ],
     notes: ['Represents ring-opening hydrolysis of a lactam.'],
     limitations: ['Many lactams require forcing conditions.']
@@ -512,8 +643,15 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acylChemistry,
     summary: 'Acid chloride -> carboxylic acid',
     variants: [
-      variant({ id: 'water', label: 'H2O', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'aqueous-base', label: 'aq. base then acid workup', role: 'alternative', reagents: ['NaOH', 'H3O+'], solvents: ['water'], conditions: { temperature: '0 C to rt', workup: 'acid workup' } })
+      variant({ id: 'water', label: 'H2O', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({
+        id: 'aqueous-base',
+        label: 'aq. base then acid workup',
+        role: 'alternative',
+        reagents: ['NaOH', 'H3O+'],
+        solvents: ['water'],
+        conditions: { temperature: '0 °C to 25 °C', workup: 'acid workup' }
+      })
     ],
     notes: ['Represents rapid hydrolysis of acid chlorides.'],
     limitations: ['HCl and salt byproducts are not represented.']
@@ -522,8 +660,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Carboxylic acid -> carboxylate',
     variants: [
-      variant({ id: 'nahco3', label: 'NaHCO3', reagents: ['NaHCO3'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'basic' } }),
-      variant({ id: 'naoh', label: 'NaOH', role: 'alternative', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'basic' } })
+      variant({ id: 'nahco3', label: 'NaHCO3', reagents: ['NaHCO3'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'basic' } }),
+      variant({ id: 'naoh', label: 'NaOH', role: 'alternative', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'basic' } })
     ],
     notes: ['Represents acid-base deprotonation of a carboxylic acid.'],
     limitations: ['Counterions are not represented.']
@@ -532,8 +670,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Carboxylate -> carboxylic acid',
     variants: [
-      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'acidic' } }),
-      variant({ id: 'h3o', label: 'H3O+', role: 'alternative', reagents: ['H3O+'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'acidic' } })
+      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'acidic' } }),
+      variant({ id: 'h3o', label: 'H3O+', role: 'alternative', reagents: ['H3O+'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'acidic' } })
     ],
     notes: ['Represents protonation of a carboxylate.'],
     limitations: ['Does not represent salts or buffers explicitly.']
@@ -544,7 +682,7 @@ const REACTION_TEMPLATE_METADATA = {
     variants: [
       variant({ id: 'h2so4-heat', label: 'conc. H2SO4, heat', reagents: ['H2SO4'], solvents: [], conditions: { temperature: 'heat', pH: 'strongly acidic' } }),
       variant({ id: 'h3po4-heat', label: 'H3PO4, heat', role: 'alternative', reagents: ['H3PO4'], solvents: [], conditions: { temperature: 'heat', pH: 'acidic' } }),
-      variant({ id: 'pocl3-pyridine', label: 'POCl3, pyridine', role: 'alternative', reagents: ['POCl3', 'pyridine'], solvents: ['CH2Cl2'], conditions: { temperature: '0 C to rt' } })
+      variant({ id: 'pocl3-pyridine', label: 'POCl3, pyridine', role: 'alternative', reagents: ['POCl3', 'pyridine'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' } })
     ],
     byproducts: ['H2O'],
     selectivity: selectivity({ regioselectivity: 'Zaitsev/Hofmann outcome not encoded', stereochemistry: 'alkene E/Z outcome not encoded' }),
@@ -556,8 +694,8 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Alkyl chloride -> alkene',
     variants: [
       variant({ id: 'koh-ethanol-heat', label: 'KOH, EtOH, heat', reagents: ['KOH'], solvents: ['EtOH'], conditions: { temperature: 'heat', pH: 'basic' } }),
-      variant({ id: 'tbuok', label: 'KOt-Bu', role: 'alternative', reagents: ['KOt-Bu'], solvents: ['t-BuOH', 'THF'], conditions: { temperature: 'rt to heat', pH: 'basic' } }),
-      variant({ id: 'dbu', label: 'DBU', role: 'alternative', reagents: ['DBU'], solvents: ['toluene', 'MeCN'], conditions: { temperature: 'rt to heat' } })
+      variant({ id: 'tbuok', label: 'KOt-Bu', role: 'alternative', reagents: ['KOt-Bu'], solvents: ['t-BuOH', 'THF'], conditions: { temperature: '25 °C to heat', pH: 'basic' } }),
+      variant({ id: 'dbu', label: 'DBU', role: 'alternative', reagents: ['DBU'], solvents: ['toluene', 'MeCN'], conditions: { temperature: '25 °C to heat' } })
     ],
     byproducts: ['HCl or chloride salt'],
     selectivity: selectivity({ regioselectivity: 'Zaitsev/Hofmann outcome not encoded', stereochemistry: 'E/Z outcome not encoded' }),
@@ -568,9 +706,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Sulfide -> sulfoxide',
     variants: [
-      variant({ id: 'mcpba-one-equiv', label: '1 equiv mCPBA', reagents: ['mCPBA'], solvents: ['CH2Cl2'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'h2o2', label: 'H2O2', role: 'alternative', reagents: ['H2O2'], solvents: ['MeOH', 'water'], conditions: { temperature: 'rt' } }),
-      variant({ id: 'naio4', label: 'NaIO4', role: 'alternative', reagents: ['NaIO4'], solvents: ['MeOH', 'water'], conditions: { temperature: 'rt' } })
+      variant({ id: 'mcpba-one-equiv', label: 'mCPBA', reagents: ['mCPBA'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({ id: 'h2o2', label: 'H2O2', role: 'alternative', reagents: ['H2O2'], solvents: ['MeOH', 'water'], conditions: { temperature: '25 °C' } }),
+      variant({ id: 'naio4', label: 'NaIO4', role: 'alternative', reagents: ['NaIO4'], solvents: ['MeOH', 'water'], conditions: { temperature: '25 °C' } })
     ],
     selectivity: selectivity({ stereochemistry: 'chiral sulfoxide stereocenter formed; asymmetric oxidation variants not encoded' }),
     notes: ['Represents one oxygen transfer to sulfur.'],
@@ -580,9 +718,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Sulfoxide -> sulfone',
     variants: [
-      variant({ id: 'mcpba-excess', label: 'excess mCPBA', reagents: ['mCPBA'], solvents: ['CH2Cl2'], conditions: { temperature: '0 C to rt' } }),
-      variant({ id: 'h2o2', label: 'H2O2', role: 'alternative', reagents: ['H2O2'], solvents: ['AcOH', 'water'], conditions: { temperature: 'rt to heat' } }),
-      variant({ id: 'oxone', label: 'Oxone', role: 'alternative', reagents: ['Oxone'], solvents: ['MeOH', 'water'], conditions: { temperature: 'rt' } })
+      variant({ id: 'mcpba-excess', label: 'mCPBA', reagents: ['mCPBA'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({ id: 'h2o2', label: 'H2O2', role: 'alternative', reagents: ['H2O2'], solvents: ['AcOH', 'water'], conditions: { temperature: '25 °C to heat' } }),
+      variant({ id: 'oxone', label: 'Oxone', role: 'alternative', reagents: ['Oxone'], solvents: ['MeOH', 'water'], conditions: { temperature: '25 °C' } })
     ],
     notes: ['Represents oxidation from sulfoxide to sulfone.'],
     limitations: ['Does not encode oxidant equivalents.']
@@ -591,8 +729,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Amine -> ammonium',
     variants: [
-      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['Et2O', 'water'], conditions: { temperature: 'rt', pH: 'acidic' } }),
-      variant({ id: 'tfa', label: 'TFA', role: 'alternative', reagents: ['TFA'], solvents: ['CH2Cl2'], conditions: { temperature: 'rt', pH: 'acidic' } })
+      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['Et2O', 'water'], conditions: { temperature: '25 °C', pH: 'acidic' } }),
+      variant({ id: 'tfa', label: 'TFA', role: 'alternative', reagents: ['TFA'], solvents: ['CH2Cl2'], conditions: { temperature: '25 °C', pH: 'acidic' } })
     ],
     notes: ['Represents protonation of a neutral amine.'],
     limitations: ['Counterions and pKa equilibria are not represented.']
@@ -601,8 +739,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Aromatic aza nitrogen -> pyridinium-like cation',
     variants: [
-      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['water', 'Et2O'], conditions: { temperature: 'rt', pH: 'acidic' } }),
-      variant({ id: 'tfa', label: 'TFA', role: 'alternative', reagents: ['TFA'], solvents: ['CH2Cl2'], conditions: { temperature: 'rt', pH: 'acidic' } })
+      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['water', 'Et2O'], conditions: { temperature: '25 °C', pH: 'acidic' } }),
+      variant({ id: 'tfa', label: 'TFA', role: 'alternative', reagents: ['TFA'], solvents: ['CH2Cl2'], conditions: { temperature: '25 °C', pH: 'acidic' } })
     ],
     notes: ['Represents protonation of pyridine-like aromatic nitrogens.'],
     limitations: ['Does not model tautomeric or multi-site protonation equilibria.']
@@ -611,8 +749,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Ammonium -> amine',
     variants: [
-      variant({ id: 'naoh', label: 'NaOH', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'basic' } }),
-      variant({ id: 'triethylamine', label: 'Et3N', role: 'alternative', reagents: ['Et3N'], solvents: ['CH2Cl2'], conditions: { temperature: 'rt', pH: 'basic' } })
+      variant({ id: 'naoh', label: 'NaOH', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'basic' } }),
+      variant({ id: 'triethylamine', label: 'Et3N', role: 'alternative', reagents: ['Et3N'], solvents: ['CH2Cl2'], conditions: { temperature: '25 °C', pH: 'basic' } })
     ],
     notes: ['Represents deprotonation of an ammonium N-H site.'],
     limitations: ['Quaternary ammonium centers without N-H are excluded.']
@@ -621,9 +759,9 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Phenol -> phenolate',
     variants: [
-      variant({ id: 'naoh', label: 'NaOH', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'basic' } }),
-      variant({ id: 'k2co3', label: 'K2CO3', role: 'alternative', reagents: ['K2CO3'], solvents: ['acetone', 'DMF'], conditions: { temperature: 'rt to heat', pH: 'basic' } }),
-      variant({ id: 'nah', label: 'NaH', role: 'alternative', reagents: ['NaH'], solvents: ['THF', 'DMF'], conditions: { temperature: '0 C to rt', atmosphere: 'dry inert atmosphere' } })
+      variant({ id: 'naoh', label: 'NaOH', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'basic' } }),
+      variant({ id: 'k2co3', label: 'K2CO3', role: 'alternative', reagents: ['K2CO3'], solvents: ['acetone', 'DMF'], conditions: { temperature: '25 °C to heat', pH: 'basic' } }),
+      variant({ id: 'nah', label: 'NaH', role: 'alternative', reagents: ['NaH'], solvents: ['THF', 'DMF'], conditions: { temperature: '0 °C to 25 °C', atmosphere: 'dry inert atmosphere' } })
     ],
     notes: ['Represents phenol deprotonation to phenolate.'],
     limitations: ['Counterions and competing functional-group deprotonation are not represented.']
@@ -632,8 +770,8 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.acidBase,
     summary: 'Phenolate -> phenol',
     variants: [
-      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['water'], conditions: { temperature: 'rt', pH: 'acidic' } }),
-      variant({ id: 'nh4cl', label: 'NH4Cl', role: 'alternative', reagents: ['NH4Cl'], solvents: ['water'], conditions: { temperature: 'rt' } })
+      variant({ id: 'hcl', label: 'HCl', reagents: ['HCl'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'acidic' } }),
+      variant({ id: 'nh4cl', label: 'NH4Cl', role: 'alternative', reagents: ['NH4Cl'], solvents: ['water'], conditions: { temperature: '25 °C' } })
     ],
     notes: ['Represents protonation of phenolate oxygen.'],
     limitations: ['Does not represent buffer equilibria.']
@@ -644,7 +782,7 @@ const REACTION_TEMPLATE_METADATA = {
     variants: [
       variant({ id: 'fe-hcl', label: 'Fe, HCl', reagents: ['Fe', 'HCl'], solvents: ['water', 'ethanol'], conditions: { temperature: 'heat', pH: 'acidic' } }),
       variant({ id: 'sn-hcl', label: 'Sn, HCl', role: 'alternative', reagents: ['Sn', 'HCl'], solvents: ['water', 'ethanol'], conditions: { temperature: 'heat', pH: 'acidic' } }),
-      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: 'rt', pressure: 'H2' } })
+      variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: 'H2' } })
     ],
     notes: ['The template abstracts multi-electron nitro reduction to neutral nitrogen plus water fragments.'],
     limitations: ['Partial reduction products are not modeled.']
@@ -654,11 +792,23 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Diene + alkene -> cyclohexene',
     variants: [
       variant({ id: 'thermal', label: 'heat', reagents: [], solvents: ['toluene', 'xylene'], conditions: { temperature: 'heat' } }),
-      variant({ id: 'lewis-acid', label: 'Lewis acid catalysis', role: 'alternative', reagents: [], catalysts: ['BF3.Et2O', 'AlCl3', 'TiCl4'], solvents: ['CH2Cl2'], conditions: { temperature: '-78 C to rt' } }),
-      variant({ id: 'high-pressure', label: 'high pressure', role: 'alternative', reagents: [], solvents: [], conditions: { temperature: 'rt to heat', pressure: 'high pressure' } })
+      variant({
+        id: 'lewis-acid',
+        label: 'Lewis acid catalysis',
+        role: 'alternative',
+        reagents: [],
+        catalysts: ['BF3.Et2O', 'AlCl3', 'TiCl4'],
+        solvents: ['CH2Cl2'],
+        conditions: { temperature: '-78 °C to 25 °C' }
+      }),
+      variant({ id: 'high-pressure', label: 'high pressure', role: 'alternative', reagents: [], solvents: [], conditions: { temperature: '25 °C to heat', pressure: 'high pressure' } })
     ],
     byproducts: [],
-    selectivity: selectivity({ regioselectivity: 'dienophile/diene substitution effects not encoded', stereochemistry: 'endo/exo and relative stereochemistry not encoded', chemoselectivity: 'requires an eligible diene and dienophile match' }),
+    selectivity: selectivity({
+      regioselectivity: 'dienophile/diene substitution effects not encoded',
+      stereochemistry: 'endo/exo and relative stereochemistry not encoded',
+      chemoselectivity: 'requires an eligible diene and dienophile match'
+    }),
     notes: ['Represents a formal [4+2] cycloaddition between a diene and dienophile.'],
     limitations: ['Regioselectivity, endo/exo selectivity, and stereochemistry are not encoded.']
   }

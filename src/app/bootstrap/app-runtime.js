@@ -152,6 +152,7 @@ export function createAppRuntime(deps) {
       clearFunctionalGroups: deps.analysis.clearFunctionalGroups
     },
     document: {
+      getCurrentMol: () => deps.runtimeState.currentMol,
       setCurrentMol: value => {
         deps.runtimeState.currentMol = value;
       },
@@ -209,7 +210,7 @@ export function createAppRuntime(deps) {
         serializeSnapshotMol: mol => deps.runtimeState.sessionUiState.serializeSnapshotMol(mol),
         captureInteractionState: () => deps.runtimeState.sessionUiState.captureInteractionState(),
         capturePanelState: () => deps.runtimeState.sessionUiState.capturePanelState(),
-        restorePanelState: panelState => deps.runtimeState.sessionUiState.restorePanelState(panelState),
+        restorePanelState: (panelState, options) => deps.runtimeState.sessionUiState.restorePanelState(panelState, options),
         restoreInteractionState: snap => deps.runtimeState.sessionUiState.restoreInteractionState(snap)
       },
       overlays: {

@@ -306,9 +306,42 @@ body.resizing-main-sidebar #sidebar {
 }
 
 .option-toggle input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
   width: 18px;
   height: 18px;
+  margin: 0;
+  border: 1px solid #b9c9cf;
+  border-radius: 4px;
+  background: #fff;
   accent-color: #53b2c8;
+  display: grid;
+  place-content: center;
+}
+
+.option-toggle input[type='checkbox']::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  transform: scale(0);
+  transition: transform 0.12s ease;
+  background: #fff;
+  clip-path: polygon(14% 44%, 0 58%, 38% 96%, 100% 20%, 84% 6%, 36% 64%);
+}
+
+.option-toggle input[type='checkbox']:checked {
+  border-color: #53b2c8;
+  background: #53b2c8;
+}
+
+.option-toggle input[type='checkbox']:checked::before {
+  transform: scale(1);
+}
+
+.option-toggle input[type='checkbox']:focus {
+  outline: none;
+  border-color: #7db7c4;
+  box-shadow: 0 0 0 3px rgba(83, 178, 200, 0.14);
 }
 
 .options-actions {

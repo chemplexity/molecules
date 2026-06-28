@@ -287,7 +287,8 @@ function makeBaseContext(overrides = {}) {
       applySelectionOverlay() {}
     },
     overlays: {
-      hasReactionPreview: () => false
+      hasReactionPreview: () => false,
+      hasActiveResonanceView: () => false
     },
     drawBond: {
       hasDrawBondState: () => false,
@@ -416,6 +417,45 @@ describe('initGestureInteractions', () => {
 
     assert.equal(stopped, true);
     assert.deepEqual(started, { atomId: null, x: 12, y: 34 });
+  });
+
+  it('blocks blank-space draw-bond starts while a resonance view is active', () => {
+    let started = false;
+    const { context, svg, state } = makeBaseContext({
+      overlays: {
+        hasReactionPreview: () => false,
+        hasActiveResonanceView: () => true
+      },
+      drawBond: {
+        hasDrawBondState: () => false,
+        start() {
+          started = true;
+        },
+        markDragged() {},
+        updatePreview() {},
+        commit() {}
+      }
+    });
+    state.setDrawBondMode(true);
+
+    initGestureInteractions(context);
+
+    let prevented = false;
+    let stopped = false;
+    svg.handlers.get('mousedown.drawbond')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      }
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.equal(started, false);
   });
 
   it('passes draw-bond free-rotation modifiers through mousemove updates', () => {

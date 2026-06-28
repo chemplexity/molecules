@@ -186,6 +186,50 @@ export function createDrawBondCommitActions(context) {
     context.snapshot.restore(reactionEdit.previousSnapshot);
   }
 
+  function restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot) {
+    if ((reactionEdit?.restored || structuralEdit?.resonanceReset) && previousSnapshot) {
+      context.snapshot.restore(previousSnapshot);
+      return;
+    }
+    restoreReactionPreviewNoOp(reactionEdit);
+  }
+
+  function isEditablePreviewAtomId(atomId) {
+    return atomId === null || context.overlays.isReactionPreviewEditableAtomId?.(atomId) !== false;
+  }
+
+  function sourceForceInitialPatch(mol) {
+    if (context.getMode() !== 'force' || !mol?.atoms?.size) {
+      return null;
+    }
+    const patch = new Map();
+    for (const node of context.force.getNodes?.() ?? []) {
+      const atom = mol.atoms.get(node?.id);
+      if (!atom || atom.name === 'H' || atom.visible === false || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+        continue;
+      }
+      patch.set(node.id, { x: node.x, y: node.y });
+    }
+    return patch.size > 0 ? patch : null;
+  }
+
+  function forceDrawRenderOptions(structuralEdit, options = {}) {
+    if (structuralEdit?.resonanceReset) {
+      const sourcePatch = sourceForceInitialPatch(structuralEdit.mol);
+      const initialPatchPos = sourcePatch || options.initialPatchPos ? new Map([...(sourcePatch ?? []), ...(options.initialPatchPos ?? [])]) : undefined;
+      return {
+        preservePositions: false,
+        preserveView: false,
+        ...options,
+        ...(initialPatchPos ? { initialPatchPos } : {})
+      };
+    }
+    return {
+      preservePositions: true,
+      ...options
+    };
+  }
+
   function findExistingBond(mol, atomIdA, atomIdB) {
     return [...mol.bonds.values()].find(bond => {
       const [a1, a2] = bond.getAtomObjects(mol);
@@ -254,8 +298,9 @@ export function createDrawBondCommitActions(context) {
 
     if (mode === 'force') {
       context.renderers.updateForce(mol, {
-        preservePositions: true,
-        initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
+        ...forceDrawRenderOptions(structuralEdit, {
+          initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
+        })
       });
       context.force.enableKeepInView();
       return;
@@ -480,10 +525,7 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, {
-        preservePositions: true,
-        initialPatchPos: patchPos
-      });
+      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { initialPatchPos: patchPos }));
       context.force.enableKeepInView();
       return;
     }
@@ -570,12 +612,17 @@ export function createDrawBondCommitActions(context) {
     }
     atomId = reactionEdit.atomId;
     snapAtomId = reactionEdit.snapAtomId;
+    if (!isEditablePreviewAtomId(atomId) || !isEditablePreviewAtomId(snapAtomId)) {
+      restoreReactionPreviewNoOp(reactionEdit);
+      return;
+    }
     const previousSnapshot = reactionEdit?.previousSnapshot ?? context.snapshot.capture();
     const structuralEdit = context.overlays.prepareResonanceStructuralEdit(context.molecule.getActive());
     if (snapAtomId !== null) {
       const checkMol = structuralEdit.mol;
-      if (checkMol?.atoms.get(snapAtomId)?.name === 'H') {
-        restoreReactionPreviewNoOp(reactionEdit);
+      const snapAtom = checkMol?.atoms.get(snapAtomId);
+      if (!snapAtom || snapAtom.name === 'H') {
+        restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
         return;
       }
     }
@@ -618,6 +665,7 @@ export function createDrawBondCommitActions(context) {
       }
       const srcAtom = mol.atoms.get(resolvedAtomId);
       if (!srcAtom) {
+        restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
         return;
       }
       let affected;
@@ -636,6 +684,7 @@ export function createDrawBondCommitActions(context) {
       if (snapAtomId !== null) {
         const destAtom = mol.atoms.get(snapAtomId);
         if (!destAtom) {
+          restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
           return;
         }
         const existingBond = findExistingBond(mol, resolvedAtomId, snapAtomId);
@@ -695,10 +744,7 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, {
-        preservePositions: true,
-        initialPatchPos: patchPos
-      });
+      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { initialPatchPos: patchPos }));
       if (reactionEdit?.restored && reactionEdit?.entryZoomTransform) {
         context.view.restoreZoomTransformSnapshot(reactionEdit.entryZoomTransform);
       }
@@ -720,12 +766,14 @@ export function createDrawBondCommitActions(context) {
     }
     const srcAtom = mol.atoms.get(resolvedAtomId);
     if (!srcAtom) {
+      restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
       return;
     }
 
     if (snapAtomId !== null) {
       const destAtom = mol.atoms.get(snapAtomId);
       if (!destAtom) {
+        restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
         return;
       }
       const existingBond = findExistingBond(mol, resolvedAtomId, snapAtomId);

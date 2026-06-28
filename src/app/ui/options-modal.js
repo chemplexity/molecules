@@ -20,6 +20,9 @@ export function initOptionsModal(context) {
   const twoDBondThicknessEl = context.dom.get2DBondThicknessElement();
   const forceAtomSizeEl = context.dom.getForceAtomSizeElement();
   const forceBondThicknessEl = context.dom.getForceBondThicknessElement();
+  const showReactionReagentsEl = context.dom.getShowReactionReagentsElement();
+  const showReactionConditionsEl = context.dom.getShowReactionConditionsElement();
+  const reactionFontSizeEl = context.dom.getReactionFontSizeElement();
   const resetBtnEl = context.dom.getResetButtonElement();
   const cancelBtnEl = context.dom.getCancelButtonElement();
   const applyBtnEl = context.dom.getApplyButtonElement();
@@ -51,6 +54,9 @@ export function initOptionsModal(context) {
     twoDBondThicknessEl.value = formatOptionNumber(options.twoDBondThickness);
     forceAtomSizeEl.value = formatOptionNumber(options.forceAtomSizeMultiplier);
     forceBondThicknessEl.value = formatOptionNumber(options.forceBondThicknessMultiplier);
+    showReactionReagentsEl.checked = options.showReactionReagents !== false;
+    showReactionConditionsEl.checked = options.showReactionConditions === true;
+    reactionFontSizeEl.value = formatOptionNumber(options.reactionFontSize);
   }
 
   function close() {
@@ -77,7 +83,10 @@ export function initOptionsModal(context) {
       bondLengthFontSize: clampOptionInputValue(bondLengthFontSizeEl, context.options.limits.bondLengthFontSize, currentOptions.bondLengthFontSize),
       twoDBondThickness: clampOptionInputValue(twoDBondThicknessEl, context.options.limits.twoDBondThickness, currentOptions.twoDBondThickness),
       forceAtomSizeMultiplier: clampOptionInputValue(forceAtomSizeEl, context.options.limits.forceAtomSizeMultiplier, currentOptions.forceAtomSizeMultiplier),
-      forceBondThicknessMultiplier: clampOptionInputValue(forceBondThicknessEl, context.options.limits.forceBondThicknessMultiplier, currentOptions.forceBondThicknessMultiplier)
+      forceBondThicknessMultiplier: clampOptionInputValue(forceBondThicknessEl, context.options.limits.forceBondThicknessMultiplier, currentOptions.forceBondThicknessMultiplier),
+      showReactionReagents: showReactionReagentsEl.checked,
+      showReactionConditions: showReactionConditionsEl.checked,
+      reactionFontSize: clampOptionInputValue(reactionFontSizeEl, context.options.limits.reactionFontSize, currentOptions.reactionFontSize)
     });
     context.view.setFontSize(nextOptions.twoDAtomFontSize);
     if (!nextOptions.showAtomTooltips) {
@@ -126,8 +135,15 @@ export function initOptionsModal(context) {
     }
   });
   doc.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && !overlayEl.hidden) {
+    if (overlayEl.hidden) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault?.();
       close();
+    } else if (event.key === 'Enter') {
+      event.preventDefault?.();
+      apply();
     }
   });
 

@@ -299,6 +299,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       startDrawBond: (atomId, gX, gY) => drawBondPreviewActions.start(atomId, gX, gY),
       previewDrawBond: (start, end, previewOptions = {}) => drawBondPreviewActions.previewBond(start, end, previewOptions),
       clearDrawBondArtifacts: () => drawBondPreviewActions.clearArtifacts(),
+      cancelDrawBondPreview: () => drawBondPreviewActions.cancel(),
       resetDrawBondHover: () => drawBondPreviewActions.resetHover(),
       getDrawBondElement: () => ctx.getDrawBondElement(),
       getDrawBondType: () => ctx.getDrawBondType(),

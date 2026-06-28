@@ -78,11 +78,13 @@ export function createSessionUiStateBridge(deps) {
     };
   }
 
-  function restorePanelState(panelState = null) {
+  function restorePanelState(panelState = null, options = {}) {
     if (panelState?.descriptorTab) {
       _restoreTabState('.desc-tab', '.desc-tab-panel', panelState.descriptorTab);
     }
-    _restoreSmartsTab(panelState?.smartsTab ?? DEFAULT_SMARTS_TAB);
+    if (!options.preserveSmartsTab) {
+      _restoreSmartsTab(panelState?.smartsTab ?? DEFAULT_SMARTS_TAB);
+    }
   }
 
   function _resolveToolMode() {

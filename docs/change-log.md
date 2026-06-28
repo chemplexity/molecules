@@ -1,5 +1,24 @@
 # Change Log
 
+## 2026-06-27
+
+- Refit force-mode molecules after structural edits exit an active resonance pair, and keep failed product-side resonance draw attempts from leaving the resonance row stuck active.
+- Preserve force-mode reaction and resonance preview node positions and zoom when undoing or redoing rotated previews, preventing restored layouts from restarting and jumbling.
+- Preserve saved reaction-preview display geometry and zoom when undoing or redoing rotated previews instead of rebuilding and refitting the preview.
+- Preserve the active SMARTS tab during undo/redo restores while keeping source-state functional-group detections intact after exiting and undoing resonance views.
+- Restore force-mode resonance pair displays correctly when undoing after exiting resonance mode.
+- Add resonance view entry, exit, and active resonance-pair navigation to undo/redo history.
+- Clear resonance electron-flow arrow metadata from reaction-preview source clones, so exiting a reaction launched from resonance mode does not leave resonance arrows on the restored molecule.
+- Exit active resonance views when a reaction row is activated, while preserving the resonance state in undo history before showing the reaction preview.
+- Keep checked settings-menu checkboxes filled while preserving white unchecked boxes, and keep active resonance views displayed when switching between Functional Groups, Reactions, and Other tabs.
+- Render unchecked settings-menu checkboxes with a white background and let Enter apply the open settings modal.
+- Reapply active reaction previews at the end of undo/redo restoration, so undoing after exiting a reaction shows the selected reaction preview instead of only reselecting its row.
+- Add Reactions options for showing reagent labels above reaction arrows and condition labels below them, defaulting reagents on and conditions off.
+- Render active reaction-template variant labels and formatted conditions on reaction preview arrows, clipped to the arrow extent and formatted with chemistry-text subscripts/superscripts.
+- Increase reaction arrow reagent/condition label size so reaction metadata remains legible in line and force previews.
+- Add a Reactions Font Size option for tuning reagent and condition label size on reaction arrows.
+- Normalize reaction temperature condition metadata from `rt`/bare `C` strings to `25 °C`/`°C` display text.
+
 ## 2026-06-26
 
 - Use the active Global Bond Length when previewing and auto-placing line-tool bonds in force mode, so short settings such as 0.5 no longer show or create default-length 1.5 bonds.

@@ -94,11 +94,17 @@ export function createSessionRuntimeBridge(deps) {
       return;
     }
 
-    deps.scene.updateForce(displayMol, { preservePositions: true, preserveView: true });
-    if (snapshot.nodePositions) {
-      const positionMap = new Map(snapshot.nodePositions.map(position => [position.id, position]));
+    const positionMap = snapshot.nodePositions ? new Map(snapshot.nodePositions.map(position => [position.id, position])) : null;
+    if (positionMap) {
+      deps.force.stop();
+    }
+    deps.scene.updateForce(displayMol, {
+      preservePositions: true,
+      preserveView: true,
+      ...(positionMap ? { initialPatchPos: positionMap, restartSimulation: false } : {})
+    });
+    if (positionMap) {
       deps.force.restoreNodePositions(positionMap);
-      deps.force.restart();
     }
     deps.view.restoreZoomTransform(snapshot.zoomTransform);
   }
@@ -108,7 +114,19 @@ export function createSessionRuntimeBridge(deps) {
       deps.scene.draw2d();
       deps.view.restoreZoomTransform(snapshot.zoomTransform);
     } else if (snapshot.mode === 'force' && deps.view.getMode() === 'force') {
-      deps.scene.updateForce(mol, { preservePositions: true, preserveView: true });
+      const displayMol = deps.document.getCurrentMol?.() ?? mol;
+      const positionMap = snapshot.nodePositions ? new Map(snapshot.nodePositions.map(position => [position.id, position])) : null;
+      if (positionMap) {
+        deps.force.stop();
+      }
+      deps.scene.updateForce(displayMol, {
+        preservePositions: true,
+        preserveView: true,
+        ...(positionMap ? { initialPatchPos: positionMap, restartSimulation: false } : {})
+      });
+      if (positionMap) {
+        deps.force.restoreNodePositions(positionMap);
+      }
       deps.view.restoreZoomTransform(snapshot.zoomTransform);
     }
   }

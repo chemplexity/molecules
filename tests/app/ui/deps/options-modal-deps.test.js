@@ -18,6 +18,9 @@ describe('createOptionsModalDeps', () => {
         get2DBondThicknessElement: () => 'bondThickness',
         getForceAtomSizeElement: () => 'forceAtomSize',
         getForceBondThicknessElement: () => 'forceBondThickness',
+        getShowReactionReagentsElement: () => 'reactionReagents',
+        getShowReactionConditionsElement: () => 'reactionConditions',
+        getReactionFontSizeElement: () => 'reactionFontSize',
         getResetButtonElement: () => 'reset',
         getCancelButtonElement: () => 'cancel',
         getApplyButtonElement: () => 'apply'
@@ -60,6 +63,9 @@ describe('createOptionsModalDeps', () => {
     assert.equal(deps.dom.getOverlayElement(), 'overlay');
     assert.equal(deps.dom.getLayoutBondLengthElement(), 'layoutBondLength');
     assert.equal(deps.dom.getAtomNumberingFontSizeElement(), 'atomNumberingFontSize');
+    assert.equal(deps.dom.getShowReactionReagentsElement(), 'reactionReagents');
+    assert.equal(deps.dom.getShowReactionConditionsElement(), 'reactionConditions');
+    assert.equal(deps.dom.getReactionFontSizeElement(), 'reactionFontSize');
     assert.equal(deps.options.getRenderOptions(), 'renderOptions');
     assert.deepEqual(deps.options.updateRenderOptions('x'), { next: 'x' });
     assert.equal(deps.state.getMode(), '2d');

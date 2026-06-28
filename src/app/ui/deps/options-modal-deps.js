@@ -22,6 +22,9 @@ export function createOptionsModalDeps(deps) {
       get2DBondThicknessElement: deps.dom.get2DBondThicknessElement,
       getForceAtomSizeElement: deps.dom.getForceAtomSizeElement,
       getForceBondThicknessElement: deps.dom.getForceBondThicknessElement,
+      getShowReactionReagentsElement: deps.dom.getShowReactionReagentsElement,
+      getShowReactionConditionsElement: deps.dom.getShowReactionConditionsElement,
+      getReactionFontSizeElement: deps.dom.getReactionFontSizeElement,
       getResetButtonElement: deps.dom.getResetButtonElement,
       getCancelButtonElement: deps.dom.getCancelButtonElement,
       getApplyButtonElement: deps.dom.getApplyButtonElement

@@ -12,9 +12,15 @@ describe('app/render/helpers', () => {
     assert.equal(getDefaultRenderOptions().twoDAtomFontSize, 14);
     assert.equal(getDefaultRenderOptions().layoutBondLength, 1.5);
     assert.equal(getDefaultRenderOptions().bondEnFontSize, 10);
+    assert.equal(getDefaultRenderOptions().reactionFontSize, 14);
+    assert.equal(getDefaultRenderOptions().showReactionReagents, true);
+    assert.equal(getDefaultRenderOptions().showReactionConditions, false);
     assert.equal(getRenderOptions().twoDAtomFontSize, 14);
     assert.equal(getRenderOptions().layoutBondLength, 1.5);
     assert.equal(getRenderOptions().bondEnFontSize, 10);
+    assert.equal(getRenderOptions().reactionFontSize, 14);
+    assert.equal(getRenderOptions().showReactionReagents, true);
+    assert.equal(getRenderOptions().showReactionConditions, false);
     assert.equal('legacy2dRendererToggle' in getDefaultRenderOptions(), false);
   });
 
@@ -27,5 +33,16 @@ describe('app/render/helpers', () => {
 
     const lowClamped = updateRenderOptions({ layoutBondLength: 0.1 });
     assert.equal(lowClamped.layoutBondLength, 0.5);
+  });
+
+  it('updates reaction metadata display toggles', () => {
+    const updated = updateRenderOptions({ showReactionReagents: false, showReactionConditions: true, reactionFontSize: 30 });
+
+    assert.equal(updated.showReactionReagents, false);
+    assert.equal(updated.showReactionConditions, true);
+    assert.equal(updated.reactionFontSize, 24);
+
+    const lowClamped = updateRenderOptions({ reactionFontSize: 6 });
+    assert.equal(lowClamped.reactionFontSize, 8);
   });
 });

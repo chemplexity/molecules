@@ -1678,6 +1678,88 @@ describe('createStructuralEditActions', () => {
     assert.equal(result.suppressDrawBondHover, true);
   });
 
+  it('does not restore primitive hover after promoting a bond from reaction preview', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({
+              mol,
+              mode: '2d',
+              reactionEdit: {
+                bondId: 'b1',
+                restored: true
+              }
+            });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1');
+
+    assert.equal(result.clearPrimitiveHover, true);
+    assert.equal(result.suppressDrawBondHover, true);
+    assert.equal(result.restorePrimitiveHover, undefined);
+  });
+
+  it('rejects resonance product-side bonds before promotion preflight mutates resonance', () => {
+    const atom1 = makeAtom('__resonance_product__:a1', 'C');
+    const atom2 = makeAtom('__resonance_product__:a2', 'O');
+    const bond = makeBond('__resonance_product__:b1', atom1.id, atom2.id, { order: 1 });
+    const mol = {
+      atoms: new Map([
+        [atom1.id, atom1],
+        [atom2.id, atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+    let preflightResult = null;
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options) {
+            preflightResult = options.preflight({
+              mol,
+              mode: 'force',
+              reactionEdit: {
+                bondId: bond.id,
+                restored: false
+              }
+            });
+            return preflightResult ? { unexpected: true } : undefined;
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder(bond.id);
+
+    assert.equal(preflightResult, false);
+    assert.equal(result, undefined);
+    assert.equal(bond.properties.order, 1);
+  });
+
   it('keeps normal promotion cycling when single bond draw mode is selected', () => {
     const atom1 = makeAtom('a1', 'C');
     const atom2 = makeAtom('a2', 'C');
@@ -2948,6 +3030,49 @@ describe('createStructuralEditActions', () => {
     assert.equal(atom.properties.charge, -1);
 
     actions.changeAtomCharge('a1', { chargeTool: 'negative', decrement: true });
+    assert.equal(atom.properties.charge, 0);
+  });
+
+  it('rejects resonance product-side atoms before charge-edit preflight mutates resonance', () => {
+    const atom = {
+      id: '__resonance_product__:a1',
+      name: 'C',
+      properties: { charge: 0 },
+      getCharge() {
+        return this.properties.charge;
+      }
+    };
+    const mol = {
+      atoms: new Map([[atom.id, atom]]),
+      setAtomCharge(atomId, charge) {
+        this.atoms.get(atomId).properties.charge = charge;
+      }
+    };
+    let preflightResult = null;
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options) {
+            preflightResult = options.preflight({
+              mol,
+              mode: 'force',
+              reactionEdit: {
+                atomId: atom.id,
+                restored: false
+              }
+            });
+            return preflightResult ? { unexpected: true } : undefined;
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.changeAtomCharge(atom.id, { chargeTool: 'positive' });
+
+    assert.equal(preflightResult, false);
+    assert.equal(result, undefined);
     assert.equal(atom.properties.charge, 0);
   });
 

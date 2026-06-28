@@ -170,7 +170,8 @@ function makeActions(overrides = {}) {
     },
     overlays: {
       prepareReactionPreviewEditTargets: payload => (overrides.reactionEditFactory ? overrides.reactionEditFactory(payload) : { ...payload, restored: false }),
-      prepareResonanceStructuralEdit: mol => (overrides.structuralEditFactory ? overrides.structuralEditFactory(mol) : { mol, resonanceReset: false })
+      prepareResonanceStructuralEdit: mol => (overrides.structuralEditFactory ? overrides.structuralEditFactory(mol) : { mol, resonanceReset: false }),
+      isReactionPreviewEditableAtomId: atomId => overrides.isReactionPreviewEditableAtomId?.(atomId) ?? true
     },
     molecule: {
       getActive: () => overrides.activeMol ?? null,
@@ -350,6 +351,73 @@ describe('createDrawBondCommitActions', () => {
 
     assert.deepEqual(calls.restoredSnapshots, [{ id: 'reaction-preview-snapshot' }]);
     assert.deepEqual(calls.snapshots, []);
+  });
+
+  it('restores the active resonance view when a dragged snap target is not in the editable source', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    const mol = {
+      atoms: new Map([[srcAtom.id, srcAtom]]),
+      bonds: new Map()
+    };
+    const { actions, calls } = makeActions({
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 0,
+        oy: 0,
+        ex: 60,
+        ey: 0,
+        snapAtomId: '__resonance_product__:a2',
+        dragged: true
+      },
+      activeMol: mol,
+      capturedSnapshot: { id: 'resonance-before-commit' },
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false
+      }),
+      structuralEditFactory: currentMol => ({
+        mol: currentMol,
+        resonanceReset: true
+      })
+    });
+
+    actions.commit();
+
+    assert.deepEqual(calls.restoredSnapshots, [{ id: 'resonance-before-commit' }]);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
+  });
+
+  it('rejects non-editable snap targets before resonance structural prep', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    const mol = {
+      atoms: new Map([[srcAtom.id, srcAtom]]),
+      bonds: new Map()
+    };
+    let preparedResonance = false;
+    const { actions, calls } = makeActions({
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 0,
+        oy: 0,
+        ex: 60,
+        ey: 0,
+        snapAtomId: '__resonance_product__:a2',
+        dragged: true
+      },
+      activeMol: mol,
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:'),
+      structuralEditFactory: currentMol => {
+        preparedResonance = true;
+        return { mol: currentMol, resonanceReset: true };
+      }
+    });
+
+    actions.commit();
+
+    assert.equal(preparedResonance, false);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
   });
 
   it('promotes an existing 2D bond instead of duplicating it on commit', () => {
@@ -598,6 +666,40 @@ describe('createDrawBondCommitActions', () => {
     const patchPos = forceUpdate[2].initialPatchPos;
     assert.deepEqual(patchPos.get('a1'), { x: 300, y: 200 });
     assert.deepEqual(patchPos.get('C1'), { x: 312.5, y: 200 });
+  });
+
+  it('refits force layout after auto-placing a bond from an active resonance pair', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    const neighborAtom = makeAtom('a2', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    neighborAtom.x = 1.5;
+    neighborAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    mol.atoms.set(neighborAtom.id, neighborAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      mode: 'force',
+      drawBondElement: 'C',
+      structuralEditFactory: currentMol => ({ mol: currentMol, resonanceReset: true }),
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 300, y: 200 } : null),
+      forceNodes: [
+        { id: 'a1', name: 'C', x: 300, y: 200 },
+        { id: 'a2', name: 'C', x: 345, y: 200 },
+        { id: '__resonance_product__:a1', name: 'C', x: 600, y: 200 }
+      ]
+    });
+
+    actions.autoPlaceBond('a1', 350, 200);
+
+    const forceUpdate = calls.renderers.find(call => call[0] === 'updateForce');
+    assert.ok(forceUpdate);
+    assert.equal(forceUpdate[2].preservePositions, false);
+    assert.equal(forceUpdate[2].preserveView, false);
+    assert.ok(forceUpdate[2].initialPatchPos instanceof Map);
+    assert.deepEqual(forceUpdate[2].initialPatchPos.get('a1'), { x: 300, y: 200 });
+    assert.deepEqual(forceUpdate[2].initialPatchPos.get('a2'), { x: 345, y: 200 });
+    assert.equal(forceUpdate[2].initialPatchPos.has('__resonance_product__:a1'), false);
   });
 
   it('does not repair implicit hydrogens on charged atoms when manually adding a bond', () => {

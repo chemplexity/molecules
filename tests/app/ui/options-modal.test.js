@@ -49,6 +49,9 @@ describe('initOptionsModal', () => {
     const twoDBondThicknessEl = makeInput();
     const forceAtomSizeEl = makeInput();
     const forceBondThicknessEl = makeInput();
+    const showReactionReagentsEl = makeCheckbox();
+    const showReactionConditionsEl = makeCheckbox();
+    const reactionFontSizeEl = makeInput();
     const resetBtnEl = makeButton();
     const cancelBtnEl = makeButton();
     const applyBtnEl = makeButton();
@@ -64,7 +67,10 @@ describe('initOptionsModal', () => {
       bondLengthFontSize: 10,
       twoDBondThickness: 1.8,
       forceAtomSizeMultiplier: 1,
-      forceBondThicknessMultiplier: 1
+      forceBondThicknessMultiplier: 1,
+      showReactionReagents: true,
+      showReactionConditions: false,
+      reactionFontSize: 14
     };
     const defaultOptions = {
       ...currentOptions,
@@ -72,7 +78,8 @@ describe('initOptionsModal', () => {
       layoutBondLength: 1.7,
       atomNumberingFontSize: 12,
       bondEnFontSize: 11,
-      bondLengthFontSize: 12
+      bondLengthFontSize: 12,
+      reactionFontSize: 16
     };
 
     const modal = initOptionsModal({
@@ -94,6 +101,9 @@ describe('initOptionsModal', () => {
         get2DBondThicknessElement: () => twoDBondThicknessEl,
         getForceAtomSizeElement: () => forceAtomSizeEl,
         getForceBondThicknessElement: () => forceBondThicknessEl,
+        getShowReactionReagentsElement: () => showReactionReagentsEl,
+        getShowReactionConditionsElement: () => showReactionConditionsEl,
+        getReactionFontSizeElement: () => reactionFontSizeEl,
         getResetButtonElement: () => resetBtnEl,
         getCancelButtonElement: () => cancelBtnEl,
         getApplyButtonElement: () => applyBtnEl
@@ -105,6 +115,7 @@ describe('initOptionsModal', () => {
           atomNumberingFontSize: { min: 8, max: 24 },
           bondEnFontSize: { min: 8, max: 24 },
           bondLengthFontSize: { min: 8, max: 24 },
+          reactionFontSize: { min: 8, max: 24 },
           twoDBondThickness: { min: 0.8, max: 4 },
           forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
           forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
@@ -147,6 +158,9 @@ describe('initOptionsModal', () => {
     assert.equal(atomNumberingFontSizeEl.value, '10');
     assert.equal(bondEnFontSizeEl.value, '10');
     assert.equal(bondLengthFontSizeEl.value, '10');
+    assert.equal(showReactionReagentsEl.checked, true);
+    assert.equal(showReactionConditionsEl.checked, false);
+    assert.equal(reactionFontSizeEl.value, '14');
 
     resetBtnEl.trigger('click');
     assert.equal(layoutBondLengthEl.value, '1.7');
@@ -154,13 +168,17 @@ describe('initOptionsModal', () => {
     assert.equal(atomNumberingFontSizeEl.value, '12');
     assert.equal(bondEnFontSizeEl.value, '11');
     assert.equal(bondLengthFontSizeEl.value, '12');
+    assert.equal(reactionFontSizeEl.value, '16');
 
     showAtomTooltipsEl.checked = false;
+    showReactionReagentsEl.checked = false;
+    showReactionConditionsEl.checked = true;
     layoutBondLengthEl.value = '3';
     twoDAtomFontSizeEl.value = '30';
     atomNumberingFontSizeEl.value = '30';
     bondEnFontSizeEl.value = '30';
     bondLengthFontSizeEl.value = '30';
+    reactionFontSizeEl.value = '30';
     applyBtnEl.trigger('click');
 
     assert.equal(overlayEl.hidden, true);
@@ -178,7 +196,10 @@ describe('initOptionsModal', () => {
           bondLengthFontSize: 24,
           twoDBondThickness: 1.8,
           forceAtomSizeMultiplier: 1,
-          forceBondThicknessMultiplier: 1
+          forceBondThicknessMultiplier: 1,
+          showReactionReagents: false,
+          showReactionConditions: true,
+          reactionFontSize: 24
         }
       ],
       ['setFontSize', 24],
@@ -200,6 +221,126 @@ describe('initOptionsModal', () => {
     assert.equal(overlayEl.hidden, true);
   });
 
+  it('applies changes when Enter is pressed while the modal is open', () => {
+    const calls = [];
+    const overlayEl = makeOverlay();
+    const docListeners = new Map();
+    const showValenceWarningsEl = makeCheckbox(true);
+    const showAtomTooltipsEl = makeCheckbox(true);
+    const layoutBondLengthEl = makeInput('1.5');
+    const twoDAtomColoringEl = makeInput('color-atoms');
+    const twoDAtomFontSizeEl = makeInput('14');
+    const atomNumberingFontSizeEl = makeInput('10');
+    const bondEnFontSizeEl = makeInput('10');
+    const bondLengthFontSizeEl = makeInput('10');
+    const twoDBondThicknessEl = makeInput('1.8');
+    const forceAtomSizeEl = makeInput('1');
+    const forceBondThicknessEl = makeInput('1');
+    const showReactionReagentsEl = makeCheckbox(true);
+    const showReactionConditionsEl = makeCheckbox(false);
+    const reactionFontSizeEl = makeInput('14');
+    const noopButton = makeButton();
+    const enterEvent = {
+      key: 'Enter',
+      preventDefault() {
+        calls.push(['preventDefault']);
+      }
+    };
+
+    initOptionsModal({
+      doc: {
+        addEventListener(type, handler) {
+          docListeners.set(type, handler);
+        }
+      },
+      dom: {
+        getOverlayElement: () => overlayEl,
+        getShowValenceWarningsElement: () => showValenceWarningsEl,
+        getShowAtomTooltipsElement: () => showAtomTooltipsEl,
+        getLayoutBondLengthElement: () => layoutBondLengthEl,
+        get2DAtomColoringElement: () => twoDAtomColoringEl,
+        get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
+        getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
+        getBondEnFontSizeElement: () => bondEnFontSizeEl,
+        getBondLengthFontSizeElement: () => bondLengthFontSizeEl,
+        get2DBondThicknessElement: () => twoDBondThicknessEl,
+        getForceAtomSizeElement: () => forceAtomSizeEl,
+        getForceBondThicknessElement: () => forceBondThicknessEl,
+        getShowReactionReagentsElement: () => showReactionReagentsEl,
+        getShowReactionConditionsElement: () => showReactionConditionsEl,
+        getReactionFontSizeElement: () => reactionFontSizeEl,
+        getResetButtonElement: () => noopButton,
+        getCancelButtonElement: () => noopButton,
+        getApplyButtonElement: () => noopButton
+      },
+      options: {
+        limits: {
+          layoutBondLength: { min: 0.5, max: 3 },
+          twoDAtomFontSize: { min: 10, max: 24 },
+          atomNumberingFontSize: { min: 8, max: 24 },
+          bondEnFontSize: { min: 8, max: 24 },
+          bondLengthFontSize: { min: 8, max: 24 },
+          reactionFontSize: { min: 8, max: 24 },
+          twoDBondThickness: { min: 0.8, max: 4 },
+          forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
+          forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
+        },
+        getRenderOptions: () => ({
+          showValenceWarnings: true,
+          showAtomTooltips: true,
+          layoutBondLength: 1.5,
+          twoDColorStyle: 'color-atoms',
+          twoDAtomFontSize: 14,
+          atomNumberingFontSize: 10,
+          bondEnFontSize: 10,
+          bondLengthFontSize: 10,
+          twoDBondThickness: 1.8,
+          forceAtomSizeMultiplier: 1,
+          forceBondThicknessMultiplier: 1,
+          showReactionReagents: true,
+          showReactionConditions: false,
+          reactionFontSize: 14
+        }),
+        getDefaultRenderOptions() {},
+        updateRenderOptions: nextOptions => {
+          calls.push(['updateRenderOptions', nextOptions]);
+          return nextOptions;
+        }
+      },
+      state: {
+        getMode: () => '2d',
+        getCurrentMol: () => null,
+        getMol2d: () => ({ id: 'mol2d' })
+      },
+      view: {
+        setFontSize: value => calls.push(['setFontSize', value]),
+        hideTooltip() {}
+      },
+      navigation: {},
+      renderers: {
+        draw2d: () => calls.push(['draw2d']),
+        renderMol() {},
+        updateForce() {}
+      },
+      parsers: {}
+    }).open();
+
+    twoDAtomFontSizeEl.value = '18';
+    docListeners.get('keydown')(enterEvent);
+
+    assert.equal(overlayEl.hidden, true);
+    assert.equal(calls[0][0], 'preventDefault');
+    assert.equal(calls[1][0], 'updateRenderOptions');
+    assert.equal(calls[1][1].twoDAtomFontSize, 18);
+    assert.deepEqual(calls.slice(2), [
+      ['setFontSize', 18],
+      ['draw2d']
+    ]);
+
+    docListeners.get('keydown')({ key: 'Enter', preventDefault: () => calls.push(['hiddenPreventDefault']) });
+    assert.equal(calls.some(call => call[0] === 'hiddenPreventDefault'), false);
+  });
+
   it('applies updated force-layout options through updateForce', () => {
     const calls = [];
     const overlayEl = makeOverlay();
@@ -214,6 +355,9 @@ describe('initOptionsModal', () => {
     const twoDBondThicknessEl = makeInput('1.8');
     const forceAtomSizeEl = makeInput('2.8');
     const forceBondThicknessEl = makeInput('0.4');
+    const showReactionReagentsEl = makeCheckbox(false);
+    const showReactionConditionsEl = makeCheckbox(true);
+    const reactionFontSizeEl = makeInput('14');
     const applyBtnEl = makeButton();
     const noopButton = makeButton();
     const currentMol = { id: 'force-mol' };
@@ -228,7 +372,10 @@ describe('initOptionsModal', () => {
       bondLengthFontSize: 10,
       twoDBondThickness: 1.8,
       forceAtomSizeMultiplier: 1,
-      forceBondThicknessMultiplier: 1
+      forceBondThicknessMultiplier: 1,
+      showReactionReagents: true,
+      showReactionConditions: false,
+      reactionFontSize: 14
     };
 
     const modal = initOptionsModal({
@@ -248,6 +395,9 @@ describe('initOptionsModal', () => {
         get2DBondThicknessElement: () => twoDBondThicknessEl,
         getForceAtomSizeElement: () => forceAtomSizeEl,
         getForceBondThicknessElement: () => forceBondThicknessEl,
+        getShowReactionReagentsElement: () => showReactionReagentsEl,
+        getShowReactionConditionsElement: () => showReactionConditionsEl,
+        getReactionFontSizeElement: () => reactionFontSizeEl,
         getResetButtonElement: () => noopButton,
         getCancelButtonElement: () => noopButton,
         getApplyButtonElement: () => applyBtnEl
@@ -259,6 +409,7 @@ describe('initOptionsModal', () => {
           atomNumberingFontSize: { min: 8, max: 24 },
           bondEnFontSize: { min: 8, max: 24 },
           bondLengthFontSize: { min: 8, max: 24 },
+          reactionFontSize: { min: 8, max: 24 },
           twoDBondThickness: { min: 0.8, max: 4 },
           forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
           forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
@@ -296,6 +447,9 @@ describe('initOptionsModal', () => {
     layoutBondLengthEl.value = '2';
     forceAtomSizeEl.value = '2.8';
     forceBondThicknessEl.value = '0.4';
+    reactionFontSizeEl.value = '6';
+    showReactionReagentsEl.checked = false;
+    showReactionConditionsEl.checked = true;
 
     applyBtnEl.trigger('click');
 
@@ -313,7 +467,10 @@ describe('initOptionsModal', () => {
           bondLengthFontSize: 10,
           twoDBondThickness: 1.8,
           forceAtomSizeMultiplier: 2.5,
-          forceBondThicknessMultiplier: 0.5
+          forceBondThicknessMultiplier: 0.5,
+          showReactionReagents: false,
+          showReactionConditions: true,
+          reactionFontSize: 8
         }
       ],
       ['setFontSize', 14],

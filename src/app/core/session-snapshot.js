@@ -106,6 +106,27 @@ export function createSessionSnapshotManager(deps) {
     return buildSnapshotMol(snapshotMol);
   }
 
+  function hasCompleteReactionPreviewDisplay(displayMol, reactionPreview) {
+    if (!reactionPreview) {
+      return false;
+    }
+    const productAtomIds = reactionPreview.productAtomIds ?? [];
+    return productAtomIds.length > 0 && productAtomIds.every(atomId => displayMol?.atoms?.has(atomId));
+  }
+
+  function cloneBaseResonanceAnalysisMol(mol) {
+    if (!mol?.properties?.resonance || typeof mol.clone !== 'function') {
+      return mol;
+    }
+    const analysisMol = mol.clone();
+    try {
+      analysisMol.setResonanceState?.(1);
+    } catch {
+      return mol;
+    }
+    return analysisMol;
+  }
+
   function capture(options = {}) {
     const documentOverrides = options.documentState ?? {};
     const activeMol = deps.getActiveMolecule();
@@ -171,7 +192,7 @@ export function createSessionSnapshotManager(deps) {
       deps.setMol2d(null);
       deps.clearAnalysisState();
       deps.clearHighlightState();
-      deps.restorePanelState(snap.panelState ?? null);
+      deps.restorePanelState(snap.panelState ?? null, { preserveSmartsTab: true });
       deps.restoreInteractionState(snap);
       deps.restoreZoomTransform(snap.zoomTransform);
       return;
@@ -206,27 +227,15 @@ export function createSessionSnapshotManager(deps) {
     deps.updateDescriptors(mol);
     deps.updateAnalysisPanels(mol, { recomputeResonance: true });
 
-    if (snap.reactionPreview) {
-      if (previewDisplayMolData) {
-        deps.updateReactionTemplatesPanel();
-        deps.restorePersistentHighlight();
-        deps.restoreZoomTransform(snap.zoomTransform);
-      } else {
-        const reapplied = deps.reapplyActiveReactionPreview();
-        if (reapplied) {
-          deps.restoreZoomTransform(snap.zoomTransform);
-        }
-      }
-    }
-
     const restoredResonanceView = deps.restoreResonanceViewSnapshot(mol, snap.resonanceView ?? null);
     if (restoredResonanceView) {
       deps.redrawRestoredResonanceView(mol, snap);
     }
+    const functionalGroupAnalysisMol = cloneBaseResonanceAnalysisMol(mol);
 
-    deps.restorePanelState(snap.panelState ?? null);
+    deps.restorePanelState(snap.panelState ?? null, { preserveSmartsTab: true });
     const restoredPhyschemHighlight = deps.restorePhyschemHighlightSnapshot(snap.highlightState?.physchem ?? null);
-    const restoredFunctionalGroupHighlight = restoredPhyschemHighlight ? false : deps.restoreFunctionalGroupHighlightSnapshot(snap.highlightState?.functionalGroup ?? null, mol);
+    const restoredFunctionalGroupHighlight = restoredPhyschemHighlight ? false : deps.restoreFunctionalGroupHighlightSnapshot(snap.highlightState?.functionalGroup ?? null, functionalGroupAnalysisMol);
     if (!restoredPhyschemHighlight && !restoredFunctionalGroupHighlight) {
       deps.restorePersistentHighlight();
     }
@@ -242,6 +251,23 @@ export function createSessionSnapshotManager(deps) {
       });
     } else {
       deps.syncInputField(syncMol);
+    }
+
+    if (snap.reactionPreview) {
+      deps.updateReactionTemplatesPanel();
+      deps.restorePersistentHighlight();
+      const hasCompletePreviewDisplay = previewDisplayMolData && hasCompleteReactionPreviewDisplay(displayMol, snap.reactionPreview);
+      const reapplied = hasCompletePreviewDisplay ? false : deps.reapplyActiveReactionPreview();
+      if (hasCompletePreviewDisplay || reapplied) {
+        if (hasCompletePreviewDisplay) {
+          if (snap.mode === '2d') {
+            deps.restore2dState(displayMol, snap);
+          } else if (snap.mode === 'force') {
+            deps.restoreForceState(displayMol, snap);
+          }
+        }
+        deps.restoreZoomTransform(snap.zoomTransform);
+      }
     }
   }
 

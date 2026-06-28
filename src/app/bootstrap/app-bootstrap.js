@@ -122,7 +122,8 @@ export function finalizeAppBootstrap(ctx) {
       },
       overlays: {
         hasActiveResonanceView: () => ctx.overlays.hasActiveResonanceView?.() ?? false,
-        getActiveResonanceSourceMolecule: mol => ctx.overlays.getActiveResonanceSourceMolecule?.(mol) ?? mol
+        getActiveResonanceSourceMolecule: mol => ctx.overlays.getActiveResonanceSourceMolecule?.(mol) ?? mol,
+        resetActiveResonanceView: mol => ctx.overlays.resetActiveResonanceView?.(mol)
       }
     })
   );
@@ -255,7 +256,8 @@ export function finalizeAppBootstrap(ctx) {
       applySelectionOverlay: () => ctx.render.applySelectionOverlay()
     },
     overlays: {
-      hasReactionPreview: () => ctx.overlays.hasReactionPreview()
+      hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
+      hasActiveResonanceView: () => ctx.overlays.hasActiveResonanceView?.() ?? false
     },
     drawBond: {
       hasDrawBondState: () => ctx.state.hasDrawBondState(),
@@ -311,6 +313,9 @@ export function finalizeAppBootstrap(ctx) {
         get2DBondThicknessElement: () => ctx.dom.get2DBondThicknessElement(),
         getForceAtomSizeElement: () => ctx.dom.getForceAtomSizeElement(),
         getForceBondThicknessElement: () => ctx.dom.getForceBondThicknessElement(),
+        getShowReactionReagentsElement: () => ctx.dom.getShowReactionReagentsElement(),
+        getShowReactionConditionsElement: () => ctx.dom.getShowReactionConditionsElement(),
+        getReactionFontSizeElement: () => ctx.dom.getReactionFontSizeElement(),
         getResetButtonElement: () => ctx.dom.getOptionsResetButtonElement(),
         getCancelButtonElement: () => ctx.dom.getOptionsCancelButtonElement(),
         getApplyButtonElement: () => ctx.dom.getOptionsApplyButtonElement()

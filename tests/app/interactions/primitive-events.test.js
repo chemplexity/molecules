@@ -141,7 +141,7 @@ function makeContext(overrides = {}) {
       }
     },
     overlays: {
-      isReactionPreviewEditableAtomId: () => true
+      isReactionPreviewEditableAtomId: atomId => overrides.isReactionPreviewEditableAtomId?.(atomId) ?? true
     },
     drawBond: {
       hasDrawBondState: () => false,
@@ -153,6 +153,9 @@ function makeContext(overrides = {}) {
       },
       clearArtifacts() {
         calls.push(['clearArtifacts']);
+      },
+      cancel() {
+        calls.push(['cancel']);
       },
       resetHover() {
         calls.push(['resetHover']);
@@ -417,6 +420,80 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(prevented, true);
     assert.equal(stopped, true);
     assert.deepEqual(calls, []);
+  });
+
+  it('cancels draw-bond state when force product-side atom clicks are blocked', () => {
+    const { context, calls, setDrawBondMode } = makeContext({
+      currentMol: { id: 'mol' },
+      overlays: {
+        isReactionPreviewEditableAtomId: atomId => atomId !== 'product-a1'
+      }
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let stopped = false;
+
+    handlers.handleForceAtomClick(
+      {
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      { id: 'product-a1', name: 'C' },
+      { atoms: new Map() }
+    );
+
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts']]);
+  });
+
+  it('cancels and consumes blocked force product-side atom draw starts', () => {
+    const { context, calls, setDrawBondMode } = makeContext({
+      currentMol: { id: 'mol' },
+      overlays: {
+        isReactionPreviewEditableAtomId: atomId => atomId !== 'product-a1'
+      }
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+
+    handlers.handleForceAtomMouseDownDrawBond(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      { id: 'product-a1', name: 'C' }
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts']]);
+  });
+
+  it('does not let blocked force product-side atoms become draw-bond hover targets', () => {
+    const { context, calls, setDrawBondMode } = makeContext({
+      overlays: {
+        isReactionPreviewEditableAtomId: atomId => atomId !== 'product-a1'
+      }
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseOver(
+      {},
+      { id: 'product-a1', name: 'C' },
+      {
+        atoms: new Map([['product-a1', { id: 'product-a1', name: 'C' }]])
+      }
+    );
+
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts'], ['clearPrimitiveHover'], ['refreshSelectionOverlay'], ['hide']]);
   });
 
   it('routes force bond clicks to bond-anchored ring template placement for heavy-atom bonds', () => {
@@ -1937,6 +2014,35 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['promoteBondOrder', 'b1', { drawBondType: 'triple' }]]);
   });
 
+  it('blocks force product-side bond promotion in draw-bond mode', () => {
+    const { context, calls, setDrawBondMode } = makeContext({
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+
+    handlers.handleForceBondClick(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      '__resonance_product__:b1',
+      {
+        bonds: new Map([['__resonance_product__:b1', { id: '__resonance_product__:b1', atoms: ['__resonance_product__:a1', '__resonance_product__:a2'] }]])
+      }
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts']]);
+  });
+
   it('starts force draw-bond drags from the selected blue-highlight atom when compact hit targets overlap', () => {
     const { context, calls, setDrawBondMode, selectedAtomIds } = makeContext({
       currentMol: { atoms: new Map(), bonds: new Map() },
@@ -2206,6 +2312,33 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['changeAtomCharge', 'a1', { chargeTool: 'positive', decrement: false }]]);
   });
 
+  it('blocks force product-side charge edits while a charge tool is active', () => {
+    const { context, calls, setChargeTool } = makeContext({
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
+    });
+    setChargeTool('positive');
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+
+    handlers.handleForceAtomClick(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      { id: '__resonance_product__:a1', name: 'C', charge: 0 },
+      { id: 'mol' }
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, []);
+  });
+
   it('routes 2D atom right-clicks to charge decrements when a charge tool is active', () => {
     const { context, calls, setChargeTool, setMode } = makeContext();
     setMode('2d');
@@ -2229,6 +2362,32 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(prevented, true);
     assert.equal(stopped, true);
     assert.deepEqual(calls, [['changeAtomCharge', 'a1', { chargeTool: 'negative', decrement: true }]]);
+  });
+
+  it('blocks force product-side charge decrements from context menu', () => {
+    const { context, calls, setChargeTool } = makeContext({
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
+    });
+    setChargeTool('negative');
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+
+    handlers.handleForceAtomContextMenu(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      { id: '__resonance_product__:a1', name: 'C', charge: 0 }
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, []);
   });
 
   it('suppresses 2D bond tooltips while charge mode is active', () => {
@@ -2291,6 +2450,24 @@ describe('createPrimitiveEventHandlers', () => {
       ['showPrimitiveHover', [], ['b1']],
       ['hide']
     ]);
+  });
+
+  it('does not let blocked force product-side bonds become draw-bond hover targets', () => {
+    const { context, calls, setDrawBondMode } = makeContext({
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceBondMouseOver({ clientX: 5, clientY: 6 }, '__resonance_product__:b1', {
+      bonds: new Map([['__resonance_product__:b1', { id: '__resonance_product__:b1', atoms: ['__resonance_product__:a1', '__resonance_product__:a2'] }]]),
+      atoms: new Map([
+        ['__resonance_product__:a1', { id: '__resonance_product__:a1', name: 'C' }],
+        ['__resonance_product__:a2', { id: '__resonance_product__:a2', name: 'O' }]
+      ])
+    });
+
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts'], ['clearPrimitiveHover'], ['refreshSelectionOverlay'], ['hide']]);
   });
 
   it('does not charge force-mode hydrogens when a charge tool is active', () => {

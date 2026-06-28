@@ -1004,7 +1004,8 @@ export function createNavigationActions(context) {
           node.vy = 0;
           patchPos.set(node.id, forcePatchEntryForNode(node));
         }
-        context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
+        context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0, restart: false });
+        context.renderers?.updateForce?.(mol, { preservePositions: true, preserveView: true, restartSimulation: false });
         const currentTransform = context.view.getZoomTransform();
         const isPreviewComplex = isActiveForcePreviewComplex(context, mol);
         const fitTransform = context.force.forceFitTransform(nodes, isPreviewComplex ? (context.force.initialFitPad ?? FORCE_LAYOUT_INITIAL_FIT_PAD) : context.force.fitPad, {
@@ -1098,7 +1099,7 @@ export function createNavigationActions(context) {
         node.vy = 0;
         patchPos.set(node.id, forcePatchEntryForNode(node));
       }
-      context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
+      context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0, restart: false });
       const flipResult = context.helpers.flipDisplayStereo?.(mol);
       if (flipResult?.size && mol?.__reactionPreview) {
         // Flip every stereo-type entry in all reaction-preview Maps.

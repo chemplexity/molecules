@@ -235,6 +235,66 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(smartsPanels[2].style.display, 'none');
   });
 
+  it('can restore descriptor state without changing the active SMARTS tab', () => {
+    const descButtons = [
+      { dataset: { tab: 'general' }, classList: makeClassList(['active']) },
+      { dataset: { tab: 'smarts' }, classList: makeClassList() }
+    ];
+    const descPanels = [
+      { id: 'tab-general', style: { display: '' } },
+      { id: 'tab-smarts', style: { display: 'none' } }
+    ];
+    const smartsButtons = [
+      { dataset: { tab: 'functional-groups' }, classList: makeClassList() },
+      { dataset: { tab: 'reactions' }, classList: makeClassList() },
+      { dataset: { tab: 'other' }, classList: makeClassList(['active']) }
+    ];
+    const smartsPanels = [
+      { id: 'tab-functional-groups', style: { display: 'none' } },
+      { id: 'tab-reactions', style: { display: 'none' } },
+      { id: 'tab-other', style: { display: '' } }
+    ];
+
+    const documentMock = {
+      querySelector() {
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '.desc-tab') {
+          return descButtons;
+        }
+        if (selector === '.desc-tab-panel') {
+          return descPanels;
+        }
+        if (selector === '.smarts-tab') {
+          return smartsButtons;
+        }
+        if (selector === '.smarts-tab-panel') {
+          return smartsPanels;
+        }
+        return [];
+      },
+      getElementById() {
+        return { innerHTML: '' };
+      }
+    };
+
+    const bridge = makeSessionUiStateBridge({ document: documentMock });
+
+    bridge.restorePanelState({ descriptorTab: 'smarts', smartsTab: 'functional-groups' }, { preserveSmartsTab: true });
+
+    assert.equal(descButtons[0].classList.contains('active'), false);
+    assert.equal(descButtons[1].classList.contains('active'), true);
+    assert.equal(descPanels[0].style.display, 'none');
+    assert.equal(descPanels[1].style.display, '');
+    assert.equal(smartsButtons[0].classList.contains('active'), false);
+    assert.equal(smartsButtons[1].classList.contains('active'), false);
+    assert.equal(smartsButtons[2].classList.contains('active'), true);
+    assert.equal(smartsPanels[0].style.display, 'none');
+    assert.equal(smartsPanels[1].style.display, 'none');
+    assert.equal(smartsPanels[2].style.display, '');
+  });
+
   it('captures and restores interaction state through one helper', () => {
     let selectedAtomIds = new Set(['a1']);
     let selectedBondIds = new Set(['b1']);

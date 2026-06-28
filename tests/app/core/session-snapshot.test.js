@@ -25,16 +25,40 @@ class FakeMolecule {
   clone() {
     const cloned = new FakeMolecule();
     for (const atom of this.atoms.values()) {
-      const next = cloned.addAtom(atom.id, atom.name, atom.properties);
+      const next = cloned.addAtom(atom.id, atom.name, JSON.parse(JSON.stringify(atom.properties)));
       next.visible = atom.visible;
       next.x = atom.x;
       next.y = atom.y;
     }
     for (const bond of this.bonds.values()) {
-      cloned.addBond(bond.id, bond.atoms[0], bond.atoms[1], bond.properties);
+      cloned.addBond(bond.id, bond.atoms[0], bond.atoms[1], JSON.parse(JSON.stringify(bond.properties)));
     }
-    cloned.properties = { ...this.properties };
+    cloned.properties = JSON.parse(JSON.stringify(this.properties));
     return cloned;
+  }
+
+  setResonanceState(n) {
+    const resonance = this.properties.resonance;
+    if (!resonance) {
+      return;
+    }
+    resonance.currentState = n;
+    for (const bond of this.bonds.values()) {
+      const state = bond.properties.resonance?.states?.[n];
+      if (!state) {
+        continue;
+      }
+      bond.properties.order = state.order;
+      bond.properties.localizedOrder = state.localizedOrder;
+      bond.properties.aromatic = state.aromatic;
+    }
+    for (const atom of this.atoms.values()) {
+      const state = atom.properties.resonance?.states?.[n];
+      if (!state) {
+        continue;
+      }
+      atom.properties.charge = state.charge;
+    }
   }
 }
 
@@ -90,8 +114,8 @@ function makeDeps() {
       clearHighlightState() {
         calls.push(['clearHighlightState']);
       },
-      restorePanelState(panelState) {
-        calls.push(['restorePanelState', panelState]);
+      restorePanelState(panelState, options) {
+        calls.push(['restorePanelState', panelState, options]);
       },
       restoreInteractionState(snapshot) {
         calls.push([
@@ -445,6 +469,157 @@ describe('createSessionSnapshotManager', () => {
     assert.deepEqual(restoredMol.properties.style.ringFills, [{ id: 'rf1', atomIds: ['A1', 'A2', 'A3'], color: '#ffe66d', opacity: 0.25 }]);
   });
 
+  it('reapplies a reaction preview when the restored display molecule is missing product atoms', () => {
+    const { deps, calls } = makeDeps();
+    deps.reapplyActiveReactionPreview = () => {
+      calls.push(['reapplyActiveReactionPreview']);
+      return true;
+    };
+    const manager = createSessionSnapshotManager(deps);
+    const sourceMol = {
+      atoms: [{ id: 'A1', name: 'C', properties: {}, x: 0, y: 0 }],
+      bonds: [],
+      moleculeProperties: {}
+    };
+
+    manager.restore({
+      mode: '2d',
+      atoms: sourceMol.atoms,
+      bonds: sourceMol.bonds,
+      moleculeProperties: sourceMol.moleculeProperties,
+      currentSmiles: 'C',
+      currentInchi: null,
+      inputMode: null,
+      inputValue: null,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null,
+      zoomTransform: { x: 12, y: 4, k: 1.5 },
+      rotationDeg: 0,
+      flipH: false,
+      flipV: false,
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0,
+      highlightState: null,
+      panelState: null,
+      reactionPreview: {
+        sourceMol,
+        displayMol: sourceMol,
+        activeReactionSmirks: '[C:1]>>[C:1].[O:2]',
+        activeReactionMatchIndex: 0,
+        reactionPreviewLocked: true,
+        reactantAtomIds: ['A1'],
+        productAtomIds: ['P1'],
+        productComponentAtomIdSets: [['P1']],
+        mappedAtomPairs: [],
+        editedProductAtomIds: [],
+        preservedReactantStereoByCenter: [],
+        preservedReactantStereoBondTypes: [],
+        preservedProductStereoByCenter: [],
+        preservedProductStereoBondTypes: [],
+        forcedStereoByCenter: [],
+        forcedStereoBondTypes: [],
+        forcedStereoBondCenters: [],
+        reactantReferenceCoords: [],
+        reactionPreviewHighlightMappings: [],
+        entryZoomTransform: null,
+        entryDisplayMol: sourceMol,
+        entryMode: '2d',
+        entryForceNodePositions: null
+      },
+      resonanceView: null
+    });
+
+    assert.ok(calls.some(call => call[0] === 'reapplyActiveReactionPreview'));
+    assert.ok(calls.some(call => call[0] === 'restoreZoomTransform' && call[1]?.k === 1.5));
+  });
+
+  it('does not rebuild a complete reaction preview snapshot during restore', () => {
+    const { deps, calls } = makeDeps();
+    deps.reapplyActiveReactionPreview = () => {
+      calls.push(['reapplyActiveReactionPreview']);
+      return true;
+    };
+    const manager = createSessionSnapshotManager(deps);
+    const sourceMol = {
+      atoms: [{ id: 'A1', name: 'C', properties: {}, x: 0, y: 0 }],
+      bonds: [],
+      moleculeProperties: {}
+    };
+    const displayMol = {
+      atoms: [
+        { id: 'A1', name: 'C', properties: {}, x: 0, y: 0 },
+        { id: 'P1', name: 'O', properties: {}, x: 4, y: 3 }
+      ],
+      bonds: [{ id: 'B1', atoms: ['A1', 'P1'], properties: { order: 1 } }],
+      moleculeProperties: {}
+    };
+
+    manager.restore({
+      mode: '2d',
+      atoms: sourceMol.atoms,
+      bonds: sourceMol.bonds,
+      moleculeProperties: sourceMol.moleculeProperties,
+      currentSmiles: 'C',
+      currentInchi: null,
+      inputMode: null,
+      inputValue: null,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null,
+      zoomTransform: { x: 12, y: 4, k: 1.5 },
+      rotationDeg: 90,
+      flipH: false,
+      flipV: false,
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0,
+      highlightState: null,
+      panelState: null,
+      reactionPreview: {
+        sourceMol,
+        displayMol,
+        activeReactionSmirks: '[C:1]>>[C:1].[O:2]',
+        activeReactionMatchIndex: 0,
+        reactionPreviewLocked: true,
+        reactantAtomIds: ['A1'],
+        productAtomIds: ['P1'],
+        productComponentAtomIdSets: [['P1']],
+        mappedAtomPairs: [],
+        editedProductAtomIds: [],
+        preservedReactantStereoByCenter: [],
+        preservedReactantStereoBondTypes: [],
+        preservedProductStereoByCenter: [],
+        preservedProductStereoBondTypes: [],
+        forcedStereoByCenter: [],
+        forcedStereoBondTypes: [],
+        forcedStereoBondCenters: [],
+        reactantReferenceCoords: [],
+        reactionPreviewHighlightMappings: [],
+        entryZoomTransform: null,
+        entryDisplayMol: sourceMol,
+        entryMode: '2d',
+        entryForceNodePositions: null
+      },
+      resonanceView: null
+    });
+
+    assert.equal(calls.filter(call => call[0] === 'restore2dState').length, 2);
+    assert.equal(calls.some(call => call[0] === 'reapplyActiveReactionPreview'), false);
+    assert.ok(calls.some(call => call[0] === 'restoreZoomTransform' && call[1]?.k === 1.5));
+  });
+
   it('preserves the selected bond draw type when restoring an app snapshot', () => {
     const { deps, calls } = makeDeps();
     const manager = createSessionSnapshotManager(deps);
@@ -544,5 +719,74 @@ describe('createSessionSnapshotManager', () => {
     assert.ok(restoredDisplayMol);
     assert.equal(analysisMol, restoredDisplayMol);
     assert.equal(resonanceMol, restoredDisplayMol);
+  });
+
+  it('restores functional-group highlights against the base resonance contributor', () => {
+    const { deps, calls } = makeDeps();
+    let functionalGroupMol = null;
+    deps.restoreResonanceViewSnapshot = mol => {
+      mol.setResonanceState(2);
+      calls.push(['restoreResonanceViewSnapshot', mol.properties.resonance.currentState, mol.bonds.get('B1').properties.order]);
+      return true;
+    };
+    deps.restoreFunctionalGroupHighlightSnapshot = (snapshot, mol) => {
+      functionalGroupMol = mol;
+      calls.push(['restoreFunctionalGroupHighlightSnapshot', mol.properties.resonance.currentState, mol.bonds.get('B1').properties.order]);
+      return false;
+    };
+
+    const manager = createSessionSnapshotManager(deps);
+
+    manager.restore({
+      mode: '2d',
+      atoms: [
+        { id: 'A1', name: 'C', properties: {}, x: 0, y: 0 },
+        { id: 'A2', name: 'O', properties: {}, x: 1, y: 0 }
+      ],
+      bonds: [
+        {
+          id: 'B1',
+          atoms: ['A1', 'A2'],
+          properties: {
+            order: 2,
+            resonance: {
+              states: {
+                1: { order: 2, localizedOrder: null, aromatic: false },
+                2: { order: 1, localizedOrder: null, aromatic: false }
+              }
+            }
+          }
+        }
+      ],
+      moleculeProperties: { resonance: { count: 2, currentState: 1, weights: [50, 50] } },
+      currentSmiles: 'C=O',
+      currentInchi: null,
+      inputMode: null,
+      inputValue: null,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null,
+      zoomTransform: null,
+      rotationDeg: 0,
+      flipH: false,
+      flipV: false,
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0,
+      highlightState: null,
+      panelState: null,
+      reactionPreview: null,
+      resonanceView: { locked: true, activeState: 2, activePairIndex: 0, activeDirection: 'forward' }
+    });
+
+    assert.ok(functionalGroupMol);
+    assert.equal(functionalGroupMol.properties.resonance.currentState, 1);
+    assert.equal(functionalGroupMol.bonds.get('B1').properties.order, 2);
+    assert.deepEqual(calls.filter(call => call[0] === 'restoreFunctionalGroupHighlightSnapshot'), [['restoreFunctionalGroupHighlightSnapshot', 1, 2]]);
   });
 });

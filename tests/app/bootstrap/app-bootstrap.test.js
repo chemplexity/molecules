@@ -241,6 +241,15 @@ describe('finalizeAppBootstrap', () => {
         getForceBondThicknessElement() {
           return {};
         },
+        getShowReactionReagentsElement() {
+          return {};
+        },
+        getShowReactionConditionsElement() {
+          return {};
+        },
+        getReactionFontSizeElement() {
+          return {};
+        },
         getOptionsResetButtonElement() {
           return {};
         },

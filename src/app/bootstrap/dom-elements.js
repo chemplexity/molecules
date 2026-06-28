@@ -64,6 +64,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const bondThickness2d = document.getElementById('options-2d-bond-thickness');
   const forceAtomSize = document.getElementById('options-force-atom-size');
   const forceBondThickness = document.getElementById('options-force-bond-thickness');
+  const showReactionReagents = document.getElementById('options-show-reaction-reagents');
+  const showReactionConditions = document.getElementById('options-show-reaction-conditions');
+  const reactionFontSize = document.getElementById('options-reaction-font-size');
   const optionsResetButton = document.getElementById('options-reset-btn');
   const optionsCancelButton = document.getElementById('options-cancel-btn');
   const optionsApplyButton = document.getElementById('options-apply-btn');
@@ -151,6 +154,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     get2DBondThicknessElement: () => bondThickness2d,
     getForceAtomSizeElement: () => forceAtomSize,
     getForceBondThicknessElement: () => forceBondThickness,
+    getShowReactionReagentsElement: () => showReactionReagents,
+    getShowReactionConditionsElement: () => showReactionConditions,
+    getReactionFontSizeElement: () => reactionFontSize,
     getOptionsResetButtonElement: () => optionsResetButton,
     getOptionsCancelButtonElement: () => optionsCancelButton,
     getOptionsApplyButtonElement: () => optionsApplyButton,

@@ -119,6 +119,7 @@ function makeBridge(options = {}) {
       }
     },
     document: {
+      getCurrentMol: () => currentMol,
       setCurrentMol: value => {
         currentMol = value;
       },
@@ -248,10 +249,43 @@ describe('createSessionRuntimeBridge', () => {
 
     assert.equal(getCurrentMol(), displayMol);
     assert.deepEqual(calls, [
-      ['updateForce', 'force-mol', { preservePositions: true, preserveView: true }],
+      ['stop'],
+      ['updateForce', 'force-mol', {
+        preservePositions: true,
+        preserveView: true,
+        initialPatchPos: new Map([['a1', { id: 'a1', x: 10, y: 11, vx: 0, vy: 0, anchorX: 12, anchorY: 13 }]]),
+        restartSimulation: false
+      }],
       ['restoreNodePositions', ['a1']],
-      ['restart'],
       ['restoreZoomTransform', { x: 2, y: 3, k: 0.75 }]
+    ]);
+  });
+
+  it('redraws a restored force resonance view with the current display molecule', () => {
+    const { bridge, calls } = makeBridge({
+      mode: 'force',
+      currentMol: { id: 'resonance-pair' }
+    });
+
+    bridge.redrawRestoredResonanceView(
+      { id: 'source-mol' },
+      {
+        mode: 'force',
+        nodePositions: [{ id: 'a1', x: 14, y: 15, vx: 0, vy: 0, anchorX: 16, anchorY: 17 }],
+        zoomTransform: { x: 8, y: 9, k: 0.5 }
+      }
+    );
+
+    assert.deepEqual(calls, [
+      ['stop'],
+      ['updateForce', 'resonance-pair', {
+        preservePositions: true,
+        preserveView: true,
+        initialPatchPos: new Map([['a1', { id: 'a1', x: 14, y: 15, vx: 0, vy: 0, anchorX: 16, anchorY: 17 }]]),
+        restartSimulation: false
+      }],
+      ['restoreNodePositions', ['a1']],
+      ['restoreZoomTransform', { x: 8, y: 9, k: 0.5 }]
     ]);
   });
 });

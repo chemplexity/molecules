@@ -30,6 +30,7 @@ export function createReaction2dDeps(deps) {
     captureAppSnapshot: deps.history.captureAppSnapshot,
     takeSnapshot: deps.history.takeSnapshot,
     hasActiveResonanceView: deps.overlays?.hasActiveResonanceView,
-    getActiveResonanceSourceMolecule: deps.overlays?.getActiveResonanceSourceMolecule
+    getActiveResonanceSourceMolecule: deps.overlays?.getActiveResonanceSourceMolecule,
+    resetActiveResonanceView: deps.overlays?.resetActiveResonanceView
   };
 }

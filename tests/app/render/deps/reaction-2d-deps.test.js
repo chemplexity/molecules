@@ -29,7 +29,8 @@ describe('createReaction2dDeps', () => {
       },
       overlays: {
         hasActiveResonanceView: () => true,
-        getActiveResonanceSourceMolecule: mol => ({ source: mol })
+        getActiveResonanceSourceMolecule: mol => ({ source: mol }),
+        resetActiveResonanceView: mol => records.push(['resetActiveResonanceView', mol])
       }
     });
 
@@ -45,7 +46,8 @@ describe('createReaction2dDeps', () => {
 
     deps.draw2d();
     deps.restoreZoomTransform({ x: 0, y: 0, k: 1 });
+    deps.resetActiveResonanceView('source-mol');
 
-    assert.deepEqual(records, [['draw2d'], ['restoreZoomTransform', { x: 0, y: 0, k: 1 }]]);
+    assert.deepEqual(records, [['draw2d'], ['restoreZoomTransform', { x: 0, y: 0, k: 1 }], ['resetActiveResonanceView', 'source-mol']]);
   });
 });

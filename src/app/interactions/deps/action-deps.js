@@ -430,6 +430,7 @@ export function createPrimitiveEventHandlerDeps(ctx) {
       start: (atomId, gX, gY) => ctx.startDrawBond(atomId, gX, gY),
       previewBond: (start, end, options = {}) => ctx.previewDrawBond(start, end, options),
       clearArtifacts: () => ctx.clearDrawBondArtifacts(),
+      cancel: () => ctx.cancelDrawBondPreview?.(),
       resetHover: () => ctx.resetDrawBondHover(),
       getElement: () => ctx.getDrawBondElement(),
       getType: () => ctx.getDrawBondType()

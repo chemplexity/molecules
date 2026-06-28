@@ -253,7 +253,7 @@ const template = reactionTemplates.dehalogenation;
 console.log(template.category); // substitution
 console.log(template.summary); // Alkyl halide -> alkane
 console.log(template.variants[0].label); // H2, Pd/C
-console.log(template.variants[0].conditions); // { temperature: 'rt', pressure: '1 atm H2' }
+console.log(template.variants[0].conditions); // { temperature: '25 °C', pressure: '1 atm H2' }
 console.log(template.byproducts); // [ 'halide-containing reagent products' ]
 console.log(template.selectivity.chemoselectivity); // strongly substrate- and halide-dependent
 ```

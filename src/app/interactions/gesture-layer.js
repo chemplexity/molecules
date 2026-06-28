@@ -1377,6 +1377,11 @@ export function initGestureInteractions(context) {
     if (context.overlays.hasReactionPreview()) {
       return;
     }
+    if (context.overlays.hasActiveResonanceView?.()) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return;
+    }
     if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
       return;
     }

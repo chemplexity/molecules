@@ -15,6 +15,7 @@ const RING_TEMPLATE_REUSE_DISTANCE_FACTOR = 0.2;
 const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
+const RESONANCE_PRODUCT_ATOM_ID_PREFIX = '__resonance_product__:';
 
 function forceRingTemplateBondLength(baseForceBondLength, layoutBondLength = DEFAULT_2D_BOND_LENGTH) {
   const parsed = Number(layoutBondLength);
@@ -1125,13 +1126,22 @@ function reactionPreviewReactantAtomIds(mol) {
 }
 
 function isReactionPreviewEditableAtomId(mol, atomId) {
+  if (typeof atomId === 'string' && atomId.startsWith(RESONANCE_PRODUCT_ATOM_ID_PREFIX)) {
+    return false;
+  }
   const reactantAtomIds = reactionPreviewReactantAtomIds(mol);
   return !reactantAtomIds || reactantAtomIds.has(atomId);
 }
 
 function isReactionPreviewEditableBond(mol, bond) {
+  if (typeof bond?.id === 'string' && bond.id.startsWith(RESONANCE_PRODUCT_ATOM_ID_PREFIX)) {
+    return false;
+  }
   const reactantAtomIds = reactionPreviewReactantAtomIds(mol);
   const atomIds = [...(bond?.atoms ?? [])];
+  if (atomIds.some(atomId => typeof atomId === 'string' && atomId.startsWith(RESONANCE_PRODUCT_ATOM_ID_PREFIX))) {
+    return false;
+  }
   return !reactantAtomIds || atomIds.every(atomId => reactantAtomIds.has(atomId));
 }
 
@@ -1545,6 +1555,9 @@ export function createStructuralEditActions(context) {
           if (!bond) {
             return false;
           }
+          if (!isReactionPreviewEditableBond(mol, bond)) {
+            return false;
+          }
           const resolvedPreferredCenterId = resolveStoredPreferredCenterId(bond, preferredCenterId);
           if (mode === 'force') {
             const [atom1, atom2] = bond.getAtomObjects(mol);
@@ -1684,9 +1697,13 @@ export function createStructuralEditActions(context) {
         return {
           suppressDrawBondHover: true,
           clearPrimitiveHover: true,
-          restorePrimitiveHover: {
-            bondIds: [activeBondId]
-          },
+          ...(reactionEdit?.restored
+            ? {}
+            : {
+                restorePrimitiveHover: {
+                  bondIds: [activeBondId]
+                }
+              }),
           force: forceResult
         };
       }
@@ -1786,6 +1803,9 @@ export function createStructuralEditActions(context) {
         zoomSnapshot,
         preflight: ({ mol, reactionEdit: activeReactionEdit }) => {
           const targetAtomId = activeReactionEdit?.atomId ?? atomId;
+          if (!isReactionPreviewEditableAtomId(mol, targetAtomId)) {
+            return false;
+          }
           const atom = mol.atoms.get(targetAtomId);
           if (!atom) {
             return false;

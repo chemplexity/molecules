@@ -582,6 +582,15 @@ export function createPrimitiveEventHandlers(context) {
     return atomIds.every(atomId => isReactionPreviewEditableRingAtom(atomId));
   }
 
+  function isReactionPreviewEditablePrimitiveBond(bondId, molecule) {
+    if (!bondId) {
+      return true;
+    }
+    const bond = molecule?.bonds?.get?.(bondId);
+    const atomIds = bond?.atoms ?? [];
+    return atomIds.every(atomId => isReactionPreviewEditableRingAtom(atomId));
+  }
+
   function getRingTemplateAtomEntries() {
     if (context.state.viewState.getMode() === 'force') {
       return (context.helpers?.getForceNodes?.() ?? [])
@@ -1502,6 +1511,11 @@ export function createPrimitiveEventHandlers(context) {
     }
     const chargeTool = getChargeTool();
     if (chargeTool) {
+      if (!context.overlays.isReactionPreviewEditableAtomId(atomId)) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
       context.actions.changeAtomCharge(atomId, {
         chargeTool,
         decrement: false
@@ -1522,7 +1536,11 @@ export function createPrimitiveEventHandlers(context) {
     }
     event.preventDefault();
     event.stopPropagation();
-    context.actions.changeAtomCharge(atom.id ?? atom, {
+    const atomId = atom.id ?? atom;
+    if (!context.overlays.isReactionPreviewEditableAtomId(atomId)) {
+      return;
+    }
+    context.actions.changeAtomCharge(atomId, {
       chargeTool,
       decrement: true
     });
@@ -1585,6 +1603,13 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     if (context.state.overlayState.getDrawBondMode()) {
+      if (!isReactionPreviewEditablePrimitiveBond(bondId, molecule)) {
+        context.drawBond.cancel?.();
+        context.drawBond.clearArtifacts?.();
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
       context.actions.promoteBondOrder(bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
       return;
     }
@@ -1625,6 +1650,14 @@ export function createPrimitiveEventHandlers(context) {
   function handleForceBondMouseOver(event, bondId, molecule) {
     const chargeTool = getChargeTool();
     if (chargeTool) {
+      return;
+    }
+    if (context.state.overlayState.getDrawBondMode() && !isReactionPreviewEditablePrimitiveBond(bondId, molecule)) {
+      context.drawBond.cancel?.();
+      context.drawBond.clearArtifacts?.();
+      context.view.clearPrimitiveHover();
+      context.view.refreshSelectionOverlay();
+      context.tooltip.hide();
       return;
     }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
@@ -1679,6 +1712,10 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     if (!context.overlays.isReactionPreviewEditableAtomId(sourceAtom.id)) {
+      context.drawBond.cancel?.();
+      context.drawBond.clearArtifacts?.();
+      event.preventDefault?.();
+      event.stopPropagation?.();
       return;
     }
     event.stopPropagation();
@@ -1692,6 +1729,8 @@ export function createPrimitiveEventHandlers(context) {
     }
     if (context.state.overlayState.getDrawBondMode()) {
       if (!context.overlays.isReactionPreviewEditableAtomId(atom.id)) {
+        context.drawBond.cancel?.();
+        context.drawBond.clearArtifacts?.();
         event.stopPropagation();
         return;
       }
@@ -1721,6 +1760,11 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     if (chargeTool) {
+      if (!context.overlays.isReactionPreviewEditableAtomId(atom.id)) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
+      }
       if (atom.name === 'H') {
         return;
       }
@@ -1747,6 +1791,9 @@ export function createPrimitiveEventHandlers(context) {
     }
     event.preventDefault();
     event.stopPropagation();
+    if (!context.overlays.isReactionPreviewEditableAtomId(atom.id)) {
+      return;
+    }
     if (atom.name === 'H') {
       return;
     }
@@ -1763,6 +1810,14 @@ export function createPrimitiveEventHandlers(context) {
   function handleForceAtomMouseOver(event, atomNode, molecule, valenceWarning) {
     const chargeTool = getChargeTool();
     if (chargeTool && atomNode.name === 'H') {
+      return;
+    }
+    if (context.state.overlayState.getDrawBondMode() && !context.overlays.isReactionPreviewEditableAtomId(atomNode.id)) {
+      context.drawBond.cancel?.();
+      context.drawBond.clearArtifacts?.();
+      context.view.clearPrimitiveHover();
+      context.view.refreshSelectionOverlay();
+      context.tooltip.hide();
       return;
     }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {

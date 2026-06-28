@@ -321,6 +321,10 @@ describe('shouldPreserveResonanceForClickTarget', () => {
     assert.equal(shouldPreserveResonanceForClickTarget(mockTarget(new Set(['#resonance-table']))), true);
   });
 
+  it('preserves resonance view for SMARTS panel tab and table interactions', () => {
+    assert.equal(shouldPreserveResonanceForClickTarget(mockTarget(new Set(['#smarts-panel']))), true);
+  });
+
   it('allows ordinary outside clicks to reset the active resonance view', () => {
     assert.equal(shouldPreserveResonanceForClickTarget(mockTarget()), false);
   });
@@ -741,6 +745,72 @@ describe('resonance undo snapshots', () => {
     assert.deepEqual(viewSnapshot, { locked: true, activeState: 2, activePairIndex: 0, activeDirection: 'forward' });
     assert.deepEqual(prepared.resonanceView, { locked: true, activeState: 2, activePairIndex: 0, activeDirection: 'forward' });
     assert.equal(carbonyl.properties.order, 2);
+  });
+
+  it('records undo snapshots when entering, exiting, and navigating resonance views', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+    clearResonancePanelState();
+
+    try {
+      const mol = parseSMILES('O=C[CH-]C=O');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      generateResonanceStructures(mol);
+      const snapshots = [];
+      let displayedMol = mol;
+      initResonancePanel({
+        mode: '2d',
+        get _mol2d() {
+          return displayedMol;
+        },
+        setMol2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        currentMol: null,
+        takeSnapshot() {
+          snapshots.push(captureResonanceViewSnapshot(mol));
+        },
+        render2d(nextMol) {
+          displayedMol = nextMol;
+        },
+        updateForce() {}
+      });
+      updateResonancePanel(mol, { recompute: false });
+
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+      assert.deepEqual(snapshots.at(-1), null);
+      assert.match(collectText(resonanceBody.children[0]), /1→2/);
+
+      let row = resonanceBody.children[0];
+      let nav = row.children[0].children.find(child => child.className === 'reaction-nav');
+      nav.children[2].dispatchEvent(mockEvent('mousedown'));
+      assert.deepEqual(snapshots.at(-1), { locked: true, activeState: 2, activePairIndex: 0, activeDirection: 'forward' });
+      assert.match(collectText(resonanceBody.children[0]), /2→3/);
+
+      row = resonanceBody.children[0];
+      nav = row.children[0].children.find(child => child.className === 'reaction-nav');
+      nav.children[0].dispatchEvent(mockEvent('mousedown'));
+      assert.deepEqual(snapshots.at(-1), { locked: true, activeState: 3, activePairIndex: 1, activeDirection: 'forward' });
+      assert.match(collectText(resonanceBody.children[0]), /2←3/);
+
+      clearResonancePanelState();
+      updateResonancePanel(mol, { recompute: false });
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+      assert.match(collectText(resonanceBody.children[0]), /1→2/);
+      resonanceBody.children[0].dispatchEvent(mockEvent('click'));
+      assert.deepEqual(snapshots.at(-1), { locked: true, activeState: 2, activePairIndex: 0, activeDirection: 'forward' });
+      assert.equal(resonanceBody.children[0].classList.contains('resonance-active'), false);
+    } finally {
+      globalThis.document = previousDocument;
+    }
   });
 
   it('rerenders the resonance row label when a locked contributor view is restored', () => {

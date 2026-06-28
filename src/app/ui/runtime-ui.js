@@ -51,7 +51,7 @@ export function createRuntimeUi(deps) {
     serializeSnapshotMol: mol => getSessionUiState().serializeSnapshotMol(mol),
     captureAppSnapshot: options => getSessionSnapshotManager().capture(options),
     updateAnalysisPanels: (mol, options = {}) => getSessionUiState().updateAnalysisPanels(mol, options),
-    restorePanelState: panelState => getSessionUiState().restorePanelState(panelState),
+    restorePanelState: (panelState, options) => getSessionUiState().restorePanelState(panelState, options),
     restoreInteractionState: snap => getSessionUiState().restoreInteractionState(snap),
     restoreSnapshot: snap => getSessionSnapshotManager().restore(snap),
     updateModeChrome

@@ -8,11 +8,15 @@ import { alignReaction2dProductOrientation, buildReaction2dMol, centerReaction2d
 import { updateRenderOptions } from '../../../src/app/render/helpers.js';
 import { FORCE_LAYOUT_BOND_LENGTH } from '../../../src/app/render/force-helpers.js';
 import { hasPersistentHighlightFallback, initHighlights, setPersistentHighlightFallback } from '../../../src/app/render/highlights.js';
+import { RESONANCE_ELECTRON_FLOW_PROPERTY, setMoleculeResonanceElectronFlow } from '../../../src/app/render/resonance-arrows.js';
 import {
   _applyReactionPreviewDisplayGeometry,
   _captureReactionPreviewSnapshot,
+  _formatReactionConditionsText,
   _forceInitialPatchFromAnchorCoords,
+  _isReactionPreviewEditableAtomId,
   _paintReactionPreviewReactantSource,
+  _reactionArrowLabelText,
   _reactionPreviewSkipsFunctionalGroupRefresh,
   _restoreReactionPreviewSnapshot,
   _restoreReactionPreviewSource,
@@ -197,6 +201,28 @@ afterEach(() => {
 });
 
 describe('reaction preview restore', () => {
+  it('treats resonance product atom ids as non-editable preview output', () => {
+    assert.equal(_isReactionPreviewEditableAtomId('__resonance_product__:a1'), false);
+    assert.equal(_isReactionPreviewEditableAtomId('a1'), true);
+    assert.equal(_isReactionPreviewEditableAtomId(null), true);
+  });
+
+  it('formats reaction metadata labels for arrow display options', () => {
+    const variant = reactionTemplates.alkeneHydrogenation.variants[0];
+    const previewState = { reactionVariant: variant };
+
+    assert.equal(_formatReactionConditionsText({ pressure: '1 atm H2', temperature: 'rt', pH: 'neutral' }), '25 °C, 1 atm H2, neutral');
+    assert.equal(_formatReactionConditionsText({ temperature: '-78 C to rt' }), '-78 °C to 25 °C');
+    assert.deepEqual(_reactionArrowLabelText(previewState, { showReactionReagents: true, showReactionConditions: false }), {
+      reagents: 'H2, Pd/C',
+      conditions: ''
+    });
+    assert.deepEqual(_reactionArrowLabelText(previewState, { showReactionReagents: false, showReactionConditions: true }), {
+      reagents: '',
+      conditions: '25 °C, 1 atm H2'
+    });
+  });
+
   it('keeps locked reaction previews out of persistent highlight restoration', () => {
     try {
       setPersistentHighlightFallback(null, { key: 'physchem' });
@@ -240,6 +266,112 @@ describe('reaction preview restore', () => {
         .join(' ');
       assert.match(rowText, /Aldehyde Oxidation/);
       assert.match(rowText, /Carbonyl Reduction/);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('exits an active resonance view when a reaction row is activated', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    const calls = [];
+    globalThis.document = mockReactionPanelDocument(rows);
+    try {
+      const sourceMol = parseSMILES('CC=O');
+      generateResonanceStructures(sourceMol);
+      sourceMol.setResonanceState(2);
+      initReaction2d({
+        mode: '2d',
+        currentMol: null,
+        _mol2d: parseSMILES('CC'),
+        takeSnapshot(options) {
+          calls.push(['takeSnapshot', options]);
+        },
+        resetActiveResonanceView(mol) {
+          calls.push(['resetActiveResonanceView', mol]);
+        },
+        renderMol(mol, options = {}) {
+          calls.push(['renderMol', mol, options]);
+        },
+        hasActiveResonanceView: () => true,
+        getActiveResonanceSourceMolecule: () => sourceMol
+      });
+      initHighlights({
+        mode: '2d',
+        applyForceHighlights() {}
+      });
+
+      updateReactionTemplatesPanel();
+      const row = rows.find(candidate => /Carbonyl Reduction/.test(collectText(candidate)));
+      assert.ok(row, 'expected carbonyl reduction row');
+
+      row.dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      assert.deepEqual(calls[0], ['takeSnapshot', { clearReactionPreview: false }]);
+      assert.equal(calls[1][0], 'resetActiveResonanceView');
+      assert.equal(calls[2][0], 'renderMol');
+      assert.ok(calls[2][1]?.__reactionPreview, 'expected reaction preview display molecule');
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('does not restore resonance electron-flow arrows after exiting a reaction launched from resonance', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    const calls = [];
+    globalThis.document = mockReactionPanelDocument(rows);
+    try {
+      const sourceMol = parseSMILES('CC=O');
+      generateResonanceStructures(sourceMol);
+      sourceMol.setResonanceState(2);
+      setMoleculeResonanceElectronFlow(sourceMol, 2);
+      assert.ok(sourceMol.properties?.[RESONANCE_ELECTRON_FLOW_PROPERTY], 'expected active resonance electron-flow metadata');
+
+      let activeResonance = true;
+      initReaction2d({
+        mode: '2d',
+        currentMol: null,
+        _mol2d: sourceMol,
+        takeSnapshot(options) {
+          calls.push(['takeSnapshot', options]);
+        },
+        resetActiveResonanceView() {
+          activeResonance = false;
+          calls.push(['resetActiveResonanceView']);
+        },
+        renderMol(mol, options = {}) {
+          calls.push(['renderMol', mol, options]);
+        },
+        hasActiveResonanceView: () => activeResonance,
+        getActiveResonanceSourceMolecule: () => sourceMol
+      });
+      initHighlights({
+        mode: '2d',
+        applyForceHighlights() {}
+      });
+
+      updateReactionTemplatesPanel();
+      const reductionRow = rows.find(candidate => /Carbonyl Reduction/.test(collectText(candidate)));
+      assert.ok(reductionRow, 'expected carbonyl reduction row');
+      reductionRow.dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      const activeRows = rows.filter(candidate => /Carbonyl Reduction/.test(collectText(candidate)));
+      activeRows.at(-1).dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      const restored = calls.filter(([name]) => name === 'renderMol').at(-1)?.[1];
+      assert.ok(restored, 'expected restored source molecule');
+      assert.equal(restored.__reactionPreview, undefined);
+      assert.equal(restored.properties?.[RESONANCE_ELECTRON_FLOW_PROPERTY], undefined);
     } finally {
       globalThis.document = previousDocument;
     }
@@ -308,6 +440,7 @@ describe('reaction preview restore', () => {
       const height = Math.max(...ys) - Math.min(...ys);
 
       assert.ok(previewMol?.__reactionPreview?.mappedAtomPairs?.length, 'expected reaction preview metadata');
+      assert.equal(previewMol.__reactionPreview.reactionVariant?.label, reactionTemplates.carbonylReduction.variants[0].label);
       assert.ok(height > width * 1.4, `expected force-rotated reactant pose to enter reaction preview, got width=${width} height=${height}`);
     } finally {
       globalThis.document = previousDocument;
@@ -600,6 +733,51 @@ describe('reaction preview restore', () => {
 
     assert.deepEqual(snapshot?.sourceMol?.moleculeProperties?.previewMarker, { kept: true });
     assert.ok(snapshot?.sourceMol?.moleculeProperties?.resonance);
+  });
+
+  it('rebuilds a complete display molecule when capturing a preview with stale source-only 2d state', () => {
+    const { context } = makeReaction2dContext();
+    const sourceMol = parseSMILES('CCO');
+    generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
+    const entry = reactionTemplates.alcoholDehydration;
+    const reactantSmarts = entry.smirks.split('>>')[0];
+    const mapping = [...findSMARTSRaw(sourceMol, reactantSmarts)][0];
+    const preview = buildReaction2dMol(sourceMol, entry.smirks, mapping);
+    assert.ok(preview, 'expected alcohol dehydration preview to build');
+
+    _restoreReactionPreviewSnapshot({
+      sourceMol: serializePreviewMol(sourceMol),
+      displayMol: serializePreviewMol(preview.mol),
+      activeReactionSmirks: entry.smirks,
+      activeReactionMatchIndex: 0,
+      reactionPreviewLocked: true,
+      reactantAtomIds: [...preview.reactantAtomIds],
+      productAtomIds: [...preview.productAtomIds],
+      productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+      mappedAtomPairs: preview.mappedAtomPairs,
+      editedProductAtomIds: [...preview.editedProductAtomIds],
+      preservedReactantStereoByCenter: [...preview.preservedReactantStereoByCenter],
+      preservedReactantStereoBondTypes: [...preview.preservedReactantStereoBondTypes],
+      preservedProductStereoByCenter: [...preview.preservedProductStereoByCenter],
+      preservedProductStereoBondTypes: [...preview.preservedProductStereoBondTypes],
+      forcedStereoByCenter: [...preview.forcedStereoByCenter],
+      forcedStereoBondTypes: [...preview.forcedStereoBondTypes],
+      forcedStereoBondCenters: [...preview.forcedStereoBondCenters],
+      reactantReferenceCoords: [...preview.reactantReferenceCoords],
+      reactionPreviewHighlightMappings: [],
+      entryZoomTransform: null,
+      entryDisplayMol: serializePreviewMol(sourceMol),
+      entryMode: '2d',
+      entryForceNodePositions: null
+    });
+    context._mol2d = sourceMol.clone();
+
+    const snapshot = _captureReactionPreviewSnapshot();
+    const displayAtomIds = new Set(snapshot?.displayMol?.atoms?.map(atom => atom.id));
+
+    for (const productAtomId of preview.productAtomIds) {
+      assert.equal(displayAtomIds.has(productAtomId), true, `expected captured display molecule to include ${productAtomId}`);
+    }
   });
 
   it('restores force previews without forcing a fresh force layout', () => {

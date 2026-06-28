@@ -1219,6 +1219,112 @@ async function forceAtomScreenPoints(page) {
   });
 }
 
+async function forceResonanceAtomScreenPoint(page, { productSide = false, label = null, horizontal = 'left' } = {}) {
+  return await page.evaluate(
+    options => {
+      const productPrefix = '__resonance_product__';
+      const circles = Array.from(document.querySelectorAll('circle.node'));
+      const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+      const atoms = circles.map((circle, index) => {
+        const rect = circle.getBoundingClientRect();
+        return {
+          id: String(circle.__data__?.id ?? ''),
+          label: labels[index]?.textContent?.trim() ?? '',
+          cx: rect.left + rect.width / 2,
+          cy: rect.top + rect.height / 2
+        };
+      });
+      const candidates = atoms.filter(atom => {
+        const isProduct = atom.id.startsWith(productPrefix);
+        return isProduct === options.productSide && (!options.label || atom.label === options.label);
+      });
+      candidates.sort((a, b) => (options.horizontal === 'right' ? b.cx - a.cx : a.cx - b.cx));
+      return candidates[0] ?? null;
+    },
+    { productSide, label, horizontal }
+  );
+}
+
+async function forceResonanceBondScreenPoint(page, { productSide = false, horizontal = 'left' } = {}) {
+  return await page.evaluate(
+    options => {
+      const productPrefix = '__resonance_product__:';
+      const lines = Array.from(document.querySelectorAll('line.bond-hover-target'));
+      const bonds = lines
+        .map(line => {
+          const datum = line.__data__ ?? {};
+          const id = String(datum.id ?? line.getAttribute('data-bond-id') ?? '');
+          const source = datum.source ?? {};
+          const target = datum.target ?? {};
+          const svg = line.ownerSVGElement;
+          const matrix = svg?.getScreenCTM?.();
+          if (!svg || !matrix || !Number.isFinite(source.x) || !Number.isFinite(source.y) || !Number.isFinite(target.x) || !Number.isFinite(target.y)) {
+            return null;
+          }
+          const point = svg.createSVGPoint();
+          point.x = (source.x + target.x) / 2;
+          point.y = (source.y + target.y) / 2;
+          const screenPoint = point.matrixTransform(matrix);
+          return {
+            id,
+            cx: screenPoint.x,
+            cy: screenPoint.y
+          };
+        })
+        .filter(Boolean)
+        .filter(bond => bond.id.startsWith(productPrefix) === options.productSide);
+      bonds.sort((a, b) => (options.horizontal === 'right' ? b.cx - a.cx : a.cx - b.cx));
+      return bonds[0] ?? null;
+    },
+    { productSide, horizontal }
+  );
+}
+
+async function forceNodeLayoutSignature(page) {
+  return await page.evaluate(() =>
+    Array.from(document.querySelectorAll('circle.node'))
+      .map(circle => {
+        const node = circle.__data__ ?? {};
+        return {
+          id: String(node.id ?? ''),
+          x: Number(node.x ?? 0),
+          y: Number(node.y ?? 0)
+        };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id))
+  );
+}
+
+async function forceRenderedNodeLayoutSignature(page) {
+  return await page.evaluate(() =>
+    Array.from(document.querySelectorAll('circle.node'))
+      .map(circle => {
+        const rect = circle.getBoundingClientRect();
+        return {
+          id: String(circle.__data__?.id ?? ''),
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2
+        };
+      })
+      .sort((a, b) => a.id.localeCompare(b.id))
+  );
+}
+
+function forceNodeLayoutsClose(actual, expected, tolerance = 0.5) {
+  if (actual.length !== expected.length) {
+    return false;
+  }
+  for (let i = 0; i < actual.length; i++) {
+    if (actual[i].id !== expected[i].id) {
+      return false;
+    }
+    if (Math.abs(actual[i].x - expected[i].x) > tolerance || Math.abs(actual[i].y - expected[i].y) > tolerance) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Computes the screen-space horizontal separation between reaction-preview
  * reactant and product force nodes.
@@ -2467,6 +2573,42 @@ test('changing a 2d bond immediately restores the hovered highlight', async ({ p
   await expect(page.locator('g.atom-selection line')).not.toHaveCount(0);
 });
 
+test('promoting a reactant bond from reaction preview clears the stale bond highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+
+  await page.locator('#draw-bond-btn').click();
+  const reactantBondPoint = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('g[data-bond-id]'))
+      .filter(group => !(group.getAttribute('data-bond-id') ?? '').startsWith('__rxn_product__:'))
+      .map(group => {
+        const hit = group.querySelector('line.bond-hit');
+        const rect = hit?.getBoundingClientRect?.();
+        return rect
+          ? {
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2
+            }
+          : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.x - b.x);
+    return candidates[0] ?? null;
+  });
+  expect(reactantBondPoint).toBeTruthy();
+
+  await page.mouse.click(reactantBondPoint.x, reactantBondPoint.y);
+
+  await expect(page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' })).toHaveCount(0);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(0);
+  await expect(page.locator('g.atom-selection line')).toHaveCount(0);
+});
+
 test('2d line mode increases the atom hit target radius', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -2502,7 +2644,7 @@ test('physicochemical row locks do not persist through undo and redo', async ({ 
   await expect(fsp3Row).not.toHaveClass(/pc-hover/);
 });
 
-test('the resonance tab does not persist through undo and redo', async ({ page }) => {
+test('undo and redo preserve the active SMARTS tab', async ({ page }) => {
   await page.goto('/index.html');
 
   await loadSmiles(page, 'C1=CC=CC=C1');
@@ -2512,7 +2654,12 @@ test('the resonance tab does not persist through undo and redo', async ({ page }
   await loadSmiles(page, 'CCO');
   await page.locator('#undo-btn').click();
 
-  await expect(page.getByRole('button', { name: 'Functional Groups' })).toHaveClass(/active/);
+  await expect(page.getByRole('button', { name: 'Other' })).toHaveClass(/active/);
+  await expect(page.getByRole('button', { name: 'Functional Groups' })).not.toHaveClass(/active/);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  await page.locator('#redo-btn').click();
+  await expect(page.getByRole('button', { name: 'Reactions' })).toHaveClass(/active/);
   await expect(page.getByRole('button', { name: 'Other' })).not.toHaveClass(/active/);
 });
 
@@ -3047,6 +3194,33 @@ test('reaction preview entry participates in undo and redo', async ({ page }) =>
   await expect(page.locator('line.bond-hit')).toHaveCount(previewBondCount);
 });
 
+test('undo after exiting reaction preview restores the visible preview', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await expect(dehydrationRow).toBeVisible();
+  const sourceBondCount = await page.locator('line.bond-hit').count();
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  const previewBondCount = await page.locator('line.bond-hit').count();
+  expect(previewBondCount).toBeGreaterThan(sourceBondCount);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+  await expect(page.locator('line.bond-hit')).toHaveCount(sourceBondCount);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(0);
+
+  await page.locator('#undo-btn').click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('line.bond-hit')).toHaveCount(previewBondCount);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+});
+
 test('reaction preview site navigation updates the active site count label', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -3355,19 +3529,98 @@ test('reaction preview redo restores the rotated preview geometry', async ({ pag
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
 
   const beforeRotate = await bondSignature(page);
+  const beforeRotateTransform = await rootTransform(page);
   await page.locator('#rotate-cw').click();
   const afterRotate = await bondSignature(page);
+  const afterRotateTransform = await rootTransform(page);
   await expect(afterRotate).not.toEqual(beforeRotate);
+  await expect(afterRotateTransform).not.toBe(beforeRotateTransform);
 
   await page.locator('#undo-btn').click();
   const afterUndo = await bondSignature(page);
   await expect(afterUndo).toEqual(beforeRotate);
+  await expect.poll(async () => rootTransform(page)).toBe(beforeRotateTransform);
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
 
   await page.locator('#redo-btn').click();
   const afterRedo = await bondSignature(page);
   await expect(afterRedo).toEqual(afterRotate);
+  await expect.poll(async () => rootTransform(page)).toBe(afterRotateTransform);
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
+});
+
+test('force reaction preview redo restores the rotated preview layout', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  const beforeRotate = await forceNodeLayoutSignature(page);
+  const beforeRotateRendered = await forceRenderedNodeLayoutSignature(page);
+  const beforeRotateTransform = await rootTransform(page);
+  await page.locator('#force-rotate-cw').click();
+  const afterRotate = await forceNodeLayoutSignature(page);
+  const afterRotateRendered = await forceRenderedNodeLayoutSignature(page);
+  const afterRotateTransform = await rootTransform(page);
+  expect(forceNodeLayoutsClose(afterRotate, beforeRotate)).toBe(false);
+  expect(forceNodeLayoutsClose(afterRotateRendered, beforeRotateRendered, 1)).toBe(false);
+  await expect(afterRotateTransform).not.toBe(beforeRotateTransform);
+
+  await page.locator('#undo-btn').click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => rootTransform(page)).toBe(beforeRotateTransform);
+  expect(forceNodeLayoutsClose(await forceNodeLayoutSignature(page), beforeRotate)).toBe(true);
+
+  await page.locator('#redo-btn').click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => rootTransform(page)).toBe(afterRotateTransform);
+  expect(forceNodeLayoutsClose(await forceNodeLayoutSignature(page), afterRotate)).toBe(true);
+  await expect.poll(async () => forceNodeLayoutsClose(await forceRenderedNodeLayoutSignature(page), beforeRotateRendered, 1)).toBe(false);
+});
+
+test('force resonance redo restores the rotated pair layout', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  const beforeRotate = await forceNodeLayoutSignature(page);
+  const beforeRotateRendered = await forceRenderedNodeLayoutSignature(page);
+  const beforeRotateTransform = await rootTransform(page);
+  await page.locator('#force-rotate-cw').click();
+  const afterRotate = await forceNodeLayoutSignature(page);
+  const afterRotateRendered = await forceRenderedNodeLayoutSignature(page);
+  const afterRotateTransform = await rootTransform(page);
+  expect(forceNodeLayoutsClose(afterRotate, beforeRotate)).toBe(false);
+  expect(forceNodeLayoutsClose(afterRotateRendered, beforeRotateRendered, 1)).toBe(false);
+  await expect(afterRotateTransform).not.toBe(beforeRotateTransform);
+
+  await page.locator('#undo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect.poll(async () => rootTransform(page)).toBe(beforeRotateTransform);
+  expect(forceNodeLayoutsClose(await forceNodeLayoutSignature(page), beforeRotate)).toBe(true);
+
+  await page.locator('#redo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect.poll(async () => rootTransform(page)).toBe(afterRotateTransform);
+  expect(forceNodeLayoutsClose(await forceNodeLayoutSignature(page), afterRotate)).toBe(true);
+  await expect.poll(async () => forceNodeLayoutsClose(await forceRenderedNodeLayoutSignature(page), beforeRotateRendered, 1)).toBe(false);
 });
 
 test('clicking a resonance structure from force reaction preview restores the pre-preview force zoom and keeps the molecule in view', async ({ page }) => {
@@ -3656,6 +3909,313 @@ test('undo and redo stay coherent when switching between reaction preview and re
   await expect(resonanceRow).toHaveClass(/resonance-active/);
 });
 
+test('switching SMARTS tabs preserves the active resonance view', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  const sourceBondCount = await page.locator('line.bond-hit').count();
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  const resonanceBondCount = await page.locator('line.bond-hit').count();
+  expect(resonanceBondCount).toBeGreaterThan(sourceBondCount);
+
+  await page.getByRole('button', { name: 'Functional Groups' }).click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('line.bond-hit')).toHaveCount(resonanceBondCount);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('line.bond-hit')).toHaveCount(resonanceBondCount);
+});
+
+test('entering and exiting resonance mode participate in undo and redo', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(resonanceRow).toContainText('1→2');
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.locator('#undo-btn').click();
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+
+  await page.locator('#redo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(resonanceRow).toContainText('1→2');
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  await resonanceRow.click();
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+
+  await page.locator('#undo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(resonanceRow).toContainText('1→2');
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.locator('#redo-btn').click();
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+});
+
+test('undo after exiting force resonance restores the active resonance pair', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  const sourceNodeCount = await page.locator('circle.node').count();
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+  await expect.poll(async () => await page.locator('circle.node').count()).toBeGreaterThan(sourceNodeCount);
+  const resonanceNodeCount = await page.locator('circle.node').count();
+
+  await resonanceRow.click();
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+  await expect.poll(async () => await page.locator('circle.node').count()).toBe(sourceNodeCount);
+
+  await page.locator('#undo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+  await expect(page.locator('circle.node')).toHaveCount(resonanceNodeCount);
+});
+
+test('editing from force resonance mode refits the unlocked molecule', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  const sourceNodeCount = await page.locator('circle.node').count();
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+  await expect.poll(async () => await page.locator('circle.node').count()).toBeGreaterThan(sourceNodeCount);
+  const resonanceTransform = await rootTransform(page);
+
+  await page.locator('#draw-bond-btn').click();
+  const sourceCarbon = await forceResonanceAtomScreenPoint(page, { productSide: false, label: 'C', horizontal: 'left' });
+  expect(sourceCarbon).toBeTruthy();
+  const sourceIdsBeforeEdit = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('circle.node'))
+      .map(circle => String(circle.__data__?.id ?? ''))
+      .filter(id => id && !id.startsWith('__resonance_product__:'))
+  );
+  await page.mouse.move(sourceCarbon.cx, sourceCarbon.cy);
+  await page.mouse.down();
+  await page.mouse.move(sourceCarbon.cx - 70, sourceCarbon.cy - 35, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+  await expect.poll(async () => rootTransform(page)).not.toBe(resonanceTransform);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+  const newAtomVector = await page.evaluate(
+    ({ sourceId, beforeIds }) => {
+      const before = new Set(beforeIds);
+      const nodes = Array.from(document.querySelectorAll('circle.node')).map(circle => {
+        const datum = circle.__data__ ?? {};
+        return {
+          id: String(datum.id ?? ''),
+          label: datum.name ?? '',
+          x: Number(datum.x ?? NaN),
+          y: Number(datum.y ?? NaN)
+        };
+      });
+      const source = nodes.find(node => node.id === sourceId);
+      const newAtom = nodes.find(node => node.label === 'C' && !before.has(node.id));
+      return source && newAtom
+        ? {
+            dx: newAtom.x - source.x,
+            dy: newAtom.y - source.y,
+            distance: Math.hypot(newAtom.x - source.x, newAtom.y - source.y)
+          }
+        : null;
+    },
+    { sourceId: sourceCarbon.id, beforeIds: sourceIdsBeforeEdit }
+  );
+  expect(newAtomVector).toBeTruthy();
+  expect(newAtomVector.dx).toBeLessThan(0);
+  expect(newAtomVector.dy).toBeLessThan(0);
+  expect(newAtomVector.distance).toBeGreaterThan(20);
+  expect(newAtomVector.distance).toBeLessThan(120);
+});
+
+test('failed force draw onto a resonance product molecule leaves resonance controls usable', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.locator('#draw-bond-btn').click();
+  const sourceCarbon = await forceResonanceAtomScreenPoint(page, { productSide: false, label: 'C', horizontal: 'left' });
+  const productCarbon = await forceResonanceAtomScreenPoint(page, { productSide: true, label: 'C', horizontal: 'right' });
+  expect(sourceCarbon).toBeTruthy();
+  expect(productCarbon).toBeTruthy();
+  await page.locator('#charge-positive-btn').click();
+  await page.mouse.click(productCarbon.cx, productCarbon.cy);
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.locator('#charge-negative-btn').click();
+  await page.mouse.click(productCarbon.cx, productCarbon.cy, { button: 'right' });
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.locator('#draw-bond-btn').click();
+  await page.mouse.move(productCarbon.cx, productCarbon.cy);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.mouse.move(productCarbon.cx + 48, productCarbon.cy + 48);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  const productBond = await forceResonanceBondScreenPoint(page, { productSide: true, horizontal: 'right' });
+  expect(productBond).toBeTruthy();
+  await page.mouse.move(productBond.cx, productBond.cy);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.mouse.move(sourceCarbon.cx, sourceCarbon.cy);
+  await page.mouse.down();
+  await page.mouse.move(productCarbon.cx, productCarbon.cy, { steps: 10 });
+  await page.mouse.up();
+
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+  await page.mouse.move(sourceCarbon.cx, sourceCarbon.cy);
+  await page.mouse.down();
+  await page.mouse.move(productBond.cx, productBond.cy, { steps: 10 });
+  await page.mouse.up();
+
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+  await resonanceRow.click();
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+});
+
+test('undo after exiting resonance keeps source functional groups detected', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC(=O)C(Cl)CC(C(C)C)C=C');
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Carbonyl' })).toHaveCount(1);
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Ketone' })).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+
+  await resonanceRow.click();
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+
+  await page.locator('#undo-btn').click();
+  await expect(page.getByRole('button', { name: 'Other' })).toHaveClass(/active/);
+  await expect(page.getByRole('button', { name: 'Functional Groups' })).not.toHaveClass(/active/);
+
+  await page.getByRole('button', { name: 'Functional Groups' }).click();
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Carbonyl' })).toHaveCount(1);
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Ketone' })).toHaveCount(1);
+});
+
+test('changing the displayed resonance pair participates in undo and redo', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=CC2=C3C4=C1C=CC5=C4C6=C(C=C5)C=CC7=C6C3=C(C=C2)C=C7');
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(resonanceRow).toContainText('1→2');
+
+  await page.getByTitle('Next resonance pair').click();
+  await expect(resonanceRow).toContainText('2→3');
+
+  await page.locator('#undo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(resonanceRow).toContainText('1→2');
+
+  await page.locator('#redo-btn').click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(resonanceRow).toContainText('2→3');
+});
+
+test('activating a reaction exits the active resonance view', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await computeResonanceContributors(resonanceRow);
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const reductionRow = page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' }).first();
+  await expect(reductionRow).toBeVisible();
+  await reductionRow.click();
+
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
+  await expect(reductionRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+
+  await reductionRow.click();
+  await expect(reductionRow).not.toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(0);
+  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
+});
+
 test('undo after editing from a locked resonance view restores the locked resonance contributor', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -3667,7 +4227,7 @@ test('undo after editing from a locked resonance view restores the locked resona
   await computeResonanceContributors(resonanceRow);
   await resonanceRow.click();
   await expect(resonanceRow).toHaveClass(/resonance-active/);
-  await expect(resonanceRow).toContainText('2/2');
+  await expect(resonanceRow).toContainText('1→2');
 
   await page.locator('#draw-bond-btn').click();
   await page.locator('#elem-btn-Cl').click();
@@ -3675,7 +4235,7 @@ test('undo after editing from a locked resonance view restores the locked resona
 
   await page.locator('#undo-btn').click();
   await expect(resonanceRow).toHaveClass(/resonance-active/);
-  await expect(resonanceRow).toContainText('2/2');
+  await expect(resonanceRow).toContainText('1→2');
   await expect(page.locator('#smiles-input')).toHaveValue('CC=O');
 });
 
@@ -3697,7 +4257,7 @@ test('redo after editing from a locked resonance view returns to the edited unlo
 
   await page.locator('#undo-btn').click();
   await expect(resonanceRow).toHaveClass(/resonance-active/);
-  await expect(resonanceRow).toContainText('2/2');
+  await expect(resonanceRow).toContainText('1→2');
 
   await page.locator('#redo-btn').click();
   await expect(resonanceRow).not.toHaveClass(/resonance-active/);

@@ -14,7 +14,9 @@ import { convertForceCoordsToLineLayout, forceLayoutBondScale, FORCE_LAYOUT_BOND
 import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
 import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
+import { clearMoleculeResonanceElectronFlow } from './resonance-arrows.js';
 import { ringAtomKey } from '../../core/style.js';
+import { tokenizeChemText } from '../../utils/index.js';
 
 let ctx = {};
 
@@ -50,9 +52,13 @@ let _reactionPreviewEntryZoomTransform = null;
 let _reactionPreviewEntryDisplayMol = null;
 let _reactionPreviewEntryMode = null;
 let _reactionPreviewEntryForceNodePositions = null;
+let _reactionPreviewVariant = null;
+
+const RESONANCE_PRODUCT_ATOM_ID_PREFIX = '__resonance_product__:';
 const _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH = 12;
 const _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH = 8;
 const _REACTION_PREVIEW_FORCE_ARROW_PAD_FALLBACKS = [12, 8, 4, 0];
+let _reactionArrowClipPathId = 0;
 
 function _forcePixelsPerMoleculeUnit(layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5) {
   const parsedBondLength = Number(layoutBondLength);
@@ -68,6 +74,82 @@ function _forcePixelsPerMoleculeUnit(layoutBondLength = getRenderOptions().layou
  */
 export function _reactionPreviewSkipsFunctionalGroupRefresh(entry) {
   return /\b(?:Protonation|Deprotonation)\b/.test(entry?.name ?? '');
+}
+
+function _reactionPreviewVariantForEntry(entry) {
+  const variant = entry?.variants?.[0];
+  if (!variant) {
+    return null;
+  }
+  return {
+    id: variant.id,
+    label: variant.label,
+    conditions: { ...(variant.conditions ?? {}) }
+  };
+}
+
+function _reactionPreviewVariantForState(previewState) {
+  if (previewState?.reactionVariant) {
+    return previewState.reactionVariant;
+  }
+  if (_reactionPreviewVariant) {
+    return _reactionPreviewVariant;
+  }
+  if (!_activeReactionSmirks) {
+    return null;
+  }
+  const entry = Object.values(reactionTemplates).find(candidate => candidate.smirks === _activeReactionSmirks);
+  return _reactionPreviewVariantForEntry(entry);
+}
+
+const REACTION_CONDITION_ORDER = ['temperature', 'pressure', 'pH', 'time', 'atmosphere', 'workup'];
+
+function _formatReactionConditionValue(key, value) {
+  const text = String(value ?? '').trim();
+  if (key !== 'temperature') {
+    return text;
+  }
+  return text
+    .replace(/\brt\b/gi, '25 \u00b0C')
+    .replace(/(-?\d+(?:\.\d+)?)\s*(?:\u00b0\s*)?C\b/g, '$1 \u00b0C');
+}
+
+/**
+ * Formats a reaction condition object into compact arrow-label text.
+ * @param {object|null|undefined} conditions - Structured reaction condition metadata.
+ * @returns {string} Comma-separated condition text.
+ */
+export function _formatReactionConditionsText(conditions) {
+  if (!conditions || typeof conditions !== 'object') {
+    return '';
+  }
+  const keys = [
+    ...REACTION_CONDITION_ORDER.filter(key => conditions[key] !== undefined),
+    ...Object.keys(conditions)
+      .filter(key => !REACTION_CONDITION_ORDER.includes(key))
+      .sort()
+  ];
+  return keys
+    .map(key => _formatReactionConditionValue(key, conditions[key]))
+    .filter(Boolean)
+    .join(', ');
+}
+
+/**
+ * Returns reagent and condition labels for the current reaction arrow display.
+ * @param {object|null|undefined} previewState - Active reaction preview metadata.
+ * @param {object} [options] - Render options controlling label visibility.
+ * @returns {{reagents: string, conditions: string}} Arrow label text.
+ */
+export function _reactionArrowLabelText(previewState, options = getRenderOptions()) {
+  const variant = _reactionPreviewVariantForState(previewState);
+  if (!variant) {
+    return { reagents: '', conditions: '' };
+  }
+  return {
+    reagents: options.showReactionReagents !== false ? String(variant.label ?? '').trim() : '',
+    conditions: options.showReactionConditions === true ? _formatReactionConditionsText(variant.conditions) : ''
+  };
 }
 
 function _takeReactionPreviewHistoryStep() {
@@ -88,6 +170,9 @@ export function _hasReactionPreview() {
  * @returns {boolean} True if the atom can be edited (either no preview is active, or the atom is a reactant atom).
  */
 export function _isReactionPreviewEditableAtomId(atomId) {
+  if (typeof atomId === 'string' && atomId.startsWith(RESONANCE_PRODUCT_ATOM_ID_PREFIX)) {
+    return false;
+  }
   if (!_hasReactionPreview() || atomId == null) {
     return true;
   }
@@ -178,6 +263,7 @@ export function _clearReactionPreviewState() {
   _reactionPreviewEntryDisplayMol = null;
   _reactionPreviewEntryMode = null;
   _reactionPreviewEntryForceNodePositions = null;
+  _reactionPreviewVariant = null;
 }
 
 function _serializeSnapshotMol(mol) {
@@ -357,7 +443,7 @@ export function _captureReactionPreviewSnapshot() {
   if (!_hasReactionPreview() || !_reactionPreviewSourceMol) {
     return null;
   }
-  const displayMol = _activeReactionPreviewDisplayMol();
+  const displayMol = _completeReactionPreviewDisplayMol(_activeReactionPreviewDisplayMol());
   return {
     sourceMol: _serializeSnapshotMol(_reactionPreviewSourceMol),
     displayMol: _serializeSnapshotMol(displayMol),
@@ -381,8 +467,53 @@ export function _captureReactionPreviewSnapshot() {
     entryZoomTransform: _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null,
     entryDisplayMol: _serializeSnapshotMol(_reactionPreviewEntryDisplayMol),
     entryMode: _reactionPreviewEntryMode ?? null,
-    entryForceNodePositions: _reactionPreviewEntryForceNodePositions ? [..._reactionPreviewEntryForceNodePositions] : null
+    entryForceNodePositions: _reactionPreviewEntryForceNodePositions ? [..._reactionPreviewEntryForceNodePositions] : null,
+    reactionVariant: _reactionPreviewVariant ? JSON.parse(JSON.stringify(_reactionPreviewVariant)) : null
   };
+}
+
+function _hasCompleteReactionPreviewDisplayMol(displayMol) {
+  if (!displayMol || _reactionPreviewProductAtomIds.size === 0) {
+    return false;
+  }
+  for (const atomId of _reactionPreviewProductAtomIds) {
+    if (!displayMol.atoms?.has?.(atomId)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function _rebuiltReactionPreviewDisplayMol() {
+  if (!_activeReactionSmirks || !_reactionPreviewSourceMol) {
+    return null;
+  }
+  const entry = Object.values(reactionTemplates).find(candidate => candidate.smirks === _activeReactionSmirks);
+  const reactantSmarts = entry?.smirks?.split('>>')[0]?.trim();
+  if (!entry || !reactantSmarts) {
+    return null;
+  }
+  const sourceMol = _reactionPreviewSourceMol.clone();
+  const mappings = [...findSMARTS(sourceMol, reactantSmarts)];
+  const matchGroups = _filterReactionMatchGroups(sourceMol, entry, reactantSmarts, mappings);
+  if (matchGroups.length === 0) {
+    return null;
+  }
+  const site = matchGroups[Math.min(_activeReactionMatchIndex, matchGroups.length - 1)];
+  const preview = _buildReaction2dMol(sourceMol, entry.smirks, site.applyMapping);
+  if (!preview?.mol) {
+    return null;
+  }
+  _applyActiveReactionPreviewMetadata(preview.mol, entry);
+  _applyReactionPreviewDisplayGeometry(preview.mol);
+  return preview.mol;
+}
+
+function _completeReactionPreviewDisplayMol(displayMol) {
+  if (_hasCompleteReactionPreviewDisplayMol(displayMol)) {
+    return displayMol;
+  }
+  return _rebuiltReactionPreviewDisplayMol() ?? displayMol;
 }
 
 function _activeReactionPreviewDisplayMol() {
@@ -531,6 +662,7 @@ function _getReactionTemplateSourceMol() {
     if (sourceMol?.properties?.resonance && typeof sourceMol.clone === 'function') {
       const baseMol = sourceMol.clone();
       baseMol.setResonanceState?.(1);
+      clearMoleculeResonanceElectronFlow(baseMol);
       return baseMol;
     }
     return sourceMol;
@@ -612,6 +744,7 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewEntryDisplayMol = _deserializeSnapshotMol(previewSnap.entryDisplayMol);
   _reactionPreviewEntryMode = previewSnap.entryMode ?? null;
   _reactionPreviewEntryForceNodePositions = previewSnap.entryForceNodePositions ? new Map(previewSnap.entryForceNodePositions) : null;
+  _reactionPreviewVariant = previewSnap.reactionVariant ?? _reactionPreviewVariantForEntry(Object.values(reactionTemplates).find(candidate => candidate.smirks === _activeReactionSmirks));
 }
 
 function _cloneWithPrefixedIds(mol, prefix) {
@@ -801,6 +934,7 @@ function _applyActiveReactionPreviewMetadata(mol, entry) {
     forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
     forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
     reactantReferenceCoords: _reactionPreviewReactantReferenceCoords,
+    reactionVariant: _reactionPreviewVariant ?? _reactionPreviewVariantForEntry(entry),
     skipForceStereoSeed: _reactionPreviewSkipsFunctionalGroupRefresh(entry)
   };
 }
@@ -1675,6 +1809,82 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
   }
 }
 
+function _appendChemTextSpans(textEl, text) {
+  for (const token of tokenizeChemText(text)) {
+    const tspan = textEl.append('tspan').text(token.text);
+    if (token.baseline === 'sub') {
+      tspan.attr('baseline-shift', 'sub').attr('font-size', '0.72em');
+    } else if (token.baseline === 'super') {
+      tspan.attr('baseline-shift', 'super').attr('font-size', '0.72em');
+    }
+  }
+}
+
+function _drawReactionArrowLabelLine(arrowLayer, text, { x, y, fontSize, clipPathId, className }) {
+  if (!text) {
+    return;
+  }
+  const textEl = arrowLayer
+    .append('text')
+    .attr('class', className)
+    .attr('x', x)
+    .attr('y', y)
+    .attr('fill', '#333')
+    .attr('font-size', fontSize)
+    .attr('font-weight', 500)
+    .attr('text-anchor', 'middle')
+    .attr('dominant-baseline', 'middle')
+    .attr('clip-path', `url(#${clipPathId})`);
+  _appendChemTextSpans(textEl, text);
+}
+
+function _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength }) {
+  const labels = _reactionArrowLabelText(previewState);
+  if (!labels.reagents && !labels.conditions) {
+    return;
+  }
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  const clipMargin = 4;
+  const arrowHeadInset = Math.min(Math.max(0, arrowHeadLength - 2), Math.max(0, maxX - minX) / 2);
+  const clipX = minX + clipMargin;
+  const clipWidth = Math.max(0, maxX - minX - clipMargin * 2 - arrowHeadInset);
+  if (clipWidth < 12) {
+    return;
+  }
+
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+  const fontSize = getRenderOptions().reactionFontSize ?? 14;
+  const labelOffset = fontSize + 3;
+  const clipId = `reaction-arrow-label-clip-${++_reactionArrowClipPathId}`;
+  arrowLayer
+    .append('clipPath')
+    .attr('id', clipId)
+    .append('rect')
+    .attr('x', clipX)
+    .attr('y', minY - labelOffset * 2)
+    .attr('width', clipWidth)
+    .attr('height', Math.max(1, maxY - minY + labelOffset * 4));
+
+  _drawReactionArrowLabelLine(arrowLayer, labels.reagents, {
+    x: midX,
+    y: midY - labelOffset,
+    fontSize,
+    clipPathId: clipId,
+    className: 'reaction-arrow-reagents'
+  });
+  _drawReactionArrowLabelLine(arrowLayer, labels.conditions, {
+    x: midX,
+    y: midY + labelOffset,
+    fontSize,
+    clipPathId: clipId,
+    className: 'reaction-arrow-conditions'
+  });
+}
+
 /**
  * Draws the reaction arrow and product-plus signs onto the 2D structure SVG layer.
  * @param {(pt: object) => object} toSVGPt - Converts a molecule-space point to SVG viewport coordinates.
@@ -1733,6 +1943,7 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms, mol = null) {
     .attr('stroke-width', 2.5)
     .attr('stroke-linecap', 'round')
     .attr('stroke-linejoin', 'round');
+  _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength });
 
   const productGeometries = _reaction2dProductGeometries(atoms, { previewState });
   for (let i = 0; i < productGeometries.length - 1; i++) {
@@ -1821,6 +2032,7 @@ export function _renderReactionPreviewArrowForce(nodes, mol = null) {
     .attr('stroke-width', 2.5)
     .attr('stroke-linecap', 'round')
     .attr('stroke-linejoin', 'round');
+  _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength });
 
   const productGeometries = _reaction2dProductGeometries(nodes, {
     previewState,
@@ -1950,6 +2162,7 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true, 
     _reactionPreviewForcedStereoBondTypes = preview.forcedStereoBondTypes ?? new Map();
     _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
+    _reactionPreviewVariant = _reactionPreviewVariantForEntry(entry);
     _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
     _applyActiveReactionPreviewMetadata(preview.mol, entry);
     _applyReactionPreviewDisplayGeometry(preview.mol);
@@ -2172,6 +2385,9 @@ export function updateReactionTemplatesPanel() {
         return;
       }
       _takeReactionPreviewHistoryStep();
+      if (ctx.hasActiveResonanceView?.() === true) {
+        ctx.resetActiveResonanceView?.(sourceMol);
+      }
       _activateReactionEntry(sourceMol, entry, 0, { lock: true });
       updateReactionTemplatesPanel();
       _setHighlight(_highlightMappingsForReactionRow(entry));
