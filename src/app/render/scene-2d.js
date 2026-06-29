@@ -1038,7 +1038,9 @@ export function create2DSceneRenderer(ctx) {
     }
     ctx.helpers.alignReaction2dProductOrientation(mol, layoutBondLength);
     ctx.helpers.spreadReaction2dProductComponents(mol, layoutBondLength);
-    ctx.helpers.centerReaction2dPairCoords(mol, layoutBondLength);
+    ctx.helpers.centerReaction2dPairCoords(mol, layoutBondLength, {
+      minGapBondLength: ctx.helpers.reactionArrowLabelMinGapBondLength?.(mol, layoutBondLength) ?? layoutBondLength
+    });
 
     const { rotationDeg, flipH, flipV } = ctx.view.getOrientation();
     if (rotationDeg !== 0 || flipH || flipV) {

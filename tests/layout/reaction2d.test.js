@@ -219,6 +219,8 @@ function atomIdBounds(preview, atomIds) {
   const xs = atoms.map(atom => atom.x);
   const ys = atoms.map(atom => atom.y);
   return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
     width: Math.max(...xs) - Math.min(...xs),
     height: Math.max(...ys) - Math.min(...ys)
   };
@@ -1355,6 +1357,35 @@ test('reaction preview product geometry uses the requested layout bond length', 
   assert.ok(carbon && hydroxylOxygen && methylCarbon && amineNitrogen, 'expected scaled product atoms');
   assert.ok(Math.abs(distance(carbon, hydroxylOxygen) - 0.5) < 1e-6, `expected acid C-O product bond to use 0.5 Å, got ${distance(carbon, hydroxylOxygen).toFixed(3)} Å`);
   assert.ok(Math.abs(distance(amineNitrogen, methylCarbon) - 0.5) < 1e-6, `expected amine N-C product bond to use 0.5 Å, got ${distance(amineNitrogen, methylCarbon).toFixed(3)} Å`);
+});
+
+test('reaction preview centering can reserve a default-sized arrow lane for compact force layouts', () => {
+  const sourceMol = parseSMILES('C=C');
+  const smirks = reactionTemplates.alkeneHydrogenation.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  assert.ok(mapping, 'expected alkene hydrogenation mapping');
+
+  const compactPreview = buildReaction2dMol(sourceMol, smirks, mapping, { bondLength: 0.5 });
+  const forcePreview = buildReaction2dMol(sourceMol, smirks, mapping, { bondLength: 0.5 });
+  assert.ok(compactPreview && forcePreview, 'expected compact previews to build');
+
+  for (const preview of [compactPreview, forcePreview]) {
+    generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 0.5 });
+    alignReaction2dProductOrientation(preview.mol, preview, 0.5);
+    spreadReaction2dProductComponents(preview.mol, preview, 0.5);
+  }
+  centerReaction2dPairCoords(compactPreview.mol, compactPreview, 0.5);
+  centerReaction2dPairCoords(forcePreview.mol, forcePreview, 0.5, { minGapBondLength: 1.5 });
+
+  const compactReactantBounds = atomIdBounds(compactPreview, compactPreview.reactantAtomIds);
+  const compactProductBounds = atomIdBounds(compactPreview, compactPreview.productAtomIds);
+  const forceReactantBounds = atomIdBounds(forcePreview, forcePreview.reactantAtomIds);
+  const forceProductBounds = atomIdBounds(forcePreview, forcePreview.productAtomIds);
+  const compactGap = compactProductBounds.minX - compactReactantBounds.maxX;
+  const forceGap = forceProductBounds.minX - forceReactantBounds.maxX;
+
+  assert.ok(compactGap > 1.85 && compactGap < 1.95, `expected compact gap near 1.9 Å, got ${compactGap.toFixed(3)} Å`);
+  assert.ok(forceGap > 5.65 && forceGap < 5.75, `expected force lane gap near default 5.7 Å, got ${forceGap.toFixed(3)} Å`);
 });
 
 test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {

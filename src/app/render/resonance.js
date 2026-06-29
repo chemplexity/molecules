@@ -3,7 +3,7 @@
 import { generateResonanceStructures } from '../../algorithms/index.js';
 import { ringAtomKey } from '../../core/style.js';
 import { centerReaction2dPairCoords, cloneWithPrefixedIds } from '../../layout/reaction2d.js';
-import { forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from './force-helpers.js';
+import { forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, FORCE_LAYOUT_REFERENCE_BOND_LENGTH } from './force-helpers.js';
 import { getRenderOptions } from './helpers.js';
 import { createModeAwareHelpers } from './render-mode-helpers.js';
 import { createNavButton } from './panel-row.js';
@@ -613,7 +613,10 @@ function buildResonancePairDisplayMolecule(sourceMol, pair) {
     leftState,
     rightState
   };
-  centerReaction2dPairCoords(pairMol, pairMol.__reactionPreview, ctx.getRenderOptions?.().layoutBondLength ?? 1.5);
+  const layoutBondLength = ctx.getRenderOptions?.().layoutBondLength ?? 1.5;
+  centerReaction2dPairCoords(pairMol, pairMol.__reactionPreview, layoutBondLength, {
+    minGapBondLength: ctx.mode === 'force' ? FORCE_LAYOUT_REFERENCE_BOND_LENGTH : layoutBondLength
+  });
   preserveSourceRingFillsOnResonancePair(pairMol, sourceMol);
   return pairMol;
 }

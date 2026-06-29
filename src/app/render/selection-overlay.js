@@ -55,7 +55,8 @@ export function createSelectionOverlayManager(ctx) {
         return;
       }
       for (const atomId of atomIds) {
-        if (mol.atoms.has(atomId)) {
+        const atom = mol.atoms.get(atomId);
+        if (atom && atom.visible !== false) {
           ctx.state.getHoveredAtomIds().add(atomId);
         }
       }
@@ -70,7 +71,14 @@ export function createSelectionOverlayManager(ctx) {
 
   function getRenderableSelectionIds() {
     const mol = ctx.state.getMode() === 'force' ? ctx.molecule.getForceMol() : ctx.molecule.getMol2D();
-    const liveHoveredAtomIds = mol ? new Set([...ctx.state.getHoveredAtomIds()].filter(id => mol.atoms.has(id))) : new Set();
+    const liveHoveredAtomIds = mol
+      ? new Set(
+          [...ctx.state.getHoveredAtomIds()].filter(id => {
+            const atom = mol.atoms.get(id);
+            return atom && atom.visible !== false;
+          })
+        )
+      : new Set();
     const liveHoveredBondIds = mol ? new Set([...ctx.state.getHoveredBondIds()].filter(id => mol.bonds.has(id))) : new Set();
     const chargeTool = ctx.state.getChargeTool?.() ?? null;
 

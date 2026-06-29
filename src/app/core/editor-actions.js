@@ -37,7 +37,8 @@ export function createEditorActions(deps) {
       reactionPreviewPayload = null,
       reactionEdit: presetReactionEdit = null,
       snapshotOptions = undefined,
-      preflight = null
+      preflight = null,
+      resonanceReset: presetResonanceReset = false
     } = options;
 
     const mode = deps.state.viewState.getMode();
@@ -69,11 +70,11 @@ export function createEditorActions(deps) {
     }
 
     let mol = deps.state.documentState.getActiveMolecule();
-    let resonanceReset = false;
+    let resonanceReset = presetResonanceReset === true;
     if (resonancePolicy === ResonancePolicy.normalizeForEdit) {
       const structuralEdit = deps.overlays.prepareResonanceStructuralEdit(mol);
       mol = structuralEdit.mol ?? deps.state.documentState.getActiveMolecule();
-      resonanceReset = !!structuralEdit.resonanceReset;
+      resonanceReset = resonanceReset || !!structuralEdit.resonanceReset;
     }
 
     if (!mol) {
@@ -145,12 +146,19 @@ export function createEditorActions(deps) {
     if (mode === 'force') {
       const forceResult = result.force ?? {};
       const aux = forceResult.beforeRender?.(context);
-      deps.renderers.updateForce(mol, forceResult.options ?? { preservePositions: true, preserveView: true });
+      const shouldRefitUnlockedForceEdit =
+        options.viewportPolicy === ViewportPolicy.restoreEdit && (reactionEdit?.restored || resonanceReset);
+      const forceOptions = {
+        ...(forceResult.options ?? { preservePositions: true, preserveView: true }),
+        ...(shouldRefitUnlockedForceEdit ? { preserveView: false } : {}),
+        ...(resonanceReset ? { preservePositions: false } : {})
+      };
+      deps.renderers.updateForce(mol, forceOptions);
       forceResult.afterRender?.(context, aux);
       if (forceResult.enableKeepInView) {
         deps.view.enableForceKeepInView();
       }
-      if (options.viewportPolicy === ViewportPolicy.restoreEdit && reactionEdit?.restored && reactionEdit?.entryZoomTransform) {
+      if (!shouldRefitUnlockedForceEdit && options.viewportPolicy === ViewportPolicy.restoreEdit && reactionEdit?.restored && reactionEdit?.entryZoomTransform) {
         deps.view.restoreZoomTransformSnapshot(reactionEdit.entryZoomTransform);
       }
     } else {

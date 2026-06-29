@@ -25,7 +25,7 @@ export const FORCE_LAYOUT_INITIAL_SETTLE_ALPHA = 0.35;
 export const FORCE_LAYOUT_INITIAL_RESTART_ALPHA = 0.02;
 export const FORCE_LAYOUT_EDIT_RESTART_ALPHA = 0.005;
 const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.14;
-const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
+export const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
 
 /**
  * Returns the force-layout scale factor implied by a line-layout bond length.
@@ -879,7 +879,10 @@ export function createForceHelpers(context) {
     });
     context.alignReaction2dProductOrientation(seedMol, layoutBondLength);
     context.spreadReaction2dProductComponents(seedMol, layoutBondLength);
-    context.centerReaction2dPairCoords(seedMol, layoutBondLength);
+    const labelMinGapBondLength = context.reactionArrowLabelMinGapBondLength?.(seedMol, layoutBondLength) ?? 0;
+    context.centerReaction2dPairCoords(seedMol, layoutBondLength, {
+      minGapBondLength: Math.max(FORCE_LAYOUT_REFERENCE_BOND_LENGTH, labelMinGapBondLength)
+    });
     const anchors = new Map();
     for (const [id, atom] of seedMol.atoms) {
       if (atom.name === 'H' || atom.visible === false) {

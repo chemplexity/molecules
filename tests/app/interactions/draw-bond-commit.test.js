@@ -565,6 +565,41 @@ describe('createDrawBondCommitActions', () => {
     assert.equal(newAtom.y, 1.5);
   });
 
+  it('keeps a dragged 2d resonance edit endpoint relative to the restored source atom', () => {
+    const sourceOxygen = makeAtom('O1', 'O');
+    sourceOxygen.x = 0;
+    sourceOxygen.y = 0;
+    const sourceMol = makeEditableMol(sourceOxygen);
+    const displayOxygen = makeAtom('O1', 'O');
+    displayOxygen.x = 10;
+    displayOxygen.y = 0;
+    const displayMol = makeEditableMol(displayOxygen);
+    const { actions } = makeActions({
+      activeMol: displayMol,
+      drawBondElement: 'C',
+      initialDrawBondState: {
+        atomId: 'O1',
+        ox: 700,
+        oy: 200,
+        ex: 760,
+        ey: 140,
+        snapAtomId: null,
+        dragged: true
+      },
+      structuralEditFactory: () => ({
+        mol: sourceMol,
+        resonanceReset: true
+      })
+    });
+
+    actions.commit();
+
+    const newAtom = sourceMol.atoms.get('C1');
+    assert.ok(newAtom);
+    assert.equal(newAtom.x, 1.5);
+    assert.equal(newAtom.y, 1.5);
+  });
+
   it('uses the configured layout bond length for dragged 2d bond placement', () => {
     const srcAtom = makeAtom('a1', 'C');
     srcAtom.x = 0;
@@ -700,6 +735,77 @@ describe('createDrawBondCommitActions', () => {
     assert.deepEqual(forceUpdate[2].initialPatchPos.get('a1'), { x: 300, y: 200 });
     assert.deepEqual(forceUpdate[2].initialPatchPos.get('a2'), { x: 345, y: 200 });
     assert.equal(forceUpdate[2].initialPatchPos.has('__resonance_product__:a1'), false);
+  });
+
+  it('refits force layout after auto-placing a bond from reaction preview', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      mode: 'force',
+      drawBondElement: 'C',
+      reactionEditFactory: payload => ({
+        ...payload,
+        atomId: payload.atomId,
+        restored: true,
+        previousSnapshot: { id: 'preview-before-autoplace' },
+        entryZoomTransform: { x: 10, y: 20, k: 2 }
+      }),
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 300, y: 200 } : null),
+      forceNodes: [{ id: 'a1', name: 'C', x: 300, y: 200 }]
+    });
+
+    actions.autoPlaceBond('a1', 350, 200);
+
+    const forceUpdate = calls.renderers.find(call => call[0] === 'updateForce');
+    assert.ok(forceUpdate);
+    assert.equal(forceUpdate[2].preservePositions, false);
+    assert.equal(forceUpdate[2].preserveView, false);
+    assert.ok(forceUpdate[2].initialPatchPos instanceof Map);
+    assert.deepEqual(forceUpdate[2].initialPatchPos.get('a1'), { x: 300, y: 200 });
+    assert.deepEqual(forceUpdate[2].initialPatchPos.get('C1'), { x: 337.5, y: 200 });
+  });
+
+  it('refits force layout after dragging a bond from reaction preview', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      mode: 'force',
+      drawBondElement: 'C',
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 300,
+        oy: 200,
+        ex: 360,
+        ey: 140,
+        snapAtomId: null,
+        dragged: true
+      },
+      reactionEditFactory: payload => ({
+        ...payload,
+        atomId: payload.atomId,
+        snapAtomId: payload.snapAtomId,
+        restored: true,
+        previousSnapshot: { id: 'preview-before-drag' },
+        entryZoomTransform: { x: 10, y: 20, k: 2 }
+      }),
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 300, y: 200 } : null),
+      forceNodes: [{ id: 'a1', name: 'C', x: 300, y: 200 }]
+    });
+
+    actions.commit();
+
+    const forceUpdate = calls.renderers.find(call => call[0] === 'updateForce');
+    assert.ok(forceUpdate);
+    assert.equal(forceUpdate[2].preservePositions, false);
+    assert.equal(forceUpdate[2].preserveView, false);
+    assert.deepEqual(forceUpdate[2].initialPatchPos.get('a1'), { x: 300, y: 200 });
+    assert.deepEqual(forceUpdate[2].initialPatchPos.get('C1'), { x: 360, y: 140 });
   });
 
   it('does not repair implicit hydrogens on charged atoms when manually adding a bond', () => {

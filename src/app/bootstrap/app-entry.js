@@ -81,6 +81,7 @@ import {
   _drawReactionPreviewArrow2d,
   _renderReactionPreviewArrowForce,
   _reapplyActiveReactionPreview,
+  _reactionArrowLabelMinGapBondLength,
   updateReactionTemplatesPanel,
   _viewportFitPadding,
   _getReactionPreviewReactantAtomIds,
@@ -278,7 +279,11 @@ const forceHelpers = createForceHelpers({
   getLayoutBondLength: () => getRenderOptions().layoutBondLength ?? 1.5,
   alignReaction2dProductOrientation: (mol, bondLength) => _alignReaction2dProductOrientation(mol, bondLength),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
-  centerReaction2dPairCoords: (mol, bondLength) => _centerReaction2dPairCoords(mol, bondLength)
+  centerReaction2dPairCoords: (mol, bondLength, options) => _centerReaction2dPairCoords(mol, bondLength, options),
+  reactionArrowLabelMinGapBondLength: (mol, bondLength) => _reactionArrowLabelMinGapBondLength(mol?.__reactionPreview, {
+    bondLength,
+    force: true
+  })
 });
 
 const SCALE = 60;
@@ -437,6 +442,7 @@ const forceSceneRenderer = createForceSceneRenderer(
     forceHydrogenRepulsion: () => forceHelpers.forceHydrogenRepulsion(),
     forceHydrogenPlacement: links => forceHelpers.forceHydrogenPlacement(links),
     forceFitTransform: (nodes, pad, options) => forceHelpers.forceFitTransform(nodes, pad, options),
+    zoomTransformsDiffer: (a, b, epsilon) => forceHelpers.zoomTransformsDiffer(a, b, epsilon),
     isHydrogenNode: node => forceHelpers.isHydrogenNode(node),
     enLabelColor: value => enLabelColor(value),
     renderReactionPreviewArrowForce: (nodes, mol = null) => _renderReactionPreviewArrowForce(nodes, mol),
@@ -511,6 +517,10 @@ const scene2DRenderer = create2DSceneRenderer(
     alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
     spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
     centerReaction2dPairCoords: _centerReaction2dPairCoords,
+    reactionArrowLabelMinGapBondLength: (mol, bondLength) => _reactionArrowLabelMinGapBondLength(mol?.__reactionPreview, {
+      bondLength,
+      force: false
+    }),
     drawReactionPreviewArrow2d: (toSVGPt, atoms, mol = null) => _drawReactionPreviewArrow2d(toSVGPt, atoms, mol),
     viewportFitPadding: _viewportFitPadding,
     hasReactionPreview: () => _hasReactionPreview(),
@@ -596,7 +606,7 @@ const _showPrimitiveHover = (atomIds = [], bondIds = []) => selectionOverlayMana
 const _setPrimitiveHover = (atomIds = [], bondIds = []) => selectionOverlayManager.setPrimitiveHover(atomIds, bondIds);
 const _getSelectedDragAtomIds = (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds);
 const _toSVGPt2d = atom => render2DHelpers.toSVGPt2d(atom);
-const _zoomToFitIf2d = () => render2DHelpers.zoomToFitIf2d();
+const _zoomToFitIf2d = options => render2DHelpers.zoomToFitIf2d(options);
 
 const {
   syncInputField: _syncInputField,
@@ -1076,7 +1086,7 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     restoreZoomTransformSnapshot: snapshot => _restoreZoomTransformSnapshot(snapshot),
     captureZoomTransformSnapshot: () => _captureZoomTransformSnapshot(),
     zoomTransformHelpers,
-    zoomToFitIf2d: () => _zoomToFitIf2d(),
+    zoomToFitIf2d: options => _zoomToFitIf2d(options),
     tooltip,
     parseSMILES,
     parseINCHI,

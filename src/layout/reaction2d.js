@@ -4324,8 +4324,10 @@ export function spreadReaction2dProductComponents(mol, previewState, bondLength 
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
  * @param {object} previewState - Reaction preview state object.
  * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - Optional spacing controls.
+ * @param {number} [options.minGapBondLength] - Minimum bond-length scale used only for the reactant/product gap.
  */
-export function centerReaction2dPairCoords(mol, previewState, bondLength = 1.5) {
+export function centerReaction2dPairCoords(mol, previewState, bondLength = 1.5, options = {}) {
   if (!previewState || !mol) {
     return;
   }
@@ -4338,7 +4340,11 @@ export function centerReaction2dPairCoords(mol, previewState, bondLength = 1.5) 
   }
 
   const productComponentCount = Math.max(1, previewState.productComponentAtomIdSets?.length ?? 0);
-  const gap = bondLength * (3.8 + Math.max(0, productComponentCount - 1) * 0.55);
+  const parsedMinGapBondLength = Number(options.minGapBondLength);
+  const gapBondLength = Number.isFinite(parsedMinGapBondLength) && parsedMinGapBondLength > 0
+    ? Math.max(bondLength, parsedMinGapBondLength)
+    : bondLength;
+  const gap = gapBondLength * (3.8 + Math.max(0, productComponentCount - 1) * 0.55);
   const reactantWidth = reactant.maxX - reactant.minX;
   const productWidth = product.maxX - product.minX;
   const reactantCx = (reactant.minX + reactant.maxX) / 2;

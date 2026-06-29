@@ -214,13 +214,15 @@ export function createDrawBondCommitActions(context) {
   }
 
   function forceDrawRenderOptions(structuralEdit, options = {}) {
-    if (structuralEdit?.resonanceReset) {
+    const reactionRestored = options.reactionRestored === true;
+    if (structuralEdit?.resonanceReset || reactionRestored) {
       const sourcePatch = sourceForceInitialPatch(structuralEdit.mol);
       const initialPatchPos = sourcePatch || options.initialPatchPos ? new Map([...(sourcePatch ?? []), ...(options.initialPatchPos ?? [])]) : undefined;
+      const { reactionRestored: _reactionRestored, ...renderOptions } = options;
       return {
-        preservePositions: false,
+        preservePositions: structuralEdit?.resonanceReset ? false : !reactionRestored,
         preserveView: false,
-        ...options,
+        ...renderOptions,
         ...(initialPatchPos ? { initialPatchPos } : {})
       };
     }
@@ -266,6 +268,18 @@ export function createDrawBondCommitActions(context) {
     };
   }
 
+  function dragged2dEndpointForEdit(srcAtom, { ox, oy, ex, ey, resonanceReset = false, atomId = null } = {}) {
+    const endPoint = moleculePointFromViewportPoint(null, '2d', ex, ey);
+    if (!resonanceReset || atomId === null || !Number.isFinite(srcAtom?.x) || !Number.isFinite(srcAtom?.y)) {
+      return endPoint;
+    }
+    const startPoint = moleculePointFromViewportPoint(null, '2d', ox, oy);
+    return {
+      x: srcAtom.x + (endPoint.x - startPoint.x),
+      y: srcAtom.y + (endPoint.y - startPoint.y)
+    };
+  }
+
   function placeStandaloneAtom(ox, oy) {
     const mode = context.getMode();
     const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransform() : null;
@@ -299,6 +313,7 @@ export function createDrawBondCommitActions(context) {
     if (mode === 'force') {
       context.renderers.updateForce(mol, {
         ...forceDrawRenderOptions(structuralEdit, {
+          reactionRestored: reactionEdit?.restored,
           initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
         })
       });
@@ -525,7 +540,7 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { initialPatchPos: patchPos }));
+      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { reactionRestored: reactionEdit?.restored, initialPatchPos: patchPos }));
       context.force.enableKeepInView();
       return;
     }
@@ -744,10 +759,7 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { initialPatchPos: patchPos }));
-      if (reactionEdit?.restored && reactionEdit?.entryZoomTransform) {
-        context.view.restoreZoomTransformSnapshot(reactionEdit.entryZoomTransform);
-      }
+      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { reactionRestored: reactionEdit?.restored, initialPatchPos: patchPos }));
       context.force.enableKeepInView();
       return;
     }
@@ -804,8 +816,14 @@ export function createDrawBondCommitActions(context) {
       _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
       affected = new Set([resolvedAtomId, snapAtomId]);
     } else {
-      const newMolX = context.view2D.getCenterX() + (ex - plotWidth / 2) / context.constants.scale;
-      const newMolY = context.view2D.getCenterY() - (ey - plotHeight / 2) / context.constants.scale;
+      const endpoint = dragged2dEndpointForEdit(srcAtom, {
+        ox,
+        oy,
+        ex,
+        ey,
+        resonanceReset: structuralEdit.resonanceReset,
+        atomId
+      });
 
       const srcHydrogen = srcAtom.getNeighbors(mol).find(neighbor => neighbor.name === 'H');
       if (srcHydrogen) {
@@ -813,8 +831,8 @@ export function createDrawBondCommitActions(context) {
       }
 
       const newAtom = mol.addAtom(null, context.getDrawBondElement(), {});
-      newAtom.x = newMolX;
-      newAtom.y = newMolY;
+      newAtom.x = endpoint.x;
+      newAtom.y = endpoint.y;
       newBond = mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, false);
       _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
       affected = new Set([resolvedAtomId, newAtom.id]);

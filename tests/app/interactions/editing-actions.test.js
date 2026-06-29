@@ -47,7 +47,7 @@ function makeContext(overrides = {}) {
       reactionPreview: { block: ReactionPreviewPolicy.block },
       resonance: { normalizeForEdit: ResonancePolicy.normalizeForEdit },
       snapshot: { take: SnapshotPolicy.take },
-      viewport: { none: ViewportPolicy.none }
+      viewport: { none: ViewportPolicy.none, restoreEdit: ViewportPolicy.restoreEdit }
     },
     chemistry: {
       clearStereoAnnotations: () => {},
@@ -55,9 +55,13 @@ function makeContext(overrides = {}) {
       refreshAromaticity: () => {}
     },
     force: {
-      getSimulation: () => null,
-      patchNodePositions: () => {},
-      reseatHydrogensAroundPatched: () => {}
+      getSimulation: () => overrides.simulation ?? null,
+      patchNodePositions: patchPos => {
+        calls.push(['patchNodePositions', patchPos]);
+      },
+      reseatHydrogensAroundPatched: patchPos => {
+        calls.push(['reseatHydrogensAroundPatched', patchPos]);
+      }
     },
     view2D: {
       fitCurrentView: () => {
@@ -108,7 +112,7 @@ describe('createEditingActions', () => {
           overlayPolicy: ReactionPreviewPolicy.block,
           resonancePolicy: ResonancePolicy.normalizeForEdit,
           snapshotPolicy: SnapshotPolicy.take,
-          viewportPolicy: ViewportPolicy.none
+          viewportPolicy: ViewportPolicy.restoreEdit
         }
       ]
     ]);
@@ -127,6 +131,53 @@ describe('createEditingActions', () => {
     assert.deepEqual([...hoveredAtomIds], []);
     assert.deepEqual([...hoveredBondIds], []);
     assert.deepEqual(calls, []);
+  });
+
+  it('treats resonance product-side selection delete as a no-op', () => {
+    const { actions, calls, selectedAtomIds, selectedBondIds } = makeContext({
+      selectedAtomIds: ['__resonance_product__:O3'],
+      selectedBondIds: ['__resonance_product__:2'],
+      performStructuralEdit: () => {
+        throw new Error('product-side resonance delete should not edit the source molecule');
+      }
+    });
+
+    const result = actions.deleteSelection();
+
+    assert.deepEqual(result, {
+      performed: false,
+      blockedByOverlay: true,
+      resonanceProductSide: true
+    });
+    assert.deepEqual([...selectedAtomIds], ['__resonance_product__:O3']);
+    assert.deepEqual([...selectedBondIds], ['__resonance_product__:2']);
+    assert.deepEqual(calls, []);
+  });
+
+  it('clears synthetic erase selection when resonance product-side erase is blocked', () => {
+    const { actions, calls, selectedAtomIds, selectedBondIds, hoveredAtomIds, hoveredBondIds } = makeContext({
+      hoveredAtomIds: ['__resonance_product__:O3'],
+      hoveredBondIds: ['__resonance_product__:2'],
+      performStructuralEdit: () => {
+        throw new Error('product-side resonance erase should not edit the source molecule');
+      }
+    });
+
+    const result = actions.eraseItem(['__resonance_product__:O3'], ['__resonance_product__:2']);
+
+    assert.deepEqual(result, {
+      performed: false,
+      blockedByOverlay: true,
+      resonanceProductSide: true
+    });
+    assert.deepEqual([...selectedAtomIds], []);
+    assert.deepEqual([...selectedBondIds], []);
+    assert.deepEqual([...hoveredAtomIds], []);
+    assert.deepEqual([...hoveredBondIds], []);
+    assert.deepEqual(calls, [
+      ['prepareReactionPreviewEraseTargets', ['__resonance_product__:O3'], ['__resonance_product__:2']],
+      ['refreshSelectionOverlay']
+    ]);
   });
 
   it('maps erase targets into selection and delegates to deleteSelection', () => {
@@ -157,7 +208,7 @@ describe('createEditingActions', () => {
           overlayPolicy: ReactionPreviewPolicy.block,
           resonancePolicy: ResonancePolicy.normalizeForEdit,
           snapshotPolicy: SnapshotPolicy.take,
-          viewportPolicy: ViewportPolicy.none
+          viewportPolicy: ViewportPolicy.restoreEdit
         }
       ],
       ['flashEraseButton']
@@ -184,9 +235,51 @@ describe('createEditingActions', () => {
           overlayPolicy: ReactionPreviewPolicy.block,
           resonancePolicy: ResonancePolicy.normalizeForEdit,
           snapshotPolicy: SnapshotPolicy.take,
-          viewportPolicy: ViewportPolicy.none
+          viewportPolicy: ViewportPolicy.restoreEdit
         }
       ],
+      ['flashEraseButton']
+    ]);
+  });
+
+  it('does not patch side-by-side force resonance coordinates after source-side erase exits resonance', () => {
+    const mol = parseSMILES('CC=O');
+    const simulation = {
+      nodes: () => [
+        { id: 'C2', x: -500, y: 200 },
+        { id: '__resonance_product__:C2', x: 500, y: 200 }
+      ]
+    };
+    const { actions, calls } = makeContext({
+      selectedAtomIds: ['O3'],
+      simulation,
+      performStructuralEdit: (_kind, _options, mutate) => {
+        const editResult = mutate({ mol, mode: 'force', resonanceReset: true });
+        const patchPos = editResult.force.beforeRender();
+        editResult.force.afterRender({}, patchPos);
+        calls.push(['forcePatchSize', patchPos.size]);
+        return { performed: true };
+      }
+    });
+
+    const result = actions.deleteSelection();
+
+    assert.deepEqual(result, { performed: true });
+    assert.equal(mol.atoms.has('O3'), false);
+    assert.equal(mol.atoms.has('C2'), true);
+    assert.deepEqual(calls, [
+      ['refreshSelectionOverlay'],
+      [
+        'performStructuralEdit',
+        'delete-selection',
+        {
+          overlayPolicy: ReactionPreviewPolicy.block,
+          resonancePolicy: ResonancePolicy.normalizeForEdit,
+          snapshotPolicy: SnapshotPolicy.take,
+          viewportPolicy: ViewportPolicy.restoreEdit
+        }
+      ],
+      ['forcePatchSize', 0],
       ['flashEraseButton']
     ]);
   });

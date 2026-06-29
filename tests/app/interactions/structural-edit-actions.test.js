@@ -100,8 +100,8 @@ function makeBaseContext(overrides = {}) {
       restoreZoomTransformSnapshot: snapshot => {
         calls.push(['restoreZoomTransformSnapshot', snapshot]);
       },
-      zoomToFitIf2d: () => {
-        calls.push(['zoomToFitIf2d']);
+      zoomToFitIf2d: options => {
+        calls.push(['zoomToFitIf2d', options]);
       }
     },
     resonance: {
@@ -149,6 +149,32 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'reaction-entry-zoom']]);
+  });
+
+  it('auto-fits 2D edits that exit resonance mode instead of restoring the locked resonance zoom', () => {
+    const { context, calls } = makeBaseContext();
+    const actions = createStructuralEditActions(context);
+
+    actions.restore2dEditViewport('zoom-snapshot', {
+      resonanceReset: true
+    });
+
+    assert.deepEqual(calls, [['zoomToFitIf2d', { force: true }]]);
+  });
+
+  it('passes an already-prepared resonance reset through skipped bond promotion prep', () => {
+    const { context, calls } = makeBaseContext();
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder('b1', {
+      skipResonancePrep: true,
+      resonanceReset: true
+    });
+
+    const [, options] = calls[0].slice(1);
+    assert.equal(options.resonanceReset, true);
+    assert.equal(options.resonancePolicy, ResonancePolicy.preserve);
+    assert.equal(options.viewportPolicy, ViewportPolicy.restoreEdit);
   });
 
   it('falls back to the active molecule when resonance prep resets the live view', () => {
@@ -549,6 +575,55 @@ describe('createStructuralEditActions', () => {
     assert.equal(mutationCount, 0);
     assert.equal(mol.atoms.size, initialAtomCount);
     assert.equal(mol.bonds.size, initialBondCount);
+  });
+
+  it('prepares reaction-preview targets before placing ring templates', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom('a1', 'C');
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom('a2', 'C');
+    atomB.x = 1.5;
+    atomB.y = 0;
+    const bond = mol.addBond('b1', atomA.id, atomB.id, { order: 1 });
+    const captured = [];
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured.push({ kind, options });
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: true }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            return { performed: true, result: mutate(editContext), mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.placeRingTemplate(6, 300, 200, { anchorAtomId: atomA.id });
+    actions.placeRingTemplate(6, 300, 200, { anchorBondId: bond.id });
+
+    assert.equal(captured[0].kind, 'place-ring-template');
+    assert.equal(captured[0].options.overlayPolicy, ReactionPreviewPolicy.prepareEditTargets);
+    assert.deepEqual(captured[0].options.reactionPreviewPayload, { atomId: atomA.id });
+    assert.equal(captured[1].kind, 'place-ring-template');
+    assert.equal(captured[1].options.overlayPolicy, ReactionPreviewPolicy.prepareBondTarget);
+    assert.equal(captured[1].options.reactionPreviewPayload, bond.id);
   });
 
   it('uses an explicit snapped orientation when placing an anchored ring template', () => {
@@ -1297,6 +1372,65 @@ describe('createStructuralEditActions', () => {
     assert.ok(Math.abs((anchorPositionA.y + anchorPositionB.y) / 2) < 1e-6);
   });
 
+  it('merges source force positions when atom-anchored ring placement exits resonance view', () => {
+    const mol = new Molecule();
+    const atomA = mol.addAtom(null, 'C');
+    atomA.x = 0;
+    atomA.y = 0;
+    const atomB = mol.addAtom(null, 'C');
+    atomB.x = 1.5;
+    atomB.y = 0;
+    mol.addBond(null, atomA.id, atomB.id, { order: 1 });
+    const nodes = [
+      { id: atomA.id, name: 'C', x: 100, y: 80 },
+      { id: atomB.id, name: 'C', x: 145, y: 80 },
+      { id: '__resonance_product__:a1', name: 'C', x: 310, y: 80 }
+    ];
+
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      mode: 'force',
+      simulation: {
+        nodes: () => nodes,
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: true };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 100, 80, { anchorAtomId: atomA.id });
+
+    assert.equal(result.performed, true);
+    const patchPos = result.result.force.options.initialPatchPos;
+    assert.equal(patchPos.has(atomA.id), true);
+    assert.equal(patchPos.has(atomB.id), true);
+    assert.equal(patchPos.has('__resonance_product__:a1'), false);
+    assert.deepEqual(patchPos.get(atomA.id), { x: 100, y: 80 });
+    assert.deepEqual(patchPos.get(atomB.id), { x: 145, y: 80 });
+    assert.ok(result.result.ringAtomIds.some(atomId => atomId !== atomA.id && patchPos.has(atomId)));
+  });
+
   it('reuses overlapped force nodes for an explicitly dragged force bond-anchored ring template', () => {
     const mol = new Molecule();
     const atomA = mol.addAtom(null, 'C');
@@ -1704,6 +1838,44 @@ describe('createStructuralEditActions', () => {
                 bondId: 'b1',
                 restored: true
               }
+            });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1');
+
+    assert.equal(result.clearPrimitiveHover, true);
+    assert.equal(result.suppressDrawBondHover, true);
+    assert.equal(result.restorePrimitiveHover, undefined);
+  });
+
+  it('does not restore primitive hover after promoting a bond from resonance mode', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({
+              mol,
+              mode: '2d',
+              reactionEdit: { bondId: 'b1', restored: false },
+              resonanceReset: true
             });
           }
         }
@@ -2478,6 +2650,101 @@ describe('createStructuralEditActions', () => {
     assert.deepEqual(result.force.options.initialPatchPos, new Map([['a1', { x: 120, y: 80 }]]));
   });
 
+  it('merges source force positions when atom element edits exit resonance view', () => {
+    const atomA = makeAtom('a1', 'O');
+    const atomB = makeAtom('a2', 'C');
+    const mol = {
+      atoms: new Map([
+        ['a1', atomA],
+        ['a2', atomB]
+      ]),
+      changeAtomElement(atomId, newEl) {
+        this.atoms.get(atomId).name = newEl;
+      },
+      clearStereoAnnotations(affected) {
+        this.clearedStereo = affected;
+      },
+      repairImplicitHydrogens(affected) {
+        this.repairedHydrogens = affected;
+      }
+    };
+
+    const { context } = makeBaseContext({
+      simulation: {
+        nodes: () => [
+          { id: 'a1', name: 'O', x: 120, y: 80 },
+          { id: 'a2', name: 'C', x: 165, y: 80 },
+          { id: '__resonance_product__:a1', name: 'O', x: 360, y: 80 }
+        ],
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { atomId: 'a1' }, resonanceReset: true };
+            assert.equal(options.preflight(editContext), true);
+            return mutate(editContext);
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.changeAtomElements(['a1'], 'C', { zoomSnapshot: 'zoom-snapshot' });
+
+    const patchPos = result.force.options.initialPatchPos;
+    assert.equal(atomA.name, 'C');
+    assert.deepEqual(patchPos.get('a1'), { x: 120, y: 80 });
+    assert.deepEqual(patchPos.get('a2'), { x: 165, y: 80 });
+    assert.equal(patchPos.has('__resonance_product__:a1'), false);
+    assert.equal(result.clearPrimitiveHover, true);
+    assert.equal(result.suppressPrimitiveHover, true);
+    assert.equal(result.restorePrimitiveHover, undefined);
+  });
+
+  it('does not restore stale atom hover after changing an atom from reaction preview', () => {
+    const atom = makeAtom('a1', 'O');
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      changeAtomElement(atomId, newEl) {
+        this.atoms.get(atomId).name = newEl;
+      },
+      clearStereoAnnotations(affected) {
+        this.clearedStereo = affected;
+      },
+      repairImplicitHydrogens(affected) {
+        this.repairedHydrogens = affected;
+      }
+    };
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { atomId: 'a1', restored: true }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            return mutate(editContext);
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.changeAtomElements(['a1'], 'C', { zoomSnapshot: 'zoom-snapshot' });
+
+    assert.equal(atom.name, 'C');
+    assert.equal(result.clearPrimitiveHover, true);
+    assert.equal(result.suppressPrimitiveHover, true);
+    assert.equal(result.restorePrimitiveHover, undefined);
+  });
+
   it('replaces a force hydrogen with the draw element and patches its position', () => {
     const hydrogen = makeAtom('h1', 'H');
     const carbon = makeAtom('c1', 'C');
@@ -2499,8 +2766,9 @@ describe('createStructuralEditActions', () => {
 
     const hydrogenNode = { id: 'h1', name: 'H', x: 10, y: 0 };
     const carbonNode = { id: 'c1', name: 'C', x: 0, y: 0 };
+    const productNode = { id: '__resonance_product__:c1', name: 'C', x: 120, y: 0 };
     const simulation = {
-      nodes: () => [hydrogenNode, carbonNode],
+      nodes: () => [hydrogenNode, carbonNode, productNode],
       force(name) {
         if (name === 'link') {
           return {
@@ -2525,7 +2793,7 @@ describe('createStructuralEditActions', () => {
       context: {
         controller: {
           performStructuralEdit(kind, options, mutate) {
-            const result = mutate({ mol, mode: 'force', reactionEdit: { atomId: 'h1' } });
+            const result = mutate({ mol, mode: 'force', reactionEdit: { atomId: 'h1' }, resonanceReset: true });
             const aux = result.force.beforeRender();
             result.force.afterRender({}, aux);
             return { kind, options, result };
@@ -2541,8 +2809,11 @@ describe('createStructuralEditActions', () => {
     assert.equal(response.options.overlayPolicy, ReactionPreviewPolicy.prepareEditTargets);
     assert.equal(response.options.resonancePolicy, ResonancePolicy.normalizeForEdit);
     assert.equal(response.options.snapshotPolicy, SnapshotPolicy.take);
-    assert.equal(response.options.viewportPolicy, ViewportPolicy.none);
+    assert.equal(response.options.viewportPolicy, ViewportPolicy.restoreEdit);
     assert.equal(hydrogen.name, 'N');
+    assert.deepEqual(response.result.force.options.initialPatchPos.get('h1'), { x: 10, y: 0 });
+    assert.deepEqual(response.result.force.options.initialPatchPos.get('c1'), { x: 0, y: 0 });
+    assert.equal(response.result.force.options.initialPatchPos.has('__resonance_product__:c1'), false);
     const patchCall = calls.find(([kind]) => kind === 'patchNodePositions');
     assert.ok(patchCall);
     const patchPos = patchCall[1];
@@ -2603,6 +2874,75 @@ describe('createStructuralEditActions', () => {
         ['refreshAromaticity', mol, { preserveKekule: true }]
       ]
     );
+  });
+
+  it('merges source force positions when charge edits exit resonance view', () => {
+    const atomA = {
+      id: 'a1',
+      name: 'N',
+      properties: { charge: 0 },
+      getCharge() {
+        return this.properties.charge;
+      }
+    };
+    const atomB = {
+      id: 'a2',
+      name: 'C',
+      properties: { charge: 0 },
+      getCharge() {
+        return this.properties.charge;
+      }
+    };
+    const mol = {
+      atoms: new Map([
+        [atomA.id, atomA],
+        [atomB.id, atomB]
+      ]),
+      setAtomCharge(atomId, charge) {
+        this.atoms.get(atomId).properties.charge = charge;
+      }
+    };
+    const nodes = [
+      { id: 'a1', name: 'N', x: 20, y: 35 },
+      { id: 'a2', name: 'C', x: 62, y: 35 },
+      { id: '__resonance_product__:a1', name: 'N', x: 260, y: 35 }
+    ];
+
+    const { context } = makeBaseContext({
+      mode: 'force',
+      simulation: {
+        nodes: () => nodes,
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { atomId: 'a1' }, resonanceReset: true };
+            assert.equal(options.preflight(editContext), true);
+            return mutate(editContext);
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.changeAtomCharge('a1', { chargeTool: 'positive' });
+
+    const patchPos = result.force.options.initialPatchPos;
+    assert.equal(atomA.properties.charge, 1);
+    assert.deepEqual(patchPos.get('a1'), { x: 20, y: 35 });
+    assert.deepEqual(patchPos.get('a2'), { x: 62, y: 35 });
+    assert.equal(patchPos.has('__resonance_product__:a1'), false);
+    assert.equal(result.clearPrimitiveHover, true);
+    assert.equal(result.suppressPrimitiveHover, true);
+    assert.equal(result.restorePrimitiveHover, undefined);
   });
 
   it('paints atom and bond styles through the structural edit action', () => {

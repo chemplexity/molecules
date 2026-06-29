@@ -1095,6 +1095,14 @@ describe('Molecule', () => {
     assert.equal(center.properties.chirality, null);
     assert.deepEqual(chiralMol.getChiralCenters(), []);
 
+    const autoDisplayBond = chiralMol.bonds.get(center.bonds[0]);
+    const manualDisplayBond = chiralMol.bonds.get(center.bonds[1]);
+    autoDisplayBond.properties.display = { as: 'wedge', centerId: center.id };
+    manualDisplayBond.properties.display = { as: 'dash', centerId: center.id, manual: true };
+    chiralMol.clearStereoAnnotations([center.id]);
+    assert.equal(autoDisplayBond.properties.display, undefined);
+    assert.deepEqual(manualDisplayBond.properties.display, { as: 'dash', centerId: center.id, manual: true });
+
     const alkeneMol = parseSMILES('F/C=C/F');
     const stereoBondsBefore = [...alkeneMol.bonds.values()].filter(bond => bond.properties.stereo !== null);
     assert.ok(stereoBondsBefore.length > 0);

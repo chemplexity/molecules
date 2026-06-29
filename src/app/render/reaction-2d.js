@@ -10,7 +10,7 @@ import {
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
 import { atomRadius, getRenderOptions } from './helpers.js';
-import { convertForceCoordsToLineLayout, forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH } from './force-helpers.js';
+import { convertForceCoordsToLineLayout, forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_REFERENCE_BOND_LENGTH } from './force-helpers.js';
 import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
 import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
@@ -59,6 +59,14 @@ const _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH = 12;
 const _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH = 8;
 const _REACTION_PREVIEW_FORCE_ARROW_PAD_FALLBACKS = [12, 8, 4, 0];
 let _reactionArrowClipPathId = 0;
+const REACTION_ARROW_ENDPOINT_PAD_UNITS = 0.45;
+const REACTION_ARROW_LABEL_CLIP_MARGIN = 4;
+const REACTION_ARROW_LABEL_HEAD_INSET = 8;
+const REACTION_ARROW_LABEL_WIDTH_FACTOR = 0.78;
+const REACTION_ARROW_LABEL_SUBSCRIPT_WIDTH_FACTOR = 0.58;
+const REACTION_ARROW_LABEL_MIN_EXTRA_PIXELS = 24;
+const REACTION_ARROW_2D_PIXELS_PER_MOLECULE_UNIT = 60;
+const REACTION_ARROW_FORCE_ENDPOINT_PAD_PIXELS = 16;
 
 function _forcePixelsPerMoleculeUnit(layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5) {
   const parsedBondLength = Number(layoutBondLength);
@@ -950,23 +958,33 @@ export function _applyReactionPreviewDisplayGeometry(mol) {
     return;
   }
   const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
+  const previewState = mol?.__reactionPreview;
+  const force = ctx.mode === 'force';
+  const labelMinGapBondLength = _reactionArrowLabelMinGapBondLength(previewState, {
+    bondLength: layoutBondLength,
+    force
+  });
   _alignReaction2dProductOrientation(mol, layoutBondLength);
   _spreadReaction2dProductComponents(mol, layoutBondLength);
-  _centerReaction2dPairCoords(mol, layoutBondLength);
+  _centerReaction2dPairCoords(mol, layoutBondLength, {
+    minGapBondLength: Math.max(force ? FORCE_LAYOUT_REFERENCE_BOND_LENGTH : layoutBondLength, labelMinGapBondLength)
+  });
 }
 
 /**
  * Clears the reaction preview and re-renders the source molecule, optionally restoring the entry display state.
  * @param {object} [options] - Options controlling what entry state is restored.
+ * @param {boolean} [options.restoreEntryZoom] - Whether to restore the zoom transform captured at preview entry.
  * @param {boolean} [options.restoreEntryDisplay] - Whether to restore the display molecule captured at preview entry.
  * @returns {boolean} True if the source was restored, false if no source mol was set.
  */
-export function _restoreReactionPreviewSource({ restoreEntryDisplay = false } = {}) {
+export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restoreEntryDisplay = false } = {}) {
   if (!_reactionPreviewSourceMol) {
     return false;
   }
   const canRestoreEntryState = !!_reactionPreviewEntryMode && _reactionPreviewEntryMode === ctx.mode;
   const shouldRestoreEntryDisplay = restoreEntryDisplay && canRestoreEntryState && !!_reactionPreviewEntryDisplayMol;
+  const entryZoomTransform = restoreEntryZoom && ctx.mode !== 'force' && canRestoreEntryState && _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
   const sourceMol = shouldRestoreEntryDisplay ? _cloneEntryDisplayWithSourceState() : _reactionPreviewSourceMol.clone();
   const currentReactantLineCoords = _currentReactantLineCoordsForSource(sourceMol);
   _applyCoordsToSourceMol(sourceMol, currentReactantLineCoords);
@@ -990,6 +1008,9 @@ export function _restoreReactionPreviewSource({ restoreEntryDisplay = false } = 
   ctx.renderMol(sourceMol, renderOptions);
   if (forceNodePositions?.size) {
     ctx.restoreForceNodePositions?.(forceNodePositions);
+  }
+  if (entryZoomTransform) {
+    ctx.restoreZoomTransform?.(entryZoomTransform);
   }
   return true;
 }
@@ -1343,8 +1364,9 @@ export function _chooseReactionPreviewForceArrow(
  * Centers reactant and product coordinate pairs in the 2D reaction preview layout.
  * @param {object} mol - Molecule whose atom coordinates will be adjusted.
  * @param {number} [bondLength] - Target bond length used for scaling.
+ * @param {object} [options] - Optional spacing controls.
  */
-export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
+export function _centerReaction2dPairCoords(mol, bondLength = 1.5, options = {}) {
   const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
     ? {
         reactantAtomIds: _reactionPreviewReactantAtomIds,
@@ -1355,7 +1377,7 @@ export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
   if (!previewState || !mol) {
     return;
   }
-  centerReaction2dPairCoordsShared(mol, previewState, bondLength);
+  centerReaction2dPairCoordsShared(mol, previewState, bondLength, options);
 }
 
 /**
@@ -1838,7 +1860,76 @@ function _drawReactionArrowLabelLine(arrowLayer, text, { x, y, fontSize, clipPat
   _appendChemTextSpans(textEl, text);
 }
 
-function _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength }) {
+/**
+ * Returns the applied reaction-arrow label font size for a render mode.
+ * @param {object} [options] - Font-size options.
+ * @param {boolean} [options.force] - Whether the label is rendered in force mode.
+ * @returns {number} Font size in pixels.
+ */
+export function _reactionArrowFontSize({ force = false } = {}) {
+  const globalFontSize = getRenderOptions().reactionFontSize ?? 16;
+  return force ? Math.max(1, globalFontSize - 2) : globalFontSize;
+}
+
+function _estimatedChemTextWidth(text, fontSize) {
+  if (!text) {
+    return 0;
+  }
+  return tokenizeChemText(text).reduce((width, token) => {
+    const factor = token.baseline === 'normal' ? REACTION_ARROW_LABEL_WIDTH_FACTOR : REACTION_ARROW_LABEL_SUBSCRIPT_WIDTH_FACTOR;
+    return width + token.text.length * fontSize * factor;
+  }, 0);
+}
+
+/**
+ * Estimates the minimum visible arrow line length needed to display the active
+ * reaction-arrow label text without clipping it at the arrow extent.
+ * @param {object|null|undefined} previewState - Active reaction preview metadata.
+ * @param {object} [options] - Render options.
+ * @param {boolean} [options.force] - Whether the label will be rendered in force mode.
+ * @param {object} [options.renderOptions] - Render options controlling label visibility.
+ * @returns {number} Required arrow line length in SVG/force coordinate units.
+ */
+export function _reactionArrowLabelRequiredLineLength(previewState, { force = false, renderOptions = getRenderOptions() } = {}) {
+  const labels = _reactionArrowLabelText(previewState, renderOptions);
+  const fontSize = _reactionArrowFontSize({ force });
+  const labelWidth = Math.max(_estimatedChemTextWidth(labels.reagents, fontSize), _estimatedChemTextWidth(labels.conditions, fontSize));
+  if (labelWidth <= 0) {
+    return 0;
+  }
+  return labelWidth + REACTION_ARROW_LABEL_CLIP_MARGIN * 2 + REACTION_ARROW_LABEL_HEAD_INSET + REACTION_ARROW_LABEL_MIN_EXTRA_PIXELS;
+}
+
+function _reactionPairGapFactor(previewState) {
+  const productComponentCount = Math.max(1, previewState?.productComponentAtomIdSets?.length ?? 0);
+  return 3.8 + Math.max(0, productComponentCount - 1) * 0.55;
+}
+
+/**
+ * Converts active reaction-arrow label width into a minimum pair gap bond length.
+ * @param {object|null|undefined} previewState - Active reaction preview metadata.
+ * @param {object} [options] - Sizing options.
+ * @param {number} [options.bondLength] - Current line-layout bond length.
+ * @param {boolean} [options.force] - Whether the pair is being prepared for force rendering.
+ * @param {object} [options.renderOptions] - Render options controlling label visibility.
+ * @returns {number} Minimum bond-length scale for pair centering.
+ */
+export function _reactionArrowLabelMinGapBondLength(previewState, { bondLength = getRenderOptions().layoutBondLength ?? 1.5, force = false, renderOptions = getRenderOptions() } = {}) {
+  const requiredLineLength = _reactionArrowLabelRequiredLineLength(previewState, { force, renderOptions });
+  if (requiredLineLength <= 0) {
+    return 0;
+  }
+  const pixelsPerMoleculeUnit = force ? _forcePixelsPerMoleculeUnit(bondLength) : REACTION_ARROW_2D_PIXELS_PER_MOLECULE_UNIT;
+  if (!Number.isFinite(pixelsPerMoleculeUnit) || pixelsPerMoleculeUnit <= 0) {
+    return 0;
+  }
+  const requiredGapUnits = force
+    ? (requiredLineLength + REACTION_ARROW_FORCE_ENDPOINT_PAD_PIXELS * 2) / pixelsPerMoleculeUnit
+    : requiredLineLength / pixelsPerMoleculeUnit + REACTION_ARROW_ENDPOINT_PAD_UNITS * 2;
+  return requiredGapUnits / _reactionPairGapFactor(previewState);
+}
+
+function _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength, force = false }) {
   const labels = _reactionArrowLabelText(previewState);
   if (!labels.reagents && !labels.conditions) {
     return;
@@ -1847,17 +1938,16 @@ function _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, ar
   const maxX = Math.max(x1, x2);
   const minY = Math.min(y1, y2);
   const maxY = Math.max(y1, y2);
-  const clipMargin = 4;
   const arrowHeadInset = Math.min(Math.max(0, arrowHeadLength - 2), Math.max(0, maxX - minX) / 2);
-  const clipX = minX + clipMargin;
-  const clipWidth = Math.max(0, maxX - minX - clipMargin * 2 - arrowHeadInset);
+  const clipX = minX + REACTION_ARROW_LABEL_CLIP_MARGIN;
+  const clipWidth = Math.max(0, maxX - minX - REACTION_ARROW_LABEL_CLIP_MARGIN * 2 - arrowHeadInset);
   if (clipWidth < 12) {
     return;
   }
 
   const midX = (x1 + x2) / 2;
   const midY = (y1 + y2) / 2;
-  const fontSize = getRenderOptions().reactionFontSize ?? 14;
+  const fontSize = _reactionArrowFontSize({ force });
   const labelOffset = fontSize + 3;
   const clipId = `reaction-arrow-label-clip-${++_reactionArrowClipPathId}`;
   arrowLayer
@@ -1995,7 +2085,7 @@ export function _renderReactionPreviewArrowForce(nodes, mol = null) {
     hydrogenRadiusScale: 0.75
   });
   const arrow = _chooseReactionPreviewForceArrow(source, target, nodes, {
-    pad: 16,
+    pad: REACTION_ARROW_FORCE_ENDPOINT_PAD_PIXELS,
     radiusForItem: node => atomRadius(node.protons),
     hydrogenRadiusScale: 0.75,
     previousOffset: _reactionPreviewForceArrowOffset
@@ -2032,7 +2122,7 @@ export function _renderReactionPreviewArrowForce(nodes, mol = null) {
     .attr('stroke-width', 2.5)
     .attr('stroke-linecap', 'round')
     .attr('stroke-linejoin', 'round');
-  _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength });
+  _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, arrowHeadLength, force: true });
 
   const productGeometries = _reaction2dProductGeometries(nodes, {
     previewState,

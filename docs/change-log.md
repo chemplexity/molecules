@@ -1,5 +1,20 @@
 # Change Log
 
+## 2026-06-28
+
+- Clear stale automatic wedge/dash display metadata when bond-order edits make stereocenters non-stereogenic, including the C6=C8 sugar edit case.
+- Block line-mode resonance product-side bond promotion attempts before they install draw-bond mouseup state, keeping resonance navigation and exit controls usable.
+- Keep dragged line-tool endpoints relative to the restored source molecule when exiting line-mode resonance views, so new atoms placed from a source oxygen no longer land in the side-by-side preview coordinate frame.
+- Reserve a default-sized center arrow lane for force-mode reaction and resonance previews at compact Global Bond Length settings such as 0.5, keeping the arrow centered between the structures.
+- Expand compact reaction preview spacing when reagent or condition labels are visible so long arrow text fits within the arrow extent instead of being clipped.
+- Preserve label-aware reaction arrow spacing through the final 2D render pass, preventing compact previews from shrinking the arrow after the preview geometry is prepared.
+- Preserve the exact displayed line-mode resonance-pair geometry and arrow metadata in undo/redo snapshots, so flipping an active resonance view restores correctly through undo and redo.
+- Refit force-mode molecules when reaction previews exit, including row-toggle exits and line-tool edits that collapse the preview, so the unlocked source recenters and auto-zooms.
+- Clear blocked erase-drag hovers during reaction previews, preventing delete-mode passes over preview bonds from leaving stale selection highlights or flashing the erase success checkmark.
+- Treat Delete on resonance product-side selections as a true no-op, keeping the resonance pair active and avoiding the erase-button success checkmark.
+- Clear temporary erase selections after blocked resonance product-side erase drags, so holding the delete tool over the right-side resonance molecule does not leave stale highlights.
+- Refit force-mode molecules after source-side erase deletes exit resonance views, avoiding side-by-side preview coordinates being patched onto the unlocked source molecule.
+
 ## 2026-06-27
 
 - Refit force-mode molecules after structural edits exit an active resonance pair, and keep failed product-side resonance draw attempts from leaving the resonance row stuck active.

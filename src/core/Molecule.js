@@ -503,6 +503,14 @@ export class Molecule {
         const bond = this.bonds.get(bondId);
         if (bond) {
           bond.properties.stereo = null;
+          if (bond.properties.display && bond.properties.display.manual !== true) {
+            delete bond.properties.display.as;
+            delete bond.properties.display.centerId;
+            delete bond.properties.display.manual;
+            if (Object.keys(bond.properties.display).length === 0) {
+              delete bond.properties.display;
+            }
+          }
         }
       }
     }

@@ -1178,6 +1178,37 @@ export function createStructuralEditActions(context) {
     return patchPos.size > 0 ? patchPos : null;
   }
 
+  function buildSourceForceInitialPatchPos(mol) {
+    if (!mol?.atoms?.size) {
+      return null;
+    }
+    const simulation = context.force.getSimulation?.();
+    const previousNodes = simulation?.nodes?.();
+    if (!Array.isArray(previousNodes) || previousNodes.length === 0) {
+      return null;
+    }
+    const patchPos = new Map();
+    for (const node of previousNodes) {
+      const atom = mol.atoms.get(node?.id);
+      if (!atom || atom.name === 'H' || atom.visible === false || !Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+        continue;
+      }
+      patchPos.set(node.id, { x: node.x, y: node.y });
+    }
+    return patchPos.size > 0 ? patchPos : null;
+  }
+
+  function mergeResonanceResetForcePatch(mol, resonanceReset, editPatch = null) {
+    if (!resonanceReset) {
+      return editPatch;
+    }
+    const sourcePatch = buildSourceForceInitialPatchPos(mol);
+    if (!sourcePatch && !editPatch) {
+      return null;
+    }
+    return new Map([...(sourcePatch ?? []), ...(editPatch ?? [])]);
+  }
+
   function restore2dEditViewport(zoomSnapshot, { reactionRestored = false, reactionEntryZoomSnapshot = null, resonanceReset = false, zoomToFit = false } = {}) {
     if (context.getMode() !== '2d') {
       return;
@@ -1186,8 +1217,8 @@ export function createStructuralEditActions(context) {
       context.view.restoreZoomTransformSnapshot(reactionEntryZoomSnapshot);
       return;
     }
-    if (resonanceReset && zoomSnapshot) {
-      context.view.restoreZoomTransformSnapshot(zoomSnapshot);
+    if (resonanceReset) {
+      context.view.zoomToFitIf2d({ force: true });
       return;
     }
     if (zoomToFit) {
@@ -1257,7 +1288,8 @@ export function createStructuralEditActions(context) {
     return context.controller.performStructuralEdit(
       'place-ring-template',
       {
-        overlayPolicy: ReactionPreviewPolicy.preserve,
+        overlayPolicy: anchorBondId ? ReactionPreviewPolicy.prepareBondTarget : ReactionPreviewPolicy.prepareEditTargets,
+        reactionPreviewPayload: anchorBondId ? anchorBondId : { atomId: anchorAtomId ?? null },
         resonancePolicy: options.skipResonancePrep ? ResonancePolicy.preserve : ResonancePolicy.normalizeForEdit,
         snapshotPolicy: options.skipSnapshot ? SnapshotPolicy.skip : SnapshotPolicy.take,
         viewportPolicy: ViewportPolicy.restoreEdit,
@@ -1275,7 +1307,7 @@ export function createStructuralEditActions(context) {
           return true;
         }
       },
-      ({ mol, mode: editMode }) => {
+      ({ mol, mode: editMode, resonanceReset }) => {
         mol = mol ?? context.molecule.ensureActive?.();
         if (!mol) {
           return { cancelled: true };
@@ -1462,11 +1494,12 @@ export function createStructuralEditActions(context) {
           if (!forcePositions) {
             return result;
           }
-          const patchPos = new Map(ringAtomIds.map((atomId, index) => [atomId, forcePositions[index]]));
+          const ringPatchPos = new Map(ringAtomIds.map((atomId, index) => [atomId, forcePositions[index]]));
+          const patchPos = mergeResonanceResetForcePatch(mol, resonanceReset, ringPatchPos);
           result.force = {
             options: { preservePositions: true, preserveView: true, initialPatchPos: patchPos },
             afterRender: () => {
-              context.force.patchNodePositions(patchPos, { alpha: 0, restart: false });
+              context.force.patchNodePositions(ringPatchPos, { alpha: 0, restart: false });
             },
             enableKeepInView: true
           };
@@ -1535,6 +1568,7 @@ export function createStructuralEditActions(context) {
       skipSnapshot = false,
       drawBondType = null,
       preferredCenterId = null,
+      resonanceReset: presetResonanceReset = false,
       zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null
     } = options;
     const explicitDrawBondType = drawBondType && drawBondType !== 'single' ? drawBondType : null;
@@ -1548,6 +1582,7 @@ export function createStructuralEditActions(context) {
         resonancePolicy: skipResonancePrep ? ResonancePolicy.preserve : ResonancePolicy.normalizeForEdit,
         snapshotPolicy: skipSnapshot ? SnapshotPolicy.skip : SnapshotPolicy.take,
         viewportPolicy: ViewportPolicy.restoreEdit,
+        resonanceReset: presetResonanceReset,
         zoomSnapshot,
         preflight: ({ mol, mode, reactionEdit }) => {
           const targetBondId = skipReactionPreviewPrep ? bondId : (reactionEdit?.bondId ?? bondId);
@@ -1574,7 +1609,7 @@ export function createStructuralEditActions(context) {
           return true;
         }
       },
-      ({ mol, mode, reactionEdit }) => {
+      ({ mol, mode, reactionEdit, resonanceReset }) => {
         const targetBondId = skipReactionPreviewPrep ? bondId : (reactionEdit?.bondId ?? bondId);
         let bond = mol.bonds.get(targetBondId);
         if (!bond) {
@@ -1639,7 +1674,10 @@ export function createStructuralEditActions(context) {
         const forceResult =
           mode === 'force'
             ? {
-                options: { preservePositions: true },
+                options: {
+                  preservePositions: true,
+                  ...(resonanceReset ? { initialPatchPos: mergeResonanceResetForcePatch(mol, resonanceReset) } : {})
+                },
                 beforeRender: () =>
                   new Set(
                     context.force
@@ -1697,7 +1735,7 @@ export function createStructuralEditActions(context) {
         return {
           suppressDrawBondHover: true,
           clearPrimitiveHover: true,
-          ...(reactionEdit?.restored
+          ...(reactionEdit?.restored || resonanceReset
             ? {}
             : {
                 restorePrimitiveHover: {
@@ -1738,7 +1776,7 @@ export function createStructuralEditActions(context) {
             return atom && atom.name !== newEl;
           })
       },
-      ({ mol, mode }) => {
+      ({ mol, mode, reactionEdit: activeReactionEdit, resonanceReset }) => {
         const toChange = atomIds.filter(atomId => {
           const atom = mol.atoms.get(atomId);
           return atom && atom.name !== newEl;
@@ -1757,14 +1795,21 @@ export function createStructuralEditActions(context) {
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         repairImplicitHydrogensWhenValenceImproves(mol, affected);
-        const initialPatchPos = mode === 'force' ? buildForceInitialPatchPos(toChange) : null;
+        const initialPatchPos =
+          mode === 'force'
+            ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos(toChange))
+            : null;
         return {
           clearSelection: true,
           clearPrimitiveHover: true,
           suppressPrimitiveHover: true,
-          restorePrimitiveHover: {
-            atomIds: toChange
-          },
+          ...(activeReactionEdit?.restored || resonanceReset
+            ? {}
+            : {
+                restorePrimitiveHover: {
+                  atomIds: toChange
+                }
+              }),
           force:
             mode === 'force'
               ? {
@@ -1814,7 +1859,7 @@ export function createStructuralEditActions(context) {
           return resolvedNextCharge !== (atom.getCharge?.() ?? atom.properties?.charge ?? 0);
         }
       },
-      ({ mol, mode, reactionEdit: activeReactionEdit }) => {
+      ({ mol, mode, reactionEdit: activeReactionEdit, resonanceReset }) => {
         const targetAtomId = activeReactionEdit?.atomId ?? atomId;
         const atom = mol.atoms.get(targetAtomId);
         if (!atom) {
@@ -1836,14 +1881,21 @@ export function createStructuralEditActions(context) {
         repairImplicitHydrogensWhenValenceImproves(mol, affected);
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
-        const initialPatchPos = mode === 'force' ? buildForceInitialPatchPos([targetAtomId]) : null;
+        const initialPatchPos =
+          mode === 'force'
+            ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos([targetAtomId]))
+            : null;
 
         return {
           clearPrimitiveHover: true,
           suppressPrimitiveHover: true,
-          restorePrimitiveHover: {
-            atomIds: [targetAtomId]
-          },
+          ...(activeReactionEdit?.restored || resonanceReset
+            ? {}
+            : {
+                restorePrimitiveHover: {
+                  atomIds: [targetAtomId]
+                }
+              }),
           force:
             mode === 'force'
               ? {
@@ -2041,14 +2093,16 @@ export function createStructuralEditActions(context) {
         reactionPreviewPayload: { atomId },
         resonancePolicy: ResonancePolicy.normalizeForEdit,
         snapshotPolicy: SnapshotPolicy.take,
-        viewportPolicy: ViewportPolicy.none
+        viewportPolicy: ViewportPolicy.restoreEdit
       },
-      ({ mol, reactionEdit }) => {
+      ({ mol, reactionEdit, resonanceReset }) => {
         const targetAtomId = reactionEdit?.atomId ?? atomId;
         const targetAtom = mol.atoms.get(targetAtomId);
         if (!targetAtom) {
           return { cancelled: true };
         }
+        const targetPatchPos = buildForceInitialPatchPos([targetAtomId]);
+        const initialPatchPos = mergeResonanceResetForcePatch(mol, resonanceReset, targetPatchPos);
 
         mol.changeAtomElement(targetAtomId, context.getDrawBondElement());
         const affected = new Set([targetAtomId]);
@@ -2058,8 +2112,10 @@ export function createStructuralEditActions(context) {
         mol.repairImplicitHydrogens(affected);
 
         return {
+          clearPrimitiveHover: true,
+          suppressPrimitiveHover: true,
           force: {
-            options: { preservePositions: true, preserveView: true },
+            options: { preservePositions: true, preserveView: true, initialPatchPos },
             beforeRender: () => {
               const simulation = context.force.getSimulation();
               const preHNode = simulation.nodes().find(node => node.id === targetAtomId);

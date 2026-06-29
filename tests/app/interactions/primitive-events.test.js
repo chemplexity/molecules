@@ -2043,6 +2043,102 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['cancel'], ['clearArtifacts']]);
   });
 
+  it('blocks 2D product-side bond promotion in draw-bond mode', () => {
+    const productBond = {
+      id: '__resonance_product__:b1',
+      atoms: ['__resonance_product__:a1', '__resonance_product__:a2']
+    };
+    const { context, calls, setMode, setDrawBondMode } = makeContext({
+      mol2d: {
+        bonds: new Map([[productBond.id, productBond]])
+      },
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
+    });
+    setMode('2d');
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+    let stoppedImmediate = false;
+
+    handlers.handle2dBondClick(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        },
+        stopImmediatePropagation() {
+          stoppedImmediate = true;
+        }
+      },
+      productBond.id
+    );
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.equal(stoppedImmediate, true);
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts']]);
+  });
+
+  it('blocks held 2D product-side bond promotion before installing draw-bond mouseup state', () => {
+    const listeners = new Map();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    const productBond = {
+      id: '__resonance_product__:b1',
+      atoms: ['__resonance_product__:a1', '__resonance_product__:a2'],
+      properties: { order: 1 }
+    };
+    const { context, calls, setMode, setDrawBondMode } = makeContext({
+      document: documentMock,
+      mol2d: {
+        bonds: new Map([[productBond.id, productBond]])
+      },
+      isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
+    });
+    setMode('2d');
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+    let stoppedImmediate = false;
+
+    const handled = handlers.handle2dBondMouseDownDrawBond(
+      {
+        currentTarget: { ownerDocument: documentMock },
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        },
+        stopImmediatePropagation() {
+          stoppedImmediate = true;
+        }
+      },
+      productBond,
+      { x: 10, y: 20 },
+      { x: 70, y: 20 }
+    );
+
+    assert.equal(handled, true);
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.equal(stoppedImmediate, true);
+    assert.equal(listeners.has('mouseup'), false);
+    assert.deepEqual(calls, [['cancel'], ['clearArtifacts']]);
+  });
+
   it('starts force draw-bond drags from the selected blue-highlight atom when compact hit targets overlap', () => {
     const { context, calls, setDrawBondMode, selectedAtomIds } = makeContext({
       currentMol: { atoms: new Map(), bonds: new Map() },
@@ -2488,6 +2584,23 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, { atoms: new Map([['h1', { id: 'h1', name: 'H' }]]) }, null);
 
     assert.deepEqual(calls, []);
+  });
+
+  it('does not re-add hidden force atoms as draw-bond hover targets', () => {
+    const hiddenHydrogen = { id: 'h1', name: 'H', visible: false };
+    const { context, calls, setDrawBondMode, hoveredAtomIds } = makeContext({
+      currentMol: {
+        atoms: new Map([['h1', hiddenHydrogen]]),
+        bonds: new Map()
+      }
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, { atoms: new Map([['h1', hiddenHydrogen]]) }, null);
+
+    assert.deepEqual([...hoveredAtomIds], []);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['h1'], []]]);
   });
 
   it('suppresses atom tooltips while charge mode is active', () => {

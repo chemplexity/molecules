@@ -1508,7 +1508,6 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     }
   }
   const storedDisplayByCenter = new Map();
-  const preservedNonChiralAssignments = [];
   const preferredBondByCenter = new Map();
   for (const bond of mol?.bonds?.values?.() ?? []) {
     const displayAs = bond.properties.display?.as ?? null;
@@ -1517,11 +1516,6 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     }
     const centerId = bond.properties.display?.centerId ?? stereoBondCenterIdForRender(mol, bond.id);
     if (!_isChiralDisplayCenter(mol, centerId)) {
-      preservedNonChiralAssignments.push({
-        bondId: bond.id,
-        type: displayAs,
-        centerId
-      });
       continue;
     }
     if (!centerId || preferredBondByCenter.has(centerId)) {
@@ -1550,9 +1544,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     });
   }
   const forcedByCenter = mol?.__reactionPreview?.forcedStereoByCenter ?? mol?.__reactionPreview?.forcedProductStereoByCenter ?? null;
-  const visitedCenters = new Set();
   for (const centerId of mol.getChiralCenters()) {
-    visitedCenters.add(centerId);
     if (lockedCenters.has(centerId)) {
       continue;
     }
@@ -1576,29 +1568,6 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
       centerId
     });
     assignedBondIds.add(stereo.bondId);
-  }
-  // Preserve stored assignments for centers whose chirality was cleared (not in getChiralCenters).
-  // This prevents nearby auto-assigned stereo bonds from disappearing when a bond is drawn
-  // between two existing stereocenters and clearStereoAnnotations resets one center's chirality.
-  for (const [centerId, stored] of storedDisplayByCenter) {
-    if (visitedCenters.has(centerId) || lockedCenters.has(centerId)) {
-      continue;
-    }
-    if (assignments.some(a => a.centerId === centerId)) {
-      continue;
-    }
-    const storedBond = mol?.bonds?.get?.(stored.bondId) ?? null;
-    if (storedBond && storedBond.atoms.includes(centerId) && !assignedBondIds.has(stored.bondId)) {
-      assignments.push({ bondId: stored.bondId, type: stored.type, centerId });
-      assignedBondIds.add(stored.bondId);
-    }
-  }
-  for (const assignment of preservedNonChiralAssignments) {
-    if (assignedBondIds.has(assignment.bondId)) {
-      continue;
-    }
-    assignments.push(assignment);
-    assignedBondIds.add(assignment.bondId);
   }
   return assignments;
 }

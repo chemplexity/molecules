@@ -591,6 +591,14 @@ export function createPrimitiveEventHandlers(context) {
     return atomIds.every(atomId => isReactionPreviewEditableRingAtom(atomId));
   }
 
+  function blockDrawBondPromotion(event) {
+    context.drawBond.cancel?.();
+    context.drawBond.clearArtifacts?.();
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+  }
+
   function getRingTemplateAtomEntries() {
     if (context.state.viewState.getMode() === 'force') {
       return (context.helpers?.getForceNodes?.() ?? [])
@@ -1327,9 +1335,18 @@ export function createPrimitiveEventHandlers(context) {
     if (!context.state.overlayState.getDrawBondMode() || context.view.isDrawBondHoverSuppressed()) {
       return;
     }
+    const mode = context.state.viewState.getMode();
+    const mol = mode === 'force' ? context.state.documentState.getCurrentMol?.() : context.state.documentState.getMol2d?.();
     if (kind === 'atom') {
+      const atom = mol?.atoms?.get?.(id);
+      if (!atom || atom.visible === false) {
+        return;
+      }
       context.state.overlayState.getHoveredAtomIds().add(id);
     } else {
+      if (mol?.bonds && !mol.bonds.has(id)) {
+        return;
+      }
       context.state.overlayState.getHoveredBondIds().add(id);
     }
     context.view.refreshSelectionOverlay();
@@ -1353,6 +1370,10 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     if (context.state.overlayState.getDrawBondMode()) {
+      if (!isReactionPreviewEditablePrimitiveBond(bondId, context.state.documentState.getMol2d?.())) {
+        blockDrawBondPromotion(event);
+        return;
+      }
       context.actions.promoteBondOrder(bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
       return;
     }
@@ -1408,6 +1429,10 @@ export function createPrimitiveEventHandlers(context) {
     }
     if (!isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
       return false;
+    }
+    if (!isReactionPreviewEditablePrimitiveBond(bond?.id ?? bond, context.state.documentState.getMol2d?.())) {
+      blockDrawBondPromotion(event);
+      return true;
     }
     event.preventDefault?.();
     event.stopPropagation?.();

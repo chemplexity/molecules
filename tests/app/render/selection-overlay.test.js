@@ -249,6 +249,50 @@ describe('createSelectionOverlayManager', () => {
     assert.equal(typeof scheduler.callback, 'function');
   });
 
+  it('filters force hover targets against atom visibility', () => {
+    const visibleAtom = makeAtom('a1', { visible: true });
+    const hiddenAtom = makeAtom('h1', { visible: false, name: 'H' });
+    const mol = {
+      atoms: new Map([
+        ['a1', visibleAtom],
+        ['h1', hiddenAtom]
+      ]),
+      bonds: new Map()
+    };
+    const { manager, hoveredAtomIds, scheduler } = makeManager({
+      mode: 'force',
+      selectMode: true,
+      forceMol: mol
+    });
+
+    manager.showPrimitiveHover(['a1', 'h1'], []);
+
+    assert.deepEqual([...hoveredAtomIds], ['a1']);
+    assert.equal(typeof scheduler.callback, 'function');
+  });
+
+  it('filters hidden force atoms out of renderable hover ids even when already present', () => {
+    const visibleAtom = makeAtom('a1', { visible: true });
+    const hiddenAtom = makeAtom('h1', { visible: false, name: 'H' });
+    const mol = {
+      atoms: new Map([
+        ['a1', visibleAtom],
+        ['h1', hiddenAtom]
+      ]),
+      bonds: new Map()
+    };
+    const { manager } = makeManager({
+      mode: 'force',
+      drawBondMode: true,
+      hoveredAtomIds: new Set(['a1', 'h1']),
+      forceMol: mol
+    });
+
+    const { atomIds } = manager.getRenderableSelectionIds();
+
+    assert.deepEqual([...atomIds], ['a1']);
+  });
+
   it('can set primitive hover directly in draw mode', () => {
     const atomA = makeAtom('a1', { x: 10, y: 10 });
     const atomB = makeAtom('a2', { x: 40, y: 10 });

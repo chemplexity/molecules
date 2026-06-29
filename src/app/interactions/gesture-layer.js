@@ -1247,6 +1247,28 @@ export function initGestureInteractions(context) {
       }
     }
 
+    const clearBlockedEraseHover = () => {
+      lastEraseHitElement = null;
+      context.view.clearPrimitiveHover();
+      if (typeof context.view.refreshSelectionOverlay === 'function') {
+        context.view.refreshSelectionOverlay();
+      } else {
+        context.renderers.applySelectionOverlay?.();
+      }
+    };
+    const scheduleEraseCandidate = (element, atomIds = [], bondIds = []) => {
+      lastEraseHitElement = element;
+      context.schedule(() => {
+        if (!context.state.overlayState.getEraseMode() || !context.state.overlayState.getErasePainting()) {
+          return;
+        }
+        const result = context.actions.eraseItem(atomIds, bondIds);
+        if (result?.performed === false || result?.blockedByOverlay || result?.cancelled) {
+          clearBlockedEraseHover();
+        }
+      });
+    };
+
     for (const element of candidates) {
       if (element === lastEraseHitElement) {
         return;
@@ -1256,13 +1278,8 @@ export function initGestureInteractions(context) {
         if (!datum || datum.name === 'H') {
           continue;
         }
-        lastEraseHitElement = element;
         context.view.showPrimitiveHover([datum.id], []);
-        context.schedule(() => {
-          if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-            context.actions.eraseItem([datum.id], []);
-          }
-        });
+        scheduleEraseCandidate(element, [datum.id], []);
         return;
       }
       if (element.classList.contains('bond-hover-target')) {
@@ -1275,13 +1292,8 @@ export function initGestureInteractions(context) {
         if (bond?.atoms.some(id => currentMol.atoms.get(id)?.name === 'H')) {
           continue;
         }
-        lastEraseHitElement = element;
         context.view.showPrimitiveHover([], [datum.id]);
-        context.schedule(() => {
-          if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-            context.actions.eraseItem([], [datum.id]);
-          }
-        });
+        scheduleEraseCandidate(element, [], [datum.id]);
         return;
       }
       if (element.classList.contains('atom-hit')) {
@@ -1290,13 +1302,8 @@ export function initGestureInteractions(context) {
           continue;
         }
         const atomId = group.getAttribute('data-atom-id');
-        lastEraseHitElement = element;
         context.view.showPrimitiveHover([atomId], []);
-        context.schedule(() => {
-          if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-            context.actions.eraseItem([atomId], []);
-          }
-        });
+        scheduleEraseCandidate(element, [atomId], []);
         return;
       }
       if (element.classList.contains('bond-hit')) {
@@ -1305,13 +1312,8 @@ export function initGestureInteractions(context) {
           continue;
         }
         const bondId = group.getAttribute('data-bond-id');
-        lastEraseHitElement = element;
         context.view.showPrimitiveHover([], [bondId]);
-        context.schedule(() => {
-          if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-            context.actions.eraseItem([], [bondId]);
-          }
-        });
+        scheduleEraseCandidate(element, [], [bondId]);
         return;
       }
     }

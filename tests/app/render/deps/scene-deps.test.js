@@ -103,6 +103,7 @@ describe('scene deps builders', () => {
       forceHydrogenRepulsion: () => 4,
       forceHydrogenPlacement: links => ({ links }),
       forceFitTransform: () => ({ k: 1 }),
+      zoomTransformsDiffer: (a, b, epsilon) => ({ a, b, epsilon }),
       isHydrogenNode: node => node.name === 'H',
       enLabelColor: value => value,
       renderReactionPreviewArrowForce: nodes => ({ nodes }),
@@ -135,6 +136,7 @@ describe('scene deps builders', () => {
     assert.equal(deps.helpers.forceLinkDistance({ distance: 7 }), 7);
     assert.equal(deps.helpers.forceAnchorRadius(), 9);
     assert.deepEqual(deps.helpers.forceHydrogenPlacement(['link']), { links: ['link'] });
+    assert.deepEqual(deps.helpers.zoomTransformsDiffer('a', 'b', 0.1), { a: 'a', b: 'b', epsilon: 0.1 });
     deps.helpers.reseatForceGraphHydrogens({});
     assert.deepEqual(deps.drag.createForceAtomDrag('sim'), { sim: 'sim', type: 'atom' });
     assert.equal(deps.callbacks.hasHighlights(), true);

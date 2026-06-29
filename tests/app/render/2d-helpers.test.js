@@ -319,6 +319,20 @@ describe('create2DRenderHelpers', () => {
     assert.equal(typeof zoom.transform, 'function');
   });
 
+  it('can force a 2D fit even when atoms are already inside the viewport', () => {
+    const atom = makeAtom('a1', 'C', 0, 0);
+    const mol = {
+      atoms: new Map([[atom.id, atom]])
+    };
+    const { helpers, records } = makeHelpersContext({ mol });
+
+    helpers.zoomToFitIf2d();
+    assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), false);
+
+    helpers.zoomToFitIf2d({ force: true });
+    assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), true);
+  });
+
   it('renders wedge and double bonds through the extracted draw helper', () => {
     const records = [];
     const container = new FakeSelection(records);

@@ -727,6 +727,135 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(calls, [['paintStyleTargets', ['a1'], [], null, { skipSnapshot: false }]]);
   });
 
+  it('clears primitive hover when erase painting is blocked', () => {
+    const bondHit = makeHitElement('bond', 'b1', { x1: 0, y1: 10, x2: 40, y2: 10 });
+    const { context, svg, listeners, calls } = makeBaseContext();
+    context.state.overlayState.setEraseMode(true);
+    context.dom.plotEl.querySelectorAll = selector => (selector === '.bond-hit' ? [bondHit] : []);
+    context.actions.eraseItem = (atomIds, bondIds) => {
+      calls.push(['eraseItem', atomIds, bondIds]);
+      return { performed: false, blockedByOverlay: true };
+    };
+    context.view.showPrimitiveHover = (atomIds, bondIds) => {
+      calls.push(['showPrimitiveHover', atomIds, bondIds]);
+    };
+    context.view.clearPrimitiveHover = () => {
+      calls.push(['clearPrimitiveHover']);
+    };
+    context.view.refreshSelectionOverlay = () => {
+      calls.push(['refreshSelectionOverlay']);
+    };
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.erase')({
+      button: 0,
+      clientX: 20,
+      clientY: 10
+    });
+    listeners.get('mousemove')({
+      buttons: 1,
+      clientX: 20,
+      clientY: 10,
+      target: {}
+    });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', [], ['b1']],
+      ['eraseItem', [], ['b1']],
+      ['clearPrimitiveHover'],
+      ['refreshSelectionOverlay']
+    ]);
+  });
+
+  it('resets blocked erase hits so the same target cannot keep stale hover', () => {
+    const bondHit = makeHitElement('bond', 'b1', { x1: 0, y1: 10, x2: 40, y2: 10 });
+    const { context, svg, listeners, calls } = makeBaseContext();
+    context.state.overlayState.setEraseMode(true);
+    context.dom.plotEl.querySelectorAll = selector => (selector === '.bond-hit' ? [bondHit] : []);
+    context.actions.eraseItem = (atomIds, bondIds) => {
+      calls.push(['eraseItem', atomIds, bondIds]);
+      return { performed: false, cancelled: true };
+    };
+    context.view.showPrimitiveHover = (atomIds, bondIds) => {
+      calls.push(['showPrimitiveHover', atomIds, bondIds]);
+    };
+    context.view.clearPrimitiveHover = () => {
+      calls.push(['clearPrimitiveHover']);
+    };
+    context.view.refreshSelectionOverlay = () => {
+      calls.push(['refreshSelectionOverlay']);
+    };
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.erase')({
+      button: 0,
+      clientX: 20,
+      clientY: 10
+    });
+    for (let index = 0; index < 2; index += 1) {
+      listeners.get('mousemove')({
+        buttons: 1,
+        clientX: 20,
+        clientY: 10,
+        target: {}
+      });
+    }
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', [], ['b1']],
+      ['eraseItem', [], ['b1']],
+      ['clearPrimitiveHover'],
+      ['refreshSelectionOverlay'],
+      ['showPrimitiveHover', [], ['b1']],
+      ['eraseItem', [], ['b1']],
+      ['clearPrimitiveHover'],
+      ['refreshSelectionOverlay']
+    ]);
+  });
+
+  it('clears primitive hover when force erase painting is blocked', () => {
+    const nodeHit = makeHitElement('force-atom', 'C1');
+    const { context, svg, listeners, calls } = makeBaseContext();
+    context.state.overlayState.setEraseMode(true);
+    context.doc.elementsFromPoint = () => [nodeHit];
+    context.actions.eraseItem = (atomIds, bondIds) => {
+      calls.push(['eraseItem', atomIds, bondIds]);
+      return { performed: false, blockedByOverlay: true };
+    };
+    context.view.showPrimitiveHover = (atomIds, bondIds) => {
+      calls.push(['showPrimitiveHover', atomIds, bondIds]);
+    };
+    context.view.clearPrimitiveHover = () => {
+      calls.push(['clearPrimitiveHover']);
+    };
+    context.view.refreshSelectionOverlay = () => {
+      calls.push(['refreshSelectionOverlay']);
+    };
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.erase')({
+      button: 0,
+      clientX: 20,
+      clientY: 10
+    });
+    listeners.get('mousemove')({
+      buttons: 1,
+      clientX: 20,
+      clientY: 10,
+      target: {}
+    });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['C1'], []],
+      ['eraseItem', ['C1'], []],
+      ['clearPrimitiveHover'],
+      ['refreshSelectionOverlay']
+    ]);
+  });
+
   it('does not paint adjacent 2D bonds when the brush center is on an atom hit', () => {
     const atomHit = makeHitElement('atom', 'cl1');
     const bondHit = makeHitElement('bond', 'b1', { x1: 10, y1: 10, x2: 30, y2: 10 });

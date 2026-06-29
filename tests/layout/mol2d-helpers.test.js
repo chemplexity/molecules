@@ -34,3 +34,34 @@ test('syncDisplayStereo uses distinct bonds for adjacent hidden-hydrogen stereoc
   assert.equal(assignments.length, 3);
   assert.notEqual(assignmentByCenter.get('C31')?.bondId, assignmentByCenter.get('C34')?.bondId);
 });
+
+test('syncDisplayStereo drops stale automatic wedges after a center stops being stereogenic', () => {
+  const mol = parseSMILES('C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O');
+  const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol, layoutResult, {
+    clearUnplaced: true,
+    hiddenHydrogenMode: 'coincident',
+    syncStereoDisplay: true
+  });
+  const previousStereoMap = syncDisplayStereo(mol);
+  assert.ok(mol.bonds.get('7').properties.display?.centerId === 'C8');
+  assert.ok(mol.bonds.get('8').properties.display?.centerId === 'C6');
+
+  const editedBond = mol.getBond('C6', 'C8');
+  editedBond.properties.order = 2;
+  editedBond.properties.aromatic = false;
+  mol.clearStereoAnnotations(editedBond.atoms);
+  const nextStereoMap = syncDisplayStereo(mol, previousStereoMap);
+
+  assert.equal(mol.atoms.get('C6').getChirality(), null);
+  assert.equal(mol.atoms.get('C8').getChirality(), null);
+  assert.equal(mol.bonds.get('7').properties.display, undefined);
+  assert.equal(mol.bonds.get('8').properties.display, undefined);
+  assert.deepEqual(
+    [...nextStereoMap.entries()].sort(),
+    [
+      ['0', 'dash'],
+      ['9', 'wedge']
+    ]
+  );
+});

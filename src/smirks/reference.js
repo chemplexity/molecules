@@ -355,7 +355,7 @@ const REACTION_TEMPLATE_METADATA = {
     category: CATEGORY.oxidationReduction,
     summary: 'Benzylic methyl -> benzaldehyde',
     variants: [
-      variant({ id: 'etard', label: 'CrO2Cl2 (Etard)', reagents: ['CrO2Cl2'], solvents: ['CS2', 'CH2Cl2'], conditions: { temperature: '0 °C to 25 °C', workup: 'aqueous workup' } }),
+      variant({ id: 'etard', label: 'CrO2Cl2', reagents: ['CrO2Cl2'], solvents: ['CS2', 'CH2Cl2'], conditions: { temperature: '0 °C to 25 °C', workup: 'aqueous workup' } }),
       variant({ id: 'seo2', label: 'SeO2', role: 'alternative', reagents: ['SeO2'], solvents: ['dioxane', 'water'], conditions: { temperature: 'heat' } })
     ],
     notes: ['The template is intentionally aldehyde-directed rather than the stronger oxidation to benzoic acid.'],

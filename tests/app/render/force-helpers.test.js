@@ -11,6 +11,7 @@ import {
   FORCE_LAYOUT_H_BOND_LENGTH,
   FORCE_LAYOUT_MULTIPLE_BOND_FACTOR,
   FORCE_LAYOUT_AROMATIC_BOND_FACTOR,
+  FORCE_LAYOUT_REFERENCE_BOND_LENGTH,
   createForceAnchorRadiusForce,
   createForceHydrogenRepulsionForce,
   createForceHydrogenPlacementForce,
@@ -339,6 +340,8 @@ describe('force-helpers', () => {
   });
 
   it('preserves resonance pair metadata while building force anchors', () => {
+    let centerCall = null;
+    const labelGap = FORCE_LAYOUT_REFERENCE_BOND_LENGTH + 0.75;
     const mol = new Molecule();
     mol.addAtom('c1', 'C');
     mol.addAtom('c2', 'O');
@@ -361,6 +364,8 @@ describe('force-helpers', () => {
         force: () => ({ links: () => [] })
       },
       viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad }),
+      getLayoutBondLength: () => 0.5,
+      reactionArrowLabelMinGapBondLength: () => labelGap,
       generate2dCoords: seedMol => {
         seedMol.atoms.get('c1').x = 0;
         seedMol.atoms.get('c1').y = 0;
@@ -373,7 +378,8 @@ describe('force-helpers', () => {
       },
       alignReaction2dProductOrientation: () => {},
       spreadReaction2dProductComponents: () => {},
-      centerReaction2dPairCoords: seedMol => {
+      centerReaction2dPairCoords: (seedMol, bondLength, options) => {
+        centerCall = { bondLength, options };
         if (!seedMol.__reactionPreview?.resonancePair) {
           return;
         }
@@ -388,6 +394,10 @@ describe('force-helpers', () => {
     const productCx = (anchors.get('__resonance_product__:c1').x + anchors.get('__resonance_product__:c2').x) / 2;
 
     assert.ok(productCx > reactantCx + 5, `expected product anchors to stay separated, got reactant ${reactantCx} product ${productCx}`);
+    assert.deepEqual(centerCall, {
+      bondLength: 0.5,
+      options: { minGapBondLength: labelGap }
+    });
   });
 
   it('places hydrogens into open angles around the parent atom', () => {

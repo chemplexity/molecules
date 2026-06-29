@@ -138,6 +138,34 @@ describe('createEditorActions', () => {
     assert.deepEqual(calls, []);
   });
 
+  it('honors a preset resonance reset when resonance prep is preserved', () => {
+    const { deps, calls } = makeDeps();
+    const actions = createEditorActions(deps);
+
+    actions.performStructuralEdit(
+      'promote-bond-order',
+      {
+        resonancePolicy: ResonancePolicy.preserve,
+        viewportPolicy: ViewportPolicy.restoreEdit,
+        resonanceReset: true,
+        zoomSnapshot: 'locked-resonance-zoom'
+      },
+      () => ({})
+    );
+
+    const restoreCall = calls.find(call => call[0] === 'restore2dEditViewport');
+    assert.deepEqual(restoreCall, [
+      'restore2dEditViewport',
+      'locked-resonance-zoom',
+      {
+        reactionRestored: false,
+        reactionEntryZoomSnapshot: null,
+        resonanceReset: true,
+        zoomToFit: false
+      }
+    ]);
+  });
+
   it('routes 2D structural edits through the shared prepare/snapshot/analyze/viewport pipeline', () => {
     const { deps, calls, mol } = makeDeps();
     const actions = createEditorActions(deps);
@@ -249,7 +277,7 @@ describe('createEditorActions', () => {
     ]);
   });
 
-  it('restores the saved force zoom after a reaction-preview edit re-renders in force mode', () => {
+  it('fits the unlocked force molecule after a reaction-preview edit re-renders in force mode', () => {
     const { deps, calls, mol } = makeDeps({ mode: 'force' });
     deps.overlays.prepareReactionPreviewBondEditTarget = payload => {
       calls.push(['prepareReactionPreviewBondEditTarget', payload]);
@@ -280,8 +308,36 @@ describe('createEditorActions', () => {
       ['prepareReactionPreviewBondEditTarget', 'bond-1'],
       ['setActiveMolecule', mol],
       ['syncInputField', mol],
-      ['updateForce', mol, { preservePositions: true, preserveView: true }],
-      ['restoreZoomTransformSnapshot', { x: 9, y: 8, k: 1.25 }]
+      ['updateForce', mol, { preservePositions: true, preserveView: false }]
+    ]);
+  });
+
+  it('fits the unlocked force molecule after a resonance edit reset re-renders in force mode', () => {
+    const { deps, calls, mol } = makeDeps({ mode: 'force' });
+    const actions = createEditorActions(deps);
+
+    const result = actions.performStructuralEdit(
+      'change-atom-charge',
+      {
+        overlayPolicy: ReactionPreviewPolicy.preserve,
+        resonancePolicy: ResonancePolicy.normalizeForEdit,
+        snapshotPolicy: SnapshotPolicy.skip,
+        viewportPolicy: ViewportPolicy.restoreEdit
+      },
+      () => ({
+        updateAnalysis: false,
+        force: {
+          options: { preservePositions: true, preserveView: true }
+        }
+      })
+    );
+
+    assert.equal(result.performed, true);
+    assert.deepEqual(calls, [
+      ['prepareResonanceStructuralEdit', mol],
+      ['setActiveMolecule', mol],
+      ['syncInputField', mol],
+      ['updateForce', mol, { preservePositions: false, preserveView: false }]
     ]);
   });
 

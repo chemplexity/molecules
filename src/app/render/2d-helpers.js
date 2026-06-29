@@ -301,7 +301,8 @@ export function create2DRenderHelpers(ctx) {
     }
   }
 
-  function zoomToFitIf2d() {
+  function zoomToFitIf2d(options = {}) {
+    const force = options.force === true;
     const mol = ctx.state.getMol();
     if (!mol) {
       return;
@@ -339,7 +340,7 @@ export function create2DRenderHelpers(ctx) {
         maxGY = gY;
       }
     }
-    if (!anyOut) {
+    if (!anyOut && !force) {
       return;
     }
     const gW = maxGX - minGX || 1;

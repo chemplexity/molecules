@@ -114,6 +114,27 @@ export function createSessionSnapshotManager(deps) {
     return productAtomIds.length > 0 && productAtomIds.every(atomId => displayMol?.atoms?.has(atomId));
   }
 
+  function isActiveResonancePairDisplay(mol) {
+    return mol?.__reactionPreview?.resonancePair === true;
+  }
+
+  function attachResonancePairMetadata(targetMol, sourceMol) {
+    if (!targetMol || !sourceMol?.__reactionPreview?.resonancePair) {
+      return;
+    }
+    targetMol.__reactionPreview = sourceMol.__reactionPreview;
+    if (targetMol.__reactionPreview.reactantAtomIds?.size) {
+      targetMol.__reactionPreview.reactantReferenceCoords = new Map(
+        [...targetMol.__reactionPreview.reactantAtomIds]
+          .map(atomId => {
+            const atom = targetMol.atoms.get(atomId);
+            return atom && Number.isFinite(atom.x) && Number.isFinite(atom.y) ? [atomId, { x: atom.x, y: atom.y }] : null;
+          })
+          .filter(Boolean)
+      );
+    }
+  }
+
   function cloneBaseResonanceAnalysisMol(mol) {
     if (!mol?.properties?.resonance || typeof mol.clone !== 'function') {
       return mol;
@@ -133,6 +154,13 @@ export function createSessionSnapshotManager(deps) {
     const reactionPreview = deps.captureReactionPreviewSnapshot();
     const resonanceUndo = reactionPreview ? { mol: activeMol, resonanceView: null } : deps.prepareResonanceUndoSnapshot(activeMol);
     const snapshotMol = reactionPreview?.sourceMol ? reactionPreview.sourceMol : deps.serializeSnapshotMol(resonanceUndo.mol);
+    const resonanceDisplayMol = deps.getMode() === '2d' && isActiveResonancePairDisplay(activeMol) ? deps.serializeSnapshotMol(activeMol) : null;
+    const resonanceView = resonanceUndo.resonanceView
+      ? {
+          ...resonanceUndo.resonanceView,
+          ...(resonanceDisplayMol ? { displayMol: resonanceDisplayMol } : {})
+        }
+      : null;
     const documentState = activeMol
       ? {
           mode: deps.getMode(),
@@ -161,7 +189,7 @@ export function createSessionSnapshotManager(deps) {
       panelState: deps.capturePanelState(),
       overlayState: {
         reactionPreview,
-        resonanceView: resonanceUndo.resonanceView ?? null
+        resonanceView
       }
     };
   }
@@ -210,6 +238,7 @@ export function createSessionSnapshotManager(deps) {
       moleculeProperties: snap.moleculeProperties
     };
     const previewDisplayMolData = snap.reactionPreview?.displayMol ?? null;
+    const resonanceDisplayMolData = snap.resonanceView?.displayMol ?? null;
 
     const mol = buildSnapshotMol(snapshotMolData);
     const displayMol = buildSnapshotMol(previewDisplayMolData) ?? mol;
@@ -229,7 +258,13 @@ export function createSessionSnapshotManager(deps) {
 
     const restoredResonanceView = deps.restoreResonanceViewSnapshot(mol, snap.resonanceView ?? null);
     if (restoredResonanceView) {
-      deps.redrawRestoredResonanceView(mol, snap);
+      const resonanceDisplayMol = buildSnapshotMol(resonanceDisplayMolData);
+      if (snap.mode === '2d' && resonanceDisplayMol) {
+        attachResonancePairMetadata(resonanceDisplayMol, deps.getMol2d?.());
+        deps.restore2dState(resonanceDisplayMol, snap);
+      } else {
+        deps.redrawRestoredResonanceView(mol, snap);
+      }
     }
     const functionalGroupAnalysisMol = cloneBaseResonanceAnalysisMol(mol);
 

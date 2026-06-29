@@ -5,7 +5,7 @@ import { generateResonanceStructures } from '../../../src/algorithms/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
 import { alignReaction2dProductOrientation, buildReaction2dMol, centerReaction2dPairCoords, spreadReaction2dProductComponents } from '../../../src/layout/reaction2d.js';
-import { updateRenderOptions } from '../../../src/app/render/helpers.js';
+import { getDefaultRenderOptions, updateRenderOptions } from '../../../src/app/render/helpers.js';
 import { FORCE_LAYOUT_BOND_LENGTH } from '../../../src/app/render/force-helpers.js';
 import { hasPersistentHighlightFallback, initHighlights, setPersistentHighlightFallback } from '../../../src/app/render/highlights.js';
 import { RESONANCE_ELECTRON_FLOW_PROPERTY, setMoleculeResonanceElectronFlow } from '../../../src/app/render/resonance-arrows.js';
@@ -16,6 +16,9 @@ import {
   _forceInitialPatchFromAnchorCoords,
   _isReactionPreviewEditableAtomId,
   _paintReactionPreviewReactantSource,
+  _reactionArrowFontSize,
+  _reactionArrowLabelMinGapBondLength,
+  _reactionArrowLabelRequiredLineLength,
   _reactionArrowLabelText,
   _reactionPreviewSkipsFunctionalGroupRefresh,
   _restoreReactionPreviewSnapshot,
@@ -135,6 +138,22 @@ function patchBounds(patch, atomIds) {
   const xs = points.map(point => point.x);
   const ys = points.map(point => point.y);
   return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys)
+  };
+}
+
+function moleculeBounds(mol, atomIds) {
+  const points = [...atomIds]
+    .map(atomId => mol.atoms.get(atomId))
+    .filter(atom => atom?.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
     width: Math.max(...xs) - Math.min(...xs),
     height: Math.max(...ys) - Math.min(...ys)
   };
@@ -197,7 +216,7 @@ function mockReactionPanelDocument(rows) {
 
 afterEach(() => {
   _restoreReactionPreviewSnapshot(null);
-  updateRenderOptions({ layoutBondLength: 1.5 });
+  updateRenderOptions(getDefaultRenderOptions());
 });
 
 describe('reaction preview restore', () => {
@@ -221,6 +240,40 @@ describe('reaction preview restore', () => {
       reagents: '',
       conditions: '25 °C, 1 atm H2'
     });
+  });
+
+  it('applies force reaction labels two pixels smaller than the global setting', () => {
+    updateRenderOptions({ reactionFontSize: 18 });
+
+    assert.equal(_reactionArrowFontSize(), 18);
+    assert.equal(_reactionArrowFontSize({ force: true }), 16);
+  });
+
+  it('computes a larger compact-pair gap for long reaction arrow labels', () => {
+    updateRenderOptions({ layoutBondLength: 0.5, reactionFontSize: 16 });
+    const previewState = {
+      productComponentAtomIdSets: [new Set(['p1'])],
+      reactionVariant: {
+        label: 'DIBAL-H, low temperature',
+        conditions: { temperature: '-78 °C', workup: 'controlled quench' }
+      }
+    };
+
+    assert.ok(_reactionArrowLabelRequiredLineLength(previewState) > 320);
+    assert.ok(_reactionArrowLabelMinGapBondLength(previewState, { bondLength: 0.5 }) > 1.6);
+    assert.ok(_reactionArrowLabelMinGapBondLength(previewState, { bondLength: 0.5, force: true }) > 3.2);
+
+    const conditionOnlyState = {
+      productComponentAtomIdSets: [new Set(['p1'])],
+      reactionVariant: {
+        label: 'H2O',
+        conditions: { temperature: '-78 °C', workup: 'controlled quench' }
+      }
+    };
+    const conditionLength = _reactionArrowLabelRequiredLineLength(conditionOnlyState, {
+      renderOptions: { showReactionReagents: false, showReactionConditions: true }
+    });
+    assert.ok(conditionLength > 300);
   });
 
   it('keeps locked reaction previews out of persistent highlight restoration', () => {
@@ -518,6 +571,120 @@ describe('reaction preview restore', () => {
     }
   });
 
+  it('reserves a default-width force arrow lane when activating compact reaction previews', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    globalThis.document = mockReactionPanelDocument(rows);
+    updateRenderOptions({ layoutBondLength: 0.5 });
+    try {
+      const sourceMol = parseSMILES('C=C');
+      const atomIds = [...sourceMol.atoms.keys()];
+      for (const [index, atomId] of atomIds.entries()) {
+        const atom = sourceMol.atoms.get(atomId);
+        atom.x = index * 0.5;
+        atom.y = 0;
+      }
+      const { renderCalls } = makeReaction2dContext({ mode: 'force' });
+      initReaction2d({
+        mode: 'force',
+        currentMol: sourceMol,
+        _mol2d: null,
+        plotEl: {
+          getBoundingClientRect() {
+            return { width: 800, height: 500 };
+          }
+        },
+        captureForceNodePositions: () => null,
+        captureZoomTransform: () => null,
+        renderMol(mol, options = {}) {
+          renderCalls.push({ mol, options });
+        },
+        applyForceHighlights() {},
+        takeSnapshot() {},
+        hasActiveResonanceView: () => false
+      });
+      initHighlights({
+        mode: 'force',
+        applyForceHighlights() {}
+      });
+
+      updateReactionTemplatesPanel();
+      const row = rows.find(candidate => /Alkene Hydrogenation/.test(collectText(candidate)));
+      assert.ok(row, 'expected alkene hydrogenation row');
+      row.dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      const previewMol = renderCalls.at(-1)?.mol;
+      const anchorLayout = renderCalls.at(-1)?.options.forceAnchorLayout;
+      const previewState = previewMol?.__reactionPreview;
+      assert.ok(anchorLayout instanceof Map, 'expected force preview anchors');
+      const reactantBounds = patchBounds(anchorLayout, previewState.reactantAtomIds);
+      const productBounds = patchBounds(anchorLayout, previewState.productAtomIds);
+      const gap = productBounds.minX - reactantBounds.maxX;
+
+      assert.ok(gap > 5.65 && gap < 5.75, `expected compact force preview arrow lane near default 5.7 Å, got ${gap.toFixed(3)} Å`);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('keeps long reagent labels inside compact line reaction arrows', () => {
+    const previousDocument = globalThis.document;
+    const rows = [];
+    globalThis.document = mockReactionPanelDocument(rows);
+    updateRenderOptions({ layoutBondLength: 0.5, reactionFontSize: 16 });
+    try {
+      const sourceMol = parseSMILES('CC#N');
+      const atomIds = [...sourceMol.atoms.keys()];
+      for (const [index, atomId] of atomIds.entries()) {
+        const atom = sourceMol.atoms.get(atomId);
+        atom.x = index * 0.5;
+        atom.y = 0;
+      }
+      const { renderCalls } = makeReaction2dContext({ mode: '2d' });
+      initReaction2d({
+        mode: '2d',
+        currentMol: null,
+        _mol2d: sourceMol,
+        captureZoomTransform: () => null,
+        renderMol(mol, options = {}) {
+          renderCalls.push({ mol, options });
+        },
+        draw2d() {},
+        applyForceHighlights() {},
+        takeSnapshot() {},
+        hasActiveResonanceView: () => false
+      });
+      initHighlights({
+        mode: '2d',
+        applyForceHighlights() {}
+      });
+
+      updateReactionTemplatesPanel();
+      const row = rows.find(candidate => /Nitrile Hydrogenation To Imine/.test(collectText(candidate)));
+      assert.ok(row, 'expected nitrile hydrogenation row');
+      row.dispatchEvent({
+        type: 'click',
+        stopPropagation() {}
+      });
+
+      const previewMol = renderCalls.at(-1)?.mol;
+      const previewState = previewMol?.__reactionPreview;
+      const reactantBounds = moleculeBounds(previewMol, previewState.reactantAtomIds);
+      const productBounds = moleculeBounds(previewMol, previewState.productAtomIds);
+      const gap = productBounds.minX - reactantBounds.maxX;
+      const visibleLineLength = Math.max(0, gap - 0.9) * 60;
+      const requiredLineLength = _reactionArrowLabelRequiredLineLength(previewState);
+
+      assert.ok(/DIBAL-H, low temperature/.test(previewState.reactionVariant.label));
+      assert.ok(visibleLineLength + 1e-6 >= requiredLineLength, `expected ${visibleLineLength.toFixed(1)} px arrow lane to fit ${requiredLineLength.toFixed(1)} px label`);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
   it('seeds force-preview reactant and product atoms in one shared preview frame', () => {
     const mol = parseSMILES('CC');
     const [c1Id, c2Id] = [...mol.atoms.keys()];
@@ -651,7 +818,7 @@ describe('reaction preview restore', () => {
 
     assert.equal(restored, true);
     assert.equal(renderCalls.length, 1);
-    assert.equal(zoomRestores.length, 0);
+    assert.deepEqual(zoomRestores, [{ x: 12, y: -8, k: 1.75 }]);
     assert.deepEqual(renderCalls[0].options, {
       preserveHistory: true,
       preserveView: false,

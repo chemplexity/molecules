@@ -2,6 +2,17 @@
 
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 
+const RESONANCE_PRODUCT_ID_PREFIX = '__resonance_product__:';
+
+function isResonanceProductId(id) {
+  return typeof id === 'string' && id.startsWith(RESONANCE_PRODUCT_ID_PREFIX);
+}
+
+function containsOnlyResonanceProductIds(atomIds, bondIds) {
+  const ids = [...atomIds, ...bondIds];
+  return ids.length > 0 && ids.every(isResonanceProductId);
+}
+
 /**
  * Returns whether a hydrogen endpoint should be pruned when its selected bond
  * is deleted instead of being left behind as a standalone displayed fragment.
@@ -69,6 +80,10 @@ export function createEditingActions(context) {
       return undefined;
     }
 
+    if (containsOnlyResonanceProductIds(targetAtomIds, targetBondIds)) {
+      return { performed: false, blockedByOverlay: true, resonanceProductSide: true };
+    }
+
     if (!transient) {
       selectedAtomIds.clear();
       selectedBondIds.clear();
@@ -81,9 +96,9 @@ export function createEditingActions(context) {
         overlayPolicy: context.policies.reactionPreview.block,
         resonancePolicy: context.policies.resonance.normalizeForEdit,
         snapshotPolicy: context.policies.snapshot.take,
-        viewportPolicy: context.policies.viewport.none
+        viewportPolicy: context.policies.viewport.restoreEdit
       },
-      ({ mol, mode }) => {
+      ({ mol, mode, resonanceReset }) => {
         const deletedAtomIds = new Set(targetAtomIds);
         const deletedBondIds = new Set(targetBondIds);
         const affectedHeavyIds = new Set();
@@ -154,6 +169,9 @@ export function createEditingActions(context) {
               ? {
                   options: { preservePositions: true, preserveView: true },
                   beforeRender: () => {
+                    if (resonanceReset) {
+                      return new Map();
+                    }
                     const patchPos = new Map();
                     const simulation = context.force.getSimulation?.();
                     if (simulation) {
@@ -223,6 +241,11 @@ export function createEditingActions(context) {
     }
 
     const result = deleteSelection();
+    if (result?.blockedByOverlay || result?.cancelled || result?.performed === false) {
+      selectedAtomIds.clear();
+      selectedBondIds.clear();
+      context.view.refreshSelectionOverlay?.();
+    }
     clearHovered();
     return result;
   }
