@@ -313,6 +313,14 @@ function createPurineTemplate() {
 }
 
 /**
+ * Creates the localized pterin/imino-lactam bridged scaffold used by folate cores.
+ * @returns {Molecule} Pterin scaffold template molecule.
+ */
+function createPterinCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('pterin-core', 'C1=CN=C2NC(=O)C(=N2)N=C1');
+}
+
+/**
  * Creates an acridine tricyclic aromatic perimeter template.
  * @returns {Molecule} Acridine scaffold template molecule.
  */
@@ -1157,6 +1165,15 @@ function createEthylDioxatricycloOxetaneCoreTemplate() {
 }
 
 /**
+ * Creates the bicyclic ether theta scaffold graph found in compact acetal
+ * cages like `CCC1(C2CC(CO)C1CO2)C1OCCCO1`.
+ * @returns {Molecule} Bicyclic ether theta scaffold template molecule.
+ */
+function createBicyclicEtherThetaCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('bicyclic-ether-theta-core', 'C12CCC(C1)CO2');
+}
+
+/**
  * Creates the hydroxy azatricyclo cyclohexene scaffold graph found in compact
  * hydroxy and aminomethyl substituted azatricyclic cages like
  * `CN1C2CC3C=C(CN)CC(C12)C3O`.
@@ -1815,6 +1832,31 @@ function createBenzotriazoleGeometry() {
 
 function createPurineGeometry() {
   return createFiveSixFusedGeometry();
+}
+
+/**
+ * Creates normalized coordinates for the localized pterin bridged core.
+ * The larger heteroring is drawn as the outer perimeter while the shared
+ * imino nitrogen is tucked inward and the imidazolone cap sits outside.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createPterinCoreGeometry() {
+  return freezeCoordEntries(
+    centeredEntries(
+      new Map([
+        ['C1', { x: 0.718, y: -0.901 }],
+        ['C2', { x: -0.256, y: -1.123 }],
+        ['N3', { x: -1.038, y: -0.5 }],
+        ['C4', { x: -1.038, y: 0.5 }],
+        ['N5', { x: -1.662, y: 1.282 }],
+        ['C6', { x: -0.88, y: 1.905 }],
+        ['C8', { x: -0.256, y: 1.123 }],
+        ['N9', { x: -0.367, y: 0.46 }],
+        ['N10', { x: 0.718, y: 0.901 }],
+        ['C11', { x: 1.152, y: 0 }]
+      ])
+    )
+  );
 }
 
 /**
@@ -3385,6 +3427,25 @@ function createEthylDioxatricycloOxetaneCoreGeometry() {
 }
 
 /**
+ * Creates a separated theta projection for bicyclic ether acetal cores. The
+ * one-carbon lane is kept slightly below the bridgehead span while the carbon
+ * and ether lanes occupy opposite sides, preventing the generic bridged
+ * fallback from collapsing the two bridgeheads into a near-linear overlap.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createBicyclicEtherThetaCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C5', { x: 0.0, y: 1.35 }],
+    ['C4', { x: 0.1, y: 0.0 }],
+    ['C1', { x: 0.55, y: 0.85 }],
+    ['C2', { x: -0.7, y: 0.25 }],
+    ['C3', { x: -0.75, y: -0.8 }],
+    ['C6', { x: 1.15, y: -0.65 }],
+    ['O7', { x: 1.55, y: 0.3 }]
+  ]);
+}
+
+/**
  * Creates a separated theta projection for hydroxy azatricyclo cyclohexenes.
  * The two six-member lanes sit on opposite sides of the shared C11-C13-C5
  * bridge and the fused aziridine cap stays equilateral above the upper lane,
@@ -4043,7 +4104,8 @@ function createSulfonylAzatricycloCageGeometry() {
 /**
  * Creates a compact projection for the cyclopentenyl sulfone azocane core. The
  * sulfone-containing five-member ring stays as a true pentagon while the larger
- * nitrogen ring takes the opposite side of the shared C8-C2-C3 path.
+ * nitrogen ring reads as a seven-point outer contour with the shared C2 atom
+ * kept as the inward exception.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
 function createSulfonylCyclopentenylAzocaneCoreGeometry() {
@@ -4053,11 +4115,11 @@ function createSulfonylCyclopentenylAzocaneCoreGeometry() {
     ['C4', { x: 0.809017, y: -0.951057 }],
     ['S5', { x: 0, y: -1.538842 }],
     ['C8', { x: -0.809017, y: -0.951057 }],
-    ['C9', { x: -1.698, y: -0.493 }],
-    ['C10', { x: -1.975, y: 0.468 }],
-    ['C11', { x: -1.465, y: 1.328 }],
-    ['N12', { x: -0.489, y: 1.547 }],
-    ['C13', { x: 0.339, y: 0.987 }]
+    ['C9', { x: -1.623009, y: -0.73667 }],
+    ['C10', { x: -2.045696, y: 0.225586 }],
+    ['C11', { x: -1.477855, y: 1.30651 }],
+    ['N12', { x: -0.274782, y: 1.537252 }],
+    ['C13', { x: 0.52963, y: 0.848483 }]
   ]);
 }
 
@@ -5263,6 +5325,16 @@ export function buildTemplateLibrary() {
       }
     ),
     createTemplate(
+      'bicyclic-ether-theta-core',
+      'bridged',
+      53.85625,
+      createBicyclicEtherThetaCoreTemplate(),
+      geometrySpec('normalized-xy', createBicyclicEtherThetaCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        rankGeometryMappings: true
+      }
+    ),
+    createTemplate(
       'hydroxy-azatricyclo-cyclohexene-core',
       'bridged',
       53.856,
@@ -5729,6 +5801,7 @@ export function buildTemplateLibrary() {
     createTemplate('indazole', 'fused', 43.5, createIndazoleTemplate(), geometrySpec('normalized-xy', createIndazoleGeometry(), PLANAR_VALIDATION)),
     createTemplate('benzotriazole', 'fused', 43.25, createBenzotriazoleTemplate(), geometrySpec('normalized-xy', createBenzotriazoleGeometry(), PLANAR_VALIDATION)),
     createTemplate('purine', 'fused', 43, createPurineTemplate(), geometrySpec('normalized-xy', createPurineGeometry(), PLANAR_VALIDATION)),
+    createTemplate('pterin-core', 'bridged', 42.75, createPterinCoreTemplate(), geometrySpec('normalized-xy', createPterinCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate('indane', 'fused', 40.9, createIndaneTemplate(), geometrySpec('normalized-xy', createIndaneGeometry(), PLANAR_VALIDATION)),
     createTemplate('tetralin', 'fused', 40.8, createTetralinTemplate(), geometrySpec('normalized-xy', createTetralinGeometry(), PLANAR_VALIDATION)),
     createTemplate('chromane', 'fused', 40.7, createChromaneTemplate(), geometrySpec('normalized-xy', createChromaneGeometry(), PLANAR_VALIDATION)),

@@ -64,6 +64,9 @@ export function createNavigationActionDeps(ctx) {
       parseINCHI: ctx.parseINCHI
     },
     simulation: ctx.simulation,
+    actions: {
+      syncPastePreviewToMode: () => ctx.getClipboardActions?.()?.syncPastePreviewToMode?.() ?? false
+    },
     dom: {
       plotEl: ctx.plotEl,
       clean2dButton: ctx.clean2dButton,
@@ -149,7 +152,8 @@ export function createEditingActionDeps(ctx) {
         take: ctx.takeSnapshotPolicy
       },
       viewport: {
-        none: ctx.viewportNonePolicy
+        none: ctx.viewportNonePolicy,
+        restoreEdit: ctx.viewportRestoreEditPolicy
       }
     },
     chemistry: {
@@ -171,6 +175,53 @@ export function createEditingActionDeps(ctx) {
     dom: {
       flashEraseButton: () => ctx.flashEraseButton()
     }
+  };
+}
+
+/**
+ * Builds dependencies for clipboard copy/paste actions.
+ * @param {object} ctx - Flat app context.
+ * @returns {object} Clipboard dependency object.
+ */
+export function createClipboardActionDeps(ctx) {
+  return {
+    state: {
+      getMode: () => ctx.getMode()
+    },
+    molecule: {
+      getActive: () => ctx.getActiveMolecule()
+    },
+    selection: {
+      getSelectedAtomIds: () => ctx.getSelectedAtomIds(),
+      getSelectedBondIds: () => ctx.getSelectedBondIds(),
+      clear: () => ctx.clearSelection()
+    },
+    overlays: {
+      hasReactionPreview: () => ctx.hasReactionPreview(),
+      hasActiveResonanceView: () => ctx.hasActiveResonanceView?.() ?? false
+    },
+    history: {
+      takeSnapshot: options => ctx.takeSnapshot(options)
+    },
+    renderers: {
+      renderMol: (mol, options = {}) => ctx.renderMol(mol, options),
+      refreshSelectionOverlay: () => ctx.refreshSelectionOverlay()
+    },
+    view: {
+      clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
+      setPreserveSelectionOnNextRender: value => ctx.setPreserveSelectionOnNextRender(value),
+      get2DCenterX: () => ctx.get2DCenterX(),
+      get2DCenterY: () => ctx.get2DCenterY(),
+      scale: ctx.scale,
+      forceScale: ctx.forceScale
+    },
+    plot: {
+      getSize: () => ctx.getPlotSize()
+    },
+    dom: {
+      g: ctx.g
+    },
+    pointer: (event, node) => ctx.pointer(event, node)
   };
 }
 

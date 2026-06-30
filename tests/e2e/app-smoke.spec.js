@@ -2510,6 +2510,83 @@ test('drawing a new 2d bond clears an existing 2d selection highlight', async ({
   await expect(page.locator('g.atom-selection line')).toHaveCount(0);
 });
 
+test('copying and pasting a selected 2D atom previews then places a selected copy', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await page.locator('g[data-atom-id="O3"] .atom-hit').click();
+  await expect(page.locator('g.atom-selection circle')).not.toHaveCount(0);
+
+  await page.keyboard.press('Control+C');
+  await page.keyboard.press('Control+V');
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  await expect(page.locator('g.paste-preview-layer .atom-label')).toHaveAttribute('fill', /^(?!#1f4f9d$).+/);
+
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.move(plotBox.x + plotBox.width - 8, plotBox.y + plotBox.height - 8);
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  await page.mouse.click(plotBox.x + plotBox.width - 8, plotBox.y + plotBox.height - 8);
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(0);
+  await expect(page.locator('g[data-atom-id="O4"] .atom-hit')).toHaveCount(1);
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
+  await expect(page.locator('g.atom-selection line')).toHaveCount(0);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('g[data-atom-id="O4"] .atom-hit')).toHaveCount(0);
+});
+
+test('active paste preview cancels when a UI button is pressed', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await page.locator('g[data-atom-id="O3"] .atom-hit').click();
+
+  await page.keyboard.press('Control+C');
+  await page.keyboard.press('Control+V');
+  await expect(page.locator('g.paste-preview-layer .atom-label')).not.toHaveCount(0);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(0);
+  await expect(page.locator('g[data-atom-id="O4"] .atom-hit')).toHaveCount(0);
+});
+
+test('copying and pasting in force mode places a duplicate near the pointer', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  const beforeCount = await page.locator('circle.node').count();
+
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.click(plotBox.x + plotBox.width / 2, plotBox.y + plotBox.height / 2);
+  await page.keyboard.press('Control+C');
+  await page.keyboard.press('Control+V');
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  await expect(page.locator('g.paste-preview-layer circle.node')).not.toHaveCount(0);
+  await expect(page.locator('g.paste-preview-layer line[stroke-dasharray="5,4"]')).toHaveCount(0);
+
+  const pasteX = plotBox.x + plotBox.width - 8;
+  const pasteY = plotBox.y + plotBox.height - 8;
+  await page.mouse.move(pasteX, pasteY);
+  await page.mouse.click(pasteX, pasteY);
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(0);
+  await expect.poll(async () => await page.locator('circle.node').count()).toBeGreaterThan(beforeCount);
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+
+  await page.locator('#undo-btn').click();
+  await expect.poll(async () => await page.locator('circle.node').count()).toBe(beforeCount);
+});
+
 test('cleaning a drawn 2d branch restores strict trigonal angles', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -4238,6 +4315,7 @@ test('undo after exiting force resonance restores the active resonance pair', as
   await loadSmiles(page, 'CC=O');
   await page.locator('#toggle-btn').click();
   await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  const sourceNodeCount = await page.locator('circle.node').count();
 
   await page.getByRole('button', { name: 'Other' }).click();
   const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
@@ -4267,7 +4345,6 @@ test('editing from force resonance mode refits the unlocked molecule', async ({ 
   await loadSmiles(page, 'CC=O');
   await page.locator('#toggle-btn').click();
   await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
-  const sourceNodeCount = await page.locator('circle.node').count();
 
   await page.getByRole('button', { name: 'Other' }).click();
   const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();

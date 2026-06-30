@@ -11,7 +11,8 @@ function makeKeyboardContext({
   hoveredAtomIds = new Set(),
   hoveredBondIds = new Set(),
   selectedAtomIds = new Set(),
-  selectedBondIds = new Set()
+  selectedBondIds = new Set(),
+  clipboard = null
 } = {}) {
   const handlers = new Map();
   const records = [];
@@ -73,6 +74,7 @@ function makeKeyboardContext({
         records.push(['deleteTargets', atomIds, bondIds, options]);
       }
     },
+    clipboard,
     history: {
       undo() {
         records.push('undo');
@@ -120,6 +122,108 @@ describe('initKeyboardInteractions', () => {
     });
 
     assert.deepEqual(records, ['undo']);
+    assert.equal(prevented, true);
+  });
+
+  it('routes copy and paste shortcuts to clipboard actions outside text inputs', () => {
+    const records = [];
+    const { handlers } = makeKeyboardContext({
+      clipboard: {
+        copySelection() {
+          records.push(['copySelection']);
+          return true;
+        },
+        beginPastePreview() {
+          records.push(['beginPastePreview']);
+          return true;
+        }
+      }
+    });
+    let preventCount = 0;
+
+    handlers.get('keydown')({
+      key: 'c',
+      metaKey: true,
+      ctrlKey: false,
+      shiftKey: false,
+      preventDefault() {
+        preventCount += 1;
+      }
+    });
+    handlers.get('keydown')({
+      key: 'v',
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: false,
+      preventDefault() {
+        preventCount += 1;
+      }
+    });
+
+    assert.deepEqual(records, [['copySelection'], ['beginPastePreview']]);
+    assert.equal(preventCount, 2);
+  });
+
+  it('lets native copy and paste run in text inputs', () => {
+    const records = [];
+    const { handlers } = makeKeyboardContext({
+      activeTagName: 'INPUT',
+      clipboard: {
+        copySelection() {
+          records.push(['copySelection']);
+          return true;
+        },
+        beginPastePreview() {
+          records.push(['beginPastePreview']);
+          return true;
+        }
+      }
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'c',
+      metaKey: true,
+      ctrlKey: false,
+      shiftKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+    handlers.get('keydown')({
+      key: 'v',
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, []);
+    assert.equal(prevented, false);
+  });
+
+  it('cancels paste preview with Escape before other escape behavior', () => {
+    const records = [];
+    const { handlers } = makeKeyboardContext({
+      clipboard: {
+        cancelPastePreview() {
+          records.push(['cancelPastePreview']);
+          return true;
+        }
+      }
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'Escape',
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, [['cancelPastePreview']]);
     assert.equal(prevented, true);
   });
 

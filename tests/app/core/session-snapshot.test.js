@@ -393,10 +393,12 @@ describe('createSessionSnapshotManager', () => {
     });
 
     const restore2dCalls = calls.filter(call => call[0] === 'restore2dState');
-    assert.equal(restore2dCalls.at(-1)?.[1].display, true);
-    assert.deepEqual(restore2dCalls.at(-1)?.[2], ['A1', '__resonance_product__:A1']);
-    assert.equal(restore2dCalls.at(-1)?.[4].resonancePair, true);
-    assert.deepEqual([...restore2dCalls.at(-1)?.[5]], [['A1', { x: -12, y: 3 }]]);
+    const lastRestore2dCall = restore2dCalls.at(-1);
+    assert.ok(lastRestore2dCall);
+    assert.equal(lastRestore2dCall[1].display, true);
+    assert.deepEqual(lastRestore2dCall[2], ['A1', '__resonance_product__:A1']);
+    assert.equal(lastRestore2dCall[4].resonancePair, true);
+    assert.deepEqual([...lastRestore2dCall[5]], [['A1', { x: -12, y: 3 }]]);
     assert.equal(calls.some(call => call[0] === 'redrawRestoredResonanceView'), false);
   });
 

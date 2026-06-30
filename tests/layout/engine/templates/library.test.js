@@ -68,6 +68,7 @@ describe('layout/engine/templates/library', () => {
       'formyl-aza-oxatricyclo-core',
       'methyl-aza-oxa-tricyclic-core',
       'ethyl-dioxatricyclo-oxetane-core',
+      'bicyclic-ether-theta-core',
       'hydroxy-azatricyclo-cyclohexene-core',
       'imino-oxa-azatricyclo-ketone-core',
       'cyclopropyl-lactam-pentacycle-core',
@@ -122,6 +123,7 @@ describe('layout/engine/templates/library', () => {
       'indazole',
       'benzotriazole',
       'purine',
+      'pterin-core',
       'quinazoline',
       'quinoxaline',
       'acridine',
@@ -696,6 +698,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(ethylDioxatricycloOxetane.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C3');
     assert.equal(ethylDioxatricycloOxetane.matchContext?.exocyclicNeighbors?.[0]?.element, 'C');
 
+    const bicyclicEtherTheta = getTemplateById('bicyclic-ether-theta-core');
+    assert.equal(bicyclicEtherTheta.family, 'bridged');
+    assert.equal(bicyclicEtherTheta.atomCount, 7);
+    assert.equal(bicyclicEtherTheta.bondCount, 8);
+    assert.equal(bicyclicEtherTheta.ringCount, 2);
+
     const dimethylOxatricycloCage = getTemplateById('dimethyl-oxatricyclo-cage-core');
     assert.equal(dimethylOxatricycloCage.family, 'bridged');
     assert.equal(dimethylOxatricycloCage.atomCount, 9);
@@ -1015,6 +1023,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(purine.atomCount, 9);
     assert.equal(purine.bondCount, 10);
     assert.equal(purine.ringCount, 2);
+
+    const pterinCore = getTemplateById('pterin-core');
+    assert.equal(pterinCore.family, 'bridged');
+    assert.equal(pterinCore.atomCount, 10);
+    assert.equal(pterinCore.bondCount, 11);
+    assert.equal(pterinCore.ringCount, 2);
 
     const acridine = getTemplateById('acridine');
     assert.equal(acridine.family, 'fused');

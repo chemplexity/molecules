@@ -906,6 +906,31 @@ test('reaction preview keeps tert-butyl alcohol products open after ester cleava
   }
 });
 
+test('reaction preview refits retained scaffold ester-cleavage centers after scaffold snapping', () => {
+  const smiles = 'CC1=CC2=C(C=C1CC1=CC=CC(Cl)=C1Cl)C(=O)C(OC([O-])=O)=CN2CCO';
+  for (const template of [reactionTemplates.esterHydrolysis, reactionTemplates.saponification]) {
+    const preview = preparePreview(smiles, template.smirks);
+    const center = productAtomForSource(preview, 'C19');
+    const carbonyl = productAtomForSource(preview, 'C17');
+    const ringCarbon = productAtomForSource(preview, 'C24');
+    const alcoholOxygen = oxygenNeighbor(center, preview.mol, neighbor => neighbor.id !== carbonyl?.id && neighbor.id !== ringCarbon?.id);
+    assert.ok(center && carbonyl && ringCarbon && alcoholOxygen, `expected ${template.name} retained scaffold alcohol center`);
+
+    assert.ok(
+      distance(center, alcoholOxygen) > 1.25 && distance(center, alcoholOxygen) < 1.7,
+      `expected ${template.name} C19-O bond to stay compact, got ${distance(center, alcoholOxygen).toFixed(3)} Å`
+    );
+    for (const [first, second] of [
+      [carbonyl, ringCarbon],
+      [carbonyl, alcoholOxygen],
+      [ringCarbon, alcoholOxygen]
+    ]) {
+      const localAngle = angleDeg(first, center, second);
+      assert.ok(localAngle > 112 && localAngle < 128, `expected ${template.name} C19 fan to stay near trigonal, got ${localAngle.toFixed(1)}°`);
+    }
+  }
+});
+
 test('reaction preview keeps ring sulfoxide products open after scaffold snapping', () => {
   const smiles = 'O=C(N1CCOCC1)\\C(=C\\2/SC=C(N2c3ccccc3)c4ccccc4)\\C#N';
   const sourceMol = parseSMILES(smiles);

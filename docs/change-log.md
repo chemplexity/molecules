@@ -1,5 +1,16 @@
 # Change Log
 
+## 2026-06-29
+
+- Tune the sulfonyl cyclopentenyl azocane scaffold so its azocane side keeps a heptagonal outer contour while the shared C2 atom stays inward.
+- Tune the pterin-core scaffold so folate outer heteroring atoms keep a seven-member contour while the inward imino nitrogen remains the exception.
+- Add a pterin-core scaffold template so folate heteroring caps draw outside the larger ring.
+- Preserve extended cis-polyene fatty-acid chains through final hidden-hydrogen vinylic fan cleanup.
+- Restore line-mode geometry from force anchors during force-to-line toggles so ring methyl branches do not rotate during compact fused-ring round trips.
+- Refit edited ester-cleavage centers after reaction scaffold snapping so retained-ring alcohol products stay compact and trigonal.
+- Add a semi-3D bicyclic ether theta scaffold template so compact acetal cages keep open shared paths and regular attached ether rings.
+- Clean up current ESLint failures across app bootstrap, molecule fragment JSDoc, session snapshot tests, and force-resonance E2E coverage.
+
 ## 2026-06-28
 
 - Clear stale automatic wedge/dash display metadata when bond-order edits make stereocenters non-stereogenic, including the C6=C8 sugar edit case.
@@ -14,6 +25,13 @@
 - Treat Delete on resonance product-side selections as a true no-op, keeping the resonance pair active and avoiding the erase-button success checkmark.
 - Clear temporary erase selections after blocked resonance product-side erase drags, so holding the delete tool over the right-side resonance molecule does not leave stale highlights.
 - Refit force-mode molecules after source-side erase deletes exit resonance views, avoiding side-by-side preview coordinates being patched onto the unlocked source molecule.
+- Add Ctrl/Cmd-C and Ctrl/Cmd-V molecule fragment copy/paste with mouse-follow previews, click-to-place insertion, fresh atom/bond IDs, undo support, and 2D/force-mode rendering coverage.
+- Render paste previews with final-like molecule styling instead of a blue dashed outline, including normal atom labels, bond orders, charges, copied styles, ring fills, and force-mode atom circles.
+- Resync active paste previews after line/force mode toggles, so a copied fragment redraws in the current view style before placement instead of keeping the previous mode's preview.
+- Auto-fit the force viewport after placing copied fragments, keeping edge-placed pasted molecules visible instead of preserving a clipped pre-paste zoom.
+- Auto-fit the line-mode viewport after placing copied fragments, keeping edge-placed pasted atoms and bonds visible instead of preserving a clipped pre-paste zoom.
+- Clear line-mode selection highlights after placing copied fragments, so pasted atoms and bonds do not remain selected after insertion.
+- Cancel active paste previews when toolbar or other UI controls are pressed, while allowing the clicked control to continue its normal action.
 
 ## 2026-06-27
 

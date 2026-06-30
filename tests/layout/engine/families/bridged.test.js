@@ -10,6 +10,7 @@ import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../../../s
 import { assignBondValidationClass } from '../../../../src/layout/engine/placement/bond-validation.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
 import { makeAdamantane, makeBicyclo222, makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
 
 const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
@@ -519,18 +520,30 @@ describe('layout/engine/families/bridged', () => {
       finalLandscapeOrientation: true
     });
     const cyclopentenylRing = { atomIds: ['C8', 'C2', 'C3', 'C4', 'S5'] };
+    const upperContourAtomIds = ['C3', 'C13', 'N12', 'C11', 'C10', 'C9', 'C8'];
     const assertCyclopentenylRing = (coords, label) => {
       for (const atomId of cyclopentenylRing.atomIds) {
         const angle = ringInternalAngle(cyclopentenylRing, coords, atomId);
         assert.ok(Math.abs(angle - (3 * Math.PI) / 5) < 1e-6, `expected ${label} ${atomId} cyclopentenyl angle to stay at 108 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`);
       }
     };
+    const assertAzocaneOuterContour = (coords, label, toleranceDegrees) => {
+      const upperContourRing = { atomIds: upperContourAtomIds };
+      const upperContourAngles = upperContourAtomIds.map(atomId => ringInternalAngle(upperContourRing, coords, atomId) * (180 / Math.PI));
+      const upperContourPolygon = upperContourAtomIds.map(atomId => coords.get(atomId));
+      for (const angle of upperContourAngles) {
+        assert.ok(Math.abs(angle - 128.571) < toleranceDegrees, `expected ${label} azocane outer contour to stay heptagonal, got ${upperContourAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+      }
+      assert.equal(pointInPolygon(coords.get('C2'), upperContourPolygon), true);
+    };
 
     assert.equal(result.placementMode, 'template');
     assertBridgedLayoutQuality(graph, result.coords);
     assertCyclopentenylRing(result.coords, 'template layout');
+    assertAzocaneOuterContour(result.coords, 'template layout', 1);
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assertCyclopentenylRing(pipelineResult.coords, 'pipeline layout');
+    assertAzocaneOuterContour(pipelineResult.coords, 'pipeline layout', 5);
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 

@@ -235,6 +235,7 @@ export function finalizeAppBootstrap(ctx) {
       deleteTargets: (atomIds, bondIds, options = {}) => ctx.actions.editingActions.deleteTargets(atomIds, bondIds, options),
       changeAtomElements: (atomIds, newEl) => changeAtomElements(atomIds, newEl)
     },
+    clipboard: ctx.actions.clipboardActions,
     history: {
       undo: () => ctx.history.undoAction(),
       redo: () => ctx.history.redoAction()
@@ -274,6 +275,7 @@ export function finalizeAppBootstrap(ctx) {
       paintRingFill: (atomIds, style, options = {}) => appDelegates.paintRingFill(atomIds, style, options),
       placeRingTemplate: (size, ox, oy, options = {}) => appDelegates.placeRingTemplate(size, ox, oy, options)
     },
+    clipboard: ctx.actions.clipboardActions,
     view: {
       getZoomTransform: () => ctx.view.getZoomTransform(),
       clearPrimitiveHover: () => ctx.view.clearPrimitiveHover(),

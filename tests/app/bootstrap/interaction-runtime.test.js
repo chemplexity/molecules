@@ -9,6 +9,7 @@ describe('interaction runtime bootstrap', () => {
     const depBuilders = {
       createNavigationActionDeps: ctx => ctx,
       createSelectionActionDeps: ctx => ctx,
+      createClipboardActionDeps: ctx => ctx,
       createEditingActionDeps: ctx => ctx,
       createDragGestureActionDeps: ctx => ctx,
       createDrawBondPreviewActionDeps: ctx => ctx,
@@ -24,6 +25,10 @@ describe('interaction runtime bootstrap', () => {
       createSelectionActions: deps => {
         created.push('selection');
         return { kind: 'selection', deps };
+      },
+      createClipboardActions: deps => {
+        created.push('clipboard');
+        return { kind: 'clipboard', deps };
       },
       createEditingActions: deps => {
         created.push('editing');
@@ -130,6 +135,7 @@ describe('interaction runtime bootstrap', () => {
         normalizeResonanceForEdit: {},
         takeSnapshotPolicy: {},
         viewportNonePolicy: {},
+        viewportRestoreEditPolicy: {},
         clearStereoAnnotations() {},
         kekulize() {},
         refreshAromaticity() {},
@@ -209,6 +215,7 @@ describe('interaction runtime bootstrap', () => {
         updatePanels() {},
         draw2d() {},
         updateForce() {},
+        renderMol() {},
         clearSelection() {},
         changeAtomElements() {},
         paintStyleTargets() {},
@@ -239,7 +246,7 @@ describe('interaction runtime bootstrap', () => {
       { factories, depBuilders }
     );
 
-    assert.deepEqual(created, ['navigation', 'selection', 'editing', 'drag', 'preview', 'commit', 'primitive-selection', 'primitive-events']);
+    assert.deepEqual(created, ['navigation', 'selection', 'clipboard', 'editing', 'drag', 'preview', 'commit', 'primitive-selection', 'primitive-events']);
     assert.equal(runtime.selectionActions.deps.getEditingActions().kind, 'editing');
     assert.equal(runtime.selectionActions.deps.getDrawBondPreviewActions().kind, 'preview');
     assert.equal(runtime.drawBondCommitActions.deps.cancelPreview(), 'cancelled');

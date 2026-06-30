@@ -91,7 +91,8 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       drawBondPreviewActions: ctx.drawBondPreviewActions,
       drawBondCommitActions: ctx.drawBondCommitActions,
       editingActions: ctx.editingActions,
-      selectionActions: ctx.selectionActions
+      selectionActions: ctx.selectionActions,
+      clipboardActions: ctx.clipboardActions
     },
     render: {
       render2DHelpers: ctx.render2DHelpers,

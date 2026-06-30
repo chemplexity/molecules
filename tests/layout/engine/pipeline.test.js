@@ -356,6 +356,30 @@ describe('layout/engine/pipeline smoke', () => {
     assert.ok(Math.abs(alkyneSeparation - 180) < 1e-6, `expected the terminal alkyne to stay linear, got ${alkyneSeparation.toFixed(2)}`);
   });
 
+  it('places folic-acid pterin caps outside the larger heteroring', () => {
+    const smiles = 'C1=CC(=CC=C1C(=O)NC(CCC(=O)O)C(=O)O)NCC2=CN=C3NC(=O)C(=N3)N=C2';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const pterinLargeRing = result.layoutGraph.rings.find(ring => ring.atomIds.length === 8 && ring.atomIds.includes('N29'));
+    const largeRingPolygon = pterinLargeRing.atomIds.map(atomId => result.coords.get(atomId));
+    const pterinOuterSevenAngles = ringAngles(result.coords, ['C31', 'N30', 'C28', 'C24', 'N23', 'C22', 'C21']);
+    const pterinOuterSevenPolygon = ['C31', 'N30', 'C28', 'C24', 'N23', 'C22', 'C21'].map(atomId => result.coords.get(atomId));
+
+    assert.ok(bugMolecules.includes(smiles), 'expected folic-acid pterin regression molecule to be registered');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(pointInPolygon(result.coords.get('N25'), largeRingPolygon), false);
+    assert.equal(pointInPolygon(result.coords.get('C26'), largeRingPolygon), false);
+    assert.equal(pointInPolygon(result.coords.get('N29'), pterinOuterSevenPolygon), true);
+    assert.equal(pointInPolygon(result.coords.get('N25'), pterinOuterSevenPolygon), false);
+    assert.equal(pointInPolygon(result.coords.get('C26'), pterinOuterSevenPolygon), false);
+    assert.ok(pterinOuterSevenAngles.every(angle => Math.abs(angle - 128.571) < 1), `expected folic-acid pterin outer contour to stay near seven-member angles, got ${pterinOuterSevenAngles.join(', ')}`);
+  });
+
   it('keeps steroid terminal methyl leaves outside incident rings after final leaf retouch', () => {
     const smiles =
       '[H][C@@]12C[C@@]3([H])[C@]4([H])CCC5=CC(=O)C=C[C@]5(C)[C@@]4(F)[C@@H](O)C[C@]3(C)[C@@]1(OC1(CCCC1)O2)C(=O)COC(C)=O';
@@ -441,6 +465,32 @@ describe('layout/engine/pipeline smoke', () => {
       assert.ok(sharedCornerAngle < 160, `expected the shared saturated corner to show a visible bend, got ${sharedCornerAngle.toFixed(2)} degrees`);
       assert.ok(sharedCornerAngle > 135, `expected the shared saturated corner to avoid an over-tight bend, got ${sharedCornerAngle.toFixed(2)} degrees`);
     }
+  });
+
+  it('keeps compact bicyclic ether theta cages open in normal pipeline runs', () => {
+    const smiles = 'CCC1(C2CC(CO)C1CO2)C1OCCCO1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const carbonLaneAngles = ringAngles(result.coords, ['C4', 'C5', 'C6', 'C9', 'C3']);
+    const etherLaneAngles = ringAngles(result.coords, ['C9', 'C10', 'O11', 'C4', 'C3']);
+    const attachedEtherAngles = ringAngles(result.coords, ['O17', 'C16', 'C15', 'C14', 'O13', 'C12']);
+    const sharedPathAngles = [...carbonLaneAngles, ...etherLaneAngles];
+
+    assert.ok(bugMolecules.includes(smiles), 'expected bicyclic ether theta regression molecule to stay registered');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.4);
+    assert.ok(Math.min(...sharedPathAngles) > 40, `expected shared ether-cage paths to stay open, got ${sharedPathAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...sharedPathAngles) < 170, `expected shared ether-cage paths to avoid flattening, got ${sharedPathAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(attachedEtherAngles, 120) < 1e-6, `expected the attached ether ring to stay regular, got ${attachedEtherAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 });
 
@@ -2270,6 +2320,31 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(Math.max(...allRingAngles) < 136, `expected the dioxatricyclo oxetane rings to avoid flattened paths, got ${allRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(Math.min(...allRingLengths) > result.layoutGraph.options.bondLength * 0.9);
     assert.ok(Math.max(...allRingLengths) < result.layoutGraph.options.bondLength * 1.22);
+  });
+
+  it('uses the bicyclic ether theta template instead of collapsing shared ether-cage paths', () => {
+    const smiles = 'CCC1(C2CC(CO)C1CO2)C1OCCCO1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const carbonLaneAngles = ringAngles(result.coords, ['C4', 'C5', 'C6', 'C9', 'C3']);
+    const etherLaneAngles = ringAngles(result.coords, ['C9', 'C10', 'O11', 'C4', 'C3']);
+    const attachedEtherAngles = ringAngles(result.coords, ['O17', 'C16', 'C15', 'C14', 'O13', 'C12']);
+    const sharedPathAngles = [...carbonLaneAngles, ...etherLaneAngles];
+
+    assert.ok(bugMolecules.includes(smiles), 'expected bicyclic ether theta regression molecule to stay registered');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.4);
+    assert.ok(Math.min(...sharedPathAngles) > 40, `expected shared ether-cage paths to stay open, got ${sharedPathAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...sharedPathAngles) < 170, `expected shared ether-cage paths to avoid flattening, got ${sharedPathAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(maxAngleDeviation(attachedEtherAngles, 120) < 1e-6, `expected the attached ether ring to stay regular, got ${attachedEtherAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
   it('uses the hydroxy azatricyclo cyclohexene template instead of flattening shared bridged rings', () => {

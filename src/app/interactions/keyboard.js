@@ -84,6 +84,24 @@ export function initKeyboardInteractions(context) {
       event.preventDefault();
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && normalizedKey === 'c') {
+      if (isTextInput) {
+        return;
+      }
+      if (context.clipboard?.copySelection?.()) {
+        event.preventDefault();
+      }
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && normalizedKey === 'v') {
+      if (isTextInput) {
+        return;
+      }
+      if (context.clipboard?.beginPastePreview?.()) {
+        event.preventDefault();
+      }
+      return;
+    }
 
     if (isTextInput) {
       return;
@@ -113,6 +131,10 @@ export function initKeyboardInteractions(context) {
     }
 
     if (event.key === 'Escape') {
+      if (context.clipboard?.cancelPastePreview?.()) {
+        event.preventDefault();
+        return;
+      }
       if (context.drawBond.hasDrawBondState()) {
         context.drawBond.cancelDrawBond();
         event.preventDefault();

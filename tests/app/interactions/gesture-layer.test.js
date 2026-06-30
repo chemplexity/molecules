@@ -419,6 +419,85 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(started, { atomId: null, x: 12, y: 34 });
   });
 
+  it('updates and places an active paste preview from pointer gestures', () => {
+    const { context, svg, listeners, calls } = makeBaseContext({
+      clipboard: {
+        hasPastePreview: () => true,
+        updatePastePreview(event) {
+          calls.push(['updatePastePreview', event.clientX, event.clientY]);
+          return true;
+        },
+        placePastePreview() {
+          calls.push(['placePastePreview']);
+          return true;
+        }
+      }
+    });
+
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      clientX: 40,
+      clientY: 50
+    });
+    svg.handlers.get('mousedown.paste')({
+      button: 0,
+      clientX: 60,
+      clientY: 70,
+      preventDefault() {
+        calls.push(['preventDefault']);
+      },
+      stopPropagation() {
+        calls.push(['stopPropagation']);
+      },
+      stopImmediatePropagation() {
+        calls.push(['stopImmediatePropagation']);
+      }
+    });
+
+    assert.deepEqual(calls, [
+      ['updatePastePreview', 40, 50],
+      ['preventDefault'],
+      ['stopPropagation'],
+      ['stopImmediatePropagation'],
+      ['updatePastePreview', 60, 70],
+      ['placePastePreview']
+    ]);
+  });
+
+  it('cancels an active paste preview when a UI control is pressed', () => {
+    const { context, listeners, calls } = makeBaseContext({
+      clipboard: {
+        hasPastePreview: () => true,
+        updatePastePreview() {
+          calls.push(['updatePastePreview']);
+          return true;
+        },
+        placePastePreview() {
+          calls.push(['placePastePreview']);
+          return true;
+        },
+        cancelPastePreview() {
+          calls.push(['cancelPastePreview']);
+          return true;
+        }
+      }
+    });
+
+    initGestureInteractions(context);
+
+    listeners.get('mousedown')({
+      button: 0,
+      target: {
+        closest(selector) {
+          return selector.includes('button') ? this : null;
+        }
+      }
+    });
+
+    assert.deepEqual(calls, [['cancelPastePreview']]);
+  });
+
   it('blocks blank-space draw-bond starts while a resonance view is active', () => {
     let started = false;
     const { context, svg, state } = makeBaseContext({

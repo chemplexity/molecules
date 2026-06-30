@@ -887,14 +887,18 @@ export function createNavigationActions(context) {
     if (previousMode === 'force') {
       const converted = convertForceCoordsToLineLayout(mol, context.simulation.nodes?.(), {
         bondLength,
-        forceBondLength: FORCE_LAYOUT_BOND_LENGTH * (bondLength / DEFAULT_LAYOUT_BOND_LENGTH)
+        forceBondLength: FORCE_LAYOUT_BOND_LENGTH * (bondLength / DEFAULT_LAYOUT_BOND_LENGTH),
+        coordinateSource: 'anchor'
       });
       const appliedCount = applyLineLayoutCoords(mol, converted.coords);
-      const preSnapLineCoords = captureFiniteAtomCoords(mol);
-      const ringSnapHints = snapCleanRingsToRegularGeometry(mol, {
-        bondLength
-      });
-      const reanchoredStereoCount = reanchorStereoTerminalsToCenters(mol, preSnapLineCoords);
+      const shouldSnapConvertedRings = !converted.usedCompleteHeavyAnchors;
+      const preSnapLineCoords = shouldSnapConvertedRings ? captureFiniteAtomCoords(mol) : new Map();
+      const ringSnapHints = shouldSnapConvertedRings
+        ? snapCleanRingsToRegularGeometry(mol, {
+            bondLength
+          })
+        : { snappedAtoms: new Set(), snappedBonds: new Set(), snappedCount: 0 };
+      const reanchoredStereoCount = shouldSnapConvertedRings ? reanchorStereoTerminalsToCenters(mol, preSnapLineCoords) : 0;
       context.renderers.renderMol(mol, {
         preserveHistory: true,
         preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0 || reanchoredStereoCount > 0,
@@ -906,6 +910,7 @@ export function createNavigationActions(context) {
             }
           : {})
       });
+      context.actions?.syncPastePreviewToMode?.();
       return;
     }
 
@@ -927,6 +932,7 @@ export function createNavigationActions(context) {
       forceAnchorLayout: converted.lineAnchorCoords.size > 0 ? converted.lineAnchorCoords : null,
       forceInitialPatchPos: converted.coords.size > 0 ? converted.coords : null
     });
+    context.actions?.syncPastePreviewToMode?.();
   }
 
   function autoZoom() {

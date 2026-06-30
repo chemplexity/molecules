@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  createClipboardActionDeps,
   createDragGestureActionDeps,
   createDrawBondCommitActionDeps,
   createDrawBondPreviewActionDeps,
@@ -124,6 +125,38 @@ describe('interaction action deps builders', () => {
     assert.equal(primitiveSelectionDeps.helpers.hasVisibleStereoBond(7), true);
   });
 
+  it('builds clipboard deps from app context accessors', () => {
+    const selectedAtomIds = new Set(['a1']);
+    const records = [];
+    const deps = createClipboardActionDeps({
+      getMode: () => '2d',
+      getActiveMolecule: () => ({ id: 'mol' }),
+      getSelectedAtomIds: () => selectedAtomIds,
+      getSelectedBondIds: () => new Set(),
+      clearSelection: () => records.push(['clearSelection']),
+      hasReactionPreview: () => false,
+      hasActiveResonanceView: () => false,
+      takeSnapshot: options => records.push(['takeSnapshot', options]),
+      renderMol: (mol, options) => records.push(['renderMol', mol, options]),
+      refreshSelectionOverlay: () => records.push(['refreshSelectionOverlay']),
+      clearPrimitiveHover: () => records.push(['clearPrimitiveHover']),
+      setPreserveSelectionOnNextRender: value => records.push(['preserveSelection', value]),
+      get2DCenterX: () => 1,
+      get2DCenterY: () => 2,
+      getPlotSize: () => ({ width: 10, height: 20 }),
+      g: { id: 'g' },
+      pointer: () => [3, 4],
+      scale: 40,
+      forceScale: 25
+    });
+
+    assert.equal(deps.state.getMode(), '2d');
+    assert.deepEqual(deps.selection.getSelectedAtomIds(), selectedAtomIds);
+    assert.equal(deps.view.get2DCenterX(), 1);
+    assert.equal(deps.plot.getSize().width, 10);
+    assert.deepEqual(deps.pointer({}, {}), [3, 4]);
+  });
+
   it('builds editing, drag, and draw-bond deps without changing behavior', () => {
     const records = [];
     const editingDeps = createEditingActionDeps({
@@ -135,6 +168,7 @@ describe('interaction action deps builders', () => {
       normalizeResonanceForEdit: Symbol('normalize'),
       takeSnapshotPolicy: Symbol('snap'),
       viewportNonePolicy: Symbol('none'),
+      viewportRestoreEditPolicy: Symbol('restore-edit'),
       clearStereoAnnotations: (...args) => records.push(['clearStereo', ...args]),
       kekulize: mol => mol,
       refreshAromaticity: mol => mol,
@@ -247,6 +281,7 @@ describe('interaction action deps builders', () => {
       ['changeAtomElements', [1], 'N', {}]
     ]);
     assert.equal(editingDeps.force.getSimulation().id, 'sim');
+    assert.equal(editingDeps.policies.viewport.restoreEdit.description, 'restore-edit');
     assert.equal(dragDeps.selection.getSelectedDragAtomIds().length, 2);
     assert.equal(dragDeps.state.getPaintMode(), true);
     assert.deepEqual(previewDeps.helpers.toSelectionSVGPt2d({ id: 7 }), { x: 7, y: 0 });

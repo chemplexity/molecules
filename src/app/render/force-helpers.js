@@ -649,7 +649,8 @@ export function convertLineCoordsToForceLayout(
  * @param {number} [options.forceBondLength] - Source force heavy-heavy bond length in pixels.
  * @param {{x: number, y: number}} [options.lineCenter] - Target line-coordinate center.
  * @param {'displayed'|'preserve'|'omit'} [options.hydrogenMode] - Hydrogen conversion strategy.
- * @returns {{coords: Map<string, object>, scale: number, forceCenter: {x: number, y: number}, lineCenter: {x: number, y: number}}} Converted line-coordinate data.
+ * @param {'position'|'anchor'} [options.coordinateSource] - Heavy-atom force coordinate source.
+ * @returns {{coords: Map<string, object>, scale: number, forceCenter: {x: number, y: number}, lineCenter: {x: number, y: number}, usedCompleteHeavyAnchors: boolean}} Converted line-coordinate data.
  */
 export function convertForceCoordsToLineLayout(
   molecule,
@@ -658,16 +659,23 @@ export function convertForceCoordsToLineLayout(
     bondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH,
     forceBondLength = FORCE_LAYOUT_BOND_LENGTH,
     lineCenter = { x: 0, y: 0 },
-    hydrogenMode = 'displayed'
+    hydrogenMode = 'displayed',
+    coordinateSource = 'position'
   } = {}
 ) {
   const coords = new Map();
   const nodeById = new Map(forceConverterNodeList(forceNodesOrGraph).filter(isFinitePoint).map(node => [node.id, node]));
+  const sourcePointForNode = node => {
+    if (coordinateSource === 'anchor') {
+      return finiteForcePointFromNode(node, 'anchorX', 'anchorY') ?? finiteForcePointFromNode(node);
+    }
+    return finiteForcePointFromNode(node);
+  };
   const atoms = molecule?.atoms instanceof Map ? [...molecule.atoms.values()] : [];
-  const heavyNodes = atoms
-    .filter(atom => atom.name !== 'H' && atom.visible !== false)
-    .map(atom => nodeById.get(atom.id))
-    .filter(isFinitePoint);
+  const heavyAtoms = atoms.filter(atom => atom.name !== 'H' && atom.visible !== false);
+  const heavyAnchorCount = heavyAtoms.filter(atom => finiteForcePointFromNode(nodeById.get(atom.id), 'anchorX', 'anchorY')).length;
+  const usedCompleteHeavyAnchors = coordinateSource === 'anchor' && heavyAtoms.length > 0 && heavyAnchorCount === heavyAtoms.length;
+  const heavyNodes = heavyAtoms.map(atom => sourcePointForNode(nodeById.get(atom.id))).filter(isFinitePoint);
   const forceCenter = centroid(heavyNodes, centroid([...nodeById.values()]));
   const scale = bondLength / forceBondLength;
   const toLinePoint = point => ({
@@ -688,7 +696,7 @@ export function convertForceCoordsToLineLayout(
     const endpointAtom = molecule.atoms.get(endpointId);
     const centerNode = nodeById.get(centerId);
     const endpointNode = nodeById.get(endpointId);
-    const centerPoint = finiteForcePointFromNode(centerNode);
+    const centerPoint = sourcePointForNode(centerNode);
     if (!endpointAtom || !centerPoint) {
       continue;
     }
@@ -716,7 +724,7 @@ export function convertForceCoordsToLineLayout(
   for (const centerId of molecule?.getChiralCenters?.() ?? []) {
     const centerAtom = molecule.atoms.get(centerId);
     const centerNode = nodeById.get(centerId);
-    const centerPoint = finiteForcePointFromNode(centerNode);
+    const centerPoint = sourcePointForNode(centerNode);
     if (!centerAtom || !centerPoint) {
       continue;
     }
@@ -763,13 +771,14 @@ export function convertForceCoordsToLineLayout(
       continue;
     }
     const node = nodeById.get(atom.id);
-    if (!isFinitePoint(node)) {
+    const sourcePoint = atom.name === 'H' ? finiteForcePointFromNode(node) : sourcePointForNode(node);
+    if (!sourcePoint) {
       continue;
     }
-    coords.set(atom.id, toLinePoint(node));
+    coords.set(atom.id, toLinePoint(sourcePoint));
   }
 
-  return { coords, scale, forceCenter, lineCenter };
+  return { coords, scale, forceCenter, lineCenter, usedCompleteHeavyAnchors };
 }
 
 /**

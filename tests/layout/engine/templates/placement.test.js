@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
 import { placeTemplateCoords } from '../../../../src/layout/engine/templates/placement.js';
 import { getTemplateCoords } from '../../../../src/layout/engine/templates/library.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
@@ -94,6 +95,20 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(purineCoords.size, 9);
     assert.ok(purineCoords.get('N5').x < purineCoords.get('C3').x);
     assert.ok(purineCoords.get('N8').x < purineCoords.get('N2').x);
+
+    const pterinGraph = createLayoutGraph(parseSMILES('C1=CN=C2NC(=O)C(=N2)N=C1'));
+    const pterinCoords = placeTemplateCoords(pterinGraph, 'pterin-core', pterinGraph.ringSystems[0].atomIds, pterinGraph.options.bondLength);
+    const pterinLargeRing = pterinGraph.rings.find(ring => ring.atomIds.length === 8);
+    const pterinLargePolygon = pterinLargeRing.atomIds.map(atomId => pterinCoords.get(atomId));
+    const pterinOuterSevenAngles = ringAngles(pterinCoords, ['C11', 'N10', 'C8', 'C4', 'N3', 'C2', 'C1']);
+    const pterinOuterSevenPolygon = ['C11', 'N10', 'C8', 'C4', 'N3', 'C2', 'C1'].map(atomId => pterinCoords.get(atomId));
+    assert.equal(pterinCoords.size, 10);
+    assert.equal(pointInPolygon(pterinCoords.get('N5'), pterinLargePolygon), false);
+    assert.equal(pointInPolygon(pterinCoords.get('C6'), pterinLargePolygon), false);
+    assert.equal(pointInPolygon(pterinCoords.get('N9'), pterinOuterSevenPolygon), true);
+    assert.equal(pointInPolygon(pterinCoords.get('N5'), pterinOuterSevenPolygon), false);
+    assert.equal(pointInPolygon(pterinCoords.get('C6'), pterinOuterSevenPolygon), false);
+    assert.ok(pterinOuterSevenAngles.every(angle => Math.abs(angle - 128.571) < 1), `expected pterin outer contour to stay near seven-member angles, got ${pterinOuterSevenAngles.join(', ')}`);
 
     const acridineGraph = createLayoutGraph(parseSMILES('c1ccc2nc3ccccc3cc2c1'));
     const acridineCoords = placeTemplateCoords(acridineGraph, 'acridine', acridineGraph.ringSystems[0].atomIds, acridineGraph.options.bondLength);
@@ -1548,6 +1563,9 @@ describe('layout/engine/templates/placement', () => {
       bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
     });
     const fiveRingAngles = ringAngles(coords, ['C8', 'C2', 'C3', 'C4', 'S5']);
+    const upperContourAtomIds = ['C3', 'C13', 'N12', 'C11', 'C10', 'C9', 'C8'];
+    const upperContourAngles = ringAngles(coords, upperContourAtomIds);
+    const upperContourPolygon = upperContourAtomIds.map(atomId => coords.get(atomId));
 
     assert.equal(coords.size, 10);
     assert.equal(audit.severeOverlapCount, 0);
@@ -1556,6 +1574,10 @@ describe('layout/engine/templates/placement', () => {
     for (const angle of fiveRingAngles) {
       assert.ok(Math.abs(angle - 108) < 1e-3, `expected the sulfonyl cyclopentene ring to stay pentagonal, got ${angle.toFixed(2)} degrees`);
     }
+    for (const angle of upperContourAngles) {
+      assert.ok(Math.abs(angle - 128.571) < 1, `expected the azocane outer contour to stay heptagonal, got ${upperContourAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+    }
+    assert.equal(pointInPolygon(coords.get('C2'), upperContourPolygon), true);
   });
 
   it('places the hydroxy alkyl bicyclohexene core with a structured cyclopentenyl ring', () => {

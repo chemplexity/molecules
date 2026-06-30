@@ -5127,6 +5127,38 @@ function finalHiddenHydrogenVinylicFanCandidate(layoutGraph, coords, descriptor,
 }
 
 /**
+ * Returns whether a late vinylic fan retouch should preserve an already
+ * extended acyclic polyene rather than rotating chain chunks around annotated
+ * alkene centers.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the polyene should remain unchanged.
+ */
+function shouldPreserveExtendedAnnotatedAcyclicPolyene(layoutGraph, coords, bondLength) {
+  if ((layoutGraph.rings?.length ?? 0) > 0) {
+    return false;
+  }
+  const annotatedAcyclicAlkeneCount = [...layoutGraph.bonds.values()].filter(bond => {
+    if (bond.kind !== 'covalent' || bond.aromatic || bond.inRing || (bond.order ?? 1) !== 2) {
+      return false;
+    }
+    return (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null;
+  }).length;
+  if (annotatedAcyclicAlkeneCount < 3) {
+    return false;
+  }
+  const heavyAtomIds = [...coords.keys()].filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+  const bounds = computeBounds(coords, heavyAtomIds);
+  if (!bounds) {
+    return false;
+  }
+  const majorSpan = Math.max(bounds.width, bounds.height);
+  const minorSpan = Math.max(Math.min(bounds.width, bounds.height), NUMERIC_EPSILON);
+  return majorSpan / minorSpan >= 5 && majorSpan >= bondLength * (annotatedAcyclicAlkeneCount * 2.5 + 2);
+}
+
+/**
  * Retouches distorted hidden-H vinylic fans after late cleanup passes.
  * @param {object} molecule - Molecule-like graph.
  * @param {object} layoutGraph - Layout graph shell.
@@ -5137,8 +5169,18 @@ function finalHiddenHydrogenVinylicFanCandidate(layoutGraph, coords, descriptor,
  */
 function maybeRetouchFinalHiddenHydrogenVinylicFans(molecule, layoutGraph, finalCoords, placement, bondLength) {
   let currentCoords = finalCoords;
-  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
   const scoreBefore = finalHiddenHydrogenVinylicFanDescriptors(layoutGraph, currentCoords)[0]?.score ?? { maxDeviation: 0, totalDeviation: 0 };
+  if (shouldPreserveExtendedAnnotatedAcyclicPolyene(layoutGraph, currentCoords, bondLength)) {
+    return {
+      changed: false,
+      coords: finalCoords,
+      movedAtomIds: [],
+      audit: null,
+      maxDeviationBefore: scoreBefore.maxDeviation,
+      maxDeviationAfter: scoreBefore.maxDeviation
+    };
+  }
+  let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
   const movedAtomIds = new Set();
   let changed = false;
 

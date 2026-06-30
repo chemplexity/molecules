@@ -1321,6 +1321,49 @@ export function initGestureInteractions(context) {
     lastEraseHitElement = null;
   }
 
+  function isPasteCancelControl(target) {
+    if (typeof target?.closest !== 'function') {
+      return false;
+    }
+    return !!target.closest('button, [role="button"], input, select, textarea, summary, a[href]');
+  }
+
+  function placePasteFromPointer(event) {
+    if (!context.clipboard?.hasPastePreview?.() || event.button !== 0) {
+      return false;
+    }
+    if (isPasteCancelControl(event.target)) {
+      return false;
+    }
+    const svgNode = svg.node();
+    if (typeof svgNode?.contains === 'function' && !svgNode.contains(event.target)) {
+      return false;
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    context.clipboard.updatePastePreview?.(event);
+    context.clipboard.placePastePreview?.();
+    return true;
+  }
+
+  doc.addEventListener(
+    'mousedown',
+    event => {
+      if (placePasteFromPointer(event)) {
+        return;
+      }
+      if (context.clipboard?.hasPastePreview?.() && event.button === 0 && isPasteCancelControl(event.target)) {
+        context.clipboard.cancelPastePreview?.();
+      }
+    },
+    true
+  );
+
+  svg.on('mousedown.paste', event => {
+    placePasteFromPointer(event);
+  });
+
   svg.on('mousedown.selection', event => {
     const mode = context.state.viewState.getMode();
     if (!context.state.overlayState.getSelectMode()) {
@@ -1511,6 +1554,10 @@ export function initGestureInteractions(context) {
 
   doc.addEventListener('mousemove', event => {
     lastPaintPreviewEvent = event;
+    if (context.clipboard?.hasPastePreview?.()) {
+      context.clipboard.updatePastePreview(event);
+      return;
+    }
     context.view.setDrawBondHoverSuppressed(false);
     if (context.drawBond.hasDrawBondState()) {
       context.drawBond.markDragged();

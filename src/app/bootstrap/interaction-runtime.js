@@ -2,6 +2,7 @@
 
 import { createDrawBondCommitActions } from '../interactions/draw-bond-commit.js';
 import { createDrawBondPreviewActions } from '../interactions/draw-bond-preview.js';
+import { createClipboardActions } from '../interactions/clipboard.js';
 import { createEditingActions } from '../interactions/editing.js';
 import { createDragGestureActions } from '../interactions/drag-gestures.js';
 import { createNavigationActions } from '../interactions/navigation.js';
@@ -9,6 +10,7 @@ import { createPrimitiveEventHandlers } from '../interactions/primitive-events.j
 import { createPrimitiveSelectionActions } from '../interactions/primitives.js';
 import { createSelectionActions } from '../interactions/selection.js';
 import {
+  createClipboardActionDeps,
   createDragGestureActionDeps,
   createDrawBondCommitActionDeps,
   createDrawBondPreviewActionDeps,
@@ -22,6 +24,7 @@ import {
 const defaultFactories = {
   createNavigationActions,
   createSelectionActions,
+  createClipboardActions,
   createEditingActions,
   createDragGestureActions,
   createDrawBondPreviewActions,
@@ -33,6 +36,7 @@ const defaultFactories = {
 const defaultDepBuilders = {
   createNavigationActionDeps,
   createSelectionActionDeps,
+  createClipboardActionDeps,
   createEditingActionDeps,
   createDragGestureActionDeps,
   createDrawBondPreviewActionDeps,
@@ -53,7 +57,7 @@ const defaultDepBuilders = {
  *   the standard `createXxxActions` imports).
  * @param {object} [options.depBuilders] - Dep-builder overrides (defaults to
  *   the standard `createXxxActionDeps` imports).
- * @returns {{ navigationActions, selectionActions, editingActions,
+ * @returns {{ navigationActions, selectionActions, clipboardActions, editingActions,
  *   dragGestureActions, drawBondPreviewActions, drawBondCommitActions,
  *   primitiveSelectionActions, primitiveEventHandlers }} Initialized action
  *   objects for each interaction subsystem.
@@ -61,6 +65,7 @@ const defaultDepBuilders = {
 export function initializeInteractionRuntime(ctx, options = {}) {
   const factories = options.factories ?? defaultFactories;
   const depBuilders = options.depBuilders ?? defaultDepBuilders;
+  let clipboardActions = null;
 
   const navigationActions = factories.createNavigationActions(
     depBuilders.createNavigationActionDeps({
@@ -106,7 +111,8 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       plotEl: ctx.plotEl,
       clean2dButton: ctx.clean2dButton,
       cleanForceButton: ctx.cleanForceButton,
-      updateModeChrome: ctx.updateModeChrome
+      updateModeChrome: ctx.updateModeChrome,
+      getClipboardActions: () => clipboardActions
     })
   );
 
@@ -141,6 +147,33 @@ export function initializeInteractionRuntime(ctx, options = {}) {
     })
   );
 
+  clipboardActions = factories.createClipboardActions(
+    depBuilders.createClipboardActionDeps({
+      appState: ctx.appState,
+      getMode: () => ctx.getMode(),
+      getActiveMolecule: () => ctx.getActiveMolecule(),
+      getSelectedAtomIds: () => ctx.getSelectedAtomIds?.() ?? ctx.appState.overlayState.getSelectedAtomIds(),
+      getSelectedBondIds: () => ctx.getSelectedBondIds?.() ?? ctx.appState.overlayState.getSelectedBondIds(),
+      clearSelection: () => ctx.clearSelection(),
+      hasReactionPreview: () => ctx.hasReactionPreview(),
+      hasActiveResonanceView: () => ctx.hasActiveResonanceView?.() ?? false,
+      takeSnapshot: options => ctx.takeSnapshot(options),
+      renderMol: (mol, renderOptions = {}) => ctx.renderRuntime.renderMol(mol, renderOptions),
+      refreshSelectionOverlay: () => ctx.refreshSelectionOverlay(),
+      clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
+      setPreserveSelectionOnNextRender: value => {
+        ctx.setPreserveSelectionOnNextRender(value);
+      },
+      get2DCenterX: () => ctx.get2DCenterX(),
+      get2DCenterY: () => ctx.get2DCenterY(),
+      getPlotSize: () => ctx.getPlotSize(),
+      g: ctx.g,
+      pointer: (event, node) => ctx.pointer(event, node),
+      scale: ctx.scale,
+      forceScale: ctx.forceScale
+    })
+  );
+
   const editingActions = factories.createEditingActions(
     depBuilders.createEditingActionDeps({
       appState: ctx.appState,
@@ -151,6 +184,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       normalizeResonanceForEdit: ctx.normalizeResonanceForEdit,
       takeSnapshotPolicy: ctx.takeSnapshotPolicy,
       viewportNonePolicy: ctx.viewportNonePolicy,
+      viewportRestoreEditPolicy: ctx.viewportRestoreEditPolicy,
       clearStereoAnnotations: (mol, affectedIds) => ctx.clearStereoAnnotations(mol, affectedIds),
       kekulize: ctx.kekulize,
       refreshAromaticity: ctx.refreshAromaticity,
@@ -347,6 +381,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
   return {
     navigationActions,
     selectionActions,
+    clipboardActions,
     editingActions,
     dragGestureActions,
     drawBondPreviewActions,

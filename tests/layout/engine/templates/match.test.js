@@ -118,6 +118,10 @@ describe('layout/engine/templates/match', () => {
     const purineMatch = findTemplateMatch(purineGraph, buildRingCandidate(purineGraph, purineGraph.ringSystems[0], 'fused'));
     assert.equal(purineMatch.id, 'purine');
 
+    const pterinGraph = createLayoutGraph(parseSMILES('C1=CN=C2NC(=O)C(=N2)N=C1'));
+    const pterinMatch = findTemplateMatch(pterinGraph, buildRingCandidate(pterinGraph, pterinGraph.ringSystems[0], 'bridged'));
+    assert.equal(pterinMatch.id, 'pterin-core');
+
     const quinazolineGraph = createLayoutGraph(parseSMILES('c1ccc2ncncc2c1'));
     const quinazolineMatch = findTemplateMatch(quinazolineGraph, buildRingCandidate(quinazolineGraph, quinazolineGraph.ringSystems[0], 'fused'));
     assert.equal(quinazolineMatch.id, 'quinazoline');
@@ -254,6 +258,10 @@ describe('layout/engine/templates/match', () => {
     const oxabicyclo222Graph = createLayoutGraph(parseSMILES('C12CCC(CO1)CC2'));
     const oxabicyclo222Match = findTemplateMatch(oxabicyclo222Graph, buildRingCandidate(oxabicyclo222Graph, oxabicyclo222Graph.ringSystems[0], 'bridged'));
     assert.equal(oxabicyclo222Match.id, 'oxabicyclo-2-2-2');
+
+    const bicyclicEtherThetaGraph = createLayoutGraph(parseSMILES('CCC1(C2CC(CO)C1CO2)C1OCCCO1'), { suppressH: true });
+    const bicyclicEtherThetaMatch = findTemplateMatch(bicyclicEtherThetaGraph, buildRingCandidate(bicyclicEtherThetaGraph, bicyclicEtherThetaGraph.ringSystems[0], 'bridged'));
+    assert.equal(bicyclicEtherThetaMatch.id, 'bicyclic-ether-theta-core');
 
     const quinuclidineGraph = createLayoutGraph(parseSMILES('C1CN2CCC1CC2'));
     const quinuclidineMatch = findTemplateMatch(quinuclidineGraph, buildRingCandidate(quinuclidineGraph, quinuclidineGraph.ringSystems[0], 'bridged'));

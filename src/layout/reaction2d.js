@@ -3013,7 +3013,8 @@ function idealizeReaction2dEditedTwoHeavyImineCenters(mol, componentAtomIds, bon
  * Centers terminal exocyclic substituents on edited ring atoms against the
  * retained ring fan. This covers dehydration products where a small-ring
  * alcohol center becomes either an exocyclic alkene or an internal ring alkene
- * with a terminal exocyclic substituent.
+ * with a terminal exocyclic substituent, and ester-cleavage products where a
+ * retained ring alkene center receives a terminal alcohol.
  * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
  * @param {Set<string>} componentAtomIds - Product component atom IDs.
  * @param {number} bondLength - Target bond length.
@@ -3040,7 +3041,7 @@ function idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bon
     }
 
     const hasInternalRingMultipleBond = heavyNeighbors.some(atom => {
-      if (!ringAtomIds.has(atom.id) || !mol.__reactionPreview.editedProductAtomIds.has(atom.id)) {
+      if (!ringAtomIds.has(atom.id)) {
         return false;
       }
       return (mol.getBond(center.id, atom.id)?.properties.order ?? 1) >= 2;

@@ -6,6 +6,7 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { actualAlkeneStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { computeCanonicalAtomRanks } from '../../../../src/layout/engine/topology/canonical-order.js';
+import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { makeBut2Yne, makeChain, makeDimethylSulfone } from '../support/molecules.js';
@@ -566,7 +567,8 @@ describe('layout/engine/families/acyclic', () => {
   });
 
   it('keeps long explicitly stereo polyenes extended instead of curling them into a compact spiral', () => {
-    const graph = createLayoutGraph(parseSMILES('CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'), {
+    const smiles = String.raw`CC\C=C/C\C=C/C\C=C/C\C=C/C\C=C/C\C=C/CCC(=O)O`;
+    const graph = createLayoutGraph(parseSMILES(smiles), {
       suppressH: true
     });
     const atomIdsToPlace = new Set(graph.components[0].atomIds.filter(atomId => graph.atoms.get(atomId)?.element !== 'H'));
@@ -579,6 +581,27 @@ describe('layout/engine/families/acyclic', () => {
 
     assert.ok(width > height * 6, `expected an extended polyene layout, got width ${width.toFixed(3)} and height ${height.toFixed(3)}`);
     assert.ok(height < 4, `expected the long fatty-acid polyene to stay fairly shallow, got height ${height.toFixed(3)}`);
+    assert.ok(stereoChecks.every(stereo => stereo === 'Z'));
+  });
+
+  it('keeps long explicitly stereo polyenes extended through final cleanup', () => {
+    const smiles = String.raw`CC\C=C/C\C=C/C\C=C/C\C=C/C\C=C/C\C=C/CCC(=O)O`;
+    const molecule = parseSMILES(smiles);
+    const graph = createLayoutGraph(molecule, {
+      suppressH: true
+    });
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const heavyAtomIds = [...graph.atoms.keys()].filter(atomId => graph.atoms.get(atomId)?.element !== 'H');
+    const bounds = computeBounds(result.coords, heavyAtomIds);
+    const stereoChecks = [...graph.bonds.values()].filter(bond => (bond.order ?? 1) === 2 && graph.sourceMolecule.getEZStereo?.(bond.id)).map(bond => actualAlkeneStereo(graph, result.coords, bond));
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(bounds);
+    assert.ok(bounds.width > bounds.height * 5, `expected final polyene layout to stay extended, got width ${bounds.width.toFixed(3)} and height ${bounds.height.toFixed(3)}`);
+    assert.ok(bounds.height < 5, `expected final fatty-acid polyene to stay shallow, got height ${bounds.height.toFixed(3)}`);
     assert.ok(stereoChecks.every(stereo => stereo === 'Z'));
   });
 });

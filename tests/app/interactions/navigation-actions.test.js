@@ -1935,6 +1935,102 @@ test('line force line conversion preserves manual 1.5 aromatic bond state', () =
   assert.equal(returnedBond.properties.localizedOrder, undefined);
 });
 
+test('toggleMode force-to-line restores anchored fused-ring geometry after force drift', () => {
+  const smiles = 'CC(C)CCCC(C)C1CCC2C3CCC4CCCCC4(C)C3CCC12C';
+  let mol2d = parseSMILES(smiles);
+  const layoutResult = generateCoords(mol2d, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol2d, layoutResult, { clearUnplaced: true });
+  const originalDistance = Math.hypot(mol2d.atoms.get('C27').x - mol2d.atoms.get('C22').x, mol2d.atoms.get('C27').y - mol2d.atoms.get('C22').y);
+  const originalMethylVectors = new Map(
+    ['C22', 'C27'].map(atomId => {
+      const atom = mol2d.atoms.get(atomId);
+      const parent = atom.getNeighbors(mol2d).find(neighbor => neighbor.name !== 'H');
+      return [atomId, { parentId: parent.id, x: atom.x - parent.x, y: atom.y - parent.y }];
+    })
+  );
+  let currentMol = mol2d;
+  let mode = 'force';
+  const converted = convertLineCoordsToForceLayout(currentMol, {
+    bondLength: 1.5,
+    forceCenter: { x: 400, y: 300 }
+  });
+  const nodes = converted.nodes.map(node => ({ ...node }));
+  for (const node of nodes) {
+    if (node.name === 'H') {
+      continue;
+    }
+    const drift = node.id === 'C27' ? 45 : node.id === 'C22' ? -35 : 8;
+    node.x += drift;
+    node.y -= drift / 2;
+  }
+
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => currentMol,
+        getMol2d: () => mol2d,
+        getCurrentSmiles: () => smiles,
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {},
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome() {}
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol: renderedMol => {
+        currentMol = renderedMol;
+        if (mode === '2d') {
+          mol2d = renderedMol;
+        }
+      }
+    },
+    helpers: {
+      getLayoutBondLength: () => 1.5,
+      refineExistingCoords
+    },
+    parsers: {
+      parseSMILES
+    }
+  });
+
+  actions.toggleMode();
+
+  const returnedDistance = Math.hypot(mol2d.atoms.get('C27').x - mol2d.atoms.get('C22').x, mol2d.atoms.get('C27').y - mol2d.atoms.get('C22').y);
+  approxEqual(returnedDistance, originalDistance, 1e-6);
+  for (const [atomId, originalVector] of originalMethylVectors) {
+    const atom = mol2d.atoms.get(atomId);
+    const parent = mol2d.atoms.get(originalVector.parentId);
+    approxEqual(atom.x - parent.x, originalVector.x, 1e-6);
+    approxEqual(atom.y - parent.y, originalVector.y, 1e-6);
+  }
+  assert.ok(maxRingBondLengthDeviation(mol2d) < 1e-6, 'expected force-to-line toggle to keep anchored ring geometry regular');
+});
+
 test('repeated clean after force perturbation preserves regular ring geometry', () => {
   const smiles = 'Cc1cc(C)cc(NC(=O)c2cc(NC(=O)c3ccc(cc3Cl)S(=O)(=O)C)ccc2Cl)c1';
   let mol2d = parseSMILES(smiles);

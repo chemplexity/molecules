@@ -129,6 +129,7 @@ describe('finalizeAppBootstrap', () => {
           deleteTargets() {},
           eraseItem() {}
         },
+        clipboardActions: {},
         selectionActions: {
           togglePanMode() {},
           toggleSelectMode() {},
