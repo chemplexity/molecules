@@ -22,8 +22,11 @@ export const DRAW_ELEM_PROTONS = {
  * @returns {object} Dependency object consumed by `createInteractionRuntime`.
  */
 export function createInteractionRuntimeDeps(ctx) {
+  const ringTemplateDrag = ctx.appState.ringTemplateDrag ?? {};
+  ctx.appState.ringTemplateDrag = ringTemplateDrag;
   return {
     appState: ctx.appState,
+    ringTemplateDrag,
     takeSnapshot: options => ctx.takeSnapshot(options),
     captureAppSnapshot: options => ctx.captureAppSnapshot(options),
     discardLastSnapshot: () => ctx.discardLastSnapshot(),

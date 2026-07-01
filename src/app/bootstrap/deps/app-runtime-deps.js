@@ -227,6 +227,7 @@ export function createAppRuntimeDeps(ctx) {
     },
     view: {
       updateModeChrome: ctx.updateModeChrome,
+      getZoomTransform: () => ctx.getZoomTransform?.() ?? null,
       restoreZoomTransformSnapshot: ctx.restoreZoomTransformSnapshot,
       captureZoomTransformSnapshot: ctx.captureZoomTransformSnapshot,
       restoreZoomTransform: snapshot => ctx.zoomTransformHelpers.restoreZoomTransformSnapshot(snapshot),

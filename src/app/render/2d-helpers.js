@@ -313,8 +313,32 @@ export function create2DRenderHelpers(ctx) {
     }
     const width = ctx.plotEl.clientWidth || 600;
     const height = ctx.plotEl.clientHeight || 400;
-    const pad = 40;
+    const pad = Number.isFinite(Number(options.pad)) ? Math.max(0, Number(options.pad)) : 40;
     const transform = ctx.d3.zoomTransform(ctx.svg.node());
+    const renderedBBox = (() => {
+      try {
+        return ctx.g?.node?.()?.getBBox?.() ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    if (renderedBBox && renderedBBox.width > 0 && renderedBBox.height > 0) {
+      const left = transform.applyX(renderedBBox.x);
+      const right = transform.applyX(renderedBBox.x + renderedBBox.width);
+      const top = transform.applyY(renderedBBox.y);
+      const bottom = transform.applyY(renderedBBox.y + renderedBBox.height);
+      const outside = left < pad || right > width - pad || top < pad || bottom > height - pad;
+      if (!outside && !force) {
+        return;
+      }
+      const fitWidth = Math.max(1, width - pad * 2);
+      const fitHeight = Math.max(1, height - pad * 2);
+      const scale = Math.min(fitWidth / renderedBBox.width, fitHeight / renderedBBox.height, 1);
+      const tx = width / 2 - (renderedBBox.x + renderedBBox.width / 2) * scale;
+      const ty = height / 2 - (renderedBBox.y + renderedBBox.height / 2) * scale;
+      ctx.svg.call(ctx.zoom.transform, ctx.d3.zoomIdentity.translate(tx, ty).scale(scale));
+      return;
+    }
     let anyOut = false;
     let minGX = Infinity;
     let maxGX = -Infinity;

@@ -128,23 +128,35 @@ describe('interaction action deps builders', () => {
   it('builds clipboard deps from app context accessors', () => {
     const selectedAtomIds = new Set(['a1']);
     const records = [];
+    const plotEl = { id: 'plot' };
     const deps = createClipboardActionDeps({
       getMode: () => '2d',
       getActiveMolecule: () => ({ id: 'mol' }),
+      getForceNodes: () => [{ id: 'C1', x: 12, y: 34 }],
       getSelectedAtomIds: () => selectedAtomIds,
       getSelectedBondIds: () => new Set(),
       clearSelection: () => records.push(['clearSelection']),
       hasReactionPreview: () => false,
       hasActiveResonanceView: () => false,
       takeSnapshot: options => records.push(['takeSnapshot', options]),
+      draw2d: () => records.push(['draw2d']),
       renderMol: (mol, options) => records.push(['renderMol', mol, options]),
       refreshSelectionOverlay: () => records.push(['refreshSelectionOverlay']),
+      syncInputField: mol => records.push(['syncInput', mol]),
+      updateFormula: mol => records.push(['formula', mol]),
+      updateDescriptors: mol => records.push(['descriptors', mol]),
+      updatePanels: mol => records.push(['panels', mol]),
       clearPrimitiveHover: () => records.push(['clearPrimitiveHover']),
       setPreserveSelectionOnNextRender: value => records.push(['preserveSelection', value]),
+      captureZoomTransform: () => ({ x: 1, y: 2, k: 3 }),
+      restore2dEditViewport: (snapshot, options) => records.push(['restore2dEditViewport', snapshot, options]),
+      sync2DDerivedState: mol => records.push(['syncDerived2d', mol]),
+      toSelectionSVGPt2d: atom => ({ x: atom.x + 1, y: atom.y + 2 }),
       get2DCenterX: () => 1,
       get2DCenterY: () => 2,
       getPlotSize: () => ({ width: 10, height: 20 }),
       g: { id: 'g' },
+      plotEl,
       pointer: () => [3, 4],
       scale: 40,
       forceScale: 25
@@ -152,9 +164,29 @@ describe('interaction action deps builders', () => {
 
     assert.equal(deps.state.getMode(), '2d');
     assert.deepEqual(deps.selection.getSelectedAtomIds(), selectedAtomIds);
+    assert.deepEqual(deps.force.getNodes(), [{ id: 'C1', x: 12, y: 34 }]);
+    assert.deepEqual(deps.view.get2DAtomPoint({ x: 5, y: 6 }), { x: 6, y: 8 });
     assert.equal(deps.view.get2DCenterX(), 1);
+    assert.deepEqual(deps.view.captureZoomTransform(), { x: 1, y: 2, k: 3 });
     assert.equal(deps.plot.getSize().width, 10);
+    assert.equal(deps.dom.plotElement, plotEl);
     assert.deepEqual(deps.pointer({}, {}), [3, 4]);
+    deps.renderers.draw2d();
+    deps.view.restore2dEditViewport('zoom', { zoomToFit: { pad: 0 } });
+    deps.view2D.syncDerivedState('mol');
+    deps.analysis.syncInputField('mol');
+    deps.analysis.updateFormula('mol');
+    deps.analysis.updateDescriptors('mol');
+    deps.analysis.updatePanels('mol');
+    assert.deepEqual(records, [
+      ['draw2d'],
+      ['restore2dEditViewport', 'zoom', { zoomToFit: { pad: 0 } }],
+      ['syncDerived2d', 'mol'],
+      ['syncInput', 'mol'],
+      ['formula', 'mol'],
+      ['descriptors', 'mol'],
+      ['panels', 'mol']
+    ]);
   });
 
   it('builds editing, drag, and draw-bond deps without changing behavior', () => {

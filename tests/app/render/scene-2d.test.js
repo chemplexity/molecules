@@ -59,7 +59,8 @@ class FakeSelection {
     return this;
   }
 
-  on() {
+  on(name, handler) {
+    this.records.push(['on', name, handler]);
     return this;
   }
 
@@ -104,7 +105,7 @@ function makeAtom(id, x, y) {
   };
 }
 
-function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides = {}, dragOverrides = {} } = {}) {
+function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides = {}, eventOverrides = {}, dragOverrides = {} } = {}) {
   const records = [];
   const nodeRef = { id: 'svg-node' };
   const svg = new FakeSelection(records, nodeRef);
@@ -235,7 +236,8 @@ function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides =
       handle2dAtomDblClick: () => {},
       handle2dAtomMouseOver: () => {},
       handle2dAtomMouseMove: () => {},
-      handle2dAtomMouseOut: () => {}
+      handle2dAtomMouseOut: () => {},
+      ...eventOverrides
     },
     drag: {
       create2dBondDrag: () => () => {},
@@ -425,6 +427,54 @@ describe('create2DSceneRenderer', () => {
     assert.deepEqual(records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'), ['attr', 'stroke', '#111111']);
     assert.deepEqual(records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'), ['attr', 'fill', '#111111']);
     assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2] === '#3366ff'), true);
+  });
+
+  it('passes rendered 2D bond endpoints to hover handlers for ring-template previews', () => {
+    let hoverCall = null;
+    const { renderer, records } = makeRenderer({
+      eventOverrides: {
+        handle2dBondMouseOver: (event, bond, atom1, atom2, anchorA, anchorB) => {
+          hoverCall = { event, bond, atom1, atom2, anchorA, anchorB };
+        }
+      }
+    });
+    const atom1 = makeAtom('a1', 0, 0);
+    const atom2 = makeAtom('a2', 1.5, 0);
+    const mol = {
+      id: 'mol-hover-endpoints',
+      atoms: new Map([
+        [atom1.id, atom1],
+        [atom2.id, atom2]
+      ]),
+      bonds: new Map(),
+      hideHydrogens() {},
+      getChiralCenters() {
+        return [];
+      }
+    };
+    const bond = {
+      id: 'b1',
+      atoms: [atom1.id, atom2.id],
+      properties: { order: 1 },
+      getAtomObjects(targetMol) {
+        return [targetMol.atoms.get(atom1.id), targetMol.atoms.get(atom2.id)];
+      }
+    };
+    mol.bonds.set(bond.id, bond);
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const hitLineIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'bond-hit');
+    assert.ok(hitLineIndex >= 0, 'expected the rendered bond hit target');
+    const hoverEntry = records.find((entry, index) => index > hitLineIndex && entry[0] === 'on' && entry[1] === 'mouseover');
+    assert.equal(typeof hoverEntry?.[2], 'function');
+    hoverEntry[2]({ type: 'mouseover' });
+
+    assert.equal(hoverCall.bond, bond);
+    assert.equal(hoverCall.atom1, atom1);
+    assert.equal(hoverCall.atom2, atom2);
+    assert.deepEqual(hoverCall.anchorA, { x: 255, y: 200 });
+    assert.deepEqual(hoverCall.anchorB, { x: 345, y: 200 });
   });
 
   it('draws 2D ring fills before functional group highlights', () => {

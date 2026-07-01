@@ -12,15 +12,26 @@ const RING_TEMPLATE_MIN_SIZE = 3;
 const RING_TEMPLATE_MAX_SIZE = 7;
 const BENZENE_RING_TEMPLATE = 'benzene';
 const RING_TEMPLATE_REUSE_DISTANCE_FACTOR = 0.2;
-const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
 const RESONANCE_PRODUCT_ATOM_ID_PREFIX = '__resonance_product__:';
 
+function screenCoordinate(transform, axis, value) {
+  if (axis === 'x' && typeof transform?.applyX === 'function') {
+    return transform.applyX(value);
+  }
+  if (axis === 'y' && typeof transform?.applyY === 'function') {
+    return transform.applyY(value);
+  }
+  const offset = Number.isFinite(Number(transform?.[axis])) ? Number(transform[axis]) : 0;
+  const scale = Number.isFinite(Number(transform?.k)) ? Number(transform.k) : 1;
+  return offset + value * scale;
+}
+
 function forceRingTemplateBondLength(baseForceBondLength, layoutBondLength = DEFAULT_2D_BOND_LENGTH) {
   const parsed = Number(layoutBondLength);
   const scale = Number.isFinite(parsed) && parsed > 0 ? parsed / DEFAULT_2D_BOND_LENGTH : 1;
-  return baseForceBondLength * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR * scale;
+  return baseForceBondLength * scale;
 }
 
 function normalizeRingTemplateSize(size) {
@@ -288,9 +299,9 @@ function stripExcessRingTemplateHeteroHydrogens(mol, ringAtomIds, newAtomIds = [
   }
 }
 
-function regularRingPositions(size, cx, cy, bondLength) {
+function regularRingPositions(size, cx, cy, bondLength, startAngleOverride = null) {
   const radius = bondLength / (2 * Math.sin(Math.PI / size));
-  const startAngle = size % 2 === 0 ? -Math.PI / 2 + Math.PI / size : -Math.PI / 2;
+  const startAngle = Number.isFinite(startAngleOverride) ? startAngleOverride : size % 2 === 0 ? -Math.PI / 2 + Math.PI / size : -Math.PI / 2;
   const positions = [];
   for (let index = 0; index < size; index++) {
     const angle = startAngle + (index * Math.PI * 2) / size;
@@ -1209,20 +1220,45 @@ export function createStructuralEditActions(context) {
     return new Map([...(sourcePatch ?? []), ...(editPatch ?? [])]);
   }
 
+  function forcePointsOutsideViewport(points, pad = 0) {
+    if (!points?.length) {
+      return false;
+    }
+    const { width = 0, height = 0 } = context.plot?.getSize?.() ?? {};
+    if (!(width > 0) || !(height > 0)) {
+      return false;
+    }
+    const transform = context.view.getZoomTransform?.() ?? { x: 0, y: 0, k: 1 };
+    return points.some(point => {
+      if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) {
+        return false;
+      }
+      const sx = screenCoordinate(transform, 'x', point.x);
+      const sy = screenCoordinate(transform, 'y', point.y);
+      return sx < pad || sx > width - pad || sy < pad || sy > height - pad;
+    });
+  }
+
   function restore2dEditViewport(zoomSnapshot, { reactionRestored = false, reactionEntryZoomSnapshot = null, resonanceReset = false, zoomToFit = false } = {}) {
     if (context.getMode() !== '2d') {
       return;
     }
     if (reactionRestored && reactionEntryZoomSnapshot) {
       context.view.restoreZoomTransformSnapshot(reactionEntryZoomSnapshot);
+      if (zoomToFit && !resonanceReset) {
+        context.view.zoomToFitIf2d(typeof zoomToFit === 'object' ? zoomToFit : undefined);
+      }
       return;
     }
     if (resonanceReset) {
       context.view.zoomToFitIf2d({ force: true });
       return;
     }
+    if (!reactionRestored && zoomSnapshot) {
+      context.view.restoreZoomTransformSnapshot(zoomSnapshot);
+    }
     if (zoomToFit) {
-      context.view.zoomToFitIf2d();
+      context.view.zoomToFitIf2d(typeof zoomToFit === 'object' ? zoomToFit : undefined);
     }
   }
 
@@ -1277,6 +1313,8 @@ export function createStructuralEditActions(context) {
     const anchorBondSide = normalizeBondSideSign(options.anchorBondSide);
     const anchorCenterAngle = Number.isFinite(options.anchorCenterAngle) ? options.anchorCenterAngle : null;
     const anchorForceCenterAngle = Number.isFinite(options.anchorForceCenterAngle) ? options.anchorForceCenterAngle : null;
+    const ringStartAngle = Number.isFinite(options.ringStartAngle) ? options.ringStartAngle : null;
+    const ringForceStartAngle = Number.isFinite(options.ringForceStartAngle) ? options.ringForceStartAngle : null;
     const explicitBondPositionReuse = options.allowBondPositionReuse === true;
     const autoFuseBondPositionReuse = options.autoFuseBondPositionReuse === true;
 
@@ -1365,13 +1403,16 @@ export function createStructuralEditActions(context) {
           : null;
         const positions = anchorBond
           ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && effectiveAnchorBondSide !== null ? -effectiveAnchorBondSide : effectiveAnchorBondSide, bondLength)
-          : anchorAtom
-            ? isFinitePoint(anchorPoint)
-              ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle ?? hydrogenRingAnchor?.centerAngle)
-              : null
+            : anchorAtom
+              ? isFinitePoint(anchorPoint)
+                ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle ?? hydrogenRingAnchor?.centerAngle)
+                : null
             : (() => {
+                if (editMode === 'force') {
+                  return regularRingPositions(normalizedSize, ox, oy, forceBondLength, ringForceStartAngle);
+                }
                 const center = getRingTemplatePlacementCenter(mol, editMode, ox, oy);
-                return regularRingPositions(normalizedSize, center.x, center.y, bondLength);
+                return regularRingPositions(normalizedSize, center.x, center.y, bondLength, ringStartAngle);
               })();
         if (!positions || anchorAtom?.name === 'H') {
           return { cancelled: true };
@@ -1481,8 +1522,9 @@ export function createStructuralEditActions(context) {
           clearPrimitiveHover: true,
           ringAtomIds,
           twoD: {
+            drawOnly: editMode === '2d',
             preserveGeometry: editMode === '2d',
-            zoomToFit: true
+            zoomToFit: { pad: 0 }
           }
         };
         if (editMode === 'force') {
@@ -1490,18 +1532,24 @@ export function createStructuralEditActions(context) {
             ? precomputedForceBondPositions
             : anchorAtom
               ? precomputedForceAtomPositions
-              : regularRingPositions(normalizedSize, ox, oy, forceBondLength);
+              : regularRingPositions(normalizedSize, ox, oy, forceBondLength, ringForceStartAngle);
           if (!forcePositions) {
             return result;
           }
           const ringPatchPos = new Map(ringAtomIds.map((atomId, index) => [atomId, forcePositions[index]]));
           const patchPos = mergeResonanceResetForcePatch(mol, resonanceReset, ringPatchPos);
+          const forcePlacementOutsideViewport = forcePointsOutsideViewport(forcePositions);
           result.force = {
-            options: { preservePositions: true, preserveView: true, initialPatchPos: patchPos },
+            options: {
+              preservePositions: true,
+              preserveView: !forcePlacementOutsideViewport,
+              initialPatchPos: patchPos,
+              restartSimulation: forcePlacementOutsideViewport
+            },
             afterRender: () => {
               context.force.patchNodePositions(ringPatchPos, { alpha: 0, restart: false });
             },
-            enableKeepInView: true
+            enableKeepInView: forcePlacementOutsideViewport
           };
         }
         return result;

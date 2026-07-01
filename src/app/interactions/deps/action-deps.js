@@ -191,6 +191,9 @@ export function createClipboardActionDeps(ctx) {
     molecule: {
       getActive: () => ctx.getActiveMolecule()
     },
+    force: {
+      getNodes: () => ctx.getForceNodes?.() ?? []
+    },
     selection: {
       getSelectedAtomIds: () => ctx.getSelectedAtomIds(),
       getSelectedBondIds: () => ctx.getSelectedBondIds(),
@@ -204,22 +207,36 @@ export function createClipboardActionDeps(ctx) {
       takeSnapshot: options => ctx.takeSnapshot(options)
     },
     renderers: {
+      draw2d: () => ctx.draw2d?.(),
       renderMol: (mol, options = {}) => ctx.renderMol(mol, options),
       refreshSelectionOverlay: () => ctx.refreshSelectionOverlay()
+    },
+    analysis: {
+      syncInputField: mol => ctx.syncInputField?.(mol),
+      updateFormula: mol => ctx.updateFormula?.(mol),
+      updateDescriptors: mol => ctx.updateDescriptors?.(mol),
+      updatePanels: mol => ctx.updatePanels?.(mol)
     },
     view: {
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
       setPreserveSelectionOnNextRender: value => ctx.setPreserveSelectionOnNextRender(value),
+      captureZoomTransform: () => ctx.captureZoomTransform?.() ?? null,
+      restore2dEditViewport: (zoomSnapshot, options = {}) => ctx.restore2dEditViewport?.(zoomSnapshot, options),
+      get2DAtomPoint: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null,
       get2DCenterX: () => ctx.get2DCenterX(),
       get2DCenterY: () => ctx.get2DCenterY(),
       scale: ctx.scale,
       forceScale: ctx.forceScale
     },
+    view2D: {
+      syncDerivedState: mol => ctx.sync2DDerivedState?.(mol)
+    },
     plot: {
       getSize: () => ctx.getPlotSize()
     },
     dom: {
-      g: ctx.g
+      g: ctx.g,
+      plotElement: ctx.plotEl ?? null
     },
     pointer: (event, node) => ctx.pointer(event, node)
   };
@@ -374,6 +391,7 @@ export function createDrawBondCommitActionDeps(ctx) {
         ctx.setDrawBondHoverSuppressed(value);
       },
       captureZoomTransform: () => ctx.captureZoomTransform(),
+      getZoomTransform: () => ctx.getZoomTransform?.() ?? null,
       restore2dEditViewport: (zoomSnapshot, options = {}) => ctx.restore2dEditViewport(zoomSnapshot, options)
     },
     plot: {
@@ -472,6 +490,7 @@ export function createPrimitiveSelectionActionDeps(ctx) {
 export function createPrimitiveEventHandlerDeps(ctx) {
   return {
     state: ctx.appState,
+    ringTemplateDrag: ctx.ringTemplateDrag,
     selection: ctx.primitiveSelectionActions,
     overlays: {
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id)

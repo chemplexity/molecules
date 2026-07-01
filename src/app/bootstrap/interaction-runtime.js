@@ -152,25 +152,36 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       appState: ctx.appState,
       getMode: () => ctx.getMode(),
       getActiveMolecule: () => ctx.getActiveMolecule(),
+      getForceNodes: () => ctx.getForceNodes?.() ?? ctx.getNodes?.() ?? [],
       getSelectedAtomIds: () => ctx.getSelectedAtomIds?.() ?? ctx.appState.overlayState.getSelectedAtomIds(),
       getSelectedBondIds: () => ctx.getSelectedBondIds?.() ?? ctx.appState.overlayState.getSelectedBondIds(),
       clearSelection: () => ctx.clearSelection(),
       hasReactionPreview: () => ctx.hasReactionPreview(),
       hasActiveResonanceView: () => ctx.hasActiveResonanceView?.() ?? false,
       takeSnapshot: options => ctx.takeSnapshot(options),
+      draw2d: () => ctx.draw2d(),
       renderMol: (mol, renderOptions = {}) => ctx.renderRuntime.renderMol(mol, renderOptions),
       refreshSelectionOverlay: () => ctx.refreshSelectionOverlay(),
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
       setPreserveSelectionOnNextRender: value => {
         ctx.setPreserveSelectionOnNextRender(value);
       },
+      captureZoomTransform: () => ctx.captureZoomTransform(),
+      restore2dEditViewport: (zoomSnapshot, restoreOptions = {}) => ctx.restore2dEditViewport(zoomSnapshot, restoreOptions),
+      sync2DDerivedState: mol => ctx.sync2DDerivedState(mol),
+      toSelectionSVGPt2d: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null,
       get2DCenterX: () => ctx.get2DCenterX(),
       get2DCenterY: () => ctx.get2DCenterY(),
       getPlotSize: () => ctx.getPlotSize(),
       g: ctx.g,
+      plotEl: ctx.plotEl,
       pointer: (event, node) => ctx.pointer(event, node),
       scale: ctx.scale,
-      forceScale: ctx.forceScale
+      forceScale: ctx.forceScale,
+      syncInputField: mol => ctx.syncInputField(mol),
+      updateFormula: mol => ctx.updateFormula(mol),
+      updateDescriptors: mol => ctx.updateDescriptors(mol),
+      updatePanels: mol => ctx.updatePanels(mol)
     })
   );
 
@@ -279,6 +290,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
         ctx.setDrawBondHoverSuppressed(value);
       },
       captureZoomTransform: () => ctx.captureZoomTransform(),
+      getZoomTransform: () => ctx.getZoomTransform(),
       restore2dEditViewport: (zoomSnapshot, restoreOptions = {}) => ctx.restore2dEditViewport(zoomSnapshot, restoreOptions),
       getPlotSize: () => ctx.getPlotSize(),
       scale: ctx.scale,
@@ -327,6 +339,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
   const primitiveEventHandlers = factories.createPrimitiveEventHandlers(
     depBuilders.createPrimitiveEventHandlerDeps({
       appState: ctx.appState,
+      ringTemplateDrag: ctx.ringTemplateDrag,
       primitiveSelectionActions,
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
       getDrawBondState: () => ctx.getDrawBondState(),

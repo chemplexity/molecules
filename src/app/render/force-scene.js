@@ -26,6 +26,9 @@ import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 
 const FORCE_STANDARD_UNLABELED_ATOMS = new Set(['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']);
+const RING_TEMPLATE_FORCE_ATOM_HOVER_RADIUS = 18;
+const RING_TEMPLATE_FORCE_BOND_HOVER_STROKE_WIDTH = 28;
+const RING_TEMPLATE_FORCE_BOND_PRIORITY_TRIM_PX = 10;
 
 function forceLinkRenderOrder(link) {
   return link?.renderOrder ?? link?.order ?? 1;
@@ -39,6 +42,31 @@ function forceLinkRenderOrder(link) {
  */
 function shouldAutoLabelForceAtom(node) {
   return typeof node?.name === 'string' && !FORCE_STANDARD_UNLABELED_ATOMS.has(node.name);
+}
+
+function shortenedForceRingTemplateBondTarget(source, target) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.hypot(dx, dy);
+  if (!(length > 1)) {
+    return { source, target };
+  }
+  const trim = Math.min(RING_TEMPLATE_FORCE_BOND_PRIORITY_TRIM_PX, length * 0.35);
+  if (trim <= 0 || trim * 2 >= length) {
+    return { source, target };
+  }
+  const ux = dx / length;
+  const uy = dy / length;
+  return {
+    source: {
+      x: source.x + ux * trim,
+      y: source.y + uy * trim
+    },
+    target: {
+      x: target.x - ux * trim,
+      y: target.y - uy * trim
+    }
+  };
 }
 
 /**
@@ -189,6 +217,31 @@ function forceRingFillData(molecule) {
       return ringAtomIds ? { ...fill, atomIds: ringAtomIds } : null;
     })
     .filter(Boolean);
+}
+
+function forceGraphOutsideViewport(nodes, transform, plotEl, pad) {
+  if (!nodes?.length || !transform) {
+    return false;
+  }
+  const width = plotEl?.clientWidth || 600;
+  const height = plotEl?.clientHeight || 400;
+  const k = Number.isFinite(transform.k) ? transform.k : 1;
+  const tx = Number.isFinite(transform.x) ? transform.x : 0;
+  const ty = Number.isFinite(transform.y) ? transform.y : 0;
+  const applyX = typeof transform.applyX === 'function' ? value => transform.applyX(value) : value => tx + value * k;
+  const applyY = typeof transform.applyY === 'function' ? value => transform.applyY(value) : value => ty + value * k;
+  for (const node of nodes) {
+    if (!Number.isFinite(node?.x) || !Number.isFinite(node?.y)) {
+      continue;
+    }
+    const radius = atomRadius(node.protons) * k;
+    const x = applyX(node.x);
+    const y = applyY(node.y);
+    if (x - radius < pad || x + radius > width - pad || y - radius < pad || y + radius > height - pad) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -474,7 +527,8 @@ export function createForceSceneRenderer(ctx) {
     const bondHoverTarget = bondEnter
       .append('line')
       .attr('class', 'bond-hover-target')
-      .style('stroke', 'transparent')
+      .style('stroke', '#000')
+      .style('stroke-opacity', 0.001)
       .style('stroke-width', '14px')
       .style('pointer-events', 'stroke')
       .style('cursor', 'grab')
@@ -499,6 +553,34 @@ export function createForceSceneRenderer(ctx) {
         ctx.events.handleForceBondMouseOut();
       })
       .call(ctx.drag.createForceBondDrag(ctx.simulation, molecule));
+
+    const ringTemplateBondHoverTarget = bondEnter
+      .append('line')
+      .attr('class', 'ring-template-bond-hover-target')
+      .style('stroke', '#000')
+      .style('stroke-opacity', 0.001)
+      .style('stroke-width', `${RING_TEMPLATE_FORCE_BOND_HOVER_STROKE_WIDTH}px`)
+      .style('cursor', 'grab')
+      .on('mousedown', (event, d) => {
+        ctx.events.handleForceBondMouseDownRingTemplate(event, d);
+      })
+      .on('click', (event, d) => {
+        ctx.events.handleForceBondClick(event, d.id, molecule);
+      })
+      .on('dblclick', (event, d) => {
+        const bond = molecule.bonds.get(d.id);
+        if (!bond) {
+          return;
+        }
+        ctx.events.handleForceBondDblClick(event, bond.atoms);
+      })
+      .on('mouseover', (event, d) => {
+        ctx.events.handleForceBondMouseOver(event, d.id, molecule);
+      })
+      .on('mousemove', event => ctx.events.handleForceBondMouseMove(event))
+      .on('mouseout', () => {
+        ctx.events.handleForceBondMouseOut();
+      });
 
     // Stereo bond display (wedge / dash) — pre-create elements positioned in tick
     const stereoBondLayer = ctx.g.append('g').attr('class', 'force-stereo-bonds').style('pointer-events', 'none');
@@ -598,6 +680,67 @@ export function createForceSceneRenderer(ctx) {
       .on('mousemove', event => ctx.events.handleForceAtomMouseMove(event))
       .on('mouseout', (event, d) => {
         ctx.events.handleForceAtomMouseOut(d.id);
+      });
+
+    const ringTemplateAtomHoverTarget = ctx.g
+      .selectAll('circle.ring-template-atom-hover-target')
+      .data(graph.nodes, d => d.id)
+      .enter()
+      .append('circle')
+      .attr('class', 'ring-template-atom-hover-target')
+      .attr('r', RING_TEMPLATE_FORCE_ATOM_HOVER_RADIUS)
+      .attr('fill', 'transparent')
+      .attr('stroke', 'none')
+      .style('cursor', 'grab')
+      .on('mousedown.drawbond', (event, d) => {
+        ctx.events.handleForceAtomMouseDownDrawBond(event, d);
+      })
+      .on('click', (event, d) => {
+        ctx.events.handleForceAtomClick(event, d, molecule);
+      })
+      .on('contextmenu', (event, d) => {
+        ctx.events.handleForceAtomContextMenu(event, d);
+      })
+      .on('dblclick', (event, d) => {
+        ctx.events.handleForceAtomDblClick(event, d.id);
+      })
+      .on('mouseover', (event, d) => {
+        ctx.events.handleForceAtomMouseOver(event, d, molecule, valenceWarningMap.get(d.id) ?? null);
+      })
+      .on('mousemove', event => ctx.events.handleForceAtomMouseMove(event))
+      .on('mouseout', (event, d) => {
+        ctx.events.handleForceAtomMouseOut(d.id);
+      });
+
+    const ringTemplateBondPriorityTarget = ctx.g
+      .selectAll('line.ring-template-bond-priority-target')
+      .data(graph.links, d => d.id)
+      .enter()
+      .append('line')
+      .attr('class', 'ring-template-bond-hover-target ring-template-bond-priority-target')
+      .style('stroke', '#000')
+      .style('stroke-opacity', 0.001)
+      .style('stroke-width', `${RING_TEMPLATE_FORCE_BOND_HOVER_STROKE_WIDTH}px`)
+      .style('cursor', 'grab')
+      .on('mousedown', (event, d) => {
+        ctx.events.handleForceBondMouseDownRingTemplate(event, d);
+      })
+      .on('click', (event, d) => {
+        ctx.events.handleForceBondClick(event, d.id, molecule);
+      })
+      .on('dblclick', (event, d) => {
+        const bond = molecule.bonds.get(d.id);
+        if (!bond) {
+          return;
+        }
+        ctx.events.handleForceBondDblClick(event, bond.atoms);
+      })
+      .on('mouseover', (event, d) => {
+        ctx.events.handleForceBondMouseOver(event, d.id, molecule);
+      })
+      .on('mousemove', event => ctx.events.handleForceBondMouseMove(event))
+      .on('mouseout', () => {
+        ctx.events.handleForceBondMouseOut();
       });
 
     const atomSymbol = ctx.g
@@ -1173,7 +1316,20 @@ export function createForceSceneRenderer(ctx) {
         .attr('x2', d => d.target.x)
         .attr('y2', d => d.target.y);
 
+      ringTemplateBondHoverTarget
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+
+      ringTemplateBondPriorityTarget
+        .attr('x1', d => shortenedForceRingTemplateBondTarget(d.source, d.target).source.x)
+        .attr('y1', d => shortenedForceRingTemplateBondTarget(d.source, d.target).source.y)
+        .attr('x2', d => shortenedForceRingTemplateBondTarget(d.source, d.target).target.x)
+        .attr('y2', d => shortenedForceRingTemplateBondTarget(d.source, d.target).target.y);
+
       atom.attr('cx', d => d.x).attr('cy', d => d.y);
+      ringTemplateAtomHoverTarget.attr('cx', d => d.x).attr('cy', d => d.y);
       atomSymbol.attr('x', d => d.x).attr('y', d => d.y);
       _updateForceRingFills();
 
@@ -1237,6 +1393,10 @@ export function createForceSceneRenderer(ctx) {
           return;
         }
         const transform = ctx.d3.zoomTransform(ctx.svg.node());
+        if (!forceGraphOutsideViewport(graph.nodes, transform, ctx.plotEl, ctx.constants.forceLayoutFitPad)) {
+          ctx.state.disableKeepInView();
+          return;
+        }
         const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, ctx.constants.forceLayoutFitPad);
         if (fitTransform && ctx.helpers.zoomTransformsDiffer(fitTransform, transform)) {
           ctx.svg.call(ctx.zoom.transform, fitTransform);

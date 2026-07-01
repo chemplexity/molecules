@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { morganRanks } from '../../src/algorithms/morgan.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 import { analyzeRings } from '../../src/layout/engine/topology/ring-analysis.js';
+import { FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_REFERENCE_BOND_LENGTH } from '../../src/app/render/force-helpers.js';
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => {
@@ -48,6 +49,558 @@ test('cleaning 2d honors the active Global Bond Length option', async ({ page })
   await page.locator('#clean-2d-btn').click();
 
   await expect.poll(async () => await atomDistance(page, 'C1', 'C2')).toBeCloseTo(30, 6);
+});
+
+test('blank-space ring preview matches the committed compact bond length', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#ring-template-btn').click();
+
+  const { x, y } = await blankSvgPoint(page);
+
+  await page.mouse.move(x, y);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+  await page.waitForTimeout(100);
+
+  const previewStats = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll('g.ring-template-preview-layer line.ring-template-preview-bond:not(.ring-template-preview-double-bond)')];
+    const endpoints = lines.flatMap(line => [
+      { x: Number(line.getAttribute('x1')), y: Number(line.getAttribute('y1')) },
+      { x: Number(line.getAttribute('x2')), y: Number(line.getAttribute('y2')) }
+    ]);
+    const center = endpoints.reduce(
+      (sum, point) => ({ x: sum.x + point.x / endpoints.length, y: sum.y + point.y / endpoints.length }),
+      { x: 0, y: 0 }
+    );
+    const lengths = lines.map(line => {
+      const x1 = Number(line.getAttribute('x1'));
+      const y1 = Number(line.getAttribute('y1'));
+      const x2 = Number(line.getAttribute('x2'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.hypot(x2 - x1, y2 - y1);
+    });
+    return { center, lengths };
+  });
+
+  expect(previewStats.lengths).toHaveLength(6);
+  for (const length of previewStats.lengths) {
+    expect(length).toBeCloseTo(30, 6);
+  }
+
+  const beforePlacementTransform = await rootTransform(page);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  expect(await rootTransform(page)).toBe(beforePlacementTransform);
+
+  const committedLengths = await page.evaluate(center => {
+    return [...document.querySelectorAll('line.bond')]
+      .map(line => {
+        const x1 = Number(line.getAttribute('x1'));
+        const y1 = Number(line.getAttribute('y1'));
+        const x2 = Number(line.getAttribute('x2'));
+        const y2 = Number(line.getAttribute('y2'));
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        return {
+          length: Math.hypot(x2 - x1, y2 - y1),
+          distance: Math.hypot(midX - center.x, midY - center.y)
+        };
+      })
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 6)
+      .map(item => item.length);
+  }, previewStats.center);
+
+  expect(committedLengths).toHaveLength(6);
+  for (const length of committedLengths) {
+    expect(length).toBeCloseTo(30, 6);
+  }
+});
+
+test('line-mode blank-space ring placement keeps the viewport when everything stays visible', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#plot').hover();
+  for (let index = 0; index < 6; index++) {
+    await page.mouse.wheel(0, 700);
+  }
+  await page.waitForTimeout(100);
+  await expect.poll(async () => await rootTransform(page)).not.toBe('translate(0,0) scale(1)');
+
+  await page.locator('#ring-template-btn').click();
+  const point = await blankSvgPoint(page);
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+
+  const beforeAtomPoint = await atomScreenPoint2d(page, 'C1');
+  expect(beforeAtomPoint).toBeTruthy();
+  const beforePlacementTransform = await rootTransform(page);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+
+  expect(await rootTransform(page)).toBe(beforePlacementTransform);
+  const afterAtomPoint = await atomScreenPoint2d(page, 'C1');
+  expect(afterAtomPoint).toBeTruthy();
+  expect(afterAtomPoint.cx).toBeCloseTo(beforeAtomPoint.cx, 1);
+  expect(afterAtomPoint.cy).toBeCloseTo(beforeAtomPoint.cy, 1);
+  await expect.poll(async () => await all2dAtomsWithinPlot(page)).toBe(true);
+});
+
+test('line-mode atom-anchored ring placement keeps the viewport when the result stays visible', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C');
+  await ensure2dMode(page);
+
+  await page.locator('#ring-template-btn').click();
+  const atom = await atomScreenPoint2d(page, 'C1');
+  expect(atom).toBeTruthy();
+
+  const beforePlacementTransform = await rootTransform(page);
+  await page.mouse.move(atom.cx, atom.cy);
+  await page.mouse.down();
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+
+  expect(await rootTransform(page)).toBe(beforePlacementTransform);
+  await expect.poll(async () => await all2dAtomsWithinPlot(page)).toBe(true);
+});
+
+test('line-mode blank-space bond placement refits when rendered geometry is clipped', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await ensure2dMode(page);
+
+  const start = await page.evaluate(() => {
+    const svg = document.querySelector('.svg-plot');
+    const box = svg.getBoundingClientRect();
+    return {
+      x: box.right - 2,
+      y: box.top + box.height / 2
+    };
+  });
+  const beforePlacementTransform = await rootTransform(page);
+
+  await page.locator('#draw-bond-btn').click();
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x - 80, start.y, { steps: 8 });
+  await page.mouse.up();
+
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePlacementTransform);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 0)).toBe(true);
+});
+
+test('force ring-template previews on atoms use the committed force bond length', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'CCO');
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+  const expectedForceRingLength = FORCE_LAYOUT_BOND_LENGTH * (0.5 / FORCE_LAYOUT_REFERENCE_BOND_LENGTH);
+
+  const atom = (await forceAtomScreenPoints(page)).find(point => point.id === 'C1');
+  expect(atom).toBeTruthy();
+  await page.locator('#ring-template-btn').click();
+  await page.mouse.move(atom.cx, atom.cy);
+  await page.mouse.down();
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+
+  const previewLength = await page.evaluate(() => {
+    const line = document.querySelector('g.ring-template-preview line.link');
+    if (!line) {
+      return null;
+    }
+    const x1 = Number(line.getAttribute('x1'));
+    const y1 = Number(line.getAttribute('y1'));
+    const x2 = Number(line.getAttribute('x2'));
+    const y2 = Number(line.getAttribute('y2'));
+    return Math.hypot(x2 - x1, y2 - y1);
+  });
+  expect(previewLength).toBeCloseTo(expectedForceRingLength, 1);
+  await page.mouse.up();
+});
+
+test('force ring-template previews on bonds use the committed force bond length', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'CCO');
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+  const expectedForceRingLength = FORCE_LAYOUT_BOND_LENGTH * (0.5 / FORCE_LAYOUT_REFERENCE_BOND_LENGTH);
+
+  const bondPoint = await page.evaluate(() => {
+    const line = [...document.querySelectorAll('line.link')].find(candidate => {
+      const datum = candidate.__data__;
+      return datum?.source?.name !== 'H' && datum?.target?.name !== 'H';
+    });
+    if (!line) {
+      return null;
+    }
+    const x1 = Number(line.getAttribute('x1'));
+    const y1 = Number(line.getAttribute('y1'));
+    const x2 = Number(line.getAttribute('x2'));
+    const y2 = Number(line.getAttribute('y2'));
+    const matrix = line.getScreenCTM();
+    const start = new DOMPoint(x1, y1).matrixTransform(matrix);
+    const end = new DOMPoint(x2, y2).matrixTransform(matrix);
+    return {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2
+    };
+  });
+  expect(bondPoint).toBeTruthy();
+
+  await page.locator('#ring-template-btn').click();
+  await page.mouse.move(bondPoint.x, bondPoint.y);
+  await page.mouse.down();
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+
+  const previewLengths = await page.evaluate(() => {
+    return [...document.querySelectorAll('g.ring-template-preview line.link')]
+      .map(line => {
+        const x1 = Number(line.getAttribute('x1'));
+        const y1 = Number(line.getAttribute('y1'));
+        const x2 = Number(line.getAttribute('x2'));
+        const y2 = Number(line.getAttribute('y2'));
+        return Math.hypot(x2 - x1, y2 - y1);
+      })
+      .filter(Number.isFinite);
+  });
+  expect(previewLengths.length).toBeGreaterThan(0);
+  for (const length of previewLengths) {
+    expect(length).toBeCloseTo(expectedForceRingLength, 1);
+  }
+  await page.mouse.up();
+});
+
+test('force-mode blank-space ring placement keeps the viewport when everything stays visible', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C1CCCCC1');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+
+  await page.locator('#plot').hover();
+  for (let index = 0; index < 4; index++) {
+    await page.mouse.wheel(0, 700);
+  }
+  await page.waitForTimeout(100);
+  await expect.poll(async () => await rootTransform(page)).not.toBe('translate(0,0) scale(1)');
+
+  await page.locator('#ring-template-btn').click();
+  const point = await blankSvgPoint(page);
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+
+  const beforeAtomPoint = (await forceAtomScreenPoints(page)).find(atom => atom.id === 'C1');
+  expect(beforeAtomPoint).toBeTruthy();
+  const beforePlacementTransform = await rootTransform(page);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+
+  expect(await rootTransform(page)).toBe(beforePlacementTransform);
+  const afterAtomPoint = (await forceAtomScreenPoints(page)).find(atom => atom.id === 'C1');
+  expect(afterAtomPoint).toBeTruthy();
+  expect(afterAtomPoint.cx).toBeCloseTo(beforeAtomPoint.cx, 1);
+  expect(afterAtomPoint.cy).toBeCloseTo(beforeAtomPoint.cy, 1);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+});
+
+test('force-mode edge bond placement refits when the rendered endpoint would be clipped', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+
+  const pan = await page.evaluate(() => {
+    const plot = document.querySelector('.svg-plot');
+    const box = plot.getBoundingClientRect();
+    return {
+      startX: box.left + 60,
+      startY: box.top + 60,
+      endX: box.left + 510,
+      endY: box.top + 60
+    };
+  });
+  await page.mouse.move(pan.startX, pan.startY);
+  await page.mouse.down();
+  await page.mouse.move(pan.endX, pan.endY, { steps: 20 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+
+  const atom = (await forceAtomScreenPoints(page)).find(point => point.id === 'C1');
+  expect(atom).toBeTruthy();
+  const beforePlacementTransform = await rootTransform(page);
+
+  await page.locator('#draw-bond-btn').click();
+  await page.mouse.click(atom.cx, atom.cy);
+
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePlacementTransform);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+});
+
+test('hovering an existing 2D bond in ring-template mode shows a visible fused-ring preview', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+  await page.locator('#ring-template-btn').click();
+
+  const hoverPoint = await page.evaluate(() => {
+    const line = document.querySelector('line.bond-hit');
+    const plotBox = document.querySelector('#plot').getBoundingClientRect();
+    const x1 = Number(line.getAttribute('x1'));
+    const y1 = Number(line.getAttribute('y1'));
+    const x2 = Number(line.getAttribute('x2'));
+    const y2 = Number(line.getAttribute('y2'));
+    const strokeWidth = Number(line.getAttribute('stroke-width'));
+    const matrix = line.getScreenCTM();
+    const start = new DOMPoint(x1, y1).matrixTransform(matrix);
+    const end = new DOMPoint(x2, y2).matrixTransform(matrix);
+    const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const center = { x: plotBox.left + plotBox.width / 2, y: plotBox.top + plotBox.height / 2 };
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy) || 1;
+    let nx = -dy / length;
+    let ny = dx / length;
+    if ((midpoint.x - center.x) * nx + (midpoint.y - center.y) * ny < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const offset = strokeWidth / 2 + 5;
+    return {
+      x: midpoint.x + nx * offset,
+      y: midpoint.y + ny * offset
+    };
+  });
+  await page.mouse.move(hoverPoint.x, hoverPoint.y);
+
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+  const previewStats = await page.evaluate(() => {
+    const preview = document.querySelector('g.ring-template-preview');
+    const box = preview.getBoundingClientRect();
+    const firstLine = preview.querySelector('line.bond');
+    const x1 = Number(firstLine.getAttribute('x1'));
+    const y1 = Number(firstLine.getAttribute('y1'));
+    const x2 = Number(firstLine.getAttribute('x2'));
+    const y2 = Number(firstLine.getAttribute('y2'));
+    return {
+      box: { width: box.width, height: box.height },
+      firstLength: Math.hypot(x2 - x1, y2 - y1)
+    };
+  });
+
+  expect(previewStats.box.width).toBeGreaterThan(100);
+  expect(previewStats.box.height).toBeGreaterThan(100);
+  expect(previewStats.firstLength).toBeGreaterThan(40);
+});
+
+test('compact ring-template bond hover targets win over expanded atom targets', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CC');
+  await ensure2dMode(page);
+
+  await page.locator('#options-btn').click();
+  await page.locator('#options-layout-bond-length').fill('0.5');
+  await page.locator('#options-apply-btn').click();
+  await page.locator('#ring-template-btn').click();
+
+  const midpoint = await page.evaluate(() => {
+    const line = document.querySelector('line.bond-hit');
+    if (!line) {
+      throw new Error('Missing bond hit');
+    }
+    const x1 = Number(line.getAttribute('x1'));
+    const y1 = Number(line.getAttribute('y1'));
+    const x2 = Number(line.getAttribute('x2'));
+    const y2 = Number(line.getAttribute('y2'));
+    const matrix = line.getScreenCTM();
+    const start = new DOMPoint(x1, y1).matrixTransform(matrix);
+    const end = new DOMPoint(x2, y2).matrixTransform(matrix);
+    return {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2
+    };
+  });
+
+  const hitClass = await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y);
+    return target?.getAttribute?.('class') ?? '';
+  }, midpoint);
+  expect(hitClass).toContain('ring-template-bond-priority-target');
+
+  await page.mouse.move(midpoint.x, midpoint.y);
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+});
+
+test('hovering an existing 2D atom in ring-template mode shows a visible anchored-ring preview', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+  await page.locator('#ring-template-btn').click();
+
+  const hoverPoint = await page.evaluate(() => {
+    const atomHit = document.querySelector('g[data-atom-id="C1"] .atom-hit');
+    const plotBox = document.querySelector('#plot').getBoundingClientRect();
+    const hitBox = atomHit.getBoundingClientRect();
+    const center = {
+      x: hitBox.left + hitBox.width / 2,
+      y: hitBox.top + hitBox.height / 2
+    };
+    const plotCenter = {
+      x: plotBox.left + plotBox.width / 2,
+      y: plotBox.top + plotBox.height / 2
+    };
+    const dx = center.x - plotCenter.x;
+    const dy = center.y - plotCenter.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const offset = Number(atomHit.getAttribute('r')) + 8;
+    return {
+      x: center.x + (dx / length) * offset,
+      y: center.y + (dy / length) * offset
+    };
+  });
+  await page.mouse.move(hoverPoint.x, hoverPoint.y);
+
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+  const previewStats = await page.evaluate(() => {
+    const preview = document.querySelector('g.ring-template-preview');
+    const box = preview.getBoundingClientRect();
+    const firstLine = preview.querySelector('line.bond');
+    const x1 = Number(firstLine.getAttribute('x1'));
+    const y1 = Number(firstLine.getAttribute('y1'));
+    const x2 = Number(firstLine.getAttribute('x2'));
+    const y2 = Number(firstLine.getAttribute('y2'));
+    return {
+      box: { width: box.width, height: box.height },
+      firstLength: Math.hypot(x2 - x1, y2 - y1)
+    };
+  });
+
+  expect(previewStats.box.width).toBeGreaterThan(100);
+  expect(previewStats.box.height).toBeGreaterThan(100);
+  expect(previewStats.firstLength).toBeGreaterThan(40);
+  await page.mouse.down();
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+  await page.mouse.up();
+});
+
+test('holding an atom after a blank-space ring preview shows only the atom-anchored preview', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+  await page.locator('#ring-template-btn').click();
+
+  const blank = await blankSvgPoint(page);
+  await page.mouse.move(blank.x, blank.y);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+
+  const atomPoint = await page.evaluate(() => {
+    const atomHit = document.querySelector('g[data-atom-id="C1"] .atom-hit');
+    const atomBox = atomHit.getBoundingClientRect();
+    return {
+      x: atomBox.left + atomBox.width / 2,
+      y: atomBox.top + atomBox.height / 2
+    };
+  });
+
+  await page.mouse.move(atomPoint.x, atomPoint.y);
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+
+  await page.mouse.down();
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+  await page.mouse.move(blank.x, blank.y);
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(0);
+  await page.mouse.up();
+});
+
+test('dragging a blank-space ring preview over an atom keeps the original free preview', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+  await page.locator('#ring-template-btn').click();
+
+  const points = await page.evaluate(() => {
+    const blockedSelector = [
+      '.atom-hit',
+      '.bond-hit',
+      '.node',
+      '.bond-hover-target',
+      '.ring-template-atom-hover-target',
+      '.ring-template-bond-hover-target',
+      '.link',
+      '.separator'
+    ].join(', ');
+    const svg = document.querySelector('.svg-plot');
+    const svgBox = svg.getBoundingClientRect();
+    const atomHit = document.querySelector('g[data-atom-id="C1"] .atom-hit');
+    const atomBox = atomHit.getBoundingClientRect();
+    const candidates = [
+      { x: svgBox.left + 48, y: svgBox.top + 48 },
+      { x: svgBox.right - 48, y: svgBox.top + 48 },
+      { x: svgBox.left + 48, y: svgBox.bottom - 48 },
+      { x: svgBox.right - 48, y: svgBox.bottom - 48 },
+      { x: svgBox.left + svgBox.width / 2, y: svgBox.top + 42 },
+      { x: svgBox.left + svgBox.width / 2, y: svgBox.bottom - 42 }
+    ];
+    const blank = candidates.find(point => {
+      const target = document.elementFromPoint(point.x, point.y);
+      return target && svg.contains(target) && !target.closest(blockedSelector);
+    });
+    if (!blank) {
+      throw new Error('Unable to find blank SVG point for ring-template drag test');
+    }
+    return {
+      blank,
+      atom: {
+        x: atomBox.left + atomBox.width / 2,
+        y: atomBox.top + atomBox.height / 2
+      }
+    };
+  });
+
+  await page.mouse.move(points.blank.x, points.blank.y);
+  await page.mouse.down();
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+
+  await page.mouse.move(points.atom.x, points.atom.y);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+  await expect(page.locator('g.ring-template-preview')).toHaveCount(0);
+  await page.mouse.up();
 });
 
 test('switching from 2d to force honors the active Global Bond Length option', async ({ page }) => {
@@ -126,6 +679,41 @@ async function ensure2dMode(page) {
   await expect(toggleButton).toHaveText('⚡ Force Layout');
 }
 
+async function blankSvgPoint(page) {
+  return await page.evaluate(() => {
+    const blockedSelector = [
+      '.atom-hit',
+      '.bond-hit',
+      '.node',
+      '.bond-hover-target',
+      '.ring-template-atom-hover-target',
+      '.ring-template-bond-hover-target',
+      '.link',
+      '.separator'
+    ].join(', ');
+    const svg = document.querySelector('.svg-plot');
+    if (!svg) {
+      throw new Error('Missing SVG plot');
+    }
+    const box = svg.getBoundingClientRect();
+    const xSteps = [0.5, 0.25, 0.75, 0.12, 0.88, 0.38, 0.62];
+    const ySteps = [0.5, 0.25, 0.75, 0.12, 0.88, 0.38, 0.62];
+    for (const yStep of ySteps) {
+      for (const xStep of xSteps) {
+        const point = {
+          x: box.left + box.width * xStep,
+          y: box.top + box.height * yStep
+        };
+        const target = document.elementFromPoint(point.x, point.y);
+        if (target && svg.contains(target) && !target.closest(blockedSelector)) {
+          return point;
+        }
+      }
+    }
+    throw new Error('Unable to find a blank SVG point');
+  });
+}
+
 async function loadInchi(page, inchi) {
   const input = page.locator('#smiles-input');
   await input.fill(inchi);
@@ -201,6 +789,21 @@ async function atomDistance(page, firstAtomId, secondAtomId) {
     },
     { firstAtomId, secondAtomId }
   );
+}
+
+async function atomScreenPoint2d(page, atomId) {
+  return await page.evaluate(id => {
+    const hit = document.querySelector(`g[data-atom-id="${id}"] .atom-hit`);
+    if (!hit) {
+      return null;
+    }
+    const rect = hit.getBoundingClientRect();
+    return {
+      id,
+      cx: rect.left + rect.width / 2,
+      cy: rect.top + rect.height / 2
+    };
+  }, atomId);
 }
 
 async function averageForceHeavyBondDistance(page) {
@@ -1164,6 +1767,24 @@ async function forceStereoOverlayCounts(page) {
 
 async function rootTransform(page) {
   return await page.evaluate(() => document.querySelector('.svg-plot > g')?.getAttribute('transform') ?? null);
+}
+
+async function all2dAtomsWithinPlot(page, padding = 0) {
+  return await page.evaluate(pad => {
+    const plot = document.querySelector('.svg-plot');
+    if (!plot) {
+      return false;
+    }
+    const plotRect = plot.getBoundingClientRect();
+    const atoms = Array.from(document.querySelectorAll('g[data-atom-id]'));
+    if (atoms.length === 0) {
+      return false;
+    }
+    return atoms.every(atom => {
+      const rect = atom.getBoundingClientRect();
+      return rect.left >= plotRect.left + pad && rect.top >= plotRect.top + pad && rect.right <= plotRect.right - pad && rect.bottom <= plotRect.bottom - pad;
+    });
+  }, padding);
 }
 
 async function forceNodesWithinPlot(page, padding = 4) {
@@ -2539,6 +3160,159 @@ test('copying and pasting a selected 2D atom previews then places a selected cop
   await expect(page.locator('g[data-atom-id="O4"] .atom-hit')).toHaveCount(0);
 });
 
+test('copying and pasting a whole 2D molecule preserves preview bond geometry', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  const blankPoint = await blankSvgPoint(page);
+  await page.mouse.click(blankPoint.x, blankPoint.y);
+  await page.keyboard.press('Control+C');
+  await page.keyboard.press('Control+V');
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  const longestPreviewBond = await page.evaluate(() => {
+    const lengths = [...document.querySelectorAll('g.paste-preview-layer line')].map(line => {
+      const x1 = Number(line.getAttribute('x1'));
+      const y1 = Number(line.getAttribute('y1'));
+      const x2 = Number(line.getAttribute('x2'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.hypot(x2 - x1, y2 - y1);
+    });
+    return Math.max(0, ...lengths);
+  });
+  expect(longestPreviewBond).toBeGreaterThan(20);
+});
+
+test('copying and pasting within the visible 2D plot preserves the viewport', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+  await page.locator('#plot').hover();
+  for (let index = 0; index < 6; index++) {
+    await page.mouse.wheel(0, 700);
+  }
+  await page.waitForTimeout(100);
+  await expect.poll(async () => await rootTransform(page)).not.toBe('translate(0,0) scale(1)');
+
+  await page.locator('#select-mode-btn').click();
+  const copyFocusPoint = await blankSvgPoint(page);
+  await page.mouse.click(copyFocusPoint.x, copyFocusPoint.y);
+  await page.keyboard.press('Control+C');
+  await page.keyboard.press('Control+V');
+
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  const pasteX = plotBox.x + plotBox.width / 2;
+  const pasteY = plotBox.y + plotBox.height / 2;
+  await page.mouse.move(pasteX, pasteY);
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  const beforePasteTransform = await rootTransform(page);
+  const beforeAtomPoint = await atomScreenPoint2d(page, 'C1');
+  expect(beforeAtomPoint).toBeTruthy();
+  await page.mouse.click(pasteX, pasteY);
+  await page.waitForTimeout(100);
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(0);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforePasteTransform);
+  const afterAtomPoint = await atomScreenPoint2d(page, 'C1');
+  expect(afterAtomPoint).toBeTruthy();
+  expect(afterAtomPoint.cx).toBeCloseTo(beforeAtomPoint.cx, 1);
+  expect(afterAtomPoint.cy).toBeCloseTo(beforeAtomPoint.cy, 1);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+});
+
+test('copying in 2D and pasting in force mode preserves preview bond geometry', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  const blankPoint = await blankSvgPoint(page);
+  await page.mouse.click(blankPoint.x, blankPoint.y);
+  await page.keyboard.press('Control+C');
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.keyboard.press('Control+V');
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  const longestPreviewBond = await page.evaluate(() => {
+    const lengths = [...document.querySelectorAll('g.paste-preview-layer line')].map(line => {
+      const x1 = Number(line.getAttribute('x1'));
+      const y1 = Number(line.getAttribute('y1'));
+      const x2 = Number(line.getAttribute('x2'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.hypot(x2 - x1, y2 - y1);
+    });
+    return Math.max(0, ...lengths);
+  });
+  expect(longestPreviewBond).toBeCloseTo(FORCE_LAYOUT_BOND_LENGTH, 1);
+});
+
+test('copying and pasting within the visible force plot preserves the viewport', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#plot').hover();
+  for (let index = 0; index < 4; index++) {
+    await page.mouse.wheel(0, 700);
+  }
+  await page.waitForTimeout(100);
+  await expect.poll(async () => await rootTransform(page)).not.toBe('translate(0,0) scale(1)');
+
+  await page.keyboard.press('Control+C');
+  await page.keyboard.press('Control+V');
+
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  const pasteX = plotBox.x + plotBox.width / 2;
+  const pasteY = plotBox.y + plotBox.height / 2;
+  await page.mouse.move(pasteX, pasteY);
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  const beforePasteTransform = await rootTransform(page);
+  const beforeAtomPoint = (await forceAtomScreenPoints(page)).find(atom => atom.id === 'C1');
+  expect(beforeAtomPoint).toBeTruthy();
+  await page.mouse.click(pasteX, pasteY);
+  await page.waitForTimeout(100);
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(0);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforePasteTransform);
+  const afterAtomPoint = (await forceAtomScreenPoints(page)).find(atom => atom.id === 'C1');
+  expect(afterAtomPoint).toBeTruthy();
+  expect(afterAtomPoint.cx).toBeCloseTo(beforeAtomPoint.cx, 1);
+  expect(afterAtomPoint.cy).toBeCloseTo(beforeAtomPoint.cy, 1);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+});
+
+test('copying a selected 2D fragment and pasting in force mode previews generated hydrogens', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+  await page.locator('g[data-atom-id="C1"] .atom-hit').click();
+  await page.keyboard.press('Control+C');
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.keyboard.press('Control+V');
+
+  await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
+  await expect(page.locator('g.paste-preview-layer circle.node')).toHaveCount(5);
+  await expect(page.locator('g.paste-preview-layer line.link')).toHaveCount(4);
+  const previewRadii = await page.evaluate(() => [...document.querySelectorAll('g.paste-preview-layer circle.node')].map(circle => Number(circle.getAttribute('r'))));
+  expect(previewRadii.filter(radius => radius < 6)).toHaveLength(4);
+  expect(Math.max(...previewRadii)).toBeLessThan(9);
+});
+
 test('active paste preview cancels when a UI button is pressed', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -2572,6 +3346,17 @@ test('copying and pasting in force mode places a duplicate near the pointer', as
   await expect(page.locator('g.paste-preview-layer')).toHaveCount(1);
   await expect(page.locator('g.paste-preview-layer circle.node')).not.toHaveCount(0);
   await expect(page.locator('g.paste-preview-layer line[stroke-dasharray="5,4"]')).toHaveCount(0);
+  const longestPreviewBond = await page.evaluate(() => {
+    const lengths = [...document.querySelectorAll('g.paste-preview-layer line')].map(line => {
+      const x1 = Number(line.getAttribute('x1'));
+      const y1 = Number(line.getAttribute('y1'));
+      const x2 = Number(line.getAttribute('x2'));
+      const y2 = Number(line.getAttribute('y2'));
+      return Math.hypot(x2 - x1, y2 - y1);
+    });
+    return Math.max(0, ...lengths);
+  });
+  expect(longestPreviewBond).toBeGreaterThan(5);
 
   const pasteX = plotBox.x + plotBox.width - 8;
   const pasteY = plotBox.y + plotBox.height - 8;
@@ -3406,6 +4191,35 @@ test('placing a ring on a reactant atom from force reaction preview refits the u
   expect(reactantCarbon).toBeTruthy();
   await page.locator('#ring-template-btn').click();
   await page.mouse.click(reactantCarbon.cx, reactantCarbon.cy);
+
+  await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(0);
+  await expect.poll(async () => rootTransform(page)).not.toBe(beforePreview);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+});
+
+test('placing a ring on blank space from force reaction preview refits the unlocked molecule', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await page.locator('#plot').hover();
+  await page.mouse.wheel(0, -900);
+  const beforePreview = await rootTransform(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+
+  await page.locator('#ring-template-btn').click();
+  const point = await blankSvgPoint(page);
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+  await page.mouse.down();
+  await page.mouse.up();
 
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
   await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(0);

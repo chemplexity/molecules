@@ -5,7 +5,6 @@ import { atomDisplayColor, atomDisplayOpacity, atomRadius, getRenderOptions, sin
 const RING_TEMPLATE_ROTATION_SNAP = Math.PI / 6;
 const RING_TEMPLATE_DRAG_THRESHOLD_PX = 3;
 const RING_TEMPLATE_REUSE_DISTANCE_FACTOR = 0.2;
-const FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR = 1.3;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
@@ -18,7 +17,9 @@ const RING_TEMPLATE_PREVIEW_VIEWPORT_PAD = 36;
  */
 export function createPrimitiveEventHandlers(context) {
   let pendingRingTemplate = null;
+  let pendingAtomRingTemplateHover = null;
   let pendingBondRingTemplatePreview = null;
+  let pendingBondRingTemplateHover = null;
   let pendingDrawBondPreview = null;
   let suppressNextRingTemplateClick = false;
   let suppressNextDrawBondClick = false;
@@ -46,7 +47,7 @@ export function createPrimitiveEventHandlers(context) {
   function getRingTemplateBondLength() {
     const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
     return context.state.viewState.getMode() === 'force'
-      ? (context.constants?.forceBondLength ?? 30) * FORCE_RING_TEMPLATE_BOND_LENGTH_FACTOR * (layoutBondLength / 1.5)
+      ? (context.constants?.forceBondLength ?? 30) * (layoutBondLength / 1.5)
       : (context.constants?.scale ?? 40) * layoutBondLength;
   }
 
@@ -591,6 +592,82 @@ export function createPrimitiveEventHandlers(context) {
     return atomIds.every(atomId => isReactionPreviewEditableRingAtom(atomId));
   }
 
+  function isDisplayedForceStereoHydrogen(atomNode, molecule) {
+    if (context.state.viewState.getMode() !== 'force' || atomNode?.name !== 'H') {
+      return false;
+    }
+    const atom = molecule?.atoms?.get?.(atomNode.id) ?? atomNode;
+    const bondIds = Array.isArray(atom?.bonds)
+      ? atom.bonds
+      : [...(molecule?.bonds?.values?.() ?? [])]
+          .filter(bond => bond?.atoms?.includes?.(atomNode.id))
+          .map(bond => bond.id);
+    for (const bondId of bondIds) {
+      const bond = molecule?.bonds?.get?.(bondId);
+      if (!bond?.atoms?.includes?.(atomNode.id)) {
+        continue;
+      }
+      const displayAs = bond.properties?.display?.as ?? null;
+      if (displayAs === 'wedge' || displayAs === 'dash') {
+        return true;
+      }
+      const otherAtomId = bond.getOtherAtom?.(atomNode.id) ?? bond.atoms.find(id => id !== atomNode.id);
+      const otherAtom = molecule?.atoms?.get?.(otherAtomId);
+      if (typeof otherAtom?.getChirality === 'function' && otherAtom.getChirality()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isSuppressedForceHydrogenTarget(atomNode, molecule) {
+    return context.state.viewState.getMode() === 'force' && atomNode?.name === 'H' && !isDisplayedForceStereoHydrogen(atomNode, molecule);
+  }
+
+  function forceHydrogenRedirectTarget(atomNode, molecule) {
+    if (!isSuppressedForceHydrogenTarget(atomNode, molecule)) {
+      return null;
+    }
+    const atom = molecule?.atoms?.get?.(atomNode.id) ?? atomNode;
+    const bondIds = Array.isArray(atom?.bonds)
+      ? atom.bonds
+      : [...(molecule?.bonds?.values?.() ?? [])]
+          .filter(bond => bond?.atoms?.includes?.(atomNode.id))
+          .map(bond => bond.id);
+    for (const bondId of bondIds) {
+      const bond = molecule?.bonds?.get?.(bondId);
+      const parentId = bond?.getOtherAtom?.(atomNode.id) ?? bond?.atoms?.find?.(id => id !== atomNode.id);
+      const parentAtom = molecule?.atoms?.get?.(parentId);
+      if (!parentAtom || parentAtom.name === 'H' || parentAtom.visible === false) {
+        continue;
+      }
+      return {
+        id: parentAtom.id,
+        atom: parentAtom,
+        node: context.helpers.getForceNodeById?.(parentAtom.id) ?? parentAtom
+      };
+    }
+    return null;
+  }
+
+  function forceHydrogenBondRedirectTarget(bond, molecule) {
+    const atomIds = bond?.atoms ?? [];
+    const atoms = atomIds.map(atomId => molecule?.atoms?.get?.(atomId) ?? null);
+    const hasHydrogen = atoms.some(atom => atom?.name === 'H');
+    if (!hasHydrogen) {
+      return null;
+    }
+    const parentAtom = atoms.find(atom => atom && atom.name !== 'H' && atom.visible !== false);
+    if (!parentAtom) {
+      return null;
+    }
+    return {
+      id: parentAtom.id,
+      atom: parentAtom,
+      node: context.helpers.getForceNodeById?.(parentAtom.id) ?? parentAtom
+    };
+  }
+
   function blockDrawBondPromotion(event) {
     context.drawBond.cancel?.();
     context.drawBond.clearArtifacts?.();
@@ -760,6 +837,13 @@ export function createPrimitiveEventHandlers(context) {
   function removeRingTemplatePreview() {
     cancelRingTemplateViewportReadjustment();
     context.dom.gNode?.()?.querySelector?.('g.ring-template-preview')?.remove?.();
+    if (context.ringTemplateDrag) {
+      context.ringTemplateDrag.anchoredPreviewActive = false;
+    }
+  }
+
+  function clearFreeRingTemplatePreview() {
+    context.ringTemplateDrag?.clearFreePreview?.();
   }
 
   function cancelRingTemplateViewportReadjustment() {
@@ -774,7 +858,7 @@ export function createPrimitiveEventHandlers(context) {
     pendingViewportReadjustment = null;
   }
 
-  function scheduleRingTemplateViewportReadjustment(positions, remaining = 2) {
+  function scheduleRingTemplateViewportReadjustment(positions, remaining = 2, options = {}) {
     if (context.state.viewState.getMode() !== 'force' || remaining <= 0) {
       return;
     }
@@ -788,8 +872,8 @@ export function createPrimitiveEventHandlers(context) {
       if (!context.dom.gNode?.()?.querySelector?.('g.ring-template-preview')) {
         return;
       }
-      adjustRingTemplatePreviewViewport(positions, { scheduleFollowup: false });
-      scheduleRingTemplateViewportReadjustment(positions, remaining - 1);
+      adjustRingTemplatePreviewViewport(positions, { scheduleFollowup: false, pad: options.pad });
+      scheduleRingTemplateViewportReadjustment(positions, remaining - 1, options);
     });
   }
 
@@ -803,8 +887,10 @@ export function createPrimitiveEventHandlers(context) {
     if (!(width > 0) || !(height > 0)) {
       return;
     }
+    const requestedPad = Number.isFinite(Number(options.pad)) ? Math.max(0, Number(options.pad)) : RING_TEMPLATE_PREVIEW_VIEWPORT_PAD;
+    const pad = Math.min(requestedPad, Math.max(0, Math.min(width, height) * 0.2));
     if (options.scheduleFollowup !== false) {
-      scheduleRingTemplateViewportReadjustment(positions);
+      scheduleRingTemplateViewportReadjustment(positions, 2, { pad });
     }
     const transform = context.view.getZoomTransform();
     const k = Number.isFinite(transform?.k) ? transform.k : 1;
@@ -828,7 +914,6 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
 
-    const pad = Math.min(RING_TEMPLATE_PREVIEW_VIEWPORT_PAD, Math.max(0, Math.min(width, height) * 0.2));
     const availableWidth = Math.max(1, width - pad * 2);
     const availableHeight = Math.max(1, height - pad * 2);
     const graphSpanX = maxGraphX - minGraphX;
@@ -915,6 +1000,8 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     removeRingTemplatePreview();
+    context.ringTemplateDrag ??= {};
+    context.ringTemplateDrag.anchoredPreviewActive = true;
     const group = gNode.ownerDocument.createElementNS(SVG_NS, 'g');
     group.setAttribute('class', 'ring-template-preview');
     group.setAttribute('pointer-events', 'none');
@@ -1008,10 +1095,12 @@ export function createPrimitiveEventHandlers(context) {
       }
     }
     gNode.appendChild(group);
-    adjustRingTemplatePreviewViewport(positions);
+    if (options.adjustViewport === true) {
+      adjustRingTemplatePreviewViewport(positions, { pad: options.viewportPad ?? 0 });
+    }
   }
 
-  function renderRingTemplatePreview(state, centerAngle) {
+  function renderRingTemplatePreview(state, centerAngle, options = {}) {
     const positions = previewRingPositions(state.size, state.anchorPoint, getRingTemplateBondLength(), centerAngle);
     const hoverOptions = {
       requireExistingReuseBond: context.state.viewState.getMode() === 'force'
@@ -1021,7 +1110,7 @@ export function createPrimitiveEventHandlers(context) {
       template: state.template,
       ringAtomIds: targets.ringAtomIds.length > 0 ? targets.ringAtomIds : [state.atomId, ...Array(Math.max(0, state.size - 1)).fill(null)]
     });
-    renderRingTemplatePreviewPositions(positions, 1, { template: state.template, aromaticDoubleBondIndices });
+    renderRingTemplatePreviewPositions(positions, 1, { template: state.template, aromaticDoubleBondIndices, adjustViewport: options.adjustViewport === true });
     context.view.showPrimitiveHover(
       [...new Set([[state.atomId].filter(Boolean), targets.atomIds].flat())],
       [...new Set(targets.bondIds)]
@@ -1038,12 +1127,32 @@ export function createPrimitiveEventHandlers(context) {
     state?.document?.removeEventListener?.('mouseup', state.handleUp, true);
   }
 
+  function clearPendingAtomRingTemplateHover(state) {
+    if (!state || pendingAtomRingTemplateHover === state) {
+      pendingAtomRingTemplateHover = null;
+      if (!pendingRingTemplate && !pendingBondRingTemplatePreview && !pendingBondRingTemplateHover) {
+        removeRingTemplatePreview();
+      }
+    }
+  }
+
   function clearPendingBondRingTemplatePreview(state) {
     state?.document?.removeEventListener?.('mousemove', state.handleMove, true);
     state?.document?.removeEventListener?.('mouseup', state.handleUp, true);
     if (!state || pendingBondRingTemplatePreview === state) {
       pendingBondRingTemplatePreview = null;
-      removeRingTemplatePreview();
+      if (!pendingAtomRingTemplateHover && !pendingBondRingTemplateHover) {
+        removeRingTemplatePreview();
+      }
+    }
+  }
+
+  function clearPendingBondRingTemplateHover(state) {
+    if (!state || pendingBondRingTemplateHover === state) {
+      pendingBondRingTemplateHover = null;
+      if (!pendingRingTemplate && !pendingAtomRingTemplateHover && !pendingBondRingTemplatePreview) {
+        removeRingTemplatePreview();
+      }
     }
   }
 
@@ -1075,7 +1184,56 @@ export function createPrimitiveEventHandlers(context) {
     state.dragged = true;
     const graphAngle = normalizePreviewAngle(Math.atan2(dy, dx));
     state.currentGraphAngle = ringTemplateFreeRotation(event) ? graphAngle : snapRingTemplateAngle(graphAngle);
+    renderRingTemplatePreview(state, state.currentGraphAngle, { adjustViewport: pendingRingTemplate === state && context.state.viewState.getMode() === 'force' });
+  }
+
+  function atomRingTemplateHoverState(event, atomId, atomDatum = null) {
+    const anchorPoint = getRingTemplateAnchorPoint(event, atomId, atomDatum);
+    if (!isFinitePoint(anchorPoint)) {
+      return null;
+    }
+    const template = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    return {
+      atomId,
+      template,
+      size: ringTemplateVertexCount(template),
+      anchorPoint,
+      currentGraphAngle: defaultRingTemplateGraphCenterAngle(atomId, anchorPoint),
+      dragged: false,
+      document: null,
+      handleMove: null,
+      handleUp: null
+    };
+  }
+
+  function showRingTemplateHoverOnAtom(event, atomId, atomDatum = null) {
+    if (!isRingTemplateMode()) {
+      return false;
+    }
+    if (context.ringTemplateDrag?.freePreviewDragging === true) {
+      clearPendingAtomRingTemplateHover();
+      clearPendingBondRingTemplateHover();
+      removeRingTemplatePreview();
+      return true;
+    }
+    if (pendingRingTemplate || pendingBondRingTemplatePreview) {
+      return true;
+    }
+    if (!isReactionPreviewEditableRingAtom(atomId)) {
+      clearPendingAtomRingTemplateHover();
+      removeRingTemplatePreview();
+      return true;
+    }
+    const state = atomRingTemplateHoverState(event, atomId, atomDatum);
+    if (!state) {
+      clearPendingAtomRingTemplateHover();
+      return true;
+    }
+    clearFreeRingTemplatePreview();
+    clearPendingBondRingTemplateHover();
+    pendingAtomRingTemplateHover = state;
     renderRingTemplatePreview(state, state.currentGraphAngle);
+    return true;
   }
 
   function startRingTemplateOnAtom(event, atomId, atomDatum = null) {
@@ -1097,6 +1255,9 @@ export function createPrimitiveEventHandlers(context) {
     const doc = event.currentTarget?.ownerDocument ?? context.document ?? globalThis.document ?? null;
     const template = context.state.overlayState.getRingTemplateSize?.() ?? 6;
     clearPendingRingTemplateListeners(pendingRingTemplate);
+    clearPendingAtomRingTemplateHover();
+    clearPendingBondRingTemplateHover();
+    clearFreeRingTemplatePreview();
     removeRingTemplatePreview();
     const state = {
       atomId,
@@ -1111,7 +1272,7 @@ export function createPrimitiveEventHandlers(context) {
     };
     if (canRenderRingTemplatePreview()) {
       state.currentGraphAngle = defaultRingTemplateGraphCenterAngle(atomId, anchorPoint);
-      renderRingTemplatePreview(state, state.currentGraphAngle);
+      renderRingTemplatePreview(state, state.currentGraphAngle, { adjustViewport: context.state.viewState.getMode() === 'force' });
     }
     state.handleMove = moveEvent => {
       if (pendingRingTemplate !== state) {
@@ -1201,7 +1362,7 @@ export function createPrimitiveEventHandlers(context) {
     });
   }
 
-  function renderPendingBondRingTemplatePreview(state, event = null) {
+  function renderPendingBondRingTemplatePreview(state, event = null, options = {}) {
     const pointer = event ? pointerPoint(event) : null;
     const sideSign = bondSideSignForPoint(state.anchorA, state.anchorB, pointer, state.sideSign);
     const positions = regularRingPositionsForBondPoints(state.anchorA, state.anchorB, state.size, sideSign);
@@ -1223,11 +1384,73 @@ export function createPrimitiveEventHandlers(context) {
         : [...state.anchorAtomIds, ...Array(Math.max(0, state.size - state.anchorAtomIds.length)).fill(null)],
       anchorBondId: state.bondId
     });
-    renderRingTemplatePreviewPositions(positions, 2, { template: state.template, aromaticDoubleBondIndices });
+    renderRingTemplatePreviewPositions(positions, 2, { template: state.template, aromaticDoubleBondIndices, adjustViewport: options.adjustViewport === true });
     context.view.showPrimitiveHover(
       [...new Set([...state.anchorAtomIds.filter(Boolean), ...targets.atomIds])],
       [...new Set([[state.bondId].filter(Boolean), targets.bondIds].flat())]
     );
+  }
+
+  function bondRingTemplatePreviewState(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
+    if (!isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
+      return null;
+    }
+    const isForce = context.state.viewState.getMode() === 'force';
+    const occupiedPoints = isForce ? getForceOccupiedRingPreviewPoints(anchorAtomIds) : get2DOccupiedRingPreviewPoints(anchorAtomIds);
+    const template = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    const size = ringTemplateVertexCount(template);
+    const [previewAnchorA, previewAnchorB] = forcePreviewBondAnchorPoints(anchorA, anchorB);
+    const autoFuseSideSign = isForce ? chooseAutoFuseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, anchorAtomIds, [bondId]) : null;
+    const fallbackSideSign = autoFuseSideSign ?? chooseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, occupiedPoints);
+    if (fallbackSideSign === null) {
+      return null;
+    }
+    const startPointer = pointerPoint(event);
+    return {
+      bondId,
+      template,
+      size,
+      anchorA: previewAnchorA,
+      anchorB: previewAnchorB,
+      anchorAtomIds: [...anchorAtomIds],
+      sideSign: bondSideSignForPoint(previewAnchorA, previewAnchorB, startPointer, fallbackSideSign),
+      positions: null,
+      startPointer,
+      hasDragged: false,
+      document: null,
+      handleMove: null,
+      handleUp: null
+    };
+  }
+
+  function showRingTemplateHoverOnBond(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
+    if (!isRingTemplateMode()) {
+      return false;
+    }
+    if (context.ringTemplateDrag?.freePreviewDragging === true) {
+      clearPendingAtomRingTemplateHover();
+      clearPendingBondRingTemplateHover();
+      removeRingTemplatePreview();
+      return true;
+    }
+    if (!isReactionPreviewEditableRingBond(bondId, anchorAtomIds)) {
+      clearPendingBondRingTemplateHover();
+      removeRingTemplatePreview();
+      return true;
+    }
+    if (pendingBondRingTemplatePreview) {
+      return true;
+    }
+    clearPendingAtomRingTemplateHover();
+    const state = bondRingTemplatePreviewState(event, bondId, anchorA, anchorB, anchorAtomIds);
+    if (!state) {
+      clearPendingBondRingTemplateHover();
+      return true;
+    }
+    clearFreeRingTemplatePreview();
+    pendingBondRingTemplateHover = state;
+    renderPendingBondRingTemplatePreview(state, event);
+    return true;
   }
 
   function startRingTemplatePreviewOnBond(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
@@ -1246,34 +1469,15 @@ export function createPrimitiveEventHandlers(context) {
     clearPendingRingTemplateListeners(pendingRingTemplate);
     pendingRingTemplate = null;
     clearPendingBondRingTemplatePreview(pendingBondRingTemplatePreview);
-    const isForce = context.state.viewState.getMode() === 'force';
-    const occupiedPoints = isForce ? getForceOccupiedRingPreviewPoints(anchorAtomIds) : get2DOccupiedRingPreviewPoints(anchorAtomIds);
-    const template = context.state.overlayState.getRingTemplateSize?.() ?? 6;
-    const size = ringTemplateVertexCount(template);
-    const [previewAnchorA, previewAnchorB] = forcePreviewBondAnchorPoints(anchorA, anchorB);
-    const autoFuseSideSign = isForce ? chooseAutoFuseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, anchorAtomIds, [bondId]) : null;
-    const fallbackSideSign = autoFuseSideSign ?? chooseBondAnchoredRingSide(previewAnchorA, previewAnchorB, size, occupiedPoints);
-    if (fallbackSideSign === null) {
+    clearPendingBondRingTemplateHover();
+    clearFreeRingTemplatePreview();
+    const state = bondRingTemplatePreviewState(event, bondId, anchorA, anchorB, anchorAtomIds);
+    if (!state) {
       return true;
     }
     const doc = event.currentTarget?.ownerDocument ?? context.document ?? globalThis.document ?? null;
-    const startPointer = pointerPoint(event);
-    const state = {
-      bondId,
-      template,
-      size,
-      anchorA: previewAnchorA,
-      anchorB: previewAnchorB,
-      anchorAtomIds: [...anchorAtomIds],
-      sideSign: bondSideSignForPoint(previewAnchorA, previewAnchorB, pointerPoint(event), fallbackSideSign),
-      positions: null,
-      startPointer,
-      hasDragged: false,
-      document: doc,
-      handleMove: null,
-      handleUp: null
-    };
-    renderPendingBondRingTemplatePreview(state);
+    state.document = doc;
+    renderPendingBondRingTemplatePreview(state, null, { adjustViewport: context.state.viewState.getMode() === 'force' });
     state.handleMove = moveEvent => {
       if (pendingBondRingTemplatePreview !== state) {
         return;
@@ -1285,7 +1489,7 @@ export function createPrimitiveEventHandlers(context) {
       if (pointDistance(currentPointer, state.startPointer) >= RING_TEMPLATE_DRAG_THRESHOLD_PX) {
         state.hasDragged = true;
       }
-      renderPendingBondRingTemplatePreview(state, moveEvent);
+      renderPendingBondRingTemplatePreview(state, moveEvent, { adjustViewport: context.state.viewState.getMode() === 'force' });
     };
     state.handleUp = upEvent => {
       if (pendingBondRingTemplatePreview !== state) {
@@ -1471,9 +1675,13 @@ export function createPrimitiveEventHandlers(context) {
     context.selection.handle2dComponentDblClick(event, atomIds);
   }
 
-  function handle2dBondMouseOver(event, bond, atom1, atom2) {
+  function handle2dBondMouseOver(event, bond, atom1, atom2, anchorA = atom1, anchorB = atom2) {
     const chargeTool = getChargeTool();
     if (chargeTool) {
+      return;
+    }
+    if (showRingTemplateHoverOnBond(event, bond.id, anchorA, anchorB, bond.atoms ?? [])) {
+      context.tooltip.hide();
       return;
     }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
@@ -1495,10 +1703,15 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handle2dBondMouseMove(event) {
+    if (pendingBondRingTemplateHover) {
+      renderPendingBondRingTemplatePreview(pendingBondRingTemplateHover, event);
+      return;
+    }
     context.tooltip.move(event);
   }
 
   function handle2dBondMouseOut() {
+    clearPendingBondRingTemplateHover();
     clearHoverOnExit();
     context.tooltip.hide();
   }
@@ -1577,6 +1790,14 @@ export function createPrimitiveEventHandlers(context) {
 
   function handle2dAtomMouseOver(event, atom, mol, valenceWarning) {
     const chargeTool = getChargeTool();
+    if (showRingTemplateHoverOnAtom(event, atom.id, atom)) {
+      const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
+      if (valenceWarning && !chargeTool && !suppressPaintModeTooltip() && showAtomTooltips) {
+        context.tooltipState.setSelectionValenceTooltipAtomId(atom.id);
+        context.tooltip.showImmediate(context.formatters.atomTooltipHtml(atom, mol, valenceWarning, '2d'), event);
+      }
+      return;
+    }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
       showPrimitiveHover([atom.id], []);
       return;
@@ -1606,10 +1827,14 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handle2dAtomMouseMove(event) {
+    if (pendingAtomRingTemplateHover) {
+      return;
+    }
     context.tooltip.move(event);
   }
 
   function handle2dAtomMouseOut(atomId) {
+    clearPendingAtomRingTemplateHover();
     if (context.state.overlayState.getSelectMode() && context.tooltipState.getSelectionValenceTooltipAtomId() === atomId) {
       return;
     }
@@ -1660,6 +1885,11 @@ export function createPrimitiveEventHandlers(context) {
   function handleForceBondMouseDownRingTemplate(event, linkDatum) {
     const source = linkDatum?.source;
     const target = linkDatum?.target;
+    const molecule = context.state.documentState.getCurrentMol?.();
+    const redirect = forceHydrogenBondRedirectTarget(molecule?.bonds?.get?.(linkDatum?.id), molecule);
+    if (redirect) {
+      return startRingTemplateOnAtom(event, redirect.id, redirect.node);
+    }
     if (isRingTemplateMode() && !isReactionPreviewEditableRingBond(linkDatum?.id, [source?.id, target?.id].filter(Boolean))) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -1677,6 +1907,40 @@ export function createPrimitiveEventHandlers(context) {
     if (chargeTool) {
       return;
     }
+    const bond = molecule.bonds.get(bondId);
+    const sourceAtomId = bond?.atoms?.[0] ?? null;
+    const targetAtomId = bond?.atoms?.[1] ?? null;
+    const redirect = forceHydrogenBondRedirectTarget(bond, molecule);
+    if (redirect) {
+      if (showRingTemplateHoverOnAtom(event, redirect.id, redirect.node)) {
+        context.tooltip.hide();
+        return;
+      }
+      if (context.state.overlayState.getDrawBondMode() && !context.overlays.isReactionPreviewEditableAtomId(redirect.id)) {
+        context.drawBond.cancel?.();
+        context.drawBond.clearArtifacts?.();
+        context.view.clearPrimitiveHover();
+        context.view.refreshSelectionOverlay();
+        context.tooltip.hide();
+        return;
+      }
+      if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
+        showPrimitiveHover([redirect.id], []);
+        return;
+      }
+      if (!showPrimitiveHover([redirect.id], [])) {
+        return;
+      }
+      maybeRefreshDrawBondHover(redirect.id, 'atom');
+      context.tooltip.hide();
+      return;
+    }
+    const sourceNode = context.helpers.getForceNodeById?.(sourceAtomId) ?? molecule.atoms.get(sourceAtomId);
+    const targetNode = context.helpers.getForceNodeById?.(targetAtomId) ?? molecule.atoms.get(targetAtomId);
+    if (showRingTemplateHoverOnBond(event, bondId, sourceNode, targetNode, [sourceAtomId, targetAtomId].filter(Boolean))) {
+      context.tooltip.hide();
+      return;
+    }
     if (context.state.overlayState.getDrawBondMode() && !isReactionPreviewEditablePrimitiveBond(bondId, molecule)) {
       context.drawBond.cancel?.();
       context.drawBond.clearArtifacts?.();
@@ -1686,7 +1950,6 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-      const bond = molecule.bonds.get(bondId);
       if (bond?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) {
         return;
       }
@@ -1704,7 +1967,6 @@ export function createPrimitiveEventHandlers(context) {
       }
       return;
     }
-    const bond = molecule.bonds.get(bondId);
     if (!bond) {
       return;
     }
@@ -1717,15 +1979,31 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceBondMouseMove(event) {
+    if (pendingBondRingTemplateHover) {
+      renderPendingBondRingTemplatePreview(pendingBondRingTemplateHover, event);
+      return;
+    }
     context.tooltip.move(event);
   }
 
   function handleForceBondMouseOut() {
+    clearPendingBondRingTemplateHover();
     clearHoverOnExit();
     context.tooltip.hide();
   }
 
   function handleForceAtomMouseDownDrawBond(event, atom) {
+    if (isSuppressedForceHydrogenTarget(atom, context.state.documentState.getCurrentMol?.())) {
+      if (isRingTemplateMode()) {
+        const redirect = forceHydrogenRedirectTarget(atom, context.state.documentState.getCurrentMol?.());
+        if (redirect && startRingTemplateOnAtom(event, redirect.id, redirect.node)) {
+          return;
+        }
+        event.preventDefault?.();
+        event.stopPropagation?.();
+      }
+      return;
+    }
     if (startRingTemplateOnAtom(event, atom.id, atom)) {
       return;
     }
@@ -1749,6 +2027,21 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceAtomClick(event, atom, molecule) {
+    if (isSuppressedForceHydrogenTarget(atom, molecule)) {
+      const redirect = forceHydrogenRedirectTarget(atom, molecule);
+      if (isRingTemplateMode() && redirect && placeRingTemplateOnAtomClick(event, redirect.id, redirect.node)) {
+        return;
+      }
+      if (!context.state.overlayState.getDrawBondMode() && !context.state.overlayState.getEraseMode() && !context.state.overlayState.getPaintMode?.() && !getChargeTool() && redirect) {
+        context.selection.handleForcePrimitiveClick(event, [redirect.id], []);
+        return;
+      }
+      if (isRingTemplateMode() || context.state.overlayState.getDrawBondMode()) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+      }
+      return;
+    }
     if (placeRingTemplateOnAtomClick(event, atom.id, atom)) {
       return;
     }
@@ -1833,8 +2126,30 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceAtomMouseOver(event, atomNode, molecule, valenceWarning) {
+    if (isSuppressedForceHydrogenTarget(atomNode, molecule)) {
+      const redirect = forceHydrogenRedirectTarget(atomNode, molecule);
+      if (redirect) {
+        handleForceAtomMouseOver(event, redirect.node, molecule, null);
+      } else {
+        clearPendingAtomRingTemplateHover();
+        removeRingTemplatePreview();
+        context.view.clearPrimitiveHover();
+        context.view.refreshSelectionOverlay();
+        context.tooltip.hide();
+      }
+      return;
+    }
     const chargeTool = getChargeTool();
     if (chargeTool && atomNode.name === 'H') {
+      return;
+    }
+    const atom = molecule.atoms.get(atomNode.id);
+    if (showRingTemplateHoverOnAtom(event, atomNode.id, atomNode)) {
+      const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
+      if (atom && valenceWarning && !chargeTool && !suppressPaintModeTooltip() && showAtomTooltips) {
+        context.tooltipState.setSelectionValenceTooltipAtomId(atomNode.id);
+        context.tooltip.showImmediate(context.formatters.atomTooltipHtml(atom, molecule, valenceWarning, 'force'), event);
+      }
       return;
     }
     if (context.state.overlayState.getDrawBondMode() && !context.overlays.isReactionPreviewEditableAtomId(atomNode.id)) {
@@ -1856,7 +2171,6 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     maybeRefreshDrawBondHover(atomNode.id, 'atom');
-    const atom = molecule.atoms.get(atomNode.id);
     if (!atom) {
       return;
     }
@@ -1881,10 +2195,14 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceAtomMouseMove(event) {
+    if (pendingAtomRingTemplateHover) {
+      return;
+    }
     context.tooltip.move(event);
   }
 
   function handleForceAtomMouseOut(atomId) {
+    clearPendingAtomRingTemplateHover();
     if (context.state.overlayState.getSelectMode() && context.tooltipState.getSelectionValenceTooltipAtomId() === atomId) {
       return;
     }

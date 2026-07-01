@@ -76,6 +76,11 @@ describe('reactionTemplates — example applications', () => {
     assert.ok(reactionTemplates.dehalogenation.variants.some(variant => variant.id === 'h2-pd-c' && variant.reagents.includes('H2')));
   });
 
+  it('dehalogenation skips charged carbon-halogen centers', () => {
+    const product = applySMIRKS(parseSMILES('[CH2+]Cl'), reactionTemplates.dehalogenation.smirks);
+    assert.equal(product, null);
+  });
+
   it('halideHydrolysis converts an alkyl halide to an alcohol', () => {
     const product = applySMIRKS(parseSMILES('CCl'), reactionTemplates.halideHydrolysis.smirks);
     assert.ok(product);
@@ -114,6 +119,19 @@ describe('reactionTemplates — example applications', () => {
     const product = applySMIRKS(parseSMILES('C#C'), reactionTemplates.alkyneFullReduction.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CC');
+  });
+
+  it('alkynePartialReduction reduces a neutral alkyne to an alkene', () => {
+    const product = applySMIRKS(parseSMILES('C#C'), reactionTemplates.alkynePartialReduction.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'C=C');
+  });
+
+  it('alkyne reductions skip charged alkyne centers and directly charge-adjacent alkynes', () => {
+    assert.equal(applySMIRKS(parseSMILES('[C-]#C'), reactionTemplates.alkynePartialReduction.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('C#C[NH3+]'), reactionTemplates.alkynePartialReduction.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('[C-]#C'), reactionTemplates.alkyneFullReduction.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('C#C[NH3+]'), reactionTemplates.alkyneFullReduction.smirks), null);
   });
 
   it('benzylicOxidation converts toluene into benzaldehyde', () => {
@@ -195,10 +213,22 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), 'CC(N)=O');
   });
 
+  it('nitrileHydrogenationToImine converts a neutral nitrile into an imine', () => {
+    const product = applySMIRKS(parseSMILES('CC#N'), reactionTemplates.nitrileHydrogenationToImine.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CC=N');
+  });
+
   it('nitrileHydrolysisToAcid converts a nitrile into an acid plus ammonia fragment', () => {
     const product = applySMIRKS(parseSMILES('CC#N'), reactionTemplates.nitrileHydrolysisToAcid.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CC(=O)O.N');
+  });
+
+  it('nitrile templates skip charged cyanide-like and protonated nitrile states', () => {
+    assert.equal(applySMIRKS(parseSMILES('[C-]#N'), reactionTemplates.nitrileHydrogenationToImine.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('[C-]#N'), reactionTemplates.nitrileHydrolysisToAmide.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('C#[NH+]'), reactionTemplates.nitrileHydrolysisToAcid.smirks), null);
   });
 
   it('carbonylReduction converts formaldehyde to methanol', () => {
@@ -216,6 +246,11 @@ describe('reactionTemplates — example applications', () => {
   it('imineReduction does not match amidines or related heteroatom-substituted imines', () => {
     const product = applySMIRKS(parseSMILES('CC(=NC)N'), reactionTemplates.imineReduction.smirks);
     assert.equal(product, null);
+  });
+
+  it('imine reduction and hydrolysis skip protonated imines', () => {
+    assert.equal(applySMIRKS(parseSMILES('CC=[NH2+]'), reactionTemplates.imineReduction.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('CC=[NH2+]'), reactionTemplates.imineHydrolysis.smirks), null);
   });
 
   it('carbonylReduction does not match carboxylates or acyl derivatives', () => {
@@ -369,12 +404,12 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(product.atoms.get('N25')?.properties.aromatic, true);
   });
 
-  it('imineHydrolysis and phenolateProtonation preserve the adjacent fused aza ring', () => {
-    const afterImineHydrolysis = applySMIRKS(parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'), reactionTemplates.imineHydrolysis.smirks);
-    assert.ok(afterImineHydrolysis);
-    assert.deepEqual(validateValence(afterImineHydrolysis), []);
+  it('imineHydrolysis skips protonated amidines while phenolateProtonation preserves the adjacent fused aza ring', () => {
+    const source = parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]');
+    const afterImineHydrolysis = applySMIRKS(source, reactionTemplates.imineHydrolysis.smirks);
+    assert.equal(afterImineHydrolysis, null);
 
-    const afterPhenolateProtonation = applySMIRKS(afterImineHydrolysis, reactionTemplates.phenolateProtonation.smirks);
+    const afterPhenolateProtonation = applySMIRKS(source, reactionTemplates.phenolateProtonation.smirks);
     assert.ok(afterPhenolateProtonation);
     assert.deepEqual(validateValence(afterPhenolateProtonation), []);
     assert.equal(afterPhenolateProtonation.atoms.get('N17')?.properties.aromatic, true);
@@ -440,6 +475,11 @@ describe('reactionTemplates — example applications', () => {
   it('dielsAlder returns null when no isolated dienophile is present', () => {
     const product = applySMIRKS(parseSMILES('C=CC=C'), reactionTemplates.dielsAlder.smirks);
     assert.equal(product, null);
+  });
+
+  it('dielsAlder skips charged diene and dienophile centers', () => {
+    assert.equal(applySMIRKS(parseSMILES('[CH2+]=CC=C.C=C'), reactionTemplates.dielsAlder.smirks), null);
+    assert.equal(applySMIRKS(parseSMILES('C=CC=C.[CH2+]=C'), reactionTemplates.dielsAlder.smirks), null);
   });
 
   it('phenolateProtonation protonates phenolate cleanly', () => {

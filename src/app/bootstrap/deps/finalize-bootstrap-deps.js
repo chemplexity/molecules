@@ -188,6 +188,10 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       getDefaultRenderOptions: ctx.getDefaultRenderOptions,
       updateRenderOptions: ctx.updateRenderOptions
     },
+    constants: {
+      forceBondLength: ctx.forceBondLength,
+      scale: ctx.scale
+    },
     input: {
       inputControls: ctx.inputControls,
       inputFlowManager: ctx.inputFlowManager

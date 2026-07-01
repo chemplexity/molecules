@@ -277,6 +277,36 @@ describe('createEditorActions', () => {
     ]);
   });
 
+  it('uses draw2d for preserved-geometry edits that must keep the current 2D center', () => {
+    const { deps, calls, mol } = makeDeps();
+    const actions = createEditorActions(deps);
+
+    const result = actions.performStructuralEdit(
+      'place-ring-template',
+      {
+        resonancePolicy: ResonancePolicy.preserve,
+        snapshotPolicy: SnapshotPolicy.skip
+      },
+      () => ({
+        twoD: {
+          drawOnly: true,
+          preserveGeometry: true
+        }
+      })
+    );
+
+    assert.equal(result.performed, true);
+    assert.deepEqual(calls, [
+      ['setActiveMolecule', mol],
+      ['syncInputField', mol],
+      ['updateFormula', mol],
+      ['updateDescriptors', mol],
+      ['updatePanels', mol],
+      ['sync2dDerivedState', mol],
+      ['draw2d']
+    ]);
+  });
+
   it('fits the unlocked force molecule after a reaction-preview edit re-renders in force mode', () => {
     const { deps, calls, mol } = makeDeps({ mode: 'force' });
     deps.overlays.prepareReactionPreviewBondEditTarget = payload => {

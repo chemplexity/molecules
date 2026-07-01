@@ -2,10 +2,15 @@
 
 import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
 import { ringFillDomId } from '../../core/style.js';
-import { atomColor } from '../render/helpers.js';
+import { atomColor, atomDisplayColor, atomDisplayOpacity, atomRadius, singleBondWidth, strokeColor } from '../render/helpers.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 
 const PAINT_SETTINGS_CHANGED_EVENT = 'molecules:paint-settings-changed';
+const DEFAULT_RING_TEMPLATE_LAYOUT_BOND_LENGTH = 1.5;
+const RING_TEMPLATE_DOUBLE_BOND_OFFSET = 5;
+const RING_TEMPLATE_PREVIEW_CLASS = 'ring-template-preview-layer';
+const RING_TEMPLATE_ROTATION_SNAP = Math.PI / 6;
+const TAU = Math.PI * 2;
 
 /**
  * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
@@ -54,6 +59,8 @@ export function initGestureInteractions(context) {
   let paintBucketStrokeRings = [];
   let paintBrushPreviewStyles = new Map();
   let lastPaintPreviewEvent = null;
+  let ringTemplatePreview = null;
+  let ringTemplatePreviewLayer = null;
 
   const DEFAULT_PAINT_R = 12;
   const ERASE_R = 14;
@@ -79,6 +86,250 @@ export function initGestureInteractions(context) {
       y = Math.max(0, Math.min(rect.height, y));
     }
     return [x, y];
+  }
+
+  function normalizeRingTemplatePreviewSize(size) {
+    if (size === 'benzene') {
+      return 6;
+    }
+    const normalized = Number(size);
+    return Number.isInteger(normalized) && normalized >= 3 && normalized <= 7 ? normalized : null;
+  }
+
+  function regularRingPreviewPositions(size, cx, cy, bondLength, startAngle) {
+    const radius = bondLength / (2 * Math.sin(Math.PI / size));
+    const positions = [];
+    for (let index = 0; index < size; index++) {
+      const angle = startAngle + (index * TAU) / size;
+      positions.push({
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius
+      });
+    }
+    return positions;
+  }
+
+  function defaultRingTemplatePreviewAngle(size) {
+    return size % 2 === 0 ? -Math.PI / 2 + Math.PI / size : -Math.PI / 2;
+  }
+
+  function ringTemplateBasePreviewBondLength() {
+    const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? DEFAULT_RING_TEMPLATE_LAYOUT_BOND_LENGTH;
+    if (context.state.viewState.getMode() === 'force') {
+      const forceBondLength = context.constants?.forceBondLength ?? 30;
+      const scale = Number.isFinite(Number(layoutBondLength)) && Number(layoutBondLength) > 0 ? Number(layoutBondLength) / DEFAULT_RING_TEMPLATE_LAYOUT_BOND_LENGTH : 1;
+      return forceBondLength * scale;
+    }
+    return layoutBondLength * (context.constants?.scale ?? 40);
+  }
+
+  function ringTemplatePreviewDoubleBondIndices(size) {
+    if (size !== 6) {
+      return new Set();
+    }
+    return new Set([0, 2, 4]);
+  }
+
+  function ringTemplatePreviewAngle(center, point, fallback) {
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    return Math.hypot(dx, dy) > 1 ? Math.atan2(dy, dx) : fallback;
+  }
+
+  function normalizeRingTemplatePreviewAngle(angle) {
+    const normalized = angle % TAU;
+    return normalized < 0 ? normalized + TAU : normalized;
+  }
+
+  function snapRingTemplatePreviewAngle(angle) {
+    return normalizeRingTemplatePreviewAngle(Math.round(angle / RING_TEMPLATE_ROTATION_SNAP) * RING_TEMPLATE_ROTATION_SNAP);
+  }
+
+  function ringTemplateFreeRotation(event) {
+    return event?.ctrlKey === true || event?.metaKey === true;
+  }
+
+  function clearRingTemplatePreview() {
+    ringTemplatePreviewLayer?.remove?.();
+    ringTemplatePreviewLayer = null;
+  }
+
+  function clearAnchoredRingTemplatePreview() {
+    context.dom.gNode?.()?.querySelector?.('g.ring-template-preview')?.remove?.();
+  }
+
+  function resetFreeRingTemplatePreview() {
+    clearRingTemplatePreview();
+    ringTemplatePreview = null;
+    setFreeRingTemplateDragActive(false);
+  }
+
+  function setFreeRingTemplateDragActive(value) {
+    context.ringTemplateDrag ??= {};
+    context.ringTemplateDrag.freePreviewDragging = value === true;
+  }
+
+  context.ringTemplateDrag ??= {};
+  context.ringTemplateDrag.clearFreePreview = resetFreeRingTemplatePreview;
+
+  function ringTemplateModeAllowsFreePreview() {
+    const mode = context.state.viewState.getMode();
+    return (
+      isRingTemplateMode() &&
+      (mode === '2d' || mode === 'force') &&
+      context.ringTemplateDrag?.anchoredPreviewActive !== true
+    );
+  }
+
+  function isRingTemplateFreePreviewBlockedTarget(event) {
+    return !!event.target?.closest?.(
+      '.atom-hit, .bond-hit, .node, .bond-hover-target, .ring-template-atom-hover-target, .ring-template-bond-hover-target, .link, .separator'
+    );
+  }
+
+  function updateRingTemplatePreviewStateAtEvent(event, phase = 'hover') {
+    const size = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    const normalizedSize = normalizeRingTemplatePreviewSize(size);
+    if (normalizedSize === null) {
+      resetFreeRingTemplatePreview();
+      return false;
+    }
+    const [gX, gY] = context.pointer(event, g.node());
+    const defaultAngle = defaultRingTemplatePreviewAngle(normalizedSize);
+    if (phase === 'dragging') {
+      clearAnchoredRingTemplatePreview();
+    }
+    ringTemplatePreview = {
+      size,
+      normalizedSize,
+      template: size,
+      phase,
+      center: { x: gX, y: gY },
+      angle: defaultAngle,
+      defaultAngle
+    };
+    setFreeRingTemplateDragActive(phase === 'dragging');
+    drawRingTemplatePreview();
+    return true;
+  }
+
+  function drawRingTemplatePreview() {
+    clearRingTemplatePreview();
+    if (!ringTemplatePreview) {
+      return;
+    }
+    const isForce = context.state.viewState.getMode() === 'force';
+    const positions = regularRingPreviewPositions(
+      ringTemplatePreview.normalizedSize,
+      ringTemplatePreview.center.x,
+      ringTemplatePreview.center.y,
+      ringTemplateBasePreviewBondLength(),
+      ringTemplatePreview.angle
+    );
+    ringTemplatePreviewLayer = g.append('g').attr('class', RING_TEMPLATE_PREVIEW_CLASS).attr('pointer-events', 'none');
+    const center = positions.reduce(
+      (sum, point) => ({
+        x: sum.x + point.x / positions.length,
+        y: sum.y + point.y / positions.length
+      }),
+      { x: 0, y: 0 }
+    );
+    const doubleBondIndices = ringTemplatePreview.template === 'benzene'
+      ? ringTemplatePreviewDoubleBondIndices(positions.length)
+      : new Set();
+    const previewCarbon = { name: 'C', properties: {} };
+    const renderOptions = context.options?.getRenderOptions?.() ?? {};
+    const bondStrokeWidth = isForce ? singleBondWidth(1) : `${renderOptions.twoDBondThickness ?? 1.8}px`;
+    for (let index = 0; index < positions.length; index++) {
+      const a = positions[index];
+      const b = positions[(index + 1) % positions.length];
+      ringTemplatePreviewLayer
+        .append('line')
+        .attr('class', isForce ? 'link ring-template-preview-bond' : 'ring-template-preview-bond')
+        .attr('x1', a.x)
+        .attr('y1', a.y)
+        .attr('x2', b.x)
+        .attr('y2', b.y)
+        .attr('stroke', '#111111')
+        .attr('stroke-width', bondStrokeWidth)
+        .attr('stroke-linecap', 'round')
+        .attr('opacity', 1);
+      if (doubleBondIndices.has(index)) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.hypot(dx, dy) || 1;
+        let nx = -dy / length;
+        let ny = dx / length;
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        if ((center.x - midX) * nx + (center.y - midY) * ny < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+        const inset = 0.16;
+        ringTemplatePreviewLayer
+          .append('line')
+          .attr('class', isForce ? 'link ring-template-preview-bond ring-template-preview-double-bond' : 'ring-template-preview-bond ring-template-preview-double-bond')
+          .attr('x1', a.x + dx * inset + nx * RING_TEMPLATE_DOUBLE_BOND_OFFSET)
+          .attr('y1', a.y + dy * inset + ny * RING_TEMPLATE_DOUBLE_BOND_OFFSET)
+          .attr('x2', b.x - dx * inset + nx * RING_TEMPLATE_DOUBLE_BOND_OFFSET)
+          .attr('y2', b.y - dy * inset + ny * RING_TEMPLATE_DOUBLE_BOND_OFFSET)
+          .attr('stroke', '#111111')
+          .attr('stroke-width', bondStrokeWidth)
+          .attr('stroke-linecap', 'round')
+          .attr('opacity', 1);
+      }
+    }
+    if (isForce) {
+      for (const point of positions) {
+        ringTemplatePreviewLayer
+          .append('circle')
+          .attr('class', 'node ring-template-preview-atom')
+          .attr('cx', point.x)
+          .attr('cy', point.y)
+          .attr('r', atomRadius(6, 'force'))
+          .attr('fill', atomDisplayColor(previewCarbon, 'force'))
+          .attr('fill-opacity', atomDisplayOpacity(previewCarbon))
+          .attr('stroke', strokeColor('C'))
+          .attr('stroke-opacity', atomDisplayOpacity(previewCarbon))
+          .attr('stroke-width', 1)
+          .attr('pointer-events', 'none');
+      }
+    }
+  }
+
+  function updateRingTemplatePreview(event) {
+    if (!ringTemplateModeAllowsFreePreview()) {
+      resetFreeRingTemplatePreview();
+      return false;
+    }
+    if (ringTemplatePreview?.phase !== 'dragging') {
+      if (isRingTemplateFreePreviewBlockedTarget(event)) {
+        resetFreeRingTemplatePreview();
+        return false;
+      }
+      return updateRingTemplatePreviewStateAtEvent(event, 'hover');
+    }
+    const [x, y] = context.pointer(event, g.node());
+    const graphAngle = ringTemplatePreviewAngle(ringTemplatePreview.center, { x, y }, ringTemplatePreview.defaultAngle);
+    ringTemplatePreview.angle = ringTemplateFreeRotation(event) ? graphAngle : snapRingTemplatePreviewAngle(graphAngle);
+    drawRingTemplatePreview();
+    return true;
+  }
+
+  function commitRingTemplatePreview() {
+    if (!ringTemplatePreview || ringTemplatePreview.phase !== 'dragging') {
+      return false;
+    }
+    const preview = ringTemplatePreview;
+    ringTemplatePreview = null;
+    setFreeRingTemplateDragActive(false);
+    clearRingTemplatePreview();
+    context.actions.placeRingTemplate?.(preview.size, preview.center.x, preview.center.y, {
+      ringStartAngle: -preview.angle,
+      ringForceStartAngle: preview.angle
+    });
+    return true;
   }
 
   function updateSelectionRect(x, y) {
@@ -1381,7 +1632,7 @@ export function initGestureInteractions(context) {
     if (event.button !== 0) {
       return;
     }
-    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
+    if (isRingTemplateFreePreviewBlockedTarget(event)) {
       return;
     }
 
@@ -1427,7 +1678,7 @@ export function initGestureInteractions(context) {
       event.stopPropagation?.();
       return;
     }
-    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
+    if (isRingTemplateFreePreviewBlockedTarget(event)) {
       return;
     }
 
@@ -1447,17 +1698,13 @@ export function initGestureInteractions(context) {
     if (event.button !== 0) {
       return;
     }
-    if (context.overlays.hasReactionPreview()) {
-      return;
-    }
-    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target, .link, .separator')) {
+    if (isRingTemplateFreePreviewBlockedTarget(event)) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
-    const [gX, gY] = context.pointer(event, g.node());
-    context.actions.placeRingTemplate?.(context.state.overlayState.getRingTemplateSize?.() ?? 6, gX, gY);
+    updateRingTemplatePreviewStateAtEvent(event, 'dragging');
   });
 
   svg.on('mousedown.erase', event => {
@@ -1558,6 +1805,9 @@ export function initGestureInteractions(context) {
       context.clipboard.updatePastePreview(event);
       return;
     }
+    if (updateRingTemplatePreview(event)) {
+      return;
+    }
     context.view.setDrawBondHoverSuppressed(false);
     if (context.drawBond.hasDrawBondState()) {
       context.drawBond.markDragged();
@@ -1584,6 +1834,9 @@ export function initGestureInteractions(context) {
   doc.addEventListener(PAINT_SETTINGS_CHANGED_EVENT, refreshPaintPreview);
 
   doc.addEventListener('mouseup', event => {
+    if (event.button === 0 && commitRingTemplatePreview()) {
+      return;
+    }
     if (event.button === 0) {
       context.state.overlayState.setErasePainting(false);
       lastEraseHitElement = null;

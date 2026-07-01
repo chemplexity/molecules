@@ -438,13 +438,45 @@ describe('createForceSceneRenderer', () => {
     assert.deepEqual(records[keepInViewIndex], ['enableKeepInView', 10]);
   });
 
-  it('fits the force viewport while keep-in-view is active even when zooming in', () => {
+  it('skips force keep-in-view fitting when the graph already fits the viewport', () => {
     const fitTransform = { x: 120, y: 90, k: 1.4 };
-    const currentTransform = { x: 10, y: 20, k: 2 };
     const graph = {
       nodes: [
         { id: 'a1', name: 'C', protons: 6, x: 100, y: 100 },
         { id: 'a2', name: 'C', protons: 6, x: 140, y: 100 }
+      ],
+      links: []
+    };
+    const { renderer, records, simulation } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => graph,
+      isKeepInViewEnabled: () => true,
+      forceFitTransform: (nodes, pad) => {
+        records.push(['forceFitTransform', nodes.map(node => node.id), pad]);
+        return fitTransform;
+      },
+      zoomTransformsDiffer: (a, b) => {
+        records.push(['zoomTransformsDiffer', a, b]);
+        return true;
+      }
+    });
+
+    renderer.updateForce({ id: 'mol-force-fit', atoms: new Map(), bonds: new Map() }, { preserveView: true, keepInView: true });
+    records.length = 0;
+    simulation.emit('tick');
+
+    assert.deepEqual(records.filter(entry => entry[0] === 'forceFitTransform' || entry[0] === 'zoomTransformsDiffer' || (entry[0] === 'call' && entry[1] === 'zoomTransform')), []);
+    assert.ok(records.some(entry => entry[0] === 'd3.zoomTransform'));
+    assert.ok(records.some(entry => entry[0] === 'disableKeepInView'));
+  });
+
+  it('fits the force viewport while keep-in-view is active when the graph is outside the viewport', () => {
+    const fitTransform = { x: 120, y: 90, k: 1.4 };
+    const currentTransform = { x: 10, y: 20, k: 2 };
+    const graph = {
+      nodes: [
+        { id: 'a1', name: 'C', protons: 6, x: 400, y: 100 },
+        { id: 'a2', name: 'C', protons: 6, x: 440, y: 100 }
       ],
       links: []
     };

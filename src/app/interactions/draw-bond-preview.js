@@ -548,6 +548,7 @@ export function createDrawBondPreviewActions(context) {
         snapAtomId: null
       });
       removePreviewGeometry();
+      context.g.select('text.draw-bond-origin-label').attr('display', null);
       context.g.select('circle.draw-bond-dest-node').remove();
       context.g.select('text.draw-bond-dest-label').remove();
       return;
@@ -627,6 +628,9 @@ export function createDrawBondPreviewActions(context) {
     });
 
     renderPreviewFromState({ ...drawBondState, ex, ey }, snapAtomId);
+    if (drawBondState.atomId === null && context.getMode() !== 'force' && context.getDrawBondElement() === 'C') {
+      context.g.select('text.draw-bond-origin-label').attr('display', 'none');
+    }
 
     const destCircle = context.g.select('circle.draw-bond-dest-node');
     if (destCircle.empty() && snapAtomId === null && context.getMode() === 'force') {

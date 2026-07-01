@@ -1,7 +1,20 @@
 # Change Log
 
+## 2026-06-30
+
+- Refine line-tool previews and placement: blank-space carbon drags now show only the line, and force-mode line placement refits only when the committed endpoint would be clipped.
+- Improve copy/paste previews and placement: preserve fragment offsets and visible paste viewports across 2D/force modes, convert 2D copies into force-layout preview coordinates, show generated hydrogens at normal force size, hide ordinary 2D hydrogens, and refresh pasted molecule metadata.
+- Rework ring-template previews so blank-space, atom-anchored, bond-anchored, compact, benzene, and force-mode previews match final placement without duplicate preview rings.
+- Normalize viewport handling for ring and line edits: keep the current view when new geometry is already visible, and refit only when committed geometry falls outside the plot.
+- Improve force-mode ring targeting and styling, including hydrogen hover routing and consistent benzene double-bond preview color.
+- Tighten targeted SMIRKS reaction templates around charge state: imine reduction/hydrolysis, nitrile reductions/hydrolyses, alkyne reductions, Diels-Alder, and dehalogenation now require neutral reaction centers where appropriate and have regression coverage for charged false positives.
+
 ## 2026-06-29
 
+- Let blank-space ring-tool mouse drags preview and rotate the standalone ring, committing the final orientation on mouseup.
+- Cap copied carbon fragments with hidden hydrogens during paste so pasted carbon atoms no longer produce valence warnings.
+- Center paste previews on visible copied atoms, preserve explicitly copied hydrogens, and show hidden-hydrogen labels such as indole NH in force paste previews.
+- Refresh the SMILES/InChI input bar and analysis panels after placing copied molecule fragments.
 - Tune the sulfonyl cyclopentenyl azocane scaffold so its azocane side keeps a heptagonal outer contour while the shared C2 atom stays inward.
 - Tune the pterin-core scaffold so folate outer heteroring atoms keep a seven-member contour while the inward imino nitrogen remains the exception.
 - Add a pterin-core scaffold template so folate heteroring caps draw outside the larger ring.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createMoleculeFragment, instantiateMoleculeFragment, mergeMoleculeFragment } from '../../src/core/molecule-fragment.js';
 import { parseSMILES } from '../../src/io/smiles.js';
+import { validateValence } from '../../src/validation/valence.js';
 
 describe('molecule fragments', () => {
   it('copies a selected subgraph with inter-selected bonds and fresh ids', () => {
@@ -28,6 +29,24 @@ describe('molecule fragments', () => {
     assert.equal(pasted.mol.atoms.get(pasted.atomIdMap.get('C1')).x, 9.25);
     assert.equal(pasted.mol.atoms.get(pasted.atomIdMap.get('C2')).x, 10.75);
     assert.equal(pasted.mol.atoms.get(pasted.atomIdMap.get('C1')).y, 5);
+  });
+
+  it('preserves fragment offsets when source coordinates are numeric strings', () => {
+    const mol = parseSMILES('CC');
+    mol.atoms.get('C1').x = '0';
+    mol.atoms.get('C1').y = '0';
+    mol.atoms.get('C2').x = '1.5';
+    mol.atoms.get('C2').y = '0';
+
+    const fragment = createMoleculeFragment(mol, { atomIds: ['C1', 'C2'], includeAttachedHiddenHydrogens: false });
+    const copiedC1 = fragment.atoms.find(atom => atom.id === 'C1');
+    const copiedC2 = fragment.atoms.find(atom => atom.id === 'C2');
+    const pasted = instantiateMoleculeFragment(fragment, { center: { x: '10', y: '5' } });
+
+    assert.equal(copiedC1.dx, -0.75);
+    assert.equal(copiedC2.dx, 0.75);
+    assert.equal(pasted.mol.atoms.get(pasted.atomIdMap.get('C1')).x, 9.25);
+    assert.equal(pasted.mol.atoms.get(pasted.atomIdMap.get('C2')).x, 10.75);
   });
 
   it('copies the full molecule when no selection is provided', () => {
@@ -76,5 +95,85 @@ describe('molecule fragments', () => {
     assert.deepEqual(pasted.mol.bonds.get(remappedBond).properties.style, { color: '#00ff00', opacity: 0.4 });
     assert.equal(pasted.mol.getRingFills().length, 1);
     assert.equal(pasted.mol.getRingFills()[0].atomIds.includes(remappedC1), true);
+  });
+
+  it('centers fragments on visible atoms while carrying hidden hydrogens for labels', () => {
+    const mol = parseSMILES('c1ccc2[nH]ccc2c1');
+    mol.atoms.get('N5').x = 10;
+    mol.atoms.get('N5').y = 20;
+    mol.atoms.get('H6').x = 10;
+    mol.atoms.get('H6').y = 21;
+
+    const fragment = createMoleculeFragment(mol, { atomIds: ['N5'] });
+    const copiedNitrogen = fragment.atoms.find(atom => atom.id === 'N5');
+    const copiedHydrogen = fragment.atoms.find(atom => atom.id === 'H6');
+
+    assert.equal(copiedNitrogen.visible, true);
+    assert.equal(copiedHydrogen.visible, false);
+    assert.equal(copiedNitrogen.dx, 0);
+    assert.equal(copiedNitrogen.dy, 0);
+    assert.equal(copiedHydrogen.dx, 0);
+    assert.equal(copiedHydrogen.dy, 1);
+  });
+
+  it('keeps explicitly copied hidden hydrogens visible in the fragment', () => {
+    const mol = parseSMILES('c1ccc2[nH]ccc2c1');
+    mol.atoms.get('H6').x = 2;
+    mol.atoms.get('H6').y = 3;
+
+    const fragment = createMoleculeFragment(mol, { atomIds: ['H6'] });
+    const copiedHydrogen = fragment.atoms.find(atom => atom.id === 'H6');
+
+    assert.equal(copiedHydrogen.visible, true);
+    assert.equal(copiedHydrogen.dx, 0);
+    assert.equal(copiedHydrogen.dy, 0);
+  });
+
+  it('preserves force-layout offsets for copied hydrogens', () => {
+    const mol = parseSMILES('c1ccc2[nH]ccc2c1');
+    mol.atoms.get('N5').x = 0;
+    mol.atoms.get('N5').y = 0;
+    mol.atoms.get('H6').x = 0;
+    mol.atoms.get('H6').y = 0;
+
+    const fragment = createMoleculeFragment(mol, {
+      atomIds: ['N5'],
+      forceAtomPositions: new Map([
+        ['N5', { x: 120, y: 80 }],
+        ['H6', { x: 120, y: 55 }]
+      ])
+    });
+    const copiedNitrogen = fragment.atoms.find(atom => atom.id === 'N5');
+    const copiedHydrogen = fragment.atoms.find(atom => atom.id === 'H6');
+
+    assert.equal(copiedNitrogen.forceDx, 0);
+    assert.equal(copiedNitrogen.forceDy, 0);
+    assert.equal(copiedHydrogen.forceDx, 0);
+    assert.equal(copiedHydrogen.forceDy, -25);
+  });
+
+  it('caps copied carbon fragments with hidden hydrogens so pasted carbons are valence-complete', () => {
+    const mol = parseSMILES('CCC');
+    mol.atoms.get('C1').x = 0;
+    mol.atoms.get('C1').y = 0;
+    mol.atoms.get('C2').x = 1.5;
+    mol.atoms.get('C2').y = 0;
+
+    const fragment = createMoleculeFragment(mol, { atomIds: ['C1', 'C2'] });
+    const carbonCapAtoms = fragment.atoms.filter(atom => atom.name === 'H' && atom.visible === false);
+    const pasted = instantiateMoleculeFragment(fragment, { center: { x: 0, y: 0 } });
+    const pastedWarningAtomIds = new Set(validateValence(pasted.mol).map(warning => warning.atomId));
+
+    assert.equal(carbonCapAtoms.length, 6);
+    for (const atom of carbonCapAtoms) {
+      assert.equal(atom.properties.protons, 1);
+      assert.equal(atom.properties.electrons, 1);
+    }
+    for (const atomId of pasted.atomIds) {
+      const atom = pasted.mol.atoms.get(atomId);
+      if (atom.name === 'C') {
+        assert.equal(pastedWarningAtomIds.has(atomId), false);
+      }
+    }
   });
 });

@@ -123,6 +123,7 @@ describe('app-runtime dependency builder', () => {
       getRenderOptions: () => ({ layoutBondLength: 0.5 }),
       takeSnapshot() {},
       updateModeChrome() {},
+      getZoomTransform: () => ({ x: 12, y: 34, k: 0.5 }),
       restoreZoomTransformSnapshot() {},
       captureZoomTransformSnapshot() {},
       zoomTransformHelpers: {
@@ -155,6 +156,7 @@ describe('app-runtime dependency builder', () => {
     assert.equal(artifactsCleared, true);
     assert.equal(keepInViewDisabled, true);
     assert.deepEqual(deps.options.getRenderOptions(), { layoutBondLength: 0.5 });
+    assert.deepEqual(deps.view.getZoomTransform(), { x: 12, y: 34, k: 0.5 });
     assert.deepEqual(deps.data.randomMolecule, [{ smiles: 'CCO' }]);
   });
 });

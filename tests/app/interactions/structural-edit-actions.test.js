@@ -97,6 +97,7 @@ function makeBaseContext(overrides = {}) {
     },
     view: {
       captureZoomTransformSnapshot: () => 'zoom-snapshot',
+      getZoomTransform: () => overrides.zoomTransform ?? { x: 0, y: 0, k: 1 },
       restoreZoomTransformSnapshot: snapshot => {
         calls.push(['restoreZoomTransformSnapshot', snapshot]);
       },
@@ -151,6 +152,19 @@ describe('createStructuralEditActions', () => {
     assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'reaction-entry-zoom']]);
   });
 
+  it('checks 2D fit after restoring reaction-entry zoom when a reaction edit requests it', () => {
+    const { context, calls } = makeBaseContext();
+    const actions = createStructuralEditActions(context);
+
+    actions.restore2dEditViewport('zoom-snapshot', {
+      reactionRestored: true,
+      reactionEntryZoomSnapshot: 'reaction-entry-zoom',
+      zoomToFit: { pad: 0 }
+    });
+
+    assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'reaction-entry-zoom'], ['zoomToFitIf2d', { pad: 0 }]]);
+  });
+
   it('auto-fits 2D edits that exit resonance mode instead of restoring the locked resonance zoom', () => {
     const { context, calls } = makeBaseContext();
     const actions = createStructuralEditActions(context);
@@ -160,6 +174,28 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.deepEqual(calls, [['zoomToFitIf2d', { force: true }]]);
+  });
+
+  it('restores normal 2D edit zoom before checking whether the result needs fitting', () => {
+    const { context, calls } = makeBaseContext();
+    const actions = createStructuralEditActions(context);
+
+    actions.restore2dEditViewport('zoom-snapshot', {
+      zoomToFit: true
+    });
+
+    assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'zoom-snapshot'], ['zoomToFitIf2d', undefined]]);
+  });
+
+  it('passes structured 2D fit options through after restoring the edit zoom', () => {
+    const { context, calls } = makeBaseContext();
+    const actions = createStructuralEditActions(context);
+
+    actions.restore2dEditViewport('zoom-snapshot', {
+      zoomToFit: { pad: 0 }
+    });
+
+    assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'zoom-snapshot'], ['zoomToFitIf2d', { pad: 0 }]]);
   });
 
   it('passes an already-prepared resonance reset through skipped bond promotion prep', () => {
@@ -231,7 +267,8 @@ describe('createStructuralEditActions', () => {
     const result = actions.placeRingTemplate(5, 600, 200);
 
     assert.equal(result.performed, true);
-    assert.equal(result.result.twoD.zoomToFit, true);
+    assert.equal(result.result.twoD.drawOnly, true);
+    assert.deepEqual(result.result.twoD.zoomToFit, { pad: 0 });
     assert.equal(result.result.restorePrimitiveHover, undefined);
     assert.equal(result.result.clearPrimitiveHover, true);
     const carbons = [...mol.atoms.values()].filter(atom => atom.name === 'C');
@@ -246,6 +283,43 @@ describe('createStructuralEditActions', () => {
     assert.equal(mol.bonds.size, 15);
     assert.ok(carbons.every(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y)));
     assert.ok(hydrogens.every(atom => atom.visible === false));
+  });
+
+  it('uses an explicit start angle for free ring-template placement', () => {
+    const mol = new Molecule();
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      context: {
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        view2D: {
+          getCenterX: () => 0,
+          getCenterY: () => 0
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        },
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: '2d', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(4, 600, 200, { ringStartAngle: 0 });
+    const firstCarbon = mol.atoms.get('C1');
+
+    assert.equal(result.performed, true);
+    assert.ok(firstCarbon.x > 7.5);
+    assert.ok(Math.abs(firstCarbon.y) < 1e-12);
   });
 
   it('uses the configured layout bond length for 2D ring-template placement', () => {
@@ -421,7 +495,8 @@ describe('createStructuralEditActions', () => {
     const result = actions.placeRingTemplate(6, 300, 200, { anchorAtomId: anchor.id });
 
     assert.equal(result.performed, true);
-    assert.equal(result.result.twoD.zoomToFit, true);
+    assert.equal(result.result.twoD.drawOnly, true);
+    assert.deepEqual(result.result.twoD.zoomToFit, { pad: 0 });
     const ringAtomIds = result.result.ringAtomIds;
     assert.equal(ringAtomIds.length, 6);
     assert.equal(ringAtomIds[0], anchor.id);
@@ -665,7 +740,8 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.equal(result.performed, true);
-    assert.equal(result.result.twoD.zoomToFit, true);
+    assert.equal(result.result.twoD.drawOnly, true);
+    assert.deepEqual(result.result.twoD.zoomToFit, { pad: 0 });
     const ringAtomIds = result.result.ringAtomIds;
     const newRingAtoms = ringAtomIds.slice(1).map(atomId => mol.atoms.get(atomId));
     assert.ok(newRingAtoms.every(atom => atom.x > 0.7), 'expected the oriented ring to extend to the right of the anchor');
@@ -765,7 +841,8 @@ describe('createStructuralEditActions', () => {
     const result = actions.placeRingTemplate(6, 300, 200, { anchorBondId: anchorBond.id, anchorBondSide: -1 });
 
     assert.equal(result.performed, true);
-    assert.equal(result.result.twoD.zoomToFit, true);
+    assert.equal(result.result.twoD.drawOnly, true);
+    assert.deepEqual(result.result.twoD.zoomToFit, { pad: 0 });
     assert.equal(mol.getBond(atomA.id, atomB.id).id, anchorBond.id);
     assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'C').length, 6);
     assert.equal([...mol.bonds.values()].filter(bond => bond.atoms.includes(atomA.id) && bond.atoms.includes(atomB.id)).length, 1);
@@ -1367,7 +1444,7 @@ describe('createStructuralEditActions', () => {
     const patchPos = result.result.force.options.initialPatchPos;
     const anchorPositionA = patchPos.get(atomA.id);
     const anchorPositionB = patchPos.get(atomB.id);
-    assert.ok(Math.abs(Math.hypot(anchorPositionB.x - anchorPositionA.x, anchorPositionB.y - anchorPositionA.y) - 39) < 1e-6);
+    assert.ok(Math.abs(Math.hypot(anchorPositionB.x - anchorPositionA.x, anchorPositionB.y - anchorPositionA.y) - 30) < 1e-6);
     assert.ok(Math.abs((anchorPositionA.x + anchorPositionB.x) / 2 - 10) < 1e-6);
     assert.ok(Math.abs((anchorPositionA.y + anchorPositionB.y) / 2) < 1e-6);
   });
@@ -1443,7 +1520,7 @@ describe('createStructuralEditActions', () => {
     const fusedAtom = mol.addAtom(null, 'C');
     fusedAtom.x = 99;
     fusedAtom.y = 99;
-    const forceBondLength = 30 * 1.3;
+    const forceBondLength = 30;
     const fusedForceX = 10 + forceBondLength;
     const fusedForceY = forceBondLength * Math.sqrt(3) / 2;
     const nodes = [
@@ -1516,7 +1593,7 @@ describe('createStructuralEditActions', () => {
     fusedAtom.x = 99;
     fusedAtom.y = 99;
     const fusedBond = mol.addBond(null, atomB.id, fusedAtom.id, { order: 1 });
-    const forceBondLength = 30 * 1.3;
+    const forceBondLength = 30;
     const fusedForceX = 10 + forceBondLength;
     const fusedForceY = forceBondLength * Math.sqrt(3) / 2;
     const nodes = [
@@ -1585,7 +1662,7 @@ describe('createStructuralEditActions', () => {
     const forceOnlyOverlap = mol.addAtom(null, 'C');
     forceOnlyOverlap.x = 99;
     forceOnlyOverlap.y = 99;
-    const forceBondLength = 30 * 1.3;
+    const forceBondLength = 30;
     const forceOverlapPosition = {
       x: forceBondLength * 0.5,
       y: -forceBondLength * Math.sqrt(3) / 2
@@ -1655,7 +1732,7 @@ describe('createStructuralEditActions', () => {
     const storedCoordOverlap = mol.addAtom(null, 'C');
     storedCoordOverlap.x = 0.75;
     storedCoordOverlap.y = -1.299038105676658;
-    const forceBondLength = 30 * 1.3;
+    const forceBondLength = 30;
     const forceOverlapPosition = {
       x: forceBondLength * 0.5,
       y: -forceBondLength * Math.sqrt(3) / 2
@@ -1744,17 +1821,53 @@ describe('createStructuralEditActions', () => {
 
     assert.equal(result.performed, true);
     assert.equal(result.result.force.options.preserveView, true);
-    assert.equal(result.result.force.enableKeepInView, true);
+    assert.equal(result.result.force.options.restartSimulation, false);
+    assert.equal(result.result.force.enableKeepInView, false);
     const ringAtomIds = result.result.ringAtomIds;
     const patchPos = result.result.force.options.initialPatchPos;
     const firstPosition = patchPos.get(ringAtomIds[0]);
     const secondPosition = patchPos.get(ringAtomIds[1]);
-    assert.ok(Math.abs(Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) - 39) < 1e-6);
+    assert.ok(Math.abs(Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) - 30) < 1e-6);
 
     result.result.force.afterRender();
 
     const patchCall = calls.find(([kind]) => kind === 'patchNodePositions');
     assert.deepEqual(patchCall, ['patchNodePositions', patchPos, { alpha: 0, restart: false }]);
+  });
+
+  it('refits force-mode ring placement when committed ring atoms fall outside the viewport', () => {
+    const mol = new Molecule();
+    const { context } = makeBaseContext({
+      activeMol: mol,
+      mode: 'force',
+      zoomTransform: { x: 0, y: 0, k: 1 },
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const editContext = { mol, mode: 'force', reactionEdit: { restored: false }, resonanceReset: false };
+            assert.equal(options.preflight(editContext), true);
+            const result = mutate(editContext);
+            return { performed: true, result, mol };
+          }
+        },
+        plot: {
+          getSize: () => ({ width: 600, height: 400 })
+        },
+        constants: {
+          forceBondLength: 30,
+          scale: 40,
+          forceScale: 25
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.placeRingTemplate(6, 590, 200);
+
+    assert.equal(result.performed, true);
+    assert.equal(result.result.force.options.preserveView, false);
+    assert.equal(result.result.force.options.restartSimulation, true);
+    assert.equal(result.result.force.enableKeepInView, true);
   });
 
   it('cycles aromatic bond promotion through the extracted structural-edit action', () => {

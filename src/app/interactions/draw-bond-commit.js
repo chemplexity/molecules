@@ -10,10 +10,23 @@ import {
 } from './draw-bond-placement.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
+const FORCE_COMMIT_VIEWPORT_PAD = 12;
 
 function _currentLayoutBondLength(context) {
   const parsed = Number(context.options?.getRenderOptions?.().layoutBondLength);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LAYOUT_BOND_LENGTH;
+}
+
+function _screenCoordinate(transform, axis, value) {
+  if (axis === 'x' && typeof transform?.applyX === 'function') {
+    return transform.applyX(value);
+  }
+  if (axis === 'y' && typeof transform?.applyY === 'function') {
+    return transform.applyY(value);
+  }
+  const offset = Number.isFinite(Number(transform?.[axis])) ? Number(transform[axis]) : 0;
+  const scale = Number.isFinite(Number(transform?.k)) ? Number(transform.k) : 1;
+  return offset + value * scale;
 }
 
 /**
@@ -232,6 +245,32 @@ export function createDrawBondCommitActions(context) {
     };
   }
 
+  function forcePatchOutsideViewport(patchPos, pad = FORCE_COMMIT_VIEWPORT_PAD) {
+    if (!(patchPos instanceof Map) || patchPos.size === 0) {
+      return false;
+    }
+    const { width = 0, height = 0 } = context.plot.getSize?.() ?? {};
+    if (!(width > 0) || !(height > 0)) {
+      return false;
+    }
+    const transform = context.view.getZoomTransform?.() ?? { x: 0, y: 0, k: 1 };
+    return [...patchPos.values()].some(point => {
+      if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) {
+        return false;
+      }
+      const sx = _screenCoordinate(transform, 'x', point.x);
+      const sy = _screenCoordinate(transform, 'y', point.y);
+      return sx < pad || sx > width - pad || sy < pad || sy > height - pad;
+    });
+  }
+
+  function forceDrawRenderOptionsForPatch(structuralEdit, patchPos, options = {}) {
+    return forceDrawRenderOptions(structuralEdit, {
+      ...options,
+      ...(forcePatchOutsideViewport(patchPos) ? { preserveView: false } : {})
+    });
+  }
+
   function findExistingBond(mol, atomIdA, atomIdB) {
     return [...mol.bonds.values()].find(bond => {
       const [a1, a2] = bond.getAtomObjects(mol);
@@ -312,10 +351,14 @@ export function createDrawBondCommitActions(context) {
 
     if (mode === 'force') {
       context.renderers.updateForce(mol, {
-        ...forceDrawRenderOptions(structuralEdit, {
-          reactionRestored: reactionEdit?.restored,
-          initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
-        })
+        ...forceDrawRenderOptionsForPatch(
+          structuralEdit,
+          new Map([[newAtom.id, { x: ox, y: oy }]]),
+          {
+            reactionRestored: reactionEdit?.restored,
+            initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
+          }
+        )
       });
       context.force.enableKeepInView();
       return;
@@ -326,7 +369,8 @@ export function createDrawBondCommitActions(context) {
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
       reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
-      resonanceReset: structuralEdit.resonanceReset
+      resonanceReset: structuralEdit.resonanceReset,
+      zoomToFit: { pad: 0 }
     });
   }
 
@@ -540,7 +584,7 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { reactionRestored: reactionEdit?.restored, initialPatchPos: patchPos }));
+      context.renderers.updateForce(mol, forceDrawRenderOptionsForPatch(structuralEdit, patchPos, { reactionRestored: reactionEdit?.restored, initialPatchPos: patchPos }));
       context.force.enableKeepInView();
       return;
     }
@@ -568,7 +612,8 @@ export function createDrawBondCommitActions(context) {
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
       reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
-      resonanceReset: structuralEdit.resonanceReset
+      resonanceReset: structuralEdit.resonanceReset,
+      zoomToFit: { pad: 0 }
     });
   }
 
@@ -759,7 +804,7 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, forceDrawRenderOptions(structuralEdit, { reactionRestored: reactionEdit?.restored, initialPatchPos: patchPos }));
+      context.renderers.updateForce(mol, forceDrawRenderOptionsForPatch(structuralEdit, patchPos, { reactionRestored: reactionEdit?.restored, initialPatchPos: patchPos }));
       context.force.enableKeepInView();
       return;
     }
@@ -857,7 +902,8 @@ export function createDrawBondCommitActions(context) {
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
       reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
-      resonanceReset: structuralEdit.resonanceReset
+      resonanceReset: structuralEdit.resonanceReset,
+      zoomToFit: { pad: 0 }
     });
   }
 

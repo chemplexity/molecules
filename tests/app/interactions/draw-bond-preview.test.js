@@ -380,6 +380,20 @@ describe('createDrawBondPreviewActions', () => {
     assert.equal(g.select('text.draw-bond-dest-label').empty(), true);
   });
 
+  it('hides the temporary carbon label once a blank-space drag previews a line', () => {
+    const { actions, g } = makeActions({
+      drawBondElement: 'C'
+    });
+
+    actions.start(null, 200, 150);
+    actions.update([240, 150]);
+
+    assert.equal(g.select('g.draw-bond-preview').empty(), false);
+    assert.equal(g.select('line.draw-bond-preview-segment').empty(), false);
+    assert.equal(g.select('text.draw-bond-origin-label').attr('display'), 'none');
+    assert.equal(g.select('text.draw-bond-dest-label').empty(), true);
+  });
+
   it('waits for sufficient blank-space movement before showing a second atom preview', () => {
     const { actions, getDrawBondState, g } = makeActions({
       drawBondElement: 'O'

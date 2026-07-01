@@ -599,6 +599,21 @@ div.tooltip td:first-child {
   cursor: default;
 }
 
+.ring-template-atom-hover-target,
+.ring-template-bond-hover-target {
+  pointer-events: none;
+}
+
+.ring-template-hover-expanded .ring-template-atom-hover-target,
+body:has(#ring-template-btn.active) .ring-template-atom-hover-target {
+  pointer-events: all;
+}
+
+.ring-template-hover-expanded .ring-template-bond-hover-target,
+body:has(#ring-template-btn.active) .ring-template-bond-hover-target {
+  pointer-events: stroke;
+}
+
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 
 #descriptor-table,

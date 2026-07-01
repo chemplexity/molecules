@@ -1,6 +1,15 @@
 /** @module core/molecule-fragment */
 
 import { Molecule } from './Molecule.js';
+import { getImplicitHydrogenChargeAdjustment } from './Atom.js';
+import elements from '../data/elements.js';
+
+const HYDROGEN_FRAGMENT_PROPERTIES = Object.freeze({
+  ...elements.H,
+  charge: 0,
+  radical: 0,
+  aromatic: false
+});
 
 function clonePlain(value) {
   if (value == null || typeof value !== 'object') {
@@ -9,8 +18,13 @@ function clonePlain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function finiteOrNull(value) {
-  return Number.isFinite(value) ? value : null;
+  return finiteNumber(value);
 }
 
 function normalizeIdSet(ids) {
@@ -20,26 +34,30 @@ function normalizeIdSet(ids) {
   return new Set([...ids].filter(id => id != null).map(String));
 }
 
-function fragmentCoordinateAtoms(mol, atomIds) {
-  const atoms = [...atomIds].map(id => mol.atoms.get(id)).filter(atom => atom && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+function fragmentCoordinateAtoms(mol, atomIds, visibleAtomIds = null) {
+  const centeredAtomIds = visibleAtomIds?.size > 0 ? visibleAtomIds : atomIds;
+  const atoms = [...centeredAtomIds].map(id => mol.atoms.get(id)).filter(atom => atom && finiteNumber(atom.x) != null && finiteNumber(atom.y) != null);
   return atoms.length > 0 ? atoms : [...atomIds].map(id => mol.atoms.get(id)).filter(Boolean);
 }
 
-function computeCenter(mol, atomIds) {
-  const atoms = fragmentCoordinateAtoms(mol, atomIds);
+function computeCenter(mol, atomIds, visibleAtomIds = null) {
+  const atoms = fragmentCoordinateAtoms(mol, atomIds, visibleAtomIds);
   let x = 0;
   let y = 0;
   let z = 0;
   let zCount = 0;
   let count = 0;
   for (const atom of atoms) {
-    if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+    const atomX = finiteNumber(atom.x);
+    const atomY = finiteNumber(atom.y);
+    const atomZ = finiteNumber(atom.z);
+    if (atomX == null || atomY == null) {
       continue;
     }
-    x += atom.x;
-    y += atom.y;
-    if (Number.isFinite(atom.z)) {
-      z += atom.z;
+    x += atomX;
+    y += atomY;
+    if (atomZ != null) {
+      z += atomZ;
       zCount += 1;
     }
     count += 1;
@@ -49,6 +67,25 @@ function computeCenter(mol, atomIds) {
     y: count > 0 ? y / count : 0,
     z: zCount > 0 ? z / zCount : 0
   };
+}
+
+function computePositionCenter(atomIds, positions, visibleAtomIds = null) {
+  const centeredAtomIds = visibleAtomIds?.size > 0 ? visibleAtomIds : atomIds;
+  let x = 0;
+  let y = 0;
+  let count = 0;
+  for (const atomId of centeredAtomIds) {
+    const point = positions?.get?.(atomId);
+    const pointX = finiteNumber(point?.x);
+    const pointY = finiteNumber(point?.y);
+    if (pointX == null || pointY == null) {
+      continue;
+    }
+    x += pointX;
+    y += pointY;
+    count++;
+  }
+  return count > 0 ? { x: x / count, y: y / count } : null;
 }
 
 function addAttachedHiddenHydrogens(mol, atomIds, bondIds) {
@@ -110,7 +147,96 @@ function selectedFragmentIds(mol, options = {}) {
     }
   }
 
-  return { atomIds, bondIds, copyWholeMolecule };
+  return { atomIds, bondIds, copyWholeMolecule, selectedAtomIds };
+}
+
+function visibleFragmentAtomIds(mol, atomIds, selectedAtomIds) {
+  const visibleAtomIds = new Set();
+  for (const atomId of atomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    if (atom.visible !== false || selectedAtomIds?.has(atomId)) {
+      visibleAtomIds.add(atomId);
+    }
+  }
+  return visibleAtomIds;
+}
+
+function copiedBondOrderForAtom(mol, atomId, bondIds) {
+  let bondOrder = 0;
+  for (const bondId of bondIds) {
+    const bond = mol.bonds.get(bondId);
+    if (!bond || !bond.atoms.includes(atomId)) {
+      continue;
+    }
+    bondOrder += Math.floor(bond.properties?.order ?? 1);
+  }
+  return bondOrder;
+}
+
+function carbonHydrogenCapCount(mol, atomId, bondIds) {
+  const atom = mol.atoms.get(atomId);
+  if (!atom || atom.name !== 'C' || atom.isAromatic?.()) {
+    return 0;
+  }
+  const charge = atom.properties?.charge ?? 0;
+  const radical = atom.properties?.radical ?? 0;
+  const targetValence = 4 + getImplicitHydrogenChargeAdjustment(14, charge) - radical;
+  return Math.max(0, targetValence - copiedBondOrderForAtom(mol, atomId, bondIds));
+}
+
+function uniqueFragmentId(prefix, usedIds) {
+  let index = 1;
+  let id = `${prefix}${index}`;
+  while (usedIds.has(id)) {
+    index++;
+    id = `${prefix}${index}`;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function createCarbonHydrogenCaps(mol, atomIds, bondIds, enabled) {
+  if (!enabled) {
+    return { atoms: [], bonds: [] };
+  }
+  const usedAtomIds = new Set(atomIds);
+  const usedBondIds = new Set(bondIds);
+  const atoms = [];
+  const bonds = [];
+  for (const atomId of atomIds) {
+    const capCount = carbonHydrogenCapCount(mol, atomId, bondIds);
+    if (capCount === 0) {
+      continue;
+    }
+    const parent = mol.atoms.get(atomId);
+    for (let index = 0; index < capCount; index++) {
+      const hydrogenId = uniqueFragmentId(`__implicit_H_${atomId}_`, usedAtomIds);
+      const bondId = uniqueFragmentId(`__implicit_H_bond_${atomId}_`, usedBondIds);
+      atoms.push({
+        id: hydrogenId,
+        name: 'H',
+        properties: { ...HYDROGEN_FRAGMENT_PROPERTIES },
+        tags: [],
+        visible: false,
+        x: finiteOrNull(parent.x),
+        y: finiteOrNull(parent.y),
+        z: finiteOrNull(parent.z),
+        dx: 0,
+        dy: 0,
+        dz: 0
+      });
+      bonds.push({
+        id: bondId,
+        atoms: [atomId, hydrogenId],
+        properties: { order: 1 },
+        tags: []
+      });
+    }
+  }
+  return { atoms, bonds };
 }
 
 function remapBondProperties(properties, atomIdMap) {
@@ -128,35 +254,48 @@ function remapBondProperties(properties, atomIdMap) {
  * @param {Iterable<string>|null} [options.atomIds] - Selected atom ids. Empty with no bonds copies the whole molecule.
  * @param {Iterable<string>|null} [options.bondIds] - Selected bond ids.
  * @param {boolean} [options.includeInterSelectedBonds] - Includes bonds whose endpoints are both selected; defaults to true.
- * @param {boolean} [options.includeAttachedHiddenHydrogens] - Includes hidden hydrogens attached to copied heavy atoms; defaults to true.
+ * @param {boolean} [options.includeAttachedHiddenHydrogens] - Includes/caps hydrogens attached to copied heavy atoms; defaults to true.
+ * @param {Map<string, {x:number,y:number}>|null} [options.forceAtomPositions] - Optional force-layout atom positions to preserve for force paste previews.
  * @returns {object|null} Fragment payload, or null if no atoms are copyable.
  */
 export function createMoleculeFragment(mol, options = {}) {
   if (!mol?.atoms || !mol?.bonds) {
     return null;
   }
-  const { atomIds, bondIds, copyWholeMolecule } = selectedFragmentIds(mol, options);
+  const { atomIds, bondIds, copyWholeMolecule, selectedAtomIds } = selectedFragmentIds(mol, options);
   if (atomIds.size === 0) {
     return null;
   }
 
-  const center = computeCenter(mol, atomIds);
+  const visibleAtomIds = visibleFragmentAtomIds(mol, atomIds, selectedAtomIds);
+  const center = computeCenter(mol, atomIds, visibleAtomIds);
+  const forceAtomPositions = options.forceAtomPositions instanceof Map ? options.forceAtomPositions : null;
+  const forceCenter = computePositionCenter(atomIds, forceAtomPositions, visibleAtomIds);
+  const hydrogenCaps = createCarbonHydrogenCaps(mol, atomIds, bondIds, options.includeAttachedHiddenHydrogens !== false);
   const atoms = [...atomIds].map(id => {
     const atom = mol.atoms.get(id);
+    const forcePoint = forceAtomPositions?.get(atom.id) ?? null;
+    const atomX = finiteNumber(atom.x);
+    const atomY = finiteNumber(atom.y);
+    const atomZ = finiteNumber(atom.z);
+    const forceX = finiteNumber(forcePoint?.x);
+    const forceY = finiteNumber(forcePoint?.y);
     return {
       id: atom.id,
       name: atom.name,
       properties: clonePlain(atom.properties) ?? {},
       tags: [...(atom.tags ?? [])],
-      visible: atom.visible,
-      x: finiteOrNull(atom.x),
-      y: finiteOrNull(atom.y),
-      z: finiteOrNull(atom.z),
-      dx: Number.isFinite(atom.x) ? atom.x - center.x : 0,
-      dy: Number.isFinite(atom.y) ? atom.y - center.y : 0,
-      dz: Number.isFinite(atom.z) ? atom.z - center.z : 0
+      visible: visibleAtomIds.has(atom.id),
+      x: atomX,
+      y: atomY,
+      z: atomZ,
+      dx: atomX != null ? atomX - center.x : 0,
+      dy: atomY != null ? atomY - center.y : 0,
+      dz: atomZ != null ? atomZ - center.z : 0,
+      forceDx: forceCenter && forceX != null ? forceX - forceCenter.x : null,
+      forceDy: forceCenter && forceY != null ? forceY - forceCenter.y : null
     };
-  });
+  }).concat(hydrogenCaps.atoms);
 
   const bonds = [...bondIds].map(id => {
     const bond = mol.bonds.get(id);
@@ -166,7 +305,7 @@ export function createMoleculeFragment(mol, options = {}) {
       properties: clonePlain(bond.properties) ?? {},
       tags: [...(bond.tags ?? [])]
     };
-  });
+  }).concat(hydrogenCaps.bonds);
 
   const ringFills =
     typeof mol.getRingFills === 'function'
@@ -208,10 +347,13 @@ export function mergeMoleculeFragment(targetMol, fragment, options = {}) {
   if (!targetMol?.atoms || !Array.isArray(fragment?.atoms) || fragment.atoms.length === 0) {
     return null;
   }
+  const centerX = finiteNumber(options.center?.x) ?? finiteNumber(fragment.center?.x) ?? 0;
+  const centerY = finiteNumber(options.center?.y) ?? finiteNumber(fragment.center?.y) ?? 0;
+  const centerZ = finiteNumber(options.center?.z) ?? finiteNumber(fragment.center?.z) ?? 0;
   const center = {
-    x: Number.isFinite(options.center?.x) ? options.center.x : fragment.center?.x ?? 0,
-    y: Number.isFinite(options.center?.y) ? options.center.y : fragment.center?.y ?? 0,
-    z: Number.isFinite(options.center?.z) ? options.center.z : fragment.center?.z ?? 0
+    x: centerX,
+    y: centerY,
+    z: centerZ
   };
   const atomIdMap = new Map();
   const bondIdMap = new Map();
@@ -222,9 +364,9 @@ export function mergeMoleculeFragment(targetMol, fragment, options = {}) {
     const atom = targetMol.addAtom(null, sourceAtom.name, clonePlain(sourceAtom.properties) ?? {}, { recompute: false });
     atom.tags = [...(sourceAtom.tags ?? [])];
     atom.visible = sourceAtom.visible !== false;
-    atom.x = center.x + (Number.isFinite(sourceAtom.dx) ? sourceAtom.dx : 0);
-    atom.y = center.y + (Number.isFinite(sourceAtom.dy) ? sourceAtom.dy : 0);
-    atom.z = center.z + (Number.isFinite(sourceAtom.dz) ? sourceAtom.dz : 0);
+    atom.x = center.x + (finiteNumber(sourceAtom.dx) ?? 0);
+    atom.y = center.y + (finiteNumber(sourceAtom.dy) ?? 0);
+    atom.z = center.z + (finiteNumber(sourceAtom.dz) ?? 0);
     atomIdMap.set(sourceAtom.id, atom.id);
     addedAtomIds.push(atom.id);
   }

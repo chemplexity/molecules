@@ -711,6 +711,7 @@ export function createSelectionActions(context) {
     context.dom.selectButton.classList.toggle('active', selectMode);
     context.dom.drawBondButton.classList.toggle('active', drawBondMode);
     context.dom.ringTemplateButton?.classList?.toggle('active', ringTemplateMode);
+    context.dom.plotElement?.classList?.toggle?.('ring-template-hover-expanded', ringTemplateMode);
     context.dom.eraseButton.classList.toggle('active', eraseMode);
     syncPaintButtons(paintMode);
     syncPaintCursor(paintMode);

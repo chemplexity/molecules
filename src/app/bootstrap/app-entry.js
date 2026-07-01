@@ -310,6 +310,7 @@ const zoomTransformHelpers = createZoomTransformHelpers({
 
 const render2DHelpers = create2DRenderHelpers({
   d3,
+  g,
   svg,
   zoom,
   plotEl,
@@ -531,7 +532,7 @@ const scene2DRenderer = create2DSceneRenderer(
     handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB, options = {}) =>
       primitiveEventHandlers.handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB, options),
     handle2dBondDblClick: (event, atomIds) => primitiveEventHandlers.handle2dBondDblClick(event, atomIds),
-    handle2dBondMouseOver: (event, bond, a1, a2) => primitiveEventHandlers.handle2dBondMouseOver(event, bond, a1, a2),
+    handle2dBondMouseOver: (event, bond, a1, a2, anchorA, anchorB) => primitiveEventHandlers.handle2dBondMouseOver(event, bond, a1, a2, anchorA, anchorB),
     handle2dBondMouseMove: event => primitiveEventHandlers.handle2dBondMouseMove(event),
     handle2dBondMouseOut: () => primitiveEventHandlers.handle2dBondMouseOut(),
     handle2dAtomMouseDownDrawBond: (event, atomId) => primitiveEventHandlers.handle2dAtomMouseDownDrawBond(event, atomId),
@@ -1087,6 +1088,7 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     getRenderOptions,
     takeSnapshot: options => _takeSnapshot(options),
     updateModeChrome: nextMode => _updateModeChrome(nextMode),
+    getZoomTransform: () => d3.zoomTransform(svg.node()),
     restoreZoomTransformSnapshot: snapshot => _restoreZoomTransformSnapshot(snapshot),
     captureZoomTransformSnapshot: () => _captureZoomTransformSnapshot(),
     zoomTransformHelpers,
@@ -1249,6 +1251,8 @@ finalizeAppBootstrap(
     savePng2d,
     atomTooltipHtml,
     toSMILES,
-    toInChI
+    toInChI,
+    forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
+    scale: SCALE
   })
 );

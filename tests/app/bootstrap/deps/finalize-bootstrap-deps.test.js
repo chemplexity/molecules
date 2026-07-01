@@ -138,10 +138,13 @@ describe('finalize-bootstrap dependency builder', () => {
       savePng2d() {},
       atomTooltipHtml() {},
       toSMILES() {},
-      toInChI() {}
+      toInChI() {},
+      forceBondLength: 41,
+      scale: 60
     });
 
     assert.equal(deps.state.hasDrawBondState(), true);
+    assert.deepEqual(deps.constants, { forceBondLength: 41, scale: 60 });
     deps.state.setDrawBondHoverSuppressed(true);
     deps.history.takeSnapshot();
     assert.equal(drawBondHoverSuppressed, true);

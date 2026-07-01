@@ -167,7 +167,9 @@ export function createEditorActions(deps) {
         deps.view.sync2dDerivedState(mol);
       }
       twoDResult.preRender?.(context);
-      if (twoDResult.preserveGeometry && typeof deps.renderers.render2d === 'function') {
+      if (twoDResult.drawOnly) {
+        deps.renderers.draw2d();
+      } else if (twoDResult.preserveGeometry && typeof deps.renderers.render2d === 'function') {
         deps.renderers.render2d(mol, { preserveGeometry: true });
       } else {
         deps.renderers.draw2d();
@@ -177,7 +179,7 @@ export function createEditorActions(deps) {
           reactionRestored: reactionEdit?.restored,
           reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
           resonanceReset,
-          zoomToFit: !!twoDResult.zoomToFit
+          zoomToFit: twoDResult.zoomToFit ?? false
         });
       }
       twoDResult.postRender?.(context);

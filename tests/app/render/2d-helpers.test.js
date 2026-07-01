@@ -91,6 +91,9 @@ function makeHelpersContext({ mol = null, hCounts = new Map(), stereoMap = new M
         applyY: value => value
       })
     },
+    g: new FakeSelection(records, {
+      getBBox: () => null
+    }),
     svg,
     zoom,
     plotEl: {
@@ -331,6 +334,68 @@ describe('create2DRenderHelpers', () => {
 
     helpers.zoomToFitIf2d({ force: true });
     assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), true);
+  });
+
+  it('fits the 2D view when the rendered bounds are clipped even if atom centers are inside', () => {
+    const atom = makeAtom('a1', 'C', 0, 0);
+    const mol = {
+      atoms: new Map([[atom.id, atom]])
+    };
+    const { helpers, records } = makeHelpersContext({ mol });
+    helpers.zoomToFitIf2d({ pad: 0 });
+    assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), false);
+
+    const clippedRecords = [];
+    const clippedHelpers = create2DRenderHelpers({
+      d3: {
+        zoomIdentity: makeZoomIdentity(),
+        zoomTransform: () => ({
+          applyX: value => value,
+          applyY: value => value
+        })
+      },
+      g: new FakeSelection(clippedRecords, {
+        getBBox: () => ({ x: 560, y: 190, width: 80, height: 20 })
+      }),
+      svg: new FakeSelection(clippedRecords, { id: 'svg-node' }),
+      zoom: {
+        transform: function transform() {}
+      },
+      plotEl: {
+        clientWidth: 600,
+        clientHeight: 400
+      },
+      state: {
+        getMol: () => mol,
+        getHCounts: () => new Map(),
+        getCenterX: () => 0,
+        getCenterY: () => 0,
+        setDerivedState() {}
+      },
+      constants: {
+        scale: 60,
+        bondOffset2d: 7,
+        getFontSize: () => 14,
+        wedgeHalfWidth: 6,
+        wedgeDashes: 5
+      },
+      geometry: {
+        perpUnit(dx, dy) {
+          const len = Math.hypot(dx, dy) || 1;
+          return { nx: -dy / len, ny: dx / len };
+        },
+        shortenLine(x1, y1, x2, y2) {
+          return { x1, y1, x2, y2 };
+        },
+        secondaryDir: () => 1
+      },
+      stereo: {
+        pickStereoMap: () => new Map()
+      }
+    });
+
+    clippedHelpers.zoomToFitIf2d({ pad: 0 });
+    assert.equal(clippedRecords.some(([kind, name]) => kind === 'call' && name === 'transform'), true);
   });
 
   it('renders wedge and double bonds through the extracted draw helper', () => {

@@ -185,7 +185,35 @@ function fitPointsFor2dView(molecule, projectedCoords = new Map()) {
  */
 export function create2DSceneRenderer(ctx) {
   const DRAW_MODE_ATOM_HIT_PAD = 6;
+  const RING_TEMPLATE_ATOM_HIT_PAD = 12;
+  const RING_TEMPLATE_BOND_HIT_STROKE_WIDTH = 28;
+  const RING_TEMPLATE_BOND_PRIORITY_TRIM_PX = 10;
   let projectedHiddenStereoCoords = new Map();
+
+  function shortenedRingTemplateBondTarget(start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (!(length > 1)) {
+      return { start, end };
+    }
+    const trim = Math.min(RING_TEMPLATE_BOND_PRIORITY_TRIM_PX, length * 0.35);
+    if (trim <= 0 || trim * 2 >= length) {
+      return { start, end };
+    }
+    const ux = dx / length;
+    const uy = dy / length;
+    return {
+      start: {
+        x: start.x + ux * trim,
+        y: start.y + uy * trim
+      },
+      end: {
+        x: end.x - ux * trim,
+        y: end.y - uy * trim
+      }
+    };
+  }
 
   function hiddenStereoBondLength() {
     return (getRenderOptions().layoutBondLength ?? 1.5) * 0.75;
@@ -714,7 +742,7 @@ export function create2DSceneRenderer(ctx) {
         .attr('x2', p2.x)
         .attr('y2', p2.y)
         .attr('stroke', '#000')
-        .attr('stroke-opacity', 0)
+        .attr('stroke-opacity', 0.001)
         .attr(
           'stroke-width',
           (() => {
@@ -739,7 +767,7 @@ export function create2DSceneRenderer(ctx) {
           ctx.events.handle2dBondDblClick(event, bi.bond.atoms);
         })
         .on('mouseover', event => {
-          ctx.events.handle2dBondMouseOver(event, bi.bond, sa1, sa2);
+          ctx.events.handle2dBondMouseOver(event, bi.bond, sa1, sa2, p1, p2);
         })
         .on('mousemove', event => ctx.events.handle2dBondMouseMove(event))
         .on('mouseout', () => {
@@ -768,6 +796,33 @@ export function create2DSceneRenderer(ctx) {
         },
         true
       );
+      bg
+        .append('line')
+        .attr('class', 'ring-template-bond-hover-target')
+        .attr('x1', p1.x)
+        .attr('y1', p1.y)
+        .attr('x2', p2.x)
+        .attr('y2', p2.y)
+        .attr('stroke', '#000')
+        .attr('stroke-opacity', 0.001)
+        .attr('stroke-width', RING_TEMPLATE_BOND_HIT_STROKE_WIDTH)
+        .style('cursor', 'grab')
+        .on('mousedown', event => {
+          ctx.events.handle2dBondMouseDownRingTemplate(event, bi.bond.id, p1, p2, bi.bond.atoms);
+        })
+        .on('click', event => {
+          ctx.events.handle2dBondClick(event, bi.bond.id);
+        })
+        .on('dblclick', event => {
+          ctx.events.handle2dBondDblClick(event, bi.bond.atoms);
+        })
+        .on('mouseover', event => {
+          ctx.events.handle2dBondMouseOver(event, bi.bond, sa1, sa2, p1, p2);
+        })
+        .on('mousemove', event => ctx.events.handle2dBondMouseMove(event))
+        .on('mouseout', () => {
+          ctx.events.handle2dBondMouseOut();
+        });
     }
 
     ctx.helpers.drawReactionPreviewArrow2d(toSVGPt, atoms, mol);
@@ -829,9 +884,21 @@ export function create2DSceneRenderer(ctx) {
       const atomHit = hitGroup
         .append('circle')
         .attr('class', 'atom-hit')
-        .attr('r', Math.max(labelHalfW(label || symbol, fontSize), 10) + (ctx.overlay.getDrawBondMode() ? DRAW_MODE_ATOM_HIT_PAD : 0))
+        .attr(
+          'r',
+          Math.max(labelHalfW(label || symbol, fontSize), 10) + (ctx.overlay.getDrawBondMode() ? DRAW_MODE_ATOM_HIT_PAD : 0)
+        )
         .style('cursor', 'grab');
       _bind2dAtomEvents(atomHit, atom);
+
+      const ringTemplateAtomHit = hitGroup
+        .append('circle')
+        .attr('class', 'ring-template-atom-hover-target')
+        .attr('r', Math.max(labelHalfW(label || symbol, fontSize), 10) + RING_TEMPLATE_ATOM_HIT_PAD)
+        .attr('fill', 'transparent')
+        .attr('stroke', 'none')
+        .style('cursor', 'grab');
+      _bind2dAtomEvents(ringTemplateAtomHit, atom);
 
       const styledAtomColor = atomDisplayColor(atom, '2d');
       const styledAtomOpacity = atomDisplayOpacity(atom);
@@ -897,6 +964,40 @@ export function create2DSceneRenderer(ctx) {
           }
         })
       );
+    }
+
+    const ringTemplateBondPriorityLayer = ctx.g.append('g').attr('class', 'ring-template-bond-priority-targets');
+    for (const bi of bondInfos) {
+      const p1 = toSVGPt(bi.a1);
+      const p2 = toSVGPt(bi.a2);
+      const { start, end } = shortenedRingTemplateBondTarget(p1, p2);
+      ringTemplateBondPriorityLayer
+        .append('line')
+        .attr('class', 'ring-template-bond-hover-target ring-template-bond-priority-target')
+        .attr('x1', start.x)
+        .attr('y1', start.y)
+        .attr('x2', end.x)
+        .attr('y2', end.y)
+        .attr('stroke', '#000')
+        .attr('stroke-opacity', 0.001)
+        .attr('stroke-width', RING_TEMPLATE_BOND_HIT_STROKE_WIDTH)
+        .style('cursor', 'grab')
+        .on('mousedown', event => {
+          ctx.events.handle2dBondMouseDownRingTemplate(event, bi.bond.id, p1, p2, bi.bond.atoms);
+        })
+        .on('click', event => {
+          ctx.events.handle2dBondClick(event, bi.bond.id);
+        })
+        .on('dblclick', event => {
+          ctx.events.handle2dBondDblClick(event, bi.bond.atoms);
+        })
+        .on('mouseover', event => {
+          ctx.events.handle2dBondMouseOver(event, bi.bond, bi.a1, bi.a2, p1, p2);
+        })
+        .on('mousemove', event => ctx.events.handle2dBondMouseMove(event))
+        .on('mouseout', () => {
+          ctx.events.handle2dBondMouseOut();
+        });
     }
 
     if (showLonePairs) {

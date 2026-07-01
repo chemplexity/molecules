@@ -94,7 +94,7 @@ describe('interaction runtime bootstrap', () => {
         getFitCurrent2dView() {
           return function fitCurrent2dView() {};
         },
-        getZoomTransform() {},
+        getZoomTransform: () => ({ x: 10, y: 20, k: 0.5 }),
         setZoomTransform() {},
         makeZoomIdentity() {},
         syncStereoMap2d() {},
@@ -175,7 +175,7 @@ describe('interaction runtime bootstrap', () => {
           return null;
         },
         getForceNodes() {
-          return [];
+          return [{ id: 'C1', x: 12, y: 34 }];
         },
         get2DAtomById() {
           return null;
@@ -184,7 +184,7 @@ describe('interaction runtime bootstrap', () => {
           return [];
         },
         toSelectionSVGPt2d() {
-          return null;
+          return { x: 9, y: 8 };
         },
         get2DCenterX: () => 0,
         get2DCenterY: () => 0,
@@ -255,6 +255,9 @@ describe('interaction runtime bootstrap', () => {
     assert.equal(typeof runtime.primitiveEventHandlers.deps.paintStyleTargets, 'function');
     assert.equal(typeof runtime.primitiveEventHandlers.deps.placeRingTemplate, 'function');
     assert.equal(runtime.navigationActions.kind, 'navigation');
+    assert.deepEqual(runtime.clipboardActions.deps.getForceNodes(), [{ id: 'C1', x: 12, y: 34 }]);
+    assert.deepEqual(runtime.clipboardActions.deps.toSelectionSVGPt2d({ id: 'C1' }), { x: 9, y: 8 });
     assert.equal(runtime.navigationActions.deps.getLayoutBondLength(), 0.5);
+    assert.deepEqual(runtime.drawBondCommitActions.deps.getZoomTransform(), { x: 10, y: 20, k: 0.5 });
   });
 });

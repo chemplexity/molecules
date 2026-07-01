@@ -129,28 +129,28 @@ const BASE_REACTION_TEMPLATES = {
   },
   imineReduction: {
     name: 'Imine Reduction',
-    smirks: '[C;!$([C](=[N])[N,O,S]):1]=[N;!$([N]-[N,O,S]):2]>>[C:1][N:2]'
+    smirks: '[C+0;!$([C](=[N+0])[N,O,S]):1]=[N+0;!$([N]-[N,O,S]):2]>>[C:1][N:2]'
   },
   alkeneHydrogenation: {
     name: 'Alkene Hydrogenation',
     smirks: '[C+0;!$([C]-[*+,-]):1]=[C+0;!$([C]-[*+,-]):2]>>[C:1][C:2]'
   },
-  alkynePartialReduction: { name: 'Alkyne Partial Reduction', smirks: '[C:1]#[C:2]>>[C:1]=[C:2]' },
-  alkyneFullReduction: { name: 'Alkyne Full Reduction', smirks: '[C:1]#[C:2]>>[C:1][C:2]' },
+  alkynePartialReduction: { name: 'Alkyne Partial Reduction', smirks: '[C+0;!$([C]-[*+,-]):1]#[C+0;!$([C]-[*+,-]):2]>>[C:1]=[C:2]' },
+  alkyneFullReduction: { name: 'Alkyne Full Reduction', smirks: '[C+0;!$([C]-[*+,-]):1]#[C+0;!$([C]-[*+,-]):2]>>[C:1][C:2]' },
   benzylicOxidation: { name: 'Benzylic Oxidation', smirks: '[c:2][CH3:1]>>[c:2][C:1]=O' },
 
   // ---------------------------------------------------------------------------
   // Substitution / functional-group interconversion
   // ---------------------------------------------------------------------------
 
-  dehalogenation: { name: 'Dehalogenation', smirks: '[C:1][F,Cl,Br,I]>>[C:1]' },
+  dehalogenation: { name: 'Dehalogenation', smirks: '[C+0:1][F+0,Cl+0,Br+0,I+0]>>[C:1]' },
   halideHydrolysis: { name: 'Halide Hydrolysis', smirks: '[C:1][Cl,Br,I:2]>>[C:1][OH:2]' },
   arylHalideHydrolysis: { name: 'Aryl Halide Hydrolysis', smirks: '[c:1][Cl,Br,I:2]>>[c:1][OH:2]' },
   alcoholHalogenation: {
     name: 'Alcohol Halogenation',
     smirks: '[C;X4:1][OH:2]>>[C:1][Cl:2]'
   },
-  nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C:1]#[N:2]>>[C:1]=[N:2]' },
+  nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C+0:1]#[N+0:2]>>[C:1]=[N:2]' },
   etherCleavage: { name: 'Ether Cleavage', smirks: '[C;X4;!$(C=O):1][O:2][C;X4;!$(C=O):3]>>[C:1][OH:2].[C:3]O' },
 
   // ---------------------------------------------------------------------------
@@ -176,9 +176,9 @@ const BASE_REACTION_TEMPLATES = {
     name: 'Amine Alkylation',
     smirks: '[C;X4&(H2,H3):1][Cl:2].[N+0;!H0;!$([N]-[C](=O)):3]>>[C:1][N+0:3].[ClH0-:2]'
   },
-  imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C:1]=[N:2]>>[C:1]=O.[N:2]' },
-  nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C:1]#[N:2]>>[C:1](=O)[N:2]' },
-  nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C:1]#[N:2]>>[C:1](=O)O.[N:2]' },
+  imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C+0;!$([C](=[N+0])[N,O,S]):1]=[N+0;!$([N]-[N,O,S]):2]>>[C:1]=O.[N:2]' },
+  nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C+0:1]#[N+0:2]>>[C:1](=O)[N:2]' },
+  nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C+0:1]#[N+0:2]>>[C:1](=O)O.[N:2]' },
   lactoneHydrolysis: { name: 'Lactone Hydrolysis', smirks: '[C;r:1](=[O:2])[O;r:3][C:4]>>[C:1](=[O:2])[OH:3].[C:4]O' },
   lactamHydrolysis: { name: 'Lactam Hydrolysis', smirks: '[C;r:1](=[O:2])[N;r:3]>>[C:1](=[O:2])O.[N:3]' },
   acidChlorideHydrolysis: { name: 'Acid Chloride Hydrolysis', smirks: '[C:1](=[O:2])[Cl:3]>>[C:1](=[O:2])[OH:3]' },
@@ -218,7 +218,7 @@ const BASE_REACTION_TEMPLATES = {
 
   dielsAlder: {
     name: 'Diels-Alder [4+2]',
-    smirks: '[C:1]=[C:2]-[C:3]=[C:4].[C:5]=[C:6]>>[C:1]1[C:2]=[C:3][C:4][C:5][C:6]1'
+    smirks: '[C+0:1]=[C+0:2]-[C+0:3]=[C+0:4].[C+0:5]=[C+0:6]>>[C:1]1[C:2]=[C:3][C:4][C:5][C:6]1'
   }
 };
 
@@ -290,7 +290,7 @@ const REACTION_TEMPLATE_METADATA = {
       variant({ id: 'h2-pd-c', label: 'H2, Pd/C', role: 'alternative', reagents: ['H2'], catalysts: ['Pd/C'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: '1 atm H2' } })
     ],
     notes: ['Useful for reductive amination-style imine reduction.'],
-    limitations: ['The template does not represent imine formation or equilibrium with carbonyl precursors.']
+    limitations: ['The SMIRKS is limited to neutral imine C=N centers.', 'The template does not represent imine formation or equilibrium with carbonyl precursors.']
   },
   alkeneHydrogenation: {
     category: CATEGORY.oxidationReduction,
@@ -339,7 +339,7 @@ const REACTION_TEMPLATE_METADATA = {
     byproducts: [],
     selectivity: selectivity({ stereochemistry: 'Lindlar gives Z (cis), dissolving metal gives E (trans); E/Z outcome not encoded in product SMIRKS' }),
     notes: ['The template stops at the alkene oxidation state.'],
-    limitations: ['No E/Z stereochemical outcome is represented.']
+    limitations: ['The SMIRKS is limited to neutral alkyne carbons and skips alkynes directly adjacent to charged atoms.', 'No E/Z stereochemical outcome is represented.']
   },
   alkyneFullReduction: {
     category: CATEGORY.oxidationReduction,
@@ -349,7 +349,7 @@ const REACTION_TEMPLATE_METADATA = {
       variant({ id: 'h2-pt', label: 'H2, Pt', role: 'alternative', reagents: ['H2'], catalysts: ['Pt'], solvents: ['EtOH'], conditions: { temperature: '25 °C', pressure: 'H2' } })
     ],
     notes: ['Represents complete catalytic hydrogenation of an alkyne.'],
-    limitations: ['Does not model intermediate alkene accumulation.']
+    limitations: ['The SMIRKS is limited to neutral alkyne carbons and skips alkynes directly adjacent to charged atoms.', 'Does not model intermediate alkene accumulation.']
   },
   benzylicOxidation: {
     category: CATEGORY.oxidationReduction,
@@ -389,7 +389,7 @@ const REACTION_TEMPLATE_METADATA = {
     byproducts: ['halide-containing reagent products'],
     selectivity: selectivity({ chemoselectivity: 'strongly substrate- and halide-dependent' }),
     notes: ['The template removes F, Cl, Br, or I from carbon and replaces it implicitly with hydrogen.'],
-    limitations: ['Actual reactivity varies strongly by halide, substrate class, and competing elimination.']
+    limitations: ['The SMIRKS is limited to neutral carbon-halogen centers.', 'Actual reactivity varies strongly by halide, substrate class, and competing elimination.']
   },
   halideHydrolysis: {
     category: CATEGORY.substitution,
@@ -458,7 +458,7 @@ const REACTION_TEMPLATE_METADATA = {
       })
     ],
     notes: ['Represents partial reduction at the nitrile carbon-nitrogen bond.'],
-    limitations: ['Many practical conditions continue to aldehydes or amines after workup; the imine product is a formal template product.']
+    limitations: ['The SMIRKS is limited to neutral nitrile C#N centers.', 'Many practical conditions continue to aldehydes or amines after workup; the imine product is a formal template product.']
   },
   etherCleavage: {
     category: CATEGORY.substitution,
@@ -583,7 +583,7 @@ const REACTION_TEMPLATE_METADATA = {
       variant({ id: 'water', label: 'H2O', role: 'alternative', reagents: ['H2O'], solvents: ['water'], conditions: { temperature: '25 °C' } })
     ],
     notes: ['Represents hydrolysis of an imine C=N bond.'],
-    limitations: ['Equilibrium and amine protonation states are not modeled.']
+    limitations: ['The SMIRKS is limited to neutral imine C=N centers.', 'Equilibrium and amine protonation states are not modeled.']
   },
   nitrileHydrolysisToAmide: {
     category: CATEGORY.acylChemistry,
@@ -593,7 +593,7 @@ const REACTION_TEMPLATE_METADATA = {
       variant({ id: 'h2o2-base', label: 'H2O2, base', role: 'alternative', reagents: ['H2O2', 'NaOH'], solvents: ['water'], conditions: { temperature: '25 °C', pH: 'basic' } })
     ],
     notes: ['Represents partial hydrolysis of a nitrile to an amide.'],
-    limitations: ['Further hydrolysis to acid competes under stronger conditions.']
+    limitations: ['The SMIRKS is limited to neutral nitrile C#N centers.', 'Further hydrolysis to acid competes under stronger conditions.']
   },
   nitrileHydrolysisToAcid: {
     category: CATEGORY.acylChemistry,
@@ -610,7 +610,7 @@ const REACTION_TEMPLATE_METADATA = {
       })
     ],
     notes: ['Represents complete hydrolysis of a nitrile to the acid oxidation state.'],
-    limitations: ['Amide intermediates and salt forms are not represented.']
+    limitations: ['The SMIRKS is limited to neutral nitrile C#N centers.', 'Amide intermediates and salt forms are not represented.']
   },
   lactoneHydrolysis: {
     category: CATEGORY.acylChemistry,
@@ -810,7 +810,7 @@ const REACTION_TEMPLATE_METADATA = {
       chemoselectivity: 'requires an eligible diene and dienophile match'
     }),
     notes: ['Represents a formal [4+2] cycloaddition between a diene and dienophile.'],
-    limitations: ['Regioselectivity, endo/exo selectivity, and stereochemistry are not encoded.']
+    limitations: ['The SMIRKS is limited to neutral diene and dienophile carbons.', 'Regioselectivity, endo/exo selectivity, and stereochemistry are not encoded.']
   }
 };
 

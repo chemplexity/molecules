@@ -33,7 +33,7 @@ function selectorPartMatches(selection, selector) {
   return classParts.every(className => classes.includes(className));
 }
 
-function makeSelection(node = null) {
+function makeSelection(node = null, parentChildren = null) {
   const handlers = new Map();
   const attrs = new Map();
   const styles = new Map();
@@ -77,7 +77,7 @@ function makeSelection(node = null) {
         getScreenCTM() {
           return null;
         }
-      });
+      }, children);
       child.tagName = tagName;
       children.push(child);
       return child;
@@ -90,7 +90,7 @@ function makeSelection(node = null) {
         getScreenCTM() {
           return null;
         }
-      });
+      }, children);
       child.tagName = tagName;
       child.insertBeforeSelector = beforeSelector;
       const beforeIndex = children.findIndex(existing => beforeSelector.split(',').some(selector => selectorPartMatches(existing, selector)));
@@ -105,6 +105,13 @@ function makeSelection(node = null) {
       styles.set(name, value);
       if (selectionNode.style) {
         selectionNode.style[name] = value ?? '';
+      }
+      return this;
+    },
+    remove() {
+      const index = parentChildren?.indexOf?.(this) ?? -1;
+      if (index >= 0) {
+        parentChildren.splice(index, 1);
       }
       return this;
     },
@@ -126,6 +133,10 @@ function makeHitElement(kind, id, options = {}) {
             ? ['link']
             : kind === 'force-separator'
               ? ['separator']
+              : kind === 'ring-template-atom'
+                ? ['ring-template-atom-hover-target']
+                : kind === 'ring-template-bond'
+                  ? ['ring-template-bond-hover-target']
               : ['bond-hover-target'];
   const ownerSVGElement = {
     createSVGPoint() {
@@ -569,8 +580,15 @@ describe('initGestureInteractions', () => {
     });
   });
 
-  it('places the selected ring template on a blank-space click', () => {
-    const { context, svg, calls, state } = makeBaseContext();
+  it('previews the selected ring template on mousedown and commits on mouseup', () => {
+    const { context, svg, calls, state, listeners } = makeBaseContext({
+      actions: {
+        placeRingTemplate(size, x, y, options) {
+          calls.push(['placeRingTemplate', size, x, y, options]);
+          return { performed: true };
+        }
+      }
+    });
     state.setRingTemplateMode(true);
     state.setRingTemplateSize(5);
     initGestureInteractions(context);
@@ -586,11 +604,370 @@ describe('initGestureInteractions', () => {
       }
     });
 
-    assert.deepEqual(calls, [
+    assert.deepEqual(calls, [['preventDefault'], ['stopPropagation']]);
+
+    listeners.get('mouseup')({
+      button: 0,
+      target: { closest: () => null }
+    });
+
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2][0], 'placeRingTemplate');
+    assert.equal(calls[2][1], 5);
+    assert.equal(calls[2][2], 12);
+    assert.equal(calls[2][3], 34);
+    assert.ok(Math.abs(calls[2][4].ringForceStartAngle + Math.PI / 2) < 1e-12);
+    assert.ok(Math.abs(calls[2][4].ringStartAngle - Math.PI / 2) < 1e-12);
+  });
+
+  it('shows a free ring template preview on mousemove before mousedown and follows the pointer', () => {
+    let pointerPoint = [12, 34];
+    const { context, g, state, listeners } = makeBaseContext({
+      pointer: () => pointerPoint
+    });
+    const previewCenter = preview => {
+      const points = preview.children
+        .filter(child => child.tagName === 'line')
+        .flatMap(line => [
+          { x: Number(line.attrs.get('x1')), y: Number(line.attrs.get('y1')) },
+          { x: Number(line.attrs.get('x2')), y: Number(line.attrs.get('y2')) }
+        ]);
+      return points.reduce(
+        (sum, point) => ({
+          x: sum.x + point.x / points.length,
+          y: sum.y + point.y / points.length
+        }),
+        { x: 0, y: 0 }
+      );
+    };
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+
+    let preview = g.children.find(child => child.attrs.get('class') === 'ring-template-preview-layer');
+    assert.ok(preview);
+    let center = previewCenter(preview);
+    assert.ok(Math.abs(center.x - 12) < 1e-9);
+    assert.ok(Math.abs(center.y - 34) < 1e-9);
+
+    pointerPoint = [82, 91];
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+
+    const previews = g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer');
+    assert.equal(previews.length, 1);
+    preview = previews[0];
+    center = previewCenter(preview);
+    assert.ok(Math.abs(center.x - 82) < 1e-9);
+    assert.ok(Math.abs(center.y - 91) < 1e-9);
+  });
+
+  it('shows the free ring template mouse preview during reaction previews', () => {
+    const { context, svg, g, calls, state, listeners } = makeBaseContext({
+      overlays: {
+        hasReactionPreview: () => true,
+        hasActiveResonanceView: () => false
+      },
+      actions: {
+        placeRingTemplate(size, x, y, options) {
+          calls.push(['placeRingTemplate', size, x, y, options]);
+          return { performed: true };
+        }
+      }
+    });
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+
+    assert.equal(g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer').length, 1);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: { closest: () => null }
+    });
+
+    assert.equal(calls.some(call => call[0] === 'placeRingTemplate'), true);
+  });
+
+  it('suppresses the free ring template preview over expanded ring atom and bond hover targets', () => {
+    const { context, g, state, listeners } = makeBaseContext();
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+    assert.equal(g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer').length, 1);
+
+    listeners.get('mousemove')({
+      target: makeHitElement('ring-template-atom', 'a1'),
+      ctrlKey: false,
+      metaKey: false
+    });
+    assert.equal(g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer').length, 0);
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+    assert.equal(g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer').length, 1);
+
+    listeners.get('mousemove')({
+      target: makeHitElement('ring-template-bond', 'b1'),
+      ctrlKey: false,
+      metaKey: false
+    });
+    assert.equal(g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer').length, 0);
+  });
+
+  it('does not commit a free ring template hover preview until mousedown starts placement', () => {
+    const { context, calls, state, listeners } = makeBaseContext({
+      actions: {
+        placeRingTemplate(size, x, y, options) {
+          calls.push(['placeRingTemplate', size, x, y, options]);
+          return { performed: true };
+        }
+      }
+    });
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: { closest: () => null }
+    });
+
+    assert.deepEqual(calls, []);
+  });
+
+  it('sizes the free 2D ring template preview from the committed layout bond length', () => {
+    const { context, svg, g, state } = makeBaseContext({
+      options: {
+        getRenderOptions: () => ({ layoutBondLength: 0.5 })
+      },
+      constants: {
+        scale: 40
+      }
+    });
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const preview = g.children.find(child => child.attrs.get('class') === 'ring-template-preview-layer');
+    assert.ok(preview);
+    const firstLine = preview.children.find(child => child.tagName === 'line');
+    assert.ok(firstLine);
+    const x1 = Number(firstLine.attrs.get('x1'));
+    const y1 = Number(firstLine.attrs.get('y1'));
+    const x2 = Number(firstLine.attrs.get('x2'));
+    const y2 = Number(firstLine.attrs.get('y2'));
+    assert.ok(Math.abs(Math.hypot(x2 - x1, y2 - y1) - 20) < 1e-9);
+  });
+
+  it('sizes the free force ring template preview from the configured layout bond length', () => {
+    const { context, svg, g, state } = makeBaseContext({
+      options: {
+        getRenderOptions: () => ({ layoutBondLength: 0.5 })
+      },
+      constants: {
+        forceBondLength: 30
+      }
+    });
+    state.setMode('force');
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const preview = g.children.find(child => child.attrs.get('class') === 'ring-template-preview-layer');
+    assert.ok(preview);
+    const firstLine = preview.children.find(child => child.tagName === 'line');
+    assert.ok(firstLine);
+    const circles = preview.children.filter(child => child.tagName === 'circle');
+    assert.equal(circles.length, 6);
+    assert.equal(circles.every(circle => String(circle.attrs.get('class')).includes('node')), true);
+    const x1 = Number(firstLine.attrs.get('x1'));
+    const y1 = Number(firstLine.attrs.get('y1'));
+    const x2 = Number(firstLine.attrs.get('x2'));
+    const y2 = Number(firstLine.attrs.get('y2'));
+    assert.ok(Math.abs(Math.hypot(x2 - x1, y2 - y1) - 10) < 1e-9);
+  });
+
+  it('previews standalone benzene templates with alternating double bonds', () => {
+    const { context, svg, g, state } = makeBaseContext();
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize('benzene');
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const preview = g.children.find(child => child.attrs.get('class') === 'ring-template-preview-layer');
+    assert.ok(preview);
+    const lines = preview.children.filter(child => child.tagName === 'line');
+    const doubleLines = lines.filter(child => String(child.attrs.get('class')).includes('ring-template-preview-double-bond'));
+    assert.equal(lines.length, 9);
+    assert.equal(doubleLines.length, 3);
+  });
+
+  it('uses force link styling for every standalone benzene preview bond stroke in force mode', () => {
+    const { context, svg, g, state } = makeBaseContext();
+    state.setMode('force');
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize('benzene');
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const preview = g.children.find(child => child.attrs.get('class') === 'ring-template-preview-layer');
+    assert.ok(preview);
+    const bondLines = preview.children.filter(child => child.tagName === 'line');
+    assert.equal(bondLines.length, 9);
+    assert.equal(bondLines.every(line => String(line.attrs.get('class')).split(/\s+/).includes('link')), true);
+  });
+
+  it('rotates the free ring template preview in snapped increments while dragging and commits the preview angle on mouseup', () => {
+    let pointerPoint = [12, 34];
+    const { context, svg, calls, state, listeners } = makeBaseContext({
+      pointer: () => pointerPoint,
+      actions: {
+        placeRingTemplate(size, x, y, options) {
+          calls.push(['placeRingTemplate', size, x, y, options]);
+          return { performed: true };
+        }
+      }
+    });
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(5);
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {
+        calls.push(['preventDefault']);
+      },
+      stopPropagation() {
+        calls.push(['stopPropagation']);
+      }
+    });
+
+    pointerPoint = [52, 54];
+    listeners.get('mousemove')({
+      button: 0,
+      target: { closest: () => null },
+      ctrlKey: false,
+      metaKey: false
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: { closest: () => null }
+    });
+
+    assert.equal(calls.length, 3);
+    assert.deepEqual(calls.slice(0, 2), [
       ['preventDefault'],
-      ['stopPropagation'],
-      ['placeRingTemplate', 5, 12, 34]
+      ['stopPropagation']
     ]);
+    assert.equal(calls[2][0], 'placeRingTemplate');
+    assert.equal(calls[2][1], 5);
+    assert.equal(calls[2][2], 12);
+    assert.equal(calls[2][3], 34);
+    assert.ok(Math.abs(calls[2][4].ringForceStartAngle - Math.PI / 6) < 1e-12);
+    assert.ok(Math.abs(calls[2][4].ringStartAngle + Math.PI / 6) < 1e-12);
+  });
+
+  it('allows free ring template preview rotation while dragging with a modifier key', () => {
+    let pointerPoint = [12, 34];
+    const { context, svg, calls, state, listeners } = makeBaseContext({
+      pointer: () => pointerPoint,
+      actions: {
+        placeRingTemplate(size, x, y, options) {
+          calls.push(['placeRingTemplate', size, x, y, options]);
+          return { performed: true };
+        }
+      }
+    });
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(5);
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.ring-template')({
+      button: 0,
+      target: { closest: () => null },
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    pointerPoint = [52, 54];
+    listeners.get('mousemove')({
+      button: 0,
+      target: { closest: () => null },
+      ctrlKey: true,
+      metaKey: false
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: { closest: () => null }
+    });
+
+    const freeAngle = Math.atan2(20, 40);
+    assert.equal(calls[0][0], 'placeRingTemplate');
+    assert.ok(Math.abs(calls[0][4].ringForceStartAngle - freeAngle) < 1e-12);
+    assert.ok(Math.abs(calls[0][4].ringStartAngle + freeAngle) < 1e-12);
   });
 
   it('does not place a free ring when ring-template mousedown starts on a rendered force bond stroke', () => {
@@ -614,6 +991,29 @@ describe('initGestureInteractions', () => {
     });
 
     assert.deepEqual(calls, []);
+  });
+
+  it('does not start a free ring preview when ring-template mousedown starts on expanded ring hover targets', () => {
+    const { context, svg, calls, state, g } = makeBaseContext();
+    state.setRingTemplateMode(true);
+    state.setRingTemplateSize(6);
+    initGestureInteractions(context);
+
+    for (const kind of ['ring-template-atom', 'ring-template-bond']) {
+      svg.handlers.get('mousedown.ring-template')({
+        button: 0,
+        target: makeHitElement(kind, kind),
+        preventDefault() {
+          calls.push(['preventDefault', kind]);
+        },
+        stopPropagation() {
+          calls.push(['stopPropagation', kind]);
+        }
+      });
+    }
+
+    assert.deepEqual(calls, []);
+    assert.equal(g.children.filter(child => child.attrs.get('class') === 'ring-template-preview-layer').length, 0);
   });
 
   it('selects the whole molecule on blank-space double-click and enters select mode', () => {

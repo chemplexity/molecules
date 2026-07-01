@@ -17,10 +17,40 @@ import {
   singleBondWidth,
   strokeColor
 } from '../render/helpers.js';
+import { convertLineCoordsToForceLayout, forceLayoutBondScale, FORCE_LAYOUT_H_BOND_LENGTH } from '../render/force-helpers.js';
 import { chargeBadgeMetrics, formatChargeLabel, labelHalfH, labelHalfW } from '../../layout/mol2d-helpers.js';
+
+const PASTE_VIEWPORT_PADDING = 2;
 
 function visibleFragmentAtoms(fragment) {
   return (fragment?.atoms ?? []).filter(atom => atom.visible !== false);
+}
+
+function forcePreviewAtoms(fragment) {
+  return fragment?.atoms ?? [];
+}
+
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function isStereoHydrogen(atom, model) {
+  if (atom?.name !== 'H') {
+    return false;
+  }
+  return (model.bondsByAtomId.get(atom.id) ?? []).some(bond => {
+    const displayAs = bond?.properties?.display?.as ?? null;
+    return displayAs === 'wedge' || displayAs === 'dash';
+  });
+}
+
+function suppressHydrogenIn2dPreview(atom, model) {
+  return atom?.name === 'H' && !isStereoHydrogen(atom, model);
+}
+
+function visible2dPreviewAtoms(fragment, model) {
+  return visibleFragmentAtoms(fragment).filter(atom => !suppressHydrogenIn2dPreview(atom, model));
 }
 
 function fragmentCenterLocal(context, mode, center) {
@@ -42,6 +72,34 @@ function localToMoleculeCenter(context, point) {
     x: context.view.get2DCenterX() + (point.x - width / 2) / scale,
     y: context.view.get2DCenterY() - (point.y - height / 2) / scale
   };
+}
+
+function rendered2dAtomPositions(context, mol) {
+  if (!mol?.atoms || typeof context.view.get2DAtomPoint !== 'function') {
+    return null;
+  }
+  const positions = new Map();
+  for (const atom of mol.atoms.values()) {
+    const point = context.view.get2DAtomPoint(atom);
+    const x = finiteNumber(point?.x);
+    const y = finiteNumber(point?.y);
+    if (x != null && y != null) {
+      positions.set(atom.id, { x, y });
+    }
+  }
+  return positions.size > 0 ? positions : null;
+}
+
+function converted2dForceAtomPositions(context, mol) {
+  if (!mol?.atoms) {
+    return null;
+  }
+  const layoutBondLength = finiteNumber(getRenderOptions().layoutBondLength) ?? 1.5;
+  const converted = convertLineCoordsToForceLayout(mol, {
+    bondLength: layoutBondLength,
+    hydrogenMode: 'stable'
+  });
+  return converted.coords?.size > 0 ? converted.coords : null;
 }
 
 function fragmentAtomCharge(atom) {
@@ -66,25 +124,105 @@ function otherAtomId(bond, atomId) {
   return bond.atoms?.[0] === atomId ? bond.atoms?.[1] : bond.atoms?.[0];
 }
 
+function atomHasForceOffset(atom) {
+  return finiteNumber(atom?.forceDx) != null && finiteNumber(atom?.forceDy) != null;
+}
+
+function currentForceHydrogenDistance() {
+  const layoutBondLength = finiteNumber(getRenderOptions().layoutBondLength) ?? 1.5;
+  return FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(layoutBondLength);
+}
+
+function normalizeAngle(angle) {
+  const twoPi = Math.PI * 2;
+  return ((angle % twoPi) + twoPi) % twoPi;
+}
+
+function chooseOpenHydrogenAngles(occupiedAngles, count) {
+  if (count <= 0) {
+    return [];
+  }
+  if (occupiedAngles.length === 0) {
+    return Array.from({ length: count }, (_, index) => -Math.PI / 2 + (Math.PI * 2 * index) / count);
+  }
+  const sorted = occupiedAngles.map(normalizeAngle).sort((a, b) => a - b);
+  let bestStart = sorted[0];
+  let bestGap = 0;
+  for (let index = 0; index < sorted.length; index++) {
+    const start = sorted[index];
+    const end = index === sorted.length - 1 ? sorted[0] + Math.PI * 2 : sorted[index + 1];
+    const gap = end - start;
+    if (gap > bestGap) {
+      bestGap = gap;
+      bestStart = start;
+    }
+  }
+  return Array.from({ length: count }, (_, index) => bestStart + (bestGap * (index + 1)) / (count + 1));
+}
+
+function placeMissingForceHydrogens(fragment, model, pointByAtomId) {
+  const groups = new Map();
+  for (const atom of forcePreviewAtoms(fragment)) {
+    if (atom.name !== 'H' || atomHasForceOffset(atom)) {
+      continue;
+    }
+    const bonds = model.bondsByAtomId.get(atom.id) ?? [];
+    if (bonds.length !== 1) {
+      continue;
+    }
+    const parentId = otherAtomId(bonds[0], atom.id);
+    const parentAtom = model.atomById.get(parentId);
+    if (!parentAtom || parentAtom.name === 'H' || !pointByAtomId.has(parentId)) {
+      continue;
+    }
+    if (!groups.has(parentId)) {
+      groups.set(parentId, []);
+    }
+    groups.get(parentId).push(atom);
+  }
+
+  const distance = currentForceHydrogenDistance();
+  for (const [parentId, hydrogens] of groups) {
+    const parentPoint = pointByAtomId.get(parentId);
+    const groupIds = new Set(hydrogens.map(atom => atom.id));
+    const occupiedAngles = (model.bondsByAtomId.get(parentId) ?? [])
+      .map(bond => otherAtomId(bond, parentId))
+      .filter(atomId => atomId && !groupIds.has(atomId) && pointByAtomId.has(atomId))
+      .map(atomId => {
+        const point = pointByAtomId.get(atomId);
+        return Math.atan2(point.y - parentPoint.y, point.x - parentPoint.x);
+      });
+    const angles = chooseOpenHydrogenAngles(occupiedAngles, hydrogens.length);
+    hydrogens.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    hydrogens.forEach((atom, index) => {
+      const angle = angles[index] ?? -Math.PI / 2;
+      pointByAtomId.set(atom.id, {
+        x: parentPoint.x + Math.cos(angle) * distance,
+        y: parentPoint.y + Math.sin(angle) * distance
+      });
+    });
+  }
+}
+
 function heavyNeighborAtoms(atom, model) {
   return (model.bondsByAtomId.get(atom.id) ?? [])
     .map(bond => model.atomById.get(otherAtomId(bond, atom.id)))
     .filter(neighbor => neighbor && neighbor.name !== 'H');
 }
 
-function hiddenHydrogenCount(atom, model) {
+function hiddenHydrogenCount(atom, model, options = {}) {
   return (model.bondsByAtomId.get(atom.id) ?? [])
     .map(bond => model.atomById.get(otherAtomId(bond, atom.id)))
-    .filter(neighbor => neighbor?.name === 'H' && neighbor.visible === false).length;
+    .filter(neighbor => neighbor?.name === 'H' && (neighbor.visible === false || (options.suppress2dHydrogens === true && suppressHydrogenIn2dPreview(neighbor, model)))).length;
 }
 
-function previewAtomLabel(atom, model, pointByAtomId) {
+function previewAtomLabel(atom, model, pointByAtomId, options = {}) {
   const charge = fragmentAtomCharge(atom);
   const heavyNeighbors = heavyNeighborAtoms(atom, model);
   if (atom.name === 'C' && charge === 0 && heavyNeighbors.length > 0) {
     return null;
   }
-  const hCount = atom.name === 'H' ? 0 : hiddenHydrogenCount(atom, model);
+  const hCount = atom.name === 'H' ? 0 : hiddenHydrogenCount(atom, model, options);
   if (hCount === 0) {
     return atom.name;
   }
@@ -223,9 +361,10 @@ function drawPreviewRingFills(layer, fragment, pointByAtomId) {
 
 function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
   const { twoDAtomFontSize: fontSize } = getRenderOptions();
+  const visibleAtoms = visible2dPreviewAtoms(fragment, model);
   const labelByAtomId = new Map();
-  for (const atom of visibleFragmentAtoms(fragment)) {
-    const label = previewAtomLabel(atom, model, pointByAtomId);
+  for (const atom of visibleAtoms) {
+    const label = previewAtomLabel(atom, model, pointByAtomId, { suppress2dHydrogens: true });
     if (label) {
       labelByAtomId.set(atom.id, label);
     }
@@ -233,7 +372,7 @@ function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
 
   drawPreviewRingFills(layer, fragment, pointByAtomId);
   const bondsLayer = layer.append('g').attr('class', 'paste-preview-bonds');
-  const visibleAtomIds = new Set(visibleFragmentAtoms(fragment).map(atom => atom.id));
+  const visibleAtomIds = new Set(visibleAtoms.map(atom => atom.id));
   for (const bond of model.bonds) {
     if (!visibleAtomIds.has(bond.atoms?.[0]) || !visibleAtomIds.has(bond.atoms?.[1])) {
       continue;
@@ -274,7 +413,7 @@ function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
   }
 
   const bgLayer = layer.append('g').attr('class', 'atom-bgs');
-  for (const atom of visibleFragmentAtoms(fragment)) {
+  for (const atom of visibleAtoms) {
     const label = labelByAtomId.get(atom.id);
     const point = pointByAtomId.get(atom.id);
     if (!label || !point) {
@@ -286,7 +425,7 @@ function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
   }
 
   const labelLayer = layer.append('g').attr('class', 'atom-labels');
-  for (const atom of visibleFragmentAtoms(fragment)) {
+  for (const atom of visibleAtoms) {
     const label = labelByAtomId.get(atom.id);
     const point = pointByAtomId.get(atom.id);
     if (!label || !point) {
@@ -308,7 +447,7 @@ function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
 
 function drawForcePreview(layer, fragment, model, pointByAtomId) {
   const bondsLayer = layer.append('g').attr('class', 'paste-preview-bonds');
-  const visibleAtomIds = new Set(visibleFragmentAtoms(fragment).map(atom => atom.id));
+  const visibleAtomIds = new Set(forcePreviewAtoms(fragment).map(atom => atom.id));
   for (const bond of model.bonds) {
     if (!visibleAtomIds.has(bond.atoms?.[0]) || !visibleAtomIds.has(bond.atoms?.[1])) {
       continue;
@@ -363,11 +502,19 @@ function drawForcePreview(layer, fragment, model, pointByAtomId) {
   }
 
   const atomLayer = layer.append('g').attr('class', 'paste-preview-atoms');
-  for (const atom of visibleFragmentAtoms(fragment)) {
+  const labelByAtomId = new Map();
+  for (const atom of forcePreviewAtoms(fragment)) {
+    const label = previewAtomLabel(atom, model, pointByAtomId);
+    if (label) {
+      labelByAtomId.set(atom.id, label);
+    }
+  }
+  for (const atom of forcePreviewAtoms(fragment)) {
     const point = pointByAtomId.get(atom.id);
     if (!point) {
       continue;
     }
+    const label = labelByAtomId.get(atom.id) ?? atom.name;
     const opacity = atomDisplayOpacity(atom);
     const radius = atomRadius(atom.properties?.protons, 'force');
     atomLayer.append('circle').attr('class', 'node').attr('cx', point.x).attr('cy', point.y).attr('r', radius).attr('fill', atomDisplayColor(atom, 'force')).attr('fill-opacity', opacity).attr('stroke', strokeColor(atom.name)).attr('stroke-opacity', opacity).attr('stroke-width', 1);
@@ -391,10 +538,10 @@ function drawForcePreview(layer, fragment, model, pointByAtomId) {
       .attr('dominant-baseline', 'central')
       .attr('font-family', 'Arial, Helvetica, sans-serif')
       .attr('font-weight', 'bold')
-      .attr('font-size', atom.name.length > 1 ? '7px' : '9px')
+      .attr('font-size', label.length > 1 ? '7px' : '9px')
       .attr('fill', fill)
       .attr('opacity', opacity)
-      .text(atom.name);
+      .text(label);
     const chargeLabel = formatChargeLabel(fragmentAtomCharge(atom));
     if (chargeLabel) {
       const metrics = chargeBadgeMetrics(chargeLabel, 11);
@@ -418,10 +565,24 @@ function drawPreview(context, fragment, mode, center) {
   const model = fragmentModel(fragment);
   const pointByAtomId = new Map();
   for (const atom of fragment.atoms) {
-    pointByAtomId.set(atom.id, {
-      x: localCenter.x + (Number.isFinite(atom.dx) ? atom.dx : 0) * scale,
-      y: localCenter.y - (Number.isFinite(atom.dy) ? atom.dy : 0) * scale
-    });
+    const forceDx = finiteNumber(atom.forceDx);
+    const forceDy = finiteNumber(atom.forceDy);
+    const dx = finiteNumber(atom.dx) ?? 0;
+    const dy = finiteNumber(atom.dy) ?? 0;
+    if (mode === 'force' && forceDx != null && forceDy != null) {
+      pointByAtomId.set(atom.id, {
+        x: localCenter.x + forceDx,
+        y: localCenter.y + forceDy
+      });
+    } else {
+      pointByAtomId.set(atom.id, {
+        x: localCenter.x + dx * scale,
+        y: localCenter.y - dy * scale
+      });
+    }
+  }
+  if (mode === 'force') {
+    placeMissingForceHydrogens(fragment, model, pointByAtomId);
   }
 
   if (mode === 'force') {
@@ -433,17 +594,66 @@ function drawPreview(context, fragment, mode, center) {
 
 function forcePatchForFragment(fragment, mergeResult, center, forceScale) {
   const patch = new Map();
+  const model = fragmentModel(fragment);
+  const pointByAtomId = new Map();
   for (const atom of fragment.atoms ?? []) {
     const newId = mergeResult.atomIdMap.get(atom.id);
     if (!newId) {
       continue;
     }
-    patch.set(newId, {
-      x: center.x + (Number.isFinite(atom.dx) ? atom.dx : 0) * forceScale,
-      y: center.y - (Number.isFinite(atom.dy) ? atom.dy : 0) * forceScale
-    });
+    const forceDx = finiteNumber(atom.forceDx);
+    const forceDy = finiteNumber(atom.forceDy);
+    const dx = finiteNumber(atom.dx) ?? 0;
+    const dy = finiteNumber(atom.dy) ?? 0;
+    if (forceDx != null && forceDy != null) {
+      pointByAtomId.set(atom.id, {
+        x: center.x + forceDx,
+        y: center.y + forceDy
+      });
+    } else {
+      pointByAtomId.set(atom.id, {
+        x: center.x + dx * forceScale,
+        y: center.y - dy * forceScale
+      });
+    }
+  }
+  placeMissingForceHydrogens(fragment, model, pointByAtomId);
+  for (const [sourceId, point] of pointByAtomId) {
+    const newId = mergeResult.atomIdMap.get(sourceId);
+    if (newId) {
+      patch.set(newId, point);
+    }
   }
   return patch;
+}
+
+function finiteRect(rect) {
+  return (
+    rect &&
+    Number.isFinite(Number(rect.left)) &&
+    Number.isFinite(Number(rect.right)) &&
+    Number.isFinite(Number(rect.top)) &&
+    Number.isFinite(Number(rect.bottom))
+  );
+}
+
+function rectInside(inner, outer, padding = PASTE_VIEWPORT_PADDING) {
+  return (
+    finiteRect(inner) &&
+    finiteRect(outer) &&
+    inner.left >= outer.left + padding &&
+    inner.right <= outer.right - padding &&
+    inner.top >= outer.top + padding &&
+    inner.bottom <= outer.bottom - padding
+  );
+}
+
+function pastePreviewFitsViewport(context) {
+  const layerNode = context.dom.g.select('g.paste-preview-layer').node?.() ?? null;
+  const plotNode = context.dom.plotElement ?? layerNode?.ownerSVGElement ?? context.dom.g.node?.()?.ownerSVGElement ?? null;
+  const layerRect = layerNode?.getBoundingClientRect?.() ?? null;
+  const plotRect = plotNode?.getBoundingClientRect?.() ?? null;
+  return rectInside(layerRect, plotRect);
 }
 
 /**
@@ -468,11 +678,22 @@ export function createClipboardActions(context) {
     if (!mol) {
       return false;
     }
+    const mode = context.state.getMode();
     const selectedAtomIds = context.selection.getSelectedAtomIds();
     const selectedBondIds = context.selection.getSelectedBondIds();
+    const forceAtomPositions =
+      mode === 'force'
+        ? new Map(
+            (context.force?.getNodes?.() ?? [])
+              .map(node => ({ id: node?.id, x: finiteNumber(node?.x), y: finiteNumber(node?.y) }))
+              .filter(node => node.id != null && node.x != null && node.y != null)
+              .map(node => [node.id, { x: node.x, y: node.y }])
+          )
+        : converted2dForceAtomPositions(context, mol) ?? rendered2dAtomPositions(context, mol);
     clipboardFragment = createMoleculeFragment(mol, {
       atomIds: selectedAtomIds.size > 0 || selectedBondIds.size > 0 ? selectedAtomIds : null,
-      bondIds: selectedAtomIds.size > 0 || selectedBondIds.size > 0 ? selectedBondIds : null
+      bondIds: selectedAtomIds.size > 0 || selectedBondIds.size > 0 ? selectedBondIds : null,
+      forceAtomPositions
     });
     return !!clipboardFragment;
   }
@@ -564,9 +785,11 @@ export function createClipboardActions(context) {
       return false;
     }
     const { fragment, center, mode } = pasteState;
+    const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransform?.() : null;
     context.history.takeSnapshot();
     const moleculeCenter = mode === 'force' ? fragment.center : center;
     const mergeResult = mergeMoleculeFragment(mol, fragment, { center: moleculeCenter });
+    const preservePlacedView = pastePreviewFitsViewport(context);
     pasteState = null;
     clearPreview();
     if (!mergeResult) {
@@ -587,17 +810,19 @@ export function createClipboardActions(context) {
     if (mode === 'force') {
       context.renderers.renderMol(mol, {
         preserveHistory: true,
-        preserveView: false,
+        preserveView: preservePlacedView,
         forcePreservePositions: true,
         forceInitialPatchPos: forcePatchForFragment(fragment, mergeResult, center, context.view.forceScale)
       });
     } else {
-      context.renderers.renderMol(mol, {
-        preserveHistory: true,
-        preserveGeometry: true,
-        preserveView: false
-      });
+      context.view2D?.syncDerivedState?.(mol);
+      context.renderers.draw2d?.();
+      context.view.restore2dEditViewport?.(zoomSnapshot, { zoomToFit: { pad: 0 } });
     }
+    context.analysis?.syncInputField?.(mol);
+    context.analysis?.updateFormula?.(mol);
+    context.analysis?.updateDescriptors?.(mol);
+    context.analysis?.updatePanels?.(mol);
     context.renderers.refreshSelectionOverlay();
     return true;
   }

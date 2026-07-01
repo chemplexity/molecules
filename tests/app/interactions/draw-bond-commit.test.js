@@ -143,6 +143,7 @@ function makeActions(overrides = {}) {
         calls.view.push(['setDrawBondHoverSuppressed', value]);
       },
       captureZoomTransform: () => 'zoom-snapshot',
+      getZoomTransform: () => overrides.zoomTransform ?? { x: 0, y: 0, k: 1 },
       restore2dEditViewport: (...args) => {
         calls.view.push(['restore2dEditViewport', ...args]);
       }
@@ -499,7 +500,8 @@ describe('createDrawBondCommitActions', () => {
       {
         reactionRestored: false,
         reactionEntryZoomSnapshot: null,
-        resonanceReset: false
+        resonanceReset: false,
+        zoomToFit: { pad: 0 }
       }
     ]);
   });
@@ -701,6 +703,46 @@ describe('createDrawBondCommitActions', () => {
     const patchPos = forceUpdate[2].initialPatchPos;
     assert.deepEqual(patchPos.get('a1'), { x: 300, y: 200 });
     assert.deepEqual(patchPos.get('C1'), { x: 312.5, y: 200 });
+  });
+
+  it('refits force layout when an auto-placed bond endpoint is outside the viewport', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      mode: 'force',
+      drawBondElement: 'C',
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 590, y: 200 } : null),
+      forceNodes: [{ id: 'a1', name: 'C', x: 590, y: 200 }]
+    });
+
+    actions.autoPlaceBond('a1', 640, 200);
+
+    const forceUpdate = calls.renderers.find(call => call[0] === 'updateForce');
+    assert.ok(forceUpdate);
+    assert.equal(forceUpdate[2].preserveView, false);
+  });
+
+  it('refits force layout when an auto-placed bond endpoint would render clipped near the viewport edge', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      mode: 'force',
+      drawBondElement: 'C',
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 552, y: 200 } : null),
+      forceNodes: [{ id: 'a1', name: 'C', x: 552, y: 200 }]
+    });
+
+    actions.autoPlaceBond('a1', 570, 200);
+
+    const forceUpdate = calls.renderers.find(call => call[0] === 'updateForce');
+    assert.ok(forceUpdate);
+    assert.equal(forceUpdate[2].preserveView, false);
   });
 
   it('refits force layout after auto-placing a bond from an active resonance pair', () => {

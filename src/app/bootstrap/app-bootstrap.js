@@ -36,6 +36,8 @@ export function finalizeAppBootstrap(ctx) {
   ctx.setDelegates?.(appDelegates);
 
   const { changeAtomElements, draw2d, captureZoomTransformSnapshot, restoreZoomTransformSnapshot, commitDrawBond, render2d } = appDelegates;
+  const ringTemplateDragState = ctx.state.appState.ringTemplateDrag ?? {};
+  ctx.state.appState.ringTemplateDrag = ringTemplateDragState;
 
   ctx.factories.initUndo({
     captureAppSnapshot: options => ctx.controller.captureAppSnapshot(options),
@@ -252,6 +254,7 @@ export function finalizeAppBootstrap(ctx) {
 
   ctx.factories.initGestureInteractions({
     state: ctx.state.appState,
+    ringTemplateDrag: ringTemplateDragState,
     selection: ctx.actions.selectionActions,
     renderers: {
       applySelectionOverlay: () => ctx.render.applySelectionOverlay()
@@ -276,6 +279,13 @@ export function finalizeAppBootstrap(ctx) {
       placeRingTemplate: (size, ox, oy, options = {}) => appDelegates.placeRingTemplate(size, ox, oy, options)
     },
     clipboard: ctx.actions.clipboardActions,
+    options: {
+      getRenderOptions: () => ctx.options.getRenderOptions()
+    },
+    constants: {
+      scale: ctx.constants?.scale ?? ctx.scale,
+      forceBondLength: ctx.constants?.forceBondLength ?? ctx.forceBondLength
+    },
     view: {
       getZoomTransform: () => ctx.view.getZoomTransform(),
       clearPrimitiveHover: () => ctx.view.clearPrimitiveHover(),
@@ -295,6 +305,7 @@ export function finalizeAppBootstrap(ctx) {
     schedule: callback => ctx.helpers.schedule(callback),
     dom: {
       plotEl: ctx.dom.plotEl,
+      gNode: () => ctx.dom.g.node(),
       getEraseCursorElement: () => ctx.dom.getEraseCursorElement()
     }
   });
@@ -459,7 +470,7 @@ export function finalizeAppBootstrap(ctx) {
         setPaintOpacity: opacity => ctx.actions.selectionActions.setPaintOpacity(opacity),
         toggleDrawBondMode: () => ctx.actions.selectionActions.toggleDrawBondMode(),
         handleDrawBondButtonClick: () => ctx.actions.selectionActions.handleDrawBondButtonClick(),
-        handleRingTemplateButtonClick: () => ctx.actions.selectionActions.handleRingTemplateButtonClick(),
+        handleRingTemplateButtonClick: () => (ctx.actions.selectionActions.handleRingTemplateButtonClick ?? ctx.actions.selectionActions.toggleRingTemplateMode)?.(),
         setRingTemplateSize: size => ctx.actions.selectionActions.setRingTemplateSize(size),
         openDrawBondDrawer: () => ctx.actions.selectionActions.openDrawBondDrawer(),
         closeDrawBondDrawer: () => ctx.actions.selectionActions.closeDrawBondDrawer(),

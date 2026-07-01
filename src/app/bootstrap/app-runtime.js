@@ -399,6 +399,7 @@ export function createAppRuntime(deps) {
     },
     view: {
       captureZoomTransformSnapshot: deps.view.captureZoomTransformSnapshot,
+      getZoomTransform: deps.view.getZoomTransform,
       restoreZoomTransformSnapshot: deps.view.restoreZoomTransformSnapshot,
       zoomToFitIf2d: deps.view.zoomToFitIf2d
     },
