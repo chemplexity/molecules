@@ -176,7 +176,7 @@ const BASE_REACTION_TEMPLATES = {
     name: 'Amine Alkylation',
     smirks: '[C;X4&(H2,H3):1][Cl:2].[N+0;!H0;!$([N]-[C](=O)):3]>>[C:1][N+0:3].[ClH0-:2]'
   },
-  imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C+0;!$([C](=[N+0])[N,O,S]):1]=[N+0;!$([N]-[N,O,S]):2]>>[C:1]=O.[N:2]' },
+  imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C+0:1]=[N+0;!$([N]-[N,O,S]):2]>>[C:1]=O.[N:2]' },
   nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C+0:1]#[N+0:2]>>[C:1](=O)[N:2]' },
   nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C+0:1]#[N+0:2]>>[C:1](=O)O.[N:2]' },
   lactoneHydrolysis: { name: 'Lactone Hydrolysis', smirks: '[C;r:1](=[O:2])[O;r:3][C:4]>>[C:1](=[O:2])[OH:3].[C:4]O' },

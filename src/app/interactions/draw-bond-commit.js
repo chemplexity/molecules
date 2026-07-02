@@ -278,6 +278,102 @@ export function createDrawBondCommitActions(context) {
     });
   }
 
+  function isDisplayedStereoHydrogenBond(mol, bond, hydrogenId = null) {
+    if (!bond?.atoms?.length) {
+      return false;
+    }
+    const hydrogenAtomIds = hydrogenId
+      ? [hydrogenId]
+      : bond.atoms.filter(atomId => mol?.atoms?.get?.(atomId)?.name === 'H');
+    if (hydrogenAtomIds.length === 0) {
+      return false;
+    }
+    const displayAs = bond.properties?.display?.as ?? null;
+    if (displayAs === 'wedge' || displayAs === 'dash') {
+      return true;
+    }
+    for (const atomId of hydrogenAtomIds) {
+      const otherAtomId = bond.getOtherAtom?.(atomId) ?? bond.atoms.find(id => id !== atomId);
+      const otherAtom = mol?.atoms?.get?.(otherAtomId);
+      if (typeof otherAtom?.getChirality === 'function' && otherAtom.getChirality()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isPotentialStereoCenter(mol, atomId) {
+    const atom = mol?.atoms?.get?.(atomId);
+    if (typeof atom?.setChirality !== 'function') {
+      return false;
+    }
+    const originalChirality = typeof atom.getChirality === 'function' ? atom.getChirality() : atom.properties?.chirality ?? null;
+    for (const candidate of ['R', 'S']) {
+      try {
+        atom.setChirality(candidate, mol);
+        atom.setChirality(originalChirality, mol);
+        return true;
+      } catch {
+        try {
+          atom.setChirality(originalChirality, mol);
+        } catch {
+          /* best-effort restore */
+        }
+      }
+    }
+    return false;
+  }
+
+  function heavyParentForHydrogen(mol, hydrogenId) {
+    const hydrogen = mol?.atoms?.get?.(hydrogenId);
+    if (!hydrogen || hydrogen.name !== 'H') {
+      return null;
+    }
+    for (const bondId of hydrogen.bonds ?? []) {
+      const bond = mol?.bonds?.get?.(bondId);
+      const parentId = bond?.getOtherAtom?.(hydrogenId) ?? bond?.atoms?.find?.(id => id !== hydrogenId);
+      const parentAtom = mol?.atoms?.get?.(parentId);
+      if (parentAtom && parentAtom.name !== 'H' && parentAtom.visible !== false) {
+        return { atom: parentAtom, bond };
+      }
+    }
+    return null;
+  }
+
+  function findStereoHydrogenPromotion(mol, sourceAtomId, targetAtomId, drawBondType) {
+    if (
+      sourceAtomId === null ||
+      targetAtomId === null ||
+      (drawBondType !== 'single' && drawBondType !== 'wedge' && drawBondType !== 'dash')
+    ) {
+      return null;
+    }
+
+    const sourceAtom = mol?.atoms?.get?.(sourceAtomId);
+    const targetAtom = mol?.atoms?.get?.(targetAtomId);
+    const hydrogenId = sourceAtom?.name === 'H' ? sourceAtomId : targetAtom?.name === 'H' ? targetAtomId : null;
+    const heavyId = hydrogenId === sourceAtomId ? targetAtomId : sourceAtomId;
+    if (hydrogenId === null) {
+      return null;
+    }
+
+    const parent = heavyParentForHydrogen(mol, hydrogenId);
+    const bond = parent?.bond ?? null;
+    if (parent?.atom?.id !== heavyId) {
+      return null;
+    }
+    const isEditableStereoHydrogen =
+      isDisplayedStereoHydrogenBond(mol, bond, hydrogenId) || (drawBondType === 'wedge' || drawBondType === 'dash' ? isPotentialStereoCenter(mol, parent.atom.id) : false);
+    if (!isEditableStereoHydrogen) {
+      return null;
+    }
+
+    return {
+      bond,
+      preferredCenterId: parent.atom.id
+    };
+  }
+
   function moleculePointFromViewportPoint(mol, mode, x, y) {
     const { width: plotWidth, height: plotHeight } = context.plot.getSize();
     if (mode === 'force') {
@@ -678,12 +774,59 @@ export function createDrawBondCommitActions(context) {
     }
     const previousSnapshot = reactionEdit?.previousSnapshot ?? context.snapshot.capture();
     const structuralEdit = context.overlays.prepareResonanceStructuralEdit(context.molecule.getActive());
+    const sourceAtom = atomId !== null ? structuralEdit.mol?.atoms?.get?.(atomId) : null;
+    if (sourceAtom?.name === 'H') {
+      const parent = heavyParentForHydrogen(structuralEdit.mol, atomId);
+      if (!parent?.atom?.id || snapAtomId !== parent.atom.id) {
+        restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
+        return;
+      }
+    }
+    const stereoHydrogenPromotion = findStereoHydrogenPromotion(structuralEdit.mol, atomId, snapAtomId, drawBondType);
+    if (stereoHydrogenPromotion?.bond?.id) {
+      restoreReactionPreviewNoOp(reactionEdit);
+      context.actions.promoteBondOrder(stereoHydrogenPromotion.bond.id, {
+        drawBondType: drawBondType || 'single',
+        preferredCenterId: stereoHydrogenPromotion.preferredCenterId,
+        zoomSnapshot,
+        reactionRestored: reactionEdit?.restored,
+        reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null
+      });
+      return;
+    }
     if (snapAtomId !== null) {
       const checkMol = structuralEdit.mol;
       const snapAtom = checkMol?.atoms.get(snapAtomId);
       if (!snapAtom || snapAtom.name === 'H') {
-        restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
-        return;
+        if (mode === 'force' && snapAtom?.name === 'H') {
+          const parent = heavyParentForHydrogen(checkMol, snapAtomId);
+          const existingHydrogenBond = parent?.bond ?? null;
+          const canPromoteHydrogenStereoBond =
+            atomId !== null &&
+            parent?.atom?.id === atomId &&
+            (drawBondType === 'single' || drawBondType === 'wedge' || drawBondType === 'dash') &&
+            isDisplayedStereoHydrogenBond(checkMol, existingHydrogenBond, snapAtomId);
+          if (canPromoteHydrogenStereoBond) {
+            restoreReactionPreviewNoOp(reactionEdit);
+            context.actions.promoteBondOrder(existingHydrogenBond.id, {
+              drawBondType: drawBondType || 'single',
+              preferredCenterId: atomId,
+              zoomSnapshot,
+              reactionRestored: reactionEdit?.restored,
+              reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null
+            });
+            return;
+          }
+          if (parent?.atom?.id && parent.atom.id !== atomId) {
+            snapAtomId = parent.atom.id;
+          } else {
+            restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
+            return;
+          }
+        } else {
+          restoreEditNoOp(reactionEdit, structuralEdit, previousSnapshot);
+          return;
+        }
       }
     }
 

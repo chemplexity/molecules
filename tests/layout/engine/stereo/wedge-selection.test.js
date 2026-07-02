@@ -11,7 +11,7 @@ const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
 const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
 
 describe('layout/engine/stereo/wedge-selection', () => {
-  it('assigns a heavy-atom wedge bond even when one substituent is a hidden hydrogen', () => {
+  it('prefers a visible heavy substituent over an explicit hidden stereochemical hydrogen', () => {
     const graph = createLayoutGraph(makeHiddenHydrogenStereocenter());
     const summary = pickWedgeAssignments(
       graph,

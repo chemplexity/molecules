@@ -1477,6 +1477,15 @@ function _isChiralDisplayCenter(mol, centerId) {
   return !!mol?.atoms?.get?.(centerId)?.getChirality?.();
 }
 
+function _isMetalDisplayCenter(mol, centerId) {
+  if (!centerId) {
+    return false;
+  }
+  const atom = mol?.atoms?.get?.(centerId) ?? null;
+  const group = atom?.properties?.group ?? atom?.group ?? 0;
+  return atom?.name !== 'H' && group >= 3 && group <= 12;
+}
+
 function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   const assignments = [];
   const forcedBondTypes = mol?.__reactionPreview?.forcedStereoBondTypes ?? null;
@@ -1506,6 +1515,22 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     if (centerId) {
       lockedCenters.add(centerId);
     }
+  }
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    const displayAs = bond.properties.display?.as ?? null;
+    const centerId = bond.properties.display?.centerId ?? null;
+    if ((displayAs !== 'wedge' && displayAs !== 'dash') || bond.properties.display?.manual === true) {
+      continue;
+    }
+    if (assignedBondIds.has(bond.id)) {
+      continue;
+    }
+    if (!_isMetalDisplayCenter(mol, centerId) || !bond.atoms.includes(centerId)) {
+      continue;
+    }
+    assignments.push({ bondId: bond.id, type: displayAs, centerId });
+    assignedBondIds.add(bond.id);
+    lockedCenters.add(centerId);
   }
   const storedDisplayByCenter = new Map();
   const preferredBondByCenter = new Map();

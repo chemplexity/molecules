@@ -426,8 +426,17 @@ describe('createSelectionActions', () => {
     buttons.benzene.innerHTML = '<svg data-ring="benzene"></svg>';
     const drawTools = makeButton();
     drawTools.classList.add('ring-template-drawer-open');
+    const refreshCalls = [];
     const actions = createSelectionActions({
       state: {
+        ringTemplateDrag: {
+          refreshFreePreview: () => {
+            refreshCalls.push('free');
+          },
+          refreshAnchoredPreview: () => {
+            refreshCalls.push('anchored');
+          }
+        },
         viewState: {
           getMode: () => '2d'
         },
@@ -513,6 +522,7 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.ring.innerHTML, '<svg data-ring="5"></svg>');
     assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
     assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), true);
+    assert.deepEqual(refreshCalls, ['free', 'anchored']);
 
     drawTools.classList.add('ring-template-drawer-open');
     drawTools.classList.remove('drawer-hover-suppressed');
@@ -526,6 +536,7 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.ring.innerHTML, '<svg data-ring="benzene"></svg>');
     assert.equal(drawTools.classList.contains('ring-template-drawer-open'), false);
     assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), true);
+    assert.deepEqual(refreshCalls, ['free', 'anchored', 'free', 'anchored']);
   });
 
   it('handleRingTemplateButtonClick mirrors line drawer click behavior without latching or suppressing hover', () => {

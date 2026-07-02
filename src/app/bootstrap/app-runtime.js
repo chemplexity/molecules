@@ -137,7 +137,8 @@ export function createAppRuntime(deps) {
     scene: {
       clear: deps.scene.clear,
       draw2d: deps.scene.draw2d,
-      updateForce: deps.scene.updateForce
+      updateForce: deps.scene.updateForce,
+      syncForcePositions: deps.scene.syncForcePositions
     },
     cache: {
       reset: deps.cache.reset

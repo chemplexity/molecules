@@ -92,6 +92,9 @@ function makeBridge(options = {}) {
       },
       updateForce: (mol, renderOptions) => {
         calls.push(['updateForce', mol.id, renderOptions]);
+      },
+      syncForcePositions: () => {
+        calls.push(['syncForcePositions']);
       }
     },
     cache: {
@@ -257,6 +260,7 @@ describe('createSessionRuntimeBridge', () => {
         restartSimulation: false
       }],
       ['restoreNodePositions', ['a1']],
+      ['syncForcePositions'],
       ['restoreZoomTransform', { x: 2, y: 3, k: 0.75 }]
     ]);
   });
@@ -285,6 +289,7 @@ describe('createSessionRuntimeBridge', () => {
         restartSimulation: false
       }],
       ['restoreNodePositions', ['a1']],
+      ['syncForcePositions'],
       ['restoreZoomTransform', { x: 8, y: 9, k: 0.5 }]
     ]);
   });

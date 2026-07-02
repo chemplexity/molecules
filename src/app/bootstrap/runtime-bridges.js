@@ -50,6 +50,8 @@ export function initializeRuntimeBridges(deps) {
       getSelectedBondIds: () => deps.runtimeState.selectedBondIds,
       getHoveredAtomIds: () => deps.runtimeState.hoveredAtomIds,
       getHoveredBondIds: () => deps.runtimeState.hoveredBondIds,
+      getPlacementRedirectedHoverAtomIds: () => deps.runtimeState.placementRedirectedHoverAtomIds,
+      getPlacementRedirectedHoverBondIds: () => deps.runtimeState.placementRedirectedHoverBondIds,
       getSelectionModifierActive: () => deps.runtimeState.selectionModifierActive,
       setSelectionModifierActive: value => {
         deps.runtimeState.selectionModifierActive = value;

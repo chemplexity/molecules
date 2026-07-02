@@ -1,5 +1,6 @@
 /** @module app/interactions/navigation */
 
+import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
 import { convertForceCoordsToLineLayout, convertLineCoordsToForceLayout, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../render/force-helpers.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
@@ -10,6 +11,8 @@ const CLEAN_RING_SNAP_MAX_DISPLACEMENT_RATIO = 0.75;
 const CLEAN_RING_SNAP_RMS_DISPLACEMENT_RATIO = 0.4;
 const CLEAN_RING_SNAP_MIN_MOVE = 1e-4;
 const CLEAN_RING_SUBSTITUENT_MIN_ANGLE_DELTA = (1 * Math.PI) / 180;
+const CLEAN_MULTI_RING_EXIT_MIN_GAP = (45 * Math.PI) / 180;
+const CLEAN_MULTI_RING_EXIT_SCAN_STEP = (15 * Math.PI) / 180;
 const ROTATE_FIT_FALLBACK_PAD = 40;
 const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
 const ROTATE_FIT_MAX_SCALE = 30;
@@ -333,6 +336,213 @@ function collectMovableRingSubstituent(molecule, anchorAtomId, rootAtomId, block
   }
 
   return movedAtomIds.size > 0 ? movedAtomIds : null;
+}
+
+function cleanAngleDifference(firstAngle, secondAngle) {
+  return Math.acos(Math.max(-1, Math.min(1, Math.cos(firstAngle - secondAngle))));
+}
+
+function candidateCleanExitAngles(referenceAngle) {
+  const angles = [];
+  const addAngle = angle => {
+    if (!Number.isFinite(angle) || angles.some(existingAngle => cleanAngleDifference(existingAngle, angle) <= 1e-9)) {
+      return;
+    }
+    angles.push(angle);
+  };
+  addAngle(referenceAngle);
+  for (let step = 1; step < Math.ceil((2 * Math.PI) / CLEAN_MULTI_RING_EXIT_SCAN_STEP); step++) {
+    addAngle(referenceAngle + step * CLEAN_MULTI_RING_EXIT_SCAN_STEP);
+    addAngle(referenceAngle - step * CLEAN_MULTI_RING_EXIT_SCAN_STEP);
+  }
+  return angles;
+}
+
+function countPointInPolygons(point, polygons) {
+  return polygons.reduce((count, polygon) => count + (polygon.length >= 3 && pointInPolygon(point, polygon) ? 1 : 0), 0);
+}
+
+function visibleHeavyCoordsForMolecule(molecule) {
+  const coords = new Map();
+  for (const [atomId, atom] of molecule?.atoms ?? []) {
+    if (atom?.name === 'H' || atom?.visible === false || !Number.isFinite(atom?.x) || !Number.isFinite(atom?.y)) {
+      continue;
+    }
+    coords.set(atomId, { x: atom.x, y: atom.y });
+  }
+  return coords;
+}
+
+function ringNeighborAnglesAtAnchor(molecule, coords, anchorAtomId, allRingAtomIds) {
+  const anchor = coords.get(anchorAtomId);
+  if (!anchor) {
+    return [];
+  }
+  const angles = [];
+  for (const bond of molecule.bonds?.values?.() ?? []) {
+    if (!bond.atoms?.includes(anchorAtomId)) {
+      continue;
+    }
+    const neighborId = bond.atoms[0] === anchorAtomId ? bond.atoms[1] : bond.atoms[0];
+    if (!allRingAtomIds.has(neighborId)) {
+      continue;
+    }
+    const neighbor = coords.get(neighborId);
+    if (!neighbor) {
+      continue;
+    }
+    const angle = Math.atan2(neighbor.y - anchor.y, neighbor.x - anchor.x);
+    if (!angles.some(existingAngle => cleanAngleDifference(existingAngle, angle) <= 1e-9)) {
+      angles.push(angle);
+    }
+  }
+  return angles;
+}
+
+function minimumAngleGap(angle, neighborAngles) {
+  if (neighborAngles.length === 0) {
+    return Math.PI;
+  }
+  return Math.min(...neighborAngles.map(neighborAngle => cleanAngleDifference(angle, neighborAngle)));
+}
+
+function bestCleanMultiRingExitAngle({ anchor, root, rootRadius, ringPolygons, ringNeighborAngles, referenceAngle, currentAngle }) {
+  const currentInsideCount = countPointInPolygons(root, ringPolygons);
+  const currentGap = minimumAngleGap(currentAngle, ringNeighborAngles);
+  let best = null;
+  for (const candidateAngle of candidateCleanExitAngles(referenceAngle)) {
+    const probe = {
+      x: anchor.x + rootRadius * Math.cos(candidateAngle),
+      y: anchor.y + rootRadius * Math.sin(candidateAngle)
+    };
+    const insideCount = countPointInPolygons(probe, ringPolygons);
+    const gap = minimumAngleGap(candidateAngle, ringNeighborAngles);
+    const record = {
+      angle: candidateAngle,
+      insideCount,
+      gap,
+      referenceDelta: cleanAngleDifference(candidateAngle, referenceAngle),
+      currentDelta: cleanAngleDifference(candidateAngle, currentAngle)
+    };
+    if (
+      !best ||
+      record.insideCount < best.insideCount ||
+      (record.insideCount === best.insideCount && record.gap > best.gap + 1e-9) ||
+      (record.insideCount === best.insideCount && Math.abs(record.gap - best.gap) <= 1e-9 && record.referenceDelta < best.referenceDelta - 1e-9) ||
+      (record.insideCount === best.insideCount && Math.abs(record.gap - best.gap) <= 1e-9 && Math.abs(record.referenceDelta - best.referenceDelta) <= 1e-9 && record.currentDelta < best.currentDelta)
+    ) {
+      best = record;
+    }
+  }
+  if (!best) {
+    return null;
+  }
+  const improvesInside = best.insideCount < currentInsideCount;
+  const improvesGap = best.gap > currentGap + 1e-9;
+  if (best.insideCount > 0 || best.gap < CLEAN_MULTI_RING_EXIT_MIN_GAP - 1e-9 || (!improvesInside && !improvesGap)) {
+    return null;
+  }
+  return best.angle;
+}
+
+function rotateCleanSubstituent(molecule, coords, anchorAtomId, movedAtomIds, delta) {
+  if (Math.abs(delta) < CLEAN_RING_SUBSTITUENT_MIN_ANGLE_DELTA) {
+    return 0;
+  }
+  const anchor = coords.get(anchorAtomId);
+  if (!anchor) {
+    return 0;
+  }
+  const cos = Math.cos(delta);
+  const sin = Math.sin(delta);
+  let movedCount = 0;
+  for (const atomId of movedAtomIds) {
+    const position = coords.get(atomId);
+    const atom = molecule.atoms.get(atomId);
+    if (!position || !atom) {
+      continue;
+    }
+    const dx = position.x - anchor.x;
+    const dy = position.y - anchor.y;
+    const x = anchor.x + dx * cos - dy * sin;
+    const y = anchor.y + dx * sin + dy * cos;
+    position.x = x;
+    position.y = y;
+    atom.x = x;
+    atom.y = y;
+    movedCount++;
+  }
+  return movedCount;
+}
+
+function repairCleanMultiRingSubstituentExits(molecule, referenceCoords) {
+  if (!molecule?.atoms || !molecule?.bonds || typeof molecule.getRings !== 'function') {
+    return 0;
+  }
+  const coords = visibleHeavyCoordsForMolecule(molecule);
+  const rings = molecule.getRings();
+  const allRingAtomIds = new Set(rings.flat());
+  let movedCount = 0;
+
+  for (const anchorAtomId of allRingAtomIds) {
+    const anchor = coords.get(anchorAtomId);
+    const incidentRings = rings.filter(ring => ring.includes(anchorAtomId) && ring.every(atomId => coords.has(atomId)));
+    if (!anchor || incidentRings.length < 2) {
+      continue;
+    }
+    const ringPolygons = incidentRings.map(ring => ring.map(atomId => coords.get(atomId)));
+    const ringNeighborAngles = ringNeighborAnglesAtAnchor(molecule, coords, anchorAtomId, allRingAtomIds);
+    if (ringNeighborAngles.length < 2) {
+      continue;
+    }
+
+    for (const bond of molecule.bonds.values()) {
+      if (!bond.atoms?.includes(anchorAtomId)) {
+        continue;
+      }
+      const rootAtomId = bond.atoms[0] === anchorAtomId ? bond.atoms[1] : bond.atoms[0];
+      if (allRingAtomIds.has(rootAtomId)) {
+        continue;
+      }
+      const root = coords.get(rootAtomId);
+      if (!root) {
+        continue;
+      }
+      const currentAngle = Math.atan2(root.y - anchor.y, root.x - anchor.x);
+      const rootInsideCount = countPointInPolygons(root, ringPolygons);
+      const currentGap = minimumAngleGap(currentAngle, ringNeighborAngles);
+      if (rootInsideCount === 0 && currentGap >= CLEAN_MULTI_RING_EXIT_MIN_GAP - 1e-9) {
+        continue;
+      }
+      const movedAtomIds = collectMovableRingSubstituent(molecule, anchorAtomId, rootAtomId, allRingAtomIds);
+      if (!movedAtomIds) {
+        continue;
+      }
+      const referenceAnchor = referenceCoords?.get?.(anchorAtomId);
+      const referenceRoot = referenceCoords?.get?.(rootAtomId);
+      const referenceAngle =
+        referenceAnchor && referenceRoot ? Math.atan2(referenceRoot.y - referenceAnchor.y, referenceRoot.x - referenceAnchor.x) : currentAngle;
+      const rootRadius = Math.hypot(root.x - anchor.x, root.y - anchor.y);
+      if (!(rootRadius > 0)) {
+        continue;
+      }
+      const targetAngle = bestCleanMultiRingExitAngle({
+        anchor,
+        root,
+        rootRadius,
+        ringPolygons,
+        ringNeighborAngles,
+        referenceAngle,
+        currentAngle
+      });
+      if (targetAngle == null) {
+        continue;
+      }
+      movedCount += rotateCleanSubstituent(molecule, coords, anchorAtomId, movedAtomIds, targetAngle - currentAngle);
+    }
+  }
+
+  return movedCount;
 }
 
 /**
@@ -741,6 +951,7 @@ export function createNavigationActions(context) {
     }
     context.history.takeSnapshot({ clearReactionPreview: false });
     const mol = context.state.documentState.getMol2d();
+    const cleanReferenceCoords = captureFiniteAtomCoords(mol);
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
@@ -774,7 +985,8 @@ export function createNavigationActions(context) {
         bondLength
       });
     }
-    const preserveGeometry = ringSnapHints.snappedCount > 0 || (refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout);
+    const multiRingExitRepairCount = repairCleanMultiRingSubstituentExits(relayoutMol, cleanReferenceCoords);
+    const preserveGeometry = ringSnapHints.snappedCount > 0 || multiRingExitRepairCount > 0 || (refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
       preserveHistory: true,
@@ -801,6 +1013,7 @@ export function createNavigationActions(context) {
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
     seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
+    const cleanReferenceCoords = captureFiniteAtomCoords(relayoutMol);
     normalizeCoordsToBondLength(relayoutMol, bondLength);
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
       bondLength
@@ -828,6 +1041,7 @@ export function createNavigationActions(context) {
         bondLength
       });
     }
+    repairCleanMultiRingSubstituentExits(relayoutMol, cleanReferenceCoords);
     reapplyReactionPreviewForceLayout(relayoutMol, context.overlays, bondLength);
     const forceAnchorLayout = buildForceAnchorLayoutFromPlacedCoords(relayoutMol);
     context.view.setPreserveSelectionOnNextRender(true);

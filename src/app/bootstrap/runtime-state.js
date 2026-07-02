@@ -35,6 +35,8 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     selectedBondIds: new Set(),
     hoveredAtomIds: new Set(),
     hoveredBondIds: new Set(),
+    placementRedirectedHoverAtomIds: new Set(),
+    placementRedirectedHoverBondIds: new Set(),
     selectionModifierActive: false,
     selectMode: false,
     drawBondMode: false,

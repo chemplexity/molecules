@@ -1240,6 +1240,8 @@ export function createSelectionActions(context) {
       syncRingTemplateSizeButtons();
     }
     syncRingTemplateButtonIcon();
+    context.state.ringTemplateDrag?.refreshFreePreview?.();
+    context.state.ringTemplateDrag?.refreshAnchoredPreview?.();
     closeRingTemplateDrawer();
     setRingTemplateDrawerHoverSuppressed(true);
   }

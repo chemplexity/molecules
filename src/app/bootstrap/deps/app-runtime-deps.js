@@ -156,7 +156,8 @@ export function createAppRuntimeDeps(ctx) {
       },
       draw2d: () => ctx.getDraw2D()(),
       render2d: (mol, options = {}) => ctx.getRender2D()(mol, options),
-      updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options)
+      updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options),
+      syncForcePositions: () => ctx.forceSceneRenderer.syncPositions?.()
     },
     cache: {
       reset: () => ctx.runtimeState.resetRenderCaches()

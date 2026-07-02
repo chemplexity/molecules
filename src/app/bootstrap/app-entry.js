@@ -280,10 +280,11 @@ const forceHelpers = createForceHelpers({
   alignReaction2dProductOrientation: (mol, bondLength) => _alignReaction2dProductOrientation(mol, bondLength),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
   centerReaction2dPairCoords: (mol, bondLength, options) => _centerReaction2dPairCoords(mol, bondLength, options),
-  reactionArrowLabelMinGapBondLength: (mol, bondLength) => _reactionArrowLabelMinGapBondLength(mol?.__reactionPreview, {
-    bondLength,
-    force: true
-  })
+  reactionArrowLabelMinGapBondLength: (mol, bondLength) =>
+    _reactionArrowLabelMinGapBondLength(mol?.__reactionPreview, {
+      bondLength,
+      force: true
+    })
 });
 
 const SCALE = 60;
@@ -518,10 +519,11 @@ const scene2DRenderer = create2DSceneRenderer(
     alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
     spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
     centerReaction2dPairCoords: _centerReaction2dPairCoords,
-    reactionArrowLabelMinGapBondLength: (mol, bondLength) => _reactionArrowLabelMinGapBondLength(mol?.__reactionPreview, {
-      bondLength,
-      force: false
-    }),
+    reactionArrowLabelMinGapBondLength: (mol, bondLength) =>
+      _reactionArrowLabelMinGapBondLength(mol?.__reactionPreview, {
+        bondLength,
+        force: false
+      }),
     drawReactionPreviewArrow2d: (toSVGPt, atoms, mol = null) => _drawReactionPreviewArrow2d(toSVGPt, atoms, mol),
     viewportFitPadding: _viewportFitPadding,
     hasReactionPreview: () => _hasReactionPreview(),
@@ -529,8 +531,7 @@ const scene2DRenderer = create2DSceneRenderer(
     handle2dBondClick: (event, bondId) => primitiveEventHandlers.handle2dBondClick(event, bondId),
     handle2dBondMouseDownRingTemplate: (event, bondId, anchorA, anchorB, anchorAtomIds = []) =>
       primitiveEventHandlers.handle2dBondMouseDownRingTemplate(event, bondId, anchorA, anchorB, anchorAtomIds),
-    handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB, options = {}) =>
-      primitiveEventHandlers.handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB, options),
+    handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB, options = {}) => primitiveEventHandlers.handle2dBondMouseDownDrawBond(event, bond, anchorA, anchorB, options),
     handle2dBondDblClick: (event, atomIds) => primitiveEventHandlers.handle2dBondDblClick(event, atomIds),
     handle2dBondMouseOver: (event, bond, a1, a2, anchorA, anchorB) => primitiveEventHandlers.handle2dBondMouseOver(event, bond, a1, a2, anchorA, anchorB),
     handle2dBondMouseMove: event => primitiveEventHandlers.handle2dBondMouseMove(event),
@@ -566,6 +567,8 @@ const selectionOverlayManager = createSelectionOverlayManager(
     getSelectedBondIds: () => runtimeState.selectedBondIds,
     getHoveredAtomIds: () => runtimeState.hoveredAtomIds,
     getHoveredBondIds: () => runtimeState.hoveredBondIds,
+    getPlacementRedirectedHoverAtomIds: () => runtimeState.placementRedirectedHoverAtomIds,
+    getPlacementRedirectedHoverBondIds: () => runtimeState.placementRedirectedHoverBondIds,
     getForceMol: () => runtimeState.currentMol,
     getMol2D: () => runtimeState.mol2d,
     getHCounts: () => runtimeState.hCounts2d,
@@ -1188,7 +1191,7 @@ finalizeAppBootstrap(
     setRestorePhyschemHighlightSnapshot: fn => {
       runtimeState.restorePhyschemHighlightSnapshot = fn;
     },
-    getInitialSmiles: () => 'CC(=O)C(Cl)CC(C(C)C)C=C',
+    getInitialSmiles: () => 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O',
     primitiveSelectionActions,
     drawBondPreviewActions,
     drawBondCommitActions,

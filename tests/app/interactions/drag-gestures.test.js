@@ -224,6 +224,61 @@ describe('createDragGestureActions', () => {
     assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0]]);
   });
 
+  it('drags an unselected force bond by moving its own endpoints', () => {
+    const nodeA = { id: 'a1', x: 1, y: 2 };
+    const nodeB = { id: 'a2', x: 3, y: 4 };
+    const nodeC = { id: 'a3', x: 9, y: 10 };
+    const simulation = {
+      nodes: () => [nodeA, nodeB, nodeC],
+      alphaTarget() {
+        return simulation;
+      },
+      restart() {
+        return simulation;
+      }
+    };
+    const molecule = {
+      atoms: new Map([
+        ['a1', {}],
+        ['a2', {}],
+        ['a3', {}]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]])
+    };
+    const { actions } = makeContext({
+      selectedDragAtomIds: null
+    });
+    const behavior = actions.createForceBondDrag(simulation, molecule);
+    const start = behavior.handlers.get('start');
+    const drag = behavior.handlers.get('drag');
+    const end = behavior.handlers.get('end');
+    const element = { id: 'bond-hit-1' };
+
+    start.call(
+      element,
+      {
+        active: false,
+        x: 10,
+        y: 20,
+        sourceEvent: {
+          stopPropagation() {}
+        }
+      },
+      { id: 'b1' }
+    );
+    drag.call(element, { x: 15, y: 30 });
+    end.call(element, { active: false });
+
+    assert.equal(nodeA.x, 6);
+    assert.equal(nodeA.y, 12);
+    assert.equal(nodeB.x, 8);
+    assert.equal(nodeB.y, 14);
+    assert.equal(nodeC.x, 9);
+    assert.equal(nodeC.y, 10);
+    assert.equal(nodeA.anchorX, 6);
+    assert.equal(nodeB.anchorY, 14);
+  });
+
   it('takes a 2D drag snapshot once and redraws drag targets before final draw', () => {
     const atom = { id: 'a1', x: 0, y: 0 };
     const molecule = {

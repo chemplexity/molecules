@@ -109,7 +109,8 @@ export function createDragGestureActions(context) {
           return;
         }
         const selectedDragAtomIds = context.selection.getSelectedDragAtomIds(molecule, [], [datum.id]);
-        if (!selectedDragAtomIds) {
+        const bondAtomIds = selectedDragAtomIds ?? new Set((molecule?.bonds?.get?.(datum.id)?.atoms ?? []).filter(atomId => molecule?.atoms?.has?.(atomId)));
+        if (bondAtomIds.size === 0) {
           this._dragState = null;
           return;
         }
@@ -124,7 +125,7 @@ export function createDragGestureActions(context) {
         const positions = new Map();
         const nodeIds = new Set();
         for (const node of simulation.nodes()) {
-          if (!selectedDragAtomIds.has(node.id)) {
+          if (!bondAtomIds.has(node.id)) {
             continue;
           }
           positions.set(node.id, { x: node.x, y: node.y });

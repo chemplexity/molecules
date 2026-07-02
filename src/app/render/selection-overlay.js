@@ -10,9 +10,15 @@ import { labelHalfW, getAtomLabel } from '../../layout/mol2d-helpers.js';
 export function createSelectionOverlayManager(ctx) {
   let overlayRafId = null;
 
+  function isRenderableForceAtom(atom) {
+    return atom && (atom.visible !== false || atom.name === 'H');
+  }
+
   function clearPrimitiveHover() {
     ctx.state.getHoveredAtomIds().clear();
     ctx.state.getHoveredBondIds().clear();
+    ctx.state.getPlacementRedirectedHoverAtomIds?.().clear();
+    ctx.state.getPlacementRedirectedHoverBondIds?.().clear();
   }
 
   function setPrimitiveHover(atomIds = [], bondIds = []) {
@@ -56,7 +62,7 @@ export function createSelectionOverlayManager(ctx) {
       }
       for (const atomId of atomIds) {
         const atom = mol.atoms.get(atomId);
-        if (atom && atom.visible !== false) {
+        if (isRenderableForceAtom(atom)) {
           ctx.state.getHoveredAtomIds().add(atomId);
         }
       }
@@ -70,12 +76,13 @@ export function createSelectionOverlayManager(ctx) {
   }
 
   function getRenderableSelectionIds() {
-    const mol = ctx.state.getMode() === 'force' ? ctx.molecule.getForceMol() : ctx.molecule.getMol2D();
+    const mode = ctx.state.getMode();
+    const mol = mode === 'force' ? ctx.molecule.getForceMol() : ctx.molecule.getMol2D();
     const liveHoveredAtomIds = mol
       ? new Set(
           [...ctx.state.getHoveredAtomIds()].filter(id => {
             const atom = mol.atoms.get(id);
-            return atom && atom.visible !== false;
+            return mode === 'force' ? isRenderableForceAtom(atom) : atom && atom.visible !== false;
           })
         )
       : new Set();

@@ -8,6 +8,9 @@ export function initKeyboardInteractions(context) {
   const { doc = document, win = window } = context;
 
   function canDeleteHoveredAtom(atomId) {
+    if (context.state.overlayState.getPlacementRedirectedHoverAtomIds?.().has(atomId)) {
+      return false;
+    }
     const mol = context.state.documentState.getActiveMolecule();
     if (!mol) {
       return false;
@@ -23,6 +26,9 @@ export function initKeyboardInteractions(context) {
   }
 
   function canDeleteHoveredBond(bondId) {
+    if (context.state.overlayState.getPlacementRedirectedHoverBondIds?.().has(bondId)) {
+      return false;
+    }
     const mol = context.state.documentState.getActiveMolecule();
     if (!mol) {
       return false;
@@ -185,6 +191,9 @@ export function initKeyboardInteractions(context) {
         const mol = context.state.documentState.getActiveMolecule();
         if (mol) {
           const toChange = [...hoveredAtomIds].filter(id => {
+            if (context.state.overlayState.getPlacementRedirectedHoverAtomIds?.().has(id)) {
+              return false;
+            }
             if (!context.overlays.isReactionPreviewEditableAtomId(id)) {
               return false;
             }

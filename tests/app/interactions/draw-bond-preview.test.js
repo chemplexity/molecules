@@ -218,6 +218,48 @@ describe('createDrawBondPreviewActions', () => {
     assert.equal(getDrawBondState().dragged, false);
   });
 
+  it('only previews projected 2D stereochemical hydrogen drags when snapping back to the parent atom', () => {
+    const hydrogen = { id: 'H4', x: 1, y: 2, visible: false, name: 'H', bonds: ['b1'] };
+    const parent = { id: 'C3', x: 1.5, y: 2, visible: true, name: 'C', bonds: ['b1'] };
+    const bond = {
+      id: 'b1',
+      atoms: ['C3', 'H4'],
+      getOtherAtom(atomId) {
+        return atomId === 'H4' ? 'C3' : 'H4';
+      }
+    };
+    const activeMolecule = {
+      atoms: new Map([
+        ['H4', hydrogen],
+        ['C3', parent]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { actions, getDrawBondState, g } = makeActions({
+      activeMolecule,
+      drawBondElement: 'C',
+      atomById: atomId => (atomId === 'H4' ? hydrogen : atomId === 'C3' ? parent : null),
+      atoms: [hydrogen, parent],
+      toSelectionSVGPt2d: currentAtom => (currentAtom?.id === 'H4' ? { x: 412, y: 156 } : null)
+    });
+
+    actions.start('H4', 10, 20);
+
+    assert.equal(getDrawBondState().sourceIsProjectedStereoHydrogen, true);
+    assert.equal(getDrawBondState().allowedHydrogenParentId, 'C3');
+    assert.equal(g.select('line.draw-bond-preview-segment').empty(), true);
+
+    actions.update([430, 180]);
+    assert.equal(g.select('line.draw-bond-preview-segment').empty(), true);
+
+    actions.update([360, 120]);
+
+    const segment = g.nodes.find(node => !node.removed && node.attrs.class === 'draw-bond-preview-segment');
+    assert.ok(segment);
+    assert.equal(segment.attrs.x1, 412);
+    assert.equal(segment.attrs.y1, 156);
+  });
+
   it('starts an atom-anchored 2D preview in the no-drag auto-placement direction', () => {
     const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C', bonds: ['b1'] };
     const neighbor = { id: 'a2', x: -1.5, y: 0, visible: true, name: 'C', bonds: ['b1'] };
@@ -345,6 +387,43 @@ describe('createDrawBondPreviewActions', () => {
     assert.ok(Math.abs(getDrawBondState().ey - (120 + Math.sin(expectedAngle) * expectedBondLength)) < 1e-9);
     assert.ok(Math.abs(Number(g.select('circle.draw-bond-dest-node').attr('cx')) - getDrawBondState().ex) < 1e-9);
     assert.ok(Math.abs(Number(g.select('circle.draw-bond-dest-node').attr('cy')) - getDrawBondState().ey) < 1e-9);
+  });
+
+  it('routes blank-space force line preview snaps from hydrogen to the parent heavy atom', () => {
+    const carbon = { id: 'c1', name: 'C', bonds: ['b1'] };
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'c1' : 'h1';
+      }
+    };
+    const activeMolecule = {
+      atoms: new Map([
+        ['c1', carbon],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const forceNodes = [
+      { id: 'c1', name: 'C', x: 120, y: 100 },
+      { id: 'h1', name: 'H', x: 150, y: 100 }
+    ];
+    const { actions, getDrawBondState, g } = makeActions({
+      mode: 'force',
+      activeMolecule,
+      forceNodes,
+      forceNodeById: atomId => forceNodes.find(node => node.id === atomId) ?? null
+    });
+
+    actions.start(null, 40, 100);
+    actions.update([150, 100]);
+
+    assert.equal(getDrawBondState().snapAtomId, 'c1');
+    assert.equal(getDrawBondState().ex, 120);
+    assert.equal(getDrawBondState().ey, 100);
+    assert.equal(g.select('g.draw-bond-preview').empty(), false);
   });
 
   it('starts a blank-space 2D preview with only the origin atom visible', () => {

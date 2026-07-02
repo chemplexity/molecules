@@ -286,7 +286,9 @@ export function createSelectionOverlayManagerDeps(ctx) {
       getSelectedAtomIds: () => ctx.getSelectedAtomIds(),
       getSelectedBondIds: () => ctx.getSelectedBondIds(),
       getHoveredAtomIds: () => ctx.getHoveredAtomIds(),
-      getHoveredBondIds: () => ctx.getHoveredBondIds()
+      getHoveredBondIds: () => ctx.getHoveredBondIds(),
+      getPlacementRedirectedHoverAtomIds: () => ctx.getPlacementRedirectedHoverAtomIds?.() ?? new Set(),
+      getPlacementRedirectedHoverBondIds: () => ctx.getPlacementRedirectedHoverBondIds?.() ?? new Set()
     },
     molecule: {
       getForceMol: () => ctx.getForceMol(),

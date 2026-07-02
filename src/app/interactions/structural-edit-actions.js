@@ -897,6 +897,28 @@ function resolveStoredPreferredCenterId(bond, preferredCenterId = null) {
   return preferredCenterId ?? bond?.properties?.display?.centerId ?? null;
 }
 
+function isPotentialStereoCenter(mol, atomId) {
+  const atom = mol?.atoms?.get?.(atomId);
+  if (typeof atom?.setChirality !== 'function') {
+    return false;
+  }
+  const originalChirality = typeof atom.getChirality === 'function' ? atom.getChirality() : atom.properties?.chirality ?? null;
+  for (const candidate of ['R', 'S']) {
+    try {
+      atom.setChirality(candidate, mol);
+      atom.setChirality(originalChirality, mol);
+      return true;
+    } catch {
+      try {
+        atom.setChirality(originalChirality, mol);
+      } catch {
+        /* best-effort restore */
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Returns whether a force-mode hydrogen bond should remain editable because it
  * represents a stereochemical hydrogen display. Ordinary force-layout H bonds
@@ -927,7 +949,7 @@ function isForceEditableHydrogenStereoBond(mol, bond, drawBondType, preferredCen
     return true;
   }
   const centerId = getPreferredBondDisplayCenterId(mol, bond.id, preferredCenterId);
-  return !!centerId && !!mol.atoms.get(centerId)?.getChirality?.();
+  return !!centerId && (!!mol.atoms.get(centerId)?.getChirality?.() || isPotentialStereoCenter(mol, centerId));
 }
 
 /**

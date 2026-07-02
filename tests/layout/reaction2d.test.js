@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSMILES, toSMILES } from '../../src/io/smiles.js';
+import { parseSMILES } from '../../src/io/smiles.js';
 import { reactionTemplates } from '../../src/smirks/reference.js';
 import { findSMARTSRaw } from '../../src/smarts/search.js';
 import { generateAndRefine2dCoords } from '../../src/layout/index.js';
 import { pickStereoWedges } from '../../src/layout/mol2d-helpers.js';
-import { buildReaction2dMol, alignReaction2dProductOrientation, spreadReaction2dProductComponents, centerReaction2dPairCoords } from '../../src/layout/reaction2d.js';
+import { buildReaction2dMol, alignReaction2dProductOrientation, spreadReaction2dProductComponents, centerReaction2dPairCoords, cloneWithPrefixedIds } from '../../src/layout/reaction2d.js';
 import {
   initReaction2d,
   _reapplyActiveReactionPreview,
@@ -1281,13 +1281,13 @@ test('reaction preview keeps charge-only amine protonation on the reactant geome
   assert.deepEqual(validateValence(preview.mol), []);
 });
 
-test('reaction preview keeps imine-hydrolysis then phenolate-protonation fused aza product valence-clean', () => {
-  const afterImineHydrolysis = preparePreview('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]', reactionTemplates.imineHydrolysis.smirks);
-  assert.deepEqual(validateValence(afterImineHydrolysis.mol), []);
+test('reaction preview skips protonated imine-hydrolysis while phenolate-protonation stays valence-clean', () => {
+  const smiles = 'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]';
+  const sourceMol = parseSMILES(smiles);
+  const imineHydrolysisMappings = [...findSMARTSRaw(sourceMol, reactionTemplates.imineHydrolysis.smirks.split('>>')[0])];
+  assert.equal(imineHydrolysisMappings.length, 0);
 
-  const productSmiles = toSMILES(afterImineHydrolysis.mol.getSubgraph([...afterImineHydrolysis.productAtomIds]));
-  const previewInput = productSmiles;
-  const afterPhenolateProtonation = preparePreview(previewInput, reactionTemplates.phenolateProtonation.smirks);
+  const afterPhenolateProtonation = preparePreview(smiles, reactionTemplates.phenolateProtonation.smirks);
   assert.deepEqual(validateValence(afterPhenolateProtonation.mol), []);
 });
 
@@ -1582,6 +1582,53 @@ test('reaction preview keeps all nitrile-to-imine mappings compact', () => {
     assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in nitrile-to-imine mapping ${index}, got ${stats.maxBond.toFixed(3)} Å`);
     assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in nitrile-to-imine mapping ${index}, got ${stats.minNonbonded.toFixed(3)} Å`);
   }
+});
+
+test('reaction preview keeps aryl halide hydrolysis product leaves locally trigonal', () => {
+  const smiles = 'NC1=C(C(C2=C(CCCC2=O)N1c3ccc(cc3)S(=O)(=O)N)c4ccc(Cl)cc4Cl)C(=O)O';
+  const sourceMol = parseSMILES(smiles);
+  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
+  const reactantSmarts = reactionTemplates.arylHalideHydrolysis.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.equal(mappings.length, 2, 'expected two aryl halide hydrolysis sites');
+
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = preparePreviewWithMapping(sourceMol, reactionTemplates.arylHalideHydrolysis.smirks, mapping);
+    const parent = productAtomForSource(preview, mapping.get('q0'));
+    const hydroxyl = productAtomForSource(preview, mapping.get('q1'));
+    assert.ok(parent && hydroxyl, `expected mapped aryl hydrolysis atoms for site ${index + 1}`);
+    assert.equal(hydroxyl.name, 'O');
+
+    const siblings = parent.getNeighbors(preview.mol).filter(nb => nb.id !== hydroxyl.id && nb.name !== 'H');
+    assert.equal(siblings.length, 2, `expected two aryl siblings for site ${index + 1}`);
+    for (const sibling of siblings) {
+      const angle = angleDeg(sibling, parent, hydroxyl);
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected hydrolysis site ${index + 1} ${hydroxyl.id} to stay trigonal, got ${angle.toFixed(1)}°`);
+    }
+  }
+});
+
+test('reaction alignment leaves resonance-pair display coordinates untouched', () => {
+  const sourceMol = parseSMILES('CC=O');
+  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
+  const right = cloneWithPrefixedIds(sourceMol, '__resonance_product__:');
+  const pairMol = sourceMol.clone().merge(right);
+  const productAtomIds = new Set(right.atoms.keys());
+  pairMol.__reactionPreview = {
+    reactantAtomIds: new Set(sourceMol.atoms.keys()),
+    productAtomIds,
+    productComponentAtomIdSets: [productAtomIds],
+    mappedAtomPairs: [...sourceMol.atoms.keys()].map(atomId => [atomId, `__resonance_product__:${atomId}`]),
+    editedProductAtomIds: new Set(productAtomIds),
+    reactantReferenceCoords: new Map([...sourceMol.atoms.values()].map(atom => [atom.id, { x: atom.x, y: atom.y }])),
+    resonancePair: true
+  };
+  centerReaction2dPairCoords(pairMol, pairMol.__reactionPreview, 1.5);
+  const before = serializeMol(pairMol);
+
+  alignReaction2dProductOrientation(pairMol, pairMol.__reactionPreview, 1.5);
+
+  assert.deepEqual(serializeMol(pairMol), before, 'expected resonance-pair coordinates to skip reaction product alignment');
 });
 
 test('reaction preview preserves exact stereobond choices on both sides for untouched stereocenters', () => {

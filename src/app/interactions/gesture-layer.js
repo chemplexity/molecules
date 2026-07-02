@@ -171,6 +171,7 @@ export function initGestureInteractions(context) {
 
   context.ringTemplateDrag ??= {};
   context.ringTemplateDrag.clearFreePreview = resetFreeRingTemplatePreview;
+  context.ringTemplateDrag.refreshFreePreview = refreshFreeRingTemplatePreview;
 
   function ringTemplateModeAllowsFreePreview() {
     const mode = context.state.viewState.getMode();
@@ -296,6 +297,27 @@ export function initGestureInteractions(context) {
           .attr('pointer-events', 'none');
       }
     }
+  }
+
+  function refreshFreeRingTemplatePreview() {
+    if (!ringTemplatePreview) {
+      return false;
+    }
+    const size = context.state.overlayState.getRingTemplateSize?.() ?? 6;
+    const normalizedSize = normalizeRingTemplatePreviewSize(size);
+    if (normalizedSize === null || !ringTemplateModeAllowsFreePreview()) {
+      resetFreeRingTemplatePreview();
+      return false;
+    }
+    ringTemplatePreview.size = size;
+    ringTemplatePreview.normalizedSize = normalizedSize;
+    ringTemplatePreview.template = size;
+    ringTemplatePreview.defaultAngle = defaultRingTemplatePreviewAngle(normalizedSize);
+    if (ringTemplatePreview.phase !== 'dragging') {
+      ringTemplatePreview.angle = ringTemplatePreview.defaultAngle;
+    }
+    drawRingTemplatePreview();
+    return true;
   }
 
   function updateRingTemplatePreview(event) {

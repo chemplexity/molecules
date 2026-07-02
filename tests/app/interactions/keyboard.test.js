@@ -7,9 +7,12 @@ function makeKeyboardContext({
   activeTagName = 'BODY',
   activeMolecule = null,
   mode = '2d',
+  selectMode = false,
   ringTemplateMode = false,
   hoveredAtomIds = new Set(),
   hoveredBondIds = new Set(),
+  placementRedirectedHoverAtomIds = new Set(),
+  placementRedirectedHoverBondIds = new Set(),
   selectedAtomIds = new Set(),
   selectedBondIds = new Set(),
   clipboard = null
@@ -41,14 +44,16 @@ function makeKeyboardContext({
       overlayState: {
         getSelectionModifierActive: () => false,
         setSelectionModifierActive() {},
-        getSelectMode: () => false,
+        getSelectMode: () => selectMode,
         getDrawBondMode: () => false,
         getRingTemplateMode: () => ringTemplateMode,
         getEraseMode: () => false,
         getSelectedAtomIds: () => selectedAtomIds,
         getSelectedBondIds: () => selectedBondIds,
         getHoveredAtomIds: () => hoveredAtomIds,
-        getHoveredBondIds: () => hoveredBondIds
+        getHoveredBondIds: () => hoveredBondIds,
+        getPlacementRedirectedHoverAtomIds: () => placementRedirectedHoverAtomIds,
+        getPlacementRedirectedHoverBondIds: () => placementRedirectedHoverBondIds
       }
     },
     selection: {
@@ -93,6 +98,8 @@ function makeKeyboardContext({
         records.push(['clearPrimitiveHover']);
         hoveredAtomIds.clear();
         hoveredBondIds.clear();
+        placementRedirectedHoverAtomIds.clear();
+        placementRedirectedHoverBondIds.clear();
       }
     }
   });
@@ -432,5 +439,56 @@ describe('initKeyboardInteractions', () => {
     ]);
     assert.equal(hoveredBondIds.size, 0);
     assert.equal(prevented, true);
+  });
+
+  it('does not delete hovered force hydrogens or hydrogen bonds outside placement routing', () => {
+    const mol = {
+      atoms: new Map([
+        ['c1', { id: 'c1', name: 'C' }],
+        ['h1', { id: 'h1', name: 'H' }]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['c1', 'h1'] }]])
+    };
+    const { handlers, records } = makeKeyboardContext({
+      activeMolecule: mol,
+      mode: 'force',
+      selectMode: true,
+      hoveredAtomIds: new Set(['h1']),
+      hoveredBondIds: new Set(['b1'])
+    });
+
+    handlers.get('keydown')({
+      key: 'Delete',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {}
+    });
+
+    assert.deepEqual(records, [['clearPrimitiveHover'], ['deleteTargets', [], [], { transient: true }]]);
+  });
+
+  it('does not delete force atoms highlighted only by hydrogen placement routing', () => {
+    const mol = {
+      atoms: new Map([['c1', { id: 'c1', name: 'C' }]]),
+      bonds: new Map()
+    };
+    const { handlers, records } = makeKeyboardContext({
+      activeMolecule: mol,
+      mode: 'force',
+      selectMode: true,
+      hoveredAtomIds: new Set(['c1']),
+      placementRedirectedHoverAtomIds: new Set(['c1'])
+    });
+
+    handlers.get('keydown')({
+      key: 'Delete',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {}
+    });
+
+    assert.deepEqual(records, [['clearPrimitiveHover'], ['deleteTargets', [], [], { transient: true }]]);
   });
 });

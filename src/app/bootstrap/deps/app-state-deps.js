@@ -85,6 +85,8 @@ export function createAppStateBridgeDeps(ctx) {
       getSelectedBondIds: () => ctx.getSelectedBondIds(),
       getHoveredAtomIds: () => ctx.getHoveredAtomIds(),
       getHoveredBondIds: () => ctx.getHoveredBondIds(),
+      getPlacementRedirectedHoverAtomIds: () => ctx.runtimeState.placementRedirectedHoverAtomIds,
+      getPlacementRedirectedHoverBondIds: () => ctx.runtimeState.placementRedirectedHoverBondIds,
       getSelectionModifierActive: () => ctx.getSelectionModifierActive(),
       setSelectionModifierActive: value => {
         ctx.setSelectionModifierActive(value);

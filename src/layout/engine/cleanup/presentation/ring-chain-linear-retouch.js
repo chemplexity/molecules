@@ -7,6 +7,7 @@ import { collectCutSubtree } from '../subtree-utils.js';
 
 const MAX_LINEARIZATION_PASSES = 2;
 const MIN_LINEARITY_IMPROVEMENT = 0.02;
+const MIN_LINKER_EXIT_IMPROVEMENT_DEGREES = 1;
 const ANGLE_CANDIDATE_DELTAS = Object.freeze([
   0,
   Math.PI / 36,
@@ -160,6 +161,27 @@ function orderedEdgeAttachment(edge, previousRingSystemId, nextRingSystemId) {
   return null;
 }
 
+function orderedFullEdgeAttachment(edge, previousRingSystemId, nextRingSystemId) {
+  if (!edge || edge.linkerAtomIds?.length !== 1) {
+    return null;
+  }
+  if (edge.firstRingSystemId === previousRingSystemId && edge.secondRingSystemId === nextRingSystemId) {
+    return {
+      linkerAtomId: edge.linkerAtomIds[0],
+      previousAttachmentAtomId: edge.firstAttachmentAtomId,
+      nextAttachmentAtomId: edge.secondAttachmentAtomId
+    };
+  }
+  if (edge.secondRingSystemId === previousRingSystemId && edge.firstRingSystemId === nextRingSystemId) {
+    return {
+      linkerAtomId: edge.linkerAtomIds[0],
+      previousAttachmentAtomId: edge.secondAttachmentAtomId,
+      nextAttachmentAtomId: edge.firstAttachmentAtomId
+    };
+  }
+  return null;
+}
+
 function rotateSubtree(inputCoords, pivot, subtreeAtomIds, angle) {
   const coords = new Map(inputCoords);
   for (const atomId of subtreeAtomIds) {
@@ -170,6 +192,86 @@ function rotateSubtree(inputCoords, pivot, subtreeAtomIds, angle) {
     coords.set(atomId, add(pivot, rotate(sub(position, pivot), angle)));
   }
   return coords;
+}
+
+function angleDegrees(firstPosition, centerPosition, secondPosition) {
+  const firstVector = sub(firstPosition, centerPosition);
+  const secondVector = sub(secondPosition, centerPosition);
+  const denominator = Math.hypot(firstVector.x, firstVector.y) * Math.hypot(secondVector.x, secondVector.y);
+  if (!(denominator > 0)) {
+    return null;
+  }
+  const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / denominator));
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
+function ringNeighborIds(layoutGraph, ringSystem, atomId) {
+  const ringAtomIds = new Set(ringSystem?.atomIds ?? []);
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? []).map(bond => (bond.a === atomId ? bond.b : bond.a)).filter(neighborAtomId => ringAtomIds.has(neighborAtomId));
+}
+
+function linkerExitDeviationDegrees(layoutGraph, coords, ringChain) {
+  const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
+  let maxDeviation = 0;
+  const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
+  for (let index = 1; index < orderedRingSystemIds.length; index++) {
+    const previousRingSystemId = orderedRingSystemIds[index - 1];
+    const nextRingSystemId = orderedRingSystemIds[index];
+    const edge = orderedFullEdgeAttachment(edgeBetween(ringChain, previousRingSystemId, nextRingSystemId), previousRingSystemId, nextRingSystemId);
+    if (!edge) {
+      continue;
+    }
+    for (const [ringSystemId, attachmentAtomId] of [
+      [previousRingSystemId, edge.previousAttachmentAtomId],
+      [nextRingSystemId, edge.nextAttachmentAtomId]
+    ]) {
+      const attachmentPosition = coords.get(attachmentAtomId);
+      const linkerPosition = coords.get(edge.linkerAtomId);
+      const ringSystem = ringSystemById.get(ringSystemId);
+      if (!attachmentPosition || !linkerPosition || !ringSystem) {
+        continue;
+      }
+      for (const neighborAtomId of ringNeighborIds(layoutGraph, ringSystem, attachmentAtomId)) {
+        const neighborPosition = coords.get(neighborAtomId);
+        const angle = neighborPosition ? angleDegrees(neighborPosition, attachmentPosition, linkerPosition) : null;
+        if (angle == null) {
+          continue;
+        }
+        maxDeviation = Math.max(maxDeviation, Math.abs(angle - 120));
+      }
+    }
+  }
+  return maxDeviation;
+}
+
+function idealLinkerExitAngles(layoutGraph, coords, ringSystem, attachmentAtomId, linkerAtomId) {
+  const attachmentPosition = coords.get(attachmentAtomId);
+  const linkerPosition = coords.get(linkerAtomId);
+  if (!attachmentPosition || !linkerPosition) {
+    return [];
+  }
+  const neighborPositions = ringNeighborIds(layoutGraph, ringSystem, attachmentAtomId)
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean);
+  if (neighborPositions.length < 2) {
+    return [];
+  }
+  let sumX = 0;
+  let sumY = 0;
+  for (const position of neighborPositions) {
+    const vector = sub(position, attachmentPosition);
+    const length = Math.hypot(vector.x, vector.y);
+    if (!(length > 0)) {
+      continue;
+    }
+    sumX += vector.x / length;
+    sumY += vector.y / length;
+  }
+  if (Math.hypot(sumX, sumY) <= 1e-9) {
+    return [];
+  }
+  const primaryAngle = Math.atan2(sumY, sumX);
+  return uniqueAngles([primaryAngle, primaryAngle + Math.PI]);
 }
 
 function auditDoesNotWorsen(candidateAudit, baseAudit) {
@@ -257,6 +359,79 @@ function bestLinearizedEdge(layoutGraph, inputCoords, ringChain, edgeIndex, opti
   return best;
 }
 
+function linkerExitCandidatesForAttachment(layoutGraph, coords, ringSystem, attachmentAtomId, linkerAtomId) {
+  const attachmentPosition = coords.get(attachmentAtomId);
+  const linkerPosition = coords.get(linkerAtomId);
+  const targetAngles = idealLinkerExitAngles(layoutGraph, coords, ringSystem, attachmentAtomId, linkerAtomId);
+  if (!attachmentPosition || !linkerPosition || targetAngles.length === 0) {
+    return [];
+  }
+  const currentAngle = angleOf(sub(linkerPosition, attachmentPosition));
+  return uniqueAngles(
+    targetAngles.flatMap(targetAngle => [targetAngle - currentAngle, ...ANGLE_CANDIDATE_DELTAS.map(delta => targetAngle - currentAngle + delta)])
+  );
+}
+
+function bestLinkerExitRetouch(layoutGraph, inputCoords, ringChain, options, baseAudit, baseExitDeviation) {
+  const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
+  const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
+  let best = null;
+  for (let index = 1; index < orderedRingSystemIds.length; index++) {
+    const previousRingSystemId = orderedRingSystemIds[index - 1];
+    const nextRingSystemId = orderedRingSystemIds[index];
+    const edge = orderedFullEdgeAttachment(edgeBetween(ringChain, previousRingSystemId, nextRingSystemId), previousRingSystemId, nextRingSystemId);
+    if (!edge) {
+      continue;
+    }
+    for (const [ringSystemId, attachmentAtomId] of [
+      [previousRingSystemId, edge.previousAttachmentAtomId],
+      [nextRingSystemId, edge.nextAttachmentAtomId]
+    ]) {
+      const ringSystem = ringSystemById.get(ringSystemId);
+      const pivot = inputCoords.get(attachmentAtomId);
+      if (!ringSystem || !pivot) {
+        continue;
+      }
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, edge.linkerAtomId, attachmentAtomId)].filter(atomId => layoutGraph.atoms.has(atomId));
+      if (subtreeAtomIds.length === 0) {
+        continue;
+      }
+      for (const angle of linkerExitCandidatesForAttachment(layoutGraph, inputCoords, ringSystem, attachmentAtomId, edge.linkerAtomId)) {
+        const coords = rotateSubtree(inputCoords, pivot, subtreeAtomIds, angle);
+        const audit = auditLayout(layoutGraph, coords, {
+          bondLength: options.bondLength,
+          bondValidationClasses: options.bondValidationClasses
+        });
+        if (options.allowAuditWorsening !== true && !auditDoesNotWorsen(audit, baseAudit)) {
+          continue;
+        }
+        const exitDeviation = linkerExitDeviationDegrees(layoutGraph, coords, ringChain);
+        if (exitDeviation > baseExitDeviation - MIN_LINKER_EXIT_IMPROVEMENT_DEGREES) {
+          continue;
+        }
+        const lineScore = linearityScore(coords, ringChain);
+        const tieScore = auditTieScore(audit);
+        if (
+          !best ||
+          exitDeviation < best.exitDeviation - 1e-9 ||
+          (Math.abs(exitDeviation - best.exitDeviation) <= 1e-9 && lineScore < best.lineScore - 1e-9) ||
+          (Math.abs(exitDeviation - best.exitDeviation) <= 1e-9 && Math.abs(lineScore - best.lineScore) <= 1e-9 && tieScore < best.tieScore)
+        ) {
+          best = {
+            coords,
+            audit,
+            exitDeviation,
+            lineScore,
+            tieScore,
+            movedAtomIds: subtreeAtomIds
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * Straightens path-like isolated ring chains by rotating downstream ring
  * subtrees around their single-atom linkers. Candidate moves are accepted only
@@ -309,6 +484,26 @@ export function runRingChainLinearRetouch(layoutGraph, inputCoords, options = {}
         changed = true;
         movedThisPass = true;
         movedAtomIds.push(...retouch.movedAtomIds);
+      }
+      const baseExitDeviation = linkerExitDeviationDegrees(layoutGraph, coords, ringChain);
+      const exitRetouch = bestLinkerExitRetouch(
+        layoutGraph,
+        coords,
+        ringChain,
+        {
+          bondLength,
+          bondValidationClasses,
+          allowAuditWorsening: options.allowAuditWorsening === true
+        },
+        audit,
+        baseExitDeviation
+      );
+      if (exitRetouch) {
+        coords = exitRetouch.coords;
+        audit = exitRetouch.audit;
+        changed = true;
+        movedThisPass = true;
+        movedAtomIds.push(...exitRetouch.movedAtomIds);
       }
     }
     if (!movedThisPass) {

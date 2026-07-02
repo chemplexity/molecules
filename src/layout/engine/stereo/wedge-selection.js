@@ -183,8 +183,8 @@ function isHydrogenEntry(entry) {
 /**
  * Returns whether a hydrogen entry should be treated as hidden for stereo display.
  * The engine API may temporarily reveal hidden hydrogens during suppressed-H
- * layout so they can receive coordinates, but wedge selection should still
- * prefer a heavy display bond in that mode.
+ * layout so they can receive coordinates. These entries remain available as
+ * lower-priority fallbacks when no clearer heavy-atom display bond exists.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} entry - Candidate stereobond entry.
  * @returns {boolean} True when the entry is a hidden/suppressed hydrogen.

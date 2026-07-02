@@ -315,6 +315,52 @@ describe('createDrawBondCommitActions', () => {
     assert.deepEqual(calls.renderers, [['draw2d']]);
   });
 
+  it('does not create a brand-new atom from a dragged stereochemical hydrogen source', () => {
+    const parent = makeAtom('C3', 'C');
+    const hydrogen = makeAtom('H4', 'H');
+    parent.bonds = ['b1'];
+    hydrogen.bonds = ['b1'];
+    const bond = {
+      id: 'b1',
+      atoms: ['C3', 'H4'],
+      properties: { order: 1, display: { as: 'dash', centerId: 'C3' } },
+      getOtherAtom(atomId) {
+        return atomId === 'H4' ? 'C3' : 'H4';
+      },
+      getAtomObjects(currentMol) {
+        return [currentMol.atoms.get('C3'), currentMol.atoms.get('H4')];
+      }
+    };
+    const mol = {
+      atoms: new Map([
+        ['C3', parent],
+        ['H4', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { actions, calls } = makeActions({
+      drawBondElement: 'C',
+      activeMol: mol,
+      initialDrawBondState: {
+        atomId: 'H4',
+        ox: 412,
+        oy: 156,
+        ex: 460,
+        ey: 156,
+        dragged: true,
+        snapAtomId: null
+      }
+    });
+
+    actions.commit();
+
+    assert.deepEqual([...mol.atoms.keys()], ['C3', 'H4']);
+    assert.deepEqual([...mol.bonds.keys()], ['b1']);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.promotedBonds, []);
+    assert.deepEqual(calls.renderers, []);
+  });
+
   it('restores the prior reaction preview on a short hydrogen snap no-op', () => {
     const srcAtom = makeAtom('a1', 'C');
     const hydrogen = makeAtom('h1', 'H');
@@ -352,6 +398,334 @@ describe('createDrawBondCommitActions', () => {
 
     assert.deepEqual(calls.restoredSnapshots, [{ id: 'reaction-preview-snapshot' }]);
     assert.deepEqual(calls.snapshots, []);
+  });
+
+  it('routes force drags from a heavy atom to its displayed stereochemical hydrogen through single-bond clearing', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.getChirality = () => 'R';
+    const hydrogen = makeAtom('h1', 'H');
+    const bond = {
+      id: 'b1',
+      atoms: ['a1', 'h1'],
+      properties: { order: 1, display: { as: 'dash', centerId: 'a1' } },
+      getAtomObjects(currentMol) {
+        return [currentMol.atoms.get('a1'), currentMol.atoms.get('h1')];
+      },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'a1' : 'h1';
+      }
+    };
+    srcAtom.bonds.push('b1');
+    hydrogen.bonds.push('b1');
+    const mol = {
+      atoms: new Map([
+        ['a1', srcAtom],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { actions, calls } = makeActions({
+      mode: 'force',
+      drawBondType: 'single',
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 100,
+        oy: 100,
+        ex: 130,
+        ey: 100,
+        snapAtomId: 'h1',
+        dragged: true
+      },
+      activeMol: mol,
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 100, y: 100 } : atomId === 'h1' ? { id: 'h1', name: 'H', x: 130, y: 100 } : null),
+      forceNodes: [
+        { id: 'a1', name: 'C', x: 100, y: 100 },
+        { id: 'h1', name: 'H', x: 130, y: 100 }
+      ],
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false
+      }),
+      structuralEditFactory: currentMol => ({
+        mol: currentMol,
+        resonanceReset: false
+      })
+    });
+
+    actions.commit();
+
+    assert.deepEqual(calls.promotedBonds, [
+      {
+        bondId: 'b1',
+        options: {
+          drawBondType: 'single',
+          preferredCenterId: 'a1',
+          zoomSnapshot: null,
+          reactionRestored: false,
+          reactionEntryZoomSnapshot: null
+        }
+      }
+    ]);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
+  });
+
+  it('routes force wedge drags from a heavy atom to its stereochemical hydrogen through bond promotion', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.getChirality = () => 'R';
+    const hydrogen = makeAtom('h1', 'H');
+    const bond = {
+      id: 'b1',
+      atoms: ['a1', 'h1'],
+      properties: { order: 1 },
+      getAtomObjects(currentMol) {
+        return [currentMol.atoms.get('a1'), currentMol.atoms.get('h1')];
+      },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'a1' : 'h1';
+      }
+    };
+    srcAtom.bonds.push('b1');
+    hydrogen.bonds.push('b1');
+    const mol = {
+      atoms: new Map([
+        ['a1', srcAtom],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { actions, calls } = makeActions({
+      mode: 'force',
+      drawBondType: 'wedge',
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 100,
+        oy: 100,
+        ex: 130,
+        ey: 100,
+        snapAtomId: 'h1',
+        dragged: true
+      },
+      activeMol: mol,
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 100, y: 100 } : atomId === 'h1' ? { id: 'h1', name: 'H', x: 130, y: 100 } : null),
+      forceNodes: [
+        { id: 'a1', name: 'C', x: 100, y: 100 },
+        { id: 'h1', name: 'H', x: 130, y: 100 }
+      ],
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false
+      }),
+      structuralEditFactory: currentMol => ({
+        mol: currentMol,
+        resonanceReset: false
+      })
+    });
+
+    actions.commit();
+
+    assert.deepEqual(calls.promotedBonds, [
+      {
+        bondId: 'b1',
+        options: {
+          drawBondType: 'wedge',
+          preferredCenterId: 'a1',
+          zoomSnapshot: null,
+          reactionRestored: false,
+          reactionEntryZoomSnapshot: null
+        }
+      }
+    ]);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
+  });
+
+  it('routes force wedge drags from a heavy atom to a plain potentially stereochemical hydrogen through bond promotion', () => {
+    const mol = parseSMILES('CC(F)(Cl)[H]');
+    const center = [...mol.atoms.values()].find(
+      atom => atom.name === 'C' && atom.getNeighbors(mol).some(neighbor => neighbor.name === 'F') && atom.getNeighbors(mol).some(neighbor => neighbor.name === 'Cl')
+    );
+    const hydrogen = center.getNeighbors(mol).find(neighbor => neighbor.name === 'H');
+    const bond = mol.bonds.get(hydrogen.bonds.find(bondId => mol.bonds.get(bondId)?.atoms.includes(center.id)));
+    const { actions, calls } = makeActions({
+      mode: 'force',
+      drawBondType: 'wedge',
+      initialDrawBondState: {
+        atomId: center.id,
+        ox: 100,
+        oy: 100,
+        ex: 130,
+        ey: 100,
+        snapAtomId: hydrogen.id,
+        dragged: true
+      },
+      activeMol: mol,
+      forceNodeById: atomId => (atomId === center.id ? { id: center.id, name: 'C', x: 100, y: 100 } : atomId === hydrogen.id ? { id: hydrogen.id, name: 'H', x: 130, y: 100 } : null),
+      forceNodes: [
+        { id: center.id, name: 'C', x: 100, y: 100 },
+        { id: hydrogen.id, name: 'H', x: 130, y: 100 }
+      ],
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false
+      }),
+      structuralEditFactory: currentMol => ({
+        mol: currentMol,
+        resonanceReset: false
+      })
+    });
+
+    actions.commit();
+
+    assert.deepEqual(calls.promotedBonds, [
+      {
+        bondId: bond.id,
+        options: {
+          drawBondType: 'wedge',
+          preferredCenterId: center.id,
+          zoomSnapshot: null,
+          reactionRestored: false,
+          reactionEntryZoomSnapshot: null
+        }
+      }
+    ]);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
+  });
+
+  it('routes force dash drags from a stereochemical hydrogen back to its heavy atom through bond promotion', () => {
+    const center = makeAtom('a1', 'C');
+    center.getChirality = () => 'R';
+    const hydrogen = makeAtom('h1', 'H');
+    const bond = {
+      id: 'b1',
+      atoms: ['a1', 'h1'],
+      properties: { order: 1, display: { as: 'wedge', centerId: 'a1' } },
+      getAtomObjects(currentMol) {
+        return [currentMol.atoms.get('a1'), currentMol.atoms.get('h1')];
+      },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'a1' : 'h1';
+      }
+    };
+    center.bonds.push('b1');
+    hydrogen.bonds.push('b1');
+    const mol = {
+      atoms: new Map([
+        ['a1', center],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { actions, calls } = makeActions({
+      mode: 'force',
+      drawBondType: 'dash',
+      initialDrawBondState: {
+        atomId: 'h1',
+        ox: 130,
+        oy: 100,
+        ex: 100,
+        ey: 100,
+        snapAtomId: 'a1',
+        dragged: true
+      },
+      activeMol: mol,
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', name: 'C', x: 100, y: 100 } : atomId === 'h1' ? { id: 'h1', name: 'H', x: 130, y: 100 } : null),
+      forceNodes: [
+        { id: 'a1', name: 'C', x: 100, y: 100 },
+        { id: 'h1', name: 'H', x: 130, y: 100 }
+      ],
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false
+      }),
+      structuralEditFactory: currentMol => ({
+        mol: currentMol,
+        resonanceReset: false
+      })
+    });
+
+    actions.commit();
+
+    assert.deepEqual(calls.promotedBonds, [
+      {
+        bondId: 'b1',
+        options: {
+          drawBondType: 'dash',
+          preferredCenterId: 'a1',
+          zoomSnapshot: null,
+          reactionRestored: false,
+          reactionEntryZoomSnapshot: null
+        }
+      }
+    ]);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
+  });
+
+  it('routes 2D dash drags from a stereochemical hydrogen back to its heavy atom through bond promotion', () => {
+    const center = makeAtom('a1', 'C');
+    center.getChirality = () => 'R';
+    const hydrogen = makeAtom('h1', 'H');
+    const bond = {
+      id: 'b1',
+      atoms: ['a1', 'h1'],
+      properties: { order: 1, display: { as: 'wedge', centerId: 'a1' } },
+      getAtomObjects(currentMol) {
+        return [currentMol.atoms.get('a1'), currentMol.atoms.get('h1')];
+      },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'a1' : 'h1';
+      }
+    };
+    center.bonds.push('b1');
+    hydrogen.bonds.push('b1');
+    const mol = {
+      atoms: new Map([
+        ['a1', center],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { actions, calls } = makeActions({
+      mode: '2d',
+      drawBondType: 'dash',
+      initialDrawBondState: {
+        atomId: 'h1',
+        ox: 130,
+        oy: 100,
+        ex: 100,
+        ey: 100,
+        snapAtomId: 'a1',
+        dragged: true
+      },
+      activeMol: mol,
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false
+      }),
+      structuralEditFactory: currentMol => ({
+        mol: currentMol,
+        resonanceReset: false
+      })
+    });
+
+    actions.commit();
+
+    assert.deepEqual(calls.promotedBonds, [
+      {
+        bondId: 'b1',
+        options: {
+          drawBondType: 'dash',
+          preferredCenterId: 'a1',
+          zoomSnapshot: 'zoom-snapshot',
+          reactionRestored: false,
+          reactionEntryZoomSnapshot: null
+        }
+      }
+    ]);
+    assert.deepEqual(calls.snapshots, []);
+    assert.deepEqual(calls.renderers, []);
   });
 
   it('restores the active resonance view when a dragged snap target is not in the editable source', () => {

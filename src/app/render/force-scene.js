@@ -295,7 +295,9 @@ function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
   const hasChiralCenters = (molecule.getChiralCenters?.()?.length ?? 0) > 0;
   const needsProjectedOrganometallicSeed = hasProjectedOrganometallicDisplayCandidate(molecule) && hasIncompleteProjectedOrganometallicDisplay(molecule);
   const skipReactionPreviewStereoSeed = isReactionPreviewMol && molecule.__reactionPreview?.skipForceStereoSeed === true;
-  const shouldSeed = needsProjectedOrganometallicSeed || (!skipReactionPreviewStereoSeed && ((!hasDisplayStereo && hasChiralCenters) || (isReactionPreviewMol && hasChiralCenters)));
+  const shouldSeed =
+    needsProjectedOrganometallicSeed ||
+    (!skipReactionPreviewStereoSeed && ((!hasDisplayStereo && hasChiralCenters) || (isReactionPreviewMol && hasChiralCenters)));
   if (!shouldSeed) {
     return;
   }
@@ -344,6 +346,8 @@ function _capturePreviousNodePositions(simulation) {
  * @returns {object} Object with an `updateForce` method for re-rendering after molecule or layout changes.
  */
 export function createForceSceneRenderer(ctx) {
+  let syncLatestForcePositions = () => {};
+
   /**
    * Rebuilds the force scene for the provided molecule, optionally preserving prior positions or seeding from a custom anchor layout.
    * @param {object} molecule - Molecule to render in force mode.
@@ -1406,6 +1410,7 @@ export function createForceSceneRenderer(ctx) {
     }
 
     ctx.simulation.on('tick', _updateForceScenePositions);
+    syncLatestForcePositions = _updateForceScenePositions;
     _updateForceScenePositions();
 
     if (preserveView && previousZoomTransform) {
@@ -1424,6 +1429,7 @@ export function createForceSceneRenderer(ctx) {
   }
 
   return {
-    updateForce
+    updateForce,
+    syncPositions: () => syncLatestForcePositions()
   };
 }

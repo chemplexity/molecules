@@ -2478,9 +2478,10 @@ describe('createStructuralEditActions', () => {
     });
   });
 
-  it('allows force-mode dash edits on displayed stereochemical hydrogen bonds', () => {
+  it('allows force-mode dash edits on displayed stereochemical hydrogen bonds and updates chirality', () => {
     const mol = parseSMILES('C[C@H](F)Cl');
     const center = [...mol.atoms.values()].find(atom => atom.name === 'C' && typeof atom.getChirality === 'function' && atom.getChirality());
+    const originalChirality = center.getChirality();
     const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1);
     const bond = mol.bonds.get(hydrogen.bonds[0]);
     bond.properties.display = { as: 'wedge', centerId: center.id };
@@ -2511,6 +2512,49 @@ describe('createStructuralEditActions', () => {
     assert.equal(mutateCalled, true);
     assert.deepEqual(bond.properties.display, {
       as: 'dash',
+      centerId: center.id,
+      manual: true
+    });
+    assert.notEqual(center.getChirality(), originalChirality);
+  });
+
+  it('allows force-mode wedge edits on plain hydrogens attached to potential stereocenters', () => {
+    const mol = parseSMILES('CC(F)(Cl)[H]');
+    generateAndRefine2dCoords(mol, { suppressH: false, bondLength: 1.5 });
+    const center = [...mol.atoms.values()].find(
+      atom => atom.name === 'C' && atom.getNeighbors(mol).some(neighbor => neighbor.name === 'F') && atom.getNeighbors(mol).some(neighbor => neighbor.name === 'Cl')
+    );
+    const hydrogen = center.getNeighbors(mol).find(neighbor => neighbor.name === 'H');
+    const bond = mol.bonds.get(hydrogen.bonds.find(bondId => mol.bonds.get(bondId)?.atoms.includes(center.id)));
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: 'force', reactionEdit: null });
+            assert.equal(preflightResult, true);
+            mutateCalled = true;
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder(bond.id, {
+      drawBondType: 'wedge',
+      preferredCenterId: center.id,
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mutateCalled, true);
+    assert.match(center.getChirality(), /^[RS]$/);
+    assert.deepEqual(bond.properties.display, {
+      as: 'wedge',
       centerId: center.id,
       manual: true
     });

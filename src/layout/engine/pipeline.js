@@ -90,6 +90,8 @@ import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, NUMERIC_EPSILON, PRESENTAT
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
 const MIN_PROJECTED_RING_CHAIN_ASPECT = 6;
+const MIN_READABLE_PROJECTED_RING_CHAIN_ASPECT = 2;
+const MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION = Math.PI / 90;
 const FINAL_TERMINAL_LEAF_CONTACT_ROTATIONS = Object.freeze(
   [...Array.from({ length: 12 }, (_value, index) => index + 1), ...Array.from({ length: 22 }, (_value, index) => 15 + index * 5), 180]
     .map(degrees => (degrees * Math.PI) / 180)
@@ -758,6 +760,66 @@ function pathLikeRingChainAspect(layoutGraph, inputCoords) {
     maxY = Math.max(maxY, center.y);
   }
   return (maxX - minX) / Math.max(maxY - minY, 1e-6);
+}
+
+function pathLikeRingChainLinkerExitDeviation(layoutGraph, inputCoords) {
+  const component = layoutGraph.components?.[0] ?? null;
+  const ringChain = component ? describePathLikeIsolatedRingChain(layoutGraph, component) : null;
+  const orderedRingSystemIds = ringChain?.orderedRingSystemIds ?? [];
+  if (orderedRingSystemIds.length < 2) {
+    return 0;
+  }
+
+  const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
+  let maxDeviation = 0;
+  for (let index = 1; index < orderedRingSystemIds.length; index++) {
+    const previousRingSystemId = orderedRingSystemIds[index - 1];
+    const nextRingSystemId = orderedRingSystemIds[index];
+    const edge =
+      (ringChain.edges ?? []).find(
+        candidate =>
+          (candidate.firstRingSystemId === previousRingSystemId && candidate.secondRingSystemId === nextRingSystemId) ||
+          (candidate.firstRingSystemId === nextRingSystemId && candidate.secondRingSystemId === previousRingSystemId)
+      ) ?? null;
+    if (!edge || edge.linkerAtomIds?.length !== 1) {
+      continue;
+    }
+    const linkerAtomId = edge.linkerAtomIds[0];
+    const attachmentPairs =
+      edge.firstRingSystemId === previousRingSystemId
+        ? [
+            [previousRingSystemId, edge.firstAttachmentAtomId],
+            [nextRingSystemId, edge.secondAttachmentAtomId]
+          ]
+        : [
+            [previousRingSystemId, edge.secondAttachmentAtomId],
+            [nextRingSystemId, edge.firstAttachmentAtomId]
+          ];
+    const linkerPosition = inputCoords.get(linkerAtomId);
+    if (!linkerPosition) {
+      continue;
+    }
+    for (const [ringSystemId, attachmentAtomId] of attachmentPairs) {
+      const ringSystem = ringSystemById.get(ringSystemId);
+      const ringAtomIds = new Set(ringSystem?.atomIds ?? []);
+      const attachmentPosition = inputCoords.get(attachmentAtomId);
+      if (!ringSystem || !attachmentPosition) {
+        continue;
+      }
+      for (const bond of layoutGraph.bondsByAtomId.get(attachmentAtomId) ?? []) {
+        const neighborAtomId = bond.a === attachmentAtomId ? bond.b : bond.a;
+        const neighborPosition = ringAtomIds.has(neighborAtomId) ? inputCoords.get(neighborAtomId) : null;
+        if (!neighborPosition) {
+          continue;
+        }
+        maxDeviation = Math.max(
+          maxDeviation,
+          Math.abs(angularDifference(angleOf(sub(neighborPosition, attachmentPosition)), angleOf(sub(linkerPosition, attachmentPosition))) - EXACT_TRIGONAL_CONTINUATION_ANGLE)
+        );
+      }
+    }
+  }
+  return maxDeviation;
 }
 
 function orientPathLikeRingChainCoords(layoutGraph, inputCoords) {
@@ -13235,7 +13297,10 @@ function maybeRetouchFinalDivalentContinuations(layoutGraph, finalCoords, placem
 
 function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bondLength, onStep = null) {
   const baseAspect = pathLikeRingChainAspect(layoutGraph, finalCoords);
-  if (!Number.isFinite(baseAspect) || baseAspect >= MIN_PROJECTED_RING_CHAIN_ASPECT) {
+  const baseLinkerExitDeviation = pathLikeRingChainLinkerExitDeviation(layoutGraph, finalCoords);
+  const shouldRetouchAspect = Number.isFinite(baseAspect) && baseAspect < MIN_PROJECTED_RING_CHAIN_ASPECT;
+  const shouldRetouchLinkerExits = baseLinkerExitDeviation > MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION;
+  if (!shouldRetouchAspect && !shouldRetouchLinkerExits) {
     return { coords: finalCoords, changed: false };
   }
 
@@ -13248,9 +13313,6 @@ function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bon
     bondValidationClasses: placement.bondValidationClasses
   });
   if (!projection.changed) {
-    return { coords: finalCoords, changed: false };
-  }
-  if (!finalAuditCountsDoNotWorsen(projection.audit, baseAudit)) {
     return { coords: finalCoords, changed: false };
   }
 
@@ -13294,14 +13356,21 @@ function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bon
   }
 
   const candidateAspect = pathLikeRingChainAspect(layoutGraph, candidateCoords);
-  if (candidateAspect < Math.max(MIN_PROJECTED_RING_CHAIN_ASPECT, baseAspect * 1.5)) {
+  const candidateLinkerExitDeviation = pathLikeRingChainLinkerExitDeviation(layoutGraph, candidateCoords);
+  const aspectImprovedEnough = shouldRetouchAspect && candidateAspect >= Math.max(MIN_READABLE_PROJECTED_RING_CHAIN_ASPECT, baseAspect * 1.5);
+  const linkerExitsImprovedEnough =
+    shouldRetouchLinkerExits &&
+    candidateLinkerExitDeviation < Math.min(MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION, baseLinkerExitDeviation - MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION);
+  if (!aspectImprovedEnough && !linkerExitsImprovedEnough) {
     return { coords: finalCoords, changed: false };
   }
 
   onStep?.('Ring Chain Unit Projection', 'Path-like isolated ring chain rebuilt as aligned ring units with glycosidic linkers re-solved at bond length.', cloneCoords(candidateCoords), {
     movedAtomCount,
     previousAspect: baseAspect,
-    projectedAspect: candidateAspect
+    projectedAspect: candidateAspect,
+    previousLinkerExitDeviation: baseLinkerExitDeviation,
+    projectedLinkerExitDeviation: candidateLinkerExitDeviation
   });
   if (projection.bondValidationClasses instanceof Map) {
     placement.bondValidationClasses = projection.bondValidationClasses;
@@ -13487,6 +13556,10 @@ function hasCleanPlacementFastPathPresentationNeed(layoutGraph, coords, placemen
       ringAnchoredAngleThreshold: PRESENTATION_METRIC_EPSILON
     })
   ) {
+    return true;
+  }
+
+  if (pathLikeRingChainLinkerExitDeviation(layoutGraph, coords) > MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION) {
     return true;
   }
 
@@ -14502,7 +14575,8 @@ export function runPipeline(molecule, options = {}) {
           bondValidationClasses: placement.bondValidationClasses,
           stereo
         });
-    if (hasCleanPlacementFastPathAudit(audit) && audit?.fallback?.mode == null) {
+    const hasPathLikeRingChainExitDrift = pathLikeRingChainLinkerExitDeviation(layoutGraph, finalCoords) > MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION;
+    if (hasCleanPlacementFastPathAudit(audit) && audit?.fallback?.mode == null && !hasPathLikeRingChainExitDrift) {
       snapTinyCoordinateNoise(finalCoords);
       onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), {
         stage: 'complete',
@@ -16261,6 +16335,11 @@ export function runPipeline(molecule, options = {}) {
     onStep?.('Late Terminal Ring Leaf Retouch', 'Terminal ring leaves pulled back outside incident ring faces after final branch and stereo retouches.', cloneCoords(finalCoords), {
       nudges: lateTerminalRingLeafIntrusionRetouch.nudges
     });
+  }
+  const lateProjectedRingChainRetouch = maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, normalizedOptions.bondLength, onStep);
+  if (lateProjectedRingChainRetouch.changed) {
+    finalCoords = lateProjectedRingChainRetouch.coords;
+    finalCoordsModified = true;
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

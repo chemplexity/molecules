@@ -972,6 +972,7 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
   idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength);
   idealizeReaction2dTerminalAlkylContinuations(mol, componentAtomIds, bondLength);
   repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength);
+  idealizeReaction2dEditedTerminalRingLeaves(mol, componentAtomIds, bondLength);
   idealizeReaction2dEditedSaturatedHalogenFans(mol, componentAtomIds, bondLength);
   finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
   finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
@@ -3542,6 +3543,62 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
   }
 }
 
+function idealizeReaction2dEditedTerminalRingLeaves(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+
+  for (const atomId of componentAtomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name === 'H' || atom.x == null || atom.y == null || !mol.__reactionPreview.editedProductAtomIds.has(atom.id)) {
+      continue;
+    }
+    if (!_TERMINAL_HETEROATOMS.has(atom.name) && !_HALOGENS.has(atom.name)) {
+      continue;
+    }
+
+    const heavyNeighbors = atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    if (heavyNeighbors.length !== 1) {
+      continue;
+    }
+
+    const parent = heavyNeighbors[0];
+    if (!(parent.isAromatic?.() || parent.isInRing?.(mol)) || parent.x == null || parent.y == null) {
+      continue;
+    }
+
+    const siblingInfos = parent
+      .getNeighbors(mol)
+      .filter(nb => nb.id !== atom.id && componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null)
+      .map(nb => {
+        const dx = nb.x - parent.x;
+        const dy = nb.y - parent.y;
+        const len = Math.hypot(dx, dy);
+        return len >= 1e-6 ? { atom: nb, dx: dx / len, dy: dy / len } : null;
+      })
+      .filter(Boolean);
+    if (siblingInfos.length < 2) {
+      continue;
+    }
+
+    let vx = 0;
+    let vy = 0;
+    for (const info of siblingInfos) {
+      vx -= info.dx;
+      vy -= info.dy;
+    }
+    const vlen = Math.hypot(vx, vy);
+    if (vlen < 1e-6) {
+      continue;
+    }
+
+    const bond = mol.getBond(atom.id, parent.id);
+    const targetLength = scaledReaction2dBondLength(bond?.properties.order ?? 1, bondLength);
+    atom.x = parent.x + (vx / vlen) * targetLength;
+    atom.y = parent.y + (vy / vlen) * targetLength;
+  }
+}
+
 function finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength = 1.5) {
   if (!mol || !componentAtomIds?.size) {
     return;
@@ -3989,6 +4046,9 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
   if (!previewState?.mappedAtomPairs?.length) {
     return;
   }
+  if (previewState.resonancePair === true) {
+    return;
+  }
   mol.__reactionPreview = previewState;
   restoreReaction2dCoords(mol, previewState.reactantReferenceCoords);
 
@@ -4214,6 +4274,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAtomIds, bondLength);
     restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bondLength);
+    idealizeReaction2dEditedTerminalRingLeaves(mol, componentAtomIds, bondLength);
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
     reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
 

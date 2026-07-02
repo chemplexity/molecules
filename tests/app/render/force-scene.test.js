@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { generateCoords } from '../../../src/layout/public-api.js';
 import { createForceSceneRenderer } from '../../../src/app/render/force-scene.js';
 
 class FakeSelection {
@@ -867,6 +868,27 @@ describe('createForceSceneRenderer', () => {
     assert.deepEqual(molecule.bonds.get('b4').properties.display, { as: 'wedge', centerId: 'Co1' });
     assert.deepEqual(molecule.bonds.get('b5').properties.display, { as: 'dash', centerId: 'Co1' });
     assert.equal(molecule.bonds.get('b6').properties.display, undefined);
+  });
+
+  it('preserves an existing force stereo display bond instead of retargeting to hydrogen', () => {
+    const molecule = parseSMILES('C[C@H](F)Cl');
+    const center = [...molecule.atoms.values()].find(atom => atom.name === 'C' && typeof atom.getChirality === 'function' && atom.getChirality());
+    const hydrogen = [...molecule.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1);
+    const fluorine = [...molecule.atoms.values()].find(atom => atom.name === 'F');
+    const hydrogenBond = molecule.bonds.get(hydrogen.bonds[0]);
+    const fluorineBond = molecule.bonds.get(fluorine.bonds[0]);
+    fluorineBond.properties.display = { as: 'wedge', centerId: center.id };
+
+    const { renderer } = makeRenderer({
+      generate2dCoords: seededMol => {
+        generateCoords(seededMol, { suppressH: true, bondLength: 1.5 });
+      }
+    });
+
+    renderer.updateForce(molecule, { preserveView: false });
+
+    assert.deepEqual(fluorineBond.properties.display, { as: 'wedge', centerId: center.id });
+    assert.equal(hydrogenBond.properties.display, undefined);
   });
 
   it('repairs incomplete projected organometallic display hints instead of keeping a lone wedge', () => {

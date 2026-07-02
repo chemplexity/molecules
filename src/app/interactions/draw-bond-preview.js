@@ -197,6 +197,22 @@ export function createDrawBondPreviewActions(context) {
     return bond?.getOtherAtom?.(atomId) ?? bond?.atoms?.find?.(id => id !== atomId) ?? null;
   }
 
+  function heavyParentForHydrogen(mol, hydrogenId) {
+    const hydrogen = mol?.atoms?.get?.(hydrogenId);
+    if (!hydrogen || hydrogen.name !== 'H') {
+      return null;
+    }
+    for (const bondId of hydrogen.bonds ?? []) {
+      const bond = mol?.bonds?.get?.(bondId);
+      const parentId = getBondOtherAtomId(bond, hydrogenId);
+      const parentAtom = mol?.atoms?.get?.(parentId);
+      if (parentAtom && parentAtom.name !== 'H' && parentAtom.visible !== false) {
+        return { atom: parentAtom, bond };
+      }
+    }
+    return null;
+  }
+
   function getPreviewSourceAtom(atomId) {
     const mol = context.molecule?.getActive?.() ?? null;
     return mol?.atoms?.get?.(atomId) ?? (context.getMode() === '2d' ? context.view2D.getAtomById(atomId) : null);
@@ -248,6 +264,31 @@ export function createDrawBondPreviewActions(context) {
       }
     }
     return best;
+  }
+
+  function forceHydrogenParentCandidate(node, mol) {
+    if (context.getMode() !== 'force' || node?.name !== 'H') {
+      return null;
+    }
+    const atom = mol?.atoms?.get?.(node.id) ?? null;
+    const bondIds = Array.isArray(atom?.bonds)
+      ? atom.bonds
+      : [...(mol?.bonds?.values?.() ?? [])]
+          .filter(bond => bond?.atoms?.includes?.(node.id))
+          .map(bond => bond.id);
+    for (const bondId of bondIds) {
+      const bond = mol?.bonds?.get?.(bondId);
+      const parentId = bond?.getOtherAtom?.(node.id) ?? bond?.atoms?.find?.(id => id !== node.id);
+      const parentAtom = mol?.atoms?.get?.(parentId);
+      if (!parentAtom || parentAtom.name === 'H' || parentAtom.visible === false) {
+        continue;
+      }
+      const parentNode = context.force.getNodeById(parentId);
+      if (Number.isFinite(parentNode?.x) && Number.isFinite(parentNode?.y)) {
+        return { id: parentNode.id, x: parentNode.x, y: parentNode.y };
+      }
+    }
+    return null;
   }
 
   function getAutoPlacedPreviewEndpoint(atomId, ox, oy) {
@@ -367,7 +408,7 @@ export function createDrawBondPreviewActions(context) {
         const ux = dx / dist;
         const uy = dy / dist;
         const sourceName = drawBondState.atomId ? (context.view2D.getAtomById(drawBondState.atomId)?.name ?? 'C') : context.getDrawBondElement();
-        if (sourceName !== 'C') {
+        if (sourceName !== 'C' && drawBondState.sourceIsProjectedStereoHydrogen !== true) {
           const gap = context.helpers.labelHalfW(sourceName, context.constants.fontSize) + 3;
           lx1 = ox + ux * gap;
           ly1 = oy + uy * gap;
@@ -412,6 +453,7 @@ export function createDrawBondPreviewActions(context) {
 
     let ox;
     let oy;
+    let sourceIsProjectedStereoHydrogen = false;
     if (atomId === null) {
       ox = gX;
       oy = gY;
@@ -428,6 +470,7 @@ export function createDrawBondPreviewActions(context) {
       if (projectedPoint && Number.isFinite(projectedPoint.x) && Number.isFinite(projectedPoint.y)) {
         ox = projectedPoint.x;
         oy = projectedPoint.y;
+        sourceIsProjectedStereoHydrogen = atom.name === 'H';
       } else {
         const { width, height } = context.plot.getSize();
         ox = width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale;
@@ -435,13 +478,27 @@ export function createDrawBondPreviewActions(context) {
       }
     }
 
-    const suppressInitialPlacementPreview = atomId !== null && noDragWouldReplaceAtom(atomId);
+    const suppressInitialPlacementPreview = atomId !== null && noDragWouldReplaceAtom(atomId) && !sourceIsProjectedStereoHydrogen;
     const endpoint = atomId === null || suppressInitialPlacementPreview ? { x: ox, y: oy } : getAutoPlacedPreviewEndpoint(atomId, ox, oy);
     const ex = endpoint.x;
     const ey = endpoint.y;
-    context.state.setDrawBondState({ atomId, ox, oy, ex, ey, dragged: false });
-    if (atomId !== null && !suppressInitialPlacementPreview) {
-      renderPreviewFromState({ atomId, ox, oy, ex, ey, dragged: false });
+    const nextDrawBondState = {
+      atomId,
+      ox,
+      oy,
+      ex,
+      ey,
+      dragged: false,
+      ...(sourceIsProjectedStereoHydrogen
+        ? {
+            sourceIsProjectedStereoHydrogen: true,
+            allowedHydrogenParentId: heavyParentForHydrogen(context.molecule?.getActive?.() ?? null, atomId)?.atom?.id ?? null
+          }
+        : {})
+    };
+    context.state.setDrawBondState(nextDrawBondState);
+    if (atomId !== null && !suppressInitialPlacementPreview && !sourceIsProjectedStereoHydrogen) {
+      renderPreviewFromState(nextDrawBondState);
     } else if (atomId !== null && suppressInitialPlacementPreview && context.getMode() === '2d') {
       renderAtomReplacementPreview(atomId, ox, oy);
     }
@@ -565,6 +622,7 @@ export function createDrawBondPreviewActions(context) {
 
     if (context.getMode() === 'force') {
       const candidates = [];
+      const mol = context.molecule?.getActive?.() ?? null;
       for (const node of context.force.getNodes()) {
         if (node.id === drawBondState.atomId) {
           continue;
@@ -573,9 +631,13 @@ export function createDrawBondPreviewActions(context) {
           candidates.push({ id: node.id, x: node.x, y: node.y });
         }
       }
-      const snapCandidate =
+      let snapCandidate =
         chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ??
         chooseSnapCandidate(candidates, mx, my, snapRadius);
+      if (drawBondState.atomId === null) {
+        const snappedNode = snapCandidate ? context.force.getNodeById(snapCandidate.id) : null;
+        snapCandidate = forceHydrogenParentCandidate(snappedNode, mol) ?? snapCandidate;
+      }
       if (snapCandidate) {
         ex = snapCandidate.x;
         ey = snapCandidate.y;
@@ -600,6 +662,20 @@ export function createDrawBondPreviewActions(context) {
         ey = snapCandidate.y;
         snapAtomId = snapCandidate.id;
       }
+    }
+
+    if (
+      drawBondState.sourceIsProjectedStereoHydrogen === true &&
+      (snapAtomId === null || snapAtomId !== drawBondState.allowedHydrogenParentId)
+    ) {
+      context.state.setDrawBondState({
+        ...drawBondState,
+        ex: ox,
+        ey: oy,
+        snapAtomId: null
+      });
+      removePreviewGeometry();
+      return;
     }
 
     if (snapAtomId === null) {

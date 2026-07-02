@@ -93,6 +93,8 @@ function makeContext(overrides = {}) {
   let primitiveHoverSuppressed = false;
   const hoveredAtomIds = new Set();
   const hoveredBondIds = new Set();
+  const placementRedirectedHoverAtomIds = new Set();
+  const placementRedirectedHoverBondIds = new Set();
   const selectedAtomIds = new Set();
   const selectedBondIds = new Set();
   let selectionModifierActive = false;
@@ -121,6 +123,8 @@ function makeContext(overrides = {}) {
         getChargeTool: () => chargeTool,
         getHoveredAtomIds: () => hoveredAtomIds,
         getHoveredBondIds: () => hoveredBondIds,
+        getPlacementRedirectedHoverAtomIds: () => placementRedirectedHoverAtomIds,
+        getPlacementRedirectedHoverBondIds: () => placementRedirectedHoverBondIds,
         getSelectedAtomIds: () => selectedAtomIds,
         getSelectedBondIds: () => selectedBondIds,
         getSelectionModifierActive: () => selectionModifierActive
@@ -291,6 +295,8 @@ function makeContext(overrides = {}) {
     },
     hoveredAtomIds,
     hoveredBondIds,
+    placementRedirectedHoverAtomIds,
+    placementRedirectedHoverBondIds,
     selectedAtomIds,
     selectedBondIds,
     setSelectionModifierActive: value => {
@@ -1841,7 +1847,7 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(svgRoot.querySelector('g.ring-template-preview'), null);
   });
 
-  it('routes force hydrogen bond hovers to the bonded heavy atom', () => {
+  it('routes force hydrogen bond hovers to the bonded heavy atom in line placement mode', () => {
     const molecule = {
       atoms: new Map([
         ['c1', { id: 'c1', name: 'C' }],
@@ -1849,19 +1855,48 @@ describe('createPrimitiveEventHandlers', () => {
       ]),
       bonds: new Map([['b1', { id: 'b1', atoms: ['c1', 'h1'] }]])
     };
-    const { context, calls } = makeContext({
+    const { context, calls, placementRedirectedHoverAtomIds, setDrawBondMode } = makeContext({
       currentMol: molecule,
       helpers: {
         getForceNodeById: atomId => (atomId === 'c1' ? { id: 'c1', name: 'C', x: 10, y: 20 } : null),
         getForceNodes: () => [{ id: 'c1', name: 'C', x: 10, y: 20 }]
       }
     });
+    setDrawBondMode(true);
     const handlers = createPrimitiveEventHandlers(context);
 
     handlers.handleForceBondMouseOver({ clientX: 5, clientY: 6 }, 'b1', molecule);
 
     assert.deepEqual(calls, [
       ['showPrimitiveHover', ['c1'], []],
+      ['refreshSelectionOverlay'],
+      ['hide']
+    ]);
+    assert.deepEqual([...placementRedirectedHoverAtomIds], ['c1']);
+  });
+
+  it('prefers a force hydrogen highlight over its C-H bond hit target in select mode', () => {
+    const molecule = {
+      atoms: new Map([
+        ['c1', { id: 'c1', name: 'C' }],
+        ['h1', { id: 'h1', name: 'H' }]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['c1', 'h1'] }]])
+    };
+    const { context, calls, setSelectMode } = makeContext({
+      currentMol: molecule,
+      pointer: () => [30, 20],
+      helpers: {
+        getForceNodeById: atomId => (atomId === 'h1' ? { id: 'h1', name: 'H', protons: 1, x: 30, y: 20 } : { id: 'c1', name: 'C', protons: 6, x: 10, y: 20 })
+      }
+    });
+    setSelectMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceBondMouseOver({ clientX: 30, clientY: 20 }, 'b1', molecule);
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['h1'], []],
       ['hide']
     ]);
   });
@@ -2700,6 +2735,45 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['replaceForceHydrogenAtom', 'a1', molecule]]);
   });
 
+  it('routes displayed stereo force hydrogen single-click to clearing its stereo bond', () => {
+    const { context, calls, setDrawBondMode, setDrawBondType } = makeContext();
+    setDrawBondMode(true);
+    setDrawBondType('single');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    let stopped = false;
+    const molecule = {
+      id: 'mol',
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'H', bonds: ['b1'] }],
+        ['c1', { id: 'c1', name: 'C', getChirality: () => 'R' }]
+      ]),
+      bonds: new Map([
+        [
+          'b1',
+          {
+            id: 'b1',
+            atoms: ['c1', 'a1'],
+            properties: { display: { as: 'wedge', centerId: 'c1' } },
+            getOtherAtom: atomId => (atomId === 'a1' ? 'c1' : 'a1')
+          }
+        ]
+      ])
+    };
+    handlers.handleForceAtomClick(
+      {
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      { id: 'a1', name: 'H' },
+      molecule
+    );
+
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, [['promoteBondOrder', 'b1', { drawBondType: 'single' }]]);
+  });
+
   it('shows immediate valence-warning tooltip for 2D atoms in select mode', () => {
     const { context, calls, setSelectMode, setMode } = makeContext();
     setMode('2d');
@@ -2822,6 +2896,68 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['changeAtomCharge', 'a1', { chargeTool: 'negative', decrement: true }]]);
   });
 
+  it('does not route displayed 2D stereochemical hydrogens to charge edits', () => {
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const center = {
+      id: 'c1',
+      name: 'C',
+      getChirality: () => 'R'
+    };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: { display: { as: 'dash', centerId: 'c1' } },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'c1' : 'h1';
+      }
+    };
+    const mol2d = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', center]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { context, calls, setMode, setChargeTool } = makeContext({ mol2d });
+    setMode('2d');
+    setChargeTool('positive');
+    const handlers = createPrimitiveEventHandlers(context);
+    let prevented = false;
+    let stopped = false;
+    let contextPrevented = false;
+    let contextStopped = false;
+
+    handlers.handle2dAtomClick(
+      {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      },
+      'h1'
+    );
+    handlers.handle2dAtomContextMenu(
+      {
+        preventDefault() {
+          contextPrevented = true;
+        },
+        stopPropagation() {
+          contextStopped = true;
+        }
+      },
+      hydrogen
+    );
+    handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, hydrogen, mol2d, null);
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.equal(contextPrevented, true);
+    assert.equal(contextStopped, true);
+    assert.deepEqual(calls, []);
+  });
+
   it('blocks force product-side charge decrements from context menu', () => {
     const { context, calls, setChargeTool } = makeContext({
       isReactionPreviewEditableAtomId: atomId => !String(atomId).startsWith('__resonance_product__:')
@@ -2938,14 +3074,185 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, []);
   });
 
-  it('clears force-mode hydrogen hover instead of highlighting normal hydrogens', () => {
+  it('keeps displayed force stereochemical hydrogen bonds as bond hover targets in draw mode', () => {
+    const center = {
+      id: 'c1',
+      name: 'C',
+      getChirality: () => 'R'
+    };
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: { display: { as: 'dash', centerId: 'c1' } },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'c1' : 'h1';
+      }
+    };
+    const { context, calls, setDrawBondMode, setDrawBondType } = makeContext({
+      forceNodes: [
+        { id: 'c1', name: 'C', x: 100, y: 100 },
+        { id: 'h1', name: 'H', x: 130, y: 100 }
+      ]
+    });
+    setDrawBondMode(true);
+    setDrawBondType('single');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceBondMouseOver({ clientX: 5, clientY: 6 }, 'b1', {
+      atoms: new Map([
+        ['c1', center],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', [], ['b1']],
+      ['refreshSelectionOverlay'],
+      ['hide']
+    ]);
+  });
+
+  it('routes force single-line clicks on displayed stereochemical hydrogens to clear the hydrogen bond display', () => {
+    const center = {
+      id: 'c1',
+      name: 'C',
+      getChirality: () => 'R'
+    };
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: { display: { as: 'wedge', centerId: 'c1' } },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'c1' : 'h1';
+      }
+    };
+    const { context, calls, setDrawBondMode, setDrawBondType } = makeContext();
+    setDrawBondMode(true);
+    setDrawBondType('single');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomClick(
+      {
+        stopPropagation() {
+          calls.push(['stopPropagation']);
+        }
+      },
+      { id: 'h1', name: 'H' },
+      {
+        atoms: new Map([
+          ['c1', center],
+          ['h1', hydrogen]
+        ]),
+        bonds: new Map([['b1', bond]])
+      }
+    );
+
+    assert.deepEqual(calls, [
+      ['stopPropagation'],
+      ['promoteBondOrder', 'b1', { drawBondType: 'single' }]
+    ]);
+  });
+
+  it('routes force wedge clicks on displayed stereochemical hydrogens to the existing hydrogen bond', () => {
+    const center = {
+      id: 'c1',
+      name: 'C',
+      getChirality: () => 'R'
+    };
+    const hydrogen = {
+      id: 'h1',
+      name: 'H',
+      bonds: ['b1'],
+      getNeighbors: () => [center]
+    };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: { display: { as: 'dash', centerId: 'c1' } },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'c1' : 'h1';
+      }
+    };
+    const { context, calls, setDrawBondMode, setDrawBondType } = makeContext();
+    setDrawBondMode(true);
+    setDrawBondType('wedge');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomClick(
+      {
+        stopPropagation() {
+          calls.push(['stopPropagation']);
+        }
+      },
+      { id: 'h1', name: 'H' },
+      {
+        atoms: new Map([
+          ['c1', center],
+          ['h1', hydrogen]
+        ]),
+        bonds: new Map([['b1', bond]])
+      }
+    );
+
+    assert.deepEqual(calls, [
+      ['stopPropagation'],
+      ['promoteBondOrder', 'b1', { drawBondType: 'wedge', preferredCenterId: 'c1' }]
+    ]);
+  });
+
+  it('allows force wedge drags to start from displayed stereochemical hydrogens', () => {
+    const center = {
+      id: 'c1',
+      name: 'C',
+      getChirality: () => 'R'
+    };
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: { display: { as: 'dash', centerId: 'c1' } },
+      getOtherAtom(atomId) {
+        return atomId === 'h1' ? 'c1' : 'h1';
+      }
+    };
+    const mol = {
+      atoms: new Map([
+        ['c1', center],
+        ['h1', hydrogen]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { context, calls, setDrawBondMode, setDrawBondType } = makeContext({ currentMol: mol });
+    setDrawBondMode(true);
+    setDrawBondType('wedge');
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseDownDrawBond(
+      {
+        stopPropagation() {
+          calls.push(['stopPropagation']);
+        }
+      },
+      { id: 'h1', name: 'H' }
+    );
+
+    assert.deepEqual(calls, [
+      ['stopPropagation'],
+      ['start', 'h1', 10, 20]
+    ]);
+  });
+
+  it('ignores force-mode hydrogen hover while a charge tool is active', () => {
     const { context, calls, setChargeTool } = makeContext();
     setChargeTool('negative');
     const handlers = createPrimitiveEventHandlers(context);
 
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, { atoms: new Map([['h1', { id: 'h1', name: 'H' }]]) }, null);
 
-    assert.deepEqual(calls, [['clearPrimitiveHover'], ['refreshSelectionOverlay'], ['hide']]);
+    assert.deepEqual(calls, []);
   });
 
   it('does not re-add hidden force hydrogens as draw-bond hover targets', () => {
@@ -2965,7 +3272,7 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['clearPrimitiveHover'], ['refreshSelectionOverlay'], ['hide']]);
   });
 
-  it('redirects normal force hydrogen hover to its heavy parent', () => {
+  it('keeps normal force hydrogens directly hoverable outside placement tools', () => {
     const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
     const carbon = { id: 'c1', name: 'C', bonds: ['b1'] };
     const bond = {
@@ -2981,18 +3288,75 @@ describe('createPrimitiveEventHandlers', () => {
       ]),
       bonds: new Map([['b1', bond]])
     };
-    const { context, calls } = makeContext({
+    const { context, calls } = makeContext({ currentMol: molecule });
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, molecule, null);
+
+    assert.deepEqual(calls[0], ['showPrimitiveHover', ['h1'], []]);
+    assert.equal(calls.some(call => call[0] === 'clearPrimitiveHover'), false);
+  });
+
+  it('redirects normal force hydrogen hover to its heavy parent in line placement mode', () => {
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const carbon = { id: 'c1', name: 'C', bonds: ['b1'] };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: {},
+      getOtherAtom: atomId => (atomId === 'h1' ? 'c1' : 'h1')
+    };
+    const molecule = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', carbon]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { context, calls, placementRedirectedHoverAtomIds, setDrawBondMode } = makeContext({
       currentMol: molecule,
       helpers: {
         getForceNodeById: id => (id === 'c1' ? { ...carbon, x: 10, y: 20 } : null)
       }
     });
+    setDrawBondMode(true);
     const handlers = createPrimitiveEventHandlers(context);
 
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, molecule, null);
 
     assert.deepEqual(calls[0], ['showPrimitiveHover', ['c1'], []]);
     assert.equal(calls.some(call => call[0] === 'clearPrimitiveHover'), false);
+    assert.deepEqual([...placementRedirectedHoverAtomIds], ['c1']);
+  });
+
+  it('starts force line placement from a normal hydrogen parent when available', () => {
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const carbon = { id: 'c1', name: 'C', bonds: ['b1'], x: 10, y: 20 };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: {},
+      getOtherAtom: atomId => (atomId === 'h1' ? 'c1' : 'h1')
+    };
+    const molecule = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', carbon]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { context, calls, setDrawBondMode } = makeContext({
+      currentMol: molecule,
+      helpers: {
+        getForceNodeById: id => (id === 'c1' ? { ...carbon, x: 10, y: 20 } : null)
+      }
+    });
+    setDrawBondMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseDownDrawBond({ stopPropagation() {} }, { id: 'h1', name: 'H' });
+
+    assert.deepEqual(calls, [['start', 'c1', 10, 20]]);
   });
 
   it('keeps displayed stereochemical force hydrogens hoverable', () => {

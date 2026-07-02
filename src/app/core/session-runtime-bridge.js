@@ -105,6 +105,7 @@ export function createSessionRuntimeBridge(deps) {
     });
     if (positionMap) {
       deps.force.restoreNodePositions(positionMap);
+      deps.scene.syncForcePositions?.();
     }
     deps.view.restoreZoomTransform(snapshot.zoomTransform);
   }
@@ -126,6 +127,7 @@ export function createSessionRuntimeBridge(deps) {
       });
       if (positionMap) {
         deps.force.restoreNodePositions(positionMap);
+        deps.scene.syncForcePositions?.();
       }
       deps.view.restoreZoomTransform(snapshot.zoomTransform);
     }

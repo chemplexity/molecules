@@ -35,6 +35,24 @@ test('syncDisplayStereo uses distinct bonds for adjacent hidden-hydrogen stereoc
   assert.notEqual(assignmentByCenter.get('C31')?.bondId, assignmentByCenter.get('C34')?.bondId);
 });
 
+test('syncDisplayStereo prefers a visible heavy substituent over a hidden stereochemical hydrogen', () => {
+  const mol = parseSMILES('C[C@H](F)Cl');
+  const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol, layoutResult, {
+    clearUnplaced: true,
+    hiddenHydrogenMode: 'coincident'
+  });
+  mol.hideHydrogens();
+
+  const stereoMap = syncDisplayStereo(mol);
+
+  assert.equal(stereoMap.size, 1);
+  const [bondId] = [...stereoMap.keys()];
+  assert.notEqual(bondId, '3');
+  assert.equal(mol.bonds.get(bondId).properties.display?.centerId, 'C2');
+  assert.equal(mol.bonds.get('3').properties.display, undefined);
+});
+
 test('syncDisplayStereo drops stale automatic wedges after a center stops being stereogenic', () => {
   const mol = parseSMILES('C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O');
   const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
@@ -64,4 +82,28 @@ test('syncDisplayStereo drops stale automatic wedges after a center stops being 
       ['9', 'wedge']
     ]
   );
+});
+
+test('syncDisplayStereo preserves projected metal wedge and dash hints for 2D cobalt rendering', () => {
+  const mol = parseSMILES('[Co+3](N)(N)(N)(N)(N)N');
+  const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol, layoutResult, {
+    clearUnplaced: true,
+    hiddenHydrogenMode: 'coincident',
+    syncStereoDisplay: true
+  });
+
+  const before = [...mol.bonds.values()]
+    .filter(bond => bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+    .map(bond => [bond.id, bond.properties.display.as, bond.properties.display.centerId])
+    .sort();
+  const stereoMap = syncDisplayStereo(mol);
+  const after = [...mol.bonds.values()]
+    .filter(bond => bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+    .map(bond => [bond.id, bond.properties.display.as, bond.properties.display.centerId])
+    .sort();
+
+  assert.equal(before.length, 4);
+  assert.deepEqual(after, before);
+  assert.deepEqual([...stereoMap.entries()].sort(), before.map(([bondId, type]) => [bondId, type]).sort());
 });

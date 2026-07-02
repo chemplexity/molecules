@@ -249,13 +249,15 @@ describe('createSelectionOverlayManager', () => {
     assert.equal(typeof scheduler.callback, 'function');
   });
 
-  it('filters force hover targets against atom visibility', () => {
+  it('keeps hidden force hydrogens renderable because their force nodes are visible', () => {
     const visibleAtom = makeAtom('a1', { visible: true });
     const hiddenAtom = makeAtom('h1', { visible: false, name: 'H' });
+    const hiddenCarbon = makeAtom('c2', { visible: false, name: 'C' });
     const mol = {
       atoms: new Map([
         ['a1', visibleAtom],
-        ['h1', hiddenAtom]
+        ['h1', hiddenAtom],
+        ['c2', hiddenCarbon]
       ]),
       bonds: new Map()
     };
@@ -265,32 +267,34 @@ describe('createSelectionOverlayManager', () => {
       forceMol: mol
     });
 
-    manager.showPrimitiveHover(['a1', 'h1'], []);
+    manager.showPrimitiveHover(['a1', 'h1', 'c2'], []);
 
-    assert.deepEqual([...hoveredAtomIds], ['a1']);
+    assert.deepEqual([...hoveredAtomIds], ['a1', 'h1']);
     assert.equal(typeof scheduler.callback, 'function');
   });
 
-  it('filters hidden force atoms out of renderable hover ids even when already present', () => {
+  it('keeps hidden force hydrogens in renderable hover ids when already present', () => {
     const visibleAtom = makeAtom('a1', { visible: true });
     const hiddenAtom = makeAtom('h1', { visible: false, name: 'H' });
+    const hiddenCarbon = makeAtom('c2', { visible: false, name: 'C' });
     const mol = {
       atoms: new Map([
         ['a1', visibleAtom],
-        ['h1', hiddenAtom]
+        ['h1', hiddenAtom],
+        ['c2', hiddenCarbon]
       ]),
       bonds: new Map()
     };
     const { manager } = makeManager({
       mode: 'force',
       drawBondMode: true,
-      hoveredAtomIds: new Set(['a1', 'h1']),
+      hoveredAtomIds: new Set(['a1', 'h1', 'c2']),
       forceMol: mol
     });
 
     const { atomIds } = manager.getRenderableSelectionIds();
 
-    assert.deepEqual([...atomIds], ['a1']);
+    assert.deepEqual([...atomIds], ['a1', 'h1']);
   });
 
   it('can set primitive hover directly in draw mode', () => {
