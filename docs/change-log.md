@@ -3,7 +3,7 @@
 ## 2026-07-02
 
 - Restore Playwright E2E coverage to CI and release workflows, removing the separate manual E2E workflow now that the browser suite is green.
-- Scope CI triggers to pushes/merges on `main` and pull requests targeting `main`.
+- Scope CI triggers to pushes/merges on `master` and pull requests targeting `master`.
 - Keep standalone force-mode six-member rings regular through repeated Clean passes after clearing and drawing them with the ring tool.
 - Clean disconnected force-mode molecules by regenerating each component independently, restoring each cleaned component near its pre-clean center, and keeping fresh disconnected force renders on their generated anchors.
 - Preserve existing wedge/dash display choices through Clean so coordinate cleanup does not invert stereo bond rendering.
