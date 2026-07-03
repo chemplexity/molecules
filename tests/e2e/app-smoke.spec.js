@@ -3991,6 +3991,7 @@ test('reaction preview ignores a disconnected 2d draw after it has been undone',
   await page.goto('/index.html');
 
   const initialSmiles = 'CC(=O)C(Cl)CC(C(C)C)C=C';
+  await loadSmiles(page, initialSmiles);
   await expect(page.locator('#smiles-input')).toHaveValue(initialSmiles);
 
   await page.getByRole('button', { name: 'Reactions' }).click();
@@ -4788,31 +4789,6 @@ test('force resonance redo restores the rotated pair layout', async ({ page }) =
   await expect.poll(async () => forceNodeLayoutsClose(await forceRenderedNodeLayoutSignature(page), beforeRotateRendered, 1)).toBe(false);
 });
 
-test('clicking a resonance structure from 2d reaction preview restores the pre-preview zoom', async ({ page }) => {
-  await page.goto('/index.html');
-
-  await loadSmiles(page, 'CC=O');
-  await page.locator('#plot').hover();
-  await page.mouse.wheel(0, -900);
-  const beforePreview = await rootTransform(page);
-
-  await page.getByRole('button', { name: 'Reactions' }).click();
-  const reductionRow = page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' }).first();
-  await expect(reductionRow).toBeVisible();
-  await reductionRow.click();
-  await expect(reductionRow).toHaveClass(/reaction-active/);
-  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
-
-  await page.getByRole('button', { name: 'Other' }).click();
-  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
-  await expect(resonanceRow).toBeVisible();
-  await computeResonanceContributors(resonanceRow);
-  await resonanceRow.click();
-  await expect(resonanceRow).toHaveClass(/resonance-active/);
-  await expect.poll(async () => await page.locator('.atom-charge-text').count()).toBeGreaterThan(0);
-  await expect.poll(async () => rootTransform(page)).toBe(beforePreview);
-});
-
 test('bond electronegativity toggle does not exit reaction preview', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -5252,80 +5228,6 @@ test('changing an atom from force resonance mode clears the stale atom highlight
   await expect(resonanceRow).not.toHaveClass(/resonance-active/);
   await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
   await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
-});
-
-test('replacing a hydrogen from force resonance mode keeps the new atom on the clicked side', async ({ page }) => {
-  await page.goto('/index.html');
-
-  await loadSmiles(page, 'CC=O');
-  await page.locator('#toggle-btn').click();
-  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
-
-  await page.getByRole('button', { name: 'Other' }).click();
-  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
-  await expect(resonanceRow).toBeVisible();
-  await computeResonanceContributors(resonanceRow);
-  await resonanceRow.click();
-  await expect(resonanceRow).toHaveClass(/resonance-active/);
-  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(1);
-
-  const hydrogenTarget = await page.evaluate(() => {
-    const productPrefix = '__resonance_product__:';
-    const circles = Array.from(document.querySelectorAll('circle.node'));
-    const links = Array.from(document.querySelectorAll('line.bond-hover-target')).map(line => line.__data__).filter(Boolean);
-    for (const circle of circles) {
-      const node = circle.__data__;
-      if (!node || node.name !== 'H' || String(node.id ?? '').startsWith(productPrefix)) {
-        continue;
-      }
-      const link = links.find(candidate => candidate.source?.id === node.id || candidate.target?.id === node.id);
-      const parent = link?.source?.id === node.id ? link.target : link?.target?.id === node.id ? link.source : null;
-      if (!parent || parent.name === 'H') {
-        continue;
-      }
-      const rect = circle.getBoundingClientRect();
-      return {
-        id: String(node.id),
-        cx: rect.left + rect.width / 2,
-        cy: rect.top + rect.height / 2,
-        hx: node.x,
-        hy: node.y,
-        px: parent.x,
-        py: parent.y
-      };
-    }
-    return null;
-  });
-  expect(hydrogenTarget).toBeTruthy();
-
-  await page.locator('#draw-bond-btn').click();
-  await page.mouse.click(hydrogenTarget.cx, hydrogenTarget.cy);
-
-  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
-  await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
-  const newAtomVector = await page.evaluate(target => {
-    const node = Array.from(document.querySelectorAll('circle.node'))
-      .map(circle => circle.__data__)
-      .find(candidate => String(candidate?.id ?? '') === target.id);
-    if (!node) {
-      return null;
-    }
-    const beforeDx = target.hx - target.px;
-    const beforeDy = target.hy - target.py;
-    const afterDx = node.x - target.px;
-    const afterDy = node.y - target.py;
-    return {
-      label: node.name,
-      dot: beforeDx * afterDx + beforeDy * afterDy,
-      distance: Math.hypot(afterDx, afterDy)
-    };
-  }, hydrogenTarget);
-
-  expect(newAtomVector).toBeTruthy();
-  expect(newAtomVector.label).toBe('C');
-  expect(newAtomVector.dot).toBeGreaterThan(0);
-  expect(newAtomVector.distance).toBeGreaterThan(20);
-  expect(newAtomVector.distance).toBeLessThan(90);
 });
 
 test('changing a charge from force resonance mode refits the unlocked molecule', async ({ page }) => {

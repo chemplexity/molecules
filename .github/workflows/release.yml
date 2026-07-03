@@ -32,6 +32,12 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e
+
       - name: Build package
         run: npm run build
 

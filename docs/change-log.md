@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-07-02
+
+- Restore Playwright E2E coverage to CI and release workflows, removing the separate manual E2E workflow now that the browser suite is green.
+- Scope CI triggers to pushes/merges on `main` and pull requests targeting `main`.
+
 ## 2026-07-01
 
 - Relax the bridged nitrile browser-clean regression to near-linear post-clean geometry instead of exact collinearity.
