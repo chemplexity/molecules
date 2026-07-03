@@ -34,6 +34,54 @@ function forceLinkRenderOrder(link) {
   return link?.renderOrder ?? link?.order ?? 1;
 }
 
+function hasDisconnectedHeavyComponents(molecule) {
+  if (!molecule?.atoms || !molecule?.bonds) {
+    return false;
+  }
+  const heavyAtomIds = [...molecule.atoms.values()]
+    .filter(atom => atom?.name !== 'H' && atom?.visible !== false)
+    .map(atom => atom.id)
+    .filter(Boolean);
+  if (heavyAtomIds.length <= 1) {
+    return false;
+  }
+
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const adjacency = new Map(heavyAtomIds.map(atomId => [atomId, []]));
+  for (const bond of molecule.bonds.values()) {
+    const [firstId, secondId] = bond?.atoms ?? [];
+    if (!heavyAtomIdSet.has(firstId) || !heavyAtomIdSet.has(secondId)) {
+      continue;
+    }
+    adjacency.get(firstId).push(secondId);
+    adjacency.get(secondId).push(firstId);
+  }
+
+  const visited = new Set();
+  let componentCount = 0;
+  for (const atomId of heavyAtomIds) {
+    if (visited.has(atomId)) {
+      continue;
+    }
+    componentCount++;
+    if (componentCount > 1) {
+      return true;
+    }
+    const queue = [atomId];
+    visited.add(atomId);
+    for (let index = 0; index < queue.length; index++) {
+      for (const neighborId of adjacency.get(queue[index]) ?? []) {
+        if (visited.has(neighborId)) {
+          continue;
+        }
+        visited.add(neighborId);
+        queue.push(neighborId);
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Returns whether a force-mode atom should keep its symbol visible even when
  * normal atom labels are hidden.
@@ -362,6 +410,7 @@ export function createForceSceneRenderer(ctx) {
    * @param {boolean} [options.ignoreOverlayPadding] - When true, fits without reserving UI overlay gutters.
    * @param {boolean} [options.fitReactionLike] - When true, uses reaction-preview overlay padding for the initial viewport fit.
    * @param {boolean} [options.restartSimulation] - When false, redraws preserved force positions without restarting physics.
+   * @param {boolean} [options.settleInitialLayout] - When false, skips the fresh-layout settling ticks.
    * @returns {void}
    */
   function updateForce(
@@ -376,7 +425,8 @@ export function createForceSceneRenderer(ctx) {
       fitScaleMultiplier = null,
       ignoreOverlayPadding = false,
       fitReactionLike = false,
-      restartSimulation = true
+      restartSimulation = true,
+      settleInitialLayout = true
     } = {}
   ) {
     prepareAromaticBondRendering(molecule);
@@ -965,13 +1015,16 @@ export function createForceSceneRenderer(ctx) {
       ctx.helpers.patchForceNodePositions(initialPatchPos, { alpha: 0, restart: false });
       ctx.helpers.reseatHydrogensAroundPatched(initialPatchPos, { resetVelocity: true });
     }
-    if (!preservePositions && !hasInitialPatch && typeof ctx.simulation.tick === 'function') {
+    const staticDisconnectedInitialLayout = !preservePositions && !hasInitialPatch && !molecule.__reactionPreview && hasDisconnectedHeavyComponents(molecule);
+    if (settleInitialLayout !== false && !staticDisconnectedInitialLayout && !preservePositions && !hasInitialPatch && typeof ctx.simulation.tick === 'function') {
       ctx.simulation.alpha(ctx.constants.forceLayoutInitialSettleAlpha);
       ctx.simulation.tick(ctx.constants.forceLayoutInitialSettleTicks);
       ctx.helpers.reseatForceGraphHydrogens(graph, { resetVelocity: true });
     }
-    if (restartSimulation) {
+    if (restartSimulation && !staticDisconnectedInitialLayout) {
       ctx.simulation.alpha(preservePositions || hasInitialPatch ? ctx.constants.forceLayoutEditRestartAlpha : ctx.constants.forceLayoutInitialRestartAlpha).restart();
+    } else {
+      ctx.simulation.stop?.();
     }
     _updateForceRingFills();
     _updateForceLonePairs();
@@ -1363,14 +1416,20 @@ export function createForceSceneRenderer(ctx) {
       }
       const selectionLines = ctx.cache.getSelectionLines();
       const selectionCircles = ctx.cache.getSelectionCircles();
+      const selectionBounds = ctx.cache.getSelectionBounds?.();
       if (selectionLines) {
         selectionLines
           .attr('x1', d => d.source.x)
           .attr('y1', d => d.source.y)
           .attr('x2', d => d.target.x)
           .attr('y2', d => d.target.y);
-        selectionCircles?.attr('cx', d => d.x).attr('cy', d => d.y);
       }
+      selectionCircles?.attr('cx', d => d.x).attr('cy', d => d.y);
+      selectionBounds
+        ?.attr('x', d => d.bounds()?.x ?? 0)
+        .attr('y', d => d.bounds()?.y ?? 0)
+        .attr('width', d => d.bounds()?.width ?? 0)
+        .attr('height', d => d.bounds()?.height ?? 0);
 
       if (ctx.state.isForceAutoFitEnabled()) {
         const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, fitPad ?? ctx.constants.forceLayoutInitialFitPad, {

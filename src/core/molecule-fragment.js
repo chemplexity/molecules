@@ -3,6 +3,7 @@
 import { Molecule } from './Molecule.js';
 import { getImplicitHydrogenChargeAdjustment } from './Atom.js';
 import elements from '../data/elements.js';
+import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../layout/engine/stereo/wedge-geometry.js';
 
 const HYDROGEN_FRAGMENT_PROPERTIES = Object.freeze({
   ...elements.H,
@@ -10,6 +11,7 @@ const HYDROGEN_FRAGMENT_PROPERTIES = Object.freeze({
   radical: 0,
   aromatic: false
 });
+const DEFAULT_HIDDEN_STEREO_HYDROGEN_BOND_LENGTH = 1.5 * 0.75;
 
 function clonePlain(value) {
   if (value == null || typeof value !== 'object') {
@@ -34,23 +36,54 @@ function normalizeIdSet(ids) {
   return new Set([...ids].filter(id => id != null).map(String));
 }
 
-function fragmentCoordinateAtoms(mol, atomIds, visibleAtomIds = null) {
-  const centeredAtomIds = visibleAtomIds?.size > 0 ? visibleAtomIds : atomIds;
-  const atoms = [...centeredAtomIds].map(id => mol.atoms.get(id)).filter(atom => atom && finiteNumber(atom.x) != null && finiteNumber(atom.y) != null);
-  return atoms.length > 0 ? atoms : [...atomIds].map(id => mol.atoms.get(id)).filter(Boolean);
+function pointForAtom(atom, atomPositions = null) {
+  const position = atomPositions?.get?.(atom?.id);
+  const positionedX = finiteNumber(position?.x);
+  const positionedY = finiteNumber(position?.y);
+  if (positionedX != null && positionedY != null) {
+    return {
+      x: positionedX,
+      y: positionedY,
+      z: finiteNumber(atom?.z)
+    };
+  }
+  const atomX = finiteNumber(atom?.x);
+  const atomY = finiteNumber(atom?.y);
+  if (atomX == null || atomY == null) {
+    return null;
+  }
+  return {
+    x: atomX,
+    y: atomY,
+    z: finiteNumber(atom?.z)
+  };
 }
 
-function computeCenter(mol, atomIds, visibleAtomIds = null) {
-  const atoms = fragmentCoordinateAtoms(mol, atomIds, visibleAtomIds);
+function fragmentCoordinateAtoms(mol, atomIds, visibleAtomIds = null, atomPositions = null) {
+  const centeredAtomIds = visibleAtomIds?.size > 0 ? visibleAtomIds : atomIds;
+  const atoms = [...centeredAtomIds]
+    .map(id => mol.atoms.get(id))
+    .map(atom => ({ atom, point: pointForAtom(atom, atomPositions) }))
+    .filter(entry => entry.atom && entry.point);
+  return atoms.length > 0
+    ? atoms
+    : [...atomIds]
+        .map(id => mol.atoms.get(id))
+        .map(atom => ({ atom, point: pointForAtom(atom, atomPositions) }))
+        .filter(entry => entry.atom && entry.point);
+}
+
+function computeCenter(mol, atomIds, visibleAtomIds = null, atomPositions = null) {
+  const atoms = fragmentCoordinateAtoms(mol, atomIds, visibleAtomIds, atomPositions);
   let x = 0;
   let y = 0;
   let z = 0;
   let zCount = 0;
   let count = 0;
-  for (const atom of atoms) {
-    const atomX = finiteNumber(atom.x);
-    const atomY = finiteNumber(atom.y);
-    const atomZ = finiteNumber(atom.z);
+  for (const { point } of atoms) {
+    const atomX = finiteNumber(point.x);
+    const atomY = finiteNumber(point.y);
+    const atomZ = finiteNumber(point.z);
     if (atomX == null || atomY == null) {
       continue;
     }
@@ -67,6 +100,102 @@ function computeCenter(mol, atomIds, visibleAtomIds = null) {
     y: count > 0 ? y / count : 0,
     z: zCount > 0 ? z / zCount : 0
   };
+}
+
+function incidentRingPolygonsForAtom(mol, atomId) {
+  return (mol.getRings?.() ?? [])
+    .filter(ringAtomIds => ringAtomIds.includes(atomId))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(ringAtomId => pointForAtom(mol.atoms.get(ringAtomId)))
+        .filter(Boolean)
+        .map(point => ({ x: point.x, y: point.y }))
+    )
+    .filter(polygon => polygon.length >= 3);
+}
+
+function averagePlacedBondLength(mol) {
+  let total = 0;
+  let count = 0;
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    const atomA = mol.atoms.get(bond.atoms?.[0]);
+    const atomB = mol.atoms.get(bond.atoms?.[1]);
+    if (!atomA || !atomB || atomA.name === 'H' || atomB.name === 'H') {
+      continue;
+    }
+    const pointA = pointForAtom(atomA);
+    const pointB = pointForAtom(atomB);
+    if (!pointA || !pointB) {
+      continue;
+    }
+    const distance = Math.hypot(pointB.x - pointA.x, pointB.y - pointA.y);
+    if (distance <= 1e-6) {
+      continue;
+    }
+    total += distance;
+    count++;
+  }
+  return count > 0 ? total / count : null;
+}
+
+function hiddenStereoHydrogenBondLength(mol, options = {}) {
+  const configured = finiteNumber(options.hiddenStereoHydrogenBondLength);
+  if (configured != null && configured > 0) {
+    return configured;
+  }
+  const average = averagePlacedBondLength(mol);
+  return average != null ? average * 0.75 : DEFAULT_HIDDEN_STEREO_HYDROGEN_BOND_LENGTH;
+}
+
+function hiddenStereoHydrogenDisplayPositions(mol, options = {}) {
+  const positions = options.atomPositions instanceof Map ? new Map(options.atomPositions) : new Map();
+  const bondLength = hiddenStereoHydrogenBondLength(mol, options);
+  for (const atom of mol?.atoms?.values?.() ?? []) {
+    if (atom.name !== 'H') {
+      continue;
+    }
+    const neighbors = atom.getNeighbors?.(mol) ?? [];
+    if (neighbors.length !== 1) {
+      continue;
+    }
+    const parent = neighbors[0];
+    if (!parent || !parent.getChirality?.()) {
+      continue;
+    }
+    const parentPoint = pointForAtom(parent);
+    const atomPoint = pointForAtom(atom);
+    if (!parentPoint || !atomPoint) {
+      continue;
+    }
+    const bond = mol.getBond?.(atom.id, parent.id);
+    const hasDisplayedStereo = !!bond?.properties?.display?.as;
+    const hasCoincidentCoords = Math.abs(atomPoint.x - parentPoint.x) <= 1e-6 && Math.abs(atomPoint.y - parentPoint.y) <= 1e-6;
+    if (atom.visible !== false && !(hasDisplayedStereo && hasCoincidentCoords)) {
+      continue;
+    }
+    const knownNeighbors = parent
+      .getNeighbors(mol)
+      .filter(neighbor => neighbor.id !== atom.id)
+      .map(neighbor => pointForAtom(neighbor))
+      .filter(Boolean)
+      .map(point => ({ x: point.x, y: point.y }));
+    const protectedAtomIds = new Set([atom.id, parent.id, ...parent.getNeighbors(mol).map(neighbor => neighbor.id)]);
+    const avoidPositions = [...mol.atoms.values()]
+      .filter(candidateAtom => !protectedAtomIds.has(candidateAtom.id) && candidateAtom.visible !== false)
+      .map(candidateAtom => pointForAtom(candidateAtom))
+      .filter(Boolean)
+      .map(point => ({ x: point.x, y: point.y }));
+    positions.set(
+      atom.id,
+      synthesizeDisplayedStereoHydrogenPosition(parentPoint, knownNeighbors, bondLength, {
+        incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id),
+        avoidPositions,
+        minimumAvoidanceDistance: bondLength * 0.45,
+        cardinalAxisSectorTolerance: hasDisplayedStereo ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
+      })
+    );
+  }
+  return positions.size > 0 ? positions : null;
 }
 
 function computePositionCenter(atomIds, positions, visibleAtomIds = null) {
@@ -255,7 +384,9 @@ function remapBondProperties(properties, atomIdMap) {
  * @param {Iterable<string>|null} [options.bondIds] - Selected bond ids.
  * @param {boolean} [options.includeInterSelectedBonds] - Includes bonds whose endpoints are both selected; defaults to true.
  * @param {boolean} [options.includeAttachedHiddenHydrogens] - Includes/caps hydrogens attached to copied heavy atoms; defaults to true.
+ * @param {Map<string, {x:number,y:number}>|null} [options.atomPositions] - Optional 2D/display atom positions to preserve for fragment geometry.
  * @param {Map<string, {x:number,y:number}>|null} [options.forceAtomPositions] - Optional force-layout atom positions to preserve for force paste previews.
+ * @param {number} [options.hiddenStereoHydrogenBondLength] - Optional projected stereo-hydrogen display bond length.
  * @returns {object|null} Fragment payload, or null if no atoms are copyable.
  */
 export function createMoleculeFragment(mol, options = {}) {
@@ -268,15 +399,17 @@ export function createMoleculeFragment(mol, options = {}) {
   }
 
   const visibleAtomIds = visibleFragmentAtomIds(mol, atomIds, selectedAtomIds);
-  const center = computeCenter(mol, atomIds, visibleAtomIds);
+  const atomPositions = hiddenStereoHydrogenDisplayPositions(mol, options);
+  const center = computeCenter(mol, atomIds, visibleAtomIds, atomPositions);
   const forceAtomPositions = options.forceAtomPositions instanceof Map ? options.forceAtomPositions : null;
   const forceCenter = computePositionCenter(atomIds, forceAtomPositions, visibleAtomIds);
   const hydrogenCaps = createCarbonHydrogenCaps(mol, atomIds, bondIds, options.includeAttachedHiddenHydrogens !== false);
   const atoms = [...atomIds].map(id => {
     const atom = mol.atoms.get(id);
+    const atomPoint = pointForAtom(atom, atomPositions);
     const forcePoint = forceAtomPositions?.get(atom.id) ?? null;
-    const atomX = finiteNumber(atom.x);
-    const atomY = finiteNumber(atom.y);
+    const atomX = finiteNumber(atomPoint?.x);
+    const atomY = finiteNumber(atomPoint?.y);
     const atomZ = finiteNumber(atom.z);
     const forceX = finiteNumber(forcePoint?.x);
     const forceY = finiteNumber(forcePoint?.y);

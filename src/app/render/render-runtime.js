@@ -31,6 +31,7 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.forcePreservePositions] - When true for force renders, reuses current simulation positions where possible.
    * @param {boolean} [options.forceKeepInView] - When true for force renders, preserves the current viewport first but refits if the graph settles outside it.
    * @param {boolean} [options.forceRestartSimulation] - When false for force renders, redraws preserved positions without restarting physics.
+   * @param {boolean} [options.forceSettleInitialLayout] - When false for force renders, skips fresh-layout settling ticks.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceAnchorLayout] - Optional force-anchor layout override keyed by atom id.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceInitialPatchPos] - Optional force-pixel positions applied before the first force tick.
    * @param {number} [options.fitPad] - Optional 2D viewport fit padding.
@@ -51,6 +52,7 @@ export function createRenderRuntime(deps) {
       forcePreservePositions = false,
       forceKeepInView = false,
       forceRestartSimulation,
+      forceSettleInitialLayout,
       forceAnchorLayout = null,
       forceInitialPatchPos = null,
       fitPad,
@@ -89,6 +91,9 @@ export function createRenderRuntime(deps) {
       }
       if (forceRestartSimulation !== undefined) {
         forceOptions.restartSimulation = forceRestartSimulation;
+      }
+      if (forceSettleInitialLayout !== undefined) {
+        forceOptions.settleInitialLayout = forceSettleInitialLayout;
       }
       if (forceFitPad !== undefined) {
         forceOptions.fitPad = forceFitPad;

@@ -4,6 +4,13 @@
 
 - Restore Playwright E2E coverage to CI and release workflows, removing the separate manual E2E workflow now that the browser suite is green.
 - Scope CI triggers to pushes/merges on `main` and pull requests targeting `main`.
+- Keep standalone force-mode six-member rings regular through repeated Clean passes after clearing and drawing them with the ring tool.
+- Clean disconnected force-mode molecules by regenerating each component independently, restoring each cleaned component near its pre-clean center, and keeping fresh disconnected force renders on their generated anchors.
+- Preserve existing wedge/dash display choices through Clean so coordinate cleanup does not invert stereo bond rendering.
+- Clean disconnected line-mode molecules component-by-component for bond-length normalization and preserve projected stereo-H coordinates through refinement.
+- Freeze cleanable rings during Clean refinement so non-default bond lengths do not let rings deform after snapping.
+- Show a transparent dashed bounds box around completed manual selections in 2D and force modes while preserving blended blue highlights during drag previews.
+- Preserve projected stereo-H positions when copying reaction products so paste previews do not collapse those hydrogens onto their heavy atoms.
 
 ## 2026-07-01
 

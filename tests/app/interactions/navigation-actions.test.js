@@ -261,6 +261,8 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
         suppressH: true,
         bondLength: 1.5,
         maxPasses: 6,
+        preserveStereoDisplay: true,
+        hiddenHydrogenMode: 'inherit',
         touchedAtoms: [],
         touchedBonds: []
       }
@@ -268,6 +270,63 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
     ['preserveSelection', true],
     ['renderMol', clonedMol, { preserveHistory: true, preserveAnalysis: true, preserveGeometry: true }]
   ]);
+});
+
+test('cleanLayout2d normalizes disconnected components around their own centers', () => {
+  const clonedMol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0, visible: true }],
+      ['a2', { id: 'a2', name: 'C', x: 1.5, y: 0, visible: true }],
+      ['b1', { id: 'b1', name: 'C', x: 10, y: 0, visible: true }],
+      ['b2', { id: 'b2', name: 'C', x: 10.5, y: 0, visible: true }],
+      ['b3', { id: 'b3', name: 'C', x: 11, y: 0, visible: true }]
+    ]),
+    bonds: new Map([
+      ['ab', { id: 'ab', atoms: ['a1', 'a2'], isInRing: () => false }],
+      ['bc1', { id: 'bc1', atoms: ['b1', 'b2'], isInRing: () => false }],
+      ['bc2', { id: 'bc2', atoms: ['b2', 'b3'], isInRing: () => false }]
+    ]),
+    getRings: () => []
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  let renderedMol = null;
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    helpers: {},
+    renderers: {
+      renderMol: mol => {
+        renderedMol = mol;
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.equal(renderedMol, clonedMol);
+  approxEqual(Math.hypot(clonedMol.atoms.get('a2').x - clonedMol.atoms.get('a1').x, clonedMol.atoms.get('a2').y - clonedMol.atoms.get('a1').y), 1.5);
+  approxEqual(Math.hypot(clonedMol.atoms.get('b2').x - clonedMol.atoms.get('b1').x, clonedMol.atoms.get('b2').y - clonedMol.atoms.get('b1').y), 1.5);
+  approxEqual(Math.hypot(clonedMol.atoms.get('b3').x - clonedMol.atoms.get('b2').x, clonedMol.atoms.get('b3').y - clonedMol.atoms.get('b2').y), 1.5);
+  approxEqual((clonedMol.atoms.get('b1').x + clonedMol.atoms.get('b2').x + clonedMol.atoms.get('b3').x) / 3, 10.5);
 });
 
 test('cleanLayout2d preserves reaction-preview metadata on the working clone', () => {
@@ -497,6 +556,90 @@ test('cleanLayout2d scales old-size rings to the active bond length before snapp
     const first = clonedMol.atoms.get(bond.atoms[0]);
     const second = clonedMol.atoms.get(bond.atoms[1]);
     approxEqual(Math.hypot(first.x - second.x, first.y - second.y), 0.5, 1e-9);
+  }
+});
+
+test('cleanLayout2d freezes already-regular rings at non-default active bond lengths during refinement', () => {
+  for (const bondLength of [0.5, 2.5]) {
+    const radius = bondLength;
+    const atomEntries = Array.from({ length: 6 }, (_, index) => {
+      const angle = (2 * Math.PI * index) / 6;
+      const id = `a${index + 1}`;
+      return [
+        id,
+        {
+          id,
+          name: 'C',
+          x: radius * Math.cos(angle),
+          y: radius * Math.sin(angle),
+          visible: true
+        }
+      ];
+    });
+    const bondEntries = Array.from({ length: 6 }, (_, index) => {
+      const firstId = `a${index + 1}`;
+      const secondId = `a${((index + 1) % 6) + 1}`;
+      return [
+        `b${index + 1}`,
+        {
+          id: `b${index + 1}`,
+          atoms: [firstId, secondId],
+          isInRing: () => true
+        }
+      ];
+    });
+    const clonedMol = {
+      atoms: new Map(atomEntries),
+      bonds: new Map(bondEntries),
+      getRings: () => [['a1', 'a2', 'a3', 'a4', 'a5', 'a6']],
+      getBond(firstId, secondId) {
+        return [...this.bonds.values()].find(bond => bond.atoms.includes(firstId) && bond.atoms.includes(secondId)) ?? null;
+      }
+    };
+    const sourceMol = {
+      clone() {
+        return clonedMol;
+      }
+    };
+    let refineOptions = null;
+    const actions = createNavigationActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => sourceMol
+        }
+      },
+      history: {
+        takeSnapshot() {}
+      },
+      renderers: {
+        renderMol() {}
+      },
+      helpers: {
+        getLayoutBondLength: () => bondLength,
+        refineExistingCoords: (_mol, options) => {
+          refineOptions = options;
+          return new Map([...clonedMol.atoms].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]));
+        }
+      },
+      view: {
+        setPreserveSelectionOnNextRender() {}
+      },
+      dom: {
+        clean2dButton: null
+      }
+    });
+
+    actions.cleanLayout2d();
+
+    assert.equal(refineOptions?.freezeRings, true);
+    for (const [, bond] of bondEntries) {
+      const first = clonedMol.atoms.get(bond.atoms[0]);
+      const second = clonedMol.atoms.get(bond.atoms[1]);
+      approxEqual(Math.hypot(first.x - second.x, first.y - second.y), bondLength, 1e-9);
+    }
   }
 });
 
@@ -1016,6 +1159,8 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
         suppressH: true,
         bondLength: 1.5,
         maxPasses: 6,
+        preserveStereoDisplay: true,
+        hiddenHydrogenMode: 'inherit',
         touchedAtoms: [],
         touchedBonds: []
       }
@@ -1028,6 +1173,8 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
         preserveHistory: true,
         preserveAnalysis: true,
         preserveView: false,
+        forceRestartSimulation: false,
+        forceSettleInitialLayout: false,
         forceAnchorLayout: [
           ['a1', { x: 0, y: 0 }],
           ['a2', { x: 1.5, y: 0 }]
@@ -1035,6 +1182,92 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
       }
     ]
   ]);
+});
+
+test('cleanLayoutForce regenerates disconnected components instead of refining the combined force scene', () => {
+  const sourceMol = new Molecule();
+  const a1 = sourceMol.addAtom('a1', 'C');
+  const a2 = sourceMol.addAtom('a2', 'C');
+  const b1 = sourceMol.addAtom('b1', 'C');
+  const b2 = sourceMol.addAtom('b2', 'C');
+  sourceMol.addBond('ba', a1.id, a2.id, { order: 1 }, false);
+  sourceMol.addBond('bb', b1.id, b2.id, { order: 1 }, false);
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    simulation: {
+      nodes: () => [
+        { id: 'a1', x: 100, y: 100 },
+        { id: 'a2', x: 141, y: 100 },
+        { id: 'b1', x: 305, y: 223 },
+        { id: 'b2', x: 346, y: 223 }
+      ]
+    },
+    helpers: {
+      generate2dCoords: (mol, options) => {
+        calls.push(['generate2dCoords', options]);
+        mol.atoms.get('a1').x = 0;
+        mol.atoms.get('a1').y = 0;
+        mol.atoms.get('a2').x = 1.5;
+        mol.atoms.get('a2').y = 0;
+        mol.atoms.get('b1').x = 4.5;
+        mol.atoms.get('b1').y = 0;
+        mol.atoms.get('b2').x = 6;
+        mol.atoms.get('b2').y = 0;
+      },
+      refineExistingCoords: () => {
+        calls.push(['refineExistingCoords']);
+      }
+    },
+    renderers: {
+      renderMol: (_mol, options) => {
+        calls.push([
+          'renderMol',
+          {
+            ...options,
+            forceAnchorLayout: [...options.forceAnchorLayout.entries()]
+          }
+        ]);
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.deepEqual(
+    calls.map(call => call[0]),
+    ['takeSnapshot', 'generate2dCoords', 'preserveSelection', 'renderMol']
+  );
+  assert.deepEqual(calls[1][1], {
+    suppressH: true,
+    bondLength: 1.5,
+    maxPasses: 6,
+    preserveStereoDisplay: true
+  });
+  assert.deepEqual(calls[3][1].forceAnchorLayout, [
+    ['a1', { x: -4.5, y: 2.25 }],
+    ['a2', { x: -3, y: 2.25 }],
+    ['b1', { x: 3, y: -2.25 }],
+    ['b2', { x: 4.5, y: -2.25 }]
+  ]);
+  assert.equal(calls[3][1].forceRestartSimulation, false);
+  assert.equal(calls[3][1].forceSettleInitialLayout, false);
 });
 
 test('cleanLayoutForce scales live force geometry from the active bond length and refits the viewport', () => {

@@ -158,6 +158,10 @@ function makeSimulation(records, initialNodes = []) {
       records.push(['simulation.restart']);
       return this;
     },
+    stop() {
+      records.push(['simulation.stop']);
+      return this;
+    },
     tick(iterations) {
       records.push(['simulation.tick', iterations]);
       return this;
@@ -809,6 +813,56 @@ describe('createForceSceneRenderer', () => {
     assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
     assert.equal(records.some(entry => entry[0] === 'reseatForceGraphHydrogens'), false);
     assert.ok(records.some(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.005));
+  });
+
+  it('can render fresh force anchors without settling or restarting the simulation', () => {
+    const { renderer, records } = makeRenderer();
+
+    renderer.updateForce(
+      { id: 'mol-no-settle', atoms: new Map(), bonds: new Map() },
+      {
+        restartSimulation: false,
+        settleInitialLayout: false
+      }
+    );
+
+    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
+    assert.equal(records.some(entry => entry[0] === 'simulation.restart'), false);
+    assert.ok(records.some(entry => entry[0] === 'simulation.stop'));
+  });
+
+  it('keeps fresh disconnected force renders on their generated component anchors', () => {
+    const graph = {
+      nodes: [
+        { id: 'a1', name: 'C', protons: 6, x: 100, y: 100 },
+        { id: 'a2', name: 'C', protons: 6, x: 141, y: 100 },
+        { id: 'b1', name: 'C', protons: 6, x: 220, y: 100 },
+        { id: 'b2', name: 'C', protons: 6, x: 261, y: 100 }
+      ],
+      links: []
+    };
+    const molecule = {
+      id: 'disconnected-force-seed',
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C', visible: true }],
+        ['a2', { id: 'a2', name: 'C', visible: true }],
+        ['b1', { id: 'b1', name: 'C', visible: true }],
+        ['b2', { id: 'b2', name: 'C', visible: true }]
+      ]),
+      bonds: new Map([
+        ['ba', { id: 'ba', atoms: ['a1', 'a2'], properties: {} }],
+        ['bb', { id: 'bb', atoms: ['b1', 'b2'], properties: {} }]
+      ])
+    };
+    const { renderer, records } = makeRenderer({
+      convertMolecule: () => graph
+    });
+
+    renderer.updateForce(molecule);
+
+    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
+    assert.equal(records.some(entry => entry[0] === 'simulation.restart'), false);
+    assert.ok(records.some(entry => entry[0] === 'simulation.stop'));
   });
 
   it('can refresh preserved force positions without restarting the simulation', () => {

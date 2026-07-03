@@ -232,6 +232,7 @@ describe('scene deps builders', () => {
       getLinks: () => [{ id: 2 }],
       setSelectionLines: value => records.push(['selectionLines', value]),
       setSelectionCircles: value => records.push(['selectionCircles', value]),
+      setSelectionBounds: value => records.push(['selectionBounds', value]),
       getSelectionColor: () => '#abc',
       getSelectionOutline: () => '#def',
       getBondSelectionRadius: () => 6,
@@ -250,6 +251,7 @@ describe('scene deps builders', () => {
     assert.deepEqual(forceSelection.selection.getRenderableSelectionIds(), { atomIds: [1], bondIds: [2] });
     forceSelection.cache.setSelectionLines('L');
     forceSelection.cache.setSelectionCircles('C');
-    assert.deepEqual(records.slice(-3), [['atomContext'], ['selectionLines', 'L'], ['selectionCircles', 'C']]);
+    forceSelection.cache.setSelectionBounds('B');
+    assert.deepEqual(records.slice(-4), [['atomContext'], ['selectionLines', 'L'], ['selectionCircles', 'C'], ['selectionBounds', 'B']]);
   });
 });

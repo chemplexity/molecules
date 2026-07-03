@@ -122,7 +122,8 @@ export function createForceSceneRendererDeps(ctx) {
       getHighlightLines: () => ctx.getHighlightLines(),
       getHighlightCircles: () => ctx.getHighlightCircles(),
       getSelectionLines: () => ctx.getSelectionLines(),
-      getSelectionCircles: () => ctx.getSelectionCircles()
+      getSelectionCircles: () => ctx.getSelectionCircles(),
+      getSelectionBounds: () => ctx.getSelectionBounds?.()
     },
     helpers: {
       valenceWarningMapFor: molecule => ctx.valenceWarningMapFor(molecule),
@@ -283,6 +284,7 @@ export function createSelectionOverlayManagerDeps(ctx) {
       getEraseMode: () => ctx.getEraseMode(),
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
       getSelectionModifierActive: () => ctx.getSelectionModifierActive(),
+      getSelectionDragActive: () => ctx.getSelectionDragActive?.() ?? false,
       getSelectedAtomIds: () => ctx.getSelectedAtomIds(),
       getSelectedBondIds: () => ctx.getSelectedBondIds(),
       getHoveredAtomIds: () => ctx.getHoveredAtomIds(),
@@ -323,7 +325,8 @@ export function createForceSelectionRendererDeps(ctx) {
       getGraphSelection: () => ctx.getGraphSelection()
     },
     selection: {
-      getRenderableSelectionIds: () => ctx.getRenderableSelectionIds()
+      getRenderableSelectionIds: () => ctx.getRenderableSelectionIds(),
+      hasExplicitSelection: () => ctx.hasExplicitSelection?.() ?? true
     },
     force: {
       getNodes: () => ctx.getNodes(),
@@ -331,7 +334,8 @@ export function createForceSelectionRendererDeps(ctx) {
     },
     cache: {
       setSelectionLines: value => ctx.setSelectionLines(value),
-      setSelectionCircles: value => ctx.setSelectionCircles(value)
+      setSelectionCircles: value => ctx.setSelectionCircles(value),
+      setSelectionBounds: value => ctx.setSelectionBounds?.(value)
     },
     constants: {
       getSelectionColor: () => ctx.getSelectionColor(),

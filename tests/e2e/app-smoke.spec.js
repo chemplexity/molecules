@@ -351,6 +351,48 @@ test('force-mode blank-space ring placement keeps the viewport when everything s
   await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
 });
 
+test('repeated force clean keeps standalone six-member rings regular after clearing in force mode', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  if ((await page.locator('#toggle-btn').textContent())?.includes('Force Layout')) {
+    await page.locator('#toggle-btn').click();
+  }
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.locator('#smiles-input').fill('');
+  await page.locator('#smiles-input').press('Enter');
+  await page.waitForTimeout(200);
+  await expect(page.locator('circle.node')).toHaveCount(0);
+
+  await page.locator('#ring-template-btn').click();
+  for (const fraction of [
+    { x: 0.42, y: 0.5 },
+    { x: 0.58, y: 0.5 }
+  ]) {
+    const point = await svgFractionPoint(page, fraction.x, fraction.y);
+    await page.mouse.move(point.x, point.y);
+    await expect(page.locator('g.ring-template-preview-layer')).toHaveCount(1);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+  }
+
+  await expect(page.locator('circle.node')).toHaveCount(36);
+  for (let index = 0; index < 3; index++) {
+    await page.locator('#clean-force-btn').click();
+    await page.waitForTimeout(250);
+  }
+
+  const ringMetrics = await forceHeavyRingComponentMetrics(page);
+  expect(ringMetrics).toHaveLength(2);
+  for (const component of ringMetrics) {
+    expect(component.count).toBe(6);
+    expect(component.minAngle).toBeGreaterThan(110);
+    expect(component.maxAngle).toBeLessThan(130);
+    expect(component.maxLength - component.minLength).toBeLessThan(1);
+  }
+});
+
 test('force-mode edge bond placement refits when the rendered endpoint would be clipped', async ({ page }) => {
   await page.goto('/index.html');
   await waitForAppReady(page);
@@ -732,6 +774,23 @@ async function blankSvgPoint(page) {
     }
     throw new Error('Unable to find a blank SVG point');
   });
+}
+
+async function svgFractionPoint(page, fractionX, fractionY) {
+  return await page.evaluate(
+    ({ fractionX, fractionY }) => {
+      const svg = document.querySelector('.svg-plot');
+      if (!svg) {
+        throw new Error('Missing SVG plot');
+      }
+      const box = svg.getBoundingClientRect();
+      return {
+        x: box.left + box.width * fractionX,
+        y: box.top + box.height * fractionY
+      };
+    },
+    { fractionX, fractionY }
+  );
 }
 
 async function loadInchi(page, inchi) {
@@ -1830,6 +1889,78 @@ async function forceAtomScreenPoints(page) {
         cy: rect.top + rect.height / 2
       };
     });
+  });
+}
+
+async function forceHeavyRingComponentMetrics(page) {
+  return await page.evaluate(() => {
+    const nodes = new Map(
+      Array.from(document.querySelectorAll('circle.node'))
+        .map(circle => {
+          const datum = circle.__data__;
+          return datum?.name === 'H' ? null : [datum?.id, { id: datum?.id, name: datum?.name, x: datum?.x, y: datum?.y }];
+        })
+        .filter(entry => entry?.[0] != null && Number.isFinite(entry[1].x) && Number.isFinite(entry[1].y))
+    );
+    const links = Array.from(document.querySelectorAll('line.link'))
+      .map(line => line.__data__)
+      .filter(link => link?.source?.name !== 'H' && link?.target?.name !== 'H' && nodes.has(link?.source?.id) && nodes.has(link?.target?.id));
+    const adjacency = new Map([...nodes.keys()].map(id => [id, []]));
+    for (const link of links) {
+      adjacency.get(link.source.id)?.push(link.target.id);
+      adjacency.get(link.target.id)?.push(link.source.id);
+    }
+
+    const seen = new Set();
+    const components = [];
+    for (const id of nodes.keys()) {
+      if (seen.has(id)) {
+        continue;
+      }
+      const queue = [id];
+      const component = [];
+      seen.add(id);
+      while (queue.length > 0) {
+        const current = queue.shift();
+        component.push(current);
+        for (const neighborId of adjacency.get(current) ?? []) {
+          if (!seen.has(neighborId)) {
+            seen.add(neighborId);
+            queue.push(neighborId);
+          }
+        }
+      }
+      components.push(component);
+    }
+
+    return components
+      .filter(component => component.length === 6 && component.every(id => (adjacency.get(id) ?? []).filter(neighborId => component.includes(neighborId)).length === 2))
+      .map(component => {
+        const componentIds = new Set(component);
+        const lengths = links
+          .filter(link => componentIds.has(link.source.id) && componentIds.has(link.target.id))
+          .map(link => Math.hypot(link.source.x - link.target.x, link.source.y - link.target.y));
+        const angles = component.map(id => {
+          const point = nodes.get(id);
+          const neighbors = (adjacency.get(id) ?? []).filter(neighborId => componentIds.has(neighborId));
+          const first = nodes.get(neighbors[0]);
+          const second = nodes.get(neighbors[1]);
+          const firstAngle = Math.atan2(first.y - point.y, first.x - point.x);
+          const secondAngle = Math.atan2(second.y - point.y, second.x - point.x);
+          let angle = Math.abs(firstAngle - secondAngle);
+          if (angle > Math.PI) {
+            angle = 2 * Math.PI - angle;
+          }
+          return (angle * 180) / Math.PI;
+        });
+        return {
+          count: component.length,
+          minLength: Math.min(...lengths),
+          maxLength: Math.max(...lengths),
+          minAngle: Math.min(...angles),
+          maxAngle: Math.max(...angles)
+        };
+      });
   });
 }
 

@@ -232,6 +232,21 @@ describe('createRenderRuntime', () => {
     );
   });
 
+  it('passes force initial-settle policy through the shared policy layer', () => {
+    const { runtime, calls } = makeRuntime({ mode: 'force' });
+    const mol = { id: 'mol-force-no-settle' };
+
+    runtime.renderMol(mol, {
+      preserveHistory: true,
+      forceSettleInitialLayout: false
+    });
+
+    assert.deepEqual(
+      calls.find(call => call[0] === 'updateForce'),
+      ['updateForce', mol, { preserveView: false, anchorLayout: null, settleInitialLayout: false }]
+    );
+  });
+
   it('preserves history and analysis when asked', () => {
     const { runtime, calls } = makeRuntime({ mode: '2d' });
     const mol = { id: 'mol-overlay' };

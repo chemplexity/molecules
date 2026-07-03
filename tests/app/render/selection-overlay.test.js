@@ -112,6 +112,7 @@ function makeManager(options = {}) {
       getEraseMode: () => options.eraseMode ?? false,
       getChargeTool: () => options.chargeTool ?? null,
       getSelectionModifierActive: () => options.selectionModifierActive ?? false,
+      getSelectionDragActive: () => options.selectionDragActive ?? false,
       getSelectedAtomIds: () => selectedAtomIds,
       getSelectedBondIds: () => selectedBondIds,
       getHoveredAtomIds: () => hoveredAtomIds,
@@ -411,6 +412,50 @@ describe('createSelectionOverlayManager', () => {
     assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-highlight-layer'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'opacity' && value === 0.45));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'fill' && value === 'none'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'stroke-dasharray' && value === '5,3'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'opacity' && value === 0.4));
+  });
+
+  it('does not draw the persistent bounds box while 2D selection drag is active', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const mol = {
+      atoms: new Map([['a1', atomA]]),
+      bonds: new Map()
+    };
+    const { manager, records } = makeManager({
+      mode: '2d',
+      mol2D: mol,
+      selectedAtomIds: new Set(['a1']),
+      selectionDragActive: true
+    });
+
+    manager.redraw2dSelection();
+
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
+  });
+
+  it('does not draw a persistent bounds box for hover-only 2D highlights', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const mol = {
+      atoms: new Map([['a1', atomA]]),
+      bonds: new Map()
+    };
+    const { manager, records } = makeManager({
+      mode: '2d',
+      selectMode: true,
+      mol2D: mol,
+      hoveredAtomIds: new Set(['a1'])
+    });
+
+    manager.redraw2dSelection();
+
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
   });
 
   it('uses the projected 2D SVG point for stereo-hydrogen atom highlights', () => {
@@ -456,7 +501,8 @@ describe('createSelectionOverlayManager', () => {
       },
       cache: {
         setSelectionLines: value => records.push(['setSelectionLines', value]),
-        setSelectionCircles: value => records.push(['setSelectionCircles', value])
+        setSelectionCircles: value => records.push(['setSelectionCircles', value]),
+        setSelectionBounds: value => records.push(['setSelectionBounds', value])
       },
       constants: {
         getSelectionColor: () => 'rgb(150, 200, 255)',
@@ -476,5 +522,7 @@ describe('createSelectionOverlayManager', () => {
     assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'));
+    assert.ok(records.some(([kind, value]) => kind === 'setSelectionBounds' && value));
   });
 });

@@ -56,6 +56,8 @@ export function createAppStateBridge(deps) {
       getPlacementRedirectedHoverBondIds: deps.overlayState.getPlacementRedirectedHoverBondIds ?? (() => new Set()),
       getSelectionModifierActive: deps.overlayState.getSelectionModifierActive,
       setSelectionModifierActive: deps.overlayState.setSelectionModifierActive,
+      getSelectionDragActive: deps.overlayState.getSelectionDragActive ?? (() => false),
+      setSelectionDragActive: deps.overlayState.setSelectionDragActive ?? (() => {}),
       getSelectMode: deps.overlayState.getSelectMode,
       setSelectMode: deps.overlayState.setSelectMode,
       getDrawBondMode: deps.overlayState.getDrawBondMode,

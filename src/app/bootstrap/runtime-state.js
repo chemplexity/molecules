@@ -38,6 +38,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     placementRedirectedHoverAtomIds: new Set(),
     placementRedirectedHoverBondIds: new Set(),
     selectionModifierActive: false,
+    selectionDragActive: false,
     selectMode: false,
     drawBondMode: false,
     ringTemplateMode: false,
@@ -52,6 +53,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     chargeTool: null,
     forceSelectionLines: null,
     forceSelectionCircles: null,
+    forceSelectionBounds: null,
     forceValenceWarningCircles: null,
     functionalGroupHighlightLines: null,
     functionalGroupHighlightCircles: null,
@@ -88,6 +90,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
   runtimeState.resetRenderCaches = () => {
     runtimeState.forceSelectionLines = null;
     runtimeState.forceSelectionCircles = null;
+    runtimeState.forceSelectionBounds = null;
     runtimeState.forceValenceWarningCircles = null;
     runtimeState.functionalGroupHighlightLines = null;
     runtimeState.functionalGroupHighlightCircles = null;

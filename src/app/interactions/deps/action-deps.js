@@ -28,6 +28,7 @@ export function createNavigationActionDeps(ctx) {
       viewportFitPadding: (pad, options = {}) => ctx.viewportFitPadding(pad, options)
     },
     helpers: {
+      generate2dCoords: ctx.generate2dCoords,
       refineExistingCoords: ctx.refineExistingCoords,
       atomBBox: ctx.atomBBox,
       flipDisplayStereo: mol => ctx.flipDisplayStereo(mol),

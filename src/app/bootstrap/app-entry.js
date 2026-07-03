@@ -196,7 +196,8 @@ function generateActive2dCoords(molecule, options = {}) {
   applyComputedCoords(molecule, result, {
     clearUnplaced: true,
     hiddenHydrogenMode: 'coincident',
-    syncStereoDisplay: true
+    syncStereoDisplay: true,
+    preserveStereoDisplay: options.preserveStereoDisplay === true
   });
   return result.coords;
 }
@@ -218,8 +219,9 @@ function refineActive2dCoords(molecule, options = {}) {
   });
   applyComputedCoords(molecule, result, {
     preserveExisting: true,
-    hiddenHydrogenMode: 'coincident',
-    syncStereoDisplay: true
+    hiddenHydrogenMode: options.hiddenHydrogenMode ?? 'coincident',
+    syncStereoDisplay: true,
+    preserveStereoDisplay: options.preserveStereoDisplay === true
   });
   return result.coords;
 }
@@ -432,6 +434,7 @@ const forceSceneRenderer = createForceSceneRenderer(
     getHighlightCircles: () => runtimeState.functionalGroupHighlightCircles,
     getSelectionLines: () => runtimeState.forceSelectionLines,
     getSelectionCircles: () => runtimeState.forceSelectionCircles,
+    getSelectionBounds: () => runtimeState.forceSelectionBounds,
     valenceWarningMapFor: molecule => runtimeState.valenceWarningMapFor(molecule),
     buildForceAnchorLayout: molecule => forceHelpers.buildForceAnchorLayout(molecule),
     convertMolecule: molecule => forceHelpers.convertMolecule(molecule),
@@ -563,6 +566,7 @@ const selectionOverlayManager = createSelectionOverlayManager(
     getEraseMode: () => runtimeState.eraseMode,
     getChargeTool: () => runtimeState.chargeTool,
     getSelectionModifierActive: () => runtimeState.selectionModifierActive,
+    getSelectionDragActive: () => runtimeState.selectionDragActive,
     getSelectedAtomIds: () => runtimeState.selectedAtomIds,
     getSelectedBondIds: () => runtimeState.selectedBondIds,
     getHoveredAtomIds: () => runtimeState.hoveredAtomIds,
@@ -592,6 +596,10 @@ const forceSelectionRenderer = createForceSelectionRenderer(
     setSelectionCircles: value => {
       runtimeState.forceSelectionCircles = value;
     },
+    setSelectionBounds: value => {
+      runtimeState.forceSelectionBounds = value;
+    },
+    hasExplicitSelection: () => !runtimeState.selectionDragActive && (runtimeState.selectedAtomIds.size > 0 || runtimeState.selectedBondIds.size > 0),
     getSelectionColor: () => 'rgb(150, 200, 255)',
     getSelectionOutline: () => 'rgb(40, 100, 210)',
     getBondSelectionRadius: () => 6,
@@ -715,6 +723,7 @@ const { navigationActions, selectionActions, clipboardActions, editingActions, d
       spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
       centerReaction2dPairCoords: _centerReaction2dPairCoords,
       viewportFitPadding: _viewportFitPadding,
+      generate2dCoords: generateActive2dCoords,
       refineExistingCoords: refineActive2dCoords,
       atomBBox,
       flipDisplayStereo,

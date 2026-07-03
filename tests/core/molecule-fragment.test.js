@@ -129,6 +129,33 @@ describe('molecule fragments', () => {
     assert.equal(copiedHydrogen.dy, 0);
   });
 
+  it('copies displayed stereo hydrogens at their projected endpoint instead of the parent coordinate', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    mol.atoms.get('C1').x = -1.5;
+    mol.atoms.get('C1').y = 0;
+    mol.atoms.get('C2').x = 0;
+    mol.atoms.get('C2').y = 0;
+    mol.atoms.get('H3').x = 0;
+    mol.atoms.get('H3').y = 0;
+    mol.atoms.get('F4').x = 0.75;
+    mol.atoms.get('F4').y = 1.3;
+    mol.atoms.get('Cl5').x = 0.75;
+    mol.atoms.get('Cl5').y = -1.3;
+    mol.atoms.get('H3').visible = true;
+    mol.getBond('C2', 'H3').properties.display = { as: 'wedge', centerId: 'C2' };
+
+    const fragment = createMoleculeFragment(mol, { atomIds: ['C2', 'H3'], includeAttachedHiddenHydrogens: false });
+    const copiedCenter = fragment.atoms.find(atom => atom.id === 'C2');
+    const copiedHydrogen = fragment.atoms.find(atom => atom.id === 'H3');
+    const pasted = instantiateMoleculeFragment(fragment, { center: { x: 10, y: 10 } });
+    const pastedCenter = pasted.mol.atoms.get(pasted.atomIdMap.get('C2'));
+    const pastedHydrogen = pasted.mol.atoms.get(pasted.atomIdMap.get('H3'));
+
+    assert.equal(copiedHydrogen.visible, true);
+    assert.ok(Math.hypot(copiedHydrogen.x - copiedCenter.x, copiedHydrogen.y - copiedCenter.y) > 0.5);
+    assert.ok(Math.hypot(pastedHydrogen.x - pastedCenter.x, pastedHydrogen.y - pastedCenter.y) > 0.5);
+  });
+
   it('preserves force-layout offsets for copied hydrogens', () => {
     const mol = parseSMILES('c1ccc2[nH]ccc2c1');
     mol.atoms.get('N5').x = 0;

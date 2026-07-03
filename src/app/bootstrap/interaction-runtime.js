@@ -83,6 +83,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       spreadReaction2dProductComponents: ctx.spreadReaction2dProductComponents,
       centerReaction2dPairCoords: ctx.centerReaction2dPairCoords,
       viewportFitPadding: ctx.viewportFitPadding,
+      generate2dCoords: ctx.generate2dCoords,
       refineExistingCoords: ctx.refineExistingCoords,
       atomBBox: ctx.atomBBox,
       flipDisplayStereo: ctx.flipDisplayStereo,

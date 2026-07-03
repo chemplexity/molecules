@@ -91,6 +91,10 @@ export function createAppStateBridgeDeps(ctx) {
       setSelectionModifierActive: value => {
         ctx.setSelectionModifierActive(value);
       },
+      getSelectionDragActive: () => ctx.runtimeState.selectionDragActive,
+      setSelectionDragActive: value => {
+        ctx.runtimeState.selectionDragActive = value;
+      },
       getSelectMode: () => ctx.getSelectMode(),
       setSelectMode: value => {
         ctx.setSelectMode(value);

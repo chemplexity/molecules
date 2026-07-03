@@ -1413,18 +1413,21 @@ export function initGestureInteractions(context) {
 
     const mode = context.state.viewState.getMode();
     if (mode !== '2d' && mode !== 'force') {
+      context.state.overlayState.setSelectionDragActive?.(false);
       selectionAdditive = false;
       replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
       context.renderers.applySelectionOverlay();
       return;
     }
     if (mode === '2d' && !context.state.documentState.getMol2d()) {
+      context.state.overlayState.setSelectionDragActive?.(false);
       selectionAdditive = false;
       replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
       context.renderers.applySelectionOverlay();
       return;
     }
     if (mode === 'force' && !context.state.documentState.getCurrentMol()) {
+      context.state.overlayState.setSelectionDragActive?.(false);
       selectionAdditive = false;
       replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
       context.renderers.applySelectionOverlay();
@@ -1437,6 +1440,7 @@ export function initGestureInteractions(context) {
     const additive = selectionAdditive;
 
     if (rw < 5 && rh < 5) {
+      context.state.overlayState.setSelectionDragActive?.(false);
       selectionAdditive = false;
       if (additive) {
         replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
@@ -1449,6 +1453,7 @@ export function initGestureInteractions(context) {
       return;
     }
 
+    context.state.overlayState.setSelectionDragActive?.(false);
     applySelectionDragResult(x, y, true);
     selectionAdditive = false;
     if (mode === 'force') {
@@ -1662,9 +1667,13 @@ export function initGestureInteractions(context) {
     selectionDragging = true;
     selectionStart = { x, y };
     selectionAdditive = isAdditiveSelectionEvent(event);
+    context.state.overlayState.setSelectionDragActive?.(true);
     selectionBaseAtomIds = new Set(context.state.overlayState.getSelectedAtomIds());
     selectionBaseBondIds = new Set(context.state.overlayState.getSelectedBondIds());
     selectionRect.attr('x', x).attr('y', y).attr('width', 0).attr('height', 0).style('display', null);
+    if (selectionBaseAtomIds.size > 0 || selectionBaseBondIds.size > 0) {
+      context.renderers.applySelectionOverlay();
+    }
     event.preventDefault();
   });
 

@@ -96,6 +96,32 @@ describe('layout/engine/apply', () => {
     assert.equal(bond.properties.display.centerId, 'c0');
   });
 
+  it('can preserve existing displayed wedge or dash type while syncing applied coordinates', () => {
+    const molecule = makeHiddenHydrogenStereocenter();
+    molecule.bonds.get('b0').properties.display = { as: 'wedge', centerId: 'c0' };
+    const result = {
+      coords: new Map([
+        ['c0', { x: 0, y: 0 }],
+        ['f0', { x: 1.4, y: 0.1 }],
+        ['cl0', { x: -0.6, y: 1.2 }],
+        ['br0', { x: -1.1, y: -0.8 }]
+      ]),
+      metadata: {
+        stereo: {
+          assignments: [{ bondId: 'b0', type: 'dash', centerId: 'c0' }]
+        }
+      }
+    };
+
+    const summary = applyCoords(molecule, result, {
+      syncStereoDisplay: true,
+      preserveStereoDisplay: true
+    });
+
+    assert.equal(summary.stereoMap.get('b0'), 'wedge');
+    assert.deepEqual(molecule.bonds.get('b0').properties.display, { as: 'wedge', centerId: 'c0' });
+  });
+
   it('can sync renderer-facing projected metal wedge and dash assignments from a layout result', () => {
     const molecule = makeProjectedTetrahedralZincComplex();
     const result = generateCoords(molecule, { suppressH: true });

@@ -33,6 +33,45 @@ function setDisplayStereo(bond, type, centerId = null, manual = false) {
   }
 }
 
+function displayStereoType(bond) {
+  const displayAs = bond?.properties?.display?.as ?? null;
+  return displayAs === 'wedge' || displayAs === 'dash' ? displayAs : null;
+}
+
+function displayStereoCenterId(molecule, bond, fallbackCenterId = null) {
+  const centerId = bond?.properties?.display?.centerId ?? fallbackCenterId;
+  if (centerId && bond?.atoms?.includes?.(centerId) && molecule?.atoms?.get?.(centerId)?.getChirality?.()) {
+    return centerId;
+  }
+  return null;
+}
+
+function collectExistingDisplayStereo(molecule) {
+  const byBondId = new Map();
+  const byCenterId = new Map();
+  for (const bond of molecule?.bonds?.values?.() ?? []) {
+    const type = displayStereoType(bond);
+    if (!type) {
+      continue;
+    }
+    const centerId = displayStereoCenterId(molecule, bond);
+    if (!centerId) {
+      continue;
+    }
+    const assignment = {
+      bondId: bond.id,
+      type,
+      centerId,
+      manual: bond.properties.display?.manual === true
+    };
+    byBondId.set(bond.id, assignment);
+    if (!byCenterId.has(centerId)) {
+      byCenterId.set(centerId, assignment);
+    }
+  }
+  return { byBondId, byCenterId };
+}
+
 /**
  * Collects all renderer-facing wedge/dash assignments from a layout result.
  * Stereo assignments are computed if missing; extra display assignments are
@@ -85,6 +124,7 @@ function resolveOptions(result, options) {
     preserveExisting: options.preserveExisting ?? inferredRefine,
     clearUnplaced: options.clearUnplaced ?? false,
     syncStereoDisplay: options.syncStereoDisplay ?? false,
+    preserveStereoDisplay: options.preserveStereoDisplay ?? false,
     hiddenHydrogenMode
   };
 }
@@ -130,14 +170,46 @@ function applyHiddenHydrogenMode(molecule, coords, hiddenHydrogenMode, preserveE
   return { appliedCount, preservedCount, clearedCount };
 }
 
-function syncAppliedStereoDisplay(molecule, coords, result) {
+function preserveDisplayStereoAssignments(molecule, assignments, existingDisplayStereo) {
+  if (!existingDisplayStereo) {
+    return assignments;
+  }
+  const usedBondIds = new Set();
+  const preservedAssignments = [];
+
+  for (const assignment of assignments) {
+    const existing =
+      existingDisplayStereo.byBondId.get(assignment.bondId) ??
+      (assignment.centerId ? existingDisplayStereo.byCenterId.get(assignment.centerId) : null) ??
+      null;
+    if (existing) {
+      const bond = molecule.bonds.get(existing.bondId);
+      if (bond && bond.atoms.includes(existing.centerId) && !usedBondIds.has(existing.bondId)) {
+        preservedAssignments.push(existing);
+        usedBondIds.add(existing.bondId);
+        continue;
+      }
+    }
+    if (usedBondIds.has(assignment.bondId)) {
+      continue;
+    }
+    preservedAssignments.push(assignment);
+    usedBondIds.add(assignment.bondId);
+  }
+
+  return preservedAssignments;
+}
+
+function syncAppliedStereoDisplay(molecule, coords, result, options = {}) {
+  const existingDisplayStereo = options.preserveStereoDisplay ? collectExistingDisplayStereo(molecule) : null;
   const assignments = collectDisplayAssignments(molecule, coords, result);
+  const resolvedAssignments = options.preserveStereoDisplay ? preserveDisplayStereoAssignments(molecule, assignments, existingDisplayStereo) : assignments;
 
   for (const bond of molecule.bonds.values()) {
     clearAutoDisplayStereo(bond);
   }
 
-  for (const assignment of assignments) {
+  for (const assignment of resolvedAssignments) {
     const bond = molecule.bonds.get(assignment.bondId);
     if (!bond) {
       continue;
@@ -148,7 +220,7 @@ function syncAppliedStereoDisplay(molecule, coords, result) {
     setDisplayStereo(bond, assignment.type, assignment.centerId, assignment.manual === true);
   }
 
-  return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
+  return new Map(resolvedAssignments.map(({ bondId, type }) => [bondId, type]));
 }
 
 /**
@@ -161,6 +233,7 @@ function syncAppliedStereoDisplay(molecule, coords, result) {
  * @param {boolean} [options.preserveExisting] - Preserve coordinates for atoms missing from the incoming map.
  * @param {boolean} [options.clearUnplaced] - Clear stale coordinates on atoms that are not placed.
  * @param {boolean} [options.syncStereoDisplay] - Populate renderer-facing wedge/dash display metadata.
+ * @param {boolean} [options.preserveStereoDisplay] - Preserve existing wedge/dash bond/type choices when syncing stereo display.
  * @param {'inherit'|'coincident'} [options.hiddenHydrogenMode] - How hidden hydrogens should receive coordinates.
  * @returns {{molecule: object, appliedAtomCount: number, preservedAtomCount: number, clearedAtomCount: number, stereoBondCount: number, stereoMap: Map<string, string>}} Application summary.
  */
@@ -202,7 +275,7 @@ export function applyCoords(molecule, coordsOrResult, options = {}) {
   preservedAtomCount += hiddenHydrogenSummary.preservedCount;
   clearedAtomCount += hiddenHydrogenSummary.clearedCount;
 
-  const stereoMap = resolved.syncStereoDisplay ? syncAppliedStereoDisplay(molecule, coords, result) : new Map();
+  const stereoMap = resolved.syncStereoDisplay ? syncAppliedStereoDisplay(molecule, coords, result, resolved) : new Map();
   return {
     molecule,
     appliedAtomCount,

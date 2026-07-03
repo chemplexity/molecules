@@ -166,6 +166,101 @@ function captureFiniteAtomCoords(molecule) {
   return coords;
 }
 
+function visibleHeavyComponents(molecule) {
+  const components = [];
+  if (!molecule?.atoms || !molecule?.bonds) {
+    return components;
+  }
+  const heavyAtomIds = [...molecule.atoms.values()]
+    .filter(atom => atom?.name !== 'H' && atom?.visible !== false)
+    .map(atom => atom.id)
+    .filter(Boolean);
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const adjacency = new Map(heavyAtomIds.map(atomId => [atomId, []]));
+  for (const bond of molecule.bonds.values()) {
+    const [firstId, secondId] = bond?.atoms ?? [];
+    if (!heavyAtomIdSet.has(firstId) || !heavyAtomIdSet.has(secondId)) {
+      continue;
+    }
+    adjacency.get(firstId).push(secondId);
+    adjacency.get(secondId).push(firstId);
+  }
+
+  const visited = new Set();
+  for (const atomId of heavyAtomIds) {
+    if (visited.has(atomId)) {
+      continue;
+    }
+    const queue = [atomId];
+    const component = [];
+    visited.add(atomId);
+    for (let index = 0; index < queue.length; index++) {
+      const currentAtomId = queue[index];
+      component.push(currentAtomId);
+      for (const neighborId of adjacency.get(currentAtomId) ?? []) {
+        if (visited.has(neighborId)) {
+          continue;
+        }
+        visited.add(neighborId);
+        queue.push(neighborId);
+      }
+    }
+    components.push(component);
+  }
+  return components;
+}
+
+function hasDisconnectedVisibleHeavyComponents(molecule) {
+  return visibleHeavyComponents(molecule).length > 1;
+}
+
+function finiteComponentCenter(molecule, atomIds) {
+  let x = 0;
+  let y = 0;
+  let count = 0;
+  for (const atomId of atomIds ?? []) {
+    const atom = molecule?.atoms?.get?.(atomId);
+    if (!Number.isFinite(atom?.x) || !Number.isFinite(atom?.y)) {
+      continue;
+    }
+    x += atom.x;
+    y += atom.y;
+    count++;
+  }
+  return count > 0 ? { x: x / count, y: y / count } : null;
+}
+
+function captureVisibleHeavyComponentCenters(molecule) {
+  return visibleHeavyComponents(molecule)
+    .map(atomIds => ({ atomIds, center: finiteComponentCenter(molecule, atomIds) }))
+    .filter(component => component.center);
+}
+
+function restoreComponentCenters(molecule, componentCenters) {
+  let movedCount = 0;
+  for (const { atomIds, center } of componentCenters ?? []) {
+    const currentCenter = finiteComponentCenter(molecule, atomIds);
+    if (!currentCenter || !center) {
+      continue;
+    }
+    const dx = center.x - currentCenter.x;
+    const dy = center.y - currentCenter.y;
+    if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) {
+      continue;
+    }
+    for (const atomId of atomIds) {
+      const atom = molecule.atoms.get(atomId);
+      if (!atom || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+        continue;
+      }
+      atom.x += dx;
+      atom.y += dy;
+      movedCount++;
+    }
+  }
+  return movedCount;
+}
+
 function visibleHeavyNeighborCount(atom, molecule, excludedAtomId = null) {
   return atom.getNeighbors(molecule).filter(neighbor => neighbor && neighbor.id !== excludedAtomId && neighbor.name !== 'H' && neighbor.visible !== false).length;
 }
@@ -642,13 +737,16 @@ function snapRingSubstituentAngles(molecule, coords, ring, allRingAtomIds, hints
   return movedCount;
 }
 
-function measureMedianHeavyBondLength(molecule) {
+function measureMedianHeavyBondLength(molecule, atomIdFilter = null) {
   if (!molecule?.atoms || !molecule?.bonds) {
     return 0;
   }
   const lengths = [];
   for (const bond of molecule.bonds.values()) {
     const [firstId, secondId] = bond.atoms ?? [];
+    if (atomIdFilter && (!atomIdFilter.has(firstId) || !atomIdFilter.has(secondId))) {
+      continue;
+    }
     const firstAtom = molecule.atoms.get(firstId);
     const secondAtom = molecule.atoms.get(secondId);
     if (!firstAtom || !secondAtom || firstAtom.name === 'H' || secondAtom.name === 'H') {
@@ -670,7 +768,53 @@ function measureMedianHeavyBondLength(molecule) {
   return lengths.length % 2 === 1 ? lengths[mid] : (lengths[mid - 1] + lengths[mid]) / 2;
 }
 
+function componentAtomIdsWithAttachedHydrogens(molecule, heavyAtomIds) {
+  const atomIds = new Set(heavyAtomIds);
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  for (const bond of molecule?.bonds?.values?.() ?? []) {
+    const [firstId, secondId] = bond.atoms ?? [];
+    const firstAtom = molecule.atoms.get(firstId);
+    const secondAtom = molecule.atoms.get(secondId);
+    if (heavyAtomIdSet.has(firstId) && secondAtom?.name === 'H') {
+      atomIds.add(secondId);
+    }
+    if (heavyAtomIdSet.has(secondId) && firstAtom?.name === 'H') {
+      atomIds.add(firstId);
+    }
+  }
+  return atomIds;
+}
+
+function scaleAtomIdsAroundCenter(molecule, atomIds, center, scale) {
+  if (!center || Math.abs(scale - 1) < 0.05) {
+    return;
+  }
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || !Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    atom.x = center.x + (atom.x - center.x) * scale;
+    atom.y = center.y + (atom.y - center.y) * scale;
+  }
+}
+
 function normalizeCoordsToBondLength(molecule, bondLength) {
+  const components = visibleHeavyComponents(molecule);
+  if (components.length > 1) {
+    for (const componentAtomIds of components) {
+      const componentAtomIdSet = new Set(componentAtomIds);
+      const medianBondLength = measureMedianHeavyBondLength(molecule, componentAtomIdSet);
+      if (medianBondLength <= 0) {
+        continue;
+      }
+      const scale = bondLength / medianBondLength;
+      const center = finiteComponentCenter(molecule, componentAtomIds);
+      scaleAtomIdsAroundCenter(molecule, componentAtomIdsWithAttachedHydrogens(molecule, componentAtomIds), center, scale);
+    }
+    return;
+  }
+
   const medianBondLength = measureMedianHeavyBondLength(molecule);
   if (medianBondLength <= 0) {
     return;
@@ -695,13 +839,7 @@ function normalizeCoordsToBondLength(molecule, bondLength) {
   }
   cx /= count;
   cy /= count;
-  for (const atom of molecule.atoms.values()) {
-    if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
-      continue;
-    }
-    atom.x = cx + (atom.x - cx) * scale;
-    atom.y = cy + (atom.y - cy) * scale;
-  }
+  scaleAtomIdsAroundCenter(molecule, [...molecule.atoms.keys()], { x: cx, y: cy }, scale);
 }
 
 function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT_BOND_LENGTH } = {}) {
@@ -792,6 +930,13 @@ function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT
   }
 
   return { snappedAtoms, snappedBonds, snappedCount: targetSums.size + snappedSubstituentCount };
+}
+
+function hasCleanableRings(molecule) {
+  if (typeof molecule?.getRings !== 'function') {
+    return false;
+  }
+  return molecule.getRings().some(ring => ring.length >= CLEAN_RING_SNAP_MIN_SIZE && ring.length <= CLEAN_RING_SNAP_MAX_SIZE);
 }
 
 function forcePatchEntryForNode(node) {
@@ -959,7 +1104,8 @@ export function createNavigationActions(context) {
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
       bondLength
     });
-    const hasRefinementRelayout = typeof context.helpers.refineExistingCoords === 'function';
+    const freezeCleanRings = hasCleanableRings(relayoutMol);
+    const hasRefinementRelayout = typeof context.helpers?.refineExistingCoords === 'function';
     const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
       bondLength
     });
@@ -974,7 +1120,9 @@ export function createNavigationActions(context) {
           suppressH: true,
           bondLength,
           maxPasses: 6,
-          ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
+          ...(freezeCleanRings ? { freezeRings: true } : {}),
+          preserveStereoDisplay: true,
+          hiddenHydrogenMode: 'inherit',
           touchedAtoms: refinementHints.touchedAtoms,
           touchedBonds: refinementHints.touchedBonds
         })
@@ -1012,36 +1160,58 @@ export function createNavigationActions(context) {
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
-    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
-    const cleanReferenceCoords = captureFiniteAtomCoords(relayoutMol);
-    normalizeCoordsToBondLength(relayoutMol, bondLength);
-    const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
-      bondLength
-    });
-    const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
-      bondLength
-    });
-    for (const atomId of ringSnapHints.snappedAtoms) {
-      refinementHints.touchedAtoms.add(atomId);
-    }
-    for (const bondId of ringSnapHints.snappedBonds) {
-      refinementHints.touchedBonds.add(bondId);
-    }
-    if (typeof context.helpers.refineExistingCoords === 'function') {
-      context.helpers.refineExistingCoords(relayoutMol, {
+    const shouldFreshCleanDisconnectedComponents =
+      !relayoutMol.__reactionPreview && hasDisconnectedVisibleHeavyComponents(relayoutMol) && typeof context.helpers?.generate2dCoords === 'function';
+    let cleanReferenceCoords = new Map();
+    if (shouldFreshCleanDisconnectedComponents) {
+      seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
+      const componentCenters = captureVisibleHeavyComponentCenters(relayoutMol);
+      context.helpers.generate2dCoords(relayoutMol, {
         suppressH: true,
         bondLength,
         maxPasses: 6,
-        ...(ringSnapHints.snappedCount > 0 ? { freezeRings: true } : {}),
-        touchedAtoms: refinementHints.touchedAtoms,
-        touchedBonds: refinementHints.touchedBonds
+        preserveStereoDisplay: true
       });
       normalizeCoordsToBondLength(relayoutMol, bondLength);
       snapCleanRingsToRegularGeometry(relayoutMol, {
         bondLength
       });
+      restoreComponentCenters(relayoutMol, componentCenters);
+    } else {
+      seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
+      cleanReferenceCoords = captureFiniteAtomCoords(relayoutMol);
+      normalizeCoordsToBondLength(relayoutMol, bondLength);
+      const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
+        bondLength
+      });
+      const freezeCleanRings = hasCleanableRings(relayoutMol);
+      const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
+        bondLength
+      });
+      for (const atomId of ringSnapHints.snappedAtoms) {
+        refinementHints.touchedAtoms.add(atomId);
+      }
+      for (const bondId of ringSnapHints.snappedBonds) {
+        refinementHints.touchedBonds.add(bondId);
+      }
+      if (typeof context.helpers?.refineExistingCoords === 'function') {
+        context.helpers.refineExistingCoords(relayoutMol, {
+          suppressH: true,
+          bondLength,
+          maxPasses: 6,
+          ...(freezeCleanRings ? { freezeRings: true } : {}),
+          preserveStereoDisplay: true,
+          hiddenHydrogenMode: 'inherit',
+          touchedAtoms: refinementHints.touchedAtoms,
+          touchedBonds: refinementHints.touchedBonds
+        });
+        normalizeCoordsToBondLength(relayoutMol, bondLength);
+        snapCleanRingsToRegularGeometry(relayoutMol, {
+          bondLength
+        });
+      }
+      repairCleanMultiRingSubstituentExits(relayoutMol, cleanReferenceCoords);
     }
-    repairCleanMultiRingSubstituentExits(relayoutMol, cleanReferenceCoords);
     reapplyReactionPreviewForceLayout(relayoutMol, context.overlays, bondLength);
     const forceAnchorLayout = buildForceAnchorLayoutFromPlacedCoords(relayoutMol);
     context.view.setPreserveSelectionOnNextRender(true);
@@ -1049,7 +1219,9 @@ export function createNavigationActions(context) {
       preserveHistory: true,
       preserveAnalysis: true,
       preserveView: false,
-      forceAnchorLayout: forceAnchorLayout.size > 0 ? forceAnchorLayout : null
+      forceAnchorLayout: forceAnchorLayout.size > 0 ? forceAnchorLayout : null,
+      forceRestartSimulation: false,
+      forceSettleInitialLayout: false
     });
     const btn = context.dom.cleanForceButton;
     if (btn) {

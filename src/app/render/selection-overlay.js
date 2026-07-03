@@ -2,6 +2,63 @@
 
 import { labelHalfW, getAtomLabel } from '../../layout/mol2d-helpers.js';
 
+const SELECTION_BOUNDS_PAD = 6;
+const SELECTION_BOUNDS_STROKE = 'rgb(80, 140, 255)';
+const SELECTION_BOUNDS_DASH = '5,3';
+const SELECTION_BOUNDS_STROKE_WIDTH = 1.5;
+const SELECTION_BOUNDS_OPACITY = 0.4;
+
+function emptyBounds() {
+  return {
+    minX: Infinity,
+    minY: Infinity,
+    maxX: -Infinity,
+    maxY: -Infinity
+  };
+}
+
+function expandBounds(bounds, minX, minY, maxX, maxY) {
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return bounds;
+  }
+  bounds.minX = Math.min(bounds.minX, minX);
+  bounds.minY = Math.min(bounds.minY, minY);
+  bounds.maxX = Math.max(bounds.maxX, maxX);
+  bounds.maxY = Math.max(bounds.maxY, maxY);
+  return bounds;
+}
+
+function finalizeBounds(bounds, pad = SELECTION_BOUNDS_PAD) {
+  if (!Number.isFinite(bounds?.minX) || !Number.isFinite(bounds?.minY) || !Number.isFinite(bounds?.maxX) || !Number.isFinite(bounds?.maxY)) {
+    return null;
+  }
+  return {
+    x: bounds.minX - pad,
+    y: bounds.minY - pad,
+    width: Math.max(0, bounds.maxX - bounds.minX + pad * 2),
+    height: Math.max(0, bounds.maxY - bounds.minY + pad * 2)
+  };
+}
+
+function drawSelectionBoundsRect(selectionLayer, bounds) {
+  if (!bounds) {
+    return null;
+  }
+  return selectionLayer
+    .append('rect')
+    .attr('class', 'selection-bounds-rect')
+    .attr('x', bounds.x)
+    .attr('y', bounds.y)
+    .attr('width', bounds.width)
+    .attr('height', bounds.height)
+    .attr('fill', 'none')
+    .attr('stroke', SELECTION_BOUNDS_STROKE)
+    .attr('stroke-width', SELECTION_BOUNDS_STROKE_WIDTH)
+    .attr('stroke-dasharray', SELECTION_BOUNDS_DASH)
+    .attr('opacity', SELECTION_BOUNDS_OPACITY)
+    .attr('pointer-events', 'none');
+}
+
 /**
  * Creates the selection overlay manager, coordinating hover and selection highlight rendering across both 2D and force layout modes.
  * @param {object} ctx - Context providing `state`, `molecule`, `view`, `view2D`, `constants`, `renderers`, `selection`, and `scheduler`.
@@ -137,7 +194,8 @@ export function createSelectionOverlayManager(ctx) {
     const bondSelectionPad = 5;
     const atomSelectionPad = 12;
 
-    const selectionLayer = g.insert('g', 'g.bonds').attr('class', 'atom-selection').attr('opacity', 0.45).style('pointer-events', 'none');
+    const selectionLayer = g.insert('g', 'g.bonds').attr('class', 'atom-selection').style('pointer-events', 'none');
+    const highlightLayer = selectionLayer.append('g').attr('class', 'selection-highlight-layer').attr('opacity', 0.45);
 
     const matchedBonds = [];
     for (const bond of mol.bonds.values()) {
@@ -169,9 +227,21 @@ export function createSelectionOverlayManager(ctx) {
       matchedAtoms.push({ x, y, radius });
     }
 
+    const selectedBounds = emptyBounds();
+    for (const { point1, point2, width } of matchedBonds) {
+      const pad = width / 2;
+      expandBounds(selectedBounds, Math.min(point1.x, point2.x) - pad, Math.min(point1.y, point2.y) - pad, Math.max(point1.x, point2.x) + pad, Math.max(point1.y, point2.y) + pad);
+    }
+    for (const { x, y, radius } of matchedAtoms) {
+      expandBounds(selectedBounds, x - radius, y - radius, x + radius, y + radius);
+    }
+    if ((ctx.state.getSelectedAtomIds().size > 0 || ctx.state.getSelectedBondIds().size > 0) && !ctx.state.getSelectionDragActive?.()) {
+      drawSelectionBoundsRect(selectionLayer, finalizeBounds(selectedBounds));
+    }
+
     const addLines = (stroke, extra) => {
       for (const { point1, point2, width } of matchedBonds) {
-        selectionLayer
+        highlightLayer
           .append('line')
           .attr('x1', point1.x)
           .attr('y1', point1.y)
@@ -185,7 +255,7 @@ export function createSelectionOverlayManager(ctx) {
 
     const addCircles = (fill, extra) => {
       for (const { x, y, radius } of matchedAtoms) {
-        selectionLayer
+        highlightLayer
           .append('circle')
           .attr('cx', x)
           .attr('cy', y)
@@ -243,6 +313,7 @@ export function createForceSelectionRenderer(ctx) {
     graphSelection.selectAll('g.force-selection-layer').remove();
     ctx.cache.setSelectionLines(null);
     ctx.cache.setSelectionCircles(null);
+    ctx.cache.setSelectionBounds?.(null);
 
     const { atomIds: activeAtomIds, bondIds: activeBondIds } = ctx.selection.getRenderableSelectionIds();
     if (activeAtomIds.size === 0 && activeBondIds.size === 0) {
@@ -254,13 +325,42 @@ export function createForceSelectionRenderer(ctx) {
     const bondSelectionRadius = ctx.constants.getBondSelectionRadius();
     const atomSelectionRadius = ctx.constants.getAtomSelectionRadius();
     const outlineWidth = ctx.constants.getOutlineWidth();
-    const selectionLayer = graphSelection.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45).style('pointer-events', 'none');
+    const selectionLayer = graphSelection.insert('g', ':first-child').attr('class', 'force-selection-layer').style('pointer-events', 'none');
+    const highlightLayer = selectionLayer.append('g').attr('class', 'selection-highlight-layer').attr('opacity', 0.45);
 
     const selectedNodes = ctx.force.getNodes().filter(node => activeAtomIds.has(node.id));
     const selectedLinks = ctx.force.getLinks().filter(link => activeBondIds.has(link.id));
 
+    const forceSelectionBounds = () => {
+      const bounds = emptyBounds();
+      for (const link of selectedLinks) {
+        const sourceRadius = ctx.helpers.atomRadius(link.source.protons);
+        const targetRadius = ctx.helpers.atomRadius(link.target.protons);
+        const pad = Math.min(sourceRadius, targetRadius) + bondSelectionRadius + outlineWidth;
+        expandBounds(
+          bounds,
+          Math.min(link.source.x, link.target.x) - pad,
+          Math.min(link.source.y, link.target.y) - pad,
+          Math.max(link.source.x, link.target.x) + pad,
+          Math.max(link.source.y, link.target.y) + pad
+        );
+      }
+      for (const node of selectedNodes) {
+        const radius = ctx.helpers.atomRadius(node.protons) + atomSelectionRadius + outlineWidth;
+        expandBounds(bounds, node.x - radius, node.y - radius, node.x + radius, node.y + radius);
+      }
+      return finalizeBounds(bounds);
+    };
+
+    let selectionBoundsRect = null;
+    if (ctx.selection.hasExplicitSelection?.() ?? true) {
+      const bounds = forceSelectionBounds();
+      selectionBoundsRect = drawSelectionBoundsRect(selectionLayer, bounds);
+      selectionBoundsRect?.datum({ bounds: forceSelectionBounds });
+    }
+
     const addLines = (stroke, extra) => {
-      selectionLayer
+      highlightLayer
         .selectAll(null)
         .data(selectedLinks)
         .enter()
@@ -276,7 +376,7 @@ export function createForceSelectionRenderer(ctx) {
     };
 
     const addCircles = (fill, extra) => {
-      selectionLayer
+      highlightLayer
         .selectAll(null)
         .data(selectedNodes)
         .enter()
@@ -295,6 +395,7 @@ export function createForceSelectionRenderer(ctx) {
     addCircles(selectionColor, 0);
     ctx.cache.setSelectionLines(selectionLayer.selectAll('line'));
     ctx.cache.setSelectionCircles(selectionLayer.selectAll('circle'));
+    ctx.cache.setSelectionBounds?.(selectionBoundsRect);
   }
 
   return {
