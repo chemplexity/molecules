@@ -132,6 +132,151 @@ function makeRangeInput(value = '1') {
 }
 
 describe('createSelectionActions', () => {
+  it('clears the active selection when switching into bond, ring, or charge tools', () => {
+    let selectMode = true;
+    let drawBondMode = false;
+    let ringTemplateMode = false;
+    let eraseMode = false;
+    let chargeTool = null;
+    let drawBondType = 'single';
+    let ringTemplateSize = 6;
+    const selectedAtomIds = new Set(['a1', 'a2']);
+    const selectedBondIds = new Set(['b1']);
+    const calls = [];
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      ring: makeButton(),
+      erase: makeButton(),
+      single: makeButton(),
+      double: makeButton(),
+      positive: makeButton(),
+      ring6: makeButton()
+    };
+    buttons.single.innerHTML = '<svg>single</svg>';
+    buttons.double.innerHTML = '<svg>double</svg>';
+    buttons.ring6.innerHTML = '<svg>ring6</svg>';
+
+    const actions = createSelectionActions({
+      state: {
+        ringTemplateDrag: {
+          refreshFreePreview() {},
+          refreshAnchoredPreview() {}
+        },
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => selectMode,
+          setSelectMode: value => {
+            selectMode = value;
+          },
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getRingTemplateMode: () => ringTemplateMode,
+          setRingTemplateMode: value => {
+            ringTemplateMode = value;
+          },
+          getRingTemplateSize: () => ringTemplateSize,
+          setRingTemplateSize: value => {
+            ringTemplateSize = value;
+          },
+          getEraseMode: () => eraseMode,
+          setEraseMode: value => {
+            eraseMode = value;
+          },
+          getPaintMode: () => false,
+          setPaintMode() {},
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => drawBondType,
+          setDrawBondType: value => {
+            drawBondType = value;
+          },
+          getSelectedAtomIds: () => selectedAtomIds,
+          getSelectedBondIds: () => selectedBondIds,
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {
+          calls.push('draw2d');
+        },
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {
+          calls.push('clearPrimitiveHover');
+        },
+        refreshSelectionOverlay() {
+          calls.push('refreshSelectionOverlay');
+        }
+      },
+      drawBond: {
+        cancelDrawBond() {
+          calls.push('cancelDrawBond');
+        }
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        ringTemplateButton: buttons.ring,
+        drawTools: makeButton(),
+        eraseButton: buttons.erase,
+        getStyleBrushButtons: () => [],
+        getPaintColorSelectors: () => [],
+        getPaintBrushSizeSelectors: () => [],
+        getPaintOpacitySelectors: () => [],
+        getPaintToolButtons: () => [],
+        getChargeToolButton: tool => buttons[tool] ?? null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: type => buttons[type] ?? null,
+        getRingTemplateSizeButton: size => (size === 6 ? buttons.ring6 : null)
+      }
+    });
+
+    actions.toggleDrawBondMode();
+
+    assert.equal(selectedAtomIds.size, 0);
+    assert.equal(selectedBondIds.size, 0);
+
+    selectedAtomIds.add('a1');
+    selectedBondIds.add('b1');
+    actions.setDrawBondType('double');
+
+    assert.equal(selectedAtomIds.size, 0);
+    assert.equal(selectedBondIds.size, 0);
+
+    selectedAtomIds.add('a1');
+    selectedBondIds.add('b1');
+    actions.setRingTemplateSize(6);
+
+    assert.equal(selectedAtomIds.size, 0);
+    assert.equal(selectedBondIds.size, 0);
+
+    selectedAtomIds.add('a1');
+    selectedBondIds.add('b1');
+    actions.setChargeTool('positive');
+
+    assert.equal(selectedAtomIds.size, 0);
+    assert.equal(selectedBondIds.size, 0);
+    assert.equal(calls.filter(call => call === 'refreshSelectionOverlay').length, 4);
+  });
+
   it('togglePanMode exits charge mode and marks pan active', () => {
     let selectMode = false;
     let drawBondMode = false;

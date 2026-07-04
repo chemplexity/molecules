@@ -2743,6 +2743,24 @@ test('deleting a displayed stereo hydrogen bond also removes the hydrogen in 2d'
   await expect(page.locator('circle.valence-warning')).toHaveCount(0);
 });
 
+test('deleting a displayed stereo hydrogen atom with Delete removes it in 2d', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await page.locator('#draw-bond-btn').click();
+
+  const hydrogenHit = page.locator('g[data-atom-id="H4"] .atom-hit');
+  await expect(hydrogenHit).toHaveCount(1);
+  const hydrogenBox = await hydrogenHit.boundingBox();
+  expect(hydrogenBox).toBeTruthy();
+
+  await page.mouse.move(hydrogenBox.x + hydrogenBox.width / 2, hydrogenBox.y + hydrogenBox.height / 2);
+  await page.keyboard.press('Delete');
+
+  await expect(page.locator('g[data-atom-id="H4"]')).toHaveCount(0);
+  await expect(page.locator('circle.valence-warning')).toHaveCount(0);
+});
+
 test('changing a dashed stereochemical hydrogen bond back to a single bond hides the hydrogen in 2d', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -4766,6 +4784,7 @@ test('force-mode benzylic oxidation seeds the new product oxygen beside the prod
 
 test('force-mode reaction preview rotation keeps the reaction arrow visible', async ({ page }) => {
   await page.goto('/index.html');
+  await waitForAppReady(page);
 
   await loadSmiles(page, 'O=C(O)C1=C2C=CCC2C=C1');
   await page.locator('#toggle-btn').click();

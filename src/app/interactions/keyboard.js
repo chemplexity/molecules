@@ -7,6 +7,18 @@
 export function initKeyboardInteractions(context) {
   const { doc = document, win = window } = context;
 
+  function isStereoHydrogenBond(bond) {
+    const displayAs = bond?.properties?.display?.as ?? null;
+    return displayAs === 'wedge' || displayAs === 'dash';
+  }
+
+  function isStereoHydrogenAtom(mol, atom) {
+    if (!atom || atom.name !== 'H') {
+      return false;
+    }
+    return (atom.bonds ?? []).some(bondId => isStereoHydrogenBond(mol.bonds.get(bondId)));
+  }
+
   function canDeleteHoveredAtom(atomId) {
     if (context.state.overlayState.getPlacementRedirectedHoverAtomIds?.().has(atomId)) {
       return false;
@@ -20,7 +32,7 @@ export function initKeyboardInteractions(context) {
       return false;
     }
     if (context.state.viewState.getMode() === 'force' && atom.name === 'H') {
-      return false;
+      return isStereoHydrogenAtom(mol, atom);
     }
     return true;
   }
@@ -38,7 +50,8 @@ export function initKeyboardInteractions(context) {
       return false;
     }
     if (context.state.viewState.getMode() === 'force') {
-      return !bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H');
+      const hasHydrogen = bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H');
+      return !hasHydrogen || isStereoHydrogenBond(bond);
     }
     return true;
   }

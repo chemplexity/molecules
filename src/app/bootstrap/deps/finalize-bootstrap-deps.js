@@ -103,7 +103,8 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       applyForceHighlights: ctx.applyForceHighlights,
       refreshSelectionOverlay: ctx.refreshSelectionOverlay,
       applySelectionOverlay: () => (ctx.runtimeState.mode === 'force' ? ctx.applyForceSelection() : ctx.selectionOverlayManager.redraw2dSelection()),
-      updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options)
+      updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options),
+      syncForcePositions: () => ctx.forceSceneRenderer.syncPositions?.()
     },
     stereo: {
       syncDisplayStereo: ctx.syncDisplayStereo
@@ -192,6 +193,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       forceBondLength: ctx.forceBondLength,
       scale: ctx.scale
     },
+    forceHelpers: ctx.forceHelpers,
     input: {
       inputControls: ctx.inputControls,
       inputFlowManager: ctx.inputFlowManager

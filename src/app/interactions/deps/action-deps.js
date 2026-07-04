@@ -93,7 +93,8 @@ export function createSelectionActionDeps(ctx) {
       applyForceSelection: () => ctx.applyForceSelection()
     },
     view: {
-      clearPrimitiveHover: () => ctx.clearPrimitiveHover()
+      clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
+      refreshSelectionOverlay: () => ctx.refreshSelectionOverlay?.()
     },
     drawBond: {
       cancelDrawBond: () => ctx.getDrawBondPreviewActions().cancel()

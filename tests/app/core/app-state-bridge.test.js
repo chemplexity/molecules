@@ -120,6 +120,10 @@ describe('createAppStateBridge', () => {
         setSelectionModifierActive: value => {
           records.push(['setSelectionModifierActive', value]);
         },
+        getSelectionPivot: () => ({ x: 20, y: 30 }),
+        setSelectionPivot: value => {
+          records.push(['setSelectionPivot', value]);
+        },
         getSelectMode: () => true,
         setSelectMode: value => {
           records.push(['setSelectMode', value]);
@@ -179,6 +183,7 @@ describe('createAppStateBridge', () => {
     assert.equal(bridge.overlayState.getPaintColor(), '#ff6633');
     assert.equal(bridge.overlayState.getPaintBrushSize(), 14);
     assert.equal(bridge.overlayState.getPaintOpacity(), 0.4);
+    assert.deepEqual(bridge.overlayState.getSelectionPivot(), { x: 20, y: 30 });
     assert.equal(bridge.overlayState.getDrawBondElement(), 'N');
     assert.equal(bridge.overlayState.getDrawBondType(), 'double');
     bridge.viewState.restoreZoomTransformSnapshot({ x: 7, y: 8, k: 0.5 });
@@ -189,6 +194,7 @@ describe('createAppStateBridge', () => {
     bridge.overlayState.setPaintColor('#3366ff');
     bridge.overlayState.setPaintBrushSize(18);
     bridge.overlayState.setPaintOpacity(0.75);
+    bridge.overlayState.setSelectionPivot({ x: 7, y: 9 });
     bridge.overlayState.setDrawBondElement('O');
     bridge.overlayState.setDrawBondType('triple');
 
@@ -201,6 +207,7 @@ describe('createAppStateBridge', () => {
       ['setPaintColor', '#3366ff'],
       ['setPaintBrushSize', 18],
       ['setPaintOpacity', 0.75],
+      ['setSelectionPivot', { x: 7, y: 9 }],
       ['setDrawBondElement', 'O'],
       ['setDrawBondType', 'triple']
     ]);

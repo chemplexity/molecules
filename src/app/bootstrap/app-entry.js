@@ -567,6 +567,8 @@ const selectionOverlayManager = createSelectionOverlayManager(
     getChargeTool: () => runtimeState.chargeTool,
     getSelectionModifierActive: () => runtimeState.selectionModifierActive,
     getSelectionDragActive: () => runtimeState.selectionDragActive,
+    getSelectionRotationActive: () => runtimeState.selectionRotationActive,
+    getSelectionPivot: () => runtimeState.selectionPivot,
     getSelectedAtomIds: () => runtimeState.selectedAtomIds,
     getSelectedBondIds: () => runtimeState.selectedBondIds,
     getHoveredAtomIds: () => runtimeState.hoveredAtomIds,
@@ -599,7 +601,9 @@ const forceSelectionRenderer = createForceSelectionRenderer(
     setSelectionBounds: value => {
       runtimeState.forceSelectionBounds = value;
     },
-    hasExplicitSelection: () => !runtimeState.selectionDragActive && (runtimeState.selectedAtomIds.size > 0 || runtimeState.selectedBondIds.size > 0),
+    hasExplicitSelection: () => !runtimeState.selectionDragActive && !runtimeState.selectionRotationActive && (runtimeState.selectedAtomIds.size > 0 || runtimeState.selectedBondIds.size > 0),
+    getSelectionRotationActive: () => runtimeState.selectionRotationActive,
+    getSelectionPivot: () => runtimeState.selectionPivot,
     getSelectionColor: () => 'rgb(150, 200, 255)',
     getSelectionOutline: () => 'rgb(40, 100, 210)',
     getBondSelectionRadius: () => 6,
@@ -1217,6 +1221,7 @@ finalizeAppBootstrap(
     applyForceSelection: () => applyForceSelection(),
     selectionOverlayManager,
     forceSceneRenderer,
+    forceHelpers,
     syncDisplayStereo,
     clearReactionPreviewState: () => _clearReactionPreviewState(),
     restoreReactionPreviewSource: options => _restoreReactionPreviewSource(options),

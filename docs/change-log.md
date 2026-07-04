@@ -1,5 +1,19 @@
 # Change Log
 
+## 2026-07-03
+
+- Fix force-selection overlays during paste previews and restore projected stereo-H positions after 2D/force Clean finishes moving parent atoms.
+- Preserve stereo-H coordinates during 2D selection rotation and commit force-mode selection rotations.
+- Hide completed selection bounds while rotate handles are actively dragging.
+- Make force-mode selection rotation track immediately like 2D rotation.
+- Snap selection rotation to 15-degree increments unless Cmd/Ctrl is held.
+- Clear active selections when switching into bond, ring, or charge tools.
+- Keep selection bounds hidden through hover refreshes while rotating selections.
+- Use one centered circular-arrow icon for selection rotation.
+- Add a draggable gray pivot cross inside completed selection bounds so selection rotation can use a custom center point.
+- Preserve selected OH/NH-style label hydrogens when switching a 2D selection into force mode.
+- Keep the selection pivot from blocking atom hover and wait for app globals before the force reaction preview rotation E2E toggle.
+
 ## 2026-07-02
 
 - Restore Playwright E2E coverage to CI and release workflows, removing the separate manual E2E workflow now that the browser suite is green.
@@ -10,7 +24,9 @@
 - Clean disconnected line-mode molecules component-by-component for bond-length normalization and preserve projected stereo-H coordinates through refinement.
 - Freeze cleanable rings during Clean refinement so non-default bond lengths do not let rings deform after snapping.
 - Show a transparent dashed bounds box around completed manual selections in 2D and force modes while preserving blended blue highlights during drag previews.
+- Add curved rotate handles above completed selection boxes so selected atoms and bonds can be rotated around the box center.
 - Preserve projected stereo-H positions when copying reaction products so paste previews do not collapse those hydrogens onto their heavy atoms.
+- Allow Delete/Backspace to remove displayed stereochemical hydrogens while keeping ordinary force hydrogens protected from hover-delete.
 
 ## 2026-07-01
 

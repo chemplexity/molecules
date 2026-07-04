@@ -285,6 +285,8 @@ export function createSelectionOverlayManagerDeps(ctx) {
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
       getSelectionModifierActive: () => ctx.getSelectionModifierActive(),
       getSelectionDragActive: () => ctx.getSelectionDragActive?.() ?? false,
+      getSelectionRotationActive: () => ctx.getSelectionRotationActive?.() ?? false,
+      getSelectionPivot: () => ctx.getSelectionPivot?.() ?? null,
       getSelectedAtomIds: () => ctx.getSelectedAtomIds(),
       getSelectedBondIds: () => ctx.getSelectedBondIds(),
       getHoveredAtomIds: () => ctx.getHoveredAtomIds(),
@@ -326,7 +328,9 @@ export function createForceSelectionRendererDeps(ctx) {
     },
     selection: {
       getRenderableSelectionIds: () => ctx.getRenderableSelectionIds(),
-      hasExplicitSelection: () => ctx.hasExplicitSelection?.() ?? true
+      hasExplicitSelection: () => ctx.hasExplicitSelection?.() ?? true,
+      getSelectionRotationActive: () => ctx.getSelectionRotationActive?.() ?? false,
+      getSelectionPivot: () => ctx.getSelectionPivot?.() ?? null
     },
     force: {
       getNodes: () => ctx.getNodes(),

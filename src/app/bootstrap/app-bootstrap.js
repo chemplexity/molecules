@@ -257,7 +257,8 @@ export function finalizeAppBootstrap(ctx) {
     ringTemplateDrag: ringTemplateDragState,
     selection: ctx.actions.selectionActions,
     renderers: {
-      applySelectionOverlay: () => ctx.render.applySelectionOverlay()
+      applySelectionOverlay: () => ctx.render.applySelectionOverlay(),
+      draw2d: () => draw2d()
     },
     overlays: {
       hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
@@ -291,6 +292,19 @@ export function finalizeAppBootstrap(ctx) {
       clearPrimitiveHover: () => ctx.view.clearPrimitiveHover(),
       showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.view.showPrimitiveHover(atomIds, bondIds),
       setDrawBondHoverSuppressed: value => ctx.state.setDrawBondHoverSuppressed(value)
+    },
+    view2D: {
+      syncDerivedState: mol => ctx.render.render2DHelpers.sync2dDerivedState(mol),
+      materializeProjectedVisibleStereoHydrogens: mol => ctx.render.scene2DRenderer.materializeProjectedVisibleStereoHydrogens?.(mol)
+    },
+    force: {
+      patchNodePositions: (patchPos, options = {}) => ctx.forceHelpers.patchForceNodePositions(patchPos, options),
+      syncPositions: () => ctx.render.syncForcePositions?.(),
+      setAutoFitEnabled: value => ctx.setForceAutoFitEnabled?.(value),
+      disableKeepInView: () => ctx.disableForceKeepInView?.()
+    },
+    history: {
+      takeSnapshot: options => ctx.history.takeSnapshot(options)
     },
     helpers: {
       toSVGPt2d: atom => ctx.render.render2DHelpers.toSVGPt2d(atom),

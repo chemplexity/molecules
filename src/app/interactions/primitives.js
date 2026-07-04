@@ -46,6 +46,7 @@ export function createPrimitiveSelectionActions(context) {
 
     context.view.clearPrimitiveHover();
     if (!additive) {
+      context.state.overlayState.setSelectionPivot?.(null);
       selectedAtomIds.clear();
       selectedBondIds.clear();
     }
@@ -79,6 +80,7 @@ export function createPrimitiveSelectionActions(context) {
 
     context.view.clearPrimitiveHover();
     if (!additive) {
+      context.state.overlayState.setSelectionPivot?.(null);
       selectedAtomIds.clear();
       selectedBondIds.clear();
     }
@@ -147,6 +149,7 @@ export function createPrimitiveSelectionActions(context) {
 
     context.view.clearPrimitiveHover();
     if (!additive) {
+      context.state.overlayState.setSelectionPivot?.(null);
       selectedAtomIds.clear();
       selectedBondIds.clear();
     }
@@ -178,6 +181,7 @@ export function createPrimitiveSelectionActions(context) {
 
     context.view.clearPrimitiveHover();
     if (!additive) {
+      context.state.overlayState.setSelectionPivot?.(null);
       selectedAtomIds.clear();
       selectedBondIds.clear();
     }

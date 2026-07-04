@@ -468,6 +468,33 @@ describe('initKeyboardInteractions', () => {
     assert.deepEqual(records, [['clearPrimitiveHover'], ['deleteTargets', [], [], { transient: true }]]);
   });
 
+  it('allows Delete to remove hovered force stereochemical hydrogens and their displayed bonds', () => {
+    const mol = {
+      atoms: new Map([
+        ['c1', { id: 'c1', name: 'C', bonds: ['b1'] }],
+        ['h1', { id: 'h1', name: 'H', bonds: ['b1'] }]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['c1', 'h1'], properties: { display: { as: 'wedge', centerId: 'c1' } } }]])
+    };
+    const { handlers, records } = makeKeyboardContext({
+      activeMolecule: mol,
+      mode: 'force',
+      selectMode: true,
+      hoveredAtomIds: new Set(['h1']),
+      hoveredBondIds: new Set(['b1'])
+    });
+
+    handlers.get('keydown')({
+      key: 'Delete',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {}
+    });
+
+    assert.deepEqual(records, [['clearPrimitiveHover'], ['deleteTargets', ['h1'], ['b1'], { transient: true }]]);
+  });
+
   it('does not delete force atoms highlighted only by hydrogen placement routing', () => {
     const mol = {
       atoms: new Map([['c1', { id: 'c1', name: 'C' }]]),

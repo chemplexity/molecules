@@ -118,6 +118,14 @@ describe('finalizeAppBootstrap', () => {
         scale: 60,
         forceBondLength: 41
       },
+      forceHelpers: {
+        patchForceNodePositions() {}
+      },
+      forceSceneRenderer: {
+        syncPositions() {
+          records.push(['syncForcePositions']);
+        }
+      },
       actions: {
         primitiveSelection: {},
         structuralEditActions: {},
@@ -172,6 +180,9 @@ describe('finalizeAppBootstrap', () => {
         applyForceHighlights() {},
         refreshSelectionOverlay() {},
         applySelectionOverlay() {},
+        syncForcePositions() {
+          records.push(['syncForcePositions']);
+        },
         updateForce() {}
       },
       stereo: {
@@ -381,10 +392,12 @@ describe('finalizeAppBootstrap', () => {
     assert.deepEqual(capturedGestureInteractionDeps.helpers.toSelectionSVGPt2d({ x: 4, y: 5 }), { x: 4, y: 5 });
     assert.deepEqual(capturedGestureInteractionDeps.options.getRenderOptions(), { showAtomTooltips: true, layoutBondLength: 0.5 });
     assert.deepEqual(capturedGestureInteractionDeps.constants, { scale: 60, forceBondLength: 41 });
+    capturedGestureInteractionDeps.force.syncPositions();
     capturedGestureInteractionDeps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' }, { skipSnapshot: true });
     capturedGestureInteractionDeps.actions.paintRingFill(['r1', 'r2', 'r3'], { color: '#ffcc00' });
     capturedAppShellDeps.selection.setChargeTool('negative');
     assert.deepEqual(records, [
+      ['syncForcePositions'],
       ['paintStyleTargets', ['a1'], ['b1'], { color: '#3366ff' }, { skipSnapshot: true }],
       ['paintRingFill', ['r1', 'r2', 'r3'], { color: '#ffcc00' }, {}],
       ['setChargeTool', 'negative']

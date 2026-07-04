@@ -16,6 +16,7 @@ describe('runtime-state bootstrap helpers', () => {
     assert.equal(runtimeState.mol2d, null);
     assert.deepEqual([...runtimeState.selectedAtomIds], []);
     assert.deepEqual([...runtimeState.selectedBondIds], []);
+    assert.equal(runtimeState.selectionPivot, null);
     assert.equal(runtimeState.selectMode, false);
     assert.equal(runtimeState.paintOpacity, 1);
     assert.equal(runtimeState.paintBrushSize, 12);
@@ -24,6 +25,20 @@ describe('runtime-state bootstrap helpers', () => {
     assert.equal(runtimeState.forceAutoFitEnabled, true);
     assert.deepEqual([...runtimeState.activeValenceWarningMap.entries()], []);
     assert.equal(VALENCE_WARNING_FILL, 'rgba(214, 48, 49, 0.3)');
+  });
+
+  it('clears the selection pivot with the active selection', () => {
+    const runtimeState = createRuntimeState({
+      getRenderOptions: () => ({ twoDAtomFontSize: 18, showValenceWarnings: true }),
+      validateValence: () => []
+    });
+    runtimeState.selectedAtomIds.add('a1');
+    runtimeState.selectionPivot = { x: 25, y: 30 };
+
+    runtimeState.clearSelection();
+
+    assert.deepEqual([...runtimeState.selectedAtomIds], []);
+    assert.equal(runtimeState.selectionPivot, null);
   });
 
   it('builds valence warnings only when enabled and can clear them', () => {

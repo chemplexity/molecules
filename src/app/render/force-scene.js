@@ -24,6 +24,7 @@ import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCou
 import { ringAtomKey, ringFillDomId } from '../../core/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
+import { updateSelectionBoundsControls } from './selection-overlay.js';
 
 const FORCE_STANDARD_UNLABELED_ATOMS = new Set(['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']);
 const RING_TEMPLATE_FORCE_ATOM_HOVER_RADIUS = 18;
@@ -1425,11 +1426,10 @@ export function createForceSceneRenderer(ctx) {
           .attr('y2', d => d.target.y);
       }
       selectionCircles?.attr('cx', d => d.x).attr('cy', d => d.y);
-      selectionBounds
-        ?.attr('x', d => d.bounds()?.x ?? 0)
-        .attr('y', d => d.bounds()?.y ?? 0)
-        .attr('width', d => d.bounds()?.width ?? 0)
-        .attr('height', d => d.bounds()?.height ?? 0);
+      if (selectionBounds) {
+        const selectionBoundsDatum = typeof selectionBounds.datum === 'function' ? selectionBounds.datum() : null;
+        updateSelectionBoundsControls(selectionBounds, selectionBoundsDatum?.bounds?.() ?? null);
+      }
 
       if (ctx.state.isForceAutoFitEnabled()) {
         const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, fitPad ?? ctx.constants.forceLayoutInitialFitPad, {

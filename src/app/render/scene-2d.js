@@ -1247,6 +1247,7 @@ export function create2DSceneRenderer(ctx) {
     draw2d,
     render2d,
     fitCurrent2dView,
-    toSVGPt
+    toSVGPt,
+    materializeProjectedVisibleStereoHydrogens
   };
 }

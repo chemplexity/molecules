@@ -26,6 +26,18 @@ function maxRingBondLengthDeviation(molecule, expectedLength = 1.5) {
   );
 }
 
+function makeDisplayedStereoHydrogenMolecule() {
+  const molecule = new Molecule();
+  const center = molecule.addAtom('C1', 'C', { chirality: 'R' }, { recompute: false });
+  const hydrogen = molecule.addAtom('H1', 'H', {}, { recompute: false });
+  center.x = 0;
+  center.y = 0;
+  hydrogen.x = 5;
+  hydrogen.y = -4;
+  molecule.addBond('b1', center.id, hydrogen.id, { order: 1, display: { as: 'wedge', centerId: center.id } }, false);
+  return molecule;
+}
+
 test('autoZoom recenters and fits the 2d molecule viewport', () => {
   const mol = {
     atoms: new Map([
@@ -270,6 +282,50 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
     ['preserveSelection', true],
     ['renderMol', clonedMol, { preserveHistory: true, preserveAnalysis: true, preserveGeometry: true }]
   ]);
+});
+
+test('cleanLayout2d resets displayed stereo hydrogen coords after final parent cleanup', () => {
+  const sourceMol = makeDisplayedStereoHydrogenMolecule();
+  let renderedMol = null;
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    helpers: {
+      refineExistingCoords: mol => {
+        mol.atoms.get('C1').x = 3.25;
+        mol.atoms.get('C1').y = -1.75;
+        return null;
+      }
+    },
+    renderers: {
+      renderMol: mol => {
+        renderedMol = mol;
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.ok(renderedMol);
+  const center = renderedMol.atoms.get('C1');
+  const hydrogen = renderedMol.atoms.get('H1');
+  assert.equal(hydrogen.x, center.x);
+  assert.equal(hydrogen.y, center.y);
 });
 
 test('cleanLayout2d normalizes disconnected components around their own centers', () => {
@@ -1184,6 +1240,56 @@ test('cleanLayoutForce refines the live force geometry with local damage hints a
   ]);
 });
 
+test('cleanLayoutForce resets displayed stereo hydrogen coords after final parent cleanup', () => {
+  const sourceMol = makeDisplayedStereoHydrogenMolecule();
+  let renderedMol = null;
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    simulation: {
+      nodes: () => [
+        { id: 'C1', x: 100, y: 100 },
+        { id: 'H1', x: 160, y: 70 }
+      ]
+    },
+    helpers: {
+      refineExistingCoords: mol => {
+        mol.atoms.get('C1').x = 2.5;
+        mol.atoms.get('C1').y = 1.25;
+        return null;
+      }
+    },
+    renderers: {
+      renderMol: mol => {
+        renderedMol = mol;
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.ok(renderedMol);
+  const center = renderedMol.atoms.get('C1');
+  const hydrogen = renderedMol.atoms.get('H1');
+  assert.equal(hydrogen.x, center.x);
+  assert.equal(hydrogen.y, center.y);
+});
+
 test('cleanLayoutForce regenerates disconnected components instead of refining the combined force scene', () => {
   const sourceMol = new Molecule();
   const a1 = sourceMol.addAtom('a1', 'C');
@@ -1590,6 +1696,136 @@ test('toggleMode seeds force mode from converted line coordinates', () => {
   approxEqual(renderCall[2].forceInitialPatchPos.get('c1').y, 300);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').x, 420.5);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').y, 300);
+});
+
+test('toggleMode includes selected 2D hetero label hydrogens when entering force mode', () => {
+  const mol = new Molecule();
+  const c1 = mol.addAtom('c1', 'C');
+  const o1 = mol.addAtom('o1', 'O');
+  const h1 = mol.addAtom('h1', 'H');
+  c1.x = 0;
+  c1.y = 0;
+  o1.x = 1.5;
+  o1.y = 0;
+  h1.visible = false;
+  h1.x = 1.5;
+  h1.y = 0;
+  mol.addBond('b1', 'c1', 'o1', { order: 1 }, false);
+  mol.addBond('b2', 'o1', 'h1', { order: 1 }, false);
+  const selectedAtomIds = new Set(['o1']);
+  let mode = '2d';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => mol,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      },
+      overlayState: {
+        getSelectedAtomIds: () => selectedAtomIds
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {}
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome() {}
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  assert.deepEqual([...selectedAtomIds].sort(), ['h1', 'o1']);
+});
+
+test('toggleMode does not add carbon hydrogens to force selection', () => {
+  const mol = new Molecule();
+  const c1 = mol.addAtom('c1', 'C');
+  const h1 = mol.addAtom('h1', 'H');
+  c1.x = 0;
+  c1.y = 0;
+  h1.visible = false;
+  h1.x = 0;
+  h1.y = 0;
+  mol.addBond('b1', 'c1', 'h1', { order: 1 }, false);
+  const selectedAtomIds = new Set(['c1']);
+  let mode = '2d';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => mol,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      },
+      overlayState: {
+        getSelectedAtomIds: () => selectedAtomIds
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {}
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome() {}
+    },
+    view: {
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  assert.deepEqual([...selectedAtomIds], ['c1']);
 });
 
 test('toggleMode scales line-to-force seeds from the active bond length', () => {

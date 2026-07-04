@@ -10,6 +10,8 @@ const DEFAULT_RING_TEMPLATE_LAYOUT_BOND_LENGTH = 1.5;
 const RING_TEMPLATE_DOUBLE_BOND_OFFSET = 5;
 const RING_TEMPLATE_PREVIEW_CLASS = 'ring-template-preview-layer';
 const RING_TEMPLATE_ROTATION_SNAP = Math.PI / 6;
+const SELECTION_ROTATION_SNAP = Math.PI / 12;
+const SELECTION_PIVOT_HIT_RADIUS = 16;
 const TAU = Math.PI * 2;
 
 /**
@@ -45,6 +47,8 @@ export function initGestureInteractions(context) {
   let selectionAdditive = false;
   let selectionBaseAtomIds = new Set();
   let selectionBaseBondIds = new Set();
+  let selectionRotation = null;
+  let selectionPivotDrag = null;
   let suppressForceSelectionClearClick = false;
   let lastEraseHitElement = null;
   let paintPainting = false;
@@ -146,6 +150,10 @@ export function initGestureInteractions(context) {
   }
 
   function ringTemplateFreeRotation(event) {
+    return event?.ctrlKey === true || event?.metaKey === true;
+  }
+
+  function selectionRotationFreeRotation(event) {
     return event?.ctrlKey === true || event?.metaKey === true;
   }
 
@@ -373,6 +381,7 @@ export function initGestureInteractions(context) {
   function replaceLiveSelection(atomIds, bondIds) {
     const selectedAtomIds = context.state.overlayState.getSelectedAtomIds();
     const selectedBondIds = context.state.overlayState.getSelectedBondIds();
+    clearSelectionPivot();
     selectedAtomIds.clear();
     selectedBondIds.clear();
     for (const atomId of atomIds) {
@@ -381,6 +390,375 @@ export function initGestureInteractions(context) {
     for (const bondId of bondIds) {
       selectedBondIds.add(bondId);
     }
+  }
+
+  function clearSelectionPivot() {
+    context.state.overlayState.setSelectionPivot?.(null);
+  }
+
+  function finiteNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function selectionRotateHandleFromEvent(event) {
+    return event.target?.closest?.('[data-selection-rotate-handle]') ?? null;
+  }
+
+  function selectionPivotHandleFromEvent(event) {
+    return event.target?.closest?.('[data-selection-pivot-handle]') ?? null;
+  }
+
+  function selectionBoundsFromControls(controls) {
+    const rect = controls?.querySelector?.('rect.selection-bounds-rect') ?? null;
+    const x = finiteNumber(rect?.getAttribute?.('x'));
+    const y = finiteNumber(rect?.getAttribute?.('y'));
+    const width = finiteNumber(rect?.getAttribute?.('width'));
+    const height = finiteNumber(rect?.getAttribute?.('height'));
+    if (x == null || y == null || width == null || height == null) {
+      return null;
+    }
+    return {
+      x,
+      y,
+      width,
+      height
+    };
+  }
+
+  function selectionBoundsFromHandle(handle) {
+    return selectionBoundsFromControls(handle?.closest?.('.selection-bounds-controls') ?? null);
+  }
+
+  function selectionPivotPointFromControls(controls) {
+    const transform = controls?.querySelector?.('g.selection-pivot-handle')?.getAttribute?.('transform') ?? '';
+    const match = /^translate\(([-\d.]+),([-\d.]+)\)$/.exec(transform.trim());
+    if (!match) {
+      return null;
+    }
+    const x = finiteNumber(match[1]);
+    const y = finiteNumber(match[2]);
+    return x == null || y == null ? null : { x, y };
+  }
+
+  function selectionPivotDescriptorFromEvent(event) {
+    const handle = selectionPivotHandleFromEvent(event);
+    if (handle) {
+      return { bounds: selectionBoundsFromHandle(handle) };
+    }
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    const svgNode = svg?.node?.() ?? null;
+    for (const controls of svgNode?.querySelectorAll?.('.selection-bounds-controls') ?? []) {
+      if (controls.style?.display === 'none') {
+        continue;
+      }
+      const pivot = selectionPivotPointFromControls(controls);
+      if (!pivot || Math.hypot(pointerX - pivot.x, pointerY - pivot.y) > SELECTION_PIVOT_HIT_RADIUS) {
+        continue;
+      }
+      return { bounds: selectionBoundsFromControls(controls) };
+    }
+    return null;
+  }
+
+  function selectionBoundsCenter(bounds) {
+    return bounds
+      ? {
+          x: bounds.x + bounds.width / 2,
+          y: bounds.y + bounds.height / 2
+        }
+      : null;
+  }
+
+  function clampPointToSelectionBounds(point, bounds) {
+    return {
+      x: Math.max(bounds.x, Math.min(bounds.x + bounds.width, point.x)),
+      y: Math.max(bounds.y, Math.min(bounds.y + bounds.height, point.y))
+    };
+  }
+
+  function selectionRotationCenterFromHandle(handle) {
+    const bounds = selectionBoundsFromHandle(handle);
+    if (!bounds) {
+      return null;
+    }
+    const pivot = context.state.overlayState.getSelectionPivot?.() ?? null;
+    const pivotX = finiteNumber(pivot?.x);
+    const pivotY = finiteNumber(pivot?.y);
+    if (pivotX == null || pivotY == null) {
+      return selectionBoundsCenter(bounds);
+    }
+    return clampPointToSelectionBounds({ x: pivotX, y: pivotY }, bounds);
+  }
+
+  function setSelectionBoundsControlsHidden(hidden) {
+    const roots = [];
+    const plotEl = context.dom?.plotEl ?? null;
+    const svgNode = svg?.node?.() ?? null;
+    if (plotEl?.querySelectorAll) {
+      roots.push(plotEl);
+    }
+    if (svgNode?.querySelectorAll && svgNode !== plotEl) {
+      roots.push(svgNode);
+    }
+    for (const root of roots) {
+      for (const controls of root.querySelectorAll('.selection-bounds-controls')) {
+        if (controls?.style) {
+          controls.style.display = hidden ? 'none' : '';
+        }
+      }
+    }
+  }
+
+  function refreshSelectionOverlayDuringRotation() {
+    context.renderers.applySelectionOverlay?.();
+    if (selectionRotation) {
+      setSelectionBoundsControlsHidden(true);
+    }
+  }
+
+  function selectedTransformAtomIds(mol) {
+    const atomIds = new Set(context.state.overlayState.getSelectedAtomIds());
+    for (const bondId of context.state.overlayState.getSelectedBondIds()) {
+      const bond = mol?.bonds?.get?.(bondId);
+      for (const atomId of bond?.atoms ?? []) {
+        if (mol?.atoms?.has?.(atomId)) {
+          atomIds.add(atomId);
+        }
+      }
+    }
+    return atomIds;
+  }
+
+  function shortestAngleDelta(from, to) {
+    let delta = to - from;
+    while (delta <= -Math.PI) {
+      delta += TAU;
+    }
+    while (delta > Math.PI) {
+      delta -= TAU;
+    }
+    return delta;
+  }
+
+  function rotatedPoint(point, center, angle) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    return {
+      x: center.x + dx * cos - dy * sin,
+      y: center.y + dx * sin + dy * cos
+    };
+  }
+
+  function activeSelectionRotationAngle(event) {
+    const angle = selectionRotation?.totalAngle ?? 0;
+    return selectionRotationFreeRotation(event) ? angle : Math.round(angle / SELECTION_ROTATION_SNAP) * SELECTION_ROTATION_SNAP;
+  }
+
+  function capture2dSelectionRotation(mol, atomIds, center) {
+    context.view2D?.materializeProjectedVisibleStereoHydrogens?.(mol);
+    const scale = finiteNumber(context.constants?.scale) ?? 40;
+    const positions = new Map();
+    for (const atomId of atomIds) {
+      const atom = mol.atoms.get(atomId);
+      const atomX = finiteNumber(atom?.x);
+      const atomY = finiteNumber(atom?.y);
+      if (!atom || atomX == null || atomY == null) {
+        continue;
+      }
+      const point = toSelectionSVGPt2d(atom);
+      const pointX = finiteNumber(point?.x);
+      const pointY = finiteNumber(point?.y);
+      if (pointX == null || pointY == null) {
+        continue;
+      }
+      positions.set(atomId, { x: atomX, y: atomY, point: { x: pointX, y: pointY } });
+    }
+    return positions.size > 0 ? { mode: '2d', mol, atomIds: new Set(positions.keys()), center, scale, positions } : null;
+  }
+
+  function captureForceSelectionRotation(mol, atomIds, center) {
+    const nodeById = new Map(context.simulation.nodes().map(node => [node.id, node]));
+    const positions = new Map();
+    for (const atomId of atomIds) {
+      const node = nodeById.get(atomId);
+      const nodeX = finiteNumber(node?.x);
+      const nodeY = finiteNumber(node?.y);
+      if (nodeX == null || nodeY == null) {
+        continue;
+      }
+      node.fx = nodeX;
+      node.fy = nodeY;
+      positions.set(atomId, { x: nodeX, y: nodeY, node });
+    }
+    return positions.size > 0 ? { mode: 'force', mol, atomIds: new Set(positions.keys()), center, positions } : null;
+  }
+
+  function startSelectionRotation(event) {
+    if (event.button !== 0) {
+      return false;
+    }
+    const handle = selectionRotateHandleFromEvent(event);
+    if (!handle) {
+      return false;
+    }
+    const mode = context.state.viewState.getMode();
+    const mol = mode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    if ((mode !== '2d' && mode !== 'force') || !mol) {
+      return false;
+    }
+    const center = selectionRotationCenterFromHandle(handle);
+    if (!center) {
+      return false;
+    }
+    const atomIds = selectedTransformAtomIds(mol);
+    if (atomIds.size === 0) {
+      return false;
+    }
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    const startAngle = Math.atan2(pointerY - center.y, pointerX - center.x);
+    const rotation =
+      mode === 'force'
+        ? captureForceSelectionRotation(mol, atomIds, center)
+        : capture2dSelectionRotation(mol, atomIds, center);
+    if (!rotation) {
+      return false;
+    }
+    context.history?.takeSnapshot?.({ clearReactionPreview: false });
+    if (mode === 'force') {
+      context.simulation?.stop?.();
+      context.force?.setAutoFitEnabled?.(false);
+      context.force?.disableKeepInView?.();
+    }
+    selectionRotation = {
+      ...rotation,
+      lastAngle: startAngle,
+      totalAngle: 0
+    };
+    context.state.overlayState.setSelectionRotationActive?.(true);
+    setSelectionBoundsControlsHidden(true);
+    context.view.clearPrimitiveHover();
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    return true;
+  }
+
+  function startSelectionPivotDrag(event) {
+    if (event.button !== 0) {
+      return false;
+    }
+    const descriptor = selectionPivotDescriptorFromEvent(event);
+    if (!descriptor) {
+      return false;
+    }
+    const mode = context.state.viewState.getMode();
+    if (mode !== '2d' && mode !== 'force') {
+      return false;
+    }
+    const bounds = descriptor.bounds;
+    if (!bounds) {
+      return false;
+    }
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    const pivot = clampPointToSelectionBounds({ x: pointerX, y: pointerY }, bounds);
+    selectionPivotDrag = { bounds };
+    context.state.overlayState.setSelectionPivot?.(pivot);
+    context.renderers.applySelectionOverlay?.();
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    return true;
+  }
+
+  function updateSelectionPivotDrag(event) {
+    if (!selectionPivotDrag) {
+      return false;
+    }
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    context.state.overlayState.setSelectionPivot?.(clampPointToSelectionBounds({ x: pointerX, y: pointerY }, selectionPivotDrag.bounds));
+    context.renderers.applySelectionOverlay?.();
+    event.preventDefault?.();
+    return true;
+  }
+
+  function finishSelectionPivotDrag(event) {
+    if (!selectionPivotDrag) {
+      return false;
+    }
+    updateSelectionPivotDrag(event);
+    selectionPivotDrag = null;
+    return true;
+  }
+
+  function applySelectionRotation(event) {
+    if (!selectionRotation) {
+      return false;
+    }
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    const angle = Math.atan2(pointerY - selectionRotation.center.y, pointerX - selectionRotation.center.x);
+    selectionRotation.totalAngle += shortestAngleDelta(selectionRotation.lastAngle, angle);
+    selectionRotation.lastAngle = angle;
+    const activeAngle = activeSelectionRotationAngle(event);
+
+    if (selectionRotation.mode === '2d') {
+      for (const [atomId, position] of selectionRotation.positions) {
+        const atom = selectionRotation.mol.atoms.get(atomId);
+        if (!atom) {
+          continue;
+        }
+        const rotated = rotatedPoint(position.point, selectionRotation.center, activeAngle);
+        atom.x = position.x + (rotated.x - position.point.x) / selectionRotation.scale;
+        atom.y = position.y - (rotated.y - position.point.y) / selectionRotation.scale;
+      }
+      context.view2D?.syncDerivedState?.(selectionRotation.mol);
+      context.renderers.draw2d?.();
+      refreshSelectionOverlayDuringRotation();
+    } else {
+      const patch = new Map();
+      for (const [atomId, position] of selectionRotation.positions) {
+        const rotated = rotatedPoint(position, selectionRotation.center, activeAngle);
+        patch.set(atomId, rotated);
+        if (position.node) {
+          position.node.x = rotated.x;
+          position.node.y = rotated.y;
+          position.node.fx = rotated.x;
+          position.node.fy = rotated.y;
+        }
+      }
+      context.force?.patchNodePositions?.(patch, { setAnchors: false, alpha: 0, restart: false });
+      selectionRotation.lastPatch = patch;
+      context.force?.syncPositions?.();
+      refreshSelectionOverlayDuringRotation();
+    }
+    event.preventDefault?.();
+    return true;
+  }
+
+  function finishSelectionRotation(event) {
+    if (!selectionRotation) {
+      return false;
+    }
+    applySelectionRotation(event);
+    if (selectionRotation.mode === 'force') {
+      if (selectionRotation.lastPatch?.size) {
+        context.force?.patchNodePositions?.(selectionRotation.lastPatch, { setAnchors: true, alpha: 0, restart: false });
+        context.force?.syncPositions?.();
+      }
+      for (const position of selectionRotation.positions.values()) {
+        if (position.node) {
+          position.node.fx = null;
+          position.node.fy = null;
+        }
+      }
+    }
+    selectionRotation = null;
+    context.state.overlayState.setSelectionRotationActive?.(false);
+    context.renderers.applySelectionOverlay?.();
+    setSelectionBoundsControlsHidden(false);
+    return true;
   }
 
   /**
@@ -1643,6 +2021,12 @@ export function initGestureInteractions(context) {
   });
 
   svg.on('mousedown.selection', event => {
+    if (startSelectionPivotDrag(event)) {
+      return;
+    }
+    if (startSelectionRotation(event)) {
+      return;
+    }
     const mode = context.state.viewState.getMode();
     if (!context.state.overlayState.getSelectMode()) {
       return;
@@ -1660,6 +2044,9 @@ export function initGestureInteractions(context) {
       return;
     }
     if (isRingTemplateFreePreviewBlockedTarget(event)) {
+      return;
+    }
+    if (selectionRotateHandleFromEvent(event) || selectionPivotHandleFromEvent(event)) {
       return;
     }
 
@@ -1825,6 +2212,7 @@ export function initGestureInteractions(context) {
     if (isAdditiveSelectionEvent(event)) {
       return;
     }
+    context.state.overlayState.setSelectionPivot?.(null);
     context.state.overlayState.getSelectedAtomIds().clear();
     context.state.overlayState.getSelectedBondIds().clear();
     context.renderers.applySelectionOverlay();
@@ -1832,6 +2220,14 @@ export function initGestureInteractions(context) {
 
   doc.addEventListener('mousemove', event => {
     lastPaintPreviewEvent = event;
+    if (selectionPivotDrag) {
+      updateSelectionPivotDrag(event);
+      return;
+    }
+    if (selectionRotation) {
+      applySelectionRotation(event);
+      return;
+    }
     if (context.clipboard?.hasPastePreview?.()) {
       context.clipboard.updatePastePreview(event);
       return;
@@ -1865,6 +2261,12 @@ export function initGestureInteractions(context) {
   doc.addEventListener(PAINT_SETTINGS_CHANGED_EVENT, refreshPaintPreview);
 
   doc.addEventListener('mouseup', event => {
+    if (event.button === 0 && finishSelectionPivotDrag(event)) {
+      return;
+    }
+    if (event.button === 0 && finishSelectionRotation(event)) {
+      return;
+    }
     if (event.button === 0 && commitRingTemplatePreview()) {
       return;
     }

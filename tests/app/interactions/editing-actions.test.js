@@ -341,4 +341,30 @@ describe('createEditingActions', () => {
       false
     );
   });
+
+  it('removes a selected displayed stereo hydrogen with Delete while keeping its parent', () => {
+    const mol = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1 && atom.visible === false);
+    assert.ok(hydrogen, 'expected an explicit stereo hydrogen');
+    const parentId = hydrogen.getNeighbors(mol).find(atom => atom.name !== 'H')?.id ?? null;
+    assert.ok(parentId, 'expected the stereo hydrogen to have a heavy-atom parent');
+    const hydrogenBondId = hydrogen.bonds[0];
+    hydrogen.visible = true;
+    mol.bonds.get(hydrogenBondId).properties.display = { as: 'dash', centerId: parentId };
+
+    const { actions } = makeContext({
+      selectedAtomIds: [hydrogen.id],
+      performStructuralEdit: (_kind, _options, mutate) => {
+        mutate({ mol, mode: '2d' });
+        return { performed: true };
+      }
+    });
+
+    const result = actions.deleteSelection();
+
+    assert.deepEqual(result, { performed: true });
+    assert.equal(mol.atoms.has(hydrogen.id), false);
+    assert.equal(mol.atoms.has(parentId), true);
+    assert.equal(mol.bonds.has(hydrogenBondId), false);
+  });
 });

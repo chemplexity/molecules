@@ -16,6 +16,7 @@ const CLEAN_MULTI_RING_EXIT_SCAN_STEP = (15 * Math.PI) / 180;
 const ROTATE_FIT_FALLBACK_PAD = 40;
 const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
 const ROTATE_FIT_MAX_SCALE = 30;
+const FORCE_SELECTION_HYDROGEN_PARENT_ELEMENTS = new Set(['N', 'O', 'P', 'S']);
 
 /**
  * Preserves reaction-preview metadata on a working molecule clone so clean and
@@ -29,6 +30,61 @@ function preserveReactionPreviewMetadata(sourceMol, targetMol) {
     return;
   }
   targetMol.__reactionPreview = sourceMol.__reactionPreview;
+}
+
+/**
+ * Restores displayed stereochemical hydrogens to their parent coordinate so
+ * render-time projection can choose the canonical visible H position again.
+ * @param {object} molecule - Molecule clone whose stereo H coordinates may have been dragged.
+ * @returns {number} Number of hydrogens reset.
+ */
+function resetDisplayedStereoHydrogenCoords(molecule) {
+  let resetCount = 0;
+  for (const atom of molecule?.atoms?.values?.() ?? []) {
+    if (atom.name !== 'H') {
+      continue;
+    }
+    const neighbors = atom.getNeighbors?.(molecule) ?? [];
+    if (neighbors.length !== 1) {
+      continue;
+    }
+    const parent = neighbors[0];
+    if (!parent || !parent.getChirality?.() || !Number.isFinite(parent.x) || !Number.isFinite(parent.y)) {
+      continue;
+    }
+    const bond = molecule.getBond?.(atom.id, parent.id);
+    const displayAs = bond?.properties?.display?.as ?? null;
+    if (displayAs !== 'wedge' && displayAs !== 'dash') {
+      continue;
+    }
+    atom.x = parent.x;
+    atom.y = parent.y;
+    resetCount++;
+  }
+  return resetCount;
+}
+
+function expandForceSelectionHydrogensForSelectedLabels(molecule, selectedAtomIds) {
+  if (!molecule?.atoms || !selectedAtomIds?.size) {
+    return 0;
+  }
+  let addedCount = 0;
+  for (const atomId of [...selectedAtomIds]) {
+    const parent = molecule.atoms.get(atomId);
+    if (!parent || !FORCE_SELECTION_HYDROGEN_PARENT_ELEMENTS.has(parent.name)) {
+      continue;
+    }
+    for (const neighbor of parent.getNeighbors?.(molecule) ?? []) {
+      if (!neighbor || neighbor.name !== 'H') {
+        continue;
+      }
+      if (!selectedAtomIds.has(neighbor.id)) {
+        selectedAtomIds.add(neighbor.id);
+        addedCount++;
+      }
+    }
+  }
+  return addedCount;
 }
 
 /**
@@ -1096,9 +1152,10 @@ export function createNavigationActions(context) {
     }
     context.history.takeSnapshot({ clearReactionPreview: false });
     const mol = context.state.documentState.getMol2d();
-    const cleanReferenceCoords = captureFiniteAtomCoords(mol);
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
+    resetDisplayedStereoHydrogenCoords(relayoutMol);
+    const cleanReferenceCoords = captureFiniteAtomCoords(relayoutMol);
     const bondLength = currentLayoutBondLength();
     normalizeCoordsToBondLength(relayoutMol, bondLength);
     const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
@@ -1134,6 +1191,7 @@ export function createNavigationActions(context) {
       });
     }
     const multiRingExitRepairCount = repairCleanMultiRingSubstituentExits(relayoutMol, cleanReferenceCoords);
+    resetDisplayedStereoHydrogenCoords(relayoutMol);
     const preserveGeometry = ringSnapHints.snappedCount > 0 || multiRingExitRepairCount > 0 || (refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
@@ -1213,6 +1271,7 @@ export function createNavigationActions(context) {
       repairCleanMultiRingSubstituentExits(relayoutMol, cleanReferenceCoords);
     }
     reapplyReactionPreviewForceLayout(relayoutMol, context.overlays, bondLength);
+    resetDisplayedStereoHydrogenCoords(relayoutMol);
     const forceAnchorLayout = buildForceAnchorLayoutFromPlacedCoords(relayoutMol);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
@@ -1306,6 +1365,7 @@ export function createNavigationActions(context) {
       bondLength,
       forceCenter: { x: plotWidth / 2, y: plotHeight / 2 }
     });
+    expandForceSelectionHydrogensForSelectedLabels(mol, context.state.overlayState?.getSelectedAtomIds?.());
     context.renderers.renderMol(mol, {
       preserveHistory: true,
       ...(activeResonanceView

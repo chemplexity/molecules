@@ -985,6 +985,19 @@ export function createSelectionActions(context) {
     }
   }
 
+  function clearActiveSelectionForTool() {
+    const selectedAtomIds = context.state.overlayState.getSelectedAtomIds?.();
+    const selectedBondIds = context.state.overlayState.getSelectedBondIds?.();
+    if ((selectedAtomIds?.size ?? 0) === 0 && (selectedBondIds?.size ?? 0) === 0) {
+      return false;
+    }
+    selectedAtomIds?.clear?.();
+    selectedBondIds?.clear?.();
+    context.view.clearPrimitiveHover();
+    context.view.refreshSelectionOverlay?.();
+    return true;
+  }
+
   function enterPaintMode() {
     setPaintMode(true);
     context.state.overlayState.setSelectMode(false);
@@ -1099,6 +1112,7 @@ export function createSelectionActions(context) {
     context.state.overlayState.setDrawBondMode(next);
     const btn = context.dom.drawBondButton;
     if (next) {
+      clearActiveSelectionForTool();
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setRingTemplateMode?.(false);
       context.state.overlayState.setEraseMode(false);
@@ -1136,6 +1150,7 @@ export function createSelectionActions(context) {
     context.state.overlayState.setRingTemplateMode?.(next);
     const btn = context.dom.ringTemplateButton;
     if (next) {
+      clearActiveSelectionForTool();
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setDrawBondMode(false);
       context.state.overlayState.setEraseMode(false);
@@ -1207,6 +1222,9 @@ export function createSelectionActions(context) {
     }
     const currentTool = context.state.overlayState.getChargeTool?.() ?? null;
     const nextTool = currentTool === tool ? null : tool;
+    if (nextTool != null) {
+      clearActiveSelectionForTool();
+    }
     context.state.overlayState.setChargeTool?.(nextTool);
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
@@ -1234,6 +1252,7 @@ export function createSelectionActions(context) {
       return;
     }
     context.state.overlayState.setRingTemplateSize?.(normalizedSize);
+    clearActiveSelectionForTool();
     if (!(context.state.overlayState.getRingTemplateMode?.() ?? false)) {
       toggleRingTemplateMode();
     } else {
@@ -1251,6 +1270,7 @@ export function createSelectionActions(context) {
       return;
     }
     context.state.overlayState.setDrawBondElement(element);
+    clearActiveSelectionForTool();
     if (!context.state.overlayState.getDrawBondMode()) {
       toggleDrawBondMode();
     } else {
@@ -1263,6 +1283,7 @@ export function createSelectionActions(context) {
       return;
     }
     context.state.overlayState.setDrawBondType?.(type);
+    clearActiveSelectionForTool();
     if (!context.state.overlayState.getDrawBondMode()) {
       toggleDrawBondMode();
     } else {

@@ -95,6 +95,14 @@ export function createAppStateBridgeDeps(ctx) {
       setSelectionDragActive: value => {
         ctx.runtimeState.selectionDragActive = value;
       },
+      getSelectionRotationActive: () => ctx.runtimeState.selectionRotationActive,
+      setSelectionRotationActive: value => {
+        ctx.runtimeState.selectionRotationActive = value;
+      },
+      getSelectionPivot: () => ctx.runtimeState.selectionPivot,
+      setSelectionPivot: value => {
+        ctx.runtimeState.selectionPivot = value;
+      },
       getSelectMode: () => ctx.getSelectMode(),
       setSelectMode: value => {
         ctx.setSelectMode(value);

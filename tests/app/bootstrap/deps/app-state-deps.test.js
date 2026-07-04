@@ -16,7 +16,8 @@ describe('app-state dependency builder', () => {
       flipV: false,
       cx2d: 0,
       cy2d: 0,
-      stereoMap2d: null
+      stereoMap2d: null,
+      selectionPivot: null
     };
     let primitiveHoverSuppressed = false;
     let drawBondHoverSuppressed = false;
@@ -79,5 +80,9 @@ describe('app-state dependency builder', () => {
     assert.equal(primitiveHoverSuppressed, true);
     assert.equal(drawBondHoverSuppressed, true);
     assert.deepEqual(restoredZoomSnapshots, [{ x: 9, y: 10, k: 2 }]);
+
+    deps.overlayState.setSelectionPivot({ x: 11, y: 22 });
+    assert.deepEqual(deps.overlayState.getSelectionPivot(), { x: 11, y: 22 });
+    assert.deepEqual(runtimeState.selectionPivot, { x: 11, y: 22 });
   });
 });

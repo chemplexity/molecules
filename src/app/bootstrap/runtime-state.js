@@ -39,6 +39,8 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     placementRedirectedHoverBondIds: new Set(),
     selectionModifierActive: false,
     selectionDragActive: false,
+    selectionRotationActive: false,
+    selectionPivot: null,
     selectMode: false,
     drawBondMode: false,
     ringTemplateMode: false,
@@ -85,6 +87,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
   runtimeState.clearSelection = () => {
     runtimeState.selectedAtomIds.clear();
     runtimeState.selectedBondIds.clear();
+    runtimeState.selectionPivot = null;
   };
 
   runtimeState.resetRenderCaches = () => {

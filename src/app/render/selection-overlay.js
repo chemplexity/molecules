@@ -7,6 +7,12 @@ const SELECTION_BOUNDS_STROKE = 'rgb(80, 140, 255)';
 const SELECTION_BOUNDS_DASH = '5,3';
 const SELECTION_BOUNDS_STROKE_WIDTH = 1.5;
 const SELECTION_BOUNDS_OPACITY = 0.4;
+const SELECTION_ROTATE_HANDLE_OFFSET = 28;
+const SELECTION_ROTATE_HANDLE_HIT_RADIUS = 16;
+const SELECTION_PIVOT_HIT_RADIUS = 16;
+const SELECTION_PIVOT_ARM = 8;
+const SELECTION_PIVOT_STROKE = '#666666';
+const SELECTION_PIVOT_OPACITY = 0.58;
 
 function emptyBounds() {
   return {
@@ -40,23 +46,157 @@ function finalizeBounds(bounds, pad = SELECTION_BOUNDS_PAD) {
   };
 }
 
-function drawSelectionBoundsRect(selectionLayer, bounds) {
+function selectionBoundsGeometry(bounds) {
   if (!bounds) {
     return null;
   }
-  return selectionLayer
-    .append('rect')
-    .attr('class', 'selection-bounds-rect')
+  const cx = bounds.x + bounds.width / 2;
+  const topY = bounds.y - SELECTION_ROTATE_HANDLE_OFFSET;
+  return {
+    cx,
+    cy: bounds.y + bounds.height / 2,
+    rotateHandle: { x: cx, y: topY }
+  };
+}
+
+function normalizedSelectionPivot(bounds, pivot = null) {
+  const geometry = selectionBoundsGeometry(bounds);
+  if (!geometry) {
+    return null;
+  }
+  const pivotX = Number(pivot?.x);
+  const pivotY = Number(pivot?.y);
+  if (
+    !Number.isFinite(pivotX) ||
+    !Number.isFinite(pivotY) ||
+    pivotX < bounds.x ||
+    pivotX > bounds.x + bounds.width ||
+    pivotY < bounds.y ||
+    pivotY > bounds.y + bounds.height
+  ) {
+    return { x: geometry.cx, y: geometry.cy };
+  }
+  return { x: pivotX, y: pivotY };
+}
+
+function appendSelectionRotateHandle(handleLayer) {
+  const handle = handleLayer
+    .append('g')
+    .attr('class', 'selection-rotate-handle')
+    .attr('data-selection-rotate-handle', 'rotate')
+    .attr('role', 'button')
+    .attr('aria-label', 'Rotate selection')
+    .style('cursor', 'grab')
+    .style('pointer-events', 'none');
+  handle
+    .append('circle')
+    .attr('class', 'selection-rotate-handle-hit')
+    .attr('cx', 0)
+    .attr('cy', 0)
+    .attr('r', SELECTION_ROTATE_HANDLE_HIT_RADIUS)
+    .attr('fill', '#ffffff')
+    .attr('opacity', 0.001)
+    .style('pointer-events', 'all');
+  handle
+    .append('path')
+    .attr('class', 'selection-rotate-handle-icon')
+    .attr('d', 'M 20 11 A 8 8 0 0 0 4.5 8.5 M 4 4 V 8.5 H 8.5 M 4 13 A 8 8 0 0 0 19.5 15.5 M 20 20 V 15.5 H 15.5')
+    .attr('transform', 'translate(-12 -12) scale(0.9)')
+    .attr('fill', 'none')
+    .attr('stroke', SELECTION_BOUNDS_STROKE)
+    .attr('stroke-width', 2.4)
+    .attr('stroke-linecap', 'round')
+    .attr('stroke-linejoin', 'round')
+    .attr('opacity', 0.72);
+  return handle;
+}
+
+function appendSelectionPivotHandle(handleLayer) {
+  const handle = handleLayer
+    .append('g')
+    .attr('class', 'selection-pivot-handle')
+    .attr('data-selection-pivot-handle', 'pivot')
+    .attr('role', 'button')
+    .attr('aria-label', 'Move rotation pivot')
+    .style('cursor', 'move')
+    .style('pointer-events', 'none');
+  handle
+    .append('circle')
+    .attr('class', 'selection-pivot-handle-hit')
+    .attr('cx', 0)
+    .attr('cy', 0)
+    .attr('r', SELECTION_PIVOT_HIT_RADIUS)
+    .attr('fill', '#ffffff')
+    .attr('opacity', 0.001)
+    .style('pointer-events', 'none');
+  handle
+    .append('line')
+    .attr('class', 'selection-pivot-cross selection-pivot-cross-h')
+    .attr('x1', -SELECTION_PIVOT_ARM)
+    .attr('y1', 0)
+    .attr('x2', SELECTION_PIVOT_ARM)
+    .attr('y2', 0)
+    .attr('stroke', SELECTION_PIVOT_STROKE)
+    .attr('stroke-width', 1.8)
+    .attr('stroke-linecap', 'round')
+    .attr('opacity', SELECTION_PIVOT_OPACITY);
+  handle
+    .append('line')
+    .attr('class', 'selection-pivot-cross selection-pivot-cross-v')
+    .attr('x1', 0)
+    .attr('y1', -SELECTION_PIVOT_ARM)
+    .attr('x2', 0)
+    .attr('y2', SELECTION_PIVOT_ARM)
+    .attr('stroke', SELECTION_PIVOT_STROKE)
+    .attr('stroke-width', 1.8)
+    .attr('stroke-linecap', 'round')
+    .attr('opacity', SELECTION_PIVOT_OPACITY);
+  return handle;
+}
+
+/**
+ * Repositions a persistent selection-bounds control group around the latest bounds.
+ * @param {object} controls - D3 selection for the bounds controls group.
+ * @param {{x: number, y: number, width: number, height: number}|null} bounds - Current selection bounds.
+ * @param {{x: number, y: number}|null} [pivot] - Optional persisted pivot point.
+ * @returns {object} The provided controls selection.
+ */
+export function updateSelectionBoundsControls(controls, bounds, pivot = null) {
+  const geometry = selectionBoundsGeometry(bounds);
+  controls.style('display', bounds && geometry ? null : 'none');
+  if (!bounds || !geometry) {
+    return controls;
+  }
+  const pivotPoint = normalizedSelectionPivot(bounds, pivot ?? controls.datum?.()?.getPivot?.() ?? null);
+  controls
+    .select('rect.selection-bounds-rect')
     .attr('x', bounds.x)
     .attr('y', bounds.y)
     .attr('width', bounds.width)
-    .attr('height', bounds.height)
+    .attr('height', bounds.height);
+  controls.select('g.selection-rotate-handle').attr('transform', `translate(${geometry.rotateHandle.x},${geometry.rotateHandle.y})`);
+  controls.select('g.selection-pivot-handle').attr('transform', `translate(${pivotPoint.x},${pivotPoint.y})`);
+  return controls;
+}
+
+function drawSelectionBoundsControls(selectionLayer, bounds, pivot = null) {
+  if (!bounds) {
+    return null;
+  }
+  const controls = selectionLayer.append('g').attr('class', 'selection-bounds-controls').style('pointer-events', 'none');
+  controls
+    .append('rect')
+    .attr('class', 'selection-bounds-rect')
     .attr('fill', 'none')
     .attr('stroke', SELECTION_BOUNDS_STROKE)
     .attr('stroke-width', SELECTION_BOUNDS_STROKE_WIDTH)
     .attr('stroke-dasharray', SELECTION_BOUNDS_DASH)
     .attr('opacity', SELECTION_BOUNDS_OPACITY)
     .attr('pointer-events', 'none');
+  const handleLayer = controls.append('g').attr('class', 'selection-rotate-handles');
+  appendSelectionRotateHandle(handleLayer);
+  appendSelectionPivotHandle(handleLayer);
+  return updateSelectionBoundsControls(controls, bounds, pivot);
 }
 
 /**
@@ -176,6 +316,7 @@ export function createSelectionOverlayManager(ctx) {
   function redraw2dSelection() {
     const g = ctx.view.getGraphSelection();
     g.select('g.atom-selection').remove();
+    g.selectAll('g.selection-bounds-control-layer').remove();
 
     const { atomIds: activeAtomIds, bondIds: activeBondIds } = getRenderableSelectionIds();
     const mol = ctx.molecule.getMol2D();
@@ -235,8 +376,13 @@ export function createSelectionOverlayManager(ctx) {
     for (const { x, y, radius } of matchedAtoms) {
       expandBounds(selectedBounds, x - radius, y - radius, x + radius, y + radius);
     }
-    if ((ctx.state.getSelectedAtomIds().size > 0 || ctx.state.getSelectedBondIds().size > 0) && !ctx.state.getSelectionDragActive?.()) {
-      drawSelectionBoundsRect(selectionLayer, finalizeBounds(selectedBounds));
+    if (
+      (ctx.state.getSelectedAtomIds().size > 0 || ctx.state.getSelectedBondIds().size > 0) &&
+      !ctx.state.getSelectionDragActive?.() &&
+      !ctx.state.getSelectionRotationActive?.()
+    ) {
+      const controlsLayer = g.append('g').attr('class', 'selection-bounds-control-layer').style('pointer-events', 'none');
+      drawSelectionBoundsControls(controlsLayer, finalizeBounds(selectedBounds), ctx.state.getSelectionPivot?.() ?? null);
     }
 
     const addLines = (stroke, extra) => {
@@ -311,6 +457,7 @@ export function createForceSelectionRenderer(ctx) {
   function applyForceSelection() {
     const graphSelection = ctx.view.getGraphSelection();
     graphSelection.selectAll('g.force-selection-layer').remove();
+    graphSelection.selectAll('g.selection-bounds-control-layer').remove();
     ctx.cache.setSelectionLines(null);
     ctx.cache.setSelectionCircles(null);
     ctx.cache.setSelectionBounds?.(null);
@@ -353,10 +500,11 @@ export function createForceSelectionRenderer(ctx) {
     };
 
     let selectionBoundsRect = null;
-    if (ctx.selection.hasExplicitSelection?.() ?? true) {
+    if ((ctx.selection.hasExplicitSelection?.() ?? true) && !ctx.selection.getSelectionRotationActive?.()) {
       const bounds = forceSelectionBounds();
-      selectionBoundsRect = drawSelectionBoundsRect(selectionLayer, bounds);
-      selectionBoundsRect?.datum({ bounds: forceSelectionBounds });
+      const controlsLayer = graphSelection.append('g').attr('class', 'selection-bounds-control-layer').style('pointer-events', 'none');
+      selectionBoundsRect = drawSelectionBoundsControls(controlsLayer, bounds, ctx.selection.getSelectionPivot?.() ?? null);
+      selectionBoundsRect?.datum({ bounds: forceSelectionBounds, getPivot: () => ctx.selection.getSelectionPivot?.() ?? null });
     }
 
     const addLines = (stroke, extra) => {
@@ -393,8 +541,8 @@ export function createForceSelectionRenderer(ctx) {
     addCircles(selectionOutline, outlineWidth);
     addLines(selectionColor, 0);
     addCircles(selectionColor, 0);
-    ctx.cache.setSelectionLines(selectionLayer.selectAll('line'));
-    ctx.cache.setSelectionCircles(selectionLayer.selectAll('circle'));
+    ctx.cache.setSelectionLines(highlightLayer.selectAll('line'));
+    ctx.cache.setSelectionCircles(highlightLayer.selectAll('circle'));
     ctx.cache.setSelectionBounds?.(selectionBoundsRect);
   }
 

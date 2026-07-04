@@ -113,6 +113,8 @@ function makeManager(options = {}) {
       getChargeTool: () => options.chargeTool ?? null,
       getSelectionModifierActive: () => options.selectionModifierActive ?? false,
       getSelectionDragActive: () => options.selectionDragActive ?? false,
+      getSelectionRotationActive: () => options.selectionRotationActive ?? false,
+      getSelectionPivot: () => options.selectionPivot ?? null,
       getSelectedAtomIds: () => selectedAtomIds,
       getSelectedBondIds: () => selectedBondIds,
       getHoveredAtomIds: () => hoveredAtomIds,
@@ -410,6 +412,8 @@ describe('createSelectionOverlayManager', () => {
 
     assert.ok(records.some(([kind, value]) => kind === 'select' && value === 'g.atom-selection'));
     assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'g'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-control-layer'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-highlight-layer'));
@@ -418,6 +422,29 @@ describe('createSelectionOverlayManager', () => {
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'fill' && value === 'none'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'stroke-dasharray' && value === '5,3'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'opacity' && value === 0.4));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-rotate-handles'));
+    assert.equal(records.filter(([kind, name, value]) => kind === 'attr' && name === 'data-selection-rotate-handle' && value === 'rotate').length, 1);
+    assert.equal(records.filter(([kind, name, value]) => kind === 'attr' && name === 'data-selection-pivot-handle' && value === 'pivot').length, 1);
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-pivot-cross selection-pivot-cross-h'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-pivot-cross selection-pivot-cross-v'));
+  });
+
+  it('positions the 2D selection pivot from persisted overlay state', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const mol = {
+      atoms: new Map([['a1', atomA]]),
+      bonds: new Map()
+    };
+    const { manager, records } = makeManager({
+      mode: '2d',
+      mol2D: mol,
+      selectedAtomIds: new Set(['a1']),
+      selectionPivot: { x: 12, y: 14 }
+    });
+
+    manager.redraw2dSelection();
+
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'transform' && value === 'translate(12,14)'));
   });
 
   it('does not draw the persistent bounds box while 2D selection drag is active', () => {
@@ -431,6 +458,25 @@ describe('createSelectionOverlayManager', () => {
       mol2D: mol,
       selectedAtomIds: new Set(['a1']),
       selectionDragActive: true
+    });
+
+    manager.redraw2dSelection();
+
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
+  });
+
+  it('does not draw the persistent bounds box while selection rotation is active', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const mol = {
+      atoms: new Map([['a1', atomA]]),
+      bonds: new Map()
+    };
+    const { manager, records } = makeManager({
+      mode: '2d',
+      mol2D: mol,
+      selectedAtomIds: new Set(['a1']),
+      selectionRotationActive: true
     });
 
     manager.redraw2dSelection();
@@ -520,9 +566,60 @@ describe('createSelectionOverlayManager', () => {
 
     assert.ok(records.some(([kind, selector]) => kind === 'selectAll' && selector === 'g.force-selection-layer'));
     assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-control-layer'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'));
+    assert.equal(records.filter(([kind, name, value]) => kind === 'attr' && name === 'data-selection-rotate-handle' && value === 'rotate').length, 1);
+    assert.equal(records.filter(([kind, name, value]) => kind === 'attr' && name === 'data-selection-pivot-handle' && value === 'pivot').length, 1);
     assert.ok(records.some(([kind, value]) => kind === 'setSelectionBounds' && value));
+  });
+
+  it('does not draw force selection bounds while selection rotation is active', () => {
+    const records = [];
+    const nodes = [
+      { id: 'a1', x: 10, y: 10, protons: 6 },
+      { id: 'a2', x: 30, y: 10, protons: 6 }
+    ];
+    const links = [{ id: 'b1', source: nodes[0], target: nodes[1] }];
+
+    const renderer = createForceSelectionRenderer({
+      view: {
+        getGraphSelection: () => new FakeSelection(records)
+      },
+      selection: {
+        getRenderableSelectionIds: () => ({
+          atomIds: new Set(['a1']),
+          bondIds: new Set(['b1'])
+        }),
+        getSelectionRotationActive: () => true
+      },
+      force: {
+        getNodes: () => nodes,
+        getLinks: () => links
+      },
+      cache: {
+        setSelectionLines: value => records.push(['setSelectionLines', value]),
+        setSelectionCircles: value => records.push(['setSelectionCircles', value]),
+        setSelectionBounds: value => records.push(['setSelectionBounds', value])
+      },
+      constants: {
+        getSelectionColor: () => 'rgb(150, 200, 255)',
+        getSelectionOutline: () => 'rgb(40, 100, 210)',
+        getBondSelectionRadius: () => 6,
+        getAtomSelectionRadius: () => 13,
+        getOutlineWidth: () => 2
+      },
+      helpers: {
+        atomRadius: () => 10
+      }
+    });
+
+    renderer.applyForceSelection();
+
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
+    assert.equal(records.some(([kind, value]) => kind === 'setSelectionBounds' && value), false);
   });
 });

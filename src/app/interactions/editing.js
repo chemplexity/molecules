@@ -85,6 +85,7 @@ export function createEditingActions(context) {
     }
 
     if (!transient) {
+      context.state.overlayState.setSelectionPivot?.(null);
       selectedAtomIds.clear();
       selectedBondIds.clear();
       context.view.refreshSelectionOverlay?.();
@@ -231,6 +232,7 @@ export function createEditingActions(context) {
 
     const selectedAtomIds = context.state.overlayState.getSelectedAtomIds();
     const selectedBondIds = context.state.overlayState.getSelectedBondIds();
+    context.state.overlayState.setSelectionPivot?.(null);
     selectedAtomIds.clear();
     selectedBondIds.clear();
     for (const id of eraseTargets.atomIds) {
@@ -242,6 +244,7 @@ export function createEditingActions(context) {
 
     const result = deleteSelection();
     if (result?.blockedByOverlay || result?.cancelled || result?.performed === false) {
+      context.state.overlayState.setSelectionPivot?.(null);
       selectedAtomIds.clear();
       selectedBondIds.clear();
       context.view.refreshSelectionOverlay?.();

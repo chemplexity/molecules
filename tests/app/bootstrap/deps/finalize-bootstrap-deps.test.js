@@ -19,6 +19,7 @@ describe('finalize-bootstrap dependency builder', () => {
     };
     let drawBondHoverSuppressed = false;
     let tookSnapshot = false;
+    const forceHelpers = { patchForceNodePositions() {} };
 
     const deps = createFinalizeAppBootstrapDeps({
       createAppDelegates() {},
@@ -71,7 +72,8 @@ describe('finalize-bootstrap dependency builder', () => {
       refreshSelectionOverlay() {},
       applyForceSelection() {},
       selectionOverlayManager: { redraw2dSelection() {} },
-      forceSceneRenderer: { updateForce() {} },
+      forceSceneRenderer: { updateForce() {}, syncPositions() {} },
+      forceHelpers,
       syncDisplayStereo() {},
       clearReactionPreviewState() {},
       restoreReactionPreviewSource() {},
@@ -145,6 +147,7 @@ describe('finalize-bootstrap dependency builder', () => {
 
     assert.equal(deps.state.hasDrawBondState(), true);
     assert.deepEqual(deps.constants, { forceBondLength: 41, scale: 60 });
+    assert.equal(deps.forceHelpers, forceHelpers);
     deps.state.setDrawBondHoverSuppressed(true);
     deps.history.takeSnapshot();
     assert.equal(drawBondHoverSuppressed, true);
@@ -153,6 +156,7 @@ describe('finalize-bootstrap dependency builder', () => {
 
   it('re-fits the force scene on resize when a molecule is loaded', () => {
     const updateForceCalls = [];
+    let syncForcePositionsCalled = false;
     const deps = createFinalizeAppBootstrapDeps({
       createAppDelegates() {},
       createReaction2dDeps() {},
@@ -210,6 +214,9 @@ describe('finalize-bootstrap dependency builder', () => {
       forceSceneRenderer: {
         updateForce(mol, options) {
           updateForceCalls.push([mol, options]);
+        },
+        syncPositions() {
+          syncForcePositionsCalled = true;
         }
       },
       syncDisplayStereo() {},
@@ -284,7 +291,9 @@ describe('finalize-bootstrap dependency builder', () => {
     });
 
     deps.view.handleForceResize();
+    deps.render.syncForcePositions();
 
     assert.deepEqual(updateForceCalls, [[{ id: 'mol-force' }, { preservePositions: true, preserveView: false }]]);
+    assert.equal(syncForcePositionsCalled, true);
   });
 });
