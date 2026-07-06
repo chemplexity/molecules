@@ -91,6 +91,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
       restorePersistentHighlight: () => ctx.restorePersistentHighlight(),
       getFitCurrent2dView: () => ctx.getFitCurrent2dView(),
+      zoomToFitIf2d: options => ctx.zoomToFitIf2d?.(options),
       getZoomTransform: () => ctx.getZoomTransform(),
       setZoomTransform: transform => ctx.setZoomTransform(transform),
       makeZoomIdentity: (x, y, k) => ctx.makeZoomIdentity(x, y, k),
@@ -106,6 +107,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       forceInitialFitPad: ctx.forceInitialFitPad,
       forceInitialZoomMultiplier: ctx.forceInitialZoomMultiplier,
       zoomTransformsDiffer: (a, b, epsilon) => ctx.zoomTransformsDiffer(a, b, epsilon),
+      syncForcePositions: () => ctx.syncForcePositions?.(),
       parseSMILES: ctx.parseSMILES,
       parseINCHI: ctx.parseINCHI,
       simulation: ctx.simulation,
@@ -217,9 +219,14 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       getEraseMode: () => ctx.getEraseMode(),
       getPaintMode: () => ctx.getPaintMode?.() ?? false,
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
+      getSelectionPivot: () => ctx.appState.overlayState.getSelectionPivot?.() ?? null,
+      setSelectionPivot: value => {
+        ctx.appState.overlayState.setSelectionPivot?.(value);
+      },
       captureSnapshot: () => ctx.captureSnapshot(),
       takeSnapshot: options => ctx.takeSnapshot(options),
       getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => ctx.getSelectedDragAtomIds(mol, atomIds, bondIds),
+      fitTransformedSelectionIfNeeded: atomIds => ctx.fitTransformedSelectionIfNeeded?.(atomIds) ?? false,
       getCurrentMolecule: () => ctx.getCurrentMolecule(),
       setAutoFitEnabled: value => {
         ctx.setAutoFitEnabled(value);

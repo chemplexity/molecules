@@ -624,6 +624,121 @@ const _getSelectedDragAtomIds = (mol, atomIds = [], bondIds = []) => selectionSt
 const _toSVGPt2d = atom => render2DHelpers.toSVGPt2d(atom);
 const _zoomToFitIf2d = options => render2DHelpers.zoomToFitIf2d(options);
 
+function _elementRectOutsidePlot(element, plotRect, pad = 0) {
+  const rect = element?.getBoundingClientRect?.() ?? null;
+  if (!rect || (rect.width === 0 && rect.height === 0)) {
+    return false;
+  }
+  return rect.left < plotRect.left + pad || rect.top < plotRect.top + pad || rect.right > plotRect.right - pad || rect.bottom > plotRect.bottom - pad;
+}
+
+function _renderedGeometryRect(selector) {
+  const plotRect = plotEl?.getBoundingClientRect?.() ?? null;
+  if (!plotRect) {
+    return null;
+  }
+  const geometry = [...(plotEl.querySelectorAll?.(selector) ?? [])]
+    .map(element => element?.getBoundingClientRect?.() ?? null)
+    .filter(rect => rect && (rect.width > 0 || rect.height > 0));
+  if (geometry.length === 0) {
+    return null;
+  }
+  return {
+    left: Math.min(...geometry.map(rect => rect.left)),
+    right: Math.max(...geometry.map(rect => rect.right)),
+    top: Math.min(...geometry.map(rect => rect.top)),
+    bottom: Math.max(...geometry.map(rect => rect.bottom)),
+    plotRect
+  };
+}
+
+function _renderedGeometryOutsidePlot(selector, pad = 2) {
+  const rect = _renderedGeometryRect(selector);
+  if (!rect) {
+    return false;
+  }
+  const { plotRect } = rect;
+  return rect.left < plotRect.left + pad || rect.top < plotRect.top + pad || rect.right > plotRect.right - pad || rect.bottom > plotRect.bottom - pad;
+}
+
+function _fitRenderedGeometryIntoPlot(selector, pad = 18) {
+  const rect = _renderedGeometryRect(selector);
+  if (!rect || !svg?.node || !zoom) {
+    return false;
+  }
+  const { plotRect } = rect;
+  const left = rect.left - plotRect.left;
+  const right = rect.right - plotRect.left;
+  const top = rect.top - plotRect.top;
+  const bottom = rect.bottom - plotRect.top;
+  const width = right - left;
+  const height = bottom - top;
+  if (!(width > 0) || !(height > 0)) {
+    return false;
+  }
+  const fitWidth = Math.max(1, plotRect.width - pad * 2);
+  const fitHeight = Math.max(1, plotRect.height - pad * 2);
+  const scaleMultiplier = Math.min(fitWidth / width, fitHeight / height, 1);
+  const current = d3.zoomTransform(svg.node());
+  const currentK = Number.isFinite(Number(current.k)) ? Number(current.k) : 1;
+  const nextK = currentK * scaleMultiplier;
+  const currentX = Number.isFinite(Number(current.x)) ? Number(current.x) : 0;
+  const currentY = Number.isFinite(Number(current.y)) ? Number(current.y) : 0;
+  const plotCx = plotRect.width / 2;
+  const plotCy = plotRect.height / 2;
+  const scaledLeft = plotCx + scaleMultiplier * (left - plotCx);
+  const scaledRight = plotCx + scaleMultiplier * (right - plotCx);
+  const scaledTop = plotCy + scaleMultiplier * (top - plotCy);
+  const scaledBottom = plotCy + scaleMultiplier * (bottom - plotCy);
+  let dx = 0;
+  let dy = 0;
+  if (scaledLeft < pad) {
+    dx = pad - scaledLeft;
+  } else if (scaledRight > plotRect.width - pad) {
+    dx = plotRect.width - pad - scaledRight;
+  }
+  if (scaledTop < pad) {
+    dy = pad - scaledTop;
+  } else if (scaledBottom > plotRect.height - pad) {
+    dy = plotRect.height - pad - scaledBottom;
+  }
+  const nextX = plotCx + scaleMultiplier * (currentX - plotCx) + dx;
+  const nextY = plotCy + scaleMultiplier * (currentY - plotCy) + dy;
+  const nextTransform = d3.zoomIdentity.translate(nextX, nextY).scale(nextK);
+  if (forceHelpers.zoomTransformsDiffer(nextTransform, current)) {
+    svg.call(zoom.transform, nextTransform);
+    return true;
+  }
+  return false;
+}
+
+function _fitTransformedSelectionIfNeeded(atomIds = []) {
+  const ids = new Set(atomIds);
+  if (ids.size === 0 || !plotEl) {
+    return false;
+  }
+  if (runtimeState.mode === '2d') {
+    const mol = runtimeState.mol2d;
+    if (!mol) {
+      return false;
+    }
+    const selector = 'line.bond-hit, circle.atom-hit, g[data-atom-id] .atom-label, g[data-atom-id] .atom-charge-text';
+    if (_renderedGeometryOutsidePlot(selector)) {
+      _fitRenderedGeometryIntoPlot(selector);
+      return true;
+    }
+    return false;
+  }
+  if (runtimeState.mode === 'force') {
+    const selector = 'circle.node, line.link, text.atom-symbol, g.charge-label';
+    if (!_renderedGeometryOutsidePlot(selector)) {
+      return false;
+    }
+    return _fitRenderedGeometryIntoPlot(selector, FORCE_LAYOUT_FIT_PAD);
+  }
+  return false;
+}
+
 const {
   syncInputField: _syncInputField,
   captureAppSnapshot: _captureAppSnapshot,
@@ -642,6 +757,7 @@ const {
   pickStereoWedgesPreserving2dChoice: mol => _pickStereoWedgesPreserving2dChoice(mol),
   clearPrimitiveHover: () => _clearPrimitiveHover(),
   setPrimitiveHover: (atomIds = [], bondIds = []) => _setPrimitiveHover(atomIds, bondIds),
+  fitTransformedSelectionIfNeeded: atomIds => _fitTransformedSelectionIfNeeded(atomIds),
   setDrawBondHoverSuppressed: value => {
     runtimeState.drawBondHoverSuppressed = value;
   },
@@ -735,6 +851,7 @@ const { navigationActions, selectionActions, clipboardActions, editingActions, d
       clearPrimitiveHover: () => _clearPrimitiveHover(),
       restorePersistentHighlight: () => _restorePersistentHighlight(),
       getFitCurrent2dView: () => fitCurrent2dView,
+      zoomToFitIf2d: options => _zoomToFitIf2d(options),
       getZoomTransform: () => d3.zoomTransform(svg.node()),
       setZoomTransform: transform => svg.call(zoom.transform, transform),
       makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
@@ -774,6 +891,7 @@ const { navigationActions, selectionActions, clipboardActions, editingActions, d
       forceInitialFitPad: FORCE_LAYOUT_INITIAL_FIT_PAD,
       forceInitialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
       zoomTransformsDiffer: (a, b, epsilon) => forceHelpers.zoomTransformsDiffer(a, b, epsilon),
+      syncForcePositions: () => forceSceneRenderer.syncPositions?.(),
       parseSMILES,
       parseINCHI,
       simulation,
@@ -832,6 +950,7 @@ const { navigationActions, selectionActions, clipboardActions, editingActions, d
       getChargeTool: () => runtimeState.chargeTool,
       captureSnapshot: () => _captureAppSnapshot(),
       getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
+      fitTransformedSelectionIfNeeded: atomIds => _fitTransformedSelectionIfNeeded(atomIds),
       getCurrentMolecule: () => runtimeState.currentMol,
       setAutoFitEnabled: value => {
         runtimeState.forceAutoFitEnabled = value;
@@ -1249,6 +1368,7 @@ finalizeAppBootstrap(
     domElements,
     clearPrimitiveHover: () => _clearPrimitiveHover(),
     showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
+    fitTransformedSelectionIfNeeded: atomIds => _fitTransformedSelectionIfNeeded(atomIds),
     updateAnalysisPanels: (mol, options = {}) => _updateAnalysisPanels(mol, options),
     prepare2dExportHighlightState: () => _prepare2dExportHighlightState(),
     setHighlight: (mappings, options = {}) => _setHighlight(mappings, options),

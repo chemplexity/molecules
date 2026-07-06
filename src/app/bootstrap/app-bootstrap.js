@@ -289,6 +289,7 @@ export function finalizeAppBootstrap(ctx) {
     },
     view: {
       getZoomTransform: () => ctx.view.getZoomTransform(),
+      fitTransformedSelectionIfNeeded: atomIds => ctx.view.fitTransformedSelectionIfNeeded?.(atomIds) ?? false,
       clearPrimitiveHover: () => ctx.view.clearPrimitiveHover(),
       showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.view.showPrimitiveHover(atomIds, bondIds),
       setDrawBondHoverSuppressed: value => ctx.state.setDrawBondHoverSuppressed(value)

@@ -19,6 +19,7 @@ function makeKeyboardContext({
 } = {}) {
   const handlers = new Map();
   const records = [];
+  let selectionModifierActive = false;
   const doc = {
     activeElement: { tagName: activeTagName },
     addEventListener(type, handler) {
@@ -42,8 +43,11 @@ function makeKeyboardContext({
         getMode: () => mode
       },
       overlayState: {
-        getSelectionModifierActive: () => false,
-        setSelectionModifierActive() {},
+        getSelectionModifierActive: () => selectionModifierActive,
+        setSelectionModifierActive(value) {
+          selectionModifierActive = value;
+          records.push(['setSelectionModifierActive', value]);
+        },
         getSelectMode: () => selectMode,
         getDrawBondMode: () => false,
         getRingTemplateMode: () => ringTemplateMode,
@@ -89,7 +93,9 @@ function makeKeyboardContext({
       }
     },
     view: {
-      refreshSelectionOverlay() {},
+      refreshSelectionOverlay() {
+        records.push(['refreshSelectionOverlay']);
+      },
       applySelectionOverlay() {},
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform() {},
@@ -108,11 +114,41 @@ function makeKeyboardContext({
     handlers,
     records,
     hoveredAtomIds,
-    hoveredBondIds
+    hoveredBondIds,
+    getSelectionModifierActive: () => selectionModifierActive
   };
 }
 
 describe('initKeyboardInteractions', () => {
+  it('uses Shift as a live selection modifier like Command or Control', () => {
+    const { handlers, records, getSelectionModifierActive } = makeKeyboardContext();
+
+    handlers.get('keydown')({
+      key: 'Shift',
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: true
+    });
+
+    assert.equal(getSelectionModifierActive(), true);
+    assert.deepEqual(records, [['setSelectionModifierActive', true], ['refreshSelectionOverlay']]);
+
+    handlers.get('keyup')({
+      key: 'Shift',
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false
+    });
+
+    assert.equal(getSelectionModifierActive(), false);
+    assert.deepEqual(records, [
+      ['setSelectionModifierActive', true],
+      ['refreshSelectionOverlay'],
+      ['setSelectionModifierActive', false],
+      ['refreshSelectionOverlay']
+    ]);
+  });
+
   it('routes cmd-z to app undo even when an input is focused', () => {
     const { handlers, records } = makeKeyboardContext({ activeTagName: 'INPUT' });
     let prevented = false;

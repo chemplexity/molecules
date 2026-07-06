@@ -145,6 +145,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       getZoomTransform: () => ctx.d3.zoomTransform(ctx.svg.node()),
       setZoomTransform: transform => ctx.svg.call(ctx.zoom.transform, transform),
       makeZoomIdentity: (x, y, k) => ctx.d3.zoomIdentity.translate(x, y).scale(k),
+      fitTransformedSelectionIfNeeded: atomIds => ctx.fitTransformedSelectionIfNeeded?.(atomIds) ?? false,
       hideTooltip: () => {
         ctx.runtimeState.selectionValenceTooltipAtomId = null;
         ctx.tooltip.interrupt().style('opacity', 0);

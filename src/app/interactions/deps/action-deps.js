@@ -38,6 +38,7 @@ export function createNavigationActionDeps(ctx) {
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
       restorePersistentHighlight: () => ctx.restorePersistentHighlight(),
       fitCurrent2dView: () => ctx.getFitCurrent2dView()(),
+      zoomToFitIf2d: options => ctx.zoomToFitIf2d?.(options),
       getZoomTransform: () => ctx.getZoomTransform(),
       setZoomTransform: transform => ctx.setZoomTransform(transform),
       makeZoomIdentity: (x, y, k) => ctx.makeZoomIdentity(x, y, k),
@@ -54,6 +55,7 @@ export function createNavigationActionDeps(ctx) {
     },
     force: {
       patchForceNodePositions: (patchPos, options = {}) => ctx.patchForceNodePositions(patchPos, options),
+      syncPositions: () => ctx.syncForcePositions?.(),
       forceFitTransform: (nodes, pad, options = {}) => ctx.forceFitTransform(nodes, pad, options),
       fitPad: ctx.forceFitPad,
       initialFitPad: ctx.forceInitialFitPad,
@@ -261,7 +263,11 @@ export function createDragGestureActionDeps(ctx) {
       getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
       getEraseMode: () => ctx.getEraseMode(),
       getPaintMode: () => ctx.getPaintMode?.() ?? false,
-      getChargeTool: () => ctx.getChargeTool?.() ?? null
+      getChargeTool: () => ctx.getChargeTool?.() ?? null,
+      getSelectionPivot: () => ctx.getSelectionPivot?.() ?? null,
+      setSelectionPivot: value => {
+        ctx.setSelectionPivot?.(value);
+      }
     },
     history: {
       captureSnapshot: () => ctx.captureSnapshot(),
@@ -283,6 +289,7 @@ export function createDragGestureActionDeps(ctx) {
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
       refresh2dSelection: () => ctx.refresh2dSelection(),
       hideTooltip: () => ctx.hideTooltip(),
+      fitTransformedSelectionIfNeeded: atomIds => ctx.fitTransformedSelectionIfNeeded?.(atomIds) ?? false,
       setElementCursor: (element, value) => {
         ctx.setElementCursor(element, value);
       }

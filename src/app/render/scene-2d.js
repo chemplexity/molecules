@@ -607,7 +607,8 @@ export function create2DSceneRenderer(ctx) {
         pX,
         pY,
         atomPositions,
-        movedAtomIds: new Set(atomPositions.keys())
+        movedAtomIds: new Set(atomPositions.keys()),
+        movesSelectionPivot: selectedDragAtomIds != null
       };
     }
 

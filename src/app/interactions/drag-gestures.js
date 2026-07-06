@@ -26,6 +26,30 @@ export function createDragGestureActions(context) {
     state._snapped = true;
   }
 
+  function finiteNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function translateSelectionPivot(dx, dy) {
+    const pivot = context.state.getSelectionPivot?.() ?? null;
+    const pivotX = finiteNumber(pivot?.x);
+    const pivotY = finiteNumber(pivot?.y);
+    if (pivotX == null || pivotY == null) {
+      return;
+    }
+    context.state.setSelectionPivot?.({ x: pivotX + dx, y: pivotY + dy });
+  }
+
+  function settleForceDragSimulation(simulation, event) {
+    if (event.active) {
+      return;
+    }
+    simulation.alphaTarget(0);
+    simulation.alpha?.(0);
+    simulation.stop?.();
+  }
+
   function createForceAtomDrag(simulation) {
     return context.d3
       .createDrag()
@@ -40,6 +64,7 @@ export function createDragGestureActions(context) {
         context.force.setAutoFitEnabled(false);
         context.force.disableKeepInView();
         const selectedDragAtomIds = context.selection.getSelectedDragAtomIds(context.molecule.getCurrent(), [datum.id], []);
+        const movesSelectionPivot = selectedDragAtomIds != null;
         const dragNodes = selectedDragAtomIds ? simulation.nodes().filter(node => selectedDragAtomIds.has(node.id)) : [datum];
         const positions = new Map();
         for (const node of dragNodes) {
@@ -50,6 +75,9 @@ export function createDragGestureActions(context) {
         datum._dragState = {
           startX: event.x,
           startY: event.y,
+          lastDx: 0,
+          lastDy: 0,
+          movesSelectionPivot,
           nodeIds: new Set(dragNodes.map(node => node.id)),
           positions,
           _snapped: false,
@@ -64,6 +92,11 @@ export function createDragGestureActions(context) {
         takePendingSnapshot(state);
         const dx = event.x - state.startX;
         const dy = event.y - state.startY;
+        if (state.movesSelectionPivot) {
+          translateSelectionPivot(dx - state.lastDx, dy - state.lastDy);
+        }
+        state.lastDx = dx;
+        state.lastDy = dy;
         for (const node of simulation.nodes()) {
           if (!state.nodeIds.has(node.id)) {
             continue;
@@ -79,9 +112,7 @@ export function createDragGestureActions(context) {
         }
       })
       .on('end', (event, datum) => {
-        if (!event.active) {
-          simulation.alphaTarget(0);
-        }
+        settleForceDragSimulation(simulation, event);
         const state = datum._dragState;
         if (state) {
           for (const node of simulation.nodes()) {
@@ -94,6 +125,9 @@ export function createDragGestureActions(context) {
             }
             node.fx = null;
             node.fy = null;
+          }
+          if (state.movesSelectionPivot && state._snapped) {
+            context.view.fitTransformedSelectionIfNeeded?.(state.nodeIds);
           }
         }
         datum._dragState = null;
@@ -109,6 +143,7 @@ export function createDragGestureActions(context) {
           return;
         }
         const selectedDragAtomIds = context.selection.getSelectedDragAtomIds(molecule, [], [datum.id]);
+        const movesSelectionPivot = selectedDragAtomIds != null;
         const bondAtomIds = selectedDragAtomIds ?? new Set((molecule?.bonds?.get?.(datum.id)?.atoms ?? []).filter(atomId => molecule?.atoms?.has?.(atomId)));
         if (bondAtomIds.size === 0) {
           this._dragState = null;
@@ -136,6 +171,9 @@ export function createDragGestureActions(context) {
         this._dragState = {
           startX: event.x,
           startY: event.y,
+          lastDx: 0,
+          lastDy: 0,
+          movesSelectionPivot,
           nodeIds,
           positions,
           _snapped: false,
@@ -150,6 +188,11 @@ export function createDragGestureActions(context) {
         takePendingSnapshot(state);
         const dx = event.x - state.startX;
         const dy = event.y - state.startY;
+        if (state.movesSelectionPivot) {
+          translateSelectionPivot(dx - state.lastDx, dy - state.lastDy);
+        }
+        state.lastDx = dx;
+        state.lastDy = dy;
         for (const node of simulation.nodes()) {
           if (!state.nodeIds.has(node.id)) {
             continue;
@@ -178,10 +221,11 @@ export function createDragGestureActions(context) {
             node.fx = null;
             node.fy = null;
           }
+          if (state.movesSelectionPivot && state._snapped) {
+            context.view.fitTransformedSelectionIfNeeded?.(state.nodeIds);
+          }
         }
-        if (!event.active) {
-          simulation.alphaTarget(0);
-        }
+        settleForceDragSimulation(simulation, event);
         this._dragState = null;
         context.view.setElementCursor(this, 'grab');
       });
@@ -189,6 +233,13 @@ export function createDragGestureActions(context) {
 
   function apply2dDragDelta(molecule, state, event, options) {
     const [svgX, svgY] = options.pointer(event.sourceEvent);
+    state.lastPX ??= state.pX;
+    state.lastPY ??= state.pY;
+    if (state.movesSelectionPivot) {
+      translateSelectionPivot(svgX - state.lastPX, svgY - state.lastPY);
+    }
+    state.lastPX = svgX;
+    state.lastPY = svgY;
     const dx = (svgX - state.pX) / options.scale;
     const dy = -(svgY - state.pY) / options.scale;
     for (const [atomId, pos] of state.atomPositions) {
@@ -234,6 +285,9 @@ export function createDragGestureActions(context) {
         this._dragState = null;
         context.view.setElementCursor(this, 'grab');
         if (state?._snapped) {
+          if (state.movesSelectionPivot) {
+            context.view.fitTransformedSelectionIfNeeded?.(state.movedAtomIds);
+          }
           options.draw();
         }
       });
@@ -272,6 +326,9 @@ export function createDragGestureActions(context) {
         this._dragState = null;
         options.resetCursor?.();
         if (state?._snapped) {
+          if (state.movesSelectionPivot) {
+            context.view.fitTransformedSelectionIfNeeded?.(state.movedAtomIds);
+          }
           options.draw();
         }
       });

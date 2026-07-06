@@ -61,8 +61,8 @@ export function initKeyboardInteractions(context) {
     const isPositiveChargeShortcut = event.key === '+' || event.code === 'NumpadAdd' || (event.code === 'Equal' && event.shiftKey);
     const isNegativeChargeShortcut = event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract' || (event.code === 'Minus' && event.shiftKey);
 
-    if (event.key === 'Meta' || event.key === 'Control') {
-      const nextActive = !!(event.metaKey || event.ctrlKey);
+    if (event.key === 'Meta' || event.key === 'Control' || event.key === 'Shift') {
+      const nextActive = !!(event.metaKey || event.ctrlKey || event.shiftKey);
       if (context.state.overlayState.getSelectionModifierActive() !== nextActive) {
         context.state.overlayState.setSelectionModifierActive(nextActive);
         context.view.refreshSelectionOverlay();
@@ -253,10 +253,10 @@ export function initKeyboardInteractions(context) {
   });
 
   doc.addEventListener('keyup', event => {
-    if (event.key !== 'Meta' && event.key !== 'Control') {
+    if (event.key !== 'Meta' && event.key !== 'Control' && event.key !== 'Shift') {
       return;
     }
-    const nextActive = !!(event.metaKey || event.ctrlKey);
+    const nextActive = !!(event.metaKey || event.ctrlKey || event.shiftKey);
     if (context.state.overlayState.getSelectionModifierActive() !== nextActive) {
       context.state.overlayState.setSelectionModifierActive(nextActive);
       context.view.refreshSelectionOverlay();

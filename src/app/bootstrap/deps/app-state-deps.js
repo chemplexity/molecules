@@ -45,6 +45,8 @@ export function createAppStateBridgeDeps(ctx) {
       setFlipV: value => {
         ctx.runtimeState.flipV = value;
       },
+      getCx2d: () => ctx.runtimeState.cx2d,
+      getCy2d: () => ctx.runtimeState.cy2d,
       setCx2d: value => {
         ctx.runtimeState.cx2d = value;
       },

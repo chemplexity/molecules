@@ -23,6 +23,7 @@ function makeContext(overrides = {}) {
   let drawBondMode = false;
   let eraseMode = false;
   let paintMode = false;
+  let selectionPivot = overrides.selectionPivot ?? null;
   const calls = [];
   const dragStubs = [];
 
@@ -37,7 +38,12 @@ function makeContext(overrides = {}) {
     state: {
       getDrawBondMode: () => drawBondMode,
       getEraseMode: () => eraseMode,
-      getPaintMode: () => paintMode
+      getPaintMode: () => paintMode,
+      getSelectionPivot: () => selectionPivot,
+      setSelectionPivot: value => {
+        selectionPivot = value;
+        calls.push(['setSelectionPivot', value]);
+      }
     },
     history: {
       captureSnapshot: () => ({ id: 'snapshot-1' }),
@@ -72,6 +78,9 @@ function makeContext(overrides = {}) {
       hideTooltip: () => {
         calls.push(['hideTooltip']);
       },
+      fitTransformedSelectionIfNeeded: atomIds => {
+        calls.push(['fitTransformedSelectionIfNeeded', [...atomIds]]);
+      },
       setElementCursor: (element, value) => {
         calls.push(['setElementCursor', element.id ?? null, value]);
       }
@@ -90,7 +99,8 @@ function makeContext(overrides = {}) {
     },
     setPaintMode: value => {
       paintMode = value;
-    }
+    },
+    getSelectionPivot: () => selectionPivot
   };
 }
 
@@ -136,8 +146,16 @@ describe('createDragGestureActions', () => {
         simCalls.push(['alphaTarget', value]);
         return simulation;
       },
+      alpha(value) {
+        simCalls.push(['alpha', value]);
+        return simulation;
+      },
       restart() {
         simCalls.push(['restart']);
+        return simulation;
+      },
+      stop() {
+        simCalls.push(['stop']);
         return simulation;
       }
     };
@@ -164,11 +182,60 @@ describe('createDragGestureActions', () => {
         ]
       ]
     );
-    assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0]]);
+    assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0], ['alpha', 0], ['stop']]);
     assert.equal(node.anchorX, 9);
     assert.equal(node.anchorY, 16);
     assert.equal(node.fx, null);
     assert.equal(node.fy, null);
+  });
+
+  it('moves the selection pivot with a selected force atom drag', () => {
+    const node = { id: 'a1', x: 4, y: 6 };
+    const simulation = {
+      nodes: () => [node],
+      alphaTarget() {
+        return simulation;
+      },
+      restart() {
+        return simulation;
+      }
+    };
+    const { actions, calls, getSelectionPivot } = makeContext({
+      selectionPivot: { x: 20, y: 25 },
+      selectedDragAtomIds: new Set(['a1'])
+    });
+    const behavior = actions.createForceAtomDrag(simulation);
+
+    behavior.handlers.get('start')({ active: false, x: 10, y: 20 }, node);
+    behavior.handlers.get('drag')({ x: 13, y: 26 }, node);
+    behavior.handlers.get('drag')({ x: 15, y: 30 }, node);
+    behavior.handlers.get('end')({ active: false }, node);
+
+    assert.deepEqual(getSelectionPivot(), { x: 25, y: 35 });
+    assert.ok(calls.some(([name, atomIds]) => name === 'fitTransformedSelectionIfNeeded' && atomIds.includes('a1')));
+  });
+
+  it('does not move the selection pivot with an unselected force atom drag', () => {
+    const node = { id: 'a1', x: 4, y: 6 };
+    const simulation = {
+      nodes: () => [node],
+      alphaTarget() {
+        return simulation;
+      },
+      restart() {
+        return simulation;
+      }
+    };
+    const { actions, getSelectionPivot } = makeContext({
+      selectionPivot: { x: 20, y: 25 },
+      selectedDragAtomIds: null
+    });
+    const behavior = actions.createForceAtomDrag(simulation);
+
+    behavior.handlers.get('start')({ active: false, x: 10, y: 20 }, node);
+    behavior.handlers.get('drag')({ x: 15, y: 30 }, node);
+
+    assert.deepEqual(getSelectionPivot(), { x: 20, y: 25 });
   });
 
   it('uses the selected drag atoms for force-bond drag and resets cursor on end', () => {
@@ -181,8 +248,16 @@ describe('createDragGestureActions', () => {
         simCalls.push(['alphaTarget', value]);
         return simulation;
       },
+      alpha(value) {
+        simCalls.push(['alpha', value]);
+        return simulation;
+      },
       restart() {
         simCalls.push(['restart']);
+        return simulation;
+      },
+      stop() {
+        simCalls.push(['stop']);
         return simulation;
       }
     };
@@ -221,7 +296,7 @@ describe('createDragGestureActions', () => {
       ['setElementCursor', 'bond-hit-1', 'grabbing']
     ]);
     assert.deepEqual(contextCalls.at(-1), ['setElementCursor', 'bond-hit-1', 'grab']);
-    assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0]]);
+    assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0], ['alpha', 0], ['stop']]);
   });
 
   it('drags an unselected force bond by moving its own endpoints', () => {
@@ -347,5 +422,44 @@ describe('createDragGestureActions', () => {
       ]
     );
     assert.deepEqual(calls.at(-1), ['draw']);
+  });
+
+  it('moves the selection pivot with a selected 2D atom drag', () => {
+    const atom = { id: 'a1', x: 0, y: 0 };
+    const molecule = {
+      atoms: new Map([[atom.id, atom]])
+    };
+    let pointer = [10, 20];
+    const { actions, calls, getSelectionPivot } = makeContext({
+      selectionPivot: { x: 40, y: 50 }
+    });
+    const behavior = actions.create2dAtomDrag(molecule, 'a1', {
+      captureDragState: () => ({
+        pX: 10,
+        pY: 20,
+        atomPositions: new Map([['a1', { x: 0, y: 0 }]]),
+        movedAtomIds: new Set(['a1']),
+        movesSelectionPivot: true
+      }),
+      redrawDragTargets() {},
+      pointer: () => pointer,
+      scale: 10,
+      draw() {}
+    });
+
+    const element = {};
+    behavior.handlers.get('start').call(element, {
+      sourceEvent: {
+        stopPropagation() {}
+      }
+    });
+    pointer = [20, 25];
+    behavior.handlers.get('drag').call(element, { sourceEvent: {} });
+    pointer = [30, 40];
+    behavior.handlers.get('drag').call(element, { sourceEvent: {} });
+    behavior.handlers.get('end').call(element, {});
+
+    assert.deepEqual(getSelectionPivot(), { x: 60, y: 70 });
+    assert.ok(calls.some(([name, atomIds]) => name === 'fitTransformedSelectionIfNeeded' && atomIds.includes('a1')));
   });
 });

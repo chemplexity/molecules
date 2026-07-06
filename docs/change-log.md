@@ -1,5 +1,21 @@
 # Change Log
 
+## 2026-07-05
+
+- Defer whole-molecule rotation viewport fitting until rotation release, then refit only when the final rotated molecule falls outside the visible plot.
+- Wire selected-rotation viewport fitting through the final gesture bootstrap and clamp zoomed/clipped selected rotations back inside the visible 2D/force plot without recentering the whole molecule; allow Shift-click to add clicked primitives to the current selection.
+- Treat Shift as a live selection modifier so selection hover and drag previews match Command/Ctrl additive behavior.
+- Stop the force simulation after force-mode atom or bond drags so dropped molecules stay in place.
+- Preserve equivalent pan and zoom framing when switching between 2D and force modes.
+- Match the force fit/Auto Zoom button to the 2D-equivalent force framing.
+- Stabilize the force ring-clean E2E placement so standalone rings are drawn on truly blank canvas space.
+- Speed up held force-mode rotation for reaction and resonance views by syncing existing force-rendered positions instead of rebuilding the scene on every tick.
+
+## 2026-07-04
+
+- Make selection pivot dragging win before underlying atom or selection drags, with a larger gesture hit area, hand cursor feedback, and no-move pivot clicks over atoms/bonds that keep the selection.
+- Snap moved selection pivots onto nearby selected atoms, keep atom-anchored pivots attached through drag/rotate/flip transforms, and fit the viewport when transformed selections leave the view.
+
 ## 2026-07-03
 
 - Fix force-selection overlays during paste previews and restore projected stereo-H positions after 2D/force Clean finishes moving parent atoms.

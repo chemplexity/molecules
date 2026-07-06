@@ -11,16 +11,17 @@ const RING_TEMPLATE_DOUBLE_BOND_OFFSET = 5;
 const RING_TEMPLATE_PREVIEW_CLASS = 'ring-template-preview-layer';
 const RING_TEMPLATE_ROTATION_SNAP = Math.PI / 6;
 const SELECTION_ROTATION_SNAP = Math.PI / 12;
-const SELECTION_PIVOT_HIT_RADIUS = 16;
+const SELECTION_PIVOT_HIT_RADIUS = 24;
+const SELECTION_PIVOT_ATOM_SNAP_RADIUS = 16;
 const TAU = Math.PI * 2;
 
 /**
  * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
  * @param {MouseEvent} event - The mouse event to test.
- * @returns {boolean} True if the Meta or Ctrl key is held.
+ * @returns {boolean} True if the Meta, Ctrl, or Shift key is held.
  */
 export function isAdditiveSelectionEvent(event) {
-  return !!(event.metaKey || event.ctrlKey);
+  return !!(event.metaKey || event.ctrlKey || event.shiftKey);
 }
 
 /**
@@ -49,6 +50,8 @@ export function initGestureInteractions(context) {
   let selectionBaseBondIds = new Set();
   let selectionRotation = null;
   let selectionPivotDrag = null;
+  let selectionPivotCursorActive = false;
+  let suppressSelectionPivotClick = false;
   let suppressForceSelectionClearClick = false;
   let lastEraseHitElement = null;
   let paintPainting = false;
@@ -432,7 +435,7 @@ export function initGestureInteractions(context) {
 
   function selectionPivotPointFromControls(controls) {
     const transform = controls?.querySelector?.('g.selection-pivot-handle')?.getAttribute?.('transform') ?? '';
-    const match = /^translate\(([-\d.]+),([-\d.]+)\)$/.exec(transform.trim());
+    const match = /^translate\(([-\d.]+)(?:,|\s+)([-\d.]+)\)$/.exec(transform.trim());
     if (!match) {
       return null;
     }
@@ -461,6 +464,40 @@ export function initGestureInteractions(context) {
     return null;
   }
 
+  function setSelectionPivotCursor(active, dragging = false) {
+    const cursor = dragging ? 'grabbing' : 'grab';
+    for (const element of [svg?.node?.(), context.dom?.plotEl].filter(Boolean)) {
+      if (!element.style) {
+        continue;
+      }
+      if (active) {
+        element.style.cursor = cursor;
+      } else if (selectionPivotCursorActive && (element.style.cursor === 'grab' || element.style.cursor === 'grabbing')) {
+        element.style.cursor = '';
+      }
+    }
+    selectionPivotCursorActive = active;
+  }
+
+  function updateSelectionPivotCursor(event) {
+    if (selectionPivotDrag) {
+      setSelectionPivotCursor(true, true);
+      return true;
+    }
+    if (selectionRotation || selectionDragging) {
+      setSelectionPivotCursor(false);
+      return false;
+    }
+    const mode = context.state.viewState.getMode();
+    const isSelectableMode = mode === '2d' || mode === 'force';
+    const active =
+      isSelectableMode &&
+      context.state.overlayState.getSelectMode() &&
+      selectionPivotDescriptorFromEvent(event) !== null;
+    setSelectionPivotCursor(active);
+    return active;
+  }
+
   function selectionBoundsCenter(bounds) {
     return bounds
       ? {
@@ -468,6 +505,64 @@ export function initGestureInteractions(context) {
           y: bounds.y + bounds.height / 2
         }
       : null;
+  }
+
+  function selectedAtomRenderedPoints() {
+    const mode = context.state.viewState.getMode();
+    const selectedAtomIds = context.state.overlayState.getSelectedAtomIds?.() ?? new Set();
+    const points = [];
+    if (selectedAtomIds.size === 0) {
+      return points;
+    }
+    if (mode === 'force') {
+      const nodeById = new Map((context.simulation.nodes?.() ?? []).map(node => [node.id, node]));
+      for (const atomId of selectedAtomIds) {
+        const node = nodeById.get(atomId);
+        const x = finiteNumber(node?.x);
+        const y = finiteNumber(node?.y);
+        if (x != null && y != null) {
+          points.push({ atomId, x, y });
+        }
+      }
+      return points;
+    }
+    if (mode === '2d') {
+      const mol = context.state.documentState.getMol2d?.();
+      for (const atomId of selectedAtomIds) {
+        const atom = mol?.atoms?.get?.(atomId);
+        if (!atom) {
+          continue;
+        }
+        const point = toSelectionSVGPt2d(atom);
+        const x = finiteNumber(point?.x);
+        const y = finiteNumber(point?.y);
+        if (x != null && y != null) {
+          points.push({ atomId, x, y });
+        }
+      }
+    }
+    return points;
+  }
+
+  function snapSelectionPivotToNearestSelectedAtom() {
+    const pivot = context.state.overlayState.getSelectionPivot?.() ?? null;
+    const pivotX = finiteNumber(pivot?.x);
+    const pivotY = finiteNumber(pivot?.y);
+    if (pivotX == null || pivotY == null) {
+      return false;
+    }
+    let best = null;
+    for (const point of selectedAtomRenderedPoints()) {
+      const distance = Math.hypot(point.x - pivotX, point.y - pivotY);
+      if (distance <= SELECTION_PIVOT_ATOM_SNAP_RADIUS && (!best || distance < best.distance)) {
+        best = { ...point, distance };
+      }
+    }
+    if (!best) {
+      return false;
+    }
+    context.state.overlayState.setSelectionPivot?.({ x: best.x, y: best.y });
+    return true;
   }
 
   function clampPointToSelectionBounds(point, bounds) {
@@ -635,7 +730,8 @@ export function initGestureInteractions(context) {
     selectionRotation = {
       ...rotation,
       lastAngle: startAngle,
-      totalAngle: 0
+      totalAngle: 0,
+      pivotStart: context.state.overlayState.getSelectionPivot?.() ?? null
     };
     context.state.overlayState.setSelectionRotationActive?.(true);
     setSelectionBoundsControlsHidden(true);
@@ -647,6 +743,9 @@ export function initGestureInteractions(context) {
   }
 
   function startSelectionPivotDrag(event) {
+    if (selectionPivotDrag) {
+      return true;
+    }
     if (event.button !== 0) {
       return false;
     }
@@ -665,6 +764,7 @@ export function initGestureInteractions(context) {
     const [pointerX, pointerY] = context.pointer(event, g.node());
     const pivot = clampPointToSelectionBounds({ x: pointerX, y: pointerY }, bounds);
     selectionPivotDrag = { bounds };
+    setSelectionPivotCursor(true, true);
     context.state.overlayState.setSelectionPivot?.(pivot);
     context.renderers.applySelectionOverlay?.();
     event.preventDefault?.();
@@ -690,6 +790,12 @@ export function initGestureInteractions(context) {
     }
     updateSelectionPivotDrag(event);
     selectionPivotDrag = null;
+    snapSelectionPivotToNearestSelectedAtom();
+    setSelectionPivotCursor(false);
+    suppressSelectionPivotClick = true;
+    if (context.state.viewState.getMode() === 'force') {
+      suppressForceSelectionClearClick = true;
+    }
     return true;
   }
 
@@ -702,6 +808,11 @@ export function initGestureInteractions(context) {
     selectionRotation.totalAngle += shortestAngleDelta(selectionRotation.lastAngle, angle);
     selectionRotation.lastAngle = angle;
     const activeAngle = activeSelectionRotationAngle(event);
+    const pivotStartX = finiteNumber(selectionRotation.pivotStart?.x);
+    const pivotStartY = finiteNumber(selectionRotation.pivotStart?.y);
+    if (pivotStartX != null && pivotStartY != null) {
+      context.state.overlayState.setSelectionPivot?.(rotatedPoint({ x: pivotStartX, y: pivotStartY }, selectionRotation.center, activeAngle));
+    }
 
     if (selectionRotation.mode === '2d') {
       for (const [atomId, position] of selectionRotation.positions) {
@@ -754,6 +865,7 @@ export function initGestureInteractions(context) {
         }
       }
     }
+    context.view.fitTransformedSelectionIfNeeded?.(selectionRotation.atomIds);
     selectionRotation = null;
     context.state.overlayState.setSelectionRotationActive?.(false);
     context.renderers.applySelectionOverlay?.();
@@ -2006,12 +2118,29 @@ export function initGestureInteractions(context) {
   doc.addEventListener(
     'mousedown',
     event => {
+      if (startSelectionPivotDrag(event)) {
+        return;
+      }
       if (placePasteFromPointer(event)) {
         return;
       }
       if (context.clipboard?.hasPastePreview?.() && event.button === 0 && isPasteCancelControl(event.target)) {
         context.clipboard.cancelPastePreview?.();
       }
+    },
+    true
+  );
+
+  doc.addEventListener(
+    'click',
+    event => {
+      if (!suppressSelectionPivotClick) {
+        return;
+      }
+      suppressSelectionPivotClick = false;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      event.stopImmediatePropagation?.();
     },
     true
   );
@@ -2228,6 +2357,7 @@ export function initGestureInteractions(context) {
       applySelectionRotation(event);
       return;
     }
+    updateSelectionPivotCursor(event);
     if (context.clipboard?.hasPastePreview?.()) {
       context.clipboard.updatePastePreview(event);
       return;

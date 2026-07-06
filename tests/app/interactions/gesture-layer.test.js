@@ -1320,6 +1320,328 @@ describe('initGestureInteractions', () => {
     assert.ok(calls.some(([name]) => name === 'applySelectionOverlay'));
   });
 
+  it('snaps the moved selection pivot onto a nearby selected atom', () => {
+    const atom = { id: 'a1', x: 0, y: 0, visible: true };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      bonds: new Map()
+    };
+    const rect = {
+      getAttribute(name) {
+        return {
+          x: '0',
+          y: '0',
+          width: '100',
+          height: '100'
+        }[name] ?? null;
+      }
+    };
+    const controls = {
+      querySelector(selector) {
+        return selector === 'rect.selection-bounds-rect' ? rect : null;
+      }
+    };
+    const handle = {
+      closest(selector) {
+        if (selector === '[data-selection-pivot-handle]') {
+          return handle;
+        }
+        if (selector === '.selection-bounds-controls') {
+          return controls;
+        }
+        return null;
+      }
+    };
+    const { context, svg, listeners, selectedAtomIds, state } = makeBaseContext({
+      pointer: event => [event.gX, event.gY],
+      helpers: {
+        toSVGPt2d: () => ({ x: 50, y: 50 }),
+        toSelectionSVGPt2d: () => ({ x: 50, y: 50 }),
+        getDatum: element => element.__datum ?? null
+      }
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setSelectMode(true);
+    selectedAtomIds.add('a1');
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.selection')({
+      button: 0,
+      target: handle,
+      gX: 60,
+      gY: 50,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: handle,
+      gX: 60,
+      gY: 50,
+      preventDefault() {}
+    });
+
+    assert.deepEqual(state.getSelectionPivot(), { x: 50, y: 50 });
+  });
+
+  it('starts pivot dragging before an underlying atom drag can steal the mousedown', () => {
+    const calls = [];
+    const rect = {
+      getAttribute(name) {
+        return {
+          x: '0',
+          y: '0',
+          width: '100',
+          height: '100'
+        }[name] ?? null;
+      }
+    };
+    const pivotHandle = {
+      getAttribute(name) {
+        return name === 'transform' ? 'translate(50 50)' : null;
+      }
+    };
+    const controls = {
+      style: { display: '' },
+      querySelector(selector) {
+        if (selector === 'rect.selection-bounds-rect') {
+          return rect;
+        }
+        if (selector === 'g.selection-pivot-handle') {
+          return pivotHandle;
+        }
+        return null;
+      }
+    };
+    const { context, svg, listeners, state } = makeBaseContext({
+      pointer: event => [event.gX, event.gY],
+      renderers: {
+        applySelectionOverlay: () => calls.push(['applySelectionOverlay'])
+      }
+    });
+    svg.node().querySelectorAll = selector => (selector === '.selection-bounds-controls' ? [controls] : []);
+    state.setSelectMode(true);
+
+    initGestureInteractions(context);
+
+    listeners.get('mousedown')({
+      button: 0,
+      target: makeHitElement('atom', 'a1'),
+      gX: 66,
+      gY: 50,
+      preventDefault() {
+        calls.push(['preventDefault']);
+      },
+      stopPropagation() {
+        calls.push(['stopPropagation']);
+      },
+      stopImmediatePropagation() {
+        calls.push(['stopImmediatePropagation']);
+      }
+    });
+
+    assert.deepEqual(state.getSelectionPivot(), { x: 66, y: 50 });
+    assert.ok(calls.some(([name]) => name === 'stopImmediatePropagation'));
+
+    listeners.get('mousemove')({
+      button: 0,
+      target: makeHitElement('atom', 'a1'),
+      gX: 72,
+      gY: 54,
+      preventDefault() {}
+    });
+    assert.deepEqual(state.getSelectionPivot(), { x: 72, y: 54 });
+  });
+
+  it('does not clear force selection after clicking the pivot without moving it', () => {
+    const rect = {
+      getAttribute(name) {
+        return {
+          x: '0',
+          y: '0',
+          width: '100',
+          height: '100'
+        }[name] ?? null;
+      }
+    };
+    const pivotHandle = {
+      getAttribute(name) {
+        return name === 'transform' ? 'translate(50,50)' : null;
+      }
+    };
+    const controls = {
+      style: { display: '' },
+      querySelector(selector) {
+        if (selector === 'rect.selection-bounds-rect') {
+          return rect;
+        }
+        if (selector === 'g.selection-pivot-handle') {
+          return pivotHandle;
+        }
+        return null;
+      }
+    };
+    const { context, svg, listeners, selectedAtomIds, selectedBondIds, state } = makeBaseContext({
+      pointer: event => [event.gX, event.gY]
+    });
+    svg.node().querySelectorAll = selector => (selector === '.selection-bounds-controls' ? [controls] : []);
+    state.setMode('force');
+    state.setSelectMode(true);
+    selectedAtomIds.add('a1');
+    selectedBondIds.add('b1');
+
+    initGestureInteractions(context);
+
+    listeners.get('mousedown')({
+      button: 0,
+      target: { closest: () => null },
+      gX: 50,
+      gY: 50,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: { closest: () => null },
+      gX: 50,
+      gY: 50,
+      preventDefault() {}
+    });
+    svg.handlers.get('click.force-selection-clear')({
+      target: { closest: () => null }
+    });
+
+    assert.deepEqual([...selectedAtomIds], ['a1']);
+    assert.deepEqual([...selectedBondIds], ['b1']);
+    assert.deepEqual(state.getSelectionPivot(), { x: 50, y: 50 });
+  });
+
+  it('suppresses the trailing click after a no-move pivot click over an underlying target', () => {
+    const rect = {
+      getAttribute(name) {
+        return {
+          x: '0',
+          y: '0',
+          width: '100',
+          height: '100'
+        }[name] ?? null;
+      }
+    };
+    const pivotHandle = {
+      getAttribute(name) {
+        return name === 'transform' ? 'translate(50,50)' : null;
+      }
+    };
+    const controls = {
+      style: { display: '' },
+      querySelector(selector) {
+        if (selector === 'rect.selection-bounds-rect') {
+          return rect;
+        }
+        if (selector === 'g.selection-pivot-handle') {
+          return pivotHandle;
+        }
+        return null;
+      }
+    };
+    const calls = [];
+    const { context, svg, listeners, selectedAtomIds, state } = makeBaseContext({
+      pointer: event => [event.gX, event.gY]
+    });
+    svg.node().querySelectorAll = selector => (selector === '.selection-bounds-controls' ? [controls] : []);
+    state.setSelectMode(true);
+    selectedAtomIds.add('a1');
+
+    initGestureInteractions(context);
+
+    listeners.get('mousedown')({
+      button: 0,
+      target: makeHitElement('atom', 'a2'),
+      gX: 50,
+      gY: 50,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: makeHitElement('atom', 'a2'),
+      gX: 50,
+      gY: 50,
+      preventDefault() {}
+    });
+    listeners.get('click')({
+      target: makeHitElement('atom', 'a2'),
+      preventDefault() {
+        calls.push('preventDefault');
+      },
+      stopPropagation() {
+        calls.push('stopPropagation');
+      },
+      stopImmediatePropagation() {
+        calls.push('stopImmediatePropagation');
+      }
+    });
+
+    assert.deepEqual([...selectedAtomIds], ['a1']);
+    assert.deepEqual(state.getSelectionPivot(), { x: 50, y: 50 });
+    assert.deepEqual(calls, ['preventDefault', 'stopPropagation', 'stopImmediatePropagation']);
+  });
+
+  it('shows a hand cursor while hovering the selection pivot hit area', () => {
+    const rect = {
+      getAttribute(name) {
+        return {
+          x: '0',
+          y: '0',
+          width: '100',
+          height: '100'
+        }[name] ?? null;
+      }
+    };
+    const pivotHandle = {
+      getAttribute(name) {
+        return name === 'transform' ? 'translate(50,50)' : null;
+      }
+    };
+    const controls = {
+      style: { display: '' },
+      querySelector(selector) {
+        if (selector === 'rect.selection-bounds-rect') {
+          return rect;
+        }
+        if (selector === 'g.selection-pivot-handle') {
+          return pivotHandle;
+        }
+        return null;
+      }
+    };
+    const { context, svg, listeners, state } = makeBaseContext({
+      pointer: event => [event.gX, event.gY]
+    });
+    svg.node().querySelectorAll = selector => (selector === '.selection-bounds-controls' ? [controls] : []);
+    state.setSelectMode(true);
+
+    initGestureInteractions(context);
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      gX: 50,
+      gY: 50
+    });
+    assert.equal(svg.node().style.cursor, 'grab');
+
+    listeners.get('mousemove')({
+      target: { closest: () => null },
+      gX: 10,
+      gY: 10
+    });
+    assert.equal(svg.node().style.cursor, '');
+  });
+
   it('rotates selected 2D atoms around a moved pivot point', () => {
     const atom = { id: 'a1', x: 1.25, y: 0, visible: true };
     const mol = {
@@ -1732,6 +2054,95 @@ describe('initGestureInteractions', () => {
     assert.ok(calls.some(([name]) => name === 'syncPositions'));
     assert.equal(node.fx, null);
     assert.equal(node.fy, null);
+  });
+
+  it('fits the viewport after a selection rotation commit when the transformed selection is clipped', () => {
+    const calls = [];
+    const atom = { id: 'a1', x: 1.25, y: 0, visible: true };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      bonds: new Map()
+    };
+    const rect = {
+      getAttribute(name) {
+        return {
+          x: '0',
+          y: '0',
+          width: '100',
+          height: '100'
+        }[name] ?? null;
+      }
+    };
+    const controls = {
+      querySelector(selector) {
+        return selector === 'rect.selection-bounds-rect' ? rect : null;
+      }
+    };
+    const handle = {
+      closest(selector) {
+        if (selector === '[data-selection-rotate-handle]') {
+          return handle;
+        }
+        if (selector === '.selection-bounds-controls') {
+          return controls;
+        }
+        return null;
+      }
+    };
+    const { context, svg, listeners, selectedAtomIds } = makeBaseContext({
+      pointer: event => [event.gX, event.gY],
+      helpers: {
+        toSVGPt2d: movedAtom => ({ x: 50 + movedAtom.x * 40, y: 50 - movedAtom.y * 40 }),
+        toSelectionSVGPt2d: movedAtom => ({ x: 50 + movedAtom.x * 40, y: 50 - movedAtom.y * 40 }),
+        getDatum: element => element.__datum ?? null
+      },
+      constants: {
+        scale: 40
+      },
+      history: {
+        takeSnapshot() {}
+      },
+      view: {
+        getZoomTransform: () => ({
+          applyX: value => value,
+          applyY: value => value
+        }),
+        fitTransformedSelectionIfNeeded: atomIds => calls.push(['fitTransformedSelectionIfNeeded', [...atomIds]]),
+        clearPrimitiveHover() {},
+        showPrimitiveHover() {},
+        setDrawBondHoverSuppressed() {}
+      },
+      view2D: {
+        syncDerivedState() {}
+      },
+      renderers: {
+        draw2d() {},
+        applySelectionOverlay() {}
+      }
+    });
+    context.state.documentState.getMol2d = () => mol;
+    selectedAtomIds.add('a1');
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.selection')({
+      button: 0,
+      target: handle,
+      gX: 100,
+      gY: 50,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      target: handle,
+      gX: 50,
+      gY: 0,
+      preventDefault() {}
+    });
+
+    assert.deepEqual(calls, [['fitTransformedSelectionIfNeeded', ['a1']]]);
   });
 
   it('paints atom and bond hits while dragging in brush paint mode', () => {
@@ -2915,7 +3326,7 @@ describe('initGestureInteractions', () => {
     assert.equal(overlayCalls.length, 2);
   });
 
-  it('previews additive drag-box selection from the pre-drag baseline', () => {
+  it('previews additive drag-box selection from the pre-drag baseline with modifier keys', () => {
     const a1 = { id: 'a1', x: 50, y: 50, visible: true, name: 'C' };
     const a2 = { id: 'a2', x: 90, y: 90, visible: true, name: 'C' };
     const b1 = { id: 'b1', atoms: ['a1', 'a2'], getAtomObjects: () => [a1, a2] };
@@ -2926,28 +3337,30 @@ describe('initGestureInteractions', () => {
       ]),
       bonds: new Map([['b1', b1]])
     };
-    const { context, svg, selectedAtomIds, selectedBondIds, state } = makeBaseContext();
-    context.state.documentState.getMol2d = () => mol;
-    selectedAtomIds.add('a1');
-    selectedBondIds.add('b1');
-    state.setSelectMode(true);
+    for (const modifier of [{ metaKey: true }, { shiftKey: true }]) {
+      const { context, svg, selectedAtomIds, selectedBondIds, state } = makeBaseContext();
+      context.state.documentState.getMol2d = () => mol;
+      selectedAtomIds.add('a1');
+      selectedBondIds.add('b1');
+      state.setSelectMode(true);
 
-    initGestureInteractions(context);
+      initGestureInteractions(context);
 
-    svg.handlers.get('mousedown.selection')({
-      button: 0,
-      clientX: 40,
-      clientY: 40,
-      metaKey: true,
-      target: { closest: () => null },
-      preventDefault() {}
-    });
-    svg.handlers.get('mousemove.selection')({
-      clientX: 110,
-      clientY: 110
-    });
+      svg.handlers.get('mousedown.selection')({
+        button: 0,
+        clientX: 40,
+        clientY: 40,
+        ...modifier,
+        target: { closest: () => null },
+        preventDefault() {}
+      });
+      svg.handlers.get('mousemove.selection')({
+        clientX: 110,
+        clientY: 110
+      });
 
-    assert.deepEqual([...selectedAtomIds], ['a2']);
-    assert.deepEqual([...selectedBondIds], []);
+      assert.deepEqual([...selectedAtomIds], ['a2']);
+      assert.deepEqual([...selectedBondIds], []);
+    }
   });
 });

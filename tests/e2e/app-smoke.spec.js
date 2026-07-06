@@ -366,8 +366,8 @@ test('repeated force clean keeps standalone six-member rings regular after clear
 
   await page.locator('#ring-template-btn').click();
   for (const fraction of [
-    { x: 0.42, y: 0.5 },
-    { x: 0.58, y: 0.5 }
+    { x: 0.3, y: 0.5 },
+    { x: 0.7, y: 0.5 }
   ]) {
     const point = await svgFractionPoint(page, fraction.x, fraction.y);
     await page.mouse.move(point.x, point.y);
@@ -667,6 +667,7 @@ test('dragging a blank-space ring preview over an atom keeps the original free p
 
 test('switching from 2d to force honors the active Global Bond Length option', async ({ page }) => {
   await page.goto('/index.html');
+  await waitForAppReady(page);
   await loadSmiles(page, 'C1CCCCC1');
   await ensure2dMode(page);
 
@@ -678,6 +679,57 @@ test('switching from 2d to force honors the active Global Bond Length option', a
   await page.locator('#toggle-btn').click();
 
   await expect.poll(async () => await averageForceHeavyBondDistance(page)).toBeLessThan(25);
+});
+
+test('first 2d to force switch preserves the visible molecule center after settling', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+
+  const center2d = await page.evaluate(() => {
+    const hits = [...document.querySelectorAll('g[data-atom-id] .atom-hit')];
+    const rects = hits.map(hit => hit.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
+    return {
+      x: rects.reduce((sum, rect) => sum + rect.left + rect.width / 2, 0) / rects.length,
+      y: rects.reduce((sum, rect) => sum + rect.top + rect.height / 2, 0) / rects.length
+    };
+  });
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.waitForTimeout(600);
+
+  const centerForce = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('circle.node')]
+      .filter(node => Number(node.getAttribute('r')) >= 7);
+    const rects = nodes.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
+    return {
+      x: rects.reduce((sum, rect) => sum + rect.left + rect.width / 2, 0) / rects.length,
+      y: rects.reduce((sum, rect) => sum + rect.top + rect.height / 2, 0) / rects.length
+    };
+  });
+
+  expect(centerForce.x).toBeCloseTo(center2d.x, 0);
+  expect(centerForce.y).toBeCloseTo(center2d.y, 0);
+});
+
+test('force fit button keeps the 2d-equivalent zoom after fitting then switching modes', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C1CCCCC1');
+  await ensure2dMode(page);
+
+  await page.locator('#auto-zoom-btn').click();
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.waitForTimeout(600);
+
+  const beforeFitScale = await rootScale(page);
+  await page.locator('#force-auto-zoom-btn').click();
+  const afterFitScale = await rootScale(page);
+
+  expect(afterFitScale).toBeCloseTo(beforeFitScale, 2);
 });
 
 test('force flip keeps compact Global Bond Length layouts from restarting and spreading', async ({ page }) => {
@@ -1816,6 +1868,13 @@ async function rootTransform(page) {
   return await page.evaluate(() => document.querySelector('.svg-plot > g')?.getAttribute('transform') ?? null);
 }
 
+async function rootScale(page) {
+  return await page.evaluate(() => {
+    const transform = document.querySelector('.svg-plot > g')?.transform?.baseVal?.consolidate?.()?.matrix;
+    return transform ? Math.hypot(transform.a, transform.b) : null;
+  });
+}
+
 async function all2dAtomsWithinPlot(page, padding = 0) {
   return await page.evaluate(pad => {
     const plot = document.querySelector('.svg-plot');
@@ -1868,6 +1927,85 @@ async function plotGeometryWithinPlot(page, padding = 4) {
       return rect.left >= plotRect.left + pad && rect.top >= plotRect.top + pad && rect.right <= plotRect.right - pad && rect.bottom <= plotRect.bottom - pad;
     });
   }, padding);
+}
+
+async function forceSceneGeometryWithinPlot(page, padding = 4) {
+  const report = await forceSceneGeometryReport(page, padding);
+  return report.inside;
+}
+
+async function forceSceneGeometryReport(page, padding = 4) {
+  return await page.evaluate(pad => {
+    const plot = document.querySelector('.svg-plot');
+    if (!plot) {
+      return { inside: false, outside: [], outsideCount: 0, transform: null, plot: null };
+    }
+    const plotRect = plot.getBoundingClientRect();
+    const geometry = Array.from(plot.querySelectorAll('circle.node, line.link, text')).filter(node => {
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 || rect.height > 0;
+    });
+    if (geometry.length === 0) {
+      return {
+        inside: false,
+        outside: [],
+        outsideCount: 0,
+        transform: plot.querySelector('g')?.getAttribute('transform') ?? null,
+        plot: {
+          left: plotRect.left,
+          top: plotRect.top,
+          right: plotRect.right,
+          bottom: plotRect.bottom
+        }
+      };
+    }
+    const outside = geometry
+      .map(node => {
+        const rect = node.getBoundingClientRect();
+        const isInside = rect.left >= plotRect.left + pad && rect.top >= plotRect.top + pad && rect.right <= plotRect.right - pad && rect.bottom <= plotRect.bottom - pad;
+        return {
+          tag: node.tagName.toLowerCase(),
+          className: node.getAttribute('class') ?? '',
+          text: node.textContent?.trim?.() ?? '',
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          isInside
+        };
+      })
+      .filter(item => !item.isInside);
+    return {
+      inside: outside.length === 0,
+      outside: outside.slice(0, 8),
+      outsideCount: outside.length,
+      transform: plot.querySelector('g')?.getAttribute('transform') ?? null,
+      plot: {
+        left: plotRect.left,
+        top: plotRect.top,
+        right: plotRect.right,
+        bottom: plotRect.bottom
+      }
+    };
+  }, padding);
+}
+
+async function selectionRotateHandlePoints(page) {
+  return await page.evaluate(() => {
+    const bounds = document.querySelector('rect.selection-bounds-rect')?.getBoundingClientRect();
+    const handle = document.querySelector('.selection-rotate-handle-hit')?.getBoundingClientRect();
+    if (!bounds || !handle) {
+      return null;
+    }
+    const cx = bounds.left + bounds.width / 2;
+    const cy = bounds.top + bounds.height / 2;
+    const radius = Math.max(80, Math.hypot(handle.left + handle.width / 2 - cx, handle.top + handle.height / 2 - cy));
+    return {
+      center: { x: cx, y: cy },
+      handle: { x: handle.left + handle.width / 2, y: handle.top + handle.height / 2 },
+      quarterTurnTarget: { x: cx + radius, y: cy }
+    };
+  });
 }
 
 /**
@@ -2395,6 +2533,113 @@ test('undo preserves localized aromatic rendering for 2d-rotated aza-aromatic ri
       }))
     )
     .toEqual({ dashed: 0 });
+});
+
+test('held 2D rotation refits the viewport after release when the final pose is clipped', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC');
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.move(plotBox.x + plotBox.width / 2, plotBox.y + plotBox.height / 2);
+  for (let index = 0; index < 4; index++) {
+    await page.mouse.wheel(0, -250);
+  }
+
+  const rotateButtonBox = await page.locator('#rotate-cw').boundingBox();
+  expect(rotateButtonBox).toBeTruthy();
+  await page.mouse.move(rotateButtonBox.x + rotateButtonBox.width / 2, rotateButtonBox.y + rotateButtonBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(1000);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(false);
+  await page.mouse.up();
+
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+});
+
+test('held force rotation refits the viewport after release when the final pose is clipped', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.waitForTimeout(600);
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.move(plotBox.x + plotBox.width / 2, plotBox.y + plotBox.height / 2);
+  for (let index = 0; index < 5; index++) {
+    await page.mouse.wheel(0, -250);
+  }
+
+  const rotateButtonBox = await page.locator('#force-rotate-cw').boundingBox();
+  expect(rotateButtonBox).toBeTruthy();
+  await page.mouse.move(rotateButtonBox.x + rotateButtonBox.width / 2, rotateButtonBox.y + rotateButtonBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(1000);
+  await expect.poll(async () => await forceSceneGeometryWithinPlot(page, 2)).toBe(false);
+  await page.mouse.up();
+
+  await expect.poll(async () => await forceSceneGeometryWithinPlot(page, 2)).toBe(true);
+});
+
+test('2D selection rotation refits the viewport after release when the final pose is clipped', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC');
+  await ensure2dMode(page);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.move(plotBox.x + plotBox.width / 2, plotBox.y + plotBox.height / 2);
+  for (let index = 0; index < 3; index++) {
+    await page.mouse.wheel(0, -250);
+  }
+
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const points = await selectionRotateHandlePoints(page);
+  expect(points).toBeTruthy();
+  await page.mouse.move(points.handle.x, points.handle.y);
+  await page.mouse.down();
+  await page.mouse.move(points.quarterTurnTarget.x, points.quarterTurnTarget.y, { steps: 20 });
+  await page.mouse.up();
+
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+});
+
+test('force selection rotation refits the viewport after release when the final pose is clipped', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.waitForTimeout(600);
+  await expect.poll(async () => await forceSceneGeometryWithinPlot(page, 2)).toBe(true);
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.move(plotBox.x + plotBox.width / 2, plotBox.y + plotBox.height / 2);
+  for (let index = 0; index < 3; index++) {
+    await page.mouse.wheel(0, -250);
+  }
+
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const points = await selectionRotateHandlePoints(page);
+  expect(points).toBeTruthy();
+  await page.mouse.move(points.handle.x, points.handle.y);
+  await page.mouse.down();
+  await page.mouse.move(points.quarterTurnTarget.x, points.quarterTurnTarget.y, { steps: 20 });
+  await page.mouse.up();
+
+  await expect.poll(async () => await forceSceneGeometryWithinPlot(page, 2)).toBe(true);
 });
 
 test('undo preserves hidden stereo hydrogen rendering after loading a random molecule', async ({ page }) => {
@@ -4850,7 +5095,6 @@ test('reaction preview redo restores the rotated preview geometry', async ({ pag
   const afterRotate = await bondSignature(page);
   const afterRotateTransform = await rootTransform(page);
   await expect(afterRotate).not.toEqual(beforeRotate);
-  await expect(afterRotateTransform).not.toBe(beforeRotateTransform);
 
   await page.locator('#undo-btn').click();
   const afterUndo = await bondSignature(page);
@@ -4887,7 +5131,6 @@ test('force reaction preview redo restores the rotated preview layout', async ({
   const afterRotateTransform = await rootTransform(page);
   expect(forceNodeLayoutsClose(afterRotate, beforeRotate)).toBe(false);
   expect(forceNodeLayoutsClose(afterRotateRendered, beforeRotateRendered, 1)).toBe(false);
-  await expect(afterRotateTransform).not.toBe(beforeRotateTransform);
 
   await page.locator('#undo-btn').click();
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
@@ -4925,7 +5168,6 @@ test('force resonance redo restores the rotated pair layout', async ({ page }) =
   const afterRotateTransform = await rootTransform(page);
   expect(forceNodeLayoutsClose(afterRotate, beforeRotate)).toBe(false);
   expect(forceNodeLayoutsClose(afterRotateRendered, beforeRotateRendered, 1)).toBe(false);
-  await expect(afterRotateTransform).not.toBe(beforeRotateTransform);
 
   await page.locator('#undo-btn').click();
   await expect(resonanceRow).toHaveClass(/resonance-active/);
@@ -5893,6 +6135,7 @@ test('redo after editing from a locked resonance view returns to the edited unlo
 
 test('bond drawer selection updates the active option, main tool icon, and collapses the drawer', async ({ page }) => {
   await page.goto('/index.html');
+  await waitForAppReady(page);
 
   const drawButton = page.locator('#draw-bond-btn');
   const doubleButton = page.locator('#draw-bond-type-double');
