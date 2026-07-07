@@ -119,7 +119,8 @@ function createClipboardHarness({
   textValues = [],
   elements = [],
   previewRect = null,
-  plotRect = null
+  plotRect = null,
+  onSyncDerivedState = null
 }) {
   const records = [];
   let currentMode = mode;
@@ -183,7 +184,10 @@ function createClipboardHarness({
       getSize: () => ({ width: 200, height: 120 })
     },
     view2D: {
-      syncDerivedState: syncedMol => records.push(['syncDerived2d', syncedMol])
+      syncDerivedState: (syncedMol, options = {}) => {
+        onSyncDerivedState?.(syncedMol, options);
+        records.push(['syncDerived2d', syncedMol, options]);
+      }
     },
     dom: {
       g: createSelectionStub(textValues, elements, { previewRect }),
@@ -276,6 +280,67 @@ describe('app/interactions/clipboard', () => {
     assert.equal(renderOptions.preserveView, true);
     assert.equal(renderOptions.forcePreservePositions, true);
     assert.ok(renderOptions.forceInitialPatchPos instanceof Map);
+  });
+
+  it('does not invent new wedge or dash bonds when pasting a copied stereochemical fragment in 2D', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    mol.atoms.get('C1').x = -1.5;
+    mol.atoms.get('C1').y = 0;
+    mol.atoms.get('C2').x = 0;
+    mol.atoms.get('C2').y = 0;
+    mol.atoms.get('H3').x = 0;
+    mol.atoms.get('H3').y = 0;
+    mol.atoms.get('F4').x = 0.75;
+    mol.atoms.get('F4').y = 1.3;
+    mol.atoms.get('Cl5').x = 0.75;
+    mol.atoms.get('Cl5').y = -1.3;
+    const copiedStereoBond = mol.getBond('C2', 'F4');
+    copiedStereoBond.properties.display = { as: 'wedge', centerId: 'C2' };
+    const selectedAtomIds = new Set(['C2', 'H3', 'F4', 'Cl5']);
+    const selectedBondIds = new Set([...mol.bonds.values()].filter(bond => bond.atoms.every(atomId => selectedAtomIds.has(atomId))).map(bond => bond.id));
+    const originalBondIds = new Set(mol.bonds.keys());
+    let adjustedStereoMap = null;
+
+    const { clipboard } = createClipboardHarness({
+      mol,
+      selectedAtomIds,
+      selectedBondIds,
+      onSyncDerivedState: (syncedMol, options = {}) => {
+        const pastedBondIds = [...syncedMol.bonds.keys()].filter(id => !originalBondIds.has(id));
+        const autoStereoMap = new Map(pastedBondIds.map(id => [id, 'dash']));
+        for (const id of pastedBondIds) {
+          syncedMol.bonds.get(id).properties.display = { as: 'dash', centerId: syncedMol.bonds.get(id).atoms[0] };
+        }
+        adjustedStereoMap = options.adjustStereoMap?.(syncedMol, autoStereoMap) ?? autoStereoMap;
+      }
+    });
+
+    assert.equal(clipboard.copySelection(), true);
+    assert.equal(clipboard.beginPastePreview(), true);
+    assert.equal(clipboard.placePastePreview(), true);
+
+    const pastedDisplayBonds = [...mol.bonds.values()].filter(bond => !originalBondIds.has(bond.id) && (bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash'));
+    assert.equal(pastedDisplayBonds.length, 1);
+    assert.equal(pastedDisplayBonds[0].properties.display.as, 'wedge');
+    assert.equal(adjustedStereoMap.size, 1);
+    assert.equal(adjustedStereoMap.get(pastedDisplayBonds[0].id), 'wedge');
+  });
+
+  it('suppresses force auto-stereo seeding when pasting a copied fragment', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    const selectedAtomIds = new Set(['C2', 'F4', 'Cl5']);
+    const { clipboard, records } = createClipboardHarness({
+      mol,
+      selectedAtomIds,
+      mode: 'force'
+    });
+
+    assert.equal(clipboard.copySelection(), true);
+    assert.equal(clipboard.beginPastePreview(), true);
+    assert.equal(clipboard.placePastePreview(), true);
+
+    const renderOptions = records.find(record => record[0] === 'render')?.[2];
+    assert.equal(renderOptions.suppressForceStereoSeed, true);
   });
 
   it('shows copied indole NH and single hydrogens in force paste previews while hiding normal 2D hydrogen atoms', () => {

@@ -295,7 +295,7 @@ export function finalizeAppBootstrap(ctx) {
       setDrawBondHoverSuppressed: value => ctx.state.setDrawBondHoverSuppressed(value)
     },
     view2D: {
-      syncDerivedState: mol => ctx.render.render2DHelpers.sync2dDerivedState(mol),
+      syncDerivedState: (mol, options = {}) => ctx.render.render2DHelpers.sync2dDerivedState(mol, options),
       materializeProjectedVisibleStereoHydrogens: mol => ctx.render.scene2DRenderer.materializeProjectedVisibleStereoHydrogens?.(mol)
     },
     force: {

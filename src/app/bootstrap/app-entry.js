@@ -1014,7 +1014,7 @@ const { navigationActions, selectionActions, clipboardActions, editingActions, d
       clearSelection: () => runtimeState.clearSelection(),
       ensureActiveMolecule: () => _ensureMol(),
       enableKeepInView: () => forceViewportStateHelpers.enableKeepInView(),
-      sync2DDerivedState: mol => render2DHelpers.sync2dDerivedState(mol),
+      sync2DDerivedState: (mol, options = {}) => render2DHelpers.sync2dDerivedState(mol, options),
       syncInputField: mol => _syncInputField(mol),
       updateFormula: mol => updateFormula(mol),
       updateDescriptors: mol => updateDescriptors(mol),

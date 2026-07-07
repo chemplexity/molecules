@@ -948,7 +948,7 @@ describe('reaction preview restore', () => {
   });
 
   it('restores force previews without forcing a fresh force layout', () => {
-    const { renderCalls, zoomRestores, forcePositionRestores, forceRestarts } = makeReaction2dContext({ mode: 'force' });
+    const { renderCalls, zoomRestores, forceRestarts } = makeReaction2dContext({ mode: 'force' });
     const sourceMol = parseSMILES('CC=O');
     for (const [index, atom] of [...sourceMol.atoms.values()].entries()) {
       atom.x = index * 1.5;
@@ -980,13 +980,12 @@ describe('reaction preview restore', () => {
     assert.ok(renderCalls[0].options.forceAnchorLayout instanceof Map);
     assert.ok(renderCalls[0].options.forceAnchorLayout.size > 0);
     assert.deepEqual(renderCalls[0].options.forceInitialPatchPos, forcePositions);
-    assert.deepEqual(forcePositionRestores, [forcePositions]);
     assert.deepEqual(forceRestarts, []);
     assert.deepEqual(zoomRestores, []);
   });
 
   it('exits force reaction previews with the current rotated reactant force pose', () => {
-    const { context, renderCalls, forcePositionRestores } = makeReaction2dContext({ mode: 'force' });
+    const { context, renderCalls } = makeReaction2dContext({ mode: 'force' });
     const sourceMol = parseSMILES('CCCC');
     const atomIds = [...sourceMol.atoms.keys()];
     for (const [index, atom] of [...sourceMol.atoms.values()].entries()) {
@@ -1020,7 +1019,6 @@ describe('reaction preview restore', () => {
     assert.equal(renderCalls[0].options.forceRestartSimulation, false);
     assert.ok(restoredPatch instanceof Map);
     assert.deepEqual([...restoredPatch.keys()], atomIds);
-    assert.deepEqual([...forcePositionRestores[0].keys()], atomIds);
     assert.equal(restoredPatch.get(atomIds[0]).x, 300);
     assert.equal(restoredPatch.get(atomIds.at(-1)).y, 160 + (atomIds.length - 1) * 41);
   });

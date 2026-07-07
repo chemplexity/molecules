@@ -116,6 +116,75 @@ function fragmentModel(fragment) {
   return { atomById, bonds, bondsByAtomId };
 }
 
+function clonePlain(value) {
+  if (value == null || typeof value !== 'object') {
+    return value;
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function copiedStereoDisplay(display, atomIdMap) {
+  const displayAs = display?.as ?? null;
+  if (displayAs !== 'wedge' && displayAs !== 'dash') {
+    return null;
+  }
+  const copy = clonePlain(display) ?? {};
+  if (copy.centerId != null && atomIdMap.has(copy.centerId)) {
+    copy.centerId = atomIdMap.get(copy.centerId);
+  }
+  return copy;
+}
+
+function clearDisplayStereo(bond) {
+  if (!bond?.properties?.display) {
+    return;
+  }
+  delete bond.properties.display.as;
+  delete bond.properties.display.centerId;
+  delete bond.properties.display.manual;
+  if (Object.keys(bond.properties.display).length === 0) {
+    delete bond.properties.display;
+  }
+}
+
+function applyDisplayStereo(bond, display) {
+  const displayAs = display?.as ?? null;
+  if (!bond || (displayAs !== 'wedge' && displayAs !== 'dash')) {
+    clearDisplayStereo(bond);
+    return;
+  }
+  bond.properties.display = {
+    ...(bond.properties.display ?? {}),
+    ...clonePlain(display)
+  };
+}
+
+function createPastedStereoMapAdjuster(fragment, mergeResult) {
+  const pastedBondIds = new Set(mergeResult?.bondIds ?? []);
+  const copiedDisplayByBondId = new Map();
+  for (const sourceBond of fragment?.bonds ?? []) {
+    const pastedBondId = mergeResult?.bondIdMap?.get?.(sourceBond.id) ?? null;
+    const display = copiedStereoDisplay(sourceBond.properties?.display, mergeResult?.atomIdMap ?? new Map());
+    if (pastedBondId && display) {
+      copiedDisplayByBondId.set(pastedBondId, display);
+    }
+  }
+  return (mol, stereoMap = new Map()) => {
+    const adjusted = new Map([...stereoMap].filter(([bondId]) => !pastedBondIds.has(bondId)));
+    for (const pastedBondId of pastedBondIds) {
+      const bond = mol?.bonds?.get?.(pastedBondId) ?? null;
+      const copiedDisplay = copiedDisplayByBondId.get(pastedBondId) ?? null;
+      if (copiedDisplay) {
+        applyDisplayStereo(bond, copiedDisplay);
+        adjusted.set(pastedBondId, copiedDisplay.as);
+      } else {
+        clearDisplayStereo(bond);
+      }
+    }
+    return adjusted;
+  };
+}
+
 function otherAtomId(bond, atomId) {
   return bond.atoms?.[0] === atomId ? bond.atoms?.[1] : bond.atoms?.[0];
 }
@@ -791,6 +860,7 @@ export function createClipboardActions(context) {
     if (!mergeResult) {
       return false;
     }
+    const adjustPastedStereoMap = createPastedStereoMapAdjuster(fragment, mergeResult);
 
     context.selection.clear();
     if (mode === 'force') {
@@ -804,14 +874,16 @@ export function createClipboardActions(context) {
     }
 
     if (mode === 'force') {
+      adjustPastedStereoMap(mol, new Map());
       context.renderers.renderMol(mol, {
         preserveHistory: true,
         preserveView: preservePlacedView,
         forcePreservePositions: true,
-        forceInitialPatchPos: forcePatchForFragment(fragment, mergeResult, center, context.view.forceScale)
+        forceInitialPatchPos: forcePatchForFragment(fragment, mergeResult, center, context.view.forceScale),
+        suppressForceStereoSeed: true
       });
     } else {
-      context.view2D?.syncDerivedState?.(mol);
+      context.view2D?.syncDerivedState?.(mol, { adjustStereoMap: adjustPastedStereoMap });
       context.renderers.draw2d?.();
       context.view.restore2dEditViewport?.(zoomSnapshot, { zoomToFit: { pad: 0 } });
     }

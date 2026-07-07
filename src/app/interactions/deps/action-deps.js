@@ -235,7 +235,7 @@ export function createClipboardActionDeps(ctx) {
       forceScale: ctx.forceScale
     },
     view2D: {
-      syncDerivedState: mol => ctx.sync2DDerivedState?.(mol)
+      syncDerivedState: (mol, options = {}) => ctx.sync2DDerivedState?.(mol, options)
     },
     plot: {
       getSize: () => ctx.getPlotSize()
@@ -440,7 +440,7 @@ export function createDrawBondCommitActionDeps(ctx) {
     view2D: {
       getCenterX: () => ctx.get2DCenterX(),
       getCenterY: () => ctx.get2DCenterY(),
-      syncDerivedState: mol => ctx.sync2DDerivedState(mol)
+      syncDerivedState: (mol, options = {}) => ctx.sync2DDerivedState(mol, options)
     },
     chemistry: {
       kekulize: ctx.kekulize,

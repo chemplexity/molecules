@@ -98,6 +98,11 @@ describe('createSessionSnapshotDeps', () => {
           return true;
         }
       },
+      render: {
+        applySelectionOverlay: () => {
+          records.push(['applySelectionOverlay']);
+        }
+      },
       highlights: {
         captureHighlightSnapshot: () => ({ highlighted: ['a1'] }),
         clearHighlightState: () => {

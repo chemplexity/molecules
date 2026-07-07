@@ -2,6 +2,7 @@
 
 ## 2026-07-06
 
+- Preserve copied fragment stereochemical bond display during paste without auto-creating new wedge/dash bonds on pasted fragments.
 - Restore manual marquee selection dragging by finalizing window-level mouseup events and selecting from rendered 2D atom hit targets.
 - Render metal hydrides as explicit Fe-H style single bonds during 2D rendering and immediate edit sync, including separating newly visible hydrogens from the metal atom.
 - Give radioactive-only elements a translucent yellow-green force-mode outline.

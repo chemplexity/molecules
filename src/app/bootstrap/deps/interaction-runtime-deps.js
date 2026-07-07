@@ -174,7 +174,7 @@ export function createInteractionRuntimeDeps(ctx) {
     getSelectedBondIds: () => ctx.getSelectedBondIds?.() ?? ctx.appState.overlayState.getSelectedBondIds(),
     ensureActiveMolecule: () => ctx.ensureActiveMolecule(),
     enableKeepInView: () => ctx.enableKeepInView(),
-    sync2DDerivedState: mol => ctx.sync2DDerivedState(mol),
+    sync2DDerivedState: (mol, options = {}) => ctx.sync2DDerivedState(mol, options),
     syncInputField: mol => ctx.syncInputField(mol),
     updateFormula: mol => ctx.updateFormula(mol),
     updateDescriptors: mol => ctx.updateDescriptors(mol),

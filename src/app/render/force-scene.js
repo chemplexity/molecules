@@ -408,6 +408,7 @@ export function createForceSceneRenderer(ctx) {
    * @param {boolean} [options.fitReactionLike] - When true, uses reaction-preview overlay padding for the initial viewport fit.
    * @param {boolean} [options.restartSimulation] - When false, redraws preserved force positions without restarting physics.
    * @param {boolean} [options.settleInitialLayout] - When false, skips the fresh-layout settling ticks.
+   * @param {boolean} [options.suppressStereoSeed] - When true, skips automatic wedge/dash display seeding.
    * @returns {void}
    */
   function updateForce(
@@ -423,7 +424,8 @@ export function createForceSceneRenderer(ctx) {
       ignoreOverlayPadding = false,
       fitReactionLike = false,
       restartSimulation = true,
-      settleInitialLayout = true
+      settleInitialLayout = true,
+      suppressStereoSeed = false
     } = {}
   ) {
     prepareAromaticBondRendering(molecule);
@@ -439,7 +441,9 @@ export function createForceSceneRenderer(ctx) {
     const resolvedAnchorLayout = anchorLayout ?? ctx.helpers.buildForceAnchorLayout(molecule);
 
     const isReactionPreviewMol = [...molecule.atoms.keys()].some(id => typeof id === 'string' && id.includes(':'));
-    seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol);
+    if (!suppressStereoSeed) {
+      seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol);
+    }
     if (ctx.state.getPreserveSelectionOnNextRender()) {
       ctx.state.syncSelectionToMolecule(molecule);
     } else {

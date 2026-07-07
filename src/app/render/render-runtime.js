@@ -35,6 +35,7 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.forceSettleInitialLayout] - When false for force renders, skips fresh-layout settling ticks.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceAnchorLayout] - Optional force-anchor layout override keyed by atom id.
    * @param {Map<string, {x: number, y: number}>|null} [options.forceInitialPatchPos] - Optional force-pixel positions applied before the first force tick.
+   * @param {boolean} [options.suppressForceStereoSeed] - When true, force rendering does not auto-create display stereo.
    * @param {number} [options.fitPad] - Optional 2D viewport fit padding.
    * @param {number} [options.fitMaxScale] - Optional 2D viewport fit zoom cap.
    * @param {boolean} [options.ignoreOverlayPadding] - When true, fits 2D viewport against molecule bounds without reserving overlay gutters.
@@ -57,6 +58,7 @@ export function createRenderRuntime(deps) {
       forceSettleInitialLayout,
       forceAnchorLayout = null,
       forceInitialPatchPos = null,
+      suppressForceStereoSeed = false,
       fitPad,
       fitMaxScale,
       ignoreOverlayPadding,
@@ -87,6 +89,9 @@ export function createRenderRuntime(deps) {
       }
       if (forceInitialPatchPos) {
         forceOptions.initialPatchPos = forceInitialPatchPos;
+      }
+      if (suppressForceStereoSeed) {
+        forceOptions.suppressStereoSeed = true;
       }
       if (forceKeepInView) {
         forceOptions.keepInView = true;

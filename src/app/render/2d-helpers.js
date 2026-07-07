@@ -366,9 +366,12 @@ export function create2DRenderHelpers(ctx) {
     ctx.svg.call(ctx.zoom.transform, ctx.d3.zoomIdentity.translate(tx, ty).scale(scale));
   }
 
-  function sync2dDerivedState(mol) {
+  function sync2dDerivedState(mol, options = {}) {
     const hCounts = collect2dHydrogenLabelCounts(mol);
-    const stereoMap = ctx.stereo.pickStereoMap(mol);
+    let stereoMap = ctx.stereo.pickStereoMap(mol);
+    if (typeof options.adjustStereoMap === 'function') {
+      stereoMap = options.adjustStereoMap(mol, stereoMap) ?? stereoMap;
+    }
     syncStereoHydrogenVisibility(mol, hCounts, stereoMap);
     ctx.state.setDerivedState({ hCounts, stereoMap });
   }
