@@ -46,6 +46,33 @@ function finalizeBounds(bounds, pad = SELECTION_BOUNDS_PAD) {
   };
 }
 
+function finitePivotPoint(pivot = null) {
+  const x = Number(pivot?.x);
+  const y = Number(pivot?.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function boundsIncludingPivot(bounds, pivot = null) {
+  if (!bounds) {
+    return null;
+  }
+  const point = finitePivotPoint(pivot);
+  if (!point) {
+    return bounds;
+  }
+  const pad = SELECTION_PIVOT_ARM + 2;
+  const minX = Math.min(bounds.x, point.x - pad);
+  const minY = Math.min(bounds.y, point.y - pad);
+  const maxX = Math.max(bounds.x + bounds.width, point.x + pad);
+  const maxY = Math.max(bounds.y + bounds.height, point.y + pad);
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY)
+  };
+}
+
 function selectionBoundsGeometry(bounds) {
   if (!bounds) {
     return null;
@@ -64,19 +91,11 @@ function normalizedSelectionPivot(bounds, pivot = null) {
   if (!geometry) {
     return null;
   }
-  const pivotX = Number(pivot?.x);
-  const pivotY = Number(pivot?.y);
-  if (
-    !Number.isFinite(pivotX) ||
-    !Number.isFinite(pivotY) ||
-    pivotX < bounds.x ||
-    pivotX > bounds.x + bounds.width ||
-    pivotY < bounds.y ||
-    pivotY > bounds.y + bounds.height
-  ) {
+  const point = finitePivotPoint(pivot);
+  if (!point) {
     return { x: geometry.cx, y: geometry.cy };
   }
-  return { x: pivotX, y: pivotY };
+  return point;
 }
 
 function appendSelectionRotateHandle(handleLayer) {
@@ -162,18 +181,26 @@ function appendSelectionPivotHandle(handleLayer) {
  * @returns {object} The provided controls selection.
  */
 export function updateSelectionBoundsControls(controls, bounds, pivot = null) {
-  const geometry = selectionBoundsGeometry(bounds);
-  controls.style('display', bounds && geometry ? null : 'none');
-  if (!bounds || !geometry) {
+  const persistedPivot = pivot ?? controls.datum?.()?.getPivot?.() ?? null;
+  const displayBounds = boundsIncludingPivot(bounds, persistedPivot);
+  const geometry = selectionBoundsGeometry(displayBounds);
+  controls.style('display', displayBounds && geometry ? null : 'none');
+  if (!displayBounds || !geometry) {
     return controls;
   }
-  const pivotPoint = normalizedSelectionPivot(bounds, pivot ?? controls.datum?.()?.getPivot?.() ?? null);
+  const pivotPoint = normalizedSelectionPivot(displayBounds, persistedPivot);
+  controls
+    .select('rect.selection-bounds-drag-hit')
+    .attr('x', displayBounds.x)
+    .attr('y', displayBounds.y)
+    .attr('width', displayBounds.width)
+    .attr('height', displayBounds.height);
   controls
     .select('rect.selection-bounds-rect')
-    .attr('x', bounds.x)
-    .attr('y', bounds.y)
-    .attr('width', bounds.width)
-    .attr('height', bounds.height);
+    .attr('x', displayBounds.x)
+    .attr('y', displayBounds.y)
+    .attr('width', displayBounds.width)
+    .attr('height', displayBounds.height);
   controls.select('g.selection-rotate-handle').attr('transform', `translate(${geometry.rotateHandle.x},${geometry.rotateHandle.y})`);
   controls.select('g.selection-pivot-handle').attr('transform', `translate(${pivotPoint.x},${pivotPoint.y})`);
   return controls;
@@ -184,6 +211,15 @@ function drawSelectionBoundsControls(selectionLayer, bounds, pivot = null) {
     return null;
   }
   const controls = selectionLayer.append('g').attr('class', 'selection-bounds-controls').style('pointer-events', 'none');
+  controls
+    .append('rect')
+    .attr('class', 'selection-bounds-drag-hit')
+    .attr('fill', 'none')
+    .attr('stroke', '#ffffff')
+    .attr('stroke-width', 14)
+    .attr('opacity', 0.001)
+    .attr('pointer-events', 'stroke')
+    .style('cursor', 'move');
   controls
     .append('rect')
     .attr('class', 'selection-bounds-rect')

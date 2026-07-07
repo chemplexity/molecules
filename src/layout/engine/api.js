@@ -1,6 +1,7 @@
 /** @module api */
 
 import { runPipeline } from './pipeline.js';
+import { showMetalBoundHydrogens } from '../hydrogen-display.js';
 
 function hasHiddenHydrogenAtoms(molecule) {
   if (!molecule?.atoms) {
@@ -144,6 +145,9 @@ function buildRefinementMetadata(result, options) {
  * @returns {object} Layout result.
  */
 export function generateCoords(molecule, options = {}) {
+  if (options?.suppressH) {
+    showMetalBoundHydrogens(molecule);
+  }
   const hiddenHydrogenAtomIds = options?.suppressH ? collectHiddenHydrogenAtomIds(molecule) : new Set();
   const engineOptions = buildEngineRunOptions(molecule, options, hiddenHydrogenAtomIds);
   const result = runPipeline(buildEngineInputMolecule(molecule, engineOptions, hiddenHydrogenAtomIds), engineOptions);
@@ -161,6 +165,9 @@ export function generateCoords(molecule, options = {}) {
  * @returns {object} Refinement result.
  */
 export function refineCoords(molecule, options = {}) {
+  if (options?.suppressH) {
+    showMetalBoundHydrogens(molecule);
+  }
   const hiddenHydrogenAtomIds = options?.suppressH ? collectHiddenHydrogenAtomIds(molecule) : new Set();
   const engineOptions = buildEngineRunOptions(molecule, options, hiddenHydrogenAtomIds);
   const result = stripHiddenHydrogenCoords(runPipeline(buildEngineInputMolecule(molecule, engineOptions, hiddenHydrogenAtomIds), engineOptions), hiddenHydrogenAtomIds);

@@ -1,24 +1,42 @@
 /** @module app/render/bond-overlay-state */
 
-let _bondEnActive = false;
-let _bondLengthsActive = false;
-let _bondEnPanelUpdater = null;
-let _bondLengthsPanelUpdater = null;
+function createOverlayToggleState() {
+  let active = false;
+  let updater = null;
+  return {
+    getActive: () => active,
+    setActive: value => {
+      active = value === true;
+    },
+    registerUpdater: fn => {
+      updater = fn;
+    },
+    refresh: mol => updater?.(mol)
+  };
+}
+
+const bondEnState = createOverlayToggleState();
+const bondLengthsState = createOverlayToggleState();
 
 /**
  * Returns whether the bond electronegativity overlay is active.
  * @returns {boolean} True when the bond electronegativity overlay is active.
  */
 export function getBondEnActive() {
-  return _bondEnActive;
+  return bondEnState.getActive();
 }
 
 /**
- * Sets whether the bond electronegativity overlay is active.
+ * Sets whether the bond electronegativity overlay is active. Activating it
+ * deactivates the bond-lengths overlay, since only one bond-property overlay
+ * can be shown at a time.
  * @param {boolean} active - Next bond electronegativity overlay state.
  */
 export function setBondEnActive(active) {
-  _bondEnActive = active === true;
+  bondEnState.setActive(active);
+  if (active === true) {
+    bondLengthsState.setActive(false);
+  }
 }
 
 /**
@@ -26,15 +44,20 @@ export function setBondEnActive(active) {
  * @returns {boolean} True when the bond lengths overlay is active.
  */
 export function getBondLengthsActive() {
-  return _bondLengthsActive;
+  return bondLengthsState.getActive();
 }
 
 /**
- * Sets whether the bond lengths overlay is active.
+ * Sets whether the bond lengths overlay is active. Activating it deactivates
+ * the bond electronegativity overlay, since only one bond-property overlay
+ * can be shown at a time.
  * @param {boolean} active - Next bond lengths overlay state.
  */
 export function setBondLengthsActive(active) {
-  _bondLengthsActive = active === true;
+  bondLengthsState.setActive(active);
+  if (active === true) {
+    bondEnState.setActive(false);
+  }
 }
 
 /**
@@ -42,7 +65,7 @@ export function setBondLengthsActive(active) {
  * @param {(mol: import('../../core/Molecule.js').Molecule|null) => void} updater - Panel rerender callback.
  */
 export function registerBondEnPanelUpdater(updater) {
-  _bondEnPanelUpdater = updater;
+  bondEnState.registerUpdater(updater);
 }
 
 /**
@@ -50,7 +73,7 @@ export function registerBondEnPanelUpdater(updater) {
  * @param {(mol: import('../../core/Molecule.js').Molecule|null) => void} updater - Panel rerender callback.
  */
 export function registerBondLengthsPanelUpdater(updater) {
-  _bondLengthsPanelUpdater = updater;
+  bondLengthsState.registerUpdater(updater);
 }
 
 /**
@@ -58,7 +81,7 @@ export function registerBondLengthsPanelUpdater(updater) {
  * @param {import('../../core/Molecule.js').Molecule|null} mol - Molecule currently shown in the UI.
  */
 export function refreshBondEnPanel(mol) {
-  _bondEnPanelUpdater?.(mol);
+  bondEnState.refresh(mol);
 }
 
 /**
@@ -66,5 +89,5 @@ export function refreshBondEnPanel(mol) {
  * @param {import('../../core/Molecule.js').Molecule|null} mol - Molecule currently shown in the UI.
  */
 export function refreshBondLengthsPanel(mol) {
-  _bondLengthsPanelUpdater?.(mol);
+  bondLengthsState.refresh(mol);
 }

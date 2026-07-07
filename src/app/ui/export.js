@@ -316,48 +316,56 @@ async function _copySvgToClipboard(svgEl) {
   throw new Error('Clipboard SVG export is not supported in this browser');
 }
 
+function _createExportSvgShell(bbox, { withWhiteBg, cssRules, pad = 30 } = {}) {
+  const vbX = bbox.x - pad;
+  const vbY = bbox.y - pad;
+  const vbW = bbox.width + pad * 2;
+  const vbH = bbox.height + pad * 2;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svgEl = document.createElementNS(ns, 'svg');
+  svgEl.setAttribute('xmlns', ns);
+  svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+  svgEl.setAttribute('width', vbW);
+  svgEl.setAttribute('height', vbH);
+
+  if (withWhiteBg) {
+    const bgRect = document.createElementNS(ns, 'rect');
+    bgRect.setAttribute('x', vbX);
+    bgRect.setAttribute('y', vbY);
+    bgRect.setAttribute('width', vbW);
+    bgRect.setAttribute('height', vbH);
+    bgRect.setAttribute('fill', 'white');
+    svgEl.appendChild(bgRect);
+  }
+
+  const styleEl = document.createElementNS(ns, 'style');
+  styleEl.textContent = cssRules.join(' ');
+  svgEl.appendChild(styleEl);
+
+  return svgEl;
+}
+
 function _buildMolSvg(withWhiteBg, { atomBgFill = withWhiteBg ? 'white' : 'none' } = {}) {
   const { g } = ctx;
   const cleanup = typeof ctx.prepare2dExport === 'function' ? ctx.prepare2dExport() : null;
   try {
-    const PAD = 30;
     const bbox = g.node().getBBox();
     if (!bbox.width && !bbox.height) {
       return null;
     }
 
-    const vbX = bbox.x - PAD,
-      vbY = bbox.y - PAD;
-    const vbW = bbox.width + PAD * 2;
-    const vbH = bbox.height + PAD * 2;
-
-    const ns = 'http://www.w3.org/2000/svg';
-    const svgEl = document.createElementNS(ns, 'svg');
-    svgEl.setAttribute('xmlns', ns);
-    svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-    svgEl.setAttribute('width', vbW);
-    svgEl.setAttribute('height', vbH);
-
-    if (withWhiteBg) {
-      const bgRect = document.createElementNS(ns, 'rect');
-      bgRect.setAttribute('x', vbX);
-      bgRect.setAttribute('y', vbY);
-      bgRect.setAttribute('width', vbW);
-      bgRect.setAttribute('height', vbH);
-      bgRect.setAttribute('fill', 'white');
-      svgEl.appendChild(bgRect);
-    }
-
-    const styleEl = document.createElementNS(ns, 'style');
-    styleEl.textContent = [
-      '.bond{stroke:#333;stroke-linecap:round;fill:none}',
-      '.bond-dashed{stroke-dasharray:5,3}',
-      `.atom-bg{fill:${atomBgFill};stroke:none}`,
-      '.atom-hit,.bond-hit,.bond-hover-target{display:none}',
-      '.atom-label{font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold}',
-      '.atom-charge{font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:bold}'
-    ].join(' ');
-    svgEl.appendChild(styleEl);
+    const svgEl = _createExportSvgShell(bbox, {
+      withWhiteBg,
+      cssRules: [
+        '.bond{stroke:#333;stroke-linecap:round;fill:none}',
+        '.bond-dashed{stroke-dasharray:5,3}',
+        `.atom-bg{fill:${atomBgFill};stroke:none}`,
+        '.atom-hit,.bond-hit,.bond-hover-target{display:none}',
+        '.atom-label{font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold}',
+        '.atom-charge{font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:bold}'
+      ]
+    });
 
     const gClone = g.node().cloneNode(true);
     gClone.removeAttribute('transform');
@@ -384,7 +392,6 @@ function _buildMolSvg(withWhiteBg, { atomBgFill = withWhiteBg ? 'white' : 'none'
 
 function _buildForceSvg(withWhiteBg = true) {
   const { simulation, g } = ctx;
-  const PAD = 30;
   const nodes = simulation.nodes();
   if (!nodes.length) {
     return null;
@@ -431,37 +438,16 @@ function _buildForceSvg(withWhiteBg = true) {
     };
   }
 
-  const vbX = contentBBox.x - PAD;
-  const vbY = contentBBox.y - PAD;
-  const vbW = contentBBox.width + PAD * 2;
-  const vbH = contentBBox.height + PAD * 2;
-
-  const ns = 'http://www.w3.org/2000/svg';
-  const svgEl = document.createElementNS(ns, 'svg');
-  svgEl.setAttribute('xmlns', ns);
-  svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-  svgEl.setAttribute('width', vbW);
-  svgEl.setAttribute('height', vbH);
-
-  if (withWhiteBg) {
-    const bgRect = document.createElementNS(ns, 'rect');
-    bgRect.setAttribute('x', vbX);
-    bgRect.setAttribute('y', vbY);
-    bgRect.setAttribute('width', vbW);
-    bgRect.setAttribute('height', vbH);
-    bgRect.setAttribute('fill', 'white');
-    svgEl.appendChild(bgRect);
-  }
-
-  const styleEl = document.createElementNS(ns, 'style');
-  styleEl.textContent = [
-    '.link{stroke:#696969;stroke-linecap:round;fill:none}',
-    '.atom-symbol,.charge-label-text{font-family:Arial,Helvetica,sans-serif;font-weight:bold}',
-    '.atom-symbol{font-size:9px;text-anchor:middle;dominant-baseline:central}',
-    '.charge-label-text{font-size:11px}',
-    '.bond-hover-target{display:none}'
-  ].join(' ');
-  svgEl.appendChild(styleEl);
+  const svgEl = _createExportSvgShell(contentBBox, {
+    withWhiteBg,
+    cssRules: [
+      '.link{stroke:#696969;stroke-linecap:round;fill:none}',
+      '.atom-symbol,.charge-label-text{font-family:Arial,Helvetica,sans-serif;font-weight:bold}',
+      '.atom-symbol{font-size:9px;text-anchor:middle;dominant-baseline:central}',
+      '.charge-label-text{font-size:11px}',
+      '.bond-hover-target{display:none}'
+    ]
+  });
 
   svgEl.appendChild(gClone);
   return svgEl;

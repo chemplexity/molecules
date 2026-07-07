@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Atom } from '../../../src/core/index.js';
-import { atomColor, atomTooltipHtml, getHighlightStyleVariant, HIGHLIGHT_STYLE_PALETTES } from '../../../src/app/render/helpers.js';
+import { atomColor, atomTooltipHtml, getHighlightStyleVariant, HIGHLIGHT_STYLE_PALETTES, isRadioactiveElement, strokeColor } from '../../../src/app/render/helpers.js';
 
 describe('getHighlightStyleVariant', () => {
   it('starts the default rainbow with the existing green highlight', () => {
@@ -28,6 +28,16 @@ describe('atomColor', () => {
     assert.equal(atomColor('H', '2d'), '#333333');
     assert.equal(atomColor('D', '2d'), '#333333');
     assert.equal(atomColor('H', 'force'), '#FFFFFF');
+  });
+});
+
+describe('force atom strokes', () => {
+  it('uses a translucent yellow-green outline for radioactive-only elements', () => {
+    assert.equal(isRadioactiveElement('U'), true);
+    assert.equal(isRadioactiveElement('Tc'), true);
+    assert.equal(isRadioactiveElement('C'), false);
+    assert.match(strokeColor('U'), /^rgba\(184, 224, 46, 0\.62\)$/);
+    assert.notEqual(strokeColor('C'), strokeColor('U'));
   });
 });
 

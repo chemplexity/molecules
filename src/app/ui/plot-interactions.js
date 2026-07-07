@@ -176,7 +176,10 @@ export function initPlotInteractions(deps) {
           break;
         }
       }
-      const atomHitGroup = element.classList?.contains('atom-hit') ? element.closest('[data-atom-id]') : element.closest?.('[data-atom-id]');
+      if (!element.classList?.contains('atom-hit')) {
+        continue;
+      }
+      const atomHitGroup = element.closest('[data-atom-id]');
       atomId = atomHitGroup?.getAttribute?.('data-atom-id') ?? null;
       if (atomId) {
         break;

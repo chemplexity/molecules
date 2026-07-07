@@ -21,6 +21,7 @@ import {
 } from '../../layout/mol2d-helpers.js';
 import { ringFillDomId } from '../../core/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
+import { collect2dHydrogenLabelCounts, hideHydrogensFor2d } from '../../layout/hydrogen-display.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 
@@ -637,7 +638,8 @@ export function create2DSceneRenderer(ctx) {
         }
         const bGroup = bondLayer.select(`[data-bond-id="${bInfo.bond.id}"]`);
         const hitLine = bGroup.select('.bond-hit');
-        bGroup.selectAll(':not(.bond-hit)').remove();
+        const ringTemplateHoverTarget = bGroup.select('.ring-template-bond-hover-target');
+        bGroup.selectAll(':not(.bond-hit):not(.ring-template-bond-hover-target)').remove();
         const st = (stereoMap ? stereoMap.get(bInfo.bond.id) : null) ?? bInfo.bond.properties?.display?.as ?? null;
         let ssa1 = bInfo.a1;
         let ssa2 = bInfo.a2;
@@ -651,6 +653,7 @@ export function create2DSceneRenderer(ctx) {
         const hp1 = toSVGPt(ssa1);
         const hp2 = toSVGPt(ssa2);
         hitLine.attr('x1', hp1.x).attr('y1', hp1.y).attr('x2', hp2.x).attr('y2', hp2.y).raise();
+        ringTemplateHoverTarget.attr('x1', hp1.x).attr('y1', hp1.y).attr('x2', hp2.x).attr('y2', hp2.y).raise();
       }
 
       ctx.helpers.redrawHighlights();
@@ -1119,30 +1122,32 @@ export function create2DSceneRenderer(ctx) {
   }
 
   function render2d(mol, options = {}) {
-    const { recomputeResonance = true, refreshResonancePanel = true, preserveGeometry = false, preserveAnalysis = false, fitPad, fitMaxScale, ignoreOverlayPadding = false } = options;
+    const {
+      recomputeResonance = true,
+      refreshResonancePanel = true,
+      preserveGeometry = false,
+      preserveAnalysis = false,
+      preserveReactionLayout = false,
+      fitPad,
+      fitMaxScale,
+      ignoreOverlayPadding = false
+    } = options;
     const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
 
-    const hCounts = new Map();
-    for (const [, atom] of mol.atoms) {
-      if (atom.name === 'H') {
-        continue;
-      }
-      const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
-      if (count > 0) {
-        hCounts.set(atom.id, count);
-      }
-    }
-    mol.hideHydrogens();
+    const hCounts = collect2dHydrogenLabelCounts(mol);
+    hideHydrogensFor2d(mol);
     prepareAromaticBondRendering(mol);
 
     if (!preserveGeometry) {
       ctx.helpers.generate2dCoords(mol, { suppressH: true, bondLength: layoutBondLength });
     }
-    ctx.helpers.alignReaction2dProductOrientation(mol, layoutBondLength);
-    ctx.helpers.spreadReaction2dProductComponents(mol, layoutBondLength);
-    ctx.helpers.centerReaction2dPairCoords(mol, layoutBondLength, {
-      minGapBondLength: ctx.helpers.reactionArrowLabelMinGapBondLength?.(mol, layoutBondLength) ?? layoutBondLength
-    });
+    if (!preserveReactionLayout) {
+      ctx.helpers.alignReaction2dProductOrientation(mol, layoutBondLength);
+      ctx.helpers.spreadReaction2dProductComponents(mol, layoutBondLength);
+      ctx.helpers.centerReaction2dPairCoords(mol, layoutBondLength, {
+        minGapBondLength: ctx.helpers.reactionArrowLabelMinGapBondLength?.(mol, layoutBondLength) ?? layoutBondLength
+      });
+    }
 
     const { rotationDeg, flipH, flipV } = ctx.view.getOrientation();
     if (rotationDeg !== 0 || flipH || flipV) {

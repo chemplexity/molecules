@@ -997,18 +997,18 @@ export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restor
     preserveView: false,
     preserveGeometry: shouldRestoreEntryDisplay && ctx.mode === '2d'
   };
-  if (canRestoreEntryState && ctx.mode === 'force') {
-    renderOptions.forcePreservePositions = true;
-    renderOptions.forceRestartSimulation = false;
-    renderOptions.forceAnchorLayout = _forceAnchorLayoutFromVisibleCoords(sourceMol);
+  if (ctx.mode === 'force') {
+    if (canRestoreEntryState) {
+      renderOptions.forcePreservePositions = true;
+      renderOptions.forceAnchorLayout = _forceAnchorLayoutFromVisibleCoords(sourceMol);
+    }
     if (forceNodePositions?.size) {
       renderOptions.forceInitialPatchPos = forceNodePositions;
+      renderOptions.forceRestartSimulation = false;
+      renderOptions.forceSettleInitialLayout = false;
     }
   }
   ctx.renderMol(sourceMol, renderOptions);
-  if (forceNodePositions?.size) {
-    ctx.restoreForceNodePositions?.(forceNodePositions);
-  }
   if (entryZoomTransform) {
     ctx.restoreZoomTransform?.(entryZoomTransform);
   }

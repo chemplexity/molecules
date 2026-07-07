@@ -307,6 +307,31 @@ describe('create2DRenderHelpers', () => {
     assert.equal(hydrogen.visible, false);
   });
 
+  it('keeps metal-bound hydrogens visible during derived-state sync', () => {
+    const iron = makeAtom('fe1', 'Fe', 0, 0);
+    iron.properties = { group: 8 };
+    const hydrogen = makeAtom('h1', 'H', 0, 0);
+    iron._neighbors = [hydrogen];
+    hydrogen._neighbors = [iron];
+    hydrogen.visible = false;
+    const mol = {
+      id: 'mol-metal-hydride',
+      atoms: new Map([
+        [iron.id, iron],
+        [hydrogen.id, hydrogen]
+      ]),
+      bonds: new Map()
+    };
+    const { helpers, state } = makeHelpersContext({ mol, stereoMap: new Map() });
+
+    helpers.sync2dDerivedState(mol);
+
+    assert.ok(state.derived);
+    assert.equal(state.derived.hCounts.has('fe1'), false);
+    assert.equal(hydrogen.visible, true);
+    assert.ok(Math.hypot(hydrogen.x - iron.x, hydrogen.y - iron.y) > 1, 'expected metal-bound H to separate from the metal atom');
+  });
+
   it('fits the 2D view when atoms fall outside the viewport', () => {
     const atom = makeAtom('a1', 'C', 10, 0);
     const mol = {

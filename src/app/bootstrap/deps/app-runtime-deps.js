@@ -86,7 +86,8 @@ export function createAppRuntimeDeps(ctx) {
       setSelectionModifierActive: ctx.setSelectionModifierActive,
       setErasePainting: ctx.setErasePainting,
       syncToolButtonsFromState: ctx.syncToolButtonsFromState,
-      refreshSelectionOverlay: ctx.refreshSelectionOverlay
+      refreshSelectionOverlay: ctx.refreshSelectionOverlay,
+      applySelectionOverlay: ctx.applySelectionOverlay
     },
     drawBond: {
       setDrawBondState: ctx.setDrawBondState,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/index.js';
 import {
+  _prepare2dExportHighlightState,
   _restorePersistentHighlight,
   _setHighlight,
   clearHighlightState,
@@ -221,6 +222,50 @@ test('cyclic functional-group rows keep fused ring matches separate', () => {
     cyclohexeneRow.dispatch('mousedown', { button: 0 });
     const highlightedHeavyAtomIds = [...getHighlightedAtomIds()].filter(id => !String(id).startsWith('H'));
     assert.equal(highlightedHeavyAtomIds.length, 6);
+  } finally {
+    clearHighlightState();
+    globalThis.document = previousDocument;
+  }
+});
+
+test('export-time functional-group highlight reactivation is undone by its returned cleanup', () => {
+  const previousDocument = globalThis.document;
+  const fgBody = makeMockElement('tbody');
+  globalThis.document = {
+    getElementById(id) {
+      return id === 'fg-body' ? fgBody : null;
+    },
+    querySelector() {
+      return null;
+    },
+    createElement(tagName) {
+      return makeMockElement(tagName);
+    }
+  };
+
+  initHighlights({
+    applyForceHighlights() {}
+  });
+
+  try {
+    const mol = parseSMILES('CCO');
+    updateFunctionalGroups(mol);
+
+    const alcoholRow = fgBody.children.find(child => collectText(child).includes('Alcohol'));
+    assert.ok(alcoholRow);
+
+    // Hover then leave, as if the user hovered the row and moved away just
+    // before clicking export: no highlight is active, but the hover is still
+    // within the export grace period.
+    alcoholRow.dispatch('mouseenter');
+    alcoholRow.dispatch('mouseleave');
+    assert.equal(getHighlightedAtomIds().size, 0);
+
+    const cleanup = _prepare2dExportHighlightState();
+    assert.ok(getHighlightedAtomIds().size > 0);
+
+    cleanup();
+    assert.equal(getHighlightedAtomIds().size, 0);
   } finally {
     clearHighlightState();
     globalThis.document = previousDocument;

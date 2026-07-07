@@ -125,6 +125,9 @@ function makeDeps() {
           snapshot.ringTemplateSize ?? snapshot.interactionState?.ringTemplateSize ?? null
         ]);
       },
+      applySelectionOverlay() {
+        calls.push(['applySelectionOverlay']);
+      },
       restoreZoomTransform(snapshot) {
         calls.push(['restoreZoomTransform', snapshot]);
       },
@@ -407,7 +410,7 @@ describe('createSessionSnapshotManager', () => {
     const manager = createSessionSnapshotManager(deps);
 
     manager.restore({
-      mode: '2d',
+      mode: 'force',
       atoms: [{ id: 'A1', name: 'C', properties: {}, x: 0, y: 0 }],
       bonds: [],
       moleculeProperties: { base: 'visible' },
@@ -423,9 +426,9 @@ describe('createSessionSnapshotManager', () => {
       rotationDeg: 0,
       flipH: false,
       flipV: false,
-      selectedAtomIds: [],
+      selectedAtomIds: ['A1'],
       selectedBondIds: [],
-      toolMode: 'pan',
+      toolMode: 'select',
       drawBondElement: 'C',
       forceAutoFitEnabled: true,
       forceKeepInView: false,
@@ -603,7 +606,7 @@ describe('createSessionSnapshotManager', () => {
     };
 
     manager.restore({
-      mode: '2d',
+      mode: 'force',
       atoms: sourceMol.atoms,
       bonds: sourceMol.bonds,
       moleculeProperties: sourceMol.moleculeProperties,
@@ -619,9 +622,9 @@ describe('createSessionSnapshotManager', () => {
       rotationDeg: 0,
       flipH: false,
       flipV: false,
-      selectedAtomIds: [],
+      selectedAtomIds: ['A1'],
       selectedBondIds: [],
-      toolMode: 'pan',
+      toolMode: 'select',
       drawBondElement: 'C',
       forceAutoFitEnabled: true,
       forceKeepInView: false,
@@ -682,7 +685,7 @@ describe('createSessionSnapshotManager', () => {
     };
 
     manager.restore({
-      mode: '2d',
+      mode: 'force',
       atoms: sourceMol.atoms,
       bonds: sourceMol.bonds,
       moleculeProperties: sourceMol.moleculeProperties,
@@ -698,9 +701,9 @@ describe('createSessionSnapshotManager', () => {
       rotationDeg: 90,
       flipH: false,
       flipV: false,
-      selectedAtomIds: [],
+      selectedAtomIds: ['A1'],
       selectedBondIds: [],
-      toolMode: 'pan',
+      toolMode: 'select',
       drawBondElement: 'C',
       forceAutoFitEnabled: true,
       forceKeepInView: false,
@@ -729,15 +732,20 @@ describe('createSessionSnapshotManager', () => {
         reactionPreviewHighlightMappings: [],
         entryZoomTransform: null,
         entryDisplayMol: sourceMol,
-        entryMode: '2d',
+        entryMode: 'force',
         entryForceNodePositions: null
       },
       resonanceView: null
     });
 
-    assert.equal(calls.filter(call => call[0] === 'restore2dState').length, 2);
+    assert.equal(calls.filter(call => call[0] === 'restoreForceState').length, 2);
     assert.equal(calls.some(call => call[0] === 'reapplyActiveReactionPreview'), false);
     assert.ok(calls.some(call => call[0] === 'restoreZoomTransform' && call[1]?.k === 1.5));
+    const finalRestoreForceStateIndex = calls.findLastIndex(call => call[0] === 'restoreForceState');
+    const finalRestoreInteractionIndex = calls.findLastIndex(call => call[0] === 'restoreInteractionState');
+    const finalApplySelectionOverlayIndex = calls.findLastIndex(call => call[0] === 'applySelectionOverlay');
+    assert.ok(finalRestoreInteractionIndex > finalRestoreForceStateIndex);
+    assert.ok(finalApplySelectionOverlayIndex > finalRestoreInteractionIndex);
   });
 
   it('preserves the selected bond draw type when restoring an app snapshot', () => {
@@ -785,6 +793,9 @@ describe('createSessionSnapshotManager', () => {
 
     const restoreInteractionCall = calls.find(call => call[0] === 'restoreInteractionState');
     assert.deepEqual(restoreInteractionCall, ['restoreInteractionState', 'draw-bond', 'dash', 5]);
+    const restoreInteractionIndex = calls.findIndex(call => call[0] === 'restoreInteractionState');
+    const applySelectionOverlayIndex = calls.findIndex(call => call[0] === 'applySelectionOverlay');
+    assert.ok(applySelectionOverlayIndex > restoreInteractionIndex);
   });
 
   it('restores resonance analysis against the same 2D molecule instance shown in the viewport', () => {

@@ -1,5 +1,30 @@
 # Change Log
 
+## 2026-07-06
+
+- Restore manual marquee selection dragging by finalizing window-level mouseup events and selecting from rendered 2D atom hit targets.
+- Render metal hydrides as explicit Fe-H style single bonds during 2D rendering and immediate edit sync, including separating newly visible hydrogens from the metal atom.
+- Give radioactive-only elements a translucent yellow-green force-mode outline.
+- Restore force-mode selection overlays immediately after undo/redo snapshot restores.
+- Keep force-flipped reaction previews fully in view when switching back to 2D mode.
+- Keep displayed stereochemical hydrogens separated and preserve flipped wedge/dash display when entering alkene hydrogenation previews and after reaction 2D-force round trips.
+- Refit force-mode source molecules correctly when exiting a reaction preview after flipping a preview that was entered from 2D.
+- Preserve vertically/horizontally flipped reaction-preview geometry when switching from 2D to force mode and back.
+- Convert custom selection pivot coordinates correctly when switching between 2D and force modes.
+- Preserve force-mode selections when using toolbar flip/mirror actions.
+- Allow selection pivot markers to be dragged anywhere on the rendered plot instead of clamping them to the current selection bounds.
+- Rotate blank-space 2D selection pivots in the same visual direction as toolbar rotation buttons by accounting for the rendered SVG coordinate system.
+- Mirror 2D selection pivots around the same stable molecule center used by toolbar rotation during horizontal/vertical flips instead of recentering the viewport first.
+- Expand completed selection bounds to include a transformed custom pivot marker, so corner pivots stay visible and usable after rotate/flip actions.
+- Keep custom selection pivots in sync during toolbar 2D/force rotations so later flip/mirror/rotate actions do not jump after placing the pivot near a selection corner.
+- Fix: finish selection rotate/pivot-drag/bounds-move/marquee gestures when the mouse is released outside the browser window or the window loses focus, instead of leaving the gesture active to consume a later unrelated click.
+- Fix: keep the ring-template bond hover target in sync with the bond's rendered position while dragging in 2D, instead of leaving it stale until the drag ends.
+- Fix: avoid a `NaN` double/triple-bond offset when a bond's two atoms share identical coordinates.
+- Fix: only match the enlarged atom hit-circle (not any element with an atom-id ancestor) when hit-testing for the valence-warning tooltip.
+- Fix: restore the prior highlight after a transient export-time functional-group highlight reactivation, instead of leaving it lit on the live canvas after export.
+- Refactor: remove a dead resonance-source-molecule computation in `toggleMode()` whose result was provably discarded in every code path.
+- Guard the descriptor panel's DOM lookup against a missing element, matching the existing guard on the physicochemical panel.
+
 ## 2026-07-05
 
 - Defer whole-molecule rotation viewport fitting until rotation release, then refit only when the final rotated molecule falls outside the visible plot.
@@ -8,8 +33,16 @@
 - Stop the force simulation after force-mode atom or bond drags so dropped molecules stay in place.
 - Preserve equivalent pan and zoom framing when switching between 2D and force modes.
 - Match the force fit/Auto Zoom button to the 2D-equivalent force framing.
+- Start newly loaded force-mode molecules at the same 2D-equivalent zoom used by the force fit button, while keeping reaction/resonance previews compact.
+- Let completed selection boxes be dragged by their dashed bounds to move the selected atoms/bonds.
 - Stabilize the force ring-clean E2E placement so standalone rings are drawn on truly blank canvas space.
 - Speed up held force-mode rotation for reaction and resonance views by syncing existing force-rendered positions instead of rebuilding the scene on every tick.
+- Preserve active reaction previews when switching between 2D and force modes.
+- Refactor: consolidate the `finiteNumber` coercion and nearest-selected-atom-within-radius snap logic (previously duplicated across `navigation.js`, `gesture-layer.js`, `drag-gestures.js`, and `clipboard.js`) into a shared `interactions/geometry-utils.js` module, and share the zoom-transform `applyX`/`applyY` fallback between `navigation.js` and `force-scene.js` via `force-helpers.js`.
+- Refactor: replace the selection-pivot handle's regex-based parsing of its own rendered SVG `transform` attribute with a direct read of the effective pivot from selection state and bounds, removing a fragile DOM round-trip.
+- Refactor: remove dead `_restoreRecentFunctionalGroupHighlight` and its now-unreachable mouseleave grace-period check from `highlights.js`.
+- Refactor: collapse the near-identical bond electronegativity and bond-lengths overlay panels into a shared `createBondOverlayPanel` factory, and centralize their mutual-exclusivity toggle in `bond-overlay-state.js` instead of each panel cross-calling the other's setter.
+- Refactor: extract a shared `_createExportSvgShell` helper for the duplicated viewBox/background/`<style>` scaffolding in the 2D and force-mode SVG export builders.
 
 ## 2026-07-04
 

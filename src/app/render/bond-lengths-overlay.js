@@ -1,23 +1,37 @@
 /** @module app/render/bond-lengths-overlay */
 
 import { getBondLength } from '../../data/bond-lengths.js';
-import { getBondLengthsActive, refreshBondEnPanel, registerBondLengthsPanelUpdater, setBondEnActive, setBondLengthsActive } from './bond-overlay-state.js';
+import { getBondLengthsActive, refreshBondEnPanel, registerBondLengthsPanelUpdater, setBondLengthsActive } from './bond-overlay-state.js';
 export { getBondLengthsActive } from './bond-overlay-state.js';
-import { createModeAwareHelpers } from './render-mode-helpers.js';
-import { createOverlayPanelRow } from './panel-row.js';
+import { createBondOverlayPanel } from './bond-overlay-panel.js';
 
-let ctx = {};
-const modeHelpers = createModeAwareHelpers(() => ctx);
+const panel = createBondOverlayPanel({
+  tbodyId: 'bond-lengths-body',
+  label: 'Bond Lengths',
+  title: 'Average covalent bond length (Å) per bond from crystallographic data (CRC Handbook / CCDC survey).',
+  getActive: getBondLengthsActive,
+  setActive: setBondLengthsActive,
+  registerUpdater: registerBondLengthsPanelUpdater,
+  refreshOther: refreshBondEnPanel
+});
 
 /**
  * Initializes the bond-lengths panel renderer with the app context it needs to
  * redraw the active molecule in either 2D or force mode.
  * @param {object} context - App context object.
  */
-export function initBondLengthsPanel(context) {
-  ctx = context;
-  registerBondLengthsPanelUpdater(updateBondLengthsPanel);
-}
+export const initBondLengthsPanel = panel.init;
+
+/**
+ * Renders or refreshes the Bond Lengths toggle row.
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to render the panel for.
+ */
+export const updateBondLengthsPanel = panel.update;
+
+/**
+ * Clears the bond-lengths panel UI state and deactivates the overlay.
+ */
+export const clearBondLengthsPanel = panel.clear;
 
 /**
  * Returns overlay data for rendering bond length labels, or null when the
@@ -49,57 +63,4 @@ export function getBondLengthsOverlayData(mol) {
     entries.push({ bondId: bond.id, label: length.toFixed(2) });
   }
   return entries.length > 0 ? entries : null;
-}
-
-/**
- * Clears the bond-lengths panel UI state and deactivates the overlay.
- */
-export function clearBondLengthsPanel() {
-  setBondLengthsActive(false);
-  const tbody = document.getElementById('bond-lengths-body');
-  if (tbody) {
-    tbody.innerHTML = '';
-  }
-}
-
-/**
- * Renders or refreshes the Bond Lengths toggle row.
- * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to render the panel for.
- */
-export function updateBondLengthsPanel(mol) {
-  if (typeof document === 'undefined') {
-    return;
-  }
-  const tbody = document.getElementById('bond-lengths-body');
-  if (!tbody) {
-    return;
-  }
-  if (!mol) {
-    tbody.innerHTML = '';
-    return;
-  }
-
-  tbody.innerHTML = '';
-
-  tbody.appendChild(
-    createOverlayPanelRow({
-      label: 'Bond Lengths',
-      title: 'Average covalent bond length (Å) per bond from crystallographic data (CRC Handbook / CCDC survey).',
-      active: getBondLengthsActive(),
-      onClick: event => {
-        event.stopPropagation();
-        const nextActive = !getBondLengthsActive();
-        setBondLengthsActive(nextActive);
-        if (nextActive) {
-          setBondEnActive(false);
-        }
-        const displayedMol = modeHelpers.currentMol() ?? mol;
-        updateBondLengthsPanel(displayedMol);
-        if (nextActive) {
-          refreshBondEnPanel(displayedMol);
-        }
-        modeHelpers.redraw(displayedMol);
-      }
-    })
-  );
 }

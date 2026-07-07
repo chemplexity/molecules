@@ -477,6 +477,50 @@ describe('create2DSceneRenderer', () => {
     assert.deepEqual(hoverCall.anchorB, { x: 345, y: 200 });
   });
 
+  it('can preserve existing reaction-preview pair layout separately from coordinates', () => {
+    const reactionLayoutCalls = [];
+    const { renderer } = makeRenderer({
+      helperOverrides: {
+        alignReaction2dProductOrientation: () => {
+          reactionLayoutCalls.push('align');
+        },
+        spreadReaction2dProductComponents: () => {
+          reactionLayoutCalls.push('spread');
+        },
+        centerReaction2dPairCoords: () => {
+          reactionLayoutCalls.push('center');
+        }
+      }
+    });
+    const atom1 = makeAtom('a1', 0, 0);
+    const atom2 = makeAtom('a2', 1.5, 0);
+    const mol = {
+      id: 'mol-preserve-reaction-preview',
+      atoms: new Map([
+        [atom1.id, atom1],
+        [atom2.id, atom2]
+      ]),
+      bonds: new Map(),
+      __reactionPreview: {
+        mappedAtomPairs: [[atom1.id, atom2.id]]
+      },
+      hideHydrogens() {},
+      getChiralCenters() {
+        return [];
+      }
+    };
+
+    renderer.render2d(mol, { preserveGeometry: true, preserveReactionLayout: true });
+    assert.deepEqual(reactionLayoutCalls, []);
+
+    renderer.render2d(mol, { preserveGeometry: true });
+    assert.deepEqual(reactionLayoutCalls, ['align', 'spread', 'center']);
+
+    reactionLayoutCalls.length = 0;
+    renderer.render2d(mol, { preserveGeometry: false });
+    assert.deepEqual(reactionLayoutCalls, ['align', 'spread', 'center']);
+  });
+
   it('draws 2D ring fills before functional group highlights', () => {
     const { renderer, records } = makeRenderer();
     const atoms = new Map([

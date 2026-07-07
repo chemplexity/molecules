@@ -4,6 +4,7 @@ import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
 import { ringFillDomId } from '../../core/style.js';
 import { atomColor, atomDisplayColor, atomDisplayOpacity, atomRadius, singleBondWidth, strokeColor } from '../render/helpers.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
+import { finiteNumber, nearestPointWithinRadius, SELECTION_PIVOT_ATOM_SNAP_RADIUS } from './geometry-utils.js';
 
 const PAINT_SETTINGS_CHANGED_EVENT = 'molecules:paint-settings-changed';
 const DEFAULT_RING_TEMPLATE_LAYOUT_BOND_LENGTH = 1.5;
@@ -12,7 +13,6 @@ const RING_TEMPLATE_PREVIEW_CLASS = 'ring-template-preview-layer';
 const RING_TEMPLATE_ROTATION_SNAP = Math.PI / 6;
 const SELECTION_ROTATION_SNAP = Math.PI / 12;
 const SELECTION_PIVOT_HIT_RADIUS = 24;
-const SELECTION_PIVOT_ATOM_SNAP_RADIUS = 16;
 const TAU = Math.PI * 2;
 
 /**
@@ -50,6 +50,7 @@ export function initGestureInteractions(context) {
   let selectionBaseBondIds = new Set();
   let selectionRotation = null;
   let selectionPivotDrag = null;
+  let selectionBoundsMove = null;
   let selectionPivotCursorActive = false;
   let suppressSelectionPivotClick = false;
   let suppressForceSelectionClearClick = false;
@@ -399,17 +400,16 @@ export function initGestureInteractions(context) {
     context.state.overlayState.setSelectionPivot?.(null);
   }
 
-  function finiteNumber(value) {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-  }
-
   function selectionRotateHandleFromEvent(event) {
     return event.target?.closest?.('[data-selection-rotate-handle]') ?? null;
   }
 
   function selectionPivotHandleFromEvent(event) {
     return event.target?.closest?.('[data-selection-pivot-handle]') ?? null;
+  }
+
+  function selectionBoundsMoveHandleFromEvent(event) {
+    return event.target?.closest?.('.selection-bounds-drag-hit') ?? null;
   }
 
   function selectionBoundsFromControls(controls) {
@@ -433,17 +433,6 @@ export function initGestureInteractions(context) {
     return selectionBoundsFromControls(handle?.closest?.('.selection-bounds-controls') ?? null);
   }
 
-  function selectionPivotPointFromControls(controls) {
-    const transform = controls?.querySelector?.('g.selection-pivot-handle')?.getAttribute?.('transform') ?? '';
-    const match = /^translate\(([-\d.]+)(?:,|\s+)([-\d.]+)\)$/.exec(transform.trim());
-    if (!match) {
-      return null;
-    }
-    const x = finiteNumber(match[1]);
-    const y = finiteNumber(match[2]);
-    return x == null || y == null ? null : { x, y };
-  }
-
   function selectionPivotDescriptorFromEvent(event) {
     const handle = selectionPivotHandleFromEvent(event);
     if (handle) {
@@ -455,11 +444,12 @@ export function initGestureInteractions(context) {
       if (controls.style?.display === 'none') {
         continue;
       }
-      const pivot = selectionPivotPointFromControls(controls);
+      const bounds = selectionBoundsFromControls(controls);
+      const pivot = bounds ? effectiveSelectionPivotForBounds(bounds) : null;
       if (!pivot || Math.hypot(pointerX - pivot.x, pointerY - pivot.y) > SELECTION_PIVOT_HIT_RADIUS) {
         continue;
       }
-      return { bounds: selectionBoundsFromControls(controls) };
+      return { bounds };
     }
     return null;
   }
@@ -484,7 +474,7 @@ export function initGestureInteractions(context) {
       setSelectionPivotCursor(true, true);
       return true;
     }
-    if (selectionRotation || selectionDragging) {
+    if (selectionRotation || selectionBoundsMove || selectionDragging) {
       setSelectionPivotCursor(false);
       return false;
     }
@@ -546,18 +536,7 @@ export function initGestureInteractions(context) {
 
   function snapSelectionPivotToNearestSelectedAtom() {
     const pivot = context.state.overlayState.getSelectionPivot?.() ?? null;
-    const pivotX = finiteNumber(pivot?.x);
-    const pivotY = finiteNumber(pivot?.y);
-    if (pivotX == null || pivotY == null) {
-      return false;
-    }
-    let best = null;
-    for (const point of selectedAtomRenderedPoints()) {
-      const distance = Math.hypot(point.x - pivotX, point.y - pivotY);
-      if (distance <= SELECTION_PIVOT_ATOM_SNAP_RADIUS && (!best || distance < best.distance)) {
-        best = { ...point, distance };
-      }
-    }
+    const best = nearestPointWithinRadius(selectedAtomRenderedPoints(), pivot, SELECTION_PIVOT_ATOM_SNAP_RADIUS);
     if (!best) {
       return false;
     }
@@ -565,11 +544,14 @@ export function initGestureInteractions(context) {
     return true;
   }
 
-  function clampPointToSelectionBounds(point, bounds) {
-    return {
-      x: Math.max(bounds.x, Math.min(bounds.x + bounds.width, point.x)),
-      y: Math.max(bounds.y, Math.min(bounds.y + bounds.height, point.y))
-    };
+  function effectiveSelectionPivotForBounds(bounds) {
+    const pivot = context.state.overlayState.getSelectionPivot?.() ?? null;
+    const pivotX = finiteNumber(pivot?.x);
+    const pivotY = finiteNumber(pivot?.y);
+    if (pivotX == null || pivotY == null) {
+      return selectionBoundsCenter(bounds);
+    }
+    return { x: pivotX, y: pivotY };
   }
 
   function selectionRotationCenterFromHandle(handle) {
@@ -577,13 +559,7 @@ export function initGestureInteractions(context) {
     if (!bounds) {
       return null;
     }
-    const pivot = context.state.overlayState.getSelectionPivot?.() ?? null;
-    const pivotX = finiteNumber(pivot?.x);
-    const pivotY = finiteNumber(pivot?.y);
-    if (pivotX == null || pivotY == null) {
-      return selectionBoundsCenter(bounds);
-    }
-    return clampPointToSelectionBounds({ x: pivotX, y: pivotY }, bounds);
+    return effectiveSelectionPivotForBounds(bounds);
   }
 
   function setSelectionBoundsControlsHidden(hidden) {
@@ -762,7 +738,7 @@ export function initGestureInteractions(context) {
       return false;
     }
     const [pointerX, pointerY] = context.pointer(event, g.node());
-    const pivot = clampPointToSelectionBounds({ x: pointerX, y: pointerY }, bounds);
+    const pivot = { x: pointerX, y: pointerY };
     selectionPivotDrag = { bounds };
     setSelectionPivotCursor(true, true);
     context.state.overlayState.setSelectionPivot?.(pivot);
@@ -778,17 +754,22 @@ export function initGestureInteractions(context) {
       return false;
     }
     const [pointerX, pointerY] = context.pointer(event, g.node());
-    context.state.overlayState.setSelectionPivot?.(clampPointToSelectionBounds({ x: pointerX, y: pointerY }, selectionPivotDrag.bounds));
+    context.state.overlayState.setSelectionPivot?.({ x: pointerX, y: pointerY });
     context.renderers.applySelectionOverlay?.();
     event.preventDefault?.();
     return true;
   }
 
-  function finishSelectionPivotDrag(event) {
+  /**
+   * Finalizes an in-progress selection-pivot drag without requiring a pointer
+   * event, so a window blur/mouseleave that never delivers a mouseup can still
+   * clear the gesture instead of leaving it to consume some later, unrelated click.
+   * @returns {boolean} True if a pivot drag was active and has been finalized.
+   */
+  function finalizeSelectionPivotDrag() {
     if (!selectionPivotDrag) {
       return false;
     }
-    updateSelectionPivotDrag(event);
     selectionPivotDrag = null;
     snapSelectionPivotToNearestSelectedAtom();
     setSelectionPivotCursor(false);
@@ -797,6 +778,14 @@ export function initGestureInteractions(context) {
       suppressForceSelectionClearClick = true;
     }
     return true;
+  }
+
+  function finishSelectionPivotDrag(event) {
+    if (!selectionPivotDrag) {
+      return false;
+    }
+    updateSelectionPivotDrag(event);
+    return finalizeSelectionPivotDrag();
   }
 
   function applySelectionRotation(event) {
@@ -848,11 +837,16 @@ export function initGestureInteractions(context) {
     return true;
   }
 
-  function finishSelectionRotation(event) {
+  /**
+   * Finalizes an in-progress selection rotation without requiring a pointer
+   * event, so a window blur/mouseleave that never delivers a mouseup can still
+   * clear the gesture instead of leaving it to consume some later, unrelated click.
+   * @returns {boolean} True if a rotation was active and has been finalized.
+   */
+  function finalizeSelectionRotation() {
     if (!selectionRotation) {
       return false;
     }
-    applySelectionRotation(event);
     if (selectionRotation.mode === 'force') {
       if (selectionRotation.lastPatch?.size) {
         context.force?.patchNodePositions?.(selectionRotation.lastPatch, { setAnchors: true, alpha: 0, restart: false });
@@ -873,6 +867,197 @@ export function initGestureInteractions(context) {
     return true;
   }
 
+  function finishSelectionRotation(event) {
+    if (!selectionRotation) {
+      return false;
+    }
+    applySelectionRotation(event);
+    return finalizeSelectionRotation();
+  }
+
+  function capture2dSelectionBoundsMove(mol, atomIds, start) {
+    context.view2D?.materializeProjectedVisibleStereoHydrogens?.(mol);
+    const scale = finiteNumber(context.constants?.scale) ?? 40;
+    const positions = new Map();
+    for (const atomId of atomIds) {
+      const atom = mol.atoms.get(atomId);
+      const x = finiteNumber(atom?.x);
+      const y = finiteNumber(atom?.y);
+      if (!atom || x == null || y == null) {
+        continue;
+      }
+      positions.set(atomId, { x, y });
+    }
+    return positions.size > 0 ? { mode: '2d', mol, atomIds: new Set(positions.keys()), start, scale, positions, moved: false, snapshotted: false } : null;
+  }
+
+  function captureForceSelectionBoundsMove(mol, atomIds, start) {
+    const nodeById = new Map(context.simulation.nodes().map(node => [node.id, node]));
+    const positions = new Map();
+    for (const atomId of atomIds) {
+      const node = nodeById.get(atomId);
+      const x = finiteNumber(node?.x);
+      const y = finiteNumber(node?.y);
+      if (x == null || y == null) {
+        continue;
+      }
+      node.fx = x;
+      node.fy = y;
+      positions.set(atomId, { x, y, node });
+    }
+    return positions.size > 0 ? { mode: 'force', mol, atomIds: new Set(positions.keys()), start, positions, moved: false, snapshotted: false } : null;
+  }
+
+  function startSelectionBoundsMove(event) {
+    if (event.button !== 0 || selectionRotateHandleFromEvent(event) || selectionPivotHandleFromEvent(event)) {
+      return false;
+    }
+    const handle = selectionBoundsMoveHandleFromEvent(event);
+    if (!handle) {
+      return false;
+    }
+    const mode = context.state.viewState.getMode();
+    if (!context.state.overlayState.getSelectMode() || (mode !== '2d' && mode !== 'force')) {
+      return false;
+    }
+    const mol = mode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    if (!mol) {
+      return false;
+    }
+    const atomIds = selectedTransformAtomIds(mol);
+    if (atomIds.size === 0) {
+      return false;
+    }
+    const [startX, startY] = context.pointer(event, g.node());
+    const move =
+      mode === 'force'
+        ? captureForceSelectionBoundsMove(mol, atomIds, { x: startX, y: startY })
+        : capture2dSelectionBoundsMove(mol, atomIds, { x: startX, y: startY });
+    if (!move) {
+      return false;
+    }
+    if (mode === 'force') {
+      context.simulation?.stop?.();
+      context.force?.setAutoFitEnabled?.(false);
+      context.force?.disableKeepInView?.();
+    }
+    selectionBoundsMove = {
+      ...move,
+      pivotStart: context.state.overlayState.getSelectionPivot?.() ?? null
+    };
+    context.state.overlayState.setSelectionDragActive?.(true);
+    context.view.clearPrimitiveHover();
+    context.renderers.applySelectionOverlay?.();
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    return true;
+  }
+
+  function snapshotSelectionBoundsMoveIfNeeded() {
+    if (!selectionBoundsMove || selectionBoundsMove.snapshotted) {
+      return;
+    }
+    context.history?.takeSnapshot?.({ clearReactionPreview: false });
+    selectionBoundsMove.snapshotted = true;
+  }
+
+  function applySelectionBoundsMove(event) {
+    if (!selectionBoundsMove) {
+      return false;
+    }
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    const dx = pointerX - selectionBoundsMove.start.x;
+    const dy = pointerY - selectionBoundsMove.start.y;
+    if (dx !== 0 || dy !== 0) {
+      snapshotSelectionBoundsMoveIfNeeded();
+      selectionBoundsMove.moved = true;
+    }
+    const pivotX = finiteNumber(selectionBoundsMove.pivotStart?.x);
+    const pivotY = finiteNumber(selectionBoundsMove.pivotStart?.y);
+    if (pivotX != null && pivotY != null) {
+      context.state.overlayState.setSelectionPivot?.({ x: pivotX + dx, y: pivotY + dy });
+    }
+
+    if (selectionBoundsMove.mode === '2d') {
+      for (const [atomId, position] of selectionBoundsMove.positions) {
+        const atom = selectionBoundsMove.mol.atoms.get(atomId);
+        if (!atom) {
+          continue;
+        }
+        atom.x = position.x + dx / selectionBoundsMove.scale;
+        atom.y = position.y - dy / selectionBoundsMove.scale;
+      }
+      context.view2D?.syncDerivedState?.(selectionBoundsMove.mol);
+      context.renderers.draw2d?.();
+    } else {
+      const patch = new Map();
+      for (const [atomId, position] of selectionBoundsMove.positions) {
+        const moved = { x: position.x + dx, y: position.y + dy };
+        patch.set(atomId, moved);
+        if (position.node) {
+          position.node.x = moved.x;
+          position.node.y = moved.y;
+          position.node.fx = moved.x;
+          position.node.fy = moved.y;
+        }
+      }
+      context.force?.patchNodePositions?.(patch, { setAnchors: false, alpha: 0, restart: false });
+      selectionBoundsMove.lastPatch = patch;
+      context.force?.syncPositions?.();
+    }
+    context.renderers.applySelectionOverlay?.();
+    event.preventDefault?.();
+    return true;
+  }
+
+  /**
+   * Finalizes an in-progress selection-bounds move without requiring a pointer
+   * event, so a window blur/mouseleave that never delivers a mouseup can still
+   * clear the gesture instead of leaving it to consume some later, unrelated click.
+   * @returns {boolean} True if a bounds move was active and has been finalized.
+   */
+  function finalizeSelectionBoundsMove() {
+    if (!selectionBoundsMove) {
+      return false;
+    }
+    if (selectionBoundsMove.mode === 'force') {
+      if (selectionBoundsMove.lastPatch?.size) {
+        context.force?.patchNodePositions?.(selectionBoundsMove.lastPatch, { setAnchors: true, alpha: 0, restart: false });
+        context.force?.syncPositions?.();
+      }
+      for (const position of selectionBoundsMove.positions.values()) {
+        if (position.node) {
+          position.node.fx = null;
+          position.node.fy = null;
+          if (Number.isFinite(position.node.x) && Number.isFinite(position.node.y)) {
+            position.node.anchorX = position.node.x;
+            position.node.anchorY = position.node.y;
+          }
+        }
+      }
+    } else if (selectionBoundsMove.moved) {
+      context.renderers.draw2d?.();
+    }
+    if (selectionBoundsMove.moved) {
+      context.view.fitTransformedSelectionIfNeeded?.(selectionBoundsMove.atomIds);
+    }
+    selectionBoundsMove = null;
+    context.state.overlayState.setSelectionDragActive?.(false);
+    context.renderers.applySelectionOverlay?.();
+    return true;
+  }
+
+  function finishSelectionBoundsMove(event) {
+    if (!selectionBoundsMove) {
+      return false;
+    }
+    applySelectionBoundsMove(event);
+    const finalized = finalizeSelectionBoundsMove();
+    event.preventDefault?.();
+    return finalized;
+  }
+
   /**
    * Returns the viewport-space rectangle for the current selection drag.
    * @param {number} x - Current pointer x coordinate.
@@ -886,6 +1071,43 @@ export function initGestureInteractions(context) {
       rw: Math.abs(x - selectionStart.x),
       rh: Math.abs(y - selectionStart.y)
     };
+  }
+
+  /**
+   * Finds 2D atom ids from the rendered hit targets so marquee selection uses
+   * the same viewport-space positions the pointer sees.
+   * @param {{ rx: number, ry: number, rw: number, rh: number }} box - Selection rectangle.
+   * @param {object} mol2d - Current 2D molecule.
+   * @returns {Set<string>|null} Rendered atom ids, or null when DOM geometry is unavailable.
+   */
+  function collectRendered2dSelectionAtomIds(box, mol2d) {
+    const svgNode = svg.node?.() ?? null;
+    const svgRect = svgNode?.getBoundingClientRect?.() ?? null;
+    if (!svgRect || !svgNode?.querySelectorAll || !mol2d?.atoms) {
+      return null;
+    }
+    const { rx, ry, rw, rh } = box;
+    const atomIds = new Set();
+    let inspectedHitCount = 0;
+    for (const hit of svgNode.querySelectorAll('g[data-atom-id] .atom-hit')) {
+      inspectedHitCount += 1;
+      const group = hit.closest?.('g[data-atom-id]') ?? null;
+      const atomId = group?.getAttribute?.('data-atom-id') ?? null;
+      const atom = atomId ? mol2d.atoms.get(atomId) : null;
+      if (!atom || atom.x == null || atom.visible === false) {
+        continue;
+      }
+      const rect = hit.getBoundingClientRect?.() ?? null;
+      if (!rect) {
+        continue;
+      }
+      const sx = rect.left + rect.width / 2 - svgRect.left;
+      const sy = rect.top + rect.height / 2 - svgRect.top;
+      if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
+        atomIds.add(atomId);
+      }
+    }
+    return inspectedHitCount > 0 ? atomIds : null;
   }
 
   /**
@@ -920,13 +1142,20 @@ export function initGestureInteractions(context) {
     }
 
     const mol2d = context.state.documentState.getMol2d();
-    const atoms = [...mol2d.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
-    for (const atom of atoms) {
-      const { x: gX, y: gY } = toSelectionSVGPt2d(atom);
-      const sx = transform.applyX(gX);
-      const sy = transform.applyY(gY);
-      if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
-        atomIds.add(atom.id);
+    const renderedAtomIds = collectRendered2dSelectionAtomIds(box, mol2d);
+    if (renderedAtomIds) {
+      for (const atomId of renderedAtomIds) {
+        atomIds.add(atomId);
+      }
+    } else {
+      const atoms = [...mol2d.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
+      for (const atom of atoms) {
+        const { x: gX, y: gY } = toSelectionSVGPt2d(atom);
+        const sx = transform.applyX(gX);
+        const sy = transform.applyY(gY);
+        if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
+          atomIds.add(atom.id);
+        }
       }
     }
 
@@ -1893,6 +2122,34 @@ export function initGestureInteractions(context) {
     updatePaintEraserPreview(lastPaintPreviewEvent);
   }
 
+  /**
+   * Cancels an in-progress marquee selection drag without a pointer event, so
+   * a window blur/mouseleave that never delivers a mouseup can still clear the
+   * gesture instead of leaving the drag rectangle and drag-active state stuck.
+   * Reverts to the pre-drag selection, matching the existing tiny-drag cancel
+   * behavior, since only the live selection preview (not molecule geometry)
+   * has been touched during the drag.
+   * @returns {boolean} True if a drag was active and has been cancelled.
+   */
+  function cancelSelectionDrag() {
+    if (!selectionDragging) {
+      return false;
+    }
+    selectionDragging = false;
+    selectionRect.style('display', 'none');
+    context.state.overlayState.setSelectionDragActive?.(false);
+    const additive = selectionAdditive;
+    selectionAdditive = false;
+    context.view.clearPrimitiveHover();
+    if (additive) {
+      replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
+    } else {
+      replaceLiveSelection([], []);
+    }
+    context.renderers.applySelectionOverlay();
+    return true;
+  }
+
   function finishSelectionDrag(event) {
     if (!selectionDragging) {
       return;
@@ -2138,6 +2395,14 @@ export function initGestureInteractions(context) {
         return;
       }
       suppressSelectionPivotClick = false;
+      const plotEl = context.dom?.plotEl ?? null;
+      const svgNode = svg?.node?.() ?? null;
+      const suppressTarget =
+        (plotEl?.contains?.(event.target) ?? false) ||
+        (svgNode?.contains?.(event.target) ?? false);
+      if (!suppressTarget) {
+        return;
+      }
       event.preventDefault?.();
       event.stopPropagation?.();
       event.stopImmediatePropagation?.();
@@ -2154,6 +2419,9 @@ export function initGestureInteractions(context) {
       return;
     }
     if (startSelectionRotation(event)) {
+      return;
+    }
+    if (startSelectionBoundsMove(event)) {
       return;
     }
     const mode = context.state.viewState.getMode();
@@ -2357,6 +2625,10 @@ export function initGestureInteractions(context) {
       applySelectionRotation(event);
       return;
     }
+    if (selectionBoundsMove) {
+      applySelectionBoundsMove(event);
+      return;
+    }
     updateSelectionPivotCursor(event);
     if (context.clipboard?.hasPastePreview?.()) {
       context.clipboard.updatePastePreview(event);
@@ -2397,6 +2669,9 @@ export function initGestureInteractions(context) {
     if (event.button === 0 && finishSelectionRotation(event)) {
       return;
     }
+    if (event.button === 0 && finishSelectionBoundsMove(event)) {
+      return;
+    }
     if (event.button === 0 && commitRingTemplatePreview()) {
       return;
     }
@@ -2423,6 +2698,34 @@ export function initGestureInteractions(context) {
     }
     finishSelectionDrag(event);
   });
+
+  // Selection rotate/pivot-drag/bounds-move/marquee gestures are otherwise
+  // only finished by the document 'mouseup' handler above. If the mouse is
+  // released outside the browser window, or the window loses focus
+  // mid-gesture, that event never arrives — without this safety net the
+  // gesture state would stay active and the next unrelated mouseup would
+  // apply a bogus rotation/pivot/bounds move, or leave the drag rectangle stuck.
+  const abortInterruptedSelectionTransformGestures = event => {
+    if (event?.type === 'mouseleave') {
+      const target = event.target;
+      const rootExit = target === doc || target === doc.documentElement || target === doc.body;
+      if (!rootExit || (event.relatedTarget && doc.contains?.(event.relatedTarget))) {
+        return;
+      }
+    }
+    finalizeSelectionPivotDrag();
+    finalizeSelectionRotation();
+    finalizeSelectionBoundsMove();
+    if (event?.type === 'mouseup' || event?.type === 'pointerup') {
+      finishSelectionDrag(event);
+    } else {
+      cancelSelectionDrag();
+    }
+  };
+  doc.addEventListener('mouseleave', abortInterruptedSelectionTransformGestures);
+  doc.defaultView?.addEventListener?.('mouseup', abortInterruptedSelectionTransformGestures);
+  doc.defaultView?.addEventListener?.('pointerup', abortInterruptedSelectionTransformGestures);
+  doc.defaultView?.addEventListener?.('blur', abortInterruptedSelectionTransformGestures);
 
   return {
     refreshPaintPreview

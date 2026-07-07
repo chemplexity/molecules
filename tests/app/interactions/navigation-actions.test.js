@@ -38,6 +38,31 @@ function makeDisplayedStereoHydrogenMolecule() {
   return molecule;
 }
 
+function makeReactionPreviewDisplayMolecule() {
+  const displayMol = new Molecule();
+  const c1 = displayMol.addAtom('c1', 'C');
+  const c2 = displayMol.addAtom('c2', 'O');
+  const p1 = displayMol.addAtom('__rxn_product__:c1', 'C');
+  const p2 = displayMol.addAtom('__rxn_product__:c2', 'O');
+  c1.x = 0;
+  c1.y = 0;
+  c2.x = 1.5;
+  c2.y = 0;
+  p1.x = 4;
+  p1.y = 0;
+  p2.x = 5.5;
+  p2.y = 0;
+  displayMol.addBond('b1', c1.id, c2.id, { order: 1 }, false);
+  displayMol.addBond('__rxn_product__:b1', p1.id, p2.id, { order: 1 }, false);
+  displayMol.__reactionPreview = {
+    reactantAtomIds: new Set([c1.id, c2.id]),
+    productAtomIds: new Set([p1.id, p2.id]),
+    productComponentAtomIdSets: [new Set([p1.id, p2.id])],
+    mappedAtomPairs: [[c1.id, p1.id]]
+  };
+  return displayMol;
+}
+
 test('autoZoom recenters and fits the 2d molecule viewport', () => {
   const mol = {
     atoms: new Map([
@@ -1736,6 +1761,16 @@ test('toggleMode preserves the visible molecule center and scale from 2d to forc
     history: {
       takeSnapshot() {}
     },
+    helpers: {
+      atomBBox(atoms) {
+        const xs = atoms.map(atom => atom.x);
+        const ys = atoms.map(atom => atom.y);
+        return {
+          cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+          cy: (Math.min(...ys) + Math.max(...ys)) / 2
+        };
+      }
+    },
     overlays: {
       hasReactionPreview: () => false,
       resetActiveResonanceView() {},
@@ -1772,6 +1807,80 @@ test('toggleMode preserves the visible molecule center and scale from 2d to forc
   approxEqual(transform.k, 2 * (40 / (41 / 1.5)));
   approxEqual(transform.x, 760 - transform.k * 400);
   approxEqual(transform.y, 620 - transform.k * 300);
+});
+
+test('toggleMode converts a free selection pivot from 2d coordinates to force coordinates', () => {
+  const mol = new Molecule();
+  const c1 = mol.addAtom('c1', 'C');
+  const c2 = mol.addAtom('c2', 'C');
+  c1.x = 0;
+  c1.y = 0;
+  c2.x = 1.5;
+  c2.y = 0;
+  mol.addBond('b1', 'c1', 'c2', { order: 1 }, false);
+  let mode = '2d';
+  let selectionPivot = { x: 430, y: 260 };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {},
+        getCx2d: () => 0,
+        getCy2d: () => 0
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => mol,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      },
+      overlayState: {
+        getSelectedAtomIds: () => new Set(),
+        getSelectionPivot: () => selectionPivot,
+        setSelectionPivot: value => {
+          selectionPivot = value;
+        }
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {}
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome() {}
+    },
+    view: {
+      scale: 40,
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {},
+      getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+      makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+      setZoomTransform() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  assert.equal(mode, 'force');
+  approxEqual(selectionPivot.x, 400);
+  approxEqual(selectionPivot.y, 300 - 41 / 1.5);
 });
 
 test('toggleMode includes selected 2D hetero label hydrogens when entering force mode', () => {
@@ -2161,6 +2270,158 @@ test('toggleMode preserves an active resonance pair when switching force mode to
   assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
 });
 
+test('toggleMode preserves an active reaction preview when switching line mode to force mode', () => {
+  const displayMol = makeReactionPreviewDisplayMolecule();
+  const calls = [];
+  let mode = '2d';
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+          calls.push(['setMode', nextMode]);
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => displayMol,
+        getMol2d: () => displayMol,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    overlays: {
+      hasReactionPreview: () => true,
+      getActiveResonanceSourceMolecule: () => {
+        throw new Error('reaction preview switch must not resolve a resonance source');
+      },
+      resetActiveResonanceView: source => calls.push(['resetActiveResonanceView', source]),
+      reapplyActiveReactionPreview: () => {
+        calls.push(['reapplyActiveReactionPreview']);
+        return true;
+      }
+    },
+    simulation: {
+      stop: () => calls.push(['stopSimulation'])
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome: nextMode => calls.push(['updateModeChrome', nextMode])
+    },
+    view: {
+      clearPrimitiveHover: () => calls.push(['clearPrimitiveHover']),
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    renderers: {
+      renderMol: (renderedMol, options) => calls.push(['renderMol', renderedMol, options])
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  const renderCall = calls.find(call => call[0] === 'renderMol');
+  assert.equal(mode, 'force');
+  assert.ok(renderCall);
+  assert.notEqual(renderCall[1], displayMol);
+  assert.equal(renderCall[1].atomCount, 4);
+  assert.equal(renderCall[1].__reactionPreview, displayMol.__reactionPreview);
+  assert.ok(renderCall[1].atoms.has('__rxn_product__:c1'));
+  assert.equal(renderCall[2].recomputeResonance, false);
+  assert.equal(renderCall[2].refreshResonancePanel, false);
+  assert.equal(renderCall[2].preserveAnalysis, true);
+  assert.ok(renderCall[2].forceInitialPatchPos.has('__rxn_product__:c1'));
+  assert.deepEqual(calls.filter(([name]) => name === 'reapplyActiveReactionPreview'), []);
+  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+});
+
+test('toggleMode preserves an active reaction preview when switching force mode to line mode', () => {
+  const displayMol = makeReactionPreviewDisplayMolecule();
+  const calls = [];
+  let mode = 'force';
+  const nodes = [
+    { id: 'c1', name: 'C', x: 100, y: 200 },
+    { id: 'c2', name: 'O', x: 141, y: 200 },
+    { id: '__rxn_product__:c1', name: 'C', x: 260, y: 200 },
+    { id: '__rxn_product__:c2', name: 'O', x: 301, y: 200 }
+  ];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+          calls.push(['setMode', nextMode]);
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {}
+      },
+      documentState: {
+        getCurrentMol: () => displayMol,
+        getMol2d: () => null,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    overlays: {
+      hasReactionPreview: () => true,
+      getActiveResonanceSourceMolecule: () => {
+        throw new Error('reaction preview switch must not resolve a resonance source');
+      },
+      resetActiveResonanceView: source => calls.push(['resetActiveResonanceView', source]),
+      reapplyActiveReactionPreview: () => {
+        calls.push(['reapplyActiveReactionPreview']);
+        return true;
+      }
+    },
+    simulation: {
+      stop: () => calls.push(['stopSimulation']),
+      nodes: () => nodes
+    },
+    dom: {
+      updateModeChrome: nextMode => calls.push(['updateModeChrome', nextMode])
+    },
+    view: {
+      clearPrimitiveHover: () => calls.push(['clearPrimitiveHover']),
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    renderers: {
+      renderMol: (renderedMol, options) => calls.push(['renderMol', renderedMol, options])
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  const renderCall = calls.find(call => call[0] === 'renderMol');
+  assert.equal(mode, '2d');
+  assert.ok(renderCall);
+  assert.notEqual(renderCall[1], displayMol);
+  assert.equal(renderCall[1].atomCount, 4);
+  assert.equal(renderCall[1].__reactionPreview, displayMol.__reactionPreview);
+  assert.ok(renderCall[1].atoms.has('__rxn_product__:c1'));
+  assert.deepEqual(renderCall[2], {
+    preserveHistory: true,
+    preserveGeometry: true,
+    recomputeResonance: false,
+    refreshResonancePanel: false,
+    preserveAnalysis: true,
+    preserveReactionLayout: true
+  });
+  assert.deepEqual(calls.filter(([name]) => name === 'reapplyActiveReactionPreview'), []);
+  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+});
+
 test('toggleMode writes converted force coordinates before rendering line mode', () => {
   const mol = new Molecule();
   mol.addAtom('c1', 'C');
@@ -2295,6 +2556,90 @@ test('toggleMode preserves the visible molecule center and scale from force to 2
   approxEqual(transform.k, 1.5 * ((41 / 1.5) / 40));
   approxEqual(transform.x, 230.75 - transform.k * 400);
   approxEqual(transform.y, 275 - transform.k * 300);
+});
+
+test('toggleMode converts a free selection pivot from force coordinates to 2d coordinates', () => {
+  const mol = new Molecule();
+  mol.addAtom('c1', 'C');
+  mol.addAtom('c2', 'C');
+  mol.addBond('b1', 'c1', 'c2', { order: 1 }, false);
+  let mode = 'force';
+  let selectionPivot = { x: 120.5, y: 159 };
+  const nodes = [
+    { id: 'c1', name: 'C', x: 100, y: 200 },
+    { id: 'c2', name: 'C', x: 141, y: 200 }
+  ];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => mode,
+        setMode: nextMode => {
+          mode = nextMode;
+        },
+        setRotationDeg() {},
+        setFlipH() {},
+        setFlipV() {},
+        getCx2d: () => 99,
+        getCy2d: () => -99
+      },
+      documentState: {
+        getCurrentMol: () => mol,
+        getMol2d: () => null,
+        getCurrentSmiles: () => '',
+        getCurrentInchi: () => ''
+      },
+      overlayState: {
+        getSelectionPivot: () => selectionPivot,
+        setSelectionPivot: value => {
+          selectionPivot = value;
+        }
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    helpers: {
+      atomBBox(atoms) {
+        const xs = atoms.map(atom => atom.x);
+        const ys = atoms.map(atom => atom.y);
+        return {
+          cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+          cy: (Math.min(...ys) + Math.max(...ys)) / 2
+        };
+      }
+    },
+    overlays: {
+      hasReactionPreview: () => false,
+      resetActiveResonanceView() {},
+      reapplyActiveReactionPreview: () => false
+    },
+    simulation: {
+      stop() {},
+      nodes: () => nodes
+    },
+    dom: {
+      plotEl: { clientWidth: 800, clientHeight: 600 },
+      updateModeChrome() {}
+    },
+    view: {
+      scale: 40,
+      clearPrimitiveHover() {},
+      setPreserveSelectionOnNextRender() {},
+      getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+      makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+      setZoomTransform() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    parsers: {}
+  });
+
+  actions.toggleMode();
+
+  assert.equal(mode, '2d');
+  approxEqual(selectionPivot.x, 400);
+  approxEqual(selectionPivot.y, 240);
 });
 
 test('toggleMode regularizes small force-mode ring drift before rendering line mode', () => {
@@ -2769,6 +3114,7 @@ test('force flip refits the viewport when a reaction preview is active', () => {
     view: {
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform: transform => calls.push(['setZoomTransform', transform]),
+      setPreserveSelectionOnNextRender: value => calls.push(['setPreserveSelectionOnNextRender', value]),
       restorePersistentHighlight: () => calls.push(['restorePersistentHighlight'])
     }
   });
@@ -2785,6 +3131,7 @@ test('force flip refits the viewport when a reaction preview is active', () => {
       ],
       { setAnchors: true, alpha: 0, restart: false }
     ],
+    ['setPreserveSelectionOnNextRender', true],
     ['updateForce', {}, { preservePositions: true, preserveView: true, restartSimulation: false }],
     ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
     ['zoomTransformsDiffer', fitTransform, { x: 0, y: 0, k: 1 }],
@@ -2834,6 +3181,7 @@ test('force flip preserves the current viewport when no reaction preview is acti
     view: {
       getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
       setZoomTransform: transform => calls.push(['setZoomTransform', transform]),
+      setPreserveSelectionOnNextRender: value => calls.push(['setPreserveSelectionOnNextRender', value]),
       restorePersistentHighlight: () => calls.push(['restorePersistentHighlight'])
     }
   });
@@ -2843,6 +3191,10 @@ test('force flip preserves the current viewport when no reaction preview is acti
   assert.equal(
     calls.some(([name]) => name === 'forceFitTransform' || name === 'setZoomTransform'),
     false
+  );
+  assert.ok(
+    calls.some(([name, value]) => name === 'setPreserveSelectionOnNextRender' && value === true),
+    'force flip should preserve the active selection across the rerender'
   );
 });
 
@@ -2895,15 +3247,13 @@ test('force flip keeps an atom-snapped selection pivot attached to that atom', (
   assert.deepEqual(selectionPivot, { x: 40, y: 20 });
 });
 
-test('2D flip keeps an atom-snapped selection pivot attached after recentering', () => {
+test('2D flip keeps an atom-snapped selection pivot attached around the molecule center', () => {
   const mol = {
     atoms: new Map([
       ['a1', { id: 'a1', name: 'C', x: 0, y: 0 }],
       ['a2', { id: 'a2', name: 'C', x: 2, y: 0 }]
     ])
   };
-  let cx2d = 0;
-  let cy2d = 0;
   let selectionPivot = { x: 300, y: 200 };
   const actions = createNavigationActions({
     state: {
@@ -2913,14 +3263,8 @@ test('2D flip keeps an atom-snapped selection pivot attached after recentering',
         setFlipH() {},
         getFlipV: () => false,
         setFlipV() {},
-        getCx2d: () => cx2d,
-        getCy2d: () => cy2d,
-        setCx2d(value) {
-          cx2d = value;
-        },
-        setCy2d(value) {
-          cy2d = value;
-        }
+        getCx2d: () => 0,
+        getCy2d: () => 0
       },
       documentState: {
         getMol2d: () => mol
@@ -2964,7 +3308,61 @@ test('2D flip keeps an atom-snapped selection pivot attached after recentering',
 
   actions.flip('h');
 
-  assert.deepEqual(selectionPivot, { x: 340, y: 200 });
+  assert.deepEqual(selectionPivot, { x: 380, y: 200 });
+});
+
+test('2D horizontal flip mirrors a free selection pivot around the toolbar rotation center', () => {
+  const mol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0 }],
+      ['a2', { id: 'a2', name: 'C', x: 2, y: 0 }]
+    ])
+  };
+  let selectionPivot = { x: 260, y: 200 };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d',
+        getFlipH: () => false,
+        setFlipH() {},
+        getFlipV: () => false,
+        setFlipV() {},
+        getCx2d: () => 0,
+        getCy2d: () => 0
+      },
+      documentState: {
+        getMol2d: () => mol
+      },
+      overlayState: {
+        getSelectionPivot: () => selectionPivot,
+        setSelectionPivot: value => {
+          selectionPivot = value;
+        },
+        getSelectedAtomIds: () => new Set()
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    dom: {
+      plotEl: {
+        clientWidth: 600,
+        clientHeight: 400
+      }
+    },
+    view: {
+      scale: 40,
+      restorePersistentHighlight() {},
+      flipStereoMap2d() {}
+    },
+    renderers: {
+      draw2d() {}
+    }
+  });
+
+  actions.flip('h');
+
+  assert.deepEqual(selectionPivot, { x: 420, y: 200 });
 });
 
 test('line rotate preserves the viewport when the rotated molecule remains visible', () => {
@@ -3041,6 +3439,82 @@ test('line rotate preserves the viewport when the rotated molecule remains visib
   assert.ok(drawIndex >= 0);
   assert.equal(calls.some(([name]) => name === 'fitCurrent2dView'), false);
   assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+});
+
+test('line rotate carries a free selection pivot with the rotated molecule', () => {
+  const mol = {
+    atoms: new Map([
+      ['c1', { id: 'c1', name: 'C', x: 0, y: 0 }],
+      ['c2', { id: 'c2', name: 'C', x: 2, y: 0 }]
+    ])
+  };
+  let rotationDeg = 0;
+  let selectionPivot = { x: 300, y: 160 };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d',
+        getRotationDeg: () => rotationDeg,
+        setRotationDeg: value => {
+          rotationDeg = value;
+        },
+        getCx2d: () => 0,
+        getCy2d: () => 0
+      },
+      documentState: {
+        getMol2d: () => mol
+      },
+      overlayState: {
+        getSelectionPivot: () => selectionPivot,
+        setSelectionPivot: value => {
+          selectionPivot = value;
+        },
+        getSelectedAtomIds: () => new Set()
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    helpers: {
+      atomBBox(atoms) {
+        const xs = atoms.map(atom => atom.x);
+        const ys = atoms.map(atom => atom.y);
+        return {
+          minX: Math.min(...xs),
+          maxX: Math.max(...xs),
+          minY: Math.min(...ys),
+          maxY: Math.max(...ys),
+          cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+          cy: (Math.min(...ys) + Math.max(...ys)) / 2
+        };
+      }
+    },
+    force: {
+      fitPad: 40,
+      initialZoomMultiplier: 1.3
+    },
+    overlays: {
+      viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad })
+    },
+    dom: {
+      plotEl: { clientWidth: 600, clientHeight: 400 }
+    },
+    view: {
+      scale: 40,
+      restorePersistentHighlight() {},
+      getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+      makeZoomIdentity: (x, y, k) => ({ x, y, k }),
+      setZoomTransform() {}
+    },
+    renderers: {
+      draw2d() {}
+    }
+  });
+
+  actions.startRotate(90);
+  actions.stopRotate();
+
+  assert.deepEqual(selectionPivot, { x: 300, y: 240 });
 });
 
 test('line rotate uses the rendered auto zoom fit when the rotated molecule is clipped', () => {
@@ -3314,6 +3788,66 @@ test('force rotate transforms hydrogen slots and fits the viewport outside react
   assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [['forceFitTransform', ['c1', 'h1'], 40, { scaleMultiplier: 1.3 }]]);
   assert.deepEqual(calls.find(([name]) => name === 'zoomTransformsDiffer'), ['zoomTransformsDiffer', fitTransform, { x: -1000, y: 0, k: 1 }]);
   assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
+});
+
+test('force rotate carries a free selection pivot with the rotated molecule', () => {
+  const nodes = [
+    { id: 'c1', name: 'C', x: 0, y: 0, vx: 0, vy: 0 },
+    { id: 'c2', name: 'C', x: 20, y: 0, vx: 0, vy: 0 }
+  ];
+  let selectionPivot = { x: 10, y: 10 };
+  const calls = [];
+  const fitTransform = { x: 0, y: 0, k: 1 };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => ({})
+      },
+      overlayState: {
+        getSelectionPivot: () => selectionPivot,
+        setSelectionPivot: value => {
+          selectionPivot = value;
+        },
+        getSelectedAtomIds: () => new Set()
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    simulation: {
+      nodes: () => nodes
+    },
+    force: {
+      patchForceNodePositions: () => {},
+      syncPositions: () => {},
+      forceFitTransform: () => fitTransform,
+      fitPad: 40,
+      initialZoomMultiplier: 1.3,
+      zoomTransformsDiffer: () => false
+    },
+    overlays: {
+      hasReactionPreview: () => false
+    },
+    dom: {
+      plotEl: { clientWidth: 600, clientHeight: 400 }
+    },
+    renderers: {
+      updateForce: (nextMol, options) => calls.push(['updateForce', nextMol, options])
+    },
+    view: {
+      getZoomTransform: () => ({ x: 0, y: 0, k: 1 }),
+      setZoomTransform: transform => calls.push(['setZoomTransform', transform])
+    }
+  });
+
+  actions.startRotate(90);
+  actions.stopRotate();
+
+  approxEqual(selectionPivot.x, 20);
+  approxEqual(selectionPivot.y, 0);
 });
 
 test('force rotate fits active resonance pairs with the same reaction-like zoom as autoZoom', () => {

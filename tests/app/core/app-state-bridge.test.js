@@ -63,6 +63,8 @@ describe('createAppStateBridge', () => {
         setFlipV: value => {
           records.push(['setFlipV', value]);
         },
+        getCx2d: () => 1.25,
+        getCy2d: () => -0.75,
         setCx2d: value => {
           records.push(['setCx2d', value]);
         },
@@ -176,6 +178,8 @@ describe('createAppStateBridge', () => {
     });
 
     assert.equal(bridge.viewState.getMode(), '2d');
+    assert.equal(bridge.viewState.getCx2d(), 1.25);
+    assert.equal(bridge.viewState.getCy2d(), -0.75);
     assert.deepEqual(bridge.viewState.captureZoomTransform(), { x: 1, y: 2, k: 3 });
     assert.equal(bridge.overlayState.getChargeTool(), 'positive');
     assert.equal(bridge.overlayState.getPaintMode(), true);

@@ -419,6 +419,8 @@ describe('createSelectionOverlayManager', () => {
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-highlight-layer'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'opacity' && value === 0.45));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-drag-hit'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'pointer-events' && value === 'stroke'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'fill' && value === 'none'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'stroke-dasharray' && value === '5,3'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'opacity' && value === 0.4));
@@ -445,6 +447,28 @@ describe('createSelectionOverlayManager', () => {
     manager.redraw2dSelection();
 
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'transform' && value === 'translate(12,14)'));
+  });
+
+  it('expands the 2D selection bounds to include an out-of-box pivot', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const mol = {
+      atoms: new Map([['a1', atomA]]),
+      bonds: new Map()
+    };
+    const { manager, records } = makeManager({
+      mode: '2d',
+      mol2D: mol,
+      selectedAtomIds: new Set(['a1']),
+      selectionPivot: { x: 100, y: 80 }
+    });
+
+    manager.redraw2dSelection();
+
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'x' && value === -18));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'y' && value === -18));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'width' && value === 128));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'height' && value === 108));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'transform' && value === 'translate(100,80)'));
   });
 
   it('does not draw the persistent bounds box while 2D selection drag is active', () => {
@@ -570,9 +594,55 @@ describe('createSelectionOverlayManager', () => {
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
     assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-drag-hit'));
     assert.equal(records.filter(([kind, name, value]) => kind === 'attr' && name === 'data-selection-rotate-handle' && value === 'rotate').length, 1);
     assert.equal(records.filter(([kind, name, value]) => kind === 'attr' && name === 'data-selection-pivot-handle' && value === 'pivot').length, 1);
     assert.ok(records.some(([kind, value]) => kind === 'setSelectionBounds' && value));
+  });
+
+  it('expands force selection bounds to include an out-of-box pivot', () => {
+    const records = [];
+    const nodes = [{ id: 'a1', x: 10, y: 10, protons: 6 }];
+
+    const renderer = createForceSelectionRenderer({
+      view: {
+        getGraphSelection: () => new FakeSelection(records)
+      },
+      selection: {
+        getRenderableSelectionIds: () => ({
+          atomIds: new Set(['a1']),
+          bondIds: new Set()
+        }),
+        getSelectionPivot: () => ({ x: 100, y: 80 })
+      },
+      force: {
+        getNodes: () => nodes,
+        getLinks: () => []
+      },
+      cache: {
+        setSelectionLines: value => records.push(['setSelectionLines', value]),
+        setSelectionCircles: value => records.push(['setSelectionCircles', value]),
+        setSelectionBounds: value => records.push(['setSelectionBounds', value])
+      },
+      constants: {
+        getSelectionColor: () => 'rgb(150, 200, 255)',
+        getSelectionOutline: () => 'rgb(40, 100, 210)',
+        getBondSelectionRadius: () => 6,
+        getAtomSelectionRadius: () => 13,
+        getOutlineWidth: () => 2
+      },
+      helpers: {
+        atomRadius: () => 10
+      }
+    });
+
+    renderer.applyForceSelection();
+
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'x' && value === -21));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'y' && value === -21));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'width' && value === 131));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'height' && value === 111));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'transform' && value === 'translate(100,80)'));
   });
 
   it('does not draw force selection bounds while selection rotation is active', () => {

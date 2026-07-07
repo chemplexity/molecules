@@ -258,7 +258,6 @@ let _highlightStyle = 'default';
 const FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS = 1500;
 let _lastHoveredFunctionalGroupMappings = null;
 let _lastHoveredFunctionalGroupAt = 0;
-let _preserveFunctionalGroupHighlightUntil = 0;
 
 const _highlightedAtomIds = new Set();
 let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
@@ -446,7 +445,7 @@ function _mergeMappingsByAnchor(smarts, mappings) {
 
 /**
  * Applies a transient highlight from the last hovered functional-group mappings for 2D export, if within the grace period.
- * @returns {() => void} Cleanup no-op (always returns an empty function).
+ * @returns {() => void} Cleanup that restores the highlight state active before this call; a no-op if nothing changed.
  */
 export function _prepare2dExportHighlightState() {
   if (_highlightedAtomSets.length > 0) {
@@ -459,26 +458,7 @@ export function _prepare2dExportHighlightState() {
     return () => {};
   }
   _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
-  return () => {};
-}
-
-/**
- * Restores a highlight from the most recently hovered functional-group mappings if still within the grace period.
- * @returns {boolean} True if a hover highlight was successfully restored, false otherwise.
- */
-export function _restoreRecentFunctionalGroupHighlight() {
-  if (_highlightedAtomSets.length > 0) {
-    return false;
-  }
-  if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) {
-    return false;
-  }
-  if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) {
-    return false;
-  }
-  _preserveFunctionalGroupHighlightUntil = Date.now() + FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS;
-  _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
-  return true;
+  return () => _restorePersistentHighlight();
 }
 
 /**
@@ -634,9 +614,6 @@ export function updateFunctionalGroups(mol) {
     });
     tr.addEventListener('mouseleave', () => {
       if (tbody.querySelector('tr.fg-active')) {
-        return;
-      }
-      if (Date.now() < _preserveFunctionalGroupHighlightUntil) {
         return;
       }
       _restorePersistentHighlight();

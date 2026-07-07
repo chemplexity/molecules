@@ -17,6 +17,9 @@ export const FORCE_LAYOUT_FIT_PAD = 40;
 export const FORCE_LAYOUT_INITIAL_FIT_PAD = 14;
 export const FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE = 0.4;
 export const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
+export const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
+export const FORCE_LAYOUT_DEFAULT_2D_PIXELS_PER_UNIT = 60;
+export const FORCE_LAYOUT_DEFAULT_ZOOM_MULTIPLIER = FORCE_LAYOUT_DEFAULT_2D_PIXELS_PER_UNIT * FORCE_LAYOUT_REFERENCE_BOND_LENGTH / FORCE_LAYOUT_BOND_LENGTH;
 export const FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN = 0.08;
 export const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
 export const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
@@ -25,7 +28,6 @@ export const FORCE_LAYOUT_INITIAL_SETTLE_ALPHA = 0.35;
 export const FORCE_LAYOUT_INITIAL_RESTART_ALPHA = 0.02;
 export const FORCE_LAYOUT_EDIT_RESTART_ALPHA = 0.005;
 const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.14;
-export const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
 
 /**
  * Returns the force-layout scale factor implied by a line-layout bond length.
@@ -343,6 +345,33 @@ export function zoomTransformsDiffer(a, b, epsilon = 0.001) {
     return true;
   }
   return Math.abs(a.k - b.k) > epsilon || Math.abs(a.x - b.x) > epsilon || Math.abs(a.y - b.y) > epsilon;
+}
+
+/**
+ * Applies a zoom transform to a point, using the transform's own `applyX`/`applyY`
+ * when present (e.g. a live d3 zoom transform) and falling back to a manual
+ * translate+scale for plain `{x, y, k}` transform objects.
+ * @param {object} transform - Zoom transform with either `applyX`/`applyY` methods or `x`/`y`/`k` fields.
+ * @param {{x: number, y: number}} point - Point to transform.
+ * @returns {{x: number, y: number}|null} The transformed point, or null when `point` is missing.
+ */
+export function applyZoomTransformPoint(transform, point) {
+  if (!point) {
+    return null;
+  }
+  if (typeof transform?.applyX === 'function' && typeof transform?.applyY === 'function') {
+    return {
+      x: transform.applyX(point.x),
+      y: transform.applyY(point.y)
+    };
+  }
+  const k = Number.isFinite(Number(transform?.k)) ? Number(transform.k) : 1;
+  const x = Number.isFinite(Number(transform?.x)) ? Number(transform.x) : 0;
+  const y = Number.isFinite(Number(transform?.y)) ? Number(transform.y) : 0;
+  return {
+    x: point.x * k + x,
+    y: point.y * k + y
+  };
 }
 
 function normalizeAngle(theta) {

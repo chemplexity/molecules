@@ -250,12 +250,65 @@ export function bondDisplayOpacity(bond) {
   return styleOpacity(bond?.properties?.style, 1);
 }
 
+const RADIOACTIVE_ELEMENT_SYMBOLS = new Set([
+  'Tc',
+  'Pm',
+  'Po',
+  'At',
+  'Rn',
+  'Fr',
+  'Ra',
+  'Ac',
+  'Th',
+  'Pa',
+  'U',
+  'Np',
+  'Pu',
+  'Am',
+  'Cm',
+  'Bk',
+  'Cf',
+  'Es',
+  'Fm',
+  'Md',
+  'No',
+  'Lr',
+  'Rf',
+  'Db',
+  'Sg',
+  'Bh',
+  'Hs',
+  'Mt',
+  'Ds',
+  'Rg',
+  'Cn',
+  'Nh',
+  'Fl',
+  'Mc',
+  'Lv',
+  'Ts',
+  'Og'
+]);
+const RADIOACTIVE_FORCE_STROKE = 'rgba(184, 224, 46, 0.62)';
+
+/**
+ * Returns whether the element has no stable isotopes and should get the force-mode radioactive outline.
+ * @param {string} symbol - Element symbol.
+ * @returns {boolean} True for radioactive-only elements.
+ */
+export function isRadioactiveElement(symbol) {
+  return RADIOACTIVE_ELEMENT_SYMBOLS.has(symbol);
+}
+
 /**
  * Returns the stroke color used for an atom circle outline in force-layout mode, choosing a lighter or darker tint based on the element.
  * @param {string} symbol - Element symbol.
  * @returns {string} CSS color string.
  */
 export function strokeColor(symbol) {
+  if (isRadioactiveElement(symbol)) {
+    return RADIOACTIVE_FORCE_STROKE;
+  }
   const light = new Set(['H', 'F', 'Cl', 'Mg', 'Ca', 'He', 'Ne', 'Ar', 'B', 'Si', 'Be', 'Li']);
   return light.has(symbol) ? '#888' : 'rgba(0,0,0,0.25)';
 }
@@ -315,6 +368,9 @@ export function atomRadius(protons, layout = 'force') {
 export function xOffset(offset, src, tgt) {
   const dx = tgt.x - src.x,
     dy = tgt.y - src.y;
+  if (dx === 0 && dy === 0) {
+    return offset;
+  }
   if (dy === 0 || Math.abs(dx / dy) > 1) {
     return offset * (dy / dx);
   }
@@ -331,6 +387,9 @@ export function xOffset(offset, src, tgt) {
 export function yOffset(offset, src, tgt) {
   const dx = tgt.x - src.x,
     dy = tgt.y - src.y;
+  if (dx === 0 && dy === 0) {
+    return -offset;
+  }
   if (dy === 0 || Math.abs(dx / dy) > 1) {
     return -offset;
   }

@@ -1,5 +1,7 @@
 /** @module app/interactions/drag-gestures */
 
+import { finiteNumber } from './geometry-utils.js';
+
 /**
  * Creates drag gesture action factories for force-layout atoms, force-layout bonds, 2D bonds, and 2D atoms.
  * @param {object} context - Dependency context providing d3, state, history, selection, force, molecule, view accessors.
@@ -24,11 +26,6 @@ export function createDragGestureActions(context) {
       snapshot: state.previousSnapshot ?? context.history.captureSnapshot()
     });
     state._snapped = true;
-  }
-
-  function finiteNumber(value) {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
   }
 
   function translateSelectionPivot(dx, dy) {

@@ -26,6 +26,8 @@ export function createAppStateBridge(deps) {
       setFlipH: deps.viewState.setFlipH,
       getFlipV: deps.viewState.getFlipV,
       setFlipV: deps.viewState.setFlipV,
+      getCx2d: deps.viewState.getCx2d,
+      getCy2d: deps.viewState.getCy2d,
       setCx2d: deps.viewState.setCx2d,
       setCy2d: deps.viewState.setCy2d,
       captureZoomTransform: deps.viewState.captureZoomTransform,

@@ -26,6 +26,7 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.refreshResonancePanel] - When true, updates the resonance panel UI after rendering.
    * @param {boolean} [options.preserveHistory] - When true, skips pushing a new undo snapshot.
    * @param {boolean} [options.preserveGeometry] - When true, retains the existing 2D coordinates.
+   * @param {boolean} [options.preserveReactionLayout] - When true, leaves existing 2D reaction-preview pair layout untouched.
    * @param {boolean} [options.preserveView] - When true, does not reset the viewport transform.
    * @param {boolean} [options.preserveAnalysis] - When true, keeps existing analysis highlights.
    * @param {boolean} [options.forcePreservePositions] - When true for force renders, reuses current simulation positions where possible.
@@ -47,6 +48,7 @@ export function createRenderRuntime(deps) {
       refreshResonancePanel = true,
       preserveHistory = false,
       preserveGeometry = false,
+      preserveReactionLayout = false,
       preserveView = false,
       preserveAnalysis = false,
       forcePreservePositions = false,
@@ -120,6 +122,9 @@ export function createRenderRuntime(deps) {
       preserveGeometry,
       preserveAnalysis
     };
+    if (preserveReactionLayout) {
+      render2dOptions.preserveReactionLayout = true;
+    }
     if (fitPad !== undefined) {
       render2dOptions.fitPad = fitPad;
     }

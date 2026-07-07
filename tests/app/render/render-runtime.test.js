@@ -104,6 +104,26 @@ describe('createRenderRuntime', () => {
     ]);
   });
 
+  it('passes reaction-layout preservation through 2D render policy', () => {
+    const { runtime, calls } = makeRuntime({ mode: '2d' });
+    const mol = { id: 'mol-reaction-layout' };
+
+    runtime.renderMol(mol, { preserveGeometry: true, preserveReactionLayout: true });
+
+    const renderCall = calls.find(call => call[0] === 'render2d');
+    assert.deepEqual(renderCall, [
+      'render2d',
+      mol,
+      {
+        recomputeResonance: true,
+        refreshResonancePanel: true,
+        preserveGeometry: true,
+        preserveAnalysis: false,
+        preserveReactionLayout: true
+      }
+    ]);
+  });
+
   it('routes force renders through the shared policy layer', () => {
     const { runtime, calls } = makeRuntime({ mode: 'force' });
     const mol = { id: 'mol-force' };

@@ -222,6 +222,7 @@ export function createSessionSnapshotManager(deps) {
       deps.clearHighlightState();
       deps.restorePanelState(snap.panelState ?? null, { preserveSmartsTab: true });
       deps.restoreInteractionState(snap);
+      deps.applySelectionOverlay?.();
       deps.restoreZoomTransform(snap.zoomTransform);
       return;
     }
@@ -275,6 +276,7 @@ export function createSessionSnapshotManager(deps) {
       deps.restorePersistentHighlight();
     }
     deps.restoreInteractionState(snap);
+    deps.applySelectionOverlay?.();
 
     const syncMol = snap.reactionPreview?.sourceMol ? cloneSnapshotSourceMol(snap.reactionPreview.sourceMol) : inputSyncMol;
     if (snap.inputMode) {
@@ -302,6 +304,8 @@ export function createSessionSnapshotManager(deps) {
           }
         }
         deps.restoreZoomTransform(snap.zoomTransform);
+        deps.restoreInteractionState(snap);
+        deps.applySelectionOverlay?.();
       }
     }
   }

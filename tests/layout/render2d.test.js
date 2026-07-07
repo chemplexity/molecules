@@ -91,6 +91,17 @@ test('renderMolSVG omits lone-pair circles by default', () => {
   assert.equal((rendered.svgContent.match(/class="lone-pair"/g) ?? []).length, 0);
 });
 
+test('renderMolSVG keeps metal hydrogens as explicit single bonds', () => {
+  const mol = parseSMILES('[FeH]');
+  const rendered = renderMolSVG(mol);
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.equal((rendered.svgContent.match(/<line /g) ?? []).length, 1);
+  assert.doesNotMatch(rendered.svgContent, /FeH/);
+  assert.match(rendered.svgContent, /<tspan>Fe<\/tspan>/);
+  assert.match(rendered.svgContent, /<tspan>H<\/tspan>/);
+});
+
 test('renderMolSVG punches smaller fused ring faces out of larger ring fills', () => {
   const mol = parseSMILES('CCOCC1=C2CC(C1)COC1OC2C=C1');
   const macroRingAtomIds = mol.getRings().find(ringAtomIds => ringAtomIds.length === 8);

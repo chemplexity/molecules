@@ -1,8 +1,18 @@
 /** @module app/interactions/navigation */
 
 import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
-import { convertForceCoordsToLineLayout, convertLineCoordsToForceLayout, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../render/force-helpers.js';
+import {
+  applyZoomTransformPoint,
+  convertForceCoordsToLineLayout,
+  convertLineCoordsToForceLayout,
+  FORCE_LAYOUT_BOND_LENGTH,
+  FORCE_LAYOUT_DEFAULT_ZOOM_MULTIPLIER,
+  FORCE_LAYOUT_INITIAL_FIT_PAD,
+  FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE,
+  FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER
+} from '../render/force-helpers.js';
 import { atomRadius } from '../render/helpers.js';
+import { finiteNumber, nearestPointWithinRadius, SELECTION_PIVOT_ATOM_SNAP_RADIUS } from './geometry-utils.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
 const CLEAN_2D_BOND_LENGTH_TOLERANCE = 0.18;
@@ -18,7 +28,6 @@ const ROTATE_FIT_FALLBACK_PAD = 40;
 const ROTATE_FIT_ZOOM_MULTIPLIER = 1.3;
 const ROTATE_FIT_MAX_SCALE = 30;
 const FORCE_SELECTION_HYDROGEN_PARENT_ELEMENTS = new Set(['N', 'O', 'P', 'S']);
-const SELECTION_PIVOT_ATOM_SNAP_RADIUS = 16;
 
 /**
  * Preserves reaction-preview metadata on a working molecule clone so clean and
@@ -1040,25 +1049,6 @@ function lineRotateFitTransform(context, bbox) {
   };
 }
 
-function applyZoomTransform(transform, point) {
-  if (!point) {
-    return null;
-  }
-  if (typeof transform?.applyX === 'function' && typeof transform?.applyY === 'function') {
-    return {
-      x: transform.applyX(point.x),
-      y: transform.applyY(point.y)
-    };
-  }
-  const k = Number.isFinite(Number(transform?.k)) ? Number(transform.k) : 1;
-  const x = Number.isFinite(Number(transform?.x)) ? Number(transform.x) : 0;
-  const y = Number.isFinite(Number(transform?.y)) ? Number(transform.y) : 0;
-  return {
-    x: point.x * k + x,
-    y: point.y * k + y
-  };
-}
-
 function pointOutsidePlot(context, point, pad = 0) {
   if (!point) {
     return false;
@@ -1076,7 +1066,7 @@ function anyRotated2dAtomOutsideView(context, atoms) {
       x: (context.dom?.plotEl?.clientWidth || 600) / 2 + (atom.x - (context.state.viewState.getCx2d?.() ?? 0)) * scale,
       y: (context.dom?.plotEl?.clientHeight || 400) / 2 - (atom.y - (context.state.viewState.getCy2d?.() ?? 0)) * scale
     };
-    return pointOutsidePlot(context, applyZoomTransform(transform, rendered));
+    return pointOutsidePlot(context, applyZoomTransformPoint(transform, rendered));
   });
 }
 
@@ -1114,7 +1104,7 @@ function anyForceNodeOutsideView(context, nodes) {
   const scale = Number.isFinite(Number(transform?.k)) ? Number(transform.k) : 1;
   return nodes.some(node => {
     const radius = atomRadius(node.protons ?? null) * Math.max(1, scale);
-    return pointOutsidePlot(context, applyZoomTransform(transform, { x: node.x, y: node.y }), radius);
+    return pointOutsidePlot(context, applyZoomTransformPoint(transform, { x: node.x, y: node.y }), radius);
   });
 }
 
@@ -1218,11 +1208,6 @@ export function createNavigationActions(context) {
   let clean2dBtnTimer = null;
   let cleanForceBtnTimer = null;
 
-  function finiteNumber(value) {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-  }
-
   function transformSelectionPivot(transform) {
     const pivot = context.state.overlayState?.getSelectionPivot?.() ?? null;
     const pivotX = finiteNumber(pivot?.x);
@@ -1263,19 +1248,7 @@ export function createNavigationActions(context) {
     if (!pivot) {
       return null;
     }
-    let best = null;
-    for (const point of points) {
-      const x = finiteNumber(point?.x);
-      const y = finiteNumber(point?.y);
-      if (x == null || y == null) {
-        continue;
-      }
-      const distance = Math.hypot(x - pivot.x, y - pivot.y);
-      if (distance <= SELECTION_PIVOT_ATOM_SNAP_RADIUS && (!best || distance < best.distance)) {
-        best = { atomId: point.atomId, distance };
-      }
-    }
-    return best?.atomId ?? null;
+    return nearestPointWithinRadius(points, pivot, SELECTION_PIVOT_ATOM_SNAP_RADIUS)?.atomId ?? null;
   }
 
   function forceSelectionPivotAnchor(nodes) {
@@ -1294,16 +1267,36 @@ export function createNavigationActions(context) {
     );
   }
 
-  function rendered2dPointForMolPoint(point) {
+  function rendered2dPointForMolPoint(point, centerOverride = null) {
     const plot = context.dom?.plotEl ?? {};
     const width = finiteNumber(plot.clientWidth) ?? 600;
     const height = finiteNumber(plot.clientHeight) ?? 400;
-    const centerX = finiteNumber(context.state.viewState.getCx2d?.()) ?? 0;
-    const centerY = finiteNumber(context.state.viewState.getCy2d?.()) ?? 0;
+    const centerX = finiteNumber(centerOverride?.x) ?? finiteNumber(context.state.viewState.getCx2d?.()) ?? 0;
+    const centerY = finiteNumber(centerOverride?.y) ?? finiteNumber(context.state.viewState.getCy2d?.()) ?? 0;
     const scale = finiteNumber(context.view?.scale) ?? 40;
     return {
       x: width / 2 + (point.x - centerX) * scale,
       y: height / 2 - (point.y - centerY) * scale
+    };
+  }
+
+  function rendered2dPointForAtom(atom) {
+    const point = context.helpers?.toSelectionSVGPt2d?.(atom) ?? null;
+    const x = finiteNumber(point?.x);
+    const y = finiteNumber(point?.y);
+    return x == null || y == null ? rendered2dPointForMolPoint(atom) : { x, y };
+  }
+
+  function rendered2dCenterForAtoms(atoms) {
+    const points = atoms
+      .map(atom => rendered2dPointForAtom(atom))
+      .filter(point => finiteNumber(point?.x) != null && finiteNumber(point?.y) != null);
+    if (!points.length) {
+      return null;
+    }
+    return {
+      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+      y: points.reduce((sum, point) => sum + point.y, 0) / points.length
     };
   }
 
@@ -1373,6 +1366,44 @@ export function createNavigationActions(context) {
       x: converted.lineCenter.x + (point.x - converted.forceCenter.x) * converted.scale,
       y: converted.lineCenter.y - (point.y - converted.forceCenter.y) * converted.scale
     };
+  }
+
+  function converted2dCenterForMolecule(mol, fallback = null) {
+    const atoms = [...(mol?.atoms?.values?.() ?? [])].filter(atom => atom?.visible !== false && atom.x != null && atom.y != null);
+    if (!atoms.length) {
+      return fallback;
+    }
+    const bbox = context.helpers?.atomBBox?.(atoms) ?? null;
+    const x = finiteNumber(bbox?.cx);
+    const y = finiteNumber(bbox?.cy);
+    if (x != null && y != null) {
+      return { x, y };
+    }
+    return {
+      x: atoms.reduce((sum, atom) => sum + atom.x, 0) / atoms.length,
+      y: atoms.reduce((sum, atom) => sum + atom.y, 0) / atoms.length
+    };
+  }
+
+  function convertSelectionPivotFromForceTo2d(converted, mol) {
+    const pivot = currentSelectionPivot();
+    if (!pivot) {
+      return;
+    }
+    const linePoint = linePointFromForcePoint(pivot, converted);
+    context.state.overlayState?.setSelectionPivot?.(rendered2dPointForMolPoint(linePoint, converted2dCenterForMolecule(mol, converted?.lineCenter ?? null)));
+  }
+
+  function convertSelectionPivotFrom2dToForce(converted) {
+    const pivot = currentSelectionPivot();
+    if (!pivot) {
+      return;
+    }
+    const linePoint = molPointForRendered2dPoint(pivot);
+    if (!linePoint) {
+      return;
+    }
+    context.state.overlayState?.setSelectionPivot?.(forcePointFromLinePoint(linePoint, converted));
   }
 
   function equivalentModeSwitchTransform({ sourceTransform, targetCenterPoint, sourcePixelsPerUnit, targetPixelsPerUnit }) {
@@ -1477,7 +1508,7 @@ export function createNavigationActions(context) {
       if (!atom) {
         continue;
       }
-      const point = rendered2dPointForMolPoint(atom);
+      const point = rendered2dPointForAtom(atom);
       points.push({
         atomId,
         x: point.x,
@@ -1494,7 +1525,7 @@ export function createNavigationActions(context) {
   function defaultForceAutoFitScaleMultiplier() {
     const linePixelsPerUnit = finiteNumber(context.view?.scale);
     if (linePixelsPerUnit == null) {
-      return context.force?.initialZoomMultiplier ?? FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER;
+      return FORCE_LAYOUT_DEFAULT_ZOOM_MULTIPLIER;
     }
     return linePixelsPerUnit * DEFAULT_LAYOUT_BOND_LENGTH / FORCE_LAYOUT_BOND_LENGTH;
   }
@@ -1676,15 +1707,13 @@ export function createNavigationActions(context) {
     const displayedMol = previousMode === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
     const sourceRenderedCenter = renderedModeHeavyCenterLocal(previousMode, displayedMol);
     const activeResonanceView = context.overlays.hasActiveResonanceView?.() === true;
-    const resonanceSourceMol = context.overlays.getActiveResonanceSourceMolecule?.(displayedMol) ?? displayedMol;
-    const modeSwitchMol = activeResonanceView ? displayedMol : resonanceSourceMol;
     const hadReactionPreview = context.overlays.hasReactionPreview();
     const nextMode = previousMode === 'force' ? '2d' : 'force';
     context.state.viewState.setMode(nextMode);
     context.dom.updateModeChrome(nextMode);
 
     if (!hadReactionPreview && !activeResonanceView) {
-      context.overlays.resetActiveResonanceView(resonanceSourceMol);
+      context.overlays.resetActiveResonanceView(displayedMol);
     }
     context.simulation.stop();
     context.state.viewState.setRotationDeg(0);
@@ -1692,13 +1721,8 @@ export function createNavigationActions(context) {
     context.state.viewState.setFlipV(false);
     context.view.setPreserveSelectionOnNextRender(true);
 
-    if (hadReactionPreview && context.overlays.reapplyActiveReactionPreview()) {
-      context.view.setPreserveSelectionOnNextRender(false);
-      return;
-    }
-
-    const mol = modeSwitchMol ? modeSwitchMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
-    preserveReactionPreviewMetadata(modeSwitchMol, mol);
+    const mol = displayedMol ? displayedMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
+    preserveReactionPreviewMetadata(displayedMol, mol);
     const bondLength = currentLayoutBondLength();
     const sourceTransform = currentZoomTransform();
     const linePixelsPerUnit = finiteNumber(context.view?.scale) ?? 40;
@@ -1719,6 +1743,7 @@ export function createNavigationActions(context) {
           })
         : { snappedAtoms: new Set(), snappedBonds: new Set(), snappedCount: 0 };
       const reanchoredStereoCount = shouldSnapConvertedRings ? reanchorStereoTerminalsToCenters(mol, preSnapLineCoords) : 0;
+      convertSelectionPivotFromForceTo2d(converted, mol);
       context.renderers.renderMol(mol, {
         preserveHistory: true,
         preserveGeometry: appliedCount > 0 || ringSnapHints.snappedCount > 0 || reanchoredStereoCount > 0,
@@ -1728,6 +1753,13 @@ export function createNavigationActions(context) {
               refreshResonancePanel: false,
               preserveAnalysis: true
             }
+          : hadReactionPreview
+            ? {
+                recomputeResonance: false,
+                refreshResonancePanel: false,
+                preserveAnalysis: true,
+                preserveReactionLayout: true
+              }
           : {})
       });
       applyEquivalentModeSwitchTransform({
@@ -1737,6 +1769,13 @@ export function createNavigationActions(context) {
         targetPixelsPerUnit: linePixelsPerUnit
       });
       nudgeModeSwitchTransformToRenderedCenter(sourceRenderedCenter, nextMode, mol);
+      if (hadReactionPreview) {
+        const visibleAtoms = [...mol.atoms.values()].filter(atom => atom.visible !== false && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+        fit2dViewportAfterRotationIfNeeded(context, visibleAtoms);
+      }
+      if (hadReactionPreview) {
+        context.overlays.updateReactionTemplatesPanel?.();
+      }
       context.actions?.syncPastePreviewToMode?.();
       return;
     }
@@ -1748,6 +1787,7 @@ export function createNavigationActions(context) {
       forceCenter: { x: plotWidth / 2, y: plotHeight / 2 }
     });
     expandForceSelectionHydrogensForSelectedLabels(mol, context.state.overlayState?.getSelectedAtomIds?.());
+    convertSelectionPivotFrom2dToForce(converted);
     context.renderers.renderMol(mol, {
       preserveHistory: true,
       ...(activeResonanceView
@@ -1756,6 +1796,12 @@ export function createNavigationActions(context) {
             refreshResonancePanel: false,
             preserveAnalysis: true
           }
+        : hadReactionPreview
+          ? {
+              recomputeResonance: false,
+              refreshResonancePanel: false,
+              preserveAnalysis: true
+            }
         : {}),
       forceAnchorLayout: converted.lineAnchorCoords.size > 0 ? converted.lineAnchorCoords : null,
       forceInitialPatchPos: converted.coords.size > 0 ? converted.coords : null,
@@ -1770,6 +1816,9 @@ export function createNavigationActions(context) {
       targetPixelsPerUnit: converted.scale,
     });
     nudgeModeSwitchTransformToRenderedCenter(sourceRenderedCenter, nextMode, mol);
+    if (hadReactionPreview) {
+      context.overlays.updateReactionTemplatesPanel?.();
+    }
     context.actions?.syncPastePreviewToMode?.();
   }
 
@@ -1825,6 +1874,8 @@ export function createNavigationActions(context) {
         if (!nodes.length) {
           return;
         }
+        const pivotAnchorAtomId = forceSelectionPivotAnchor(nodes);
+        const pivot = pivotAnchorAtomId ? null : currentSelectionPivot();
         let cx = 0;
         let cy = 0;
         for (const node of nodes) {
@@ -1836,18 +1887,35 @@ export function createNavigationActions(context) {
         const rad = (forceDelta * Math.PI) / 180;
         const cosR = Math.cos(rad);
         const sinR = Math.sin(rad);
+        const rotatePoint = point => {
+          const dx = point.x - cx;
+          const dy = point.y - cy;
+          return {
+            x: cx + dx * cosR - dy * sinR,
+            y: cy + dx * sinR + dy * cosR
+          };
+        };
         const patchPos = new Map();
         for (const node of nodes) {
-          const dx = node.x - cx;
-          const dy = node.y - cy;
-          node.x = cx + dx * cosR - dy * sinR;
-          node.y = cy + dx * sinR + dy * cosR;
+          const rotated = rotatePoint(node);
+          node.x = rotated.x;
+          node.y = rotated.y;
           if (Number.isFinite(node.forcePlacementAngle)) {
             node.forcePlacementAngle += rad;
           }
           node.vx = 0;
           node.vy = 0;
           patchPos.set(node.id, forcePatchEntryForNode(node));
+        }
+        if (pivotAnchorAtomId) {
+          const node = nodes.find(candidate => candidate.id === pivotAnchorAtomId);
+          const x = finiteNumber(node?.x);
+          const y = finiteNumber(node?.y);
+          if (x != null && y != null) {
+            context.state.overlayState?.setSelectionPivot?.({ x, y });
+          }
+        } else if (pivot) {
+          context.state.overlayState?.setSelectionPivot?.(rotatePoint(pivot));
         }
         context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0, restart: false });
         context.force.syncPositions?.();
@@ -1869,6 +1937,9 @@ export function createNavigationActions(context) {
       if (!allAtoms.length) {
         return;
       }
+      const pivotAnchorAtomId = twoDSelectionPivotAnchor(mol);
+      const pivot = pivotAnchorAtomId ? null : currentSelectionPivot();
+      const renderedCenter = rendered2dCenterForAtoms(allAtoms);
       let mx = 0;
       let my = 0;
       for (const atom of allAtoms) {
@@ -1880,11 +1951,37 @@ export function createNavigationActions(context) {
       const rad = (delta * Math.PI) / 180;
       const cosR = Math.cos(rad);
       const sinR = Math.sin(rad);
+      const rotatePoint = point => {
+        const dx = point.x - mx;
+        const dy = point.y - my;
+        return {
+          x: mx + dx * cosR - dy * sinR,
+          y: my + dx * sinR + dy * cosR
+        };
+      };
+      const rotateRenderedPoint = point => {
+        const center = renderedCenter;
+        if (!center) {
+          return point;
+        }
+        const renderedSinR = -sinR;
+        const dx = point.x - center.x;
+        const dy = point.y - center.y;
+        return {
+          x: center.x + dx * cosR - dy * renderedSinR,
+          y: center.y + dx * renderedSinR + dy * cosR
+        };
+      };
       for (const atom of allAtoms) {
-        const dx = atom.x - mx;
-        const dy = atom.y - my;
-        atom.x = mx + dx * cosR - dy * sinR;
-        atom.y = my + dx * sinR + dy * cosR;
+        const rotated = rotatePoint(atom);
+        atom.x = rotated.x;
+        atom.y = rotated.y;
+      }
+      const pivotAnchorAtom = pivotAnchorAtomId ? mol.atoms.get(pivotAnchorAtomId) : null;
+      if (pivotAnchorAtom) {
+        context.state.overlayState?.setSelectionPivot?.(rendered2dPointForAtom(pivotAnchorAtom));
+      } else if (pivot) {
+        context.state.overlayState?.setSelectionPivot?.(rotateRenderedPoint(pivot));
       }
       context.state.viewState.setRotationDeg((context.state.viewState.getRotationDeg() + delta) % 360);
       context.renderers.draw2d();
@@ -1981,6 +2078,7 @@ export function createNavigationActions(context) {
           }
         }
       }
+      context.view.setPreserveSelectionOnNextRender?.(true);
       context.renderers.updateForce(mol, { preservePositions: true, preserveView: true, restartSimulation: false });
       if (context.overlays.hasReactionPreview()) {
         const renderedNodes = context.simulation.nodes().filter(node => Number.isFinite(node.x) && Number.isFinite(node.y));
@@ -2013,7 +2111,8 @@ export function createNavigationActions(context) {
 
     const allAtoms = [...mol.atoms.values()].filter(atom => atom.x != null);
     const pivotAnchorAtomId = twoDSelectionPivotAnchor(mol);
-    const pivotMolPoint = pivotAnchorAtomId ? null : molPointForRendered2dPoint(currentSelectionPivot());
+    const pivot = pivotAnchorAtomId ? null : currentSelectionPivot();
+    const renderedCenter = rendered2dCenterForAtoms(allAtoms);
     let mx = 0;
     let my = 0;
     for (const atom of allAtoms) {
@@ -2032,25 +2131,20 @@ export function createNavigationActions(context) {
       }
     }
 
-    const bbox = context.helpers.atomBBox(allAtoms);
-    context.state.viewState.setCx2d(bbox.cx);
-    context.state.viewState.setCy2d(bbox.cy);
     const pivotAnchorAtom = pivotAnchorAtomId ? mol.atoms.get(pivotAnchorAtomId) : null;
     if (pivotAnchorAtom) {
-      context.state.overlayState?.setSelectionPivot?.(rendered2dPointForMolPoint(pivotAnchorAtom));
-    } else if (pivotMolPoint) {
+      context.state.overlayState?.setSelectionPivot?.(rendered2dPointForAtom(pivotAnchorAtom));
+    } else if (pivot && renderedCenter) {
       context.state.overlayState?.setSelectionPivot?.(
-        rendered2dPointForMolPoint(
-          axis === 'h'
-            ? {
-                x: 2 * mx - pivotMolPoint.x,
-                y: pivotMolPoint.y
-              }
-            : {
-                x: pivotMolPoint.x,
-                y: 2 * my - pivotMolPoint.y
-              }
-        )
+        axis === 'h'
+          ? {
+              x: 2 * renderedCenter.x - pivot.x,
+              y: pivot.y
+            }
+          : {
+              x: pivot.x,
+              y: 2 * renderedCenter.y - pivot.y
+            }
       );
     }
     context.view.flipStereoMap2d?.(mol);

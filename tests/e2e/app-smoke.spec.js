@@ -732,6 +732,27 @@ test('force fit button keeps the 2d-equivalent zoom after fitting then switching
   expect(afterFitScale).toBeCloseTo(beforeFitScale, 2);
 });
 
+test('new molecules loaded while in force mode start at the force fit zoom', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await ensure2dMode(page);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await loadSmiles(page, 'C1CCCCC1');
+  await expect.poll(async () => await forceHeavyNodeScreenWidth(page)).toBeGreaterThan(180);
+
+  const initialWidth = await forceHeavyNodeScreenWidth(page);
+  await page.locator('#force-auto-zoom-btn').click();
+  await page.waitForTimeout(200);
+  const fittedWidth = await forceHeavyNodeScreenWidth(page);
+
+  expect(initialWidth).toBeGreaterThan(0);
+  expect(fittedWidth).toBeGreaterThan(0);
+  expect(initialWidth / fittedWidth).toBeGreaterThan(0.92);
+  expect(initialWidth / fittedWidth).toBeLessThan(1.08);
+});
+
 test('force flip keeps compact Global Bond Length layouts from restarting and spreading', async ({ page }) => {
   await page.goto('/index.html');
   await loadSmiles(page, 'C1CCCCC1');
@@ -856,6 +877,51 @@ async function computeResonanceContributors(resonanceRow) {
   await expect(computeBtn).toBeVisible();
   await computeBtn.click();
   await expect(resonanceRow).not.toContainText('Compute');
+}
+
+async function renderedReactionProductAtomCount(page) {
+  return page.evaluate(
+    () =>
+      [...document.querySelectorAll('g[data-atom-id], circle.node')].filter(el => {
+        const atomId = el.getAttribute('data-atom-id') ?? el.__data__?.id ?? '';
+        return String(atomId).includes('__rxn_product__');
+      }).length
+  );
+}
+
+async function nearestHeavyDistancesForHydrogens(page, hydrogenAtomIds) {
+  return await page.evaluate(ids => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    let atoms = [...document.querySelectorAll('g.atom-labels g[data-atom-id]')].map(group => ({
+      id: group.getAttribute('data-atom-id'),
+      name: group.textContent.trim(),
+      point: parseTranslate(group.getAttribute('transform'))
+    }));
+    if (!atoms.length) {
+      atoms = [...document.querySelectorAll('circle.node')].map(circle => ({
+        id: circle.__data__?.id ?? circle.getAttribute('data-atom-id'),
+        name: circle.__data__?.name ?? '',
+        point: Number.isFinite(circle.__data__?.x) && Number.isFinite(circle.__data__?.y) ? { x: circle.__data__.x, y: circle.__data__.y } : null
+      }));
+    }
+    return ids.map(id => {
+      const hydrogen = atoms.find(atom => atom.id === id);
+      if (!hydrogen?.point) {
+        return null;
+      }
+      let bestDistance = Infinity;
+      for (const atom of atoms) {
+        if (!atom.point || atom.id === id || atom.name === 'H') {
+          continue;
+        }
+        bestDistance = Math.min(bestDistance, Math.hypot(hydrogen.point.x - atom.point.x, hydrogen.point.y - atom.point.y));
+      }
+      return Number.isFinite(bestDistance) ? bestDistance : null;
+    });
+  }, hydrogenAtomIds);
 }
 
 async function atomBondAngleDegrees(page, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
@@ -1875,6 +1941,20 @@ async function rootScale(page) {
   });
 }
 
+async function forceHeavyNodeScreenWidth(page) {
+  return await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('circle.node')]
+      .filter(node => Number(node.getAttribute('r')) >= 7);
+    const rects = nodes.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
+    if (!rects.length) {
+      return 0;
+    }
+    const left = Math.min(...rects.map(rect => rect.left));
+    const right = Math.max(...rects.map(rect => rect.right));
+    return right - left;
+  });
+}
+
 async function all2dAtomsWithinPlot(page, padding = 0) {
   return await page.evaluate(pad => {
     const plot = document.querySelector('.svg-plot');
@@ -2004,6 +2084,19 @@ async function selectionRotateHandlePoints(page) {
       center: { x: cx, y: cy },
       handle: { x: handle.left + handle.width / 2, y: handle.top + handle.height / 2 },
       quarterTurnTarget: { x: cx + radius, y: cy }
+    };
+  });
+}
+
+async function selectionPivotHandlePoint(page) {
+  return await page.evaluate(() => {
+    const handle = document.querySelector('.selection-pivot-handle-hit')?.getBoundingClientRect();
+    if (!handle) {
+      return null;
+    }
+    return {
+      x: handle.left + handle.width / 2,
+      y: handle.top + handle.height / 2
     };
   });
 }
@@ -2640,6 +2733,232 @@ test('force selection rotation refits the viewport after release when the final 
   await page.mouse.up();
 
   await expect.poll(async () => await forceSceneGeometryWithinPlot(page, 2)).toBe(true);
+});
+
+test('selection pivot stays aligned when switching between 2d and force modes', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const c1 = await atomScreenPoint2d(page, 'C1');
+  const pivot = await selectionPivotHandlePoint(page);
+  expect(c1).toBeTruthy();
+  expect(pivot).toBeTruthy();
+  await page.mouse.move(pivot.x, pivot.y);
+  await page.mouse.down();
+  await page.mouse.move(c1.cx, c1.cy, { steps: 8 });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => {
+      const atom = await atomScreenPoint2d(page, 'C1');
+      const handle = await selectionPivotHandlePoint(page);
+      return atom && handle ? Math.hypot(handle.x - atom.cx, handle.y - atom.cy) : 9999;
+    })
+    .toBeLessThan(10);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const atom = (await forceAtomScreenPoints(page)).find(point => point.id === 'C1');
+      const handle = await selectionPivotHandlePoint(page);
+      return atom && handle ? Math.hypot(handle.x - atom.cx, handle.y - atom.cy) : 9999;
+    })
+    .toBeLessThan(12);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⚡ Force Layout');
+  await expect
+    .poll(async () => {
+      const atom = await atomScreenPoint2d(page, 'C1');
+      const handle = await selectionPivotHandlePoint(page);
+      return atom && handle ? Math.hypot(handle.x - atom.cx, handle.y - atom.cy) : 9999;
+    })
+    .toBeLessThan(10);
+});
+
+test('dragging the completed selection bounding box moves the selected molecule', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCC');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const before = await atomScreenPoint2d(page, 'C1');
+  expect(before).toBeTruthy();
+  const bounds = await page.locator('rect.selection-bounds-rect').boundingBox();
+  expect(bounds).toBeTruthy();
+
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 70, bounds.y + 35, { steps: 12 });
+  await page.mouse.up();
+
+  const after = await atomScreenPoint2d(page, 'C1');
+  expect(after).toBeTruthy();
+  expect(after.cx - before.cx).toBeGreaterThan(45);
+  expect(after.cy - before.cy).toBeGreaterThan(20);
+});
+
+test('dragging a selected 2D atom moves the active selection together', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCC');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const beforeC1 = await atomScreenPoint2d(page, 'C1');
+  const beforeC6 = await atomScreenPoint2d(page, 'C6');
+  expect(beforeC1).toBeTruthy();
+  expect(beforeC6).toBeTruthy();
+
+  const atomHit = page.locator('g[data-atom-id="C1"] .atom-hit');
+  const atomBox = await atomHit.boundingBox();
+  expect(atomBox).toBeTruthy();
+  const startX = atomBox.x + atomBox.width / 2;
+  const startY = atomBox.y + atomBox.height / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY + 40, { steps: 12 });
+  await page.mouse.up();
+
+  const afterC1 = await atomScreenPoint2d(page, 'C1');
+  const afterC6 = await atomScreenPoint2d(page, 'C6');
+  expect(afterC1).toBeTruthy();
+  expect(afterC6).toBeTruthy();
+  expect(afterC1.cx - beforeC1.cx).toBeGreaterThan(45);
+  expect(afterC1.cy - beforeC1.cy).toBeGreaterThan(20);
+  expect(afterC6.cx - beforeC6.cx).toBeGreaterThan(45);
+  expect(afterC6.cy - beforeC6.cy).toBeGreaterThan(20);
+});
+
+test('dragging a selected force atom moves the active selection together', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCC');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const before = await forceAtomScreenPoints(page);
+  const beforeC1 = before.find(atom => atom.id === 'C1');
+  const beforeC6 = before.find(atom => atom.id === 'C6');
+  expect(beforeC1).toBeTruthy();
+  expect(beforeC6).toBeTruthy();
+
+  await page.mouse.move(beforeC1.cx, beforeC1.cy);
+  await page.mouse.down();
+  await page.mouse.move(beforeC1.cx + 80, beforeC1.cy + 40, { steps: 12 });
+  await page.mouse.up();
+
+  const after = await forceAtomScreenPoints(page);
+  const afterC1 = after.find(atom => atom.id === 'C1');
+  const afterC6 = after.find(atom => atom.id === 'C6');
+  expect(afterC1).toBeTruthy();
+  expect(afterC6).toBeTruthy();
+  expect(afterC1.cx - beforeC1.cx).toBeGreaterThan(45);
+  expect(afterC1.cy - beforeC1.cy).toBeGreaterThan(20);
+  expect(afterC6.cx - beforeC6.cx).toBeGreaterThan(45);
+  expect(afterC6.cy - beforeC6.cy).toBeGreaterThan(20);
+});
+
+test('dragging a selected 2D metal hydride moves the metal and explicit hydrogen together', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, '[FeH]');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+  await page.keyboard.press('Control+A');
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const beforeFe = await atomScreenPoint2d(page, 'Fe1');
+  const beforeH = await atomScreenPoint2d(page, 'H2');
+  expect(beforeFe).toBeTruthy();
+  expect(beforeH).toBeTruthy();
+  expect(Math.hypot(beforeFe.cx - beforeH.cx, beforeFe.cy - beforeH.cy)).toBeGreaterThan(20);
+
+  const atomHit = page.locator('g[data-atom-id="Fe1"] .atom-hit');
+  const atomBox = await atomHit.boundingBox();
+  expect(atomBox).toBeTruthy();
+  const startX = atomBox.x + atomBox.width / 2;
+  const startY = atomBox.y + atomBox.height / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY + 40, { steps: 12 });
+  await page.mouse.up();
+
+  const afterFe = await atomScreenPoint2d(page, 'Fe1');
+  const afterH = await atomScreenPoint2d(page, 'H2');
+  expect(afterFe).toBeTruthy();
+  expect(afterH).toBeTruthy();
+  expect(afterFe.cx - beforeFe.cx).toBeGreaterThan(45);
+  expect(afterFe.cy - beforeFe.cy).toBeGreaterThan(20);
+  expect(afterH.cx - beforeH.cx).toBeGreaterThan(45);
+  expect(afterH.cy - beforeH.cy).toBeGreaterThan(20);
+});
+
+test('dragging after a manual marquee selection moves the selected 2D molecule', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'CCCCCC');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+
+  const points = await Promise.all(['C1', 'C6'].map(atomId => atomScreenPoint2d(page, atomId)));
+  const beforeC1 = points[0];
+  const beforeC6 = points[1];
+  expect(beforeC1).toBeTruthy();
+  expect(beforeC6).toBeTruthy();
+  const minX = Math.min(beforeC1.cx, beforeC6.cx) - 50;
+  const maxX = Math.max(beforeC1.cx, beforeC6.cx) + 50;
+  const minY = Math.min(beforeC1.cy, beforeC6.cy) - 50;
+  const maxY = Math.max(beforeC1.cy, beforeC6.cy) + 50;
+
+  await page.mouse.move(minX, minY);
+  await page.mouse.down();
+  await page.mouse.move(maxX, maxY, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator('rect.selection-bounds-rect')).toHaveCount(1);
+
+  const atomHit = page.locator('g[data-atom-id="C1"] .atom-hit');
+  const atomBox = await atomHit.boundingBox();
+  expect(atomBox).toBeTruthy();
+  const startX = atomBox.x + atomBox.width / 2;
+  const startY = atomBox.y + atomBox.height / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY + 40, { steps: 12 });
+  await page.mouse.up();
+
+  const afterC1 = await atomScreenPoint2d(page, 'C1');
+  const afterC6 = await atomScreenPoint2d(page, 'C6');
+  expect(afterC1).toBeTruthy();
+  expect(afterC6).toBeTruthy();
+  expect(afterC1.cx - beforeC1.cx).toBeGreaterThan(45);
+  expect(afterC1.cy - beforeC1.cy).toBeGreaterThan(20);
+  expect(afterC6.cx - beforeC6.cx).toBeGreaterThan(45);
+  expect(afterC6.cy - beforeC6.cy).toBeGreaterThan(20);
 });
 
 test('undo preserves hidden stereo hydrogen rendering after loading a random molecule', async ({ page }) => {
@@ -4119,6 +4438,145 @@ test('force selection mode highlights a hovered hydrogen atom', async ({ page })
     .toBe(true);
 });
 
+test('force flip and mirror preserve the active selection', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  const heavyTarget = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    return circles
+      .map(circle => {
+        const rect = circle.getBoundingClientRect();
+        return {
+          label: circle.__data__?.name ?? '',
+          cx: rect.left + rect.width / 2,
+          cy: rect.top + rect.height / 2
+        };
+      })
+      .find(atom => atom.label !== 'H');
+  });
+  expect(heavyTarget).toBeTruthy();
+
+  await page.mouse.click(heavyTarget.cx, heavyTarget.cy);
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+
+  await page.locator('#force-flip-h').click();
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+
+  await page.locator('#force-flip-v').click();
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+});
+
+test('force undo and redo restore the active selection highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  const heavyTarget = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    return circles
+      .map(circle => {
+        const rect = circle.getBoundingClientRect();
+        return {
+          label: circle.__data__?.name ?? '',
+          cx: rect.left + rect.width / 2,
+          cy: rect.top + rect.height / 2
+        };
+      })
+      .find(atom => atom.label !== 'H');
+  });
+  expect(heavyTarget).toBeTruthy();
+
+  await page.mouse.click(heavyTarget.cx, heavyTarget.cy);
+  const selectedCircleCount = await page.locator('g.force-selection-layer circle').count();
+  expect(selectedCircleCount).toBeGreaterThan(0);
+
+  await page.locator('#force-flip-h').click();
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue('CCO');
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer circle')).toHaveCount(selectedCircleCount);
+
+  await page.locator('#redo-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue('CCO');
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer circle')).toHaveCount(selectedCircleCount);
+});
+
+test('redoing a selected mode switch restores the force selection highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  await page.locator('g[data-atom-id="O3"] .atom-hit').click();
+  const selectedCircleCount2d = await page.locator('g.atom-selection circle').count();
+  expect(selectedCircleCount2d).toBeGreaterThan(0);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⚡ Force Layout');
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(selectedCircleCount2d);
+
+  await page.locator('#redo-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer circle')).not.toHaveCount(0);
+});
+
+test('force undo and redo restore a selected bond highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  const bondTarget = await page.evaluate(() => {
+    const target = document.querySelector('line.bond-hover-target');
+    const rect = target?.getBoundingClientRect();
+    return rect
+      ? {
+          cx: rect.left + rect.width / 2,
+          cy: rect.top + rect.height / 2
+        }
+      : null;
+  });
+  expect(bondTarget).toBeTruthy();
+
+  await page.mouse.click(bondTarget.cx, bondTarget.cy);
+  const selectedLineCount = await page.locator('g.force-selection-layer line').count();
+  expect(selectedLineCount).toBeGreaterThan(0);
+
+  await page.locator('#force-flip-v').click();
+  await expect(page.locator('g.force-selection-layer line')).toHaveCount(selectedLineCount);
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer line')).toHaveCount(selectedLineCount);
+
+  await page.locator('#redo-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer line')).toHaveCount(selectedLineCount);
+});
+
 test('delete key is a no-op for a hovered force hydrogen while draw mode is active', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -4356,6 +4814,174 @@ test('reaction preview can be entered and toggled back off from the reactions ta
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
 });
 
+test('reaction preview survives switching between 2d and force modes', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await expect(dehydrationRow).toBeVisible();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+  await expect.poll(async () => renderedReactionProductAtomCount(page)).toBeGreaterThan(0);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⚡ Force Layout');
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+  await expect.poll(async () => renderedReactionProductAtomCount(page)).toBeGreaterThan(0);
+});
+
+test('force-flipped reaction preview stays in view after switching back to 2d', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await ensure2dMode(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const hydrogenationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alkene Hydrogenation' }).first();
+
+  await expect(hydrogenationRow).toBeVisible();
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+  await page.locator('#force-flip-v').click();
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⚡ Force Layout');
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+});
+
+test('vertically flipped 2D reaction previews stay flipped after force round trip', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'CCO');
+  await ensure2dMode(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  const initialY = await page.evaluate(() => {
+    const parseY = atomId => {
+      const transform = document.querySelector(`g[data-atom-id="${atomId}"]`)?.getAttribute('transform') ?? '';
+      const match = /translate\([-0-9.]+,([-0-9.]+)\)/.exec(transform);
+      return match ? Number(match[1]) : null;
+    };
+    return {
+      c1: parseY('C1'),
+      c2: parseY('C2'),
+      productC1: parseY('__rxn_product__0:C1'),
+      productC2: parseY('__rxn_product__0:C2')
+    };
+  });
+  await page.locator('#flip-v').click();
+  const flippedY = await page.evaluate(() => {
+    const parseY = atomId => {
+      const transform = document.querySelector(`g[data-atom-id="${atomId}"]`)?.getAttribute('transform') ?? '';
+      const match = /translate\([-0-9.]+,([-0-9.]+)\)/.exec(transform);
+      return match ? Number(match[1]) : null;
+    };
+    return {
+      c1: parseY('C1'),
+      c2: parseY('C2'),
+      productC1: parseY('__rxn_product__0:C1'),
+      productC2: parseY('__rxn_product__0:C2')
+    };
+  });
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⚡ Force Layout');
+
+  const roundTripY = await page.evaluate(() => {
+    const parseY = atomId => {
+      const transform = document.querySelector(`g[data-atom-id="${atomId}"]`)?.getAttribute('transform') ?? '';
+      const match = /translate\([-0-9.]+,([-0-9.]+)\)/.exec(transform);
+      return match ? Number(match[1]) : null;
+    };
+    return {
+      c1: parseY('C1'),
+      c2: parseY('C2'),
+      productC1: parseY('__rxn_product__0:C1'),
+      productC2: parseY('__rxn_product__0:C2')
+    };
+  });
+
+  expect(initialY.c2).toBeLessThan(initialY.c1);
+  expect(flippedY.c2).toBeGreaterThan(flippedY.c1);
+  expect(roundTripY.c2).toBeGreaterThan(roundTripY.c1);
+  expect(initialY.productC2).toBeLessThan(initialY.productC1);
+  expect(flippedY.productC2).toBeGreaterThan(flippedY.productC1);
+  expect(roundTripY.productC2).toBeGreaterThan(roundTripY.productC1);
+});
+
+test('alkene hydrogenation preserves displayed stereo hydrogens through reaction flips and force round trips', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await ensure2dMode(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const hydrogenationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alkene Hydrogenation' }).first();
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+
+  const stereoHydrogenIds = ['H4', 'H6', '__rxn_product__0:H4', '__rxn_product__0:H6'];
+  const assertSeparated = async minimumDistance => {
+    const distances = await nearestHeavyDistancesForHydrogens(page, stereoHydrogenIds);
+    expect(distances).toHaveLength(stereoHydrogenIds.length);
+    for (const distance of distances) {
+      expect(distance).not.toBeNull();
+      expect(distance).toBeGreaterThan(minimumDistance);
+    }
+  };
+
+  await expect.poll(async () => nearestHeavyDistancesForHydrogens(page, stereoHydrogenIds)).toHaveLength(stereoHydrogenIds.length);
+  await assertSeparated(12);
+
+  await page.locator('#flip-v').click();
+  const flipped2dStereo = await stereoGlyphState(page);
+  expect(flipped2dStereo.wedgeCount).toBe(0);
+  expect(flipped2dStereo.hashCount).toBeGreaterThan(0);
+  await assertSeparated(12);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect.poll(async () => nearestHeavyDistancesForHydrogens(page, stereoHydrogenIds)).toHaveLength(stereoHydrogenIds.length);
+  const forceStereo = await forceStereoOverlayCounts(page);
+  expect(forceStereo.wedgeCount).toBe(0);
+  expect(forceStereo.dashLineCount).toBeGreaterThan(0);
+  await assertSeparated(8);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⚡ Force Layout');
+  await expect.poll(async () => nearestHeavyDistancesForHydrogens(page, stereoHydrogenIds)).toHaveLength(stereoHydrogenIds.length);
+  const roundTrip2dStereo = await stereoGlyphState(page);
+  expect(roundTrip2dStereo.wedgeCount).toBe(0);
+  expect(roundTrip2dStereo.hashCount).toBeGreaterThan(0);
+  await assertSeparated(12);
+});
+
 test('cleaning a 2d carboxylic-acid deprotonation preview preserves the displayed product layout', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -4507,6 +5133,29 @@ test('exiting force reaction preview refits the source molecule', async ({ page 
   await dehydrationRow.click();
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
   await expect.poll(async () => await rootTransform(page)).not.toBe(manualTransform);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+});
+
+test('exiting a force reaction preview after a force flip keeps the source molecule in view', async ({ page }) => {
+  await page.goto('/index.html');
+  await waitForAppReady(page);
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await ensure2dMode(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const hydrogenationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alkene Hydrogenation' }).first();
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  await page.locator('#force-flip-v').click();
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).not.toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(0);
   await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
 });
 
@@ -5142,6 +5791,40 @@ test('force reaction preview redo restores the rotated preview layout', async ({
   await expect.poll(async () => rootTransform(page)).toBe(afterRotateTransform);
   expect(forceNodeLayoutsClose(await forceNodeLayoutSignature(page), afterRotate)).toBe(true);
   await expect.poll(async () => forceNodeLayoutsClose(await forceRenderedNodeLayoutSignature(page), beforeRotateRendered, 1)).toBe(false);
+});
+
+test('force reaction preview undo and redo preserve the active selection highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  await page.locator('#select-mode-btn').click();
+  const oxygen = (await forceAtomScreenPoints(page)).find(atom => atom.id === 'O3');
+  expect(oxygen).toBeTruthy();
+  await page.mouse.click(oxygen.cx, oxygen.cy);
+  const selectedCircleCount = await page.locator('g.force-selection-layer circle').count();
+  expect(selectedCircleCount).toBeGreaterThan(0);
+
+  await page.locator('#force-rotate-cw').click();
+  await expect(page.locator('g.force-selection-layer circle')).toHaveCount(selectedCircleCount);
+
+  await page.locator('#undo-btn').click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer circle')).toHaveCount(selectedCircleCount);
+
+  await page.locator('#redo-btn').click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.force-selection-layer circle')).toHaveCount(selectedCircleCount);
 });
 
 test('force resonance redo restores the rotated pair layout', async ({ page }) => {

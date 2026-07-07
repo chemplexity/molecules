@@ -214,6 +214,9 @@ export function createAppRuntime(deps) {
         restorePanelState: (panelState, options) => deps.runtimeState.sessionUiState.restorePanelState(panelState, options),
         restoreInteractionState: snap => deps.runtimeState.sessionUiState.restoreInteractionState(snap)
       },
+      render: {
+        applySelectionOverlay: () => deps.selection.applySelectionOverlay?.()
+      },
       overlays: {
         captureReactionPreviewSnapshot: deps.overlays.captureReactionPreviewSnapshot,
         restoreReactionPreviewSnapshot: deps.overlays.restoreReactionPreviewSnapshot,

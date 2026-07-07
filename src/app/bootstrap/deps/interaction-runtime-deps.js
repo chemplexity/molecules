@@ -36,6 +36,7 @@ export function createInteractionRuntimeDeps(ctx) {
     resetActiveResonanceView: ctx.resetActiveResonanceView,
     hasActiveResonanceView: () => ctx.hasActiveResonanceView?.() ?? false,
     getActiveResonanceSourceMolecule: mol => ctx.getActiveResonanceSourceMolecule?.(mol) ?? mol,
+    updateReactionTemplatesPanel: () => ctx.updateReactionTemplatesPanel?.(),
     alignReaction2dProductOrientation: ctx.alignReaction2dProductOrientation,
     spreadReaction2dProductComponents: ctx.spreadReaction2dProductComponents,
     centerReaction2dPairCoords: ctx.centerReaction2dPairCoords,

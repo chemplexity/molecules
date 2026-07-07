@@ -22,6 +22,7 @@ export function createNavigationActionDeps(ctx) {
       resetActiveResonanceView: mol => ctx.resetActiveResonanceView(mol),
       hasActiveResonanceView: () => ctx.hasActiveResonanceView?.() ?? false,
       getActiveResonanceSourceMolecule: mol => ctx.getActiveResonanceSourceMolecule?.(mol) ?? mol,
+      updateReactionTemplatesPanel: () => ctx.updateReactionTemplatesPanel?.(),
       alignReaction2dProductOrientation: (mol, bondLength) => ctx.alignReaction2dProductOrientation(mol, bondLength),
       spreadReaction2dProductComponents: (mol, bondLength) => ctx.spreadReaction2dProductComponents(mol, bondLength),
       centerReaction2dPairCoords: (mol, bondLength) => ctx.centerReaction2dPairCoords(mol, bondLength),
@@ -31,6 +32,7 @@ export function createNavigationActionDeps(ctx) {
       generate2dCoords: ctx.generate2dCoords,
       refineExistingCoords: ctx.refineExistingCoords,
       atomBBox: ctx.atomBBox,
+      toSelectionSVGPt2d: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null,
       flipDisplayStereo: mol => ctx.flipDisplayStereo(mol),
       getLayoutBondLength: () => ctx.getLayoutBondLength?.() ?? 1.5
     },

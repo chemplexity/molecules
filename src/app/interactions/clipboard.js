@@ -19,6 +19,7 @@ import {
 } from '../render/helpers.js';
 import { convertLineCoordsToForceLayout, forceLayoutBondScale, FORCE_LAYOUT_H_BOND_LENGTH } from '../render/force-helpers.js';
 import { chargeBadgeMetrics, formatChargeLabel, labelHalfH, labelHalfW } from '../../layout/mol2d-helpers.js';
+import { finiteNumber } from './geometry-utils.js';
 
 const PASTE_VIEWPORT_PADDING = 2;
 
@@ -28,11 +29,6 @@ function visibleFragmentAtoms(fragment) {
 
 function forcePreviewAtoms(fragment) {
   return fragment?.atoms ?? [];
-}
-
-function finiteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
 }
 
 function isStereoHydrogen(atom, model) {

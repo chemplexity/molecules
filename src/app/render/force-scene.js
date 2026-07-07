@@ -25,6 +25,7 @@ import { ringAtomKey, ringFillDomId } from '../../core/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 import { updateSelectionBoundsControls } from './selection-overlay.js';
+import { applyZoomTransformPoint } from './force-helpers.js';
 
 const FORCE_STANDARD_UNLABELED_ATOMS = new Set(['C', 'H', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']);
 const RING_TEMPLATE_FORCE_ATOM_HOVER_RADIUS = 18;
@@ -275,17 +276,12 @@ function forceGraphOutsideViewport(nodes, transform, plotEl, pad) {
   const width = plotEl?.clientWidth || 600;
   const height = plotEl?.clientHeight || 400;
   const k = Number.isFinite(transform.k) ? transform.k : 1;
-  const tx = Number.isFinite(transform.x) ? transform.x : 0;
-  const ty = Number.isFinite(transform.y) ? transform.y : 0;
-  const applyX = typeof transform.applyX === 'function' ? value => transform.applyX(value) : value => tx + value * k;
-  const applyY = typeof transform.applyY === 'function' ? value => transform.applyY(value) : value => ty + value * k;
   for (const node of nodes) {
     if (!Number.isFinite(node?.x) || !Number.isFinite(node?.y)) {
       continue;
     }
     const radius = atomRadius(node.protons) * k;
-    const x = applyX(node.x);
-    const y = applyY(node.y);
+    const { x, y } = applyZoomTransformPoint(transform, node);
     if (x - radius < pad || x + radius > width - pad || y - radius < pad || y + radius > height - pad) {
       return true;
     }
@@ -346,7 +342,7 @@ function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
   const skipReactionPreviewStereoSeed = isReactionPreviewMol && molecule.__reactionPreview?.skipForceStereoSeed === true;
   const shouldSeed =
     needsProjectedOrganometallicSeed ||
-    (!skipReactionPreviewStereoSeed && ((!hasDisplayStereo && hasChiralCenters) || (isReactionPreviewMol && hasChiralCenters)));
+    (!skipReactionPreviewStereoSeed && !hasDisplayStereo && hasChiralCenters);
   if (!shouldSeed) {
     return;
   }
@@ -1432,11 +1428,15 @@ export function createForceSceneRenderer(ctx) {
       }
 
       if (ctx.state.isForceAutoFitEnabled()) {
+        const reactionLikeFit = fitReactionLike === true || molecule?.__reactionPreview?.resonancePair === true;
+        const defaultFitScaleMultiplier = reactionLikeFit
+          ? ctx.constants.forceLayoutInitialZoomMultiplier
+          : (ctx.constants.forceLayoutDefaultZoomMultiplier ?? ctx.constants.forceLayoutInitialZoomMultiplier);
         const fitTransform = ctx.helpers.forceFitTransform(graph.nodes, fitPad ?? ctx.constants.forceLayoutInitialFitPad, {
           hydrogenRadiusScale: ctx.constants.forceLayoutInitialHRadiusScale,
-          scaleMultiplier: fitScaleMultiplier ?? ctx.constants.forceLayoutInitialZoomMultiplier,
+          scaleMultiplier: fitScaleMultiplier ?? defaultFitScaleMultiplier,
           ignoreOverlayPadding,
-          reactionLike: fitReactionLike === true || molecule?.__reactionPreview?.resonancePair === true
+          reactionLike: reactionLikeFit
         });
         if (fitTransform) {
           ctx.svg.call(ctx.zoom.transform, fitTransform);

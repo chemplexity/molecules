@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getDefaultRenderOptions, getRenderOptions, updateRenderOptions } from '../../../src/app/render/helpers.js';
+import { getDefaultRenderOptions, getRenderOptions, updateRenderOptions, xOffset, yOffset } from '../../../src/app/render/helpers.js';
 
 afterEach(() => {
   updateRenderOptions(getDefaultRenderOptions());
@@ -44,5 +44,23 @@ describe('app/render/helpers', () => {
 
     const lowClamped = updateRenderOptions({ reactionFontSize: 6 });
     assert.equal(lowClamped.reactionFontSize, 8);
+  });
+
+  it('falls back to a finite offset instead of NaN for coincident bond endpoints', () => {
+    const src = { x: 5, y: 5 };
+    const tgt = { x: 5, y: 5 };
+
+    assert.equal(xOffset(3, src, tgt), 3);
+    assert.equal(yOffset(3, src, tgt), -3);
+  });
+
+  it('still offsets non-degenerate horizontal and vertical bonds correctly', () => {
+    const horizontal = { x: 10, y: 0 };
+    assert.equal(xOffset(3, { x: 0, y: 0 }, horizontal), 0);
+    assert.equal(yOffset(3, { x: 0, y: 0 }, horizontal), -3);
+
+    const vertical = { x: 0, y: 10 };
+    assert.equal(xOffset(3, { x: 0, y: 0 }, vertical), 3);
+    assert.equal(Math.abs(yOffset(3, { x: 0, y: 0 }, vertical)), 0);
   });
 });

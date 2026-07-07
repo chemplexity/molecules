@@ -77,6 +77,9 @@ function detailHighlightGroups(detail, molecule, label = '') {
  */
 export function updateDescriptors(molecule, extraH = 0) {
   const tbody = document.getElementById('descriptor-body');
+  if (!tbody) {
+    return;
+  }
 
   let heavyCount = 0;
   for (const atom of molecule.atoms.values()) {

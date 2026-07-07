@@ -12,6 +12,20 @@ function bondAngleAtAtom(molecule, centerAtomId, firstNeighborAtomId, secondNeig
 }
 
 describe('layout/public-api', () => {
+  it('keeps metal hydrogens explicit when generating suppressed-h coordinates', () => {
+    const molecule = parseSMILES('[FeH]');
+
+    generateCoords(molecule, { suppressH: true, bondLength: 1.5 });
+
+    const iron = molecule.atoms.get('Fe1');
+    const hydrogen = molecule.atoms.get('H2');
+    assert.equal(iron?.visible, true);
+    assert.equal(hydrogen?.visible, true);
+    assert.equal(Number.isFinite(hydrogen?.x), true);
+    assert.equal(Number.isFinite(hydrogen?.y), true);
+    assert.ok(Math.hypot(hydrogen.x - iron.x, hydrogen.y - iron.y) > 0.5, 'expected Fe-H to be laid out as an explicit bond');
+  });
+
   it('keeps hidden-h benzylic amino-alcohol centers trigonal when generating suppressed-h coordinates', () => {
     const molecule = parseSMILES('CC(COC1=CC=CC=C1)NC(C)C(O)C1=CC=C(O)C=C1');
 

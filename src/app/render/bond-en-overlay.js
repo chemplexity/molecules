@@ -1,13 +1,19 @@
 /** @module app/render/bond-en-overlay */
 
 import { bondElectronegativityDifference } from '../../descriptors/physicochemical.js';
-import { getBondEnActive, refreshBondLengthsPanel, registerBondEnPanelUpdater, setBondEnActive, setBondLengthsActive } from './bond-overlay-state.js';
+import { getBondEnActive, refreshBondLengthsPanel, registerBondEnPanelUpdater, setBondEnActive } from './bond-overlay-state.js';
 export { getBondEnActive } from './bond-overlay-state.js';
-import { createModeAwareHelpers } from './render-mode-helpers.js';
-import { createOverlayPanelRow } from './panel-row.js';
+import { createBondOverlayPanel } from './bond-overlay-panel.js';
 
-let ctx = {};
-const modeHelpers = createModeAwareHelpers(() => ctx);
+const panel = createBondOverlayPanel({
+  tbodyId: 'bond-en-body',
+  label: 'Bond Electronegativity',
+  title: 'Pauling electronegativity difference (Δχ) per bond. Values reflect atomic electronegativity only and are independent of bond order.',
+  getActive: getBondEnActive,
+  setActive: setBondEnActive,
+  registerUpdater: registerBondEnPanelUpdater,
+  refreshOther: refreshBondLengthsPanel
+});
 
 /**
  * Initializes the bond-EN panel renderer with the app context it needs to
@@ -19,10 +25,18 @@ const modeHelpers = createModeAwareHelpers(() => ctx);
  * @param {() => void} context.draw2d - Triggers a 2D redraw.
  * @param {(mol: object, options?: object) => void} context.updateForce - Triggers a force-layout redraw.
  */
-export function initBondEnPanel(context) {
-  ctx = context;
-  registerBondEnPanelUpdater(updateBondEnPanel);
-}
+export const initBondEnPanel = panel.init;
+
+/**
+ * Renders or refreshes the Bond Electronegativity toggle row.
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to render the panel for.
+ */
+export const updateBondEnPanel = panel.update;
+
+/**
+ * Clears the bond-EN panel UI state and deactivates the overlay.
+ */
+export const clearBondEnPanel = panel.clear;
 
 /**
  * Returns overlay data for rendering bond polarity labels, or null when the
@@ -56,57 +70,4 @@ export function getBondEnOverlayData(mol) {
     label: delta.toFixed(2),
     t: delta / norm
   }));
-}
-
-/**
- * Clears the bond-EN panel UI state and deactivates the overlay.
- */
-export function clearBondEnPanel() {
-  setBondEnActive(false);
-  const tbody = document.getElementById('bond-en-body');
-  if (tbody) {
-    tbody.innerHTML = '';
-  }
-}
-
-/**
- * Renders or refreshes the Bond Electronegativity toggle row.
- * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to render the panel for.
- */
-export function updateBondEnPanel(mol) {
-  if (typeof document === 'undefined') {
-    return;
-  }
-  const tbody = document.getElementById('bond-en-body');
-  if (!tbody) {
-    return;
-  }
-  if (!mol) {
-    tbody.innerHTML = '';
-    return;
-  }
-
-  tbody.innerHTML = '';
-
-  tbody.appendChild(
-    createOverlayPanelRow({
-      label: 'Bond Electronegativity',
-      title: 'Pauling electronegativity difference (Δχ) per bond. Values reflect atomic electronegativity only and are independent of bond order.',
-      active: getBondEnActive(),
-      onClick: event => {
-        event.stopPropagation();
-        const nextActive = !getBondEnActive();
-        setBondEnActive(nextActive);
-        if (nextActive) {
-          setBondLengthsActive(false);
-        }
-        const displayedMol = modeHelpers.currentMol() ?? mol;
-        updateBondEnPanel(displayedMol);
-        if (nextActive) {
-          refreshBondLengthsPanel(displayedMol);
-        }
-        modeHelpers.redraw(displayedMol);
-      }
-    })
-  );
 }

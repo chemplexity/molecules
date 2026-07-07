@@ -1,7 +1,8 @@
 /** @module app/render/2d-helpers */
 
-import { renderBondOrder, addLine, bondAtomColor, bondDisplayColor, bondDisplayOpacity } from './helpers.js';
+import { renderBondOrder, addLine, bondAtomColor, bondDisplayColor, bondDisplayOpacity, getRenderOptions } from './helpers.js';
 import { labelHalfW, labelHalfH, ringLabelOffset, getAtomLabel, heavyDegree } from '../../layout/mol2d-helpers.js';
+import { collect2dHydrogenLabelCounts, hideHydrogensFor2d, materializeMetalHydrideCoords } from '../../layout/hydrogen-display.js';
 
 /**
  * Creates 2D render helper functions for SVG point conversion, bond drawing, viewport fitting, and derived state synchronization.
@@ -10,24 +11,14 @@ import { labelHalfW, labelHalfH, ringLabelOffset, getAtomLabel, heavyDegree } fr
  */
 export function create2DRenderHelpers(ctx) {
   /**
-   * Hides all hydrogens in the current 2D molecule without requiring a full
-   * coordinate regeneration pass.
+   * Hides ordinary hydrogens in the current 2D molecule without requiring a full
+   * coordinate regeneration pass, while keeping metal hydrides explicit.
    * @param {object|null|undefined} mol - Molecule whose hydrogen visibility should be reset.
    * @returns {void}
    */
   function hideHydrogensFor2dSync(mol) {
-    if (!mol) {
-      return;
-    }
-    if (typeof mol.hideHydrogens === 'function') {
-      mol.hideHydrogens();
-      return;
-    }
-    for (const atom of mol.atoms?.values?.() ?? []) {
-      if (atom?.name === 'H') {
-        atom.visible = false;
-      }
-    }
+    hideHydrogensFor2d(mol);
+    materializeMetalHydrideCoords(mol, { bondLength: getRenderOptions().layoutBondLength ?? 1.5 });
   }
 
   /**
@@ -376,16 +367,7 @@ export function create2DRenderHelpers(ctx) {
   }
 
   function sync2dDerivedState(mol) {
-    const hCounts = new Map();
-    for (const [, atom] of mol.atoms) {
-      if (atom.name === 'H') {
-        continue;
-      }
-      const count = atom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').length;
-      if (count > 0) {
-        hCounts.set(atom.id, count);
-      }
-    }
+    const hCounts = collect2dHydrogenLabelCounts(mol);
     const stereoMap = ctx.stereo.pickStereoMap(mol);
     syncStereoHydrogenVisibility(mol, hCounts, stereoMap);
     ctx.state.setDerivedState({ hCounts, stereoMap });

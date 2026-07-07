@@ -93,6 +93,7 @@ export function createForceSceneRendererDeps(ctx) {
       forceLayoutInitialFitPad: ctx.forceLayoutInitialFitPad,
       forceLayoutInitialHRadiusScale: ctx.forceLayoutInitialHRadiusScale,
       forceLayoutInitialZoomMultiplier: ctx.forceLayoutInitialZoomMultiplier,
+      forceLayoutDefaultZoomMultiplier: ctx.forceLayoutDefaultZoomMultiplier,
       forceLayoutInitialKeepInViewTicks: ctx.forceLayoutInitialKeepInViewTicks,
       forceLayoutInitialSettleTicks: ctx.forceLayoutInitialSettleTicks,
       forceLayoutInitialSettleAlpha: ctx.forceLayoutInitialSettleAlpha,

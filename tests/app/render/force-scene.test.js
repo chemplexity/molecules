@@ -229,6 +229,7 @@ function makeRenderer({
       forceLayoutInitialFitPad: 40,
       forceLayoutInitialHRadiusScale: 0.75,
       forceLayoutInitialZoomMultiplier: 0.9,
+      forceLayoutDefaultZoomMultiplier: 1.8,
       forceLayoutInitialKeepInViewTicks: 10,
       forceLayoutInitialSettleTicks: 7,
       forceLayoutInitialSettleAlpha: 0.7,
@@ -581,6 +582,71 @@ describe('createForceSceneRenderer', () => {
     assert.ok(highlightIndex > firstBondPositionIndex, 'expected highlights after bond positioning');
   });
 
+  it('uses the default 2D-equivalent zoom multiplier for fresh force renders', () => {
+    const graph = {
+      nodes: [
+        { id: 'c1', name: 'C', protons: 6, charge: 0, x: 80, y: 100 },
+        { id: 'c2', name: 'C', protons: 6, charge: 0, x: 120, y: 100 }
+      ],
+      links: []
+    };
+    graph.links.push({ id: 'b1', source: graph.nodes[0], target: graph.nodes[1], order: 1 });
+    const mol = parseSMILES('CC');
+    const { renderer, records } = makeRenderer({
+      convertMolecule: () => graph,
+      forceFitTransform: (_nodes, pad, options) => {
+        records.push(['forceFitTransform', pad, options]);
+        return { kind: 'fit' };
+      }
+    });
+
+    renderer.updateForce(mol);
+
+    assert.deepEqual(records.find(entry => entry[0] === 'forceFitTransform'), [
+      'forceFitTransform',
+      40,
+      {
+        hydrogenRadiusScale: 0.75,
+        scaleMultiplier: 1.8,
+        ignoreOverlayPadding: false,
+        reactionLike: false
+      }
+    ]);
+  });
+
+  it('uses the compact preview multiplier for fresh force resonance-pair renders', () => {
+    const graph = {
+      nodes: [
+        { id: 'c1', name: 'C', protons: 6, charge: 0, x: 80, y: 100 },
+        { id: 'c2', name: 'C', protons: 6, charge: 0, x: 120, y: 100 }
+      ],
+      links: []
+    };
+    graph.links.push({ id: 'b1', source: graph.nodes[0], target: graph.nodes[1], order: 1 });
+    const mol = parseSMILES('CC');
+    mol.__reactionPreview = { resonancePair: true };
+    const { renderer, records } = makeRenderer({
+      convertMolecule: () => graph,
+      forceFitTransform: (_nodes, pad, options) => {
+        records.push(['forceFitTransform', pad, options]);
+        return { kind: 'fit' };
+      }
+    });
+
+    renderer.updateForce(mol);
+
+    assert.deepEqual(records.find(entry => entry[0] === 'forceFitTransform'), [
+      'forceFitTransform',
+      40,
+      {
+        hydrogenRadiusScale: 0.75,
+        scaleMultiplier: 0.9,
+        ignoreOverlayPadding: false,
+        reactionLike: true
+      }
+    ]);
+  });
+
   it('keeps preserved-position force updates from running the initial settle pass', () => {
     const { renderer, records } = makeRenderer();
 
@@ -612,6 +678,31 @@ describe('createForceSceneRenderer', () => {
     assert.deepEqual(atomSymbolClassRecord?.[2], ['atom-symbol force-auto-label', 'atom-symbol']);
   });
 
+  it('uses radioactive force outlines for radioactive-only atoms', () => {
+    const molecule = parseSMILES('[U]C');
+    const { renderer, records } = makeRenderer({
+      preserveView: true,
+      convertMolecule: () => ({
+        nodes: [
+          { id: 'U1', name: 'U', protons: 92, charge: 0, x: 10, y: 20 },
+          { id: 'C2', name: 'C', protons: 6, charge: 0, x: 40, y: 20 }
+        ],
+        links: []
+      })
+    });
+
+    renderer.updateForce(molecule, { preserveView: true });
+
+    const forceAtomStrokeRecord = records.find(
+      entry =>
+        entry[0] === 'attr' &&
+        entry[1] === 'stroke' &&
+        Array.isArray(entry[2]) &&
+        entry[2].includes('rgba(184, 224, 46, 0.62)')
+    );
+    assert.deepEqual(forceAtomStrokeRecord?.[2], ['rgba(184, 224, 46, 0.62)', 'rgba(0,0,0,0.25)']);
+  });
+
   it('skips chiral force stereo reseeding when reaction preview metadata allows it', () => {
     const molecule = {
       atoms: new Map([['__rxn_product__0:c1', { id: '__rxn_product__0:c1', name: 'C', protons: 6, bonds: [], properties: {} }]]),
@@ -634,6 +725,31 @@ describe('createForceSceneRenderer', () => {
     renderer.updateForce(molecule, { preservePositions: true });
 
     assert.equal(records.some(entry => entry[0] === 'generate2dCoords'), false);
+  });
+
+  it('does not reseed chiral reaction-preview stereo when display stereo already exists', () => {
+    const molecule = parseSMILES('C[C@H](F)Cl');
+    molecule.id = 'reaction-preview-with-display-stereo';
+    molecule.__reactionPreview = {};
+    const stereoBond = molecule.bonds.get('0');
+    stereoBond.properties.display = { as: 'dash', centerId: 'C2' };
+    const { renderer, records } = makeRenderer({
+      convertMolecule: () => ({
+        nodes: [
+          { id: 'C1', name: 'C', protons: 6, charge: 0, x: 100, y: 100 },
+          { id: 'C2', name: 'C', protons: 6, charge: 0, x: 130, y: 100 }
+        ],
+        links: []
+      }),
+      generate2dCoords: () => {
+        records.push(['generate2dCoords']);
+      }
+    });
+
+    renderer.updateForce(molecule, { preservePositions: true });
+
+    assert.equal(records.some(entry => entry[0] === 'generate2dCoords'), false);
+    assert.equal(stereoBond.properties.display?.as, 'dash');
   });
 
   it('carries force hydrogen slot metadata through preserved-position edits', () => {

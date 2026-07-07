@@ -5,6 +5,7 @@ import { Resvg } from '@resvg/resvg-js';
 import { parseSMILES } from '../../io/smiles.js';
 import { parseINCHI } from '../../io/inchi.js';
 import { ringFillDomId, styleColor, styleOpacity } from '../../core/style.js';
+import { collect2dHydrogenLabelCounts, hideHydrogensFor2d } from '../hydrogen-display.js';
 import { buildRingFillShape } from '../ring-fill-shape.js';
 import { applyCoords } from './apply.js';
 import { generateCoords } from './api.js';
@@ -359,18 +360,9 @@ export function renderMolSVG(
     return null;
   }
 
-  const hCounts = new Map();
-  for (const atom of molecule.atoms.values()) {
-    if (atom.name === 'H') {
-      continue;
-    }
-    const count = atom.getNeighbors(molecule).filter(neighbor => neighbor.name === 'H').length;
-    if (count > 0) {
-      hCounts.set(atom.id, count);
-    }
-  }
+  const hCounts = collect2dHydrogenLabelCounts(molecule);
 
-  molecule.hideHydrogens();
+  hideHydrogensFor2d(molecule);
 
   if (aromaticMode === 'localized') {
     kekulize(molecule);

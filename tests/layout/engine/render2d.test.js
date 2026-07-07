@@ -18,6 +18,17 @@ describe('layout/engine/render2d', () => {
     assert.equal((rendered.svgContent.match(/class="lone-pair"/g) ?? []).length, 0);
   });
 
+  it('keeps metal hydrogens as explicit single bonds', () => {
+    const molecule = parseSMILES('[FeH]');
+    const rendered = renderMolSVG(molecule);
+
+    assert.ok(rendered, 'expected SVG render output');
+    assert.equal((rendered.svgContent.match(/<line /g) ?? []).length, 1);
+    assert.doesNotMatch(rendered.svgContent, /FeH/);
+    assert.match(rendered.svgContent, /<tspan>Fe<\/tspan>/);
+    assert.match(rendered.svgContent, /<tspan>H<\/tspan>/);
+  });
+
   it('emits lone-pair circles when enabled', () => {
     const molecule = parseSMILES('CO');
     const rendered = renderMolSVG(molecule, { showLonePairs: true });

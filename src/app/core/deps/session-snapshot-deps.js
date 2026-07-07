@@ -51,6 +51,7 @@ export function createSessionSnapshotDeps(deps) {
     restoreForceState: deps.runtime.restoreForceState,
     restorePanelState: deps.sessionUi.restorePanelState,
     restoreInteractionState: deps.sessionUi.restoreInteractionState,
+    applySelectionOverlay: deps.render.applySelectionOverlay,
     clearHighlightState: deps.highlights.clearHighlightState,
     restoreFunctionalGroupHighlightSnapshot: deps.highlights.restoreFunctionalGroupHighlightSnapshot,
     restorePhyschemHighlightSnapshot: deps.highlights.restorePhyschemHighlightSnapshot,

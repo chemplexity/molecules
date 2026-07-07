@@ -18,6 +18,7 @@ import { parseINCHI } from '../io/inchi.js';
 import { ringFillDomId, styleColor, styleOpacity } from '../core/style.js';
 import { generateAndRefine2dCoords } from './index.js';
 import { buildRingFillShape } from './ring-fill-shape.js';
+import { collect2dHydrogenLabelCounts, hideHydrogensFor2d } from './hydrogen-display.js';
 import {
   atomColor,
   WEDGE_HALF_W,
@@ -329,20 +330,11 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     return null;
   }
 
-  // Collect implicit-H counts before hiding hydrogens.
-  const hCounts = new Map();
-  for (const [, atom] of mol.atoms) {
-    if (atom.name === 'H') {
-      continue;
-    }
-    const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
-    if (count > 0) {
-      hCounts.set(atom.id, count);
-    }
-  }
+  // Collect folded H counts before hiding ordinary hydrogens.
+  const hCounts = collect2dHydrogenLabelCounts(mol);
 
   // Hide (not strip) so chiral centers retain their H neighbours.
-  mol.hideHydrogens();
+  hideHydrogensFor2d(mol);
 
   // Assign Kekulé bond orders to any aromatic bonds that lack them.
   if (aromaticMode === 'localized') {
