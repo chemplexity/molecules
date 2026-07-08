@@ -63,7 +63,7 @@ const elements = {
   Rb: { protons: 37, neutrons: 48.4678, electrons: 37, group: 1, period: 5, electronegativity: 0.82 },
   Sr: { protons: 38, neutrons: 49.621, electrons: 38, group: 2, period: 5, electronegativity: 0.95 },
   Y: { protons: 39, neutrons: 49.9058, electrons: 39, group: 3, period: 5, electronegativity: 1.22 },
-  Zr: { protons: 40, neutrons: 52.2242, electrons: 40, group: 4, period: 5, electronegativity: 1.33 },
+  Zr: { protons: 40, neutrons: 51.2242, electrons: 40, group: 4, period: 5, electronegativity: 1.33 },
   Nb: { protons: 41, neutrons: 51.9064, electrons: 41, group: 5, period: 5, electronegativity: 1.6 },
   Mo: { protons: 42, neutrons: 53.951, electrons: 42, group: 6, period: 5, electronegativity: 2.16 },
   Tc: { protons: 43, neutrons: 55.0, electrons: 43, group: 7, period: 5, electronegativity: 1.9 },

@@ -1,9 +1,18 @@
 # Change Log
 
+## 2026-07-07
+
+- Add `data/elements-extended.js`: per-isotope mass number, exact mass, and natural abundance for every element (plus D), with an abundance-weighted `averageMass` field derived from each element's isotope table.
+- Fix a Zr data-entry bug in `data/elements.js` where the neutron count implied an atomic weight of 92.2242 instead of the correct ~91.224 (off by one neutron).
+- Fix inaccurate documentation of the `halfLife` field in `data/elements-extended.js`, which claimed to appear only on zero-abundance isotopes when it's also present on naturally abundant but radioactive isotopes (e.g. K-40, Rb-87, U-235/238).
+- Keep compact metal-hydride hydrogens separated after 2D/force/2D round trips at small default bond lengths.
+- Clamp label-trimmed 2D bond segments so compact metal-to-label bonds do not reverse back through atom labels.
+
 ## 2026-07-06
 
 - Preserve copied fragment stereochemical bond display during paste without auto-creating new wedge/dash bonds on pasted fragments.
 - Restore manual marquee selection dragging by finalizing window-level mouseup events and selecting from rendered 2D atom hit targets.
+- Pull stale far-away metal-hydride hydrogens back beside the placed metal atom during 2D display sync, choosing slots that avoid ring faces and straight-line continuations.
 - Render metal hydrides as explicit Fe-H style single bonds during 2D rendering and immediate edit sync, including separating newly visible hydrogens from the metal atom.
 - Give radioactive-only elements a translucent yellow-green force-mode outline.
 - Restore force-mode selection overlays immediately after undo/redo snapshot restores.

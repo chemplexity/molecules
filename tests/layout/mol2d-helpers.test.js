@@ -4,11 +4,21 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../src/io/smiles.js';
 import { applyCoords } from '../../src/layout/engine/apply.js';
 import { generateCoords } from '../../src/layout/engine/api.js';
-import { labelHalfH, syncDisplayStereo } from '../../src/layout/mol2d-helpers.js';
+import { labelHalfH, shortenLine, syncDisplayStereo } from '../../src/layout/mol2d-helpers.js';
 
 test('labelHalfH reserves extra descent for subscripted atom labels', () => {
   assert.ok(labelHalfH('NH2', 11) > labelHalfH('NH', 11));
   assert.ok(labelHalfH('CH3', 14) > labelHalfH('CH', 14));
+});
+
+test('shortenLine clamps oversized label clearances without reversing the segment', () => {
+  const line = shortenLine(0, 0, 20, 0, 18, 12);
+
+  assert.ok(line.x1 <= line.x2);
+  assert.equal(line.y1, 0);
+  assert.equal(line.y2, 0);
+  assert.ok(line.x1 >= 0);
+  assert.ok(line.x2 <= 20);
 });
 
 test('syncDisplayStereo uses distinct bonds for adjacent hidden-hydrogen stereocenters', () => {

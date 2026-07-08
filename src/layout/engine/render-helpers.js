@@ -203,11 +203,24 @@ export function shortenLine(x1, y1, x2, y2, d1, d2) {
   const len = vecLen(dx, dy);
   const ux = dx / len;
   const uy = dy / len;
+  let trim1 = Math.max(0, Number(d1) || 0);
+  let trim2 = Math.max(0, Number(d2) || 0);
+  const trimTotal = trim1 + trim2;
+  if (trimTotal >= len) {
+    if (trimTotal > 0) {
+      const scale = len / trimTotal;
+      trim1 *= scale;
+      trim2 *= scale;
+    } else {
+      trim1 = len / 2;
+      trim2 = len / 2;
+    }
+  }
   return {
-    x1: x1 + ux * d1,
-    y1: y1 + uy * d1,
-    x2: x2 - ux * d2,
-    y2: y2 - uy * d2
+    x1: x1 + ux * trim1,
+    y1: y1 + uy * trim1,
+    x2: x2 - ux * trim2,
+    y2: y2 - uy * trim2
   };
 }
 

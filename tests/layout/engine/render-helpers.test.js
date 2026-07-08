@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords } from '../../../src/layout/engine/api.js';
-import { atomColor, computeChargeBadgePlacement, formatChargeLabel, kekulize, labelHalfW, ringLabelOffset } from '../../../src/layout/engine/render-helpers.js';
+import { atomColor, computeChargeBadgePlacement, formatChargeLabel, kekulize, labelHalfW, ringLabelOffset, shortenLine } from '../../../src/layout/engine/render-helpers.js';
 
 describe('layout/engine/render-helpers', () => {
   it('uses the expanded CPK palette while preserving protected metals', () => {
@@ -23,6 +23,16 @@ describe('layout/engine/render-helpers', () => {
     assert.equal(formatChargeLabel(2), '2+');
     assert.equal(formatChargeLabel(-1), '−');
     assert.equal(formatChargeLabel(-2), '2−');
+  });
+
+  it('clamps oversized label clearances without reversing shortened bond segments', () => {
+    const line = shortenLine(0, 0, 20, 0, 18, 12);
+
+    assert.ok(line.x1 <= line.x2);
+    assert.equal(line.y1, 0);
+    assert.equal(line.y2, 0);
+    assert.ok(line.x1 >= 0);
+    assert.ok(line.x2 <= 20);
   });
 
   it('places charge badges outside shifted carbonyl oxygen labels', () => {
