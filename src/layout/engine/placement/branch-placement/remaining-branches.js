@@ -1156,9 +1156,7 @@ function placeNeighborSequence(
       allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) &&
       (shouldUseClassicSingleBranchLookahead || shouldUseRingAnchorLookahead);
     if (shouldUseSingleBranchLookahead) {
-      const batchLookaheadAngles = shouldUseRingAnchorLookahead
-        ? batchSingleBranchLookaheadAngles(adjacency, coords, anchorAtomId, parentAtomId, childAtomId, layoutGraph, branchConstraints)
-        : [];
+      const batchLookaheadAngles = shouldUseRingAnchorLookahead ? batchSingleBranchLookaheadAngles(adjacency, coords, anchorAtomId, parentAtomId, childAtomId, layoutGraph, branchConstraints) : [];
       const phosphateTailLookaheadAngles = shouldUseRingAnchorLookahead
         ? phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, constrainedPreferredAngles)
         : [];

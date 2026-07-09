@@ -85,13 +85,10 @@ test('syncDisplayStereo drops stale automatic wedges after a center stops being 
   assert.equal(mol.atoms.get('C8').getChirality(), null);
   assert.equal(mol.bonds.get('7').properties.display, undefined);
   assert.equal(mol.bonds.get('8').properties.display, undefined);
-  assert.deepEqual(
-    [...nextStereoMap.entries()].sort(),
-    [
-      ['0', 'dash'],
-      ['9', 'wedge']
-    ]
-  );
+  assert.deepEqual([...nextStereoMap.entries()].sort(), [
+    ['0', 'dash'],
+    ['9', 'wedge']
+  ]);
 });
 
 test('syncDisplayStereo preserves projected metal wedge and dash hints for 2D cobalt rendering', () => {

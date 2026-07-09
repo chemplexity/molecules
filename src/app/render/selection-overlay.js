@@ -189,18 +189,8 @@ export function updateSelectionBoundsControls(controls, bounds, pivot = null) {
     return controls;
   }
   const pivotPoint = normalizedSelectionPivot(displayBounds, persistedPivot);
-  controls
-    .select('rect.selection-bounds-drag-hit')
-    .attr('x', displayBounds.x)
-    .attr('y', displayBounds.y)
-    .attr('width', displayBounds.width)
-    .attr('height', displayBounds.height);
-  controls
-    .select('rect.selection-bounds-rect')
-    .attr('x', displayBounds.x)
-    .attr('y', displayBounds.y)
-    .attr('width', displayBounds.width)
-    .attr('height', displayBounds.height);
+  controls.select('rect.selection-bounds-drag-hit').attr('x', displayBounds.x).attr('y', displayBounds.y).attr('width', displayBounds.width).attr('height', displayBounds.height);
+  controls.select('rect.selection-bounds-rect').attr('x', displayBounds.x).attr('y', displayBounds.y).attr('width', displayBounds.width).attr('height', displayBounds.height);
   controls.select('g.selection-rotate-handle').attr('transform', `translate(${geometry.rotateHandle.x},${geometry.rotateHandle.y})`);
   controls.select('g.selection-pivot-handle').attr('transform', `translate(${pivotPoint.x},${pivotPoint.y})`);
   return controls;
@@ -412,11 +402,7 @@ export function createSelectionOverlayManager(ctx) {
     for (const { x, y, radius } of matchedAtoms) {
       expandBounds(selectedBounds, x - radius, y - radius, x + radius, y + radius);
     }
-    if (
-      (ctx.state.getSelectedAtomIds().size > 0 || ctx.state.getSelectedBondIds().size > 0) &&
-      !ctx.state.getSelectionDragActive?.() &&
-      !ctx.state.getSelectionRotationActive?.()
-    ) {
+    if ((ctx.state.getSelectedAtomIds().size > 0 || ctx.state.getSelectedBondIds().size > 0) && !ctx.state.getSelectionDragActive?.() && !ctx.state.getSelectionRotationActive?.()) {
       const controlsLayer = g.append('g').attr('class', 'selection-bounds-control-layer').style('pointer-events', 'none');
       drawSelectionBoundsControls(controlsLayer, finalizeBounds(selectedBounds), ctx.state.getSelectionPivot?.() ?? null);
     }

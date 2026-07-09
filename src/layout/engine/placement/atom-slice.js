@@ -261,7 +261,6 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
         const cageKkAudit = auditSlicePlacement(layoutGraph, atomIds, family, cageKkResult, bondLength, templateId);
         if (isBetterBridgedRescueForFusedSystem(cageKkAudit, bestAudit)) {
           bestResult = cageKkResult;
-          bestAudit = cageKkAudit;
         }
       }
       result = bestResult;

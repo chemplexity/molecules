@@ -11,8 +11,7 @@ import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { makeSquarePlanarPlatinumComplex } from '../support/molecules.js';
 
 const PLATINUM_CHELATE_SMILES = '[H][N]([H])([H])[Pt]1(OCC(=O)O1)[N]([H])([H])[H]';
-const ZIRCONIUM_MIXED_CHELATE_SMILES =
-  'CCC1=CC=C2C(C(CC(C)C)=CC2=C1C1=CC(=CC(=C1)C(C)C)C(C)C)[Zr](Cl)(Cl)C1=CC=CC2=C1[SiH2]C1=CC=CC=C21';
+const ZIRCONIUM_MIXED_CHELATE_SMILES = 'CCC1=CC=C2C(C(CC(C)C)=CC2=C1C1=CC(=CC(=C1)C(C)C)C(C)C)[Zr](Cl)(Cl)C1=CC=CC2=C1[SiH2]C1=CC=CC=C21';
 
 /**
  * Returns whether all direct platinum ligands sit on the axis-aligned square-planar cross.

@@ -4,7 +4,7 @@ import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy 
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
-import { normalizeRingAtomIds, normalizeRingFillStyle, normalizeVisualStyle, ringAtomKey } from '../../core/style.js';
+import { normalizeRingAtomIds, normalizeRingFillStyle, normalizeVisualStyle, ringAtomKey } from '../../core/support/style.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 const DEFAULT_2D_BOND_LENGTH = 1.5;
@@ -248,9 +248,7 @@ function repairRingTemplateCarbonImplicitHydrogens(mol, atomIds) {
     }
     const neighbors = atom.getNeighbors?.(mol) ?? [];
     const heavyNeighborCount = neighbors.filter(neighbor => neighbor?.name !== 'H').length;
-    const hydrogenIds = neighbors
-      .filter(neighbor => neighbor?.name === 'H' && (neighbor.bonds?.length ?? 0) === 1)
-      .map(neighbor => neighbor.id);
+    const hydrogenIds = neighbors.filter(neighbor => neighbor?.name === 'H' && (neighbor.bonds?.length ?? 0) === 1).map(neighbor => neighbor.id);
     const neededHydrogenCount = heavyNeighborCount === 2 ? 1 : 0;
 
     for (const hydrogenId of hydrogenIds.slice(neededHydrogenCount)) {
@@ -402,17 +400,16 @@ function terminalHydrogenRingAnchor(mol, anchorBond, currentForceNodes = [], bon
     return null;
   }
 
-  const hydrogenPoint = isFinitePoint(hydrogenAtom) && pointDistance(hydrogenAtom, heavyAtom) > GEOMETRY_EPSILON
-    ? { x: hydrogenAtom.x, y: hydrogenAtom.y }
-    : null;
+  const hydrogenPoint = isFinitePoint(hydrogenAtom) && pointDistance(hydrogenAtom, heavyAtom) > GEOMETRY_EPSILON ? { x: hydrogenAtom.x, y: hydrogenAtom.y } : null;
   const forceHydrogenPoint = forceNodePoint(currentForceNodes, hydrogenAtom.id);
   const forceHeavyPoint = forceNodePoint(currentForceNodes, heavyAtom.id);
-  const forceAngle = forceHydrogenPoint && forceHeavyPoint && pointDistance(forceHydrogenPoint, forceHeavyPoint) > GEOMETRY_EPSILON
-    ? normalizeAngle(Math.atan2(forceHydrogenPoint.y - forceHeavyPoint.y, forceHydrogenPoint.x - forceHeavyPoint.x))
-    : null;
+  const forceAngle =
+    forceHydrogenPoint && forceHeavyPoint && pointDistance(forceHydrogenPoint, forceHeavyPoint) > GEOMETRY_EPSILON
+      ? normalizeAngle(Math.atan2(forceHydrogenPoint.y - forceHeavyPoint.y, forceHydrogenPoint.x - forceHeavyPoint.x))
+      : null;
   const moleculeAngle = hydrogenPoint
     ? normalizeAngle(Math.atan2(hydrogenPoint.y - heavyAtom.y, hydrogenPoint.x - heavyAtom.x))
-    : forceAngle ?? largestAngularGapMidpoint(neighborAnglesForRingAnchor(mol, heavyAtom, heavyAtom), -Math.PI / 2);
+    : (forceAngle ?? largestAngularGapMidpoint(neighborAnglesForRingAnchor(mol, heavyAtom, heavyAtom), -Math.PI / 2));
   const anchorPoint = hydrogenPoint ?? {
     x: heavyAtom.x + Math.cos(moleculeAngle) * bondLength,
     y: heavyAtom.y + Math.sin(moleculeAngle) * bondLength
@@ -534,7 +531,16 @@ function chooseBondAnchoredRingPositions(anchorA, anchorB, size, occupiedPoints 
 
 function bondAnchoredRingPositionsForBond(mol, anchorBond, size, sideSign = null, targetBondLength = null) {
   const [anchorA, anchorB] = anchorBond?.getAtomObjects?.(mol) ?? [];
-  if (!anchorA || !anchorB || anchorA.name === 'H' || anchorB.name === 'H' || !Number.isFinite(anchorA.x) || !Number.isFinite(anchorA.y) || !Number.isFinite(anchorB.x) || !Number.isFinite(anchorB.y)) {
+  if (
+    !anchorA ||
+    !anchorB ||
+    anchorA.name === 'H' ||
+    anchorB.name === 'H' ||
+    !Number.isFinite(anchorA.x) ||
+    !Number.isFinite(anchorA.y) ||
+    !Number.isFinite(anchorB.x) ||
+    !Number.isFinite(anchorB.y)
+  ) {
     return null;
   }
   const anchorIds = new Set(anchorBond.atoms);
@@ -751,9 +757,7 @@ function forceBondAnchoredRingPositions(currentForceNodes, anchorBond, size, sid
   }
   const [forceAnchorA, forceAnchorB] = bondAnchorPointsWithLength(anchorA, anchorB, forceBondLength);
   const anchorIds = new Set(anchorBond.atoms);
-  const occupiedPoints = currentForceNodes
-    .filter(node => !anchorIds.has(node.id) && node.name !== 'H' && Number.isFinite(node.x) && Number.isFinite(node.y))
-    .map(node => ({ x: node.x, y: node.y }));
+  const occupiedPoints = currentForceNodes.filter(node => !anchorIds.has(node.id) && node.name !== 'H' && Number.isFinite(node.x) && Number.isFinite(node.y)).map(node => ({ x: node.x, y: node.y }));
   return chooseBondAnchoredRingPositions(forceAnchorA, forceAnchorB, size, occupiedPoints, sideSign);
 }
 
@@ -902,7 +906,7 @@ function isPotentialStereoCenter(mol, atomId) {
   if (typeof atom?.setChirality !== 'function') {
     return false;
   }
-  const originalChirality = typeof atom.getChirality === 'function' ? atom.getChirality() : atom.properties?.chirality ?? null;
+  const originalChirality = typeof atom.getChirality === 'function' ? atom.getChirality() : (atom.properties?.chirality ?? null);
   for (const candidate of ['R', 'S']) {
     try {
       atom.setChirality(candidate, mol);
@@ -1080,12 +1084,7 @@ function stylesMatch(currentStyle, nextStyle) {
 }
 
 function ringFillMatches(entry, nextEntry) {
-  return (
-    entry &&
-    ringAtomKey(entry.atomIds ?? []) === ringAtomKey(nextEntry.atomIds) &&
-    entry.color === nextEntry.color &&
-    entry.opacity === nextEntry.opacity
-  );
+  return entry && ringAtomKey(entry.atomIds ?? []) === ringAtomKey(nextEntry.atomIds) && entry.color === nextEntry.color && entry.opacity === nextEntry.opacity;
 }
 
 function findRingFillEntry(mol, atomIds) {
@@ -1389,9 +1388,8 @@ export function createStructuralEditActions(context) {
           anchorBond && anchorBondSide === null && autoFuseBondPositionReuse
             ? findAutoFuseBondPositionReuseSide(mol, anchorBond, normalizedSize, editMode, currentForceNodes, forceBondLength, bondLength)
             : anchorBondSide;
-        const precomputedForceBondPositions = editMode === 'force' && anchorBond
-          ? forceBondAnchoredRingPositions(currentForceNodes, anchorBond, normalizedSize, effectiveAnchorBondSide, forceBondLength)
-          : null;
+        const precomputedForceBondPositions =
+          editMode === 'force' && anchorBond ? forceBondAnchoredRingPositions(currentForceNodes, anchorBond, normalizedSize, effectiveAnchorBondSide, forceBondLength) : null;
         let anchorPoint = anchorAtom && Number.isFinite(anchorAtom.x) && Number.isFinite(anchorAtom.y) ? { x: anchorAtom.x, y: anchorAtom.y } : null;
         if (anchorAtom && !anchorPoint && editMode === 'force') {
           anchorPoint = getRingTemplatePlacementCenter(mol, editMode, ox, oy);
@@ -1415,20 +1413,21 @@ export function createStructuralEditActions(context) {
             .filter(angle => angle !== null);
           return largestAngularGapMidpoint(graphNeighborAngles, -Math.PI / 2);
         };
-        const precomputedForceAtomPositions = editMode === 'force' && anchorAtom
-          ? anchoredRingPositions(
-              normalizedSize,
-              hydrogenRingAnchor?.forceAnchorPoint ?? { x: ox, y: oy },
-              forceBondLength,
-              anchorForceCenterAngle ?? hydrogenRingAnchor?.forceCenterAngle ?? fallbackForceCenterAngle()
-            )
-          : null;
+        const precomputedForceAtomPositions =
+          editMode === 'force' && anchorAtom
+            ? anchoredRingPositions(
+                normalizedSize,
+                hydrogenRingAnchor?.forceAnchorPoint ?? { x: ox, y: oy },
+                forceBondLength,
+                anchorForceCenterAngle ?? hydrogenRingAnchor?.forceCenterAngle ?? fallbackForceCenterAngle()
+              )
+            : null;
         const positions = anchorBond
           ? bondAnchoredRingPositionsForBond(mol, anchorBond, normalizedSize, editMode === '2d' && effectiveAnchorBondSide !== null ? -effectiveAnchorBondSide : effectiveAnchorBondSide, bondLength)
-            : anchorAtom
-              ? isFinitePoint(anchorPoint)
-                ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle ?? hydrogenRingAnchor?.centerAngle)
-                : null
+          : anchorAtom
+            ? isFinitePoint(anchorPoint)
+              ? anchoredRingPositionsForAtom(mol, anchorAtom, normalizedSize, bondLength, -Math.PI / 2, anchorCenterAngle ?? hydrogenRingAnchor?.centerAngle)
+              : null
             : (() => {
                 if (editMode === 'force') {
                   return regularRingPositions(normalizedSize, ox, oy, forceBondLength, ringForceStartAngle);
@@ -1453,19 +1452,11 @@ export function createStructuralEditActions(context) {
         const newAtomIds = [];
         const ringAtomIds = anchorBond ? [...anchorBond.atoms] : anchorAtom ? [anchorAtom.id] : [];
         const usedRingAtomIds = new Set(ringAtomIds);
-        const forceReusePositions = editMode === 'force'
-          ? anchorBond
-            ? precomputedForceBondPositions?.slice(2)
-            : anchorAtom
-              ? precomputedForceAtomPositions?.slice(1)
-              : null
-          : null;
+        const forceReusePositions = editMode === 'force' ? (anchorBond ? precomputedForceBondPositions?.slice(2) : anchorAtom ? precomputedForceAtomPositions?.slice(1) : null) : null;
         const atomForceReuseIds =
           anchorAtom && !anchorBond && forceReusePositions
             ? findAutoFuseAtomPositionReuseIds(mol, anchorAtom, positions, bondLength, {
-                entries: currentForceNodes.filter(
-                  node => node?.id && node.id !== anchorAtom.id && node.name !== 'H' && node.visible !== false && Number.isFinite(node.x) && Number.isFinite(node.y)
-                ),
+                entries: currentForceNodes.filter(node => node?.id && node.id !== anchorAtom.id && node.name !== 'H' && node.visible !== false && Number.isFinite(node.x) && Number.isFinite(node.y)),
                 positions: forceReusePositions,
                 tolerance: forceBondLength * RING_TEMPLATE_REUSE_DISTANCE_FACTOR
               })
@@ -1865,10 +1856,7 @@ export function createStructuralEditActions(context) {
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         repairImplicitHydrogensWhenValenceImproves(mol, affected);
-        const initialPatchPos =
-          mode === 'force'
-            ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos(toChange))
-            : null;
+        const initialPatchPos = mode === 'force' ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos(toChange)) : null;
         return {
           clearSelection: true,
           clearPrimitiveHover: true,
@@ -1951,10 +1939,7 @@ export function createStructuralEditActions(context) {
         repairImplicitHydrogensWhenValenceImproves(mol, affected);
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
-        const initialPatchPos =
-          mode === 'force'
-            ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos([targetAtomId]))
-            : null;
+        const initialPatchPos = mode === 'force' ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos([targetAtomId])) : null;
 
         return {
           clearPrimitiveHover: true,

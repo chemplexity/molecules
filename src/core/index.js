@@ -17,4 +17,4 @@ export {
   ringAtomKey,
   styleColor,
   styleOpacity
-} from './style.js';
+} from './support/style.js';

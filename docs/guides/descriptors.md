@@ -1,6 +1,6 @@
 # Molecular Descriptors
 
-This guide covers every descriptor function available in the `molecules` library, from simple
+This guide covers the descriptor functions exported by the `molecules` library, from simple
 molecular formula to spectral graph indices.
 
 ---
@@ -26,7 +26,7 @@ import { molecularFormula, molecularMass } from 'molecules/descriptors';
 const caffeine = parseSMILES('Cn1cnc2c1c(=O)n(c(=O)n2C)C');
 
 console.log(molecularFormula(caffeine)); // { C: 8, H: 10, N: 4, O: 2 }
-console.log(molecularMass(caffeine)); // 194.19  (monoisotopic, Da)
+console.log(molecularMass(caffeine)); // 194.1902  (g/mol)
 ```
 
 ---
@@ -47,12 +47,12 @@ const aspirin = parseSMILES('CC(=O)Oc1ccccc1C(=O)O');
 Wildman–Crippen partition coefficient (lipophilicity). Negative values indicate hydrophilicity.
 
 ```js
-logP(aspirin); // 1.19
+logP(aspirin); // -0.07
 ```
 
 ### `tpsa(mol)` → `number`
 
-Topological polar surface area in Ų. Computed from N- and O-containing fragments.
+Topological polar surface area in Å². Computed from N-, O-, S-, and P-containing fragments.
 
 ```js
 tpsa(aspirin); // 63.6
@@ -85,12 +85,12 @@ const { count } = rotatableBondCount(aspirin);
 count; // 3
 ```
 
-### `fsp³(mol)` → `number`
+### `fsp3(mol)` → `{ value: number, atoms: string[] }`
 
 Fraction of sp³ carbons. Values near 1 indicate greater three-dimensionality.
 
 ```js
-fsp3(aspirin); // 0.111
+fsp3(aspirin); // { value: 0.111, atoms: [...] }
 ```
 
 ### `lipinskiRuleOfFive(mol)` → `object`
@@ -100,10 +100,10 @@ Evaluates Lipinski's Rule-of-Five and returns a summary object.
 ```js
 const ro5 = lipinskiRuleOfFive(aspirin);
 // {
-//   molecularWeight: 180.16,
-//   logP: 1.19,
+//   molecularWeight: 180.1571,
+//   logP: -0.07,
 //   hBondDonors: 1,
-//   hBondAcceptors: 4,
+//   hBondAcceptors: 3,
 //   violations: 0,
 //   passes: true
 // }
@@ -183,16 +183,16 @@ const D = distanceMatrix(A);
 
 These take `D` (and sometimes `A`).
 
-| Function              | Signature     | Description                                      |
-| --------------------- | ------------- | ------------------------------------------------ |
-| `wienerIndex`         | `(D)`         | Sum of all pairwise distances; W = Σᵢ＜ⱼ D[i][j] |
-| `hyperWienerIndex`    | `(D)`         | WW = ½ Σᵢ＜ⱼ (D + D²)                            |
-| `balabanIndex`        | `(D, A)`      | J index; encodes cyclic structure                |
-| `hararyIndex`         | `(RD)`        | H = ½ Σ RD[i][j]; pass `reciprocalMatrix(D)`     |
-| `szegedIndex`         | `(D, A)`      | Sz = Σ nᵤ(e)·nᵥ(e); equals Wiener for trees      |
-| `wienerPolarityIndex` | `(D)`         | WP = number of pairs at distance 3               |
-| `schultzIndex`        | `(D, A, DEG)` | MTI = Σᵢ (row sum of (A + D))ᵢ · degᵢ            |
-| `gutmanIndex`         | `(D, A, DEG)` | WA = Σ edge (deg·row_sum)                        |
+| Function              | Signature  | Description                                      |
+| --------------------- | ---------- | ------------------------------------------------ |
+| `wienerIndex`         | `(D)`      | Sum of all pairwise distances; W = Σᵢ＜ⱼ D[i][j] |
+| `hyperWienerIndex`    | `(D)`      | WW = ½ Σᵢ＜ⱼ (D + D²)                            |
+| `balabanIndex`        | `(D, A)`   | J index; encodes cyclic structure                |
+| `hararyIndex`         | `(RD)`     | H = ½ Σ RD[i][j]; pass `reciprocalMatrix(D)`     |
+| `szegedIndex`         | `(D, A)`   | Sz = Σ nᵤ(e)·nᵥ(e); equals Wiener for trees      |
+| `wienerPolarityIndex` | `(D)`      | WP = number of pairs at distance 3               |
+| `schultzIndex`        | `(DEG, D)` | MTI = Σᵢ＜ⱼ (degᵢ + degⱼ)·D[i][j]                |
+| `gutmanIndex`         | `(DEG, D)` | Gut = Σᵢ＜ⱼ degᵢ·degⱼ·D[i][j]                    |
 
 ```js
 console.log(wienerIndex(D)); // 10
@@ -213,12 +213,12 @@ These take `A` and/or `DEG`.
 | `gaIndex`              | `(A, DEG)` | GA = Σ 2√(dᵢdⱼ)/(dᵢ+dⱼ) per edge      |
 | `harmonicIndex`        | `(A, DEG)` | H = Σ 2/(dᵢ+dⱼ) per edge              |
 | `sumConnectivityIndex` | `(A, DEG)` | χˢ = Σ (dᵢ+dⱼ)^(−½) per edge          |
-| `forgottenIndex`       | `(A, DEG)` | F-index = Σ (dᵢ³)                     |
-| `narumiKatayamaIndex`  | `(A, DEG)` | NK = Π dᵢ^dᵢ                          |
+| `forgottenIndex`       | `(DEG)`    | F-index = Σ dᵢ³                       |
+| `narumiKatayamaIndex`  | `(DEG)`    | NK = Π dᵢ                             |
 
 ```js
-console.log(zagreb1(DEG)); // 8   (n-butane: degrees 1,2,2,1  → 1+4+4+1)
-console.log(randicIndex(A, DEG)); // ~1.73
+console.log(zagreb1(DEG)); // 10  (n-butane: degrees 1,2,2,1  -> 1+4+4+1)
+console.log(randicIndex(A, DEG)); // ~1.91
 ```
 
 ### Mixed indices
@@ -231,7 +231,7 @@ console.log(randicIndex(A, DEG)); // ~1.73
 ```js
 // hosoyaIndex takes the molecule directly (not matrices)
 import { hosoyaIndex } from 'molecules/descriptors';
-console.log(hosoyaIndex(butane)); // 6
+console.log(hosoyaIndex(butane)); // 5
 ```
 
 **Full example — computing several indices at once**
@@ -300,7 +300,7 @@ spectralRadius(A); // 2.0  (benzene)
 EE = Σ eˡᵢ; sensitive to network connectivity and folding.
 
 ```js
-estradaIndex(A); // ~13.43  (benzene)
+estradaIndex(A); // ~13.70  (benzene)
 ```
 
 ---
@@ -318,7 +318,7 @@ import { graphEntropy } from 'molecules/descriptors';
 import { parseSMILES } from 'molecules';
 
 const mol = parseSMILES('CC(=O)O'); // acetic acid
-graphEntropy(mol); // ~0.92  bits
+graphEntropy(mol); // ~0.81  bits
 ```
 
 Higher values indicate more diverse degree distribution (more complex topology).
@@ -343,13 +343,13 @@ topologicalEntropy(D); // ~1.94  bits
 | Function                     | Module        | Input               | Returns                     |
 | ---------------------------- | ------------- | ------------------- | --------------------------- |
 | `molecularFormula`           | `descriptors` | `mol`               | `{ [element]: count }`      |
-| `molecularMass`              | `descriptors` | `mol`               | `number` (Da)               |
+| `molecularMass`              | `descriptors` | `mol`               | `number` (g/mol)            |
 | `logP`                       | `descriptors` | `mol`               | `number`                    |
-| `tpsa`                       | `descriptors` | `mol`               | `number` (Ų)                |
+| `tpsa`                       | `descriptors` | `mol`               | `number` (Å²)               |
 | `hBondDonors`                | `descriptors` | `mol`               | `{ count, atoms }`          |
 | `hBondAcceptors`             | `descriptors` | `mol`               | `{ count, atoms }`          |
 | `rotatableBondCount`         | `descriptors` | `mol`               | `{ count, bonds }`          |
-| `fsp3`                       | `descriptors` | `mol`               | `number` [0–1]              |
+| `fsp3`                       | `descriptors` | `mol`               | `{ value, atoms }`          |
 | `lipinskiRuleOfFive`         | `descriptors` | `mol`               | `{ passes, violations, … }` |
 | `graphEntropy`               | `descriptors` | `mol`               | `number` (bits)             |
 | `hosoyaIndex`                | `descriptors` | `mol`               | `number`                    |
@@ -373,10 +373,10 @@ topologicalEntropy(D); // ~1.94  bits
 | `sumConnectivityIndex`       | `descriptors` | `A, DEG`            | `number`                    |
 | `eccentricConnectivityIndex` | `descriptors` | `A, DEG, D`         | `number`                    |
 | `wienerPolarityIndex`        | `descriptors` | `D`                 | `number`                    |
-| `schultzIndex`               | `descriptors` | `D, A, DEG`         | `number`                    |
-| `gutmanIndex`                | `descriptors` | `D, A, DEG`         | `number`                    |
-| `forgottenIndex`             | `descriptors` | `A, DEG`            | `number`                    |
-| `narumiKatayamaIndex`        | `descriptors` | `A, DEG`            | `number`                    |
+| `schultzIndex`               | `descriptors` | `DEG, D`            | `number`                    |
+| `gutmanIndex`                | `descriptors` | `DEG, D`            | `number`                    |
+| `forgottenIndex`             | `descriptors` | `DEG`               | `number`                    |
+| `narumiKatayamaIndex`        | `descriptors` | `DEG`               | `number`                    |
 | `topologicalEntropy`         | `descriptors` | `D`                 | `number` (bits)             |
 | `adjacencySpectrum`          | `descriptors` | `A`                 | `number[]`                  |
 | `laplacianSpectrum`          | `descriptors` | `L`                 | `number[]`                  |

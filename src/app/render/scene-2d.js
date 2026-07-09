@@ -19,7 +19,7 @@ import {
   stereoBondCenterIdForRender,
   atomBBox
 } from '../../layout/mol2d-helpers.js';
-import { ringFillDomId } from '../../core/style.js';
+import { ringFillDomId } from '../../core/support/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { collect2dHydrogenLabelCounts, hideHydrogensFor2d } from '../../layout/hydrogen-display.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
@@ -800,8 +800,7 @@ export function create2DSceneRenderer(ctx) {
         },
         true
       );
-      bg
-        .append('line')
+      bg.append('line')
         .attr('class', 'ring-template-bond-hover-target')
         .attr('x1', p1.x)
         .attr('y1', p1.y)
@@ -888,10 +887,7 @@ export function create2DSceneRenderer(ctx) {
       const atomHit = hitGroup
         .append('circle')
         .attr('class', 'atom-hit')
-        .attr(
-          'r',
-          Math.max(labelHalfW(label || symbol, fontSize), 10) + (ctx.overlay.getDrawBondMode() ? DRAW_MODE_ATOM_HIT_PAD : 0)
-        )
+        .attr('r', Math.max(labelHalfW(label || symbol, fontSize), 10) + (ctx.overlay.getDrawBondMode() ? DRAW_MODE_ATOM_HIT_PAD : 0))
         .style('cursor', 'grab');
       _bind2dAtomEvents(atomHit, atom);
 
@@ -920,10 +916,7 @@ export function create2DSceneRenderer(ctx) {
             labelOffset: { dx: labelDx, dy: labelDy },
             fontSize,
             chargeLabel: sign,
-            extraOccupiedAngles: [
-              ...lonePairDots.map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite),
-              ...arrowOccupiedAngles
-            ]
+            extraOccupiedAngles: [...lonePairDots.map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite), ...arrowOccupiedAngles]
           });
           if (placement) {
             hitGroup

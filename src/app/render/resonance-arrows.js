@@ -462,7 +462,10 @@ function endpointPoint(endpoint, molecule, pointForAtom, towardPoint = null, bon
   const offset = Number.isFinite(bondOffset) ? Math.max(0, bondOffset) : BOND_ENDPOINT_OFFSET;
   const towardDot = (towardPoint.x - mid.x) * nx + (towardPoint.y - mid.y) * ny;
   const storedSign = Number.isFinite(endpoint.sideSign) && endpoint.sideSign !== 0 ? Math.sign(endpoint.sideSign) : 0;
-  const sign = Math.abs(towardDot) > 0.75 && (!storedSign || Math.sign(towardDot) !== storedSign) ? Math.sign(towardDot) : storedSign || chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom, offset);
+  const sign =
+    Math.abs(towardDot) > 0.75 && (!storedSign || Math.sign(towardDot) !== storedSign)
+      ? Math.sign(towardDot)
+      : storedSign || chooseBondEndpointOffsetSign(mid, nx, ny, towardPoint, molecule, pointForAtom, offset);
   return { x: mid.x + nx * offset * sign, y: mid.y + ny * offset * sign };
 }
 
@@ -903,12 +906,14 @@ export function computeResonanceArrowPath(arrow, index, molecule, pointForAtom, 
   const curveMagnitude = Math.max(resolvedOptions.minCurve, Math.min(resolvedOptions.maxCurve, shortened.len * resolvedOptions.curveScale));
   const curve = curveMagnitude * curveSign;
   const defaultControl = atomToBondPoints
-    ? { x: (shortened.start.x + shortened.end.x) / 2 + atomToBondPoints.nx * atomToBondPoints.sideSign * curveMagnitude, y: (shortened.start.y + shortened.end.y) / 2 + atomToBondPoints.ny * atomToBondPoints.sideSign * curveMagnitude }
+    ? {
+        x: (shortened.start.x + shortened.end.x) / 2 + atomToBondPoints.nx * atomToBondPoints.sideSign * curveMagnitude,
+        y: (shortened.start.y + shortened.end.y) / 2 + atomToBondPoints.ny * atomToBondPoints.sideSign * curveMagnitude
+      }
     : { x: (shortened.start.x + shortened.end.x) / 2 - shortened.uy * curve, y: (shortened.start.y + shortened.end.y) / 2 + shortened.ux * curve };
-  const atomTargetControl = resolvedOptions.atomTargetCenterTangent && arrow.to.kind === 'atom' ? controlPointForAtomTargetCenter(shortened, endBase, defaultControl, curveMagnitude, resolvedOptions.atomTargetMinBend) : null;
-  const control = atomTargetControl
-    ? blendControlPoint(defaultControl, atomTargetControl, resolvedOptions.atomTargetCenterTangentStrength)
-    : defaultControl;
+  const atomTargetControl =
+    resolvedOptions.atomTargetCenterTangent && arrow.to.kind === 'atom' ? controlPointForAtomTargetCenter(shortened, endBase, defaultControl, curveMagnitude, resolvedOptions.atomTargetMinBend) : null;
+  const control = atomTargetControl ? blendControlPoint(defaultControl, atomTargetControl, resolvedOptions.atomTargetCenterTangentStrength) : defaultControl;
   return {
     d: quadraticPathData(shortened.start, control, shortened.end),
     start: shortened.start,

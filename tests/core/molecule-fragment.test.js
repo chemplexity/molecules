@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createMoleculeFragment, instantiateMoleculeFragment, mergeMoleculeFragment } from '../../src/core/molecule-fragment.js';
+import { createMoleculeFragment, instantiateMoleculeFragment, mergeMoleculeFragment } from '../../src/core/support/molecule-fragment.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 import { validateValence } from '../../src/validation/valence.js';
 

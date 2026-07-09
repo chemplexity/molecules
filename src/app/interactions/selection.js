@@ -314,8 +314,7 @@ export function createSelectionActions(context) {
     doc.addEventListener(
       'pointerdown',
       event => {
-        const hasOpenDrawer =
-          context.dom.drawTools?.classList?.contains?.('drawer-open') || context.dom.drawTools?.classList?.contains?.('ring-template-drawer-open');
+        const hasOpenDrawer = context.dom.drawTools?.classList?.contains?.('drawer-open') || context.dom.drawTools?.classList?.contains?.('ring-template-drawer-open');
         if (!hasOpenDrawer) {
           return;
         }
@@ -330,13 +329,7 @@ export function createSelectionActions(context) {
     context.dom.drawTools.__bondDrawerOutsideCloseBound = true;
   }
 
-  if (
-    doc &&
-    context.dom &&
-    typeof doc.addEventListener === 'function' &&
-    typeof context.dom.getPeriodicTablePopover === 'function' &&
-    !context.dom.__periodicTableOutsideCloseBound
-  ) {
+  if (doc && context.dom && typeof doc.addEventListener === 'function' && typeof context.dom.getPeriodicTablePopover === 'function' && !context.dom.__periodicTableOutsideCloseBound) {
     doc.addEventListener(
       'pointerdown',
       event => {
@@ -400,9 +393,7 @@ export function createSelectionActions(context) {
     const centeredLeft = buttonCenterX - popoverWidth / 2;
     const left = Math.max(8, Math.min(centeredLeft, viewportWidth - popoverWidth - 8));
     const preferredTop = buttonRect.top - popoverHeight - 8;
-    const top = Number.isFinite(viewportHeight)
-      ? Math.max(8, Math.min(preferredTop, viewportHeight - popoverHeight - 8))
-      : Math.max(8, preferredTop);
+    const top = Number.isFinite(viewportHeight) ? Math.max(8, Math.min(preferredTop, viewportHeight - popoverHeight - 8)) : Math.max(8, preferredTop);
     popover.style?.setProperty?.('--periodic-table-popover-top', `${top}px`);
     popover.style?.setProperty?.('--periodic-table-popover-left', `${left}px`);
   }

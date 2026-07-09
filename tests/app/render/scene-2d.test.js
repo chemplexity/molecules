@@ -424,9 +424,18 @@ describe('create2DSceneRenderer', () => {
     const textClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'atom-charge-text');
     assert.ok(ringClassIndex >= 0, 'expected charge badge ring');
     assert.ok(textClassIndex >= 0, 'expected charge badge text');
-    assert.deepEqual(records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'), ['attr', 'stroke', '#111111']);
-    assert.deepEqual(records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'), ['attr', 'fill', '#111111']);
-    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2] === '#3366ff'), true);
+    assert.deepEqual(
+      records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'),
+      ['attr', 'stroke', '#111111']
+    );
+    assert.deepEqual(
+      records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'),
+      ['attr', 'fill', '#111111']
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2] === '#3366ff'),
+      true
+    );
   });
 
   it('passes rendered 2D bond endpoints to hover handlers for ring-template previews', () => {

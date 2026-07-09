@@ -339,14 +339,7 @@ describe('createSessionSnapshotManager', () => {
       return true;
     };
     deps.restore2dState = (displayMol, snap) => {
-      calls.push([
-        'restore2dState',
-        displayMol.properties,
-        [...displayMol.atoms.keys()],
-        snap.mode,
-        displayMol.__reactionPreview,
-        displayMol.__reactionPreview?.reactantReferenceCoords
-      ]);
+      calls.push(['restore2dState', displayMol.properties, [...displayMol.atoms.keys()], snap.mode, displayMol.__reactionPreview, displayMol.__reactionPreview?.reactantReferenceCoords]);
     };
     deps.redrawRestoredResonanceView = () => {
       calls.push(['redrawRestoredResonanceView']);
@@ -402,7 +395,10 @@ describe('createSessionSnapshotManager', () => {
     assert.deepEqual(lastRestore2dCall[2], ['A1', '__resonance_product__:A1']);
     assert.equal(lastRestore2dCall[4].resonancePair, true);
     assert.deepEqual([...lastRestore2dCall[5]], [['A1', { x: -12, y: 3 }]]);
-    assert.equal(calls.some(call => call[0] === 'redrawRestoredResonanceView'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'redrawRestoredResonanceView'),
+      false
+    );
   });
 
   it('preserves molecule-level properties when syncing input from a reaction-preview source snapshot', () => {
@@ -739,7 +735,10 @@ describe('createSessionSnapshotManager', () => {
     });
 
     assert.equal(calls.filter(call => call[0] === 'restoreForceState').length, 2);
-    assert.equal(calls.some(call => call[0] === 'reapplyActiveReactionPreview'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'reapplyActiveReactionPreview'),
+      false
+    );
     assert.ok(calls.some(call => call[0] === 'restoreZoomTransform' && call[1]?.k === 1.5));
     const finalRestoreForceStateIndex = calls.findLastIndex(call => call[0] === 'restoreForceState');
     const finalRestoreInteractionIndex = calls.findLastIndex(call => call[0] === 'restoreInteractionState');
@@ -918,6 +917,9 @@ describe('createSessionSnapshotManager', () => {
     assert.ok(functionalGroupMol);
     assert.equal(functionalGroupMol.properties.resonance.currentState, 1);
     assert.equal(functionalGroupMol.bonds.get('B1').properties.order, 2);
-    assert.deepEqual(calls.filter(call => call[0] === 'restoreFunctionalGroupHighlightSnapshot'), [['restoreFunctionalGroupHighlightSnapshot', 1, 2]]);
+    assert.deepEqual(
+      calls.filter(call => call[0] === 'restoreFunctionalGroupHighlightSnapshot'),
+      [['restoreFunctionalGroupHighlightSnapshot', 1, 2]]
+    );
   });
 });

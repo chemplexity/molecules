@@ -1,7 +1,7 @@
 /** @module app/render/resonance */
 
 import { generateResonanceStructures } from '../../algorithms/index.js';
-import { ringAtomKey } from '../../core/style.js';
+import { ringAtomKey } from '../../core/support/style.js';
 import { centerReaction2dPairCoords, cloneWithPrefixedIds } from '../../layout/reaction2d.js';
 import { forceLayoutBondScale, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, FORCE_LAYOUT_REFERENCE_BOND_LENGTH } from './force-helpers.js';
 import { getRenderOptions } from './helpers.js';
@@ -548,12 +548,8 @@ function preserveSourceRingFillsOnResonancePair(pairMol, sourceMol) {
   if (!pairMol || !sourceMol || typeof sourceMol.getRingFills !== 'function' || typeof pairMol.setRingFill !== 'function') {
     return;
   }
-  const pairRingKeys = typeof pairMol.getRings === 'function'
-    ? new Set(pairMol.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds)))
-    : null;
-  const canFillRing = atomIds => atomIds.length > 0
-    && atomIds.every(atomId => pairMol.atoms.has(atomId))
-    && (!pairRingKeys || pairRingKeys.has(ringAtomKey(atomIds)));
+  const pairRingKeys = typeof pairMol.getRings === 'function' ? new Set(pairMol.getRings().map(ringAtomIds => ringAtomKey(ringAtomIds))) : null;
+  const canFillRing = atomIds => atomIds.length > 0 && atomIds.every(atomId => pairMol.atoms.has(atomId)) && (!pairRingKeys || pairRingKeys.has(ringAtomKey(atomIds)));
 
   for (const fill of sourceMol.getRingFills()) {
     const atomIds = fill.atomIds ?? [];
@@ -592,11 +588,7 @@ function buildResonancePairDisplayMolecule(sourceMol, pair) {
   pairMol.properties[RESONANCE_ELECTRON_FLOW_PROPERTY] = flow;
   const reactantAtomIds = new Set(left.atoms.keys());
   const productAtomIds = new Set(right.atoms.keys());
-  const reactantReferenceCoords = new Map(
-    [...left.atoms.values()]
-      .filter(atom => atom.x != null && atom.y != null)
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }])
-  );
+  const reactantReferenceCoords = new Map([...left.atoms.values()].filter(atom => atom.x != null && atom.y != null).map(atom => [atom.id, { x: atom.x, y: atom.y }]));
   pairMol.__reactionPreview = {
     reactantAtomIds,
     productAtomIds,

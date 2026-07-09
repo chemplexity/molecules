@@ -94,12 +94,7 @@ export function initOptionsModal(context) {
     }
 
     if (context.state.getMode() === 'force' && context.state.getCurrentMol()) {
-      context.renderers.updateForce(
-        context.state.getCurrentMol(),
-        layoutBondLengthChanged
-          ? { preservePositions: false, preserveView: false }
-          : { preservePositions: true, preserveView: true }
-      );
+      context.renderers.updateForce(context.state.getCurrentMol(), layoutBondLengthChanged ? { preservePositions: false, preserveView: false } : { preservePositions: true, preserveView: true });
       if (layoutBondLengthChanged) {
         context.navigation?.autoZoom?.();
         context.navigation?.autoZoomAfterRender?.();

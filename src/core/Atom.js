@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 import elements from '../data/elements.js';
-import { cloneVisualStyle, normalizeAtomStyle } from './style.js';
+import { cloneVisualStyle, normalizeAtomStyle } from './support/style.js';
 
 /**
  * Returns the implicit-hydrogen valence adjustment for a charged main-group atom.
@@ -58,7 +58,19 @@ export class Atom {
   constructor(
     id,
     name,
-    { charge = 0, aromatic = false, protons = undefined, neutrons = undefined, electrons = undefined, group = 0, period = 0, radical = 0, chirality = null, reaction = undefined, style = undefined } = {}
+    {
+      charge = 0,
+      aromatic = false,
+      protons = undefined,
+      neutrons = undefined,
+      electrons = undefined,
+      group = 0,
+      period = 0,
+      radical = 0,
+      chirality = null,
+      reaction = undefined,
+      style = undefined
+    } = {}
   ) {
     const normalizedStyle = normalizeAtomStyle(style);
     /** @type {string} Unique identifier for this atom. */

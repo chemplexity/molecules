@@ -1,4 +1,4 @@
-/** @module core/style */
+/** @module core/support/style */
 
 const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const DEFAULT_RING_FILL_OPACITY = 0.25;
@@ -118,7 +118,9 @@ export function ringAtomKey(atomIds) {
  * @returns {string} Safe renderer id.
  */
 export function ringFillDomId(atomIds) {
-  return `ring-fill:${normalizeRingAtomIds(atomIds).map(atomId => encodeURIComponent(atomId)).join('|')}`;
+  return `ring-fill:${normalizeRingAtomIds(atomIds)
+    .map(atomId => encodeURIComponent(atomId))
+    .join('|')}`;
 }
 
 /**

@@ -583,7 +583,10 @@ describe('createPrimitiveEventHandlers', () => {
     const preview = svgRoot.querySelector('g.ring-template-preview');
     assert.ok(preview);
     assert.equal(preview.children.length, 4);
-    assert.equal(preview.children.every(child => child.tagName === 'line' && child.getAttribute('class') === 'bond'), true);
+    assert.equal(
+      preview.children.every(child => child.tagName === 'line' && child.getAttribute('class') === 'bond'),
+      true
+    );
     assert.equal(preview.querySelector('polygon'), null);
     listeners.get('mouseup')({
       preventDefault() {},
@@ -792,7 +795,10 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(lines[0].getAttribute('y1'), '50');
     assert.equal(Math.round(svgLineLength(lines[0])), 90);
     assert.ok(calls.some(call => JSON.stringify(call) === JSON.stringify(['showPrimitiveHover', ['a1'], []])));
-    assert.equal(calls.some(call => call[0] === 'placeRingTemplate'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'placeRingTemplate'),
+      false
+    );
 
     handlers.handle2dAtomMouseOut('a1');
     assert.equal(svgRoot.querySelector('g.ring-template-preview'), null);
@@ -824,17 +830,13 @@ describe('createPrimitiveEventHandlers', () => {
     const bond = { id: 'b1', atoms: ['a1', 'a2'] };
 
     handlers.handle2dAtomMouseOver({ clientX: 40, clientY: 50 }, atom, mol, null);
-    handlers.handle2dBondMouseOver(
-      { clientX: 50, clientY: 90 },
-      bond,
-      { id: 'a1', x: 1, y: 2 },
-      { id: 'a2', x: 2, y: 2 },
-      { x: 10, y: 20 },
-      { x: 100, y: 20 }
-    );
+    handlers.handle2dBondMouseOver({ clientX: 50, clientY: 90 }, bond, { id: 'a1', x: 1, y: 2 }, { id: 'a2', x: 2, y: 2 }, { x: 10, y: 20 }, { x: 100, y: 20 });
 
     assert.equal(svgRoot.querySelector('g.ring-template-preview'), null);
-    assert.equal(calls.some(call => call[0] === 'showPrimitiveHover'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'showPrimitiveHover'),
+      false
+    );
   });
 
   it('clears the free ring preview before starting an atom-anchored hold preview', () => {
@@ -980,9 +982,15 @@ describe('createPrimitiveEventHandlers', () => {
     const circles = preview.children.filter(child => child.tagName === 'circle');
     assert.equal(lines.length, 5);
     assert.equal(circles.length, 4);
-    assert.equal(lines.every(line => line.getAttribute('class') === 'link'), true);
+    assert.equal(
+      lines.every(line => line.getAttribute('class') === 'link'),
+      true
+    );
     assert.equal(Math.round(svgLineLength(lines[0])), 41);
-    assert.equal(circles.every(circle => circle.getAttribute('class') === 'node' && circle.getAttribute('fill')), true);
+    assert.equal(
+      circles.every(circle => circle.getAttribute('class') === 'node' && circle.getAttribute('fill')),
+      true
+    );
     assert.equal(preview.querySelector('polygon'), null);
   });
 
@@ -1062,13 +1070,7 @@ describe('createPrimitiveEventHandlers', () => {
     setRingTemplateSize('benzene');
     const handlers = createPrimitiveEventHandlers(context);
 
-    handlers.handle2dBondMouseDownRingTemplate(
-      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
-      'b1',
-      { x: 10, y: 20 },
-      { x: 100, y: 20 },
-      ['a1', 'a2']
-    );
+    handlers.handle2dBondMouseDownRingTemplate({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} }, 'b1', { x: 10, y: 20 }, { x: 100, y: 20 }, ['a1', 'a2']);
 
     const preview = svgRoot.querySelector('g.ring-template-preview');
     assert.ok(preview);
@@ -1144,9 +1146,7 @@ describe('createPrimitiveEventHandlers', () => {
         ['a1', { id: 'a1', name: 'C' }],
         ['a2', { id: 'a2', name: 'C' }]
       ]),
-      bonds: new Map([
-        ['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1.5, aromatic: true, localizedOrder: 2 } }]
-      ])
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1.5, aromatic: true, localizedOrder: 2 } }]])
     };
     const { context, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
       document: documentMock,
@@ -1161,13 +1161,7 @@ describe('createPrimitiveEventHandlers', () => {
     setRingTemplateSize('benzene');
     const handlers = createPrimitiveEventHandlers(context);
 
-    handlers.handle2dBondMouseDownRingTemplate(
-      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
-      'b1',
-      { x: 10, y: 20 },
-      { x: 100, y: 20 },
-      ['a1', 'a2']
-    );
+    handlers.handle2dBondMouseDownRingTemplate({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} }, 'b1', { x: 10, y: 20 }, { x: 100, y: 20 }, ['a1', 'a2']);
 
     const preview = svgRoot.querySelector('g.ring-template-preview');
     assert.ok(preview);
@@ -1221,13 +1215,7 @@ describe('createPrimitiveEventHandlers', () => {
     setRingTemplateSize('benzene');
     const handlers = createPrimitiveEventHandlers(context);
 
-    handlers.handle2dBondMouseDownRingTemplate(
-      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
-      'b1',
-      { x: 10, y: 20 },
-      { x: 100, y: 20 },
-      ['a1', 'a2']
-    );
+    handlers.handle2dBondMouseDownRingTemplate({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} }, 'b1', { x: 10, y: 20 }, { x: 100, y: 20 }, ['a1', 'a2']);
 
     const preview = svgRoot.querySelector('g.ring-template-preview');
     assert.ok(preview);
@@ -1275,13 +1263,7 @@ describe('createPrimitiveEventHandlers', () => {
     setRingTemplateSize('benzene');
     const handlers = createPrimitiveEventHandlers(context);
 
-    handlers.handle2dBondMouseDownRingTemplate(
-      { preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} },
-      'b1',
-      { x: 10, y: 20 },
-      { x: 100, y: 20 },
-      ['a1', 'a2']
-    );
+    handlers.handle2dBondMouseDownRingTemplate({ preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} }, 'b1', { x: 10, y: 20 }, { x: 100, y: 20 }, ['a1', 'a2']);
 
     const preview = svgRoot.querySelector('g.ring-template-preview');
     assert.ok(preview);
@@ -1358,9 +1340,7 @@ describe('createPrimitiveEventHandlers', () => {
     let pointer = [50, 20];
     const fusedAtom = { id: 'f1', name: 'C', x: 145, y: 97.94228634059948 };
     const mol2d = {
-      atoms: new Map([
-        ['f1', fusedAtom]
-      ]),
+      atoms: new Map([['f1', fusedAtom]]),
       bonds: new Map()
     };
     const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
@@ -1409,7 +1389,10 @@ describe('createPrimitiveEventHandlers', () => {
     assert.ok(preview);
     const lines = preview.children.filter(child => child.tagName === 'line');
     assert.equal(lines.length, 6);
-    assert.equal(lines.every(line => line.getAttribute('class') === 'bond'), true);
+    assert.equal(
+      lines.every(line => line.getAttribute('class') === 'bond'),
+      true
+    );
     assert.equal(lines[0].getAttribute('x1'), '10');
     assert.equal(lines[0].getAttribute('y1'), '20');
     assert.equal(lines[0].getAttribute('x2'), '100');
@@ -1501,9 +1484,7 @@ describe('createPrimitiveEventHandlers', () => {
   it('fits the force ring-template preview together with the existing molecule when panning alone would hide atoms', () => {
     const svgRoot = makeSvgRoot();
     const mol2d = {
-      atoms: new Map([
-        ['left', { id: 'left', name: 'C', x: 0, y: 70 }]
-      ]),
+      atoms: new Map([['left', { id: 'left', name: 'C', x: 0, y: 70 }]]),
       bonds: new Map()
     };
     const zoomTransforms = [];
@@ -1758,7 +1739,10 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(circles.length, 3);
     assert.equal(lines[0].getAttribute('class'), 'link');
     assert.equal(Math.round(svgLineLength(lines[0])), 41);
-    assert.equal(circles.every(circle => circle.getAttribute('class') === 'node'), true);
+    assert.equal(
+      circles.every(circle => circle.getAttribute('class') === 'node'),
+      true
+    );
     assert.equal(typeof listeners.get('mousemove'), 'function');
 
     preview.remove();
@@ -1867,11 +1851,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handleForceBondMouseOver({ clientX: 5, clientY: 6 }, 'b1', molecule);
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', ['c1'], []],
-      ['refreshSelectionOverlay'],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['c1'], []], ['refreshSelectionOverlay'], ['hide']]);
     assert.deepEqual([...placementRedirectedHoverAtomIds], ['c1']);
   });
 
@@ -1895,10 +1875,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handleForceBondMouseOver({ clientX: 30, clientY: 20 }, 'b1', molecule);
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', ['h1'], []],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['h1'], []], ['hide']]);
   });
 
   it('does not auto-fit ring-template hover previews before mouse down', () => {
@@ -1944,7 +1921,10 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handleForceBondMouseOver({ clientX: 700, clientY: 700 }, 'b1', molecule);
 
     assert.ok(svgRoot.querySelector('g.ring-template-preview'));
-    assert.equal(calls.some(call => call[0] === 'setZoomTransform'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'setZoomTransform'),
+      false
+    );
   });
 
   it('previews an atom-anchored ring template while hovering a force atom', () => {
@@ -1993,7 +1973,10 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(lines[0].getAttribute('y1'), '20');
     assert.equal(Math.round(svgLineLength(lines[0])), 41);
     assert.ok(calls.some(call => JSON.stringify(call) === JSON.stringify(['showPrimitiveHover', ['a1'], []])));
-    assert.equal(calls.some(call => call[0] === 'placeRingTemplate'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'placeRingTemplate'),
+      false
+    );
 
     handlers.handleForceAtomMouseOut('a1');
     assert.equal(svgRoot.querySelector('g.ring-template-preview'), null);
@@ -2023,9 +2006,7 @@ describe('createPrimitiveEventHandlers', () => {
         ['b2', { id: 'b2', atoms: ['a2', 'f1'] }]
       ]),
       getBond(atomIdA, atomIdB) {
-        return [...this.bonds.values()].find(
-          bond => (bond.atoms[0] === atomIdA && bond.atoms[1] === atomIdB) || (bond.atoms[0] === atomIdB && bond.atoms[1] === atomIdA)
-        ) ?? null;
+        return [...this.bonds.values()].find(bond => (bond.atoms[0] === atomIdA && bond.atoms[1] === atomIdB) || (bond.atoms[0] === atomIdB && bond.atoms[1] === atomIdA)) ?? null;
       }
     };
     const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
@@ -2089,9 +2070,7 @@ describe('createPrimitiveEventHandlers', () => {
       ]),
       bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]]),
       getBond(atomIdA, atomIdB) {
-        return [...this.bonds.values()].find(
-          bond => (bond.atoms[0] === atomIdA && bond.atoms[1] === atomIdB) || (bond.atoms[0] === atomIdB && bond.atoms[1] === atomIdA)
-        ) ?? null;
+        return [...this.bonds.values()].find(bond => (bond.atoms[0] === atomIdA && bond.atoms[1] === atomIdB) || (bond.atoms[0] === atomIdB && bond.atoms[1] === atomIdA)) ?? null;
       }
     };
     const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
@@ -2603,10 +2582,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     assert.equal(handlers.handle2dBondMouseDownDrawBond(event, bond, { x: 10, y: 20 }, { x: 70, y: 20 }), true);
     assert.equal(typeof listeners.get('mouseup'), 'function');
-    assert.deepEqual(calls, [
-      ['clearArtifacts'],
-      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }]
-    ]);
+    assert.deepEqual(calls, [['clearArtifacts'], ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }]]);
 
     listeners.get('mouseup')({
       preventDefault() {},
@@ -2646,17 +2622,9 @@ describe('createPrimitiveEventHandlers', () => {
       stopImmediatePropagation() {}
     };
 
-    handlers.handle2dBondMouseDownDrawBond(
-      event,
-      { id: 'b1', properties: { order: 1 } },
-      { x: 10, y: 20 },
-      { x: 70, y: 20 }
-    );
+    handlers.handle2dBondMouseDownDrawBond(event, { id: 'b1', properties: { order: 1 } }, { x: 10, y: 20 }, { x: 70, y: 20 });
 
-    assert.deepEqual(calls, [
-      ['clearArtifacts'],
-      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'triple', sourceElement: event.currentTarget }]
-    ]);
+    assert.deepEqual(calls, [['clearArtifacts'], ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'triple', sourceElement: event.currentTarget }]]);
   });
 
   it('previews a held 2D bond even if the view mode is not the strict 2d token', () => {
@@ -2681,20 +2649,9 @@ describe('createPrimitiveEventHandlers', () => {
       stopImmediatePropagation() {}
     };
 
-    assert.equal(
-      handlers.handle2dBondMouseDownDrawBond(
-        event,
-        { id: 'b1', properties: { order: 1 } },
-        { x: 10, y: 20 },
-        { x: 70, y: 20 }
-      ),
-      true
-    );
+    assert.equal(handlers.handle2dBondMouseDownDrawBond(event, { id: 'b1', properties: { order: 1 } }, { x: 10, y: 20 }, { x: 70, y: 20 }), true);
 
-    assert.deepEqual(calls, [
-      ['clearArtifacts'],
-      ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }]
-    ]);
+    assert.deepEqual(calls, [['clearArtifacts'], ['previewBond', { x: 10, y: 20 }, { x: 70, y: 20 }, { drawBondType: 'double', sourceElement: event.currentTarget }]]);
   });
 
   it('routes displayed stereo force hydrogen click in draw-bond mode to element replacement', () => {
@@ -3004,10 +2961,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handle2dBondMouseOver({ clientX: 5, clientY: 6 }, { id: 'b1' }, { id: 'a1' }, { id: 'a2' });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', [], ['b1']],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['hide']]);
   });
 
   it('suppresses force bond tooltips while charge mode is active', () => {
@@ -3040,10 +2994,7 @@ describe('createPrimitiveEventHandlers', () => {
       ])
     });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', [], ['b1']],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['hide']]);
   });
 
   it('does not let blocked force product-side bonds become draw-bond hover targets', () => {
@@ -3107,11 +3058,7 @@ describe('createPrimitiveEventHandlers', () => {
       bonds: new Map([['b1', bond]])
     });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', [], ['b1']],
-      ['refreshSelectionOverlay'],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['refreshSelectionOverlay'], ['hide']]);
   });
 
   it('routes force single-line clicks on displayed stereochemical hydrogens to clear the hydrogen bond display', () => {
@@ -3150,10 +3097,7 @@ describe('createPrimitiveEventHandlers', () => {
       }
     );
 
-    assert.deepEqual(calls, [
-      ['stopPropagation'],
-      ['promoteBondOrder', 'b1', { drawBondType: 'single' }]
-    ]);
+    assert.deepEqual(calls, [['stopPropagation'], ['promoteBondOrder', 'b1', { drawBondType: 'single' }]]);
   });
 
   it('routes force wedge clicks on displayed stereochemical hydrogens to the existing hydrogen bond', () => {
@@ -3197,10 +3141,7 @@ describe('createPrimitiveEventHandlers', () => {
       }
     );
 
-    assert.deepEqual(calls, [
-      ['stopPropagation'],
-      ['promoteBondOrder', 'b1', { drawBondType: 'wedge', preferredCenterId: 'c1' }]
-    ]);
+    assert.deepEqual(calls, [['stopPropagation'], ['promoteBondOrder', 'b1', { drawBondType: 'wedge', preferredCenterId: 'c1' }]]);
   });
 
   it('allows force wedge drags to start from displayed stereochemical hydrogens', () => {
@@ -3239,10 +3180,7 @@ describe('createPrimitiveEventHandlers', () => {
       { id: 'h1', name: 'H' }
     );
 
-    assert.deepEqual(calls, [
-      ['stopPropagation'],
-      ['start', 'h1', 10, 20]
-    ]);
+    assert.deepEqual(calls, [['stopPropagation'], ['start', 'h1', 10, 20]]);
   });
 
   it('ignores force-mode hydrogen hover while a charge tool is active', () => {
@@ -3294,7 +3232,10 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, molecule, null);
 
     assert.deepEqual(calls[0], ['showPrimitiveHover', ['h1'], []]);
-    assert.equal(calls.some(call => call[0] === 'clearPrimitiveHover'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'clearPrimitiveHover'),
+      false
+    );
   });
 
   it('redirects normal force hydrogen hover to its heavy parent in line placement mode', () => {
@@ -3325,7 +3266,10 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, molecule, null);
 
     assert.deepEqual(calls[0], ['showPrimitiveHover', ['c1'], []]);
-    assert.equal(calls.some(call => call[0] === 'clearPrimitiveHover'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'clearPrimitiveHover'),
+      false
+    );
     assert.deepEqual([...placementRedirectedHoverAtomIds], ['c1']);
   });
 
@@ -3381,7 +3325,10 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, molecule, null);
 
     assert.deepEqual(calls[0], ['showPrimitiveHover', ['h1'], []]);
-    assert.equal(calls.some(call => call[0] === 'clearPrimitiveHover'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'clearPrimitiveHover'),
+      false
+    );
   });
 
   it('does not start ring placement from normal force hydrogens', () => {
@@ -3412,7 +3359,10 @@ describe('createPrimitiveEventHandlers', () => {
 
     assert.equal(prevented, true);
     assert.equal(stopped, true);
-    assert.equal(calls.some(call => call[0] === 'placeRingTemplate'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'placeRingTemplate'),
+      false
+    );
   });
 
   it('starts force ring placement from a normal hydrogen parent when available', () => {
@@ -3459,7 +3409,10 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handleForceAtomMouseDownDrawBond({ preventDefault() {}, stopPropagation() {} }, { id: 'h1', name: 'H' });
     listeners.get('mouseup')?.({ preventDefault() {}, stopPropagation() {} });
 
-    assert.equal(calls.some(call => call[0] === 'placeRingTemplate' && call[4]?.anchorAtomId === 'c1'), true);
+    assert.equal(
+      calls.some(call => call[0] === 'placeRingTemplate' && call[4]?.anchorAtomId === 'c1'),
+      true
+    );
   });
 
   it('suppresses atom tooltips while charge mode is active', () => {
@@ -3483,10 +3436,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1' }, { id: 'mol' }, { message: 'warn' });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', ['a1'], []],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['a1'], []], ['hide']]);
   });
 
   it('restores charge-mode hover immediately after primitive hover suppression', () => {

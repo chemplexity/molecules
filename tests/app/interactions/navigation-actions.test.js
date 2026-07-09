@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createNavigationActions } from '../../../src/app/interactions/navigation.js';
-import { convertLineCoordsToForceLayout, FORCE_LAYOUT_BOND_LENGTH, FORCE_LAYOUT_INITIAL_FIT_PAD, FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER } from '../../../src/app/render/force-helpers.js';
+import {
+  convertLineCoordsToForceLayout,
+  FORCE_LAYOUT_BOND_LENGTH,
+  FORCE_LAYOUT_INITIAL_FIT_PAD,
+  FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE,
+  FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER
+} from '../../../src/app/render/force-helpers.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { applyCoords } from '../../../src/layout/engine/apply.js';
@@ -128,7 +134,7 @@ test('autoZoom and the force fit button use the default force framing', () => {
   actions.autoZoom();
 
   assert.deepEqual(calls, [
-    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, scaleMultiplier: 60 * 1.5 / FORCE_LAYOUT_BOND_LENGTH }],
+    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, scaleMultiplier: (60 * 1.5) / FORCE_LAYOUT_BOND_LENGTH }],
     ['setZoomTransform', fitTransform]
   ]);
 });
@@ -176,7 +182,12 @@ test('autoZoom fits active force resonance pairs with the initial reaction-like 
   actions.autoZoom();
 
   assert.deepEqual(calls, [
-    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
+    [
+      'forceFitTransform',
+      ['a1', 'a2'],
+      FORCE_LAYOUT_INITIAL_FIT_PAD,
+      { hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }
+    ],
     ['setZoomTransform', fitTransform]
   ]);
 });
@@ -224,7 +235,12 @@ test('autoZoom fits active force reaction previews with the initial reaction-lik
   actions.autoZoom();
 
   assert.deepEqual(calls, [
-    ['forceFitTransform', ['a1', 'a2'], FORCE_LAYOUT_INITIAL_FIT_PAD, { hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }],
+    [
+      'forceFitTransform',
+      ['a1', 'a2'],
+      FORCE_LAYOUT_INITIAL_FIT_PAD,
+      { hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE, scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }
+    ],
     ['setZoomTransform', fitTransform]
   ]);
 });
@@ -1714,10 +1730,13 @@ test('toggleMode seeds force mode from converted line coordinates', () => {
   const renderCall = calls.find(call => call[0] === 'renderMol');
   assert.equal(mode, 'force');
   assert.equal(renderCall[2].preserveHistory, true);
-  assert.deepEqual([...renderCall[2].forceAnchorLayout.entries()], [
-    ['c1', { x: 0, y: 0 }],
-    ['c2', { x: 1.5, y: 0 }]
-  ]);
+  assert.deepEqual(
+    [...renderCall[2].forceAnchorLayout.entries()],
+    [
+      ['c1', { x: 0, y: 0 }],
+      ['c2', { x: 1.5, y: 0 }]
+    ]
+  );
   approxEqual(renderCall[2].forceInitialPatchPos.get('c1').x, 379.5);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c1').y, 300);
   approxEqual(renderCall[2].forceInitialPatchPos.get('c2').x, 420.5);
@@ -2073,7 +2092,10 @@ test('toggleMode scales line-to-force seeds from the active bond length', () => 
   actions.toggleMode();
 
   const options = calls[0];
-  approxEqual(Math.hypot(options.forceInitialPatchPos.get('c2').x - options.forceInitialPatchPos.get('c1').x, options.forceInitialPatchPos.get('c2').y - options.forceInitialPatchPos.get('c1').y), 41 * (0.5 / 1.5));
+  approxEqual(
+    Math.hypot(options.forceInitialPatchPos.get('c2').x - options.forceInitialPatchPos.get('c1').x, options.forceInitialPatchPos.get('c2').y - options.forceInitialPatchPos.get('c1').y),
+    41 * (0.5 / 1.5)
+  );
 });
 
 test('toggleMode preserves an active resonance pair when switching line mode to force mode', () => {
@@ -2164,7 +2186,10 @@ test('toggleMode preserves an active resonance pair when switching line mode to 
   assert.ok(renderCall[1].atoms.has('__resonance_product__:c1'));
   assert.ok(renderCall[1].properties.resonanceElectronFlow?.arrows?.length);
   assert.ok(renderCall[2].forceInitialPatchPos.has('__resonance_product__:c1'));
-  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'resetActiveResonanceView'),
+    []
+  );
 });
 
 test('toggleMode preserves an active resonance pair when switching force mode to line mode', () => {
@@ -2267,7 +2292,10 @@ test('toggleMode preserves an active resonance pair when switching force mode to
     refreshResonancePanel: false,
     preserveAnalysis: true
   });
-  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'resetActiveResonanceView'),
+    []
+  );
 });
 
 test('toggleMode preserves an active reaction preview when switching line mode to force mode', () => {
@@ -2337,8 +2365,14 @@ test('toggleMode preserves an active reaction preview when switching line mode t
   assert.equal(renderCall[2].refreshResonancePanel, false);
   assert.equal(renderCall[2].preserveAnalysis, true);
   assert.ok(renderCall[2].forceInitialPatchPos.has('__rxn_product__:c1'));
-  assert.deepEqual(calls.filter(([name]) => name === 'reapplyActiveReactionPreview'), []);
-  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'reapplyActiveReactionPreview'),
+    []
+  );
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'resetActiveResonanceView'),
+    []
+  );
 });
 
 test('toggleMode preserves an active reaction preview when switching force mode to line mode', () => {
@@ -2418,8 +2452,14 @@ test('toggleMode preserves an active reaction preview when switching force mode 
     preserveAnalysis: true,
     preserveReactionLayout: true
   });
-  assert.deepEqual(calls.filter(([name]) => name === 'reapplyActiveReactionPreview'), []);
-  assert.deepEqual(calls.filter(([name]) => name === 'resetActiveResonanceView'), []);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'reapplyActiveReactionPreview'),
+    []
+  );
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'resetActiveResonanceView'),
+    []
+  );
 });
 
 test('toggleMode writes converted force coordinates before rendering line mode', () => {
@@ -2553,7 +2593,7 @@ test('toggleMode preserves the visible molecule center and scale from force to 2
   actions.toggleMode();
 
   const transform = calls.find(([name]) => name === 'setZoomTransform')?.[1];
-  approxEqual(transform.k, 1.5 * ((41 / 1.5) / 40));
+  approxEqual(transform.k, 1.5 * (41 / 1.5 / 40));
   approxEqual(transform.x, 230.75 - transform.k * 400);
   approxEqual(transform.y, 275 - transform.k * 300);
 });
@@ -3431,14 +3471,26 @@ test('line rotate preserves the viewport when the rotated molecule remains visib
   });
 
   actions.startRotate(90);
-  assert.equal(calls.some(([name]) => name === 'fitCurrent2dView'), false);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'fitCurrent2dView'),
+    false
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
   actions.stopRotate();
 
   const drawIndex = calls.findIndex(([name]) => name === 'draw2d');
   assert.ok(drawIndex >= 0);
-  assert.equal(calls.some(([name]) => name === 'fitCurrent2dView'), false);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'fitCurrent2dView'),
+    false
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
 });
 
 test('line rotate carries a free selection pivot with the rotated molecule', () => {
@@ -3585,15 +3637,24 @@ test('line rotate uses the rendered auto zoom fit when the rotated molecule is c
   });
 
   actions.startRotate(90);
-  assert.equal(calls.some(([name]) => name === 'fitCurrent2dView'), false);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'fitCurrent2dView'),
+    false
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
   actions.stopRotate();
 
   const drawIndex = calls.findIndex(([name]) => name === 'draw2d');
   const fitIndex = calls.findIndex(([name]) => name === 'fitCurrent2dView');
   assert.ok(drawIndex >= 0);
   assert.ok(fitIndex > drawIndex);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
 });
 
 test('line rotate defers the rendered bbox viewport check until rotation release', () => {
@@ -3639,10 +3700,16 @@ test('line rotate defers the rendered bbox viewport check until rotation release
   });
 
   actions.startRotate(90);
-  assert.equal(calls.some(([name]) => name === 'zoomToFitIf2d'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'zoomToFitIf2d'),
+    false
+  );
   actions.stopRotate();
 
-  assert.deepEqual(calls.filter(([name]) => name === 'zoomToFitIf2d'), [['zoomToFitIf2d', { pad: 40 }]]);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'zoomToFitIf2d'),
+    [['zoomToFitIf2d', { pad: 40 }]]
+  );
 });
 
 test('line rotate falls back to the math fit when the rotated molecule is clipped and rendered auto zoom is unavailable', () => {
@@ -3712,10 +3779,16 @@ test('line rotate falls back to the math fit when the rotated molecule is clippe
   });
 
   actions.startRotate(90);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
   actions.stopRotate();
 
-  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', { x: -90, y: -60, k: 1.3 }]);
+  assert.deepEqual(
+    calls.find(([name]) => name === 'setZoomTransform'),
+    ['setZoomTransform', { x: -90, y: -60, k: 1.3 }]
+  );
   assert.ok(calls.some(([name]) => name === 'draw2d'));
 });
 
@@ -3771,8 +3844,14 @@ test('force rotate transforms hydrogen slots and fits the viewport outside react
   });
 
   actions.startRotate(90);
-  assert.equal(calls.some(([name]) => name === 'forceFitTransform'), false);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'forceFitTransform'),
+    false
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
   actions.stopRotate();
 
   const patchCall = calls.find(([name]) => name === 'patchForceNodePositions');
@@ -3783,11 +3862,26 @@ test('force rotate transforms hydrogen slots and fits the viewport outside react
   approxEqual(patchCall[1][1][1].y, 210);
   assert.equal(patchCall[1][1][1].forcePlacementParentId, 'c1');
   approxEqual(patchCall[1][1][1].forcePlacementAngle, 0);
-  assert.deepEqual(calls.find(([name]) => name === 'syncPositions'), ['syncPositions']);
-  assert.equal(calls.some(([name]) => name === 'updateForce'), false);
-  assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [['forceFitTransform', ['c1', 'h1'], 40, { scaleMultiplier: 1.3 }]]);
-  assert.deepEqual(calls.find(([name]) => name === 'zoomTransformsDiffer'), ['zoomTransformsDiffer', fitTransform, { x: -1000, y: 0, k: 1 }]);
-  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
+  assert.deepEqual(
+    calls.find(([name]) => name === 'syncPositions'),
+    ['syncPositions']
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'updateForce'),
+    false
+  );
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'forceFitTransform'),
+    [['forceFitTransform', ['c1', 'h1'], 40, { scaleMultiplier: 1.3 }]]
+  );
+  assert.deepEqual(
+    calls.find(([name]) => name === 'zoomTransformsDiffer'),
+    ['zoomTransformsDiffer', fitTransform, { x: -1000, y: 0, k: 1 }]
+  );
+  assert.deepEqual(
+    calls.find(([name]) => name === 'setZoomTransform'),
+    ['setZoomTransform', fitTransform]
+  );
 });
 
 test('force rotate carries a free selection pivot with the rotated molecule', () => {
@@ -3909,12 +4003,22 @@ test('force rotate fits active resonance pairs with the same reaction-like zoom 
   actions.startRotate(90);
   actions.stopRotate();
 
-  assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [
-    ['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]
-  ]);
-  assert.deepEqual(calls.find(([name]) => name === 'syncPositions'), ['syncPositions']);
-  assert.equal(calls.some(([name]) => name === 'updateForce'), false);
-  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'forceFitTransform'),
+    [['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]]
+  );
+  assert.deepEqual(
+    calls.find(([name]) => name === 'syncPositions'),
+    ['syncPositions']
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'updateForce'),
+    false
+  );
+  assert.deepEqual(
+    calls.find(([name]) => name === 'setZoomTransform'),
+    ['setZoomTransform', fitTransform]
+  );
 });
 
 test('force rotate fits active reaction previews with the same reaction-like zoom as autoZoom', () => {
@@ -3976,12 +4080,22 @@ test('force rotate fits active reaction previews with the same reaction-like zoo
   actions.startRotate(90);
   actions.stopRotate();
 
-  assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), [
-    ['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]
-  ]);
-  assert.deepEqual(calls.find(([name]) => name === 'syncPositions'), ['syncPositions']);
-  assert.equal(calls.some(([name]) => name === 'updateForce'), false);
-  assert.deepEqual(calls.find(([name]) => name === 'setZoomTransform'), ['setZoomTransform', fitTransform]);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'forceFitTransform'),
+    [['forceFitTransform', ['c1', 'h1'], FORCE_LAYOUT_INITIAL_FIT_PAD, { scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER, reactionLike: true }]]
+  );
+  assert.deepEqual(
+    calls.find(([name]) => name === 'syncPositions'),
+    ['syncPositions']
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'updateForce'),
+    false
+  );
+  assert.deepEqual(
+    calls.find(([name]) => name === 'setZoomTransform'),
+    ['setZoomTransform', fitTransform]
+  );
 });
 
 test('force rotate skips fitting when the rotated molecule remains visible', () => {
@@ -4035,9 +4149,18 @@ test('force rotate skips fitting when the rotated molecule remains visible', () 
   actions.stopRotate();
 
   assert.ok(calls.some(([name]) => name === 'patchForceNodePositions'));
-  assert.deepEqual(calls.filter(([name]) => name === 'forceFitTransform'), []);
-  assert.equal(calls.some(([name]) => name === 'zoomTransformsDiffer'), false);
-  assert.equal(calls.some(([name]) => name === 'setZoomTransform'), false);
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'forceFitTransform'),
+    []
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'zoomTransformsDiffer'),
+    false
+  );
+  assert.equal(
+    calls.some(([name]) => name === 'setZoomTransform'),
+    false
+  );
 });
 
 test('force flip mirrors hydrogen slot angles with the hydrogen nodes', () => {

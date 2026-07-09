@@ -296,15 +296,7 @@ describe('createEditorActions', () => {
     );
 
     assert.equal(result.performed, true);
-    assert.deepEqual(calls, [
-      ['setActiveMolecule', mol],
-      ['syncInputField', mol],
-      ['updateFormula', mol],
-      ['updateDescriptors', mol],
-      ['updatePanels', mol],
-      ['sync2dDerivedState', mol],
-      ['draw2d']
-    ]);
+    assert.deepEqual(calls, [['setActiveMolecule', mol], ['syncInputField', mol], ['updateFormula', mol], ['updateDescriptors', mol], ['updatePanels', mol], ['sync2dDerivedState', mol], ['draw2d']]);
   });
 
   it('fits the unlocked force molecule after a reaction-preview edit re-renders in force mode', () => {

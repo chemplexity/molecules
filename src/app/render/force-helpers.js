@@ -19,7 +19,7 @@ export const FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE = 0.4;
 export const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
 export const FORCE_LAYOUT_REFERENCE_BOND_LENGTH = 1.5;
 export const FORCE_LAYOUT_DEFAULT_2D_PIXELS_PER_UNIT = 60;
-export const FORCE_LAYOUT_DEFAULT_ZOOM_MULTIPLIER = FORCE_LAYOUT_DEFAULT_2D_PIXELS_PER_UNIT * FORCE_LAYOUT_REFERENCE_BOND_LENGTH / FORCE_LAYOUT_BOND_LENGTH;
+export const FORCE_LAYOUT_DEFAULT_ZOOM_MULTIPLIER = (FORCE_LAYOUT_DEFAULT_2D_PIXELS_PER_UNIT * FORCE_LAYOUT_REFERENCE_BOND_LENGTH) / FORCE_LAYOUT_BOND_LENGTH;
 export const FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN = 0.08;
 export const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
 export const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
@@ -529,12 +529,7 @@ function visibleHeavyNeighborCount(atom, molecule, excludedAtomId = null) {
 }
 
 function shouldReanchorChiralTerminalNeighbor(atom, molecule, centerId) {
-  return (
-    atom?.name !== 'H' &&
-    atom?.visible !== false &&
-    !(typeof atom.isInRing === 'function' && atom.isInRing(molecule)) &&
-    visibleHeavyNeighborCount(atom, molecule, centerId) === 0
-  );
+  return atom?.name !== 'H' && atom?.visible !== false && !(typeof atom.isInRing === 'function' && atom.isInRing(molecule)) && visibleHeavyNeighborCount(atom, molecule, centerId) === 0;
 }
 
 function finiteForcePointFromNode(node, xKey = 'x', yKey = 'y') {
@@ -593,7 +588,7 @@ export function convertLineCoordsToForceLayout(
       id: atom.id,
       name: atom.name,
       protons: atom.properties?.protons,
-      charge: typeof atom.getCharge === 'function' ? atom.getCharge() : atom.properties?.charge ?? 0,
+      charge: typeof atom.getCharge === 'function' ? atom.getCharge() : (atom.properties?.charge ?? 0),
       aromatic: typeof atom.isAromatic === 'function' ? atom.isAromatic() : atom.properties?.aromatic === true,
       x,
       y,
@@ -627,7 +622,7 @@ export function convertLineCoordsToForceLayout(
     if (!parentNode) {
       continue;
     }
-    let node = null;
+    let node;
     if (hydrogenMode === 'preserve' && isFinitePoint(atom)) {
       const x = forceCenter.x + (atom.x - lineCenter.x) * scale;
       const y = forceCenter.y - (atom.y - lineCenter.y) * scale;
@@ -684,16 +679,14 @@ export function convertLineCoordsToForceLayout(
 export function convertForceCoordsToLineLayout(
   molecule,
   forceNodesOrGraph,
-  {
-    bondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH,
-    forceBondLength = FORCE_LAYOUT_BOND_LENGTH,
-    lineCenter = { x: 0, y: 0 },
-    hydrogenMode = 'displayed',
-    coordinateSource = 'position'
-  } = {}
+  { bondLength = FORCE_LAYOUT_REFERENCE_BOND_LENGTH, forceBondLength = FORCE_LAYOUT_BOND_LENGTH, lineCenter = { x: 0, y: 0 }, hydrogenMode = 'displayed', coordinateSource = 'position' } = {}
 ) {
   const coords = new Map();
-  const nodeById = new Map(forceConverterNodeList(forceNodesOrGraph).filter(isFinitePoint).map(node => [node.id, node]));
+  const nodeById = new Map(
+    forceConverterNodeList(forceNodesOrGraph)
+      .filter(isFinitePoint)
+      .map(node => [node.id, node])
+  );
   const sourcePointForNode = node => {
     if (coordinateSource === 'anchor') {
       return finiteForcePointFromNode(node, 'anchorX', 'anchorY') ?? finiteForcePointFromNode(node);

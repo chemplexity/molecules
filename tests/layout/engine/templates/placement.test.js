@@ -108,7 +108,10 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(pointInPolygon(pterinCoords.get('N9'), pterinOuterSevenPolygon), true);
     assert.equal(pointInPolygon(pterinCoords.get('N5'), pterinOuterSevenPolygon), false);
     assert.equal(pointInPolygon(pterinCoords.get('C6'), pterinOuterSevenPolygon), false);
-    assert.ok(pterinOuterSevenAngles.every(angle => Math.abs(angle - 128.571) < 1), `expected pterin outer contour to stay near seven-member angles, got ${pterinOuterSevenAngles.join(', ')}`);
+    assert.ok(
+      pterinOuterSevenAngles.every(angle => Math.abs(angle - 128.571) < 1),
+      `expected pterin outer contour to stay near seven-member angles, got ${pterinOuterSevenAngles.join(', ')}`
+    );
 
     const acridineGraph = createLayoutGraph(parseSMILES('c1ccc2nc3ccccc3cc2c1'));
     const acridineCoords = placeTemplateCoords(acridineGraph, 'acridine', acridineGraph.ringSystems[0].atomIds, acridineGraph.options.bondLength);
@@ -626,9 +629,7 @@ describe('layout/engine/templates/placement', () => {
     const cyclobutaneAngles = ringAngles(coords, ['C9', 'C8', 'C7', 'C6']);
     const coreAtomIds = graph.ringSystems[0].atomIds;
     const coreAtomIdSet = new Set(coreAtomIds);
-    const coreBondLengths = [...graph.bonds.values()]
-      .filter(bond => coreAtomIdSet.has(bond.a) && coreAtomIdSet.has(bond.b))
-      .map(bond => distance(coords.get(bond.a), coords.get(bond.b)));
+    const coreBondLengths = [...graph.bonds.values()].filter(bond => coreAtomIdSet.has(bond.a) && coreAtomIdSet.has(bond.b)).map(bond => distance(coords.get(bond.a), coords.get(bond.b)));
 
     assert.equal(coords.size, 7);
     assert.equal(audit.ok, true);

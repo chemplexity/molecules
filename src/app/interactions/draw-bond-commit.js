@@ -3,11 +3,7 @@
 import { ReactionPreviewPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
-import {
-  angularDifference as _angularDifference,
-  chooseAutoPlacedBondAngle as _chooseAutoPlacedBondAngle,
-  normalizeAngle as _normalizeAngle
-} from './draw-bond-placement.js';
+import { angularDifference as _angularDifference, chooseAutoPlacedBondAngle as _chooseAutoPlacedBondAngle, normalizeAngle as _normalizeAngle } from './draw-bond-placement.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
 const FORCE_COMMIT_VIEWPORT_PAD = 12;
@@ -282,9 +278,7 @@ export function createDrawBondCommitActions(context) {
     if (!bond?.atoms?.length) {
       return false;
     }
-    const hydrogenAtomIds = hydrogenId
-      ? [hydrogenId]
-      : bond.atoms.filter(atomId => mol?.atoms?.get?.(atomId)?.name === 'H');
+    const hydrogenAtomIds = hydrogenId ? [hydrogenId] : bond.atoms.filter(atomId => mol?.atoms?.get?.(atomId)?.name === 'H');
     if (hydrogenAtomIds.length === 0) {
       return false;
     }
@@ -307,7 +301,7 @@ export function createDrawBondCommitActions(context) {
     if (typeof atom?.setChirality !== 'function') {
       return false;
     }
-    const originalChirality = typeof atom.getChirality === 'function' ? atom.getChirality() : atom.properties?.chirality ?? null;
+    const originalChirality = typeof atom.getChirality === 'function' ? atom.getChirality() : (atom.properties?.chirality ?? null);
     for (const candidate of ['R', 'S']) {
       try {
         atom.setChirality(candidate, mol);
@@ -341,11 +335,7 @@ export function createDrawBondCommitActions(context) {
   }
 
   function findStereoHydrogenPromotion(mol, sourceAtomId, targetAtomId, drawBondType) {
-    if (
-      sourceAtomId === null ||
-      targetAtomId === null ||
-      (drawBondType !== 'single' && drawBondType !== 'wedge' && drawBondType !== 'dash')
-    ) {
+    if (sourceAtomId === null || targetAtomId === null || (drawBondType !== 'single' && drawBondType !== 'wedge' && drawBondType !== 'dash')) {
       return null;
     }
 
@@ -447,14 +437,10 @@ export function createDrawBondCommitActions(context) {
 
     if (mode === 'force') {
       context.renderers.updateForce(mol, {
-        ...forceDrawRenderOptionsForPatch(
-          structuralEdit,
-          new Map([[newAtom.id, { x: ox, y: oy }]]),
-          {
-            reactionRestored: reactionEdit?.restored,
-            initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
-          }
-        )
+        ...forceDrawRenderOptionsForPatch(structuralEdit, new Map([[newAtom.id, { x: ox, y: oy }]]), {
+          reactionRestored: reactionEdit?.restored,
+          initialPatchPos: new Map([[newAtom.id, { x: ox, y: oy }]])
+        })
       });
       context.force.enableKeepInView();
       return;
@@ -583,7 +569,12 @@ export function createDrawBondCommitActions(context) {
     {
       const bondLength = mode === 'force' ? layoutBondLength * forceScale : layoutBondLength;
       const thresholdSq = (bondLength * 0.7) ** 2;
-      const sourceHydrogenIds = new Set(srcAtom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').map(neighbor => neighbor.id));
+      const sourceHydrogenIds = new Set(
+        srcAtom
+          .getNeighbors(mol)
+          .filter(neighbor => neighbor.name === 'H')
+          .map(neighbor => neighbor.id)
+      );
       const overlaps = angle => {
         const px = srcRX + Math.cos(angle) * bondLength;
         const py = srcRY + Math.sin(angle) * bondLength;
@@ -685,9 +676,7 @@ export function createDrawBondCommitActions(context) {
       return;
     }
 
-    _removeSourceHydrogenNearestAngle(mol, srcAtom, { x: srcRX, y: srcRY }, bestAngle, atom =>
-      Number.isFinite(atom.x) && Number.isFinite(atom.y) ? { x: atom.x, y: atom.y } : null
-    );
+    _removeSourceHydrogenNearestAngle(mol, srcAtom, { x: srcRX, y: srcRY }, bestAngle, atom => (Number.isFinite(atom.x) && Number.isFinite(atom.y) ? { x: atom.x, y: atom.y } : null));
     newAtom.x = srcRX + Math.cos(bestAngle) * layoutBondLength;
     newAtom.y = srcRY + Math.sin(bestAngle) * layoutBondLength;
 
@@ -872,7 +861,7 @@ export function createDrawBondCommitActions(context) {
         return;
       }
       let affected;
-      let newBond = null;
+      let newBond;
 
       const patchPos = new Map();
       if (atomId === null) {
@@ -955,7 +944,7 @@ export function createDrawBondCommitActions(context) {
     const mol = structuralEdit.mol ?? context.molecule.ensureActive();
     const { width: plotWidth, height: plotHeight } = context.plot.getSize();
     let affected;
-    let newBond = null;
+    let newBond;
 
     let resolvedAtomId = atomId;
     if (atomId === null) {

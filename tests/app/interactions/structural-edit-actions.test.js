@@ -162,7 +162,10 @@ describe('createStructuralEditActions', () => {
       zoomToFit: { pad: 0 }
     });
 
-    assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'reaction-entry-zoom'], ['zoomToFitIf2d', { pad: 0 }]]);
+    assert.deepEqual(calls, [
+      ['restoreZoomTransformSnapshot', 'reaction-entry-zoom'],
+      ['zoomToFitIf2d', { pad: 0 }]
+    ]);
   });
 
   it('auto-fits 2D edits that exit resonance mode instead of restoring the locked resonance zoom', () => {
@@ -184,7 +187,10 @@ describe('createStructuralEditActions', () => {
       zoomToFit: true
     });
 
-    assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'zoom-snapshot'], ['zoomToFitIf2d', undefined]]);
+    assert.deepEqual(calls, [
+      ['restoreZoomTransformSnapshot', 'zoom-snapshot'],
+      ['zoomToFitIf2d', undefined]
+    ]);
   });
 
   it('passes structured 2D fit options through after restoring the edit zoom', () => {
@@ -195,7 +201,10 @@ describe('createStructuralEditActions', () => {
       zoomToFit: { pad: 0 }
     });
 
-    assert.deepEqual(calls, [['restoreZoomTransformSnapshot', 'zoom-snapshot'], ['zoomToFitIf2d', { pad: 0 }]]);
+    assert.deepEqual(calls, [
+      ['restoreZoomTransformSnapshot', 'zoom-snapshot'],
+      ['zoomToFitIf2d', { pad: 0 }]
+    ]);
   });
 
   it('passes an already-prepared resonance reset through skipped bond promotion prep', () => {
@@ -452,7 +461,10 @@ describe('createStructuralEditActions', () => {
     assert.equal(ringBondOrders.filter(order => order === 1).length, 3);
     assert.equal(mol.bonds.size, 12);
     assert.ok(calls.some(call => call[0] === 'kekulize'));
-    assert.equal(calls.some(call => call[0] === 'refreshAromaticity'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'refreshAromaticity'),
+      false
+    );
   });
 
   it('uses a clicked existing atom as one vertex of a regular ring template', () => {
@@ -512,7 +524,10 @@ describe('createStructuralEditActions', () => {
     });
     assert.ok(edgeLengths.every(length => Math.abs(length - 1.5) < 1e-6));
     const newRingAtoms = ringAtomIds.slice(1).map(atomId => mol.atoms.get(atomId));
-    assert.ok(newRingAtoms.every(atom => atom.x > -0.001), 'expected the ring to be placed away from the existing left-side substituent');
+    assert.ok(
+      newRingAtoms.every(atom => atom.x > -0.001),
+      'expected the ring to be placed away from the existing left-side substituent'
+    );
   });
 
   it('strips pendant hydrogens from OH and NH2 atoms reused as ring-template vertices', () => {
@@ -744,7 +759,10 @@ describe('createStructuralEditActions', () => {
     assert.deepEqual(result.result.twoD.zoomToFit, { pad: 0 });
     const ringAtomIds = result.result.ringAtomIds;
     const newRingAtoms = ringAtomIds.slice(1).map(atomId => mol.atoms.get(atomId));
-    assert.ok(newRingAtoms.every(atom => atom.x > 0.7), 'expected the oriented ring to extend to the right of the anchor');
+    assert.ok(
+      newRingAtoms.every(atom => atom.x > 0.7),
+      'expected the oriented ring to extend to the right of the anchor'
+    );
   });
 
   it('reuses overlapped existing atoms and bonds when placing an anchored ring template', () => {
@@ -849,7 +867,10 @@ describe('createStructuralEditActions', () => {
     const ringAtomIds = result.result.ringAtomIds;
     assert.equal(ringAtomIds.length, 6);
     assert.deepEqual(ringAtomIds.slice(0, 2), [atomA.id, atomB.id]);
-    assert.equal(ringAtomIds.slice(2).every(atomId => mol.atoms.get(atomId).y > 0), true);
+    assert.equal(
+      ringAtomIds.slice(2).every(atomId => mol.atoms.get(atomId).y > 0),
+      true
+    );
     for (let index = 0; index < ringAtomIds.length; index++) {
       const atom1 = mol.atoms.get(ringAtomIds[index]);
       const atom2 = mol.atoms.get(ringAtomIds[(index + 1) % ringAtomIds.length]);
@@ -975,10 +996,28 @@ describe('createStructuralEditActions', () => {
       assert.equal(bond.properties.aromatic, properties.aromatic, `expected bond ${bondId} aromatic state to remain stable`);
       assert.equal(bond.properties.localizedOrder, properties.localizedOrder, `expected bond ${bondId} localized order to remain stable`);
     }
-    assert.equal(mol.atoms.get(atomAId).getNeighbors(mol).filter(atom => atom.name === 'H').length, 0);
-    assert.equal(mol.atoms.get(atomBId).getNeighbors(mol).filter(atom => atom.name === 'H').length, 0);
+    assert.equal(
+      mol.atoms
+        .get(atomAId)
+        .getNeighbors(mol)
+        .filter(atom => atom.name === 'H').length,
+      0
+    );
+    assert.equal(
+      mol.atoms
+        .get(atomBId)
+        .getNeighbors(mol)
+        .filter(atom => atom.name === 'H').length,
+      0
+    );
     assert.deepEqual(
-      ringAtomIds.slice(2).map(atomId => mol.atoms.get(atomId).getNeighbors(mol).filter(atom => atom.name === 'H' && atom.visible === false).length),
+      ringAtomIds.slice(2).map(
+        atomId =>
+          mol.atoms
+            .get(atomId)
+            .getNeighbors(mol)
+            .filter(atom => atom.name === 'H' && atom.visible === false).length
+      ),
       [1, 1, 1, 1]
     );
   });
@@ -1159,7 +1198,13 @@ describe('createStructuralEditActions', () => {
 
     assert.equal(result.performed, true);
     assert.deepEqual(
-      result.result.ringAtomIds.slice(2).map(atomId => mol.atoms.get(atomId).getNeighbors(mol).filter(atom => atom.name === 'H').length),
+      result.result.ringAtomIds.slice(2).map(
+        atomId =>
+          mol.atoms
+            .get(atomId)
+            .getNeighbors(mol)
+            .filter(atom => atom.name === 'H').length
+      ),
       [1, 1, 1, 1]
     );
   });
@@ -1522,7 +1567,7 @@ describe('createStructuralEditActions', () => {
     fusedAtom.y = 99;
     const forceBondLength = 30;
     const fusedForceX = 10 + forceBondLength;
-    const fusedForceY = forceBondLength * Math.sqrt(3) / 2;
+    const fusedForceY = (forceBondLength * Math.sqrt(3)) / 2;
     const nodes = [
       { id: atomA.id, name: 'C', x: 0, y: 0 },
       { id: atomB.id, name: 'C', x: 20, y: 0 },
@@ -1595,7 +1640,7 @@ describe('createStructuralEditActions', () => {
     const fusedBond = mol.addBond(null, atomB.id, fusedAtom.id, { order: 1 });
     const forceBondLength = 30;
     const fusedForceX = 10 + forceBondLength;
-    const fusedForceY = forceBondLength * Math.sqrt(3) / 2;
+    const fusedForceY = (forceBondLength * Math.sqrt(3)) / 2;
     const nodes = [
       { id: atomA.id, name: 'C', x: 0, y: 0 },
       { id: atomB.id, name: 'C', x: 20, y: 0 },
@@ -1665,7 +1710,7 @@ describe('createStructuralEditActions', () => {
     const forceBondLength = 30;
     const forceOverlapPosition = {
       x: forceBondLength * 0.5,
-      y: -forceBondLength * Math.sqrt(3) / 2
+      y: (-forceBondLength * Math.sqrt(3)) / 2
     };
     const nodes = [
       { id: anchor.id, name: 'C', x: 0, y: 0 },
@@ -1735,7 +1780,7 @@ describe('createStructuralEditActions', () => {
     const forceBondLength = 30;
     const forceOverlapPosition = {
       x: forceBondLength * 0.5,
-      y: -forceBondLength * Math.sqrt(3) / 2
+      y: (-forceBondLength * Math.sqrt(3)) / 2
     };
     const nodes = [
       { id: anchor.id, name: 'C', x: 0, y: 0 },
@@ -2351,7 +2396,10 @@ describe('createStructuralEditActions', () => {
         zoomSnapshot: 'zoom-snapshot'
       });
     }
-    assert.equal(ringAtomIds.some(atomId => mol.atoms.get(atomId)?.properties.aromatic === true), false);
+    assert.equal(
+      ringAtomIds.some(atomId => mol.atoms.get(atomId)?.properties.aromatic === true),
+      false
+    );
 
     actions.promoteBondOrder(ringBonds.at(-1).id, {
       drawBondType: 'aromatic',
@@ -2361,8 +2409,14 @@ describe('createStructuralEditActions', () => {
       zoomSnapshot: 'zoom-snapshot'
     });
 
-    assert.equal(ringBonds.every(bond => bond.properties.aromatic === true && bond.properties.order === 1.5), true);
-    assert.equal(ringAtomIds.every(atomId => mol.atoms.get(atomId)?.properties.aromatic === true), true);
+    assert.equal(
+      ringBonds.every(bond => bond.properties.aromatic === true && bond.properties.order === 1.5),
+      true
+    );
+    assert.equal(
+      ringAtomIds.every(atomId => mol.atoms.get(atomId)?.properties.aromatic === true),
+      true
+    );
   });
 
   it('applies the aromatic 1.5 bond type to existing force-mode bonds', () => {

@@ -128,13 +128,7 @@ function bridgedRingShapeMetrics(graph, coords) {
  * @returns {number} Angle in degrees.
  */
 function angleAtAtom(coords, centerAtomId, firstAtomId, secondAtomId) {
-  return (
-    angularDifference(
-      angleOf(sub(coords.get(firstAtomId), coords.get(centerAtomId))),
-      angleOf(sub(coords.get(secondAtomId), coords.get(centerAtomId)))
-    ) *
-    (180 / Math.PI)
-  );
+  return angularDifference(angleOf(sub(coords.get(firstAtomId), coords.get(centerAtomId))), angleOf(sub(coords.get(secondAtomId), coords.get(centerAtomId)))) * (180 / Math.PI);
 }
 
 describe('layout/engine/families/bridged', () => {
@@ -532,7 +526,10 @@ describe('layout/engine/families/bridged', () => {
       const upperContourAngles = upperContourAtomIds.map(atomId => ringInternalAngle(upperContourRing, coords, atomId) * (180 / Math.PI));
       const upperContourPolygon = upperContourAtomIds.map(atomId => coords.get(atomId));
       for (const angle of upperContourAngles) {
-        assert.ok(Math.abs(angle - 128.571) < toleranceDegrees, `expected ${label} azocane outer contour to stay heptagonal, got ${upperContourAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+        assert.ok(
+          Math.abs(angle - 128.571) < toleranceDegrees,
+          `expected ${label} azocane outer contour to stay heptagonal, got ${upperContourAngles.map(candidate => candidate.toFixed(2)).join(', ')}`
+        );
       }
       assert.equal(pointInPolygon(coords.get('C2'), upperContourPolygon), true);
     };

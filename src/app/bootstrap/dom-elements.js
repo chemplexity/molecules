@@ -132,8 +132,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getRingTemplateSizeButtonElement: size => ringTemplateSizeButtons.get(ringTemplateKey(size)) ?? null,
     getEraseButtonElement: () => eraseButton,
     getElementButtonElement: element => document.getElementById(`elem-btn-${element}`),
-    getElementButtonElements: element =>
-      [document.getElementById(`elem-btn-${element}`), ...document.querySelectorAll(`[data-periodic-element="${element}"]`)].filter(Boolean),
+    getElementButtonElements: element => [document.getElementById(`elem-btn-${element}`), ...document.querySelectorAll(`[data-periodic-element="${element}"]`)].filter(Boolean),
     getMolecularFormulaElement: () => molecularFormula,
     getMolecularWeightElement: () => molecularWeight,
     getDescriptorBodyElement: () => descriptorBody,

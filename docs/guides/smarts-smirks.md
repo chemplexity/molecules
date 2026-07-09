@@ -258,8 +258,10 @@ console.log(template.byproducts); // [ 'halide-containing reagent products' ]
 console.log(template.selectivity.chemoselectivity); // strongly substrate- and halide-dependent
 ```
 
-Metadata is informational. `applySMIRKS`, reaction matching, and the app's
-reaction preview still use the `smirks` string.
+Variant metadata includes structured reagent, catalyst, solvent, condition,
+byproduct, note, and limitation fields. Template-level metadata is
+informational: `applySMIRKS`, reaction matching, and the app's reaction preview
+still use the `smirks` string.
 
 ### Template categories
 
@@ -274,6 +276,7 @@ reaction preview still use the `smirks` string.
 | `alkeneHydrogenation`         | Alkene → alkane                |
 | `alkynePartialReduction`      | Alkyne → alkene                |
 | `alkyneFullReduction`         | Alkyne → alkane                |
+| `nitrileHydrogenationToImine` | Nitrile → imine                |
 | `benzylicOxidation`           | Benzylic methyl → benzaldehyde |
 | `nitroReduction`              | Nitro → primary amine          |
 | `sulfideOxidationToSulfoxide` | Sulfide → sulfoxide            |
@@ -281,45 +284,51 @@ reaction preview still use the `smirks` string.
 
 **Substitution / interconversion**
 
-| Key                           | Description            |
-| ----------------------------- | ---------------------- |
-| `dehalogenation`              | Remove halide          |
-| `halideHydrolysis`            | Alkyl halide → alcohol |
-| `arylHalideHydrolysis`        | Aryl halide → phenol   |
-| `alcoholHalogenation`         | Alcohol → chloride     |
-| `nitrileHydrogenationToImine` | Nitrile → imine        |
-| `etherCleavage`               | Ether → two alcohols   |
+| Key                    | Description                              |
+| ---------------------- | ---------------------------------------- |
+| `dehalogenation`       | Remove halide                            |
+| `halideHydrolysis`     | Alkyl halide → alcohol                   |
+| `arylHalideHydrolysis` | Aryl halide → phenol                     |
+| `alcoholHalogenation`  | Alcohol → chloride                       |
+| `etherCleavage`        | Ether → two alcohols                     |
+| `imineHydrolysis`      | Imine → carbonyl + amine                 |
+| `amineAlkylation`      | Alkyl chloride + amine → secondary amine |
 
 **Acyl chemistry**
 
-| Key                        | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `esterHydrolysis`          | Ester → acid + alcohol                   |
-| `esterification`           | Acid + alcohol → ester                   |
-| `saponification`           | Ester → carboxylate (base)               |
-| `anhydrideHydrolysis`      | Anhydride → two acids                    |
-| `amideHydrolysis`          | Amide → acid + amine                     |
-| `amineAcylation`           | Acid chloride + amine → amide            |
-| `amineAlkylation`          | Alkyl chloride + amine → secondary amine |
-| `lactoneHydrolysis`        | Lactone → hydroxy acid                   |
-| `lactamHydrolysis`         | Lactam → amino acid                      |
-| `acidChlorideHydrolysis`   | Acid chloride → carboxylic acid          |
-| `nitrileHydrolysisToAmide` | Nitrile → amide                          |
-| `nitrileHydrolysisToAcid`  | Nitrile → carboxylic acid                |
-| `imineHydrolysis`          | Imine → carbonyl + amine                 |
+| Key                        | Description                     |
+| -------------------------- | ------------------------------- |
+| `esterHydrolysis`          | Ester → acid + alcohol          |
+| `esterification`           | Acid + alcohol → ester          |
+| `saponification`           | Ester → carboxylate (base)      |
+| `anhydrideHydrolysis`      | Anhydride → two acids           |
+| `amideHydrolysis`          | Amide → acid + amine            |
+| `amineAcylation`           | Acid chloride + amine → amide   |
+| `lactoneHydrolysis`        | Lactone → hydroxy acid          |
+| `lactamHydrolysis`         | Lactam → amino acid             |
+| `acidChlorideHydrolysis`   | Acid chloride → carboxylic acid |
+| `nitrileHydrolysisToAmide` | Nitrile → amide                 |
+| `nitrileHydrolysisToAcid`  | Nitrile → carboxylic acid       |
 
-**Acid/base and other**
+**Acid/base**
 
 | Key                           | Description             |
 | ----------------------------- | ----------------------- |
 | `carboxylicAcidDeprotonation` | Acid → carboxylate      |
 | `carboxylateProtonation`      | Carboxylate → acid      |
 | `amineProtonation`            | Amine → ammonium        |
+| `aromaticAzaProtonation`      | Aromatic aza N → cation |
 | `ammoniumDeprotonation`       | Ammonium → amine        |
 | `phenolDeprotonation`         | Phenol → phenolate      |
 | `phenolateProtonation`        | Phenolate → phenol      |
-| `alcoholDehydration`          | Alcohol → alkene        |
-| `alkylChlorideElimination`    | Alkyl chloride → alkene |
+
+**Bond construction and cycloaddition**
+
+| Key                        | Description                  |
+| -------------------------- | ---------------------------- |
+| `alcoholDehydration`       | Alcohol → alkene             |
+| `alkylChlorideElimination` | Alkyl chloride → alkene      |
+| `dielsAlder`               | Diene + alkene → cyclohexene |
 
 ### Applying templates in bulk
 

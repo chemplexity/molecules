@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/index.js';
 import { generateResonanceStructures } from '../../../src/algorithms/index.js';
-import { ringAtomKey } from '../../../src/core/style.js';
+import { ringAtomKey } from '../../../src/core/support/style.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
 import { computeChargeBadgePlacement, secondaryDir, syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 import { atomRadius, renderBondOrder, updateRenderOptions } from '../../../src/app/render/helpers.js';
@@ -19,7 +19,13 @@ import {
   shouldPreserveResonanceForClickTarget,
   updateResonancePanel
 } from '../../../src/app/render/resonance.js';
-import { buildResonanceElectronFlow, computeResonanceArrowPath, resonanceArrowOccupiedAnglesForAtom, RESONANCE_ELECTRON_FLOW_PROPERTY, setMoleculeResonanceElectronFlow } from '../../../src/app/render/resonance-arrows.js';
+import {
+  buildResonanceElectronFlow,
+  computeResonanceArrowPath,
+  resonanceArrowOccupiedAnglesForAtom,
+  RESONANCE_ELECTRON_FLOW_PROPERTY,
+  setMoleculeResonanceElectronFlow
+} from '../../../src/app/render/resonance-arrows.js';
 
 function makeMockElement(tagName = 'div') {
   let _textContent = '';
@@ -288,7 +294,10 @@ function rotatedForceNodesFromMolecule(mol, angle) {
 }
 
 function ringFillKeys(mol) {
-  return mol.getRingFills().map(fill => ringAtomKey(fill.atomIds)).sort();
+  return mol
+    .getRingFills()
+    .map(fill => ringAtomKey(fill.atomIds))
+    .sort();
 }
 
 function rotatedPointForAtom(angle) {
@@ -360,8 +369,14 @@ describe('resonance undo snapshots', () => {
     assert.equal(flow.referenceState, 1);
     assert.equal(flow.state, 2);
     assert.equal(flow.arrows.length, 2);
-    assert.ok(flow.arrows.some(arrow => arrow.from.kind === 'atom' && arrow.to.kind === 'bond'), 'expected lone-pair donation into the single C-O bond');
-    assert.ok(flow.arrows.some(arrow => arrow.from.kind === 'bond' && arrow.to.kind === 'atom'), 'expected carbonyl pi electrons to move onto oxygen');
+    assert.ok(
+      flow.arrows.some(arrow => arrow.from.kind === 'atom' && arrow.to.kind === 'bond'),
+      'expected lone-pair donation into the single C-O bond'
+    );
+    assert.ok(
+      flow.arrows.some(arrow => arrow.from.kind === 'bond' && arrow.to.kind === 'atom'),
+      'expected carbonyl pi electrons to move onto oxygen'
+    );
   });
 
   it('does not draw direct atom-to-atom arrows for allylic charge relocation', () => {
@@ -372,7 +387,10 @@ describe('resonance undo snapshots', () => {
     const flow = buildResonanceElectronFlow(mol, 2);
 
     assert.equal(flow.arrows.length, 1);
-    assert.deepEqual(flow.arrows.map(arrow => [arrow.from.kind, arrow.to.kind]), [['bond', 'bond']]);
+    assert.deepEqual(
+      flow.arrows.map(arrow => [arrow.from.kind, arrow.to.kind]),
+      [['bond', 'bond']]
+    );
     assert.equal(Number.isFinite(flow.arrows[0].from.sideSign), true);
     assert.equal(Number.isFinite(flow.arrows[0].to.sideSign), true);
   });
@@ -418,8 +436,14 @@ describe('resonance undo snapshots', () => {
     const tipDistance = signedBondDistance(visibleArrowTipPoint(path), targetBond, mol);
     const distances = [path.start, path.control, path.end].map(point => signedBondDistance(point, targetBond, mol));
     const signs = distances.map(Math.sign);
-    assert.ok(distances.every(distance => Math.abs(distance) > 0.1), `expected all arrow points off the target bond plane, got ${distances.join(', ')}`);
-    assert.ok(signs.every(sign => sign === signs[0]), `expected all arrow points on one side of the target bond, got ${distances.join(', ')}`);
+    assert.ok(
+      distances.every(distance => Math.abs(distance) > 0.1),
+      `expected all arrow points off the target bond plane, got ${distances.join(', ')}`
+    );
+    assert.ok(
+      signs.every(sign => sign === signs[0]),
+      `expected all arrow points on one side of the target bond, got ${distances.join(', ')}`
+    );
     assert.ok(Math.sign(tipDistance) === signs[0] && Math.abs(tipDistance) > 8, `expected atom-to-bond arrow tip to stay clear of the target bond, got ${tipDistance}`);
   });
 
@@ -662,11 +686,7 @@ describe('resonance undo snapshots', () => {
       for (const arrow of bondToBondArrows) {
         const sourceBond = mol.bonds.get(arrow.from.bondId);
         const targetBond = mol.bonds.get(arrow.to.bondId);
-        assert.equal(
-          sharedBondEndpointCount(sourceBond, targetBond),
-          1,
-          `expected coronene state ${state} arrow ${arrow.from.bondId}->${arrow.to.bondId} to move to an adjacent bond`
-        );
+        assert.equal(sharedBondEndpointCount(sourceBond, targetBond), 1, `expected coronene state ${state} arrow ${arrow.from.bondId}->${arrow.to.bondId} to move to an adjacent bond`);
       }
     }
   });
@@ -685,7 +705,10 @@ describe('resonance undo snapshots', () => {
 
     const sectors = resonanceArrowOccupiedAnglesForAtom(mol, sourceAtom, toRenderPoint, lineModeArrowOptions(mol));
 
-    assert.ok(sectors.some(sector => angularDistance(sector.angle, expectedAngle) < 0.08 && sector.spread > 0.5), 'expected atom-to-bond resonance arrow to block the charged atom badge direction');
+    assert.ok(
+      sectors.some(sector => angularDistance(sector.angle, expectedAngle) < 0.08 && sector.spread > 0.5),
+      'expected atom-to-bond resonance arrow to block the charged atom badge direction'
+    );
   });
 
   it('moves charge badge placement away from an occupied resonance arrow sector', () => {
@@ -886,7 +909,11 @@ describe('resonance undo snapshots', () => {
       assert.equal(render2dCall.options.fitMaxScale, undefined);
       assert.equal(render2dCall.options.ignoreOverlayPadding, undefined);
       assert.ok(displayedMol.properties[RESONANCE_ELECTRON_FLOW_PROPERTY]?.arrows.length > 0);
-      assert.ok([...displayedMol.properties[RESONANCE_ELECTRON_FLOW_PROPERTY].arrows.flatMap(arrow => [arrow.from, arrow.to])].every(endpoint => !String(endpoint.atomId ?? endpoint.bondId ?? '').startsWith('__resonance_product__:')));
+      assert.ok(
+        [...displayedMol.properties[RESONANCE_ELECTRON_FLOW_PROPERTY].arrows.flatMap(arrow => [arrow.from, arrow.to])].every(
+          endpoint => !String(endpoint.atomId ?? endpoint.bondId ?? '').startsWith('__resonance_product__:')
+        )
+      );
 
       let row = resonanceBody.children[0];
       let nav = row.children[0].children.find(child => child.className === 'reaction-nav');
@@ -1090,10 +1117,7 @@ describe('resonance undo snapshots', () => {
       resonanceBody.children[0].dispatchEvent(mockEvent('click'));
 
       const prefix = '__resonance_product__:';
-      const expectedKeys = [
-        ringAtomKey(ringAtomIds),
-        ringAtomKey(ringAtomIds.map(atomId => `${prefix}${atomId}`))
-      ].sort();
+      const expectedKeys = [ringAtomKey(ringAtomIds), ringAtomKey(ringAtomIds.map(atomId => `${prefix}${atomId}`))].sort();
       const fills = displayedMol.getRingFills();
       assert.equal(displayedMol.__reactionPreview?.resonancePair, true);
       assert.deepEqual(ringFillKeys(displayedMol), expectedKeys);
@@ -1158,10 +1182,7 @@ describe('resonance undo snapshots', () => {
       resonanceBody.children[0].dispatchEvent(mockEvent('click'));
 
       const prefix = '__resonance_product__:';
-      const expectedKeys = [
-        ringAtomKey(ringAtomIds),
-        ringAtomKey(ringAtomIds.map(atomId => `${prefix}${atomId}`))
-      ].sort();
+      const expectedKeys = [ringAtomKey(ringAtomIds), ringAtomKey(ringAtomIds.map(atomId => `${prefix}${atomId}`))].sort();
       const fills = updateForceCall.mol.getRingFills();
       assert.equal(displayedMol.__reactionPreview?.resonancePair, true);
       assert.equal(updateForceCall.mol.__reactionPreview?.resonancePair, true);

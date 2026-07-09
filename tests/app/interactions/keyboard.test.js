@@ -141,12 +141,7 @@ describe('initKeyboardInteractions', () => {
     });
 
     assert.equal(getSelectionModifierActive(), false);
-    assert.deepEqual(records, [
-      ['setSelectionModifierActive', true],
-      ['refreshSelectionOverlay'],
-      ['setSelectionModifierActive', false],
-      ['refreshSelectionOverlay']
-    ]);
+    assert.deepEqual(records, [['setSelectionModifierActive', true], ['refreshSelectionOverlay'], ['setSelectionModifierActive', false], ['refreshSelectionOverlay']]);
   });
 
   it('routes cmd-z to app undo even when an input is focused', () => {
@@ -384,10 +379,7 @@ describe('initKeyboardInteractions', () => {
       }
     });
 
-    assert.deepEqual(records, [
-      ['clearPrimitiveHover'],
-      ['deleteTargets', ['a1'], [], { transient: true }]
-    ]);
+    assert.deepEqual(records, [['clearPrimitiveHover'], ['deleteTargets', ['a1'], [], { transient: true }]]);
     assert.equal(hoveredAtomIds.size, 0);
     assert.equal(prevented, true);
   });
@@ -469,10 +461,7 @@ describe('initKeyboardInteractions', () => {
       }
     });
 
-    assert.deepEqual(records, [
-      ['clearPrimitiveHover'],
-      ['deleteTargets', [], ['b1'], { transient: true }]
-    ]);
+    assert.deepEqual(records, [['clearPrimitiveHover'], ['deleteTargets', [], ['b1'], { transient: true }]]);
     assert.equal(hoveredBondIds.size, 0);
     assert.equal(prevented, true);
   });

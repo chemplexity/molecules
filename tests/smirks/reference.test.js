@@ -329,7 +329,8 @@ describe('reactionTemplates — example applications', () => {
     const reactant = parseSMILES('C[C@H](CC)O');
     const alcoholCarbon = [...reactant.atoms.values()].find(atom => atom.getChirality());
     assert.ok(alcoholCarbon, 'expected chiral alcohol center');
-    const displayedBonds = alcoholCarbon.getNeighbors(reactant)
+    const displayedBonds = alcoholCarbon
+      .getNeighbors(reactant)
       .filter(neighbor => neighbor.name === 'C')
       .map(neighbor => reactant.getBond(alcoholCarbon.id, neighbor.id))
       .filter(Boolean);

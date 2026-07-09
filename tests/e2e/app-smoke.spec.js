@@ -73,10 +73,7 @@ test('blank-space ring preview matches the committed compact bond length', async
       { x: Number(line.getAttribute('x1')), y: Number(line.getAttribute('y1')) },
       { x: Number(line.getAttribute('x2')), y: Number(line.getAttribute('y2')) }
     ]);
-    const center = endpoints.reduce(
-      (sum, point) => ({ x: sum.x + point.x / endpoints.length, y: sum.y + point.y / endpoints.length }),
-      { x: 0, y: 0 }
-    );
+    const center = endpoints.reduce((sum, point) => ({ x: sum.x + point.x / endpoints.length, y: sum.y + point.y / endpoints.length }), { x: 0, y: 0 });
     const lengths = lines.map(line => {
       const x1 = Number(line.getAttribute('x1'));
       const y1 = Number(line.getAttribute('y1'));
@@ -617,16 +614,7 @@ test('dragging a blank-space ring preview over an atom keeps the original free p
   await page.locator('#ring-template-btn').click();
 
   const points = await page.evaluate(() => {
-    const blockedSelector = [
-      '.atom-hit',
-      '.bond-hit',
-      '.node',
-      '.bond-hover-target',
-      '.ring-template-atom-hover-target',
-      '.ring-template-bond-hover-target',
-      '.link',
-      '.separator'
-    ].join(', ');
+    const blockedSelector = ['.atom-hit', '.bond-hit', '.node', '.bond-hover-target', '.ring-template-atom-hover-target', '.ring-template-bond-hover-target', '.link', '.separator'].join(', ');
     const svg = document.querySelector('.svg-plot');
     const svgBox = svg.getBoundingClientRect();
     const atomHit = document.querySelector('g[data-atom-id="C1"] .atom-hit');
@@ -701,8 +689,7 @@ test('first 2d to force switch preserves the visible molecule center after settl
   await page.waitForTimeout(600);
 
   const centerForce = await page.evaluate(() => {
-    const nodes = [...document.querySelectorAll('circle.node')]
-      .filter(node => Number(node.getAttribute('r')) >= 7);
+    const nodes = [...document.querySelectorAll('circle.node')].filter(node => Number(node.getAttribute('r')) >= 7);
     const rects = nodes.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
     return {
       x: rects.reduce((sum, rect) => sum + rect.left + rect.width / 2, 0) / rects.length,
@@ -816,16 +803,7 @@ async function ensure2dMode(page) {
 
 async function blankSvgPoint(page) {
   return await page.evaluate(() => {
-    const blockedSelector = [
-      '.atom-hit',
-      '.bond-hit',
-      '.node',
-      '.bond-hover-target',
-      '.ring-template-atom-hover-target',
-      '.ring-template-bond-hover-target',
-      '.link',
-      '.separator'
-    ].join(', ');
+    const blockedSelector = ['.atom-hit', '.bond-hit', '.node', '.bond-hover-target', '.ring-template-atom-hover-target', '.ring-template-bond-hover-target', '.link', '.separator'].join(', ');
     const svg = document.querySelector('.svg-plot');
     if (!svg) {
       throw new Error('Missing SVG plot');
@@ -1943,8 +1921,7 @@ async function rootScale(page) {
 
 async function forceHeavyNodeScreenWidth(page) {
   return await page.evaluate(() => {
-    const nodes = [...document.querySelectorAll('circle.node')]
-      .filter(node => Number(node.getAttribute('r')) >= 7);
+    const nodes = [...document.querySelectorAll('circle.node')].filter(node => Number(node.getAttribute('r')) >= 7);
     const rects = nodes.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
     if (!rects.length) {
       return 0;
@@ -6333,11 +6310,7 @@ test('changing a charge from force resonance mode refits the unlocked molecule',
   await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
   await expect.poll(async () => await page.locator('circle.node').count()).toBeLessThan(resonanceNodeCount);
   await expect
-    .poll(async () =>
-      await page.evaluate(() =>
-        Array.from(document.querySelectorAll('circle.node')).every(circle => !String(circle.__data__?.id ?? '').startsWith('__resonance_product__:'))
-      )
-    )
+    .poll(async () => await page.evaluate(() => Array.from(document.querySelectorAll('circle.node')).every(circle => !String(circle.__data__?.id ?? '').startsWith('__resonance_product__:'))))
     .toBe(true);
   await expect.poll(async () => rootTransform(page)).not.toBe(resonanceTransform);
   await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
@@ -6401,24 +6374,17 @@ test('erasing a source atom from force resonance mode refits the unlocked molecu
   await expect(resonanceRow).not.toHaveClass(/resonance-active/);
   await expect(page.locator('g.resonance-electron-flow-layer')).toHaveCount(0);
   await expect
-    .poll(async () =>
-      await page.evaluate(() =>
-        Array.from(document.querySelectorAll('circle.node')).every(circle => {
-          const node = circle.__data__ ?? {};
-          return (
-            !String(node.id ?? '').startsWith('__resonance_product__:') &&
-            Number.isFinite(node.x) &&
-            Number.isFinite(node.y) &&
-            Math.abs(node.x) < 1000 &&
-            Math.abs(node.y) < 1000
-          );
-        })
-      )
+    .poll(
+      async () =>
+        await page.evaluate(() =>
+          Array.from(document.querySelectorAll('circle.node')).every(circle => {
+            const node = circle.__data__ ?? {};
+            return !String(node.id ?? '').startsWith('__resonance_product__:') && Number.isFinite(node.x) && Number.isFinite(node.y) && Math.abs(node.x) < 1000 && Math.abs(node.y) < 1000;
+          })
+        )
     )
     .toBe(true);
-  await expect
-    .poll(async () => await page.evaluate(() => Array.from(document.querySelectorAll('circle.node')).every(circle => circle.__data__?.name !== 'O')))
-    .toBe(true);
+  await expect.poll(async () => await page.evaluate(() => Array.from(document.querySelectorAll('circle.node')).every(circle => circle.__data__?.name !== 'O'))).toBe(true);
   await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
 });
 
@@ -7342,11 +7308,7 @@ test('force dash drags from a stereochemical hydrogen target the rendered hydrog
   await page.mouse.move(points.C10.x, points.C10.y, { steps: 10 });
   await page.mouse.up();
 
-  await expect
-    .poll(async () =>
-      page.evaluate(() => Array.from(document.querySelectorAll('g.force-stereo-bonds line')).some(line => line.getAttribute('data-bond-id') === '13'))
-    )
-    .toBe(true);
+  await expect.poll(async () => page.evaluate(() => Array.from(document.querySelectorAll('g.force-stereo-bonds line')).some(line => line.getAttribute('data-bond-id') === '13'))).toBe(true);
   expect(await page.evaluate(() => window._getMolSmiles?.() ?? null)).toContain('@');
 
   await page.locator('#undo-btn').click();

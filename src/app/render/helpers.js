@@ -1,7 +1,7 @@
 /** @module app/render/helpers */
 
 import { atomColor as baseAtomColor, kekulize } from '../../layout/mol2d-helpers.js';
-import { styleColor, styleOpacity } from '../../core/style.js';
+import { styleColor, styleOpacity } from '../../core/support/style.js';
 
 // ---------------------------------------------------------------------------
 // Bond rendering constants

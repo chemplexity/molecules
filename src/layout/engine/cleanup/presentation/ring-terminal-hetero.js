@@ -597,9 +597,7 @@ function exactTrigonalLeafTargetAngleFromFixedAngles(fixedAngles) {
 
   const candidates = [fixedAngles[0] + (2 * Math.PI) / 3, fixedAngles[0] - (2 * Math.PI) / 3];
   candidates.sort(
-    (firstAngle, secondAngle) =>
-      Math.abs(angularDifference(firstAngle, fixedAngles[1]) - (2 * Math.PI) / 3) -
-      Math.abs(angularDifference(secondAngle, fixedAngles[1]) - (2 * Math.PI) / 3)
+    (firstAngle, secondAngle) => Math.abs(angularDifference(firstAngle, fixedAngles[1]) - (2 * Math.PI) / 3) - Math.abs(angularDifference(secondAngle, fixedAngles[1]) - (2 * Math.PI) / 3)
   );
   return wrapAngle(candidates[0]);
 }
@@ -1719,8 +1717,7 @@ function compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, 
         bondValidationClasses: options.bondValidationClasses
       });
       const auditAccepted =
-        candidateAudit.ok === true ||
-        (options.acceptNonRegressingAudit === true && terminalMultipleBondLeafFanAuditDoesNotRegress(candidateAudit, options.incumbentAudit, bondLength));
+        candidateAudit.ok === true || (options.acceptNonRegressingAudit === true && terminalMultipleBondLeafFanAuditDoesNotRegress(candidateAudit, options.incumbentAudit, bondLength));
       if (!auditAccepted) {
         continue;
       }

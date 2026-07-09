@@ -1,9 +1,9 @@
-/** @module core/molecule-fragment */
+/** @module core/support/molecule-fragment */
 
-import { Molecule } from './Molecule.js';
-import { getImplicitHydrogenChargeAdjustment } from './Atom.js';
-import elements from '../data/elements.js';
-import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../layout/engine/stereo/wedge-geometry.js';
+import { Molecule } from '../Molecule.js';
+import { getImplicitHydrogenChargeAdjustment } from '../Atom.js';
+import elements from '../../data/elements.js';
+import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 
 const HYDROGEN_FRAGMENT_PROPERTIES = Object.freeze({
   ...elements.H,
@@ -404,45 +404,52 @@ export function createMoleculeFragment(mol, options = {}) {
   const forceAtomPositions = options.forceAtomPositions instanceof Map ? options.forceAtomPositions : null;
   const forceCenter = computePositionCenter(atomIds, forceAtomPositions, visibleAtomIds);
   const hydrogenCaps = createCarbonHydrogenCaps(mol, atomIds, bondIds, options.includeAttachedHiddenHydrogens !== false);
-  const atoms = [...atomIds].map(id => {
-    const atom = mol.atoms.get(id);
-    const atomPoint = pointForAtom(atom, atomPositions);
-    const forcePoint = forceAtomPositions?.get(atom.id) ?? null;
-    const atomX = finiteNumber(atomPoint?.x);
-    const atomY = finiteNumber(atomPoint?.y);
-    const atomZ = finiteNumber(atom.z);
-    const forceX = finiteNumber(forcePoint?.x);
-    const forceY = finiteNumber(forcePoint?.y);
-    return {
-      id: atom.id,
-      name: atom.name,
-      properties: clonePlain(atom.properties) ?? {},
-      tags: [...(atom.tags ?? [])],
-      visible: visibleAtomIds.has(atom.id),
-      x: atomX,
-      y: atomY,
-      z: atomZ,
-      dx: atomX != null ? atomX - center.x : 0,
-      dy: atomY != null ? atomY - center.y : 0,
-      dz: atomZ != null ? atomZ - center.z : 0,
-      forceDx: forceCenter && forceX != null ? forceX - forceCenter.x : null,
-      forceDy: forceCenter && forceY != null ? forceY - forceCenter.y : null
-    };
-  }).concat(hydrogenCaps.atoms);
+  const atoms = [...atomIds]
+    .map(id => {
+      const atom = mol.atoms.get(id);
+      const atomPoint = pointForAtom(atom, atomPositions);
+      const forcePoint = forceAtomPositions?.get(atom.id) ?? null;
+      const atomX = finiteNumber(atomPoint?.x);
+      const atomY = finiteNumber(atomPoint?.y);
+      const atomZ = finiteNumber(atom.z);
+      const forceX = finiteNumber(forcePoint?.x);
+      const forceY = finiteNumber(forcePoint?.y);
+      return {
+        id: atom.id,
+        name: atom.name,
+        properties: clonePlain(atom.properties) ?? {},
+        tags: [...(atom.tags ?? [])],
+        visible: visibleAtomIds.has(atom.id),
+        x: atomX,
+        y: atomY,
+        z: atomZ,
+        dx: atomX != null ? atomX - center.x : 0,
+        dy: atomY != null ? atomY - center.y : 0,
+        dz: atomZ != null ? atomZ - center.z : 0,
+        forceDx: forceCenter && forceX != null ? forceX - forceCenter.x : null,
+        forceDy: forceCenter && forceY != null ? forceY - forceCenter.y : null
+      };
+    })
+    .concat(hydrogenCaps.atoms);
 
-  const bonds = [...bondIds].map(id => {
-    const bond = mol.bonds.get(id);
-    return {
-      id: bond.id,
-      atoms: [...bond.atoms],
-      properties: clonePlain(bond.properties) ?? {},
-      tags: [...(bond.tags ?? [])]
-    };
-  }).concat(hydrogenCaps.bonds);
+  const bonds = [...bondIds]
+    .map(id => {
+      const bond = mol.bonds.get(id);
+      return {
+        id: bond.id,
+        atoms: [...bond.atoms],
+        properties: clonePlain(bond.properties) ?? {},
+        tags: [...(bond.tags ?? [])]
+      };
+    })
+    .concat(hydrogenCaps.bonds);
 
   const ringFills =
     typeof mol.getRingFills === 'function'
-      ? mol.getRingFills().filter(fill => (fill.atomIds ?? []).every(atomId => atomIds.has(atomId))).map(fill => ({ ...fill, atomIds: [...fill.atomIds] }))
+      ? mol
+          .getRingFills()
+          .filter(fill => (fill.atomIds ?? []).every(atomId => atomIds.has(atomId)))
+          .map(fill => ({ ...fill, atomIds: [...fill.atomIds] }))
       : [];
 
   return {

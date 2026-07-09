@@ -1240,7 +1240,7 @@ export function runRingTerminalRootExactClearance(layoutGraph, inputCoords, opti
       bondLength,
       bondValidationClasses: options.bondValidationClasses
     });
-    let exactReliefCoords = null;
+    let exactReliefCoords;
     if (exactAudit.ok === true && auditPenalty(exactAudit) <= auditPenalty(baseAudit)) {
       exactReliefCoords = exactCoords;
     } else {

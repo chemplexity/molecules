@@ -72,10 +72,7 @@ describe('createRenderRuntime', () => {
     runtime.draw2d();
     runtime.render2d(mol, { preserveGeometry: true });
 
-    assert.deepEqual(calls, [
-      ['draw2d'],
-      ['render2d', mol, { preserveGeometry: true }]
-    ]);
+    assert.deepEqual(calls, [['draw2d'], ['render2d', mol, { preserveGeometry: true }]]);
   });
 
   it('routes 2D renders through the shared policy layer', () => {
@@ -188,17 +185,20 @@ describe('createRenderRuntime', () => {
       forceIgnoreOverlayPadding: true
     });
 
-    assert.deepEqual(force.calls.find(call => call[0] === 'updateForce'), [
-      'updateForce',
-      molForce,
-      {
-        preserveView: false,
-        anchorLayout: null,
-        fitPad: 4,
-        fitScaleMultiplier: 4,
-        ignoreOverlayPadding: true
-      }
-    ]);
+    assert.deepEqual(
+      force.calls.find(call => call[0] === 'updateForce'),
+      [
+        'updateForce',
+        molForce,
+        {
+          preserveView: false,
+          anchorLayout: null,
+          fitPad: 4,
+          fitScaleMultiplier: 4,
+          ignoreOverlayPadding: true
+        }
+      ]
+    );
   });
 
   it('passes initial force coordinate patches through the shared policy layer', () => {

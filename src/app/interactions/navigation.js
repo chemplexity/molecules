@@ -353,12 +353,7 @@ function reanchorStereoTerminalsToCenters(molecule, referenceCoords) {
       if (neighbor.name === 'H') {
         neighbor.x = center.x;
         neighbor.y = center.y;
-      } else if (
-        neighbor.visible !== false &&
-        !neighbor.isInRing(molecule) &&
-        visibleHeavyNeighborCount(neighbor, molecule, centerId) === 0 &&
-        centerReference
-      ) {
+      } else if (neighbor.visible !== false && !neighbor.isInRing(molecule) && visibleHeavyNeighborCount(neighbor, molecule, centerId) === 0 && centerReference) {
         const neighborReference = referenceCoords.get(neighbor.id);
         if (!neighborReference) {
           continue;
@@ -682,8 +677,7 @@ function repairCleanMultiRingSubstituentExits(molecule, referenceCoords) {
       }
       const referenceAnchor = referenceCoords?.get?.(anchorAtomId);
       const referenceRoot = referenceCoords?.get?.(rootAtomId);
-      const referenceAngle =
-        referenceAnchor && referenceRoot ? Math.atan2(referenceRoot.y - referenceAnchor.y, referenceRoot.x - referenceAnchor.x) : currentAngle;
+      const referenceAngle = referenceAnchor && referenceRoot ? Math.atan2(referenceRoot.y - referenceAnchor.y, referenceRoot.x - referenceAnchor.x) : currentAngle;
       const rootRadius = Math.hypot(root.x - anchor.x, root.y - anchor.y);
       if (!(rootRadius > 0)) {
         continue;
@@ -947,11 +941,7 @@ function snapCleanRingsToRegularGeometry(molecule, { bondLength = DEFAULT_LAYOUT
       moveSquared += move * move;
     }
     const rmsMove = Math.sqrt(moveSquared / ring.length);
-    if (
-      maxMove < CLEAN_RING_SNAP_MIN_MOVE ||
-      maxMove > bondLength * CLEAN_RING_SNAP_MAX_DISPLACEMENT_RATIO ||
-      rmsMove > bondLength * CLEAN_RING_SNAP_RMS_DISPLACEMENT_RATIO
-    ) {
+    if (maxMove < CLEAN_RING_SNAP_MIN_MOVE || maxMove > bondLength * CLEAN_RING_SNAP_MAX_DISPLACEMENT_RATIO || rmsMove > bondLength * CLEAN_RING_SNAP_RMS_DISPLACEMENT_RATIO) {
       continue;
     }
 
@@ -1042,11 +1032,13 @@ function lineRotateFitTransform(context, bbox) {
   const exactFitScale = Math.min(fitWidth / molSVGW, fitHeight / molSVGH, ROTATE_FIT_MAX_SCALE);
   const scaleMultiplier = context.force?.initialZoomMultiplier ?? ROTATE_FIT_ZOOM_MULTIPLIER;
   const scale = exactFitScale < 1 ? exactFitScale : Math.min(scaleMultiplier, exactFitScale, ROTATE_FIT_MAX_SCALE);
-  return context.view.makeZoomIdentity?.(width / 2 - (width / 2) * scale, height / 2 - (height / 2) * scale, scale) ?? {
-    x: width / 2 - (width / 2) * scale,
-    y: height / 2 - (height / 2) * scale,
-    k: scale
-  };
+  return (
+    context.view.makeZoomIdentity?.(width / 2 - (width / 2) * scale, height / 2 - (height / 2) * scale, scale) ?? {
+      x: width / 2 - (width / 2) * scale,
+      y: height / 2 - (height / 2) * scale,
+      k: scale
+    }
+  );
 }
 
 function pointOutsidePlot(context, point, pad = 0) {
@@ -1288,9 +1280,7 @@ export function createNavigationActions(context) {
   }
 
   function rendered2dCenterForAtoms(atoms) {
-    const points = atoms
-      .map(atom => rendered2dPointForAtom(atom))
-      .filter(point => finiteNumber(point?.x) != null && finiteNumber(point?.y) != null);
+    const points = atoms.map(atom => rendered2dPointForAtom(atom)).filter(point => finiteNumber(point?.x) != null && finiteNumber(point?.y) != null);
     if (!points.length) {
       return null;
     }
@@ -1527,7 +1517,7 @@ export function createNavigationActions(context) {
     if (linePixelsPerUnit == null) {
       return FORCE_LAYOUT_DEFAULT_ZOOM_MULTIPLIER;
     }
-    return linePixelsPerUnit * DEFAULT_LAYOUT_BOND_LENGTH / FORCE_LAYOUT_BOND_LENGTH;
+    return (linePixelsPerUnit * DEFAULT_LAYOUT_BOND_LENGTH) / FORCE_LAYOUT_BOND_LENGTH;
   }
 
   function stopRotate() {
@@ -1619,9 +1609,7 @@ export function createNavigationActions(context) {
     const relayoutMol = mol.clone();
     preserveReactionPreviewMetadata(mol, relayoutMol);
     const bondLength = currentLayoutBondLength();
-    const shouldFreshCleanDisconnectedComponents =
-      !relayoutMol.__reactionPreview && hasDisconnectedVisibleHeavyComponents(relayoutMol) && typeof context.helpers?.generate2dCoords === 'function';
-    let cleanReferenceCoords = new Map();
+    const shouldFreshCleanDisconnectedComponents = !relayoutMol.__reactionPreview && hasDisconnectedVisibleHeavyComponents(relayoutMol) && typeof context.helpers?.generate2dCoords === 'function';
     if (shouldFreshCleanDisconnectedComponents) {
       seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
       const componentCenters = captureVisibleHeavyComponentCenters(relayoutMol);
@@ -1638,7 +1626,7 @@ export function createNavigationActions(context) {
       restoreComponentCenters(relayoutMol, componentCenters);
     } else {
       seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), bondLength);
-      cleanReferenceCoords = captureFiniteAtomCoords(relayoutMol);
+      const cleanReferenceCoords = captureFiniteAtomCoords(relayoutMol);
       normalizeCoordsToBondLength(relayoutMol, bondLength);
       const ringSnapHints = snapCleanRingsToRegularGeometry(relayoutMol, {
         bondLength
@@ -1760,7 +1748,7 @@ export function createNavigationActions(context) {
                 preserveAnalysis: true,
                 preserveReactionLayout: true
               }
-          : {})
+            : {})
       });
       applyEquivalentModeSwitchTransform({
         sourceTransform,
@@ -1802,7 +1790,7 @@ export function createNavigationActions(context) {
               refreshResonancePanel: false,
               preserveAnalysis: true
             }
-        : {}),
+          : {}),
       forceAnchorLayout: converted.lineAnchorCoords.size > 0 ? converted.lineAnchorCoords : null,
       forceInitialPatchPos: converted.coords.size > 0 ? converted.coords : null,
       preserveView: true,
@@ -1813,7 +1801,7 @@ export function createNavigationActions(context) {
       sourceTransform,
       sourcePixelsPerUnit: linePixelsPerUnit,
       targetCenterPoint: forcePointFromLinePoint(lineViewportPoint, converted),
-      targetPixelsPerUnit: converted.scale,
+      targetPixelsPerUnit: converted.scale
     });
     nudgeModeSwitchTransformToRenderedCenter(sourceRenderedCenter, nextMode, mol);
     if (hadReactionPreview) {

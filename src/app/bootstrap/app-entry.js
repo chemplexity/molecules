@@ -639,9 +639,7 @@ function _renderedGeometryRect(selector) {
   if (!plotRect) {
     return null;
   }
-  const geometry = [...(plotEl.querySelectorAll?.(selector) ?? [])]
-    .map(element => element?.getBoundingClientRect?.() ?? null)
-    .filter(rect => rect && (rect.width > 0 || rect.height > 0));
+  const geometry = [...(plotEl.querySelectorAll?.(selector) ?? [])].map(element => element?.getBoundingClientRect?.() ?? null).filter(rect => rect && (rect.width > 0 || rect.height > 0));
   if (geometry.length === 0) {
     return null;
   }

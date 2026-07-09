@@ -174,10 +174,7 @@ describe('createEditingActions', () => {
     assert.deepEqual([...selectedBondIds], []);
     assert.deepEqual([...hoveredAtomIds], []);
     assert.deepEqual([...hoveredBondIds], []);
-    assert.deepEqual(calls, [
-      ['prepareReactionPreviewEraseTargets', ['__resonance_product__:O3'], ['__resonance_product__:2']],
-      ['refreshSelectionOverlay']
-    ]);
+    assert.deepEqual(calls, [['prepareReactionPreviewEraseTargets', ['__resonance_product__:O3'], ['__resonance_product__:2']], ['refreshSelectionOverlay']]);
   });
 
   it('maps erase targets into selection and delegates to deleteSelection', () => {

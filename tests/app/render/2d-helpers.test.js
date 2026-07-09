@@ -355,10 +355,16 @@ describe('create2DRenderHelpers', () => {
     const { helpers, records } = makeHelpersContext({ mol });
 
     helpers.zoomToFitIf2d();
-    assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), false);
+    assert.equal(
+      records.some(([kind, name]) => kind === 'call' && name === 'transform'),
+      false
+    );
 
     helpers.zoomToFitIf2d({ force: true });
-    assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), true);
+    assert.equal(
+      records.some(([kind, name]) => kind === 'call' && name === 'transform'),
+      true
+    );
   });
 
   it('fits the 2D view when the rendered bounds are clipped even if atom centers are inside', () => {
@@ -368,7 +374,10 @@ describe('create2DRenderHelpers', () => {
     };
     const { helpers, records } = makeHelpersContext({ mol });
     helpers.zoomToFitIf2d({ pad: 0 });
-    assert.equal(records.some(([kind, name]) => kind === 'call' && name === 'transform'), false);
+    assert.equal(
+      records.some(([kind, name]) => kind === 'call' && name === 'transform'),
+      false
+    );
 
     const clippedRecords = [];
     const clippedHelpers = create2DRenderHelpers({
@@ -420,7 +429,10 @@ describe('create2DRenderHelpers', () => {
     });
 
     clippedHelpers.zoomToFitIf2d({ pad: 0 });
-    assert.equal(clippedRecords.some(([kind, name]) => kind === 'call' && name === 'transform'), true);
+    assert.equal(
+      clippedRecords.some(([kind, name]) => kind === 'call' && name === 'transform'),
+      true
+    );
   });
 
   it('renders wedge and double bonds through the extracted draw helper', () => {

@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { Atom, getImplicitHydrogenChargeAdjustment } from './Atom.js';
 import { Bond } from './Bond.js';
-import { normalizeRingAtomIds, normalizeRingFillStyle, ringAtomKey } from './style.js';
+import { normalizeRingAtomIds, normalizeRingFillStyle, ringAtomKey } from './support/style.js';
 import elements from '../data/elements.js';
 import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
 import { validateValence } from '../validation/index.js';

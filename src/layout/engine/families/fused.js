@@ -383,7 +383,6 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
     const candidateAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, orientedCoords, bondLength);
     if (isBetterFusedCageCandidate(candidateAudit, bestAudit)) {
       bestCoords = orientedCoords;
-      bestAudit = candidateAudit;
     }
   }
 

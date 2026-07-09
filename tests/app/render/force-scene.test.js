@@ -471,7 +471,10 @@ describe('createForceSceneRenderer', () => {
     records.length = 0;
     simulation.emit('tick');
 
-    assert.deepEqual(records.filter(entry => entry[0] === 'forceFitTransform' || entry[0] === 'zoomTransformsDiffer' || (entry[0] === 'call' && entry[1] === 'zoomTransform')), []);
+    assert.deepEqual(
+      records.filter(entry => entry[0] === 'forceFitTransform' || entry[0] === 'zoomTransformsDiffer' || (entry[0] === 'call' && entry[1] === 'zoomTransform')),
+      []
+    );
     assert.ok(records.some(entry => entry[0] === 'd3.zoomTransform'));
     assert.ok(records.some(entry => entry[0] === 'disableKeepInView'));
   });
@@ -504,11 +507,14 @@ describe('createForceSceneRenderer', () => {
     records.length = 0;
     simulation.emit('tick');
 
-    assert.deepEqual(records.filter(entry => entry[0] === 'forceFitTransform' || entry[0] === 'zoomTransformsDiffer' || (entry[0] === 'call' && entry[1] === 'zoomTransform')), [
-      ['forceFitTransform', ['a1', 'a2'], 40],
-      ['zoomTransformsDiffer', fitTransform, currentTransform],
-      ['call', 'zoomTransform', fitTransform]
-    ]);
+    assert.deepEqual(
+      records.filter(entry => entry[0] === 'forceFitTransform' || entry[0] === 'zoomTransformsDiffer' || (entry[0] === 'call' && entry[1] === 'zoomTransform')),
+      [
+        ['forceFitTransform', ['a1', 'a2'], 40],
+        ['zoomTransformsDiffer', fitTransform, currentTransform],
+        ['call', 'zoomTransform', fitTransform]
+      ]
+    );
   });
 
   it('resets to identity and syncs selection state on a fresh force render', () => {
@@ -602,16 +608,19 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(mol);
 
-    assert.deepEqual(records.find(entry => entry[0] === 'forceFitTransform'), [
-      'forceFitTransform',
-      40,
-      {
-        hydrogenRadiusScale: 0.75,
-        scaleMultiplier: 1.8,
-        ignoreOverlayPadding: false,
-        reactionLike: false
-      }
-    ]);
+    assert.deepEqual(
+      records.find(entry => entry[0] === 'forceFitTransform'),
+      [
+        'forceFitTransform',
+        40,
+        {
+          hydrogenRadiusScale: 0.75,
+          scaleMultiplier: 1.8,
+          ignoreOverlayPadding: false,
+          reactionLike: false
+        }
+      ]
+    );
   });
 
   it('uses the compact preview multiplier for fresh force resonance-pair renders', () => {
@@ -635,16 +644,19 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(mol);
 
-    assert.deepEqual(records.find(entry => entry[0] === 'forceFitTransform'), [
-      'forceFitTransform',
-      40,
-      {
-        hydrogenRadiusScale: 0.75,
-        scaleMultiplier: 0.9,
-        ignoreOverlayPadding: false,
-        reactionLike: true
-      }
-    ]);
+    assert.deepEqual(
+      records.find(entry => entry[0] === 'forceFitTransform'),
+      [
+        'forceFitTransform',
+        40,
+        {
+          hydrogenRadiusScale: 0.75,
+          scaleMultiplier: 0.9,
+          ignoreOverlayPadding: false,
+          reactionLike: true
+        }
+      ]
+    );
   });
 
   it('keeps preserved-position force updates from running the initial settle pass', () => {
@@ -652,8 +664,14 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce({ id: 'mol-preserve', atoms: new Map(), bonds: new Map() }, { preservePositions: true });
 
-    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
-    assert.equal(records.some(entry => entry[0] === 'reseatForceGraphHydrogens'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.tick'),
+      false
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'reseatForceGraphHydrogens'),
+      false
+    );
     assert.ok(records.some(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.005));
   });
 
@@ -672,9 +690,7 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(molecule, { preserveView: true });
 
-    const atomSymbolClassRecord = records.find(
-      entry => entry[0] === 'attr' && entry[1] === 'class' && Array.isArray(entry[2]) && entry[2].some(value => value.startsWith('atom-symbol'))
-    );
+    const atomSymbolClassRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'class' && Array.isArray(entry[2]) && entry[2].some(value => value.startsWith('atom-symbol')));
     assert.deepEqual(atomSymbolClassRecord?.[2], ['atom-symbol force-auto-label', 'atom-symbol']);
   });
 
@@ -693,13 +709,7 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(molecule, { preserveView: true });
 
-    const forceAtomStrokeRecord = records.find(
-      entry =>
-        entry[0] === 'attr' &&
-        entry[1] === 'stroke' &&
-        Array.isArray(entry[2]) &&
-        entry[2].includes('rgba(184, 224, 46, 0.62)')
-    );
+    const forceAtomStrokeRecord = records.find(entry => entry[0] === 'attr' && entry[1] === 'stroke' && Array.isArray(entry[2]) && entry[2].includes('rgba(184, 224, 46, 0.62)'));
     assert.deepEqual(forceAtomStrokeRecord?.[2], ['rgba(184, 224, 46, 0.62)', 'rgba(0,0,0,0.25)']);
   });
 
@@ -724,7 +734,10 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(molecule, { preservePositions: true });
 
-    assert.equal(records.some(entry => entry[0] === 'generate2dCoords'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'generate2dCoords'),
+      false
+    );
   });
 
   it('does not reseed chiral reaction-preview stereo when display stereo already exists', () => {
@@ -748,7 +761,10 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(molecule, { preservePositions: true });
 
-    assert.equal(records.some(entry => entry[0] === 'generate2dCoords'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'generate2dCoords'),
+      false
+    );
     assert.equal(stereoBond.properties.display?.as, 'dash');
   });
 
@@ -802,9 +818,18 @@ describe('createForceSceneRenderer', () => {
     const textClassIndex = records.findIndex(entry => entry[0] === 'attr' && entry[1] === 'class' && entry[2] === 'charge-label-text');
     assert.ok(ringClassIndex >= 0, 'expected force charge badge ring');
     assert.ok(textClassIndex >= 0, 'expected force charge badge text');
-    assert.deepEqual(records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'), ['attr', 'stroke', '#111111']);
-    assert.deepEqual(records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'), ['attr', 'fill', '#111111']);
-    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && Array.isArray(entry[2]) && entry[2].includes('#3366ff')), true);
+    assert.deepEqual(
+      records.find((entry, index) => index > ringClassIndex && entry[0] === 'attr' && entry[1] === 'stroke'),
+      ['attr', 'stroke', '#111111']
+    );
+    assert.deepEqual(
+      records.find((entry, index) => index > textClassIndex && entry[0] === 'attr' && entry[1] === 'fill'),
+      ['attr', 'fill', '#111111']
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && Array.isArray(entry[2]) && entry[2].includes('#3366ff')),
+      true
+    );
   });
 
   it('renders force ring fills behind force bonds', () => {
@@ -844,8 +869,14 @@ describe('createForceSceneRenderer', () => {
     assert.ok(fillClassIndex < bondClassIndex);
     assert.ok(fillRuleRecord);
     assert.equal(ringFillIdRecord?.[2]?.[0], 'ring-fill:C1|C2|C3|C4|C5|C6');
-    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2]?.[0] === '#ffe66d'), true);
-    assert.equal(records.some(entry => entry[0] === 'attr' && entry[1] === 'fill-opacity' && entry[2]?.[0] === 0.3), true);
+    assert.equal(
+      records.some(entry => entry[0] === 'attr' && entry[1] === 'fill' && entry[2]?.[0] === '#ffe66d'),
+      true
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'attr' && entry[1] === 'fill-opacity' && entry[2]?.[0] === 0.3),
+      true
+    );
     assert.equal(pathRecord[2][0], 'M 10,0 L 20,10 L 20,20 L 10,30 L 0,20 L 0,10 Z');
   });
 
@@ -926,8 +957,14 @@ describe('createForceSceneRenderer', () => {
       }
     );
 
-    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
-    assert.equal(records.some(entry => entry[0] === 'reseatForceGraphHydrogens'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.tick'),
+      false
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'reseatForceGraphHydrogens'),
+      false
+    );
     assert.ok(records.some(entry => entry[0] === 'simulation.alpha.set' && entry[1] === 0.005));
   });
 
@@ -942,8 +979,14 @@ describe('createForceSceneRenderer', () => {
       }
     );
 
-    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
-    assert.equal(records.some(entry => entry[0] === 'simulation.restart'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.tick'),
+      false
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.restart'),
+      false
+    );
     assert.ok(records.some(entry => entry[0] === 'simulation.stop'));
   });
 
@@ -976,8 +1019,14 @@ describe('createForceSceneRenderer', () => {
 
     renderer.updateForce(molecule);
 
-    assert.equal(records.some(entry => entry[0] === 'simulation.tick'), false);
-    assert.equal(records.some(entry => entry[0] === 'simulation.restart'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.tick'),
+      false
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.restart'),
+      false
+    );
     assert.ok(records.some(entry => entry[0] === 'simulation.stop'));
   });
 
@@ -993,8 +1042,14 @@ describe('createForceSceneRenderer', () => {
       }
     );
 
-    assert.equal(records.some(entry => entry[0] === 'simulation.restart'), false);
-    assert.equal(records.some(entry => entry[0] === 'simulation.alpha.set'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.restart'),
+      false
+    );
+    assert.equal(
+      records.some(entry => entry[0] === 'simulation.alpha.set'),
+      false
+    );
   });
 
   it('honors a provided force anchor layout instead of regenerating one', () => {

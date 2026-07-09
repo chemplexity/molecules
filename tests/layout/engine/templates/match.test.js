@@ -461,10 +461,7 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'formyl-acetal-cyclobutane-core');
 
     const withoutCyclobutaneAlkylGraph = createLayoutGraph(parseSMILES('C1C2CCC1C21COC(C)C(O1)C=O'), { suppressH: true });
-    const withoutCyclobutaneAlkylMatch = findTemplateMatch(
-      withoutCyclobutaneAlkylGraph,
-      buildRingCandidate(withoutCyclobutaneAlkylGraph, withoutCyclobutaneAlkylGraph.ringSystems[0], 'bridged')
-    );
+    const withoutCyclobutaneAlkylMatch = findTemplateMatch(withoutCyclobutaneAlkylGraph, buildRingCandidate(withoutCyclobutaneAlkylGraph, withoutCyclobutaneAlkylGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutCyclobutaneAlkylMatch?.id, 'formyl-acetal-cyclobutane-core');
 
     const withoutAcetalMethylGraph = createLayoutGraph(parseSMILES('CCC1C2CCC1C21COCC(O1)C=O'), { suppressH: true });

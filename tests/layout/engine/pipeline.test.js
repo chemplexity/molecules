@@ -59,8 +59,7 @@ const AMINO_ETHER_LONG_THETA_CAGE_SMILES = 'CCCCC1(N)CNC2CN(C)C1COCC2';
 const AROMATIC_CAPPED_FUSED_SQUARE_BRIDGE_SMILES = 'C1CC2C1C1CCNC2C2=C1N=CO2';
 const MACROCYCLE_PLACED_LARGE_PEPTIDE_ANGLE_SMILES =
   'CCCCC(NC(=O)[C@H](<CCC(=O)O>)NC(=O)[C@H](<CC(C)C>)NC(=O)[C@@H](<NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](Cc1cnc[nH]1)NC(=O)[C@@H](Cc2ccccc2)NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)O)NC(=O)C)[C@@H](C)O>)C(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](C)C(=O)N[C@@H](<CCC(=O)O>)C(=O)N[C@@H](<CCC(=O)N>)C(=O)NC(C)(CC(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](<CCC(=O)N>)C(=O)N[C@H]3CCC(=O)NCCCC[C@H](<NC(=O)[C@H](Cc4cnc[nH]4)NC(=O)[C@H](C)NC3=O>)C(=O)N[C@@H](<CC(=O)N>)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](<CC(C)C>)C(=O)N[C@@H](Cc5ccccc5)C(=O)N[C@@H](<CCC(=O)O>)C(=O)NC(C)(CC(C)C)C(=O)N[C@@H](<[C@@H](C)CC>)C(=O)N';
-const BRIDGED_FLAVONOID_LINEAR_CORNER_SMILES =
-  'O[C@H]1Cc2c(O)cc3O[C@@]4(Oc5cc(O)cc(O)c5[C@@H]([C@H]4O)c3c2O[C@@H]1c6ccc(O)cc6)c7ccc(O)c(O)c7';
+const BRIDGED_FLAVONOID_LINEAR_CORNER_SMILES = 'O[C@H]1Cc2c(O)cc3O[C@@]4(Oc5cc(O)cc(O)c5[C@@H]([C@H]4O)c3c2O[C@@H]1c6ccc(O)cc6)c7ccc(O)c(O)c7';
 
 /**
  * Returns the interior angles for an ordered ring path.
@@ -377,12 +376,14 @@ describe('layout/engine/pipeline smoke', () => {
     assert.equal(pointInPolygon(result.coords.get('N29'), pterinOuterSevenPolygon), true);
     assert.equal(pointInPolygon(result.coords.get('N25'), pterinOuterSevenPolygon), false);
     assert.equal(pointInPolygon(result.coords.get('C26'), pterinOuterSevenPolygon), false);
-    assert.ok(pterinOuterSevenAngles.every(angle => Math.abs(angle - 128.571) < 1), `expected folic-acid pterin outer contour to stay near seven-member angles, got ${pterinOuterSevenAngles.join(', ')}`);
+    assert.ok(
+      pterinOuterSevenAngles.every(angle => Math.abs(angle - 128.571) < 1),
+      `expected folic-acid pterin outer contour to stay near seven-member angles, got ${pterinOuterSevenAngles.join(', ')}`
+    );
   });
 
   it('keeps steroid terminal methyl leaves outside incident rings after final leaf retouch', () => {
-    const smiles =
-      '[H][C@@]12C[C@@]3([H])[C@]4([H])CCC5=CC(=O)C=C[C@]5(C)[C@@]4(F)[C@@H](O)C[C@]3(C)[C@@]1(OC1(CCCC1)O2)C(=O)COC(C)=O';
+    const smiles = '[H][C@@]12C[C@@]3([H])[C@]4([H])CCC5=CC(=O)C=C[C@]5(C)[C@@]4(F)[C@@H](O)C[C@]3(C)[C@@]1(OC1(CCCC1)O2)C(=O)COC(C)=O';
     const result = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       auditTelemetry: true,
@@ -4173,9 +4174,7 @@ stressDescribe('layout/engine/pipeline', () => {
   });
 
   it('keeps linked aminoglycoside ether bridges on consistent publication-style angles', () => {
-    const smiles = bugMolecules.find(candidate =>
-      candidate.startsWith('NC[C@@H]1O[C@H](<O[C@@H]2[C@@H](CO)O[C@@H](O[C@@H]3')
-    );
+    const smiles = bugMolecules.find(candidate => candidate.startsWith('NC[C@@H]1O[C@H](<O[C@@H]2[C@@H](CO)O[C@@H](O[C@@H]3'));
     assert.ok(smiles, 'expected linked aminoglycoside ether bridge regression molecule to be registered');
 
     const result = runPipeline(parseSMILES(smiles), {
@@ -6797,9 +6796,7 @@ stressDescribe('layout/engine/pipeline', () => {
 
   it('keeps aromatic peptide side-chain exits on their trigonal fan without creating carbonyl contacts', () => {
     const result = runPipeline(
-      parseSMILES(
-        'CNCC(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](<C(C)C>)C(=O)N[C@@H](<Cc1ccc(O)cc1>)C(=O)N[C@@H]2CSS[C@@H]3C[C@@H](<N(C3)C(=O)[C@@H](Cc4c[nH]cn4)NC2=O>)C(=O)N[C@@H](Cc5ccccc5)C(=O)O'
-      ),
+      parseSMILES('CNCC(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](<C(C)C>)C(=O)N[C@@H](<Cc1ccc(O)cc1>)C(=O)N[C@@H]2CSS[C@@H]3C[C@@H](<N(C3)C(=O)[C@@H](Cc4c[nH]cn4)NC2=O>)C(=O)N[C@@H](Cc5ccccc5)C(=O)O'),
       {
         suppressH: true
       }
@@ -6810,7 +6807,10 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
-    assert.ok(maxAngleDeviation([...c30ExitAngles, c30RingAngle], 120) < 1e-6, `expected C30 phenyl side-chain fan to stay trigonal, got ${[...c30ExitAngles, c30RingAngle].map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(
+      maxAngleDeviation([...c30ExitAngles, c30RingAngle], 120) < 1e-6,
+      `expected C30 phenyl side-chain fan to stay trigonal, got ${[...c30ExitAngles, c30RingAngle].map(angle => angle.toFixed(2)).join(', ')}`
+    );
   });
 
   it('uses balanced dense partitions for ring-decorated peptide chains to stay horizontal', () => {
@@ -7148,10 +7148,7 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(maxAngleDeviation(sidechainFanAngles, 120) < 30, `expected the protected peptide sidechain fan to stay readable, got ${sidechainFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(maxAngleDeviation(distalCarbonylFanAngles, 120) < 1e-6, `expected the distal amide fan to recover, got ${distalCarbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(maxAngleDeviation(terminalAcidFanAngles, 120) < 10, `expected the terminal acid fan to recover, got ${terminalAcidFanAngles.map(angle => angle.toFixed(2)).join(', ')}`);
-    assert.ok(
-      Math.abs(terminalAmideContinuationAngle - 120) < 15,
-      `expected the terminal peptide amide continuation to stay open, got ${terminalAmideContinuationAngle.toFixed(2)}`
-    );
+    assert.ok(Math.abs(terminalAmideContinuationAngle - 120) < 15, `expected the terminal peptide amide continuation to stay open, got ${terminalAmideContinuationAngle.toFixed(2)}`);
     assert.ok(terminalMultipleBondFanPenalty.maxDeviation < 0.1, `expected post-relief amide fan max penalty to stay bounded, got ${terminalMultipleBondFanPenalty.maxDeviation}`);
     assert.ok(terminalMultipleBondFanPenalty.totalDeviation < 0.2, `expected post-relief amide fan polish to stay bounded, got ${terminalMultipleBondFanPenalty.totalDeviation}`);
     assert.ok(
@@ -7886,10 +7883,7 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.fallback.mode, null);
     assert.ok(bugMolecules.includes(GLYCOPEPTIDE_DISTORTED_ARYL_MACROCYCLE_SMILES));
-    assert.ok(
-      aromaticRegularity.maxDeviation < 45,
-      `expected embedded aryl rings to avoid pinched corners, got ${aromaticRegularity.worstRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
-    );
+    assert.ok(aromaticRegularity.maxDeviation < 45, `expected embedded aryl rings to avoid pinched corners, got ${aromaticRegularity.worstRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     assert.ok(aromaticRegularity.totalDeviation < 600, `expected aggregate aryl ring distortion to stay bounded, got ${aromaticRegularity.totalDeviation.toFixed(2)}`);
     assert.ok(result.metadata.timing.totalMs < 15000, `expected crowded glycopeptide layout to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });

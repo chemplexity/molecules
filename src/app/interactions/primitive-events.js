@@ -46,20 +46,24 @@ export function createPrimitiveEventHandlers(context) {
 
   function getRingTemplateBondLength() {
     const layoutBondLength = getRenderOptions().layoutBondLength ?? 1.5;
-    return context.state.viewState.getMode() === 'force'
-      ? (context.constants?.forceBondLength ?? 30) * (layoutBondLength / 1.5)
-      : (context.constants?.scale ?? 40) * layoutBondLength;
+    return context.state.viewState.getMode() === 'force' ? (context.constants?.forceBondLength ?? 30) * (layoutBondLength / 1.5) : (context.constants?.scale ?? 40) * layoutBondLength;
   }
 
   function forcePreviewBondAnchorPoints(anchorA, anchorB) {
     if (context.state.viewState.getMode() !== 'force' || !isFinitePoint(anchorA) || !isFinitePoint(anchorB)) {
-      return [{ x: anchorA.x, y: anchorA.y }, { x: anchorB.x, y: anchorB.y }];
+      return [
+        { x: anchorA.x, y: anchorA.y },
+        { x: anchorB.x, y: anchorB.y }
+      ];
     }
     const dx = anchorB.x - anchorA.x;
     const dy = anchorB.y - anchorA.y;
     const length = Math.hypot(dx, dy);
     if (length <= GEOMETRY_EPSILON) {
-      return [{ x: anchorA.x, y: anchorA.y }, { x: anchorB.x, y: anchorB.y }];
+      return [
+        { x: anchorA.x, y: anchorA.y },
+        { x: anchorB.x, y: anchorB.y }
+      ];
     }
     const targetLength = getRingTemplateBondLength();
     const halfX = (dx / length) * targetLength * 0.5;
@@ -229,10 +233,7 @@ export function createPrimitiveEventHandlers(context) {
       if (!neighbor || neighbor.visible === false || neighbor.name === 'H') {
         continue;
       }
-      const point =
-        mode === 'force'
-          ? context.helpers?.getForceNodeById?.(neighbor.id)
-          : context.helpers?.toSelectionSVGPt2d?.(neighbor);
+      const point = mode === 'force' ? context.helpers?.getForceNodeById?.(neighbor.id) : context.helpers?.toSelectionSVGPt2d?.(neighbor);
       if (!isFinitePoint(point) || pointDistance(point, anchorPoint) <= GEOMETRY_EPSILON) {
         continue;
       }
@@ -395,14 +396,16 @@ export function createPrimitiveEventHandlers(context) {
       }
       const previousRingEdgeIndex = (index - 1 + ringAtomIds.length) % ringAtomIds.length;
       const hasRingDoubleBond = doubleBondIndices.has(previousRingEdgeIndex) || doubleBondIndices.has(index);
-      const hasExternalDoubleBond = atom && atomBondEntries(mol, atomId).some(bond => {
-        const otherAtomId = bond.getOtherAtom?.(atomId) ?? bond.atoms?.find?.(id => id !== atomId);
-        if (ringAtomIds.includes(otherAtomId)) {
-          return false;
-        }
-        const otherAtom = mol?.atoms?.get?.(otherAtomId);
-        return otherAtom?.name !== 'H' && localizedBondOrderForValence(bond) >= 2;
-      });
+      const hasExternalDoubleBond =
+        atom &&
+        atomBondEntries(mol, atomId).some(bond => {
+          const otherAtomId = bond.getOtherAtom?.(atomId) ?? bond.atoms?.find?.(id => id !== atomId);
+          if (ringAtomIds.includes(otherAtomId)) {
+            return false;
+          }
+          const otherAtom = mol?.atoms?.get?.(otherAtomId);
+          return otherAtom?.name !== 'H' && localizedBondOrderForValence(bond) >= 2;
+        });
       if (!hasRingDoubleBond && !hasExternalDoubleBond) {
         count++;
       }
@@ -562,9 +565,7 @@ export function createPrimitiveEventHandlers(context) {
   function getForceOccupiedRingPreviewPoints(anchorAtomIds = []) {
     const anchorIds = new Set(anchorAtomIds);
     const nodes = context.helpers?.getForceNodes?.() ?? [];
-    return nodes
-      .filter(node => !anchorIds.has(node.id) && node.name !== 'H' && node.visible !== false && isFinitePoint(node))
-      .map(node => ({ x: node.x, y: node.y }));
+    return nodes.filter(node => !anchorIds.has(node.id) && node.name !== 'H' && node.visible !== false && isFinitePoint(node)).map(node => ({ x: node.x, y: node.y }));
   }
 
   function getRingTemplateMolecule() {
@@ -603,11 +604,7 @@ export function createPrimitiveEventHandlers(context) {
     if (context.state.viewState.getMode() !== '2d' || atom?.name !== 'H') {
       return false;
     }
-    const bondIds = Array.isArray(atom?.bonds)
-      ? atom.bonds
-      : [...(molecule?.bonds?.values?.() ?? [])]
-          .filter(bond => bond?.atoms?.includes?.(atom.id))
-          .map(bond => bond.id);
+    const bondIds = Array.isArray(atom?.bonds) ? atom.bonds : [...(molecule?.bonds?.values?.() ?? [])].filter(bond => bond?.atoms?.includes?.(atom.id)).map(bond => bond.id);
     for (const bondId of bondIds) {
       const bond = molecule?.bonds?.get?.(bondId);
       if (!bond?.atoms?.includes?.(atom.id)) {
@@ -642,11 +639,7 @@ export function createPrimitiveEventHandlers(context) {
       return null;
     }
     const atom = molecule?.atoms?.get?.(atomNode.id) ?? atomNode;
-    const bondIds = Array.isArray(atom?.bonds)
-      ? atom.bonds
-      : [...(molecule?.bonds?.values?.() ?? [])]
-          .filter(bond => bond?.atoms?.includes?.(atomNode.id))
-          .map(bond => bond.id);
+    const bondIds = Array.isArray(atom?.bonds) ? atom.bonds : [...(molecule?.bonds?.values?.() ?? [])].filter(bond => bond?.atoms?.includes?.(atomNode.id)).map(bond => bond.id);
     for (const bondId of bondIds) {
       const bond = molecule?.bonds?.get?.(bondId);
       if (!bond?.atoms?.includes?.(atomNode.id)) {
@@ -686,11 +679,7 @@ export function createPrimitiveEventHandlers(context) {
       return null;
     }
     const atom = molecule?.atoms?.get?.(atomNode.id) ?? atomNode;
-    const bondIds = Array.isArray(atom?.bonds)
-      ? atom.bonds
-      : [...(molecule?.bonds?.values?.() ?? [])]
-          .filter(bond => bond?.atoms?.includes?.(atomNode.id))
-          .map(bond => bond.id);
+    const bondIds = Array.isArray(atom?.bonds) ? atom.bonds : [...(molecule?.bonds?.values?.() ?? [])].filter(bond => bond?.atoms?.includes?.(atomNode.id)).map(bond => bond.id);
     for (const bondId of bondIds) {
       const bond = molecule?.bonds?.get?.(bondId);
       const parentId = bond?.getOtherAtom?.(atomNode.id) ?? bond?.atoms?.find?.(id => id !== atomNode.id);
@@ -788,9 +777,7 @@ export function createPrimitiveEventHandlers(context) {
 
   function getRingTemplateViewportPoints() {
     if (context.state.viewState.getMode() === 'force') {
-      return (context.helpers?.getForceNodes?.() ?? [])
-        .filter(node => node?.id && node.visible !== false && isFinitePoint(node))
-        .map(node => ({ x: node.x, y: node.y }));
+      return (context.helpers?.getForceNodes?.() ?? []).filter(node => node?.id && node.visible !== false && isFinitePoint(node)).map(node => ({ x: node.x, y: node.y }));
     }
     const mol = context.state.documentState.getMol2d?.();
     if (!mol?.atoms?.values) {
@@ -938,7 +925,9 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     const cancel =
-      context.timers?.cancelAnimationFrame ?? globalThis.cancelAnimationFrame ?? (id => {
+      context.timers?.cancelAnimationFrame ??
+      globalThis.cancelAnimationFrame ??
+      (id => {
         clearTimeout(id);
       });
     cancel(pendingViewportReadjustment);
@@ -951,7 +940,9 @@ export function createPrimitiveEventHandlers(context) {
     }
     cancelRingTemplateViewportReadjustment();
     const schedule =
-      context.timers?.requestAnimationFrame ?? globalThis.requestAnimationFrame ?? (callback => {
+      context.timers?.requestAnimationFrame ??
+      globalThis.requestAnimationFrame ??
+      (callback => {
         return setTimeout(callback, 16);
       });
     pendingViewportReadjustment = schedule(() => {
@@ -1098,13 +1089,14 @@ export function createPrimitiveEventHandlers(context) {
     const lineClass = isForce ? 'link' : 'bond';
     const doubleBondOffset = 5;
     const showBenzeneDoubleBonds = isBenzeneRingTemplate(options.template);
-    const aromaticDoubleBondIndices = options.aromaticDoubleBondIndices instanceof Set
-      ? options.aromaticDoubleBondIndices
-      : new Set(
-          Array.isArray(options.aromaticDoubleBondIndices)
-            ? options.aromaticDoubleBondIndices
-            : ringTemplateDoubleBondCandidates(positions.length)[Number.isInteger(options.aromaticDoubleBondPhase) ? options.aromaticDoubleBondPhase === 1 ? 4 : 0 : 0] ?? []
-        );
+    const aromaticDoubleBondIndices =
+      options.aromaticDoubleBondIndices instanceof Set
+        ? options.aromaticDoubleBondIndices
+        : new Set(
+            Array.isArray(options.aromaticDoubleBondIndices)
+              ? options.aromaticDoubleBondIndices
+              : (ringTemplateDoubleBondCandidates(positions.length)[Number.isInteger(options.aromaticDoubleBondPhase) ? (options.aromaticDoubleBondPhase === 1 ? 4 : 0) : 0] ?? [])
+          );
     const center = positions.reduce(
       (sum, point) => ({
         x: sum.x + point.x / positions.length,
@@ -1198,10 +1190,7 @@ export function createPrimitiveEventHandlers(context) {
       ringAtomIds: targets.ringAtomIds.length > 0 ? targets.ringAtomIds : [state.atomId, ...Array(Math.max(0, state.size - 1)).fill(null)]
     });
     renderRingTemplatePreviewPositions(positions, 1, { template: state.template, aromaticDoubleBondIndices, adjustViewport: options.adjustViewport === true });
-    context.view.showPrimitiveHover(
-      [...new Set([[state.atomId].filter(Boolean), targets.atomIds].flat())],
-      [...new Set(targets.bondIds)]
-    );
+    context.view.showPrimitiveHover([...new Set([[state.atomId].filter(Boolean), targets.atomIds].flat())], [...new Set(targets.bondIds)]);
   }
 
   function updateRingTemplateStateTemplate(state) {
@@ -1511,16 +1500,11 @@ export function createPrimitiveEventHandlers(context) {
     const targets = ringTemplateHoverTargets(positions, state.anchorAtomIds, hoverOptions);
     const aromaticDoubleBondIndices = chooseRingTemplateDoubleBondPreviewIndices({
       template: state.template,
-      ringAtomIds: targets.ringAtomIds.length > 0
-        ? targets.ringAtomIds
-        : [...state.anchorAtomIds, ...Array(Math.max(0, state.size - state.anchorAtomIds.length)).fill(null)],
+      ringAtomIds: targets.ringAtomIds.length > 0 ? targets.ringAtomIds : [...state.anchorAtomIds, ...Array(Math.max(0, state.size - state.anchorAtomIds.length)).fill(null)],
       anchorBondId: state.bondId
     });
     renderRingTemplatePreviewPositions(positions, 2, { template: state.template, aromaticDoubleBondIndices, adjustViewport: options.adjustViewport === true });
-    context.view.showPrimitiveHover(
-      [...new Set([...state.anchorAtomIds.filter(Boolean), ...targets.atomIds])],
-      [...new Set([[state.bondId].filter(Boolean), targets.bondIds].flat())]
-    );
+    context.view.showPrimitiveHover([...new Set([...state.anchorAtomIds.filter(Boolean), ...targets.atomIds])], [...new Set([[state.bondId].filter(Boolean), targets.bondIds].flat())]);
   }
 
   function bondRingTemplatePreviewState(event, bondId, anchorA, anchorB, anchorAtomIds = []) {
@@ -1965,15 +1949,8 @@ export function createPrimitiveEventHandlers(context) {
     }
     maybeRefreshDrawBondHover(atom.id, 'atom');
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
-    const valenceWarningHoverMode =
-      context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
-    if (
-      chargeTool ||
-      suppressPaintModeTooltip() ||
-      !showAtomTooltips ||
-      (context.state.overlayState.getEraseMode() && !valenceWarning) ||
-      (valenceWarningHoverMode && !valenceWarning)
-    ) {
+    const valenceWarningHoverMode = context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
+    if (chargeTool || suppressPaintModeTooltip() || !showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || (valenceWarningHoverMode && !valenceWarning)) {
       return;
     }
     if (valenceWarningHoverMode && valenceWarning) {
@@ -2349,15 +2326,8 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
-    const valenceWarningHoverMode =
-      context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
-    if (
-      chargeTool ||
-      suppressPaintModeTooltip() ||
-      !showAtomTooltips ||
-      (context.state.overlayState.getEraseMode() && !valenceWarning) ||
-      (valenceWarningHoverMode && !valenceWarning)
-    ) {
+    const valenceWarningHoverMode = context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
+    if (chargeTool || suppressPaintModeTooltip() || !showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || (valenceWarningHoverMode && !valenceWarning)) {
       return;
     }
     if (valenceWarningHoverMode && valenceWarning) {

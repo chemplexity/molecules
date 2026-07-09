@@ -33,7 +33,13 @@ function createSelectionStub(textValues = [], elements = [], options = {}) {
           const found = elements
             .slice()
             .reverse()
-            .find(element => element.tagName === 'g' && String(element.attrs.get('class') ?? '').split(/\s+/).includes('paste-preview-layer'));
+            .find(
+              element =>
+                element.tagName === 'g' &&
+                String(element.attrs.get('class') ?? '')
+                  .split(/\s+/)
+                  .includes('paste-preview-layer')
+            );
           return makeNodeSelection(null, found ?? null);
         }
         return makeNodeSelection();
@@ -80,7 +86,13 @@ function createSelectionStub(textValues = [], elements = [], options = {}) {
         const found = elements
           .slice()
           .reverse()
-          .find(element => element.tagName === 'g' && String(element.attrs.get('class') ?? '').split(/\s+/).includes('paste-preview-layer'));
+          .find(
+            element =>
+              element.tagName === 'g' &&
+              String(element.attrs.get('class') ?? '')
+                .split(/\s+/)
+                .includes('paste-preview-layer')
+          );
         return makeNodeSelection(null, found ?? null);
       }
       return makeNodeSelection();
@@ -220,7 +232,13 @@ function longestPreviewLine(elements) {
 }
 
 function previewElementsByClass(elements, tagName, className) {
-  return elements.filter(element => element.tagName === tagName && String(element.attrs.get('class') ?? '').split(/\s+/).includes(className));
+  return elements.filter(
+    element =>
+      element.tagName === tagName &&
+      String(element.attrs.get('class') ?? '')
+        .split(/\s+/)
+        .includes(className)
+  );
 }
 
 describe('app/interactions/clipboard', () => {
@@ -257,8 +275,14 @@ describe('app/interactions/clipboard', () => {
     assert.equal(clipboard.beginPastePreview(), true);
     assert.equal(clipboard.placePastePreview(), true);
 
-    assert.deepEqual(records.find(record => record[0] === 'restore2dEditViewport'), ['restore2dEditViewport', { x: 1, y: 2, k: 3 }, { zoomToFit: { pad: 0 } }]);
-    assert.equal(records.some(record => record[0] === 'render'), false);
+    assert.deepEqual(
+      records.find(record => record[0] === 'restore2dEditViewport'),
+      ['restore2dEditViewport', { x: 1, y: 2, k: 3 }, { zoomToFit: { pad: 0 } }]
+    );
+    assert.equal(
+      records.some(record => record[0] === 'render'),
+      false
+    );
   });
 
   it('preserves the force viewport when the pasted preview is already inside the plot', () => {

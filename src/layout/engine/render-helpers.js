@@ -870,11 +870,7 @@ export function stereoBondCenterIdForRender(molecule, bondId) {
 export function kekulize(molecule) {
   const aromaticBonds = [];
   for (const bond of molecule.bonds.values()) {
-    if (
-      bond.properties.aromatic &&
-      bond.properties.localizedOrder == null &&
-      bond.atoms.every(atomId => molecule.atoms.get(atomId)?.properties?.aromatic === true)
-    ) {
+    if (bond.properties.aromatic && bond.properties.localizedOrder == null && bond.atoms.every(atomId => molecule.atoms.get(atomId)?.properties?.aromatic === true)) {
       aromaticBonds.push(bond);
     }
   }

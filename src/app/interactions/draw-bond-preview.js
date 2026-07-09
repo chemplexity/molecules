@@ -271,11 +271,7 @@ export function createDrawBondPreviewActions(context) {
       return null;
     }
     const atom = mol?.atoms?.get?.(node.id) ?? null;
-    const bondIds = Array.isArray(atom?.bonds)
-      ? atom.bonds
-      : [...(mol?.bonds?.values?.() ?? [])]
-          .filter(bond => bond?.atoms?.includes?.(node.id))
-          .map(bond => bond.id);
+    const bondIds = Array.isArray(atom?.bonds) ? atom.bonds : [...(mol?.bonds?.values?.() ?? [])].filter(bond => bond?.atoms?.includes?.(node.id)).map(bond => bond.id);
     for (const bondId of bondIds) {
       const bond = mol?.bonds?.get?.(bondId);
       const parentId = bond?.getOtherAtom?.(node.id) ?? bond?.atoms?.find?.(id => id !== node.id);
@@ -296,9 +292,10 @@ export function createDrawBondPreviewActions(context) {
     const layoutBondLength = currentLayoutBondLength(context);
     const bondLength = mode === 'force' ? currentForcePreviewBondLength(context, layoutBondLength) : layoutBondLength * context.constants.scale;
     const fallbackAngle = chooseAutoPlacedBondAngle([]);
-    const fallbackEndpoint = mode === 'force'
-      ? { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy + Math.sin(fallbackAngle) * bondLength }
-      : { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy - Math.sin(fallbackAngle) * bondLength };
+    const fallbackEndpoint =
+      mode === 'force'
+        ? { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy + Math.sin(fallbackAngle) * bondLength }
+        : { x: ox + Math.cos(fallbackAngle) * bondLength, y: oy - Math.sin(fallbackAngle) * bondLength };
     const mol = context.molecule?.getActive?.() ?? null;
     const srcAtom = mol?.atoms?.get?.(atomId) ?? null;
     if (!srcAtom) {
@@ -389,9 +386,7 @@ export function createDrawBondPreviewActions(context) {
       angle = fallback;
     }
 
-    return mode === 'force'
-      ? { x: ox + Math.cos(angle) * bondLength, y: oy + Math.sin(angle) * bondLength }
-      : { x: ox + Math.cos(angle) * bondLength, y: oy - Math.sin(angle) * bondLength };
+    return mode === 'force' ? { x: ox + Math.cos(angle) * bondLength, y: oy + Math.sin(angle) * bondLength } : { x: ox + Math.cos(angle) * bondLength, y: oy - Math.sin(angle) * bondLength };
   }
 
   function renderPreviewFromState(drawBondState, snapAtomId = null) {
@@ -631,9 +626,7 @@ export function createDrawBondPreviewActions(context) {
           candidates.push({ id: node.id, x: node.x, y: node.y });
         }
       }
-      let snapCandidate =
-        chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ??
-        chooseSnapCandidate(candidates, mx, my, snapRadius);
+      let snapCandidate = chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ?? chooseSnapCandidate(candidates, mx, my, snapRadius);
       if (drawBondState.atomId === null) {
         const snappedNode = snapCandidate ? context.force.getNodeById(snapCandidate.id) : null;
         snapCandidate = forceHydrogenParentCandidate(snappedNode, mol) ?? snapCandidate;
@@ -654,9 +647,7 @@ export function createDrawBondPreviewActions(context) {
           candidates.push({ id: atom.id, x: point.x, y: point.y });
         }
       }
-      const snapCandidate =
-        chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ??
-        chooseSnapCandidate(candidates, mx, my, snapRadius);
+      const snapCandidate = chooseSnapCandidate(candidates, mx, my, snapRadius, highlightedAtomIds) ?? chooseSnapCandidate(candidates, mx, my, snapRadius);
       if (snapCandidate) {
         ex = snapCandidate.x;
         ey = snapCandidate.y;
@@ -664,10 +655,7 @@ export function createDrawBondPreviewActions(context) {
       }
     }
 
-    if (
-      drawBondState.sourceIsProjectedStereoHydrogen === true &&
-      (snapAtomId === null || snapAtomId !== drawBondState.allowedHydrogenParentId)
-    ) {
+    if (drawBondState.sourceIsProjectedStereoHydrogen === true && (snapAtomId === null || snapAtomId !== drawBondState.allowedHydrogenParentId)) {
       context.state.setDrawBondState({
         ...drawBondState,
         ex: ox,
@@ -679,19 +667,20 @@ export function createDrawBondPreviewActions(context) {
     }
 
     if (snapAtomId === null) {
-      const endpoint = drawBondState.atomId !== null && context.getMode() === '2d'
-        ? snappedPreviewEndpoint(ox, oy, mx, my, bondLength, options)
-        : (() => {
-            const dist = Math.hypot(mx - ox, my - oy);
-            if (dist < 1e-6) {
-              return { x: ox + bondLength, y: oy };
-            }
-            const clamped = Math.min(dist, bondLength);
-            return {
-              x: ox + ((mx - ox) / dist) * clamped,
-              y: oy + ((my - oy) / dist) * clamped
-            };
-          })();
+      const endpoint =
+        drawBondState.atomId !== null && context.getMode() === '2d'
+          ? snappedPreviewEndpoint(ox, oy, mx, my, bondLength, options)
+          : (() => {
+              const dist = Math.hypot(mx - ox, my - oy);
+              if (dist < 1e-6) {
+                return { x: ox + bondLength, y: oy };
+              }
+              const clamped = Math.min(dist, bondLength);
+              return {
+                x: ox + ((mx - ox) / dist) * clamped,
+                y: oy + ((my - oy) / dist) * clamped
+              };
+            })();
       ex = endpoint.x;
       ey = endpoint.y;
     }

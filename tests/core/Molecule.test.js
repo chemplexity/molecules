@@ -74,9 +74,7 @@ describe('Molecule.repairImplicitHydrogens', () => {
 
     mol.repairImplicitHydrogens([carbon.id]);
 
-    const remainingHydrogenIds = [...mol.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => atom.id);
+    const remainingHydrogenIds = [...mol.atoms.values()].filter(atom => atom.name === 'H').map(atom => atom.id);
     assert.deepEqual(remainingHydrogenIds, hydrogenIds.slice(0, 3));
     assert.equal(mol.atoms.has(hydrogenIds[3]), false);
     for (const hydrogenId of remainingHydrogenIds) {

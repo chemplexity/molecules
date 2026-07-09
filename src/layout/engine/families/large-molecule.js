@@ -1154,15 +1154,14 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
   const useFineDensePartition =
     componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap && ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryRingFloor;
   const useMediumDensePartition =
-    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryComponentHeavyAtomCap &&
-    ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryRingFloor;
+    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryComponentHeavyAtomCap && ringCount >= LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryRingFloor;
   const denseHeavyAtomCap = hypervalentRingChain
     ? LARGE_MOLECULE_LAYOUT_LIMITS.hypervalentRingChainDensePartitionHeavyAtomCap
     : useFineDensePartition
       ? LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryHeavyAtomCap
       : useMediumDensePartition
         ? LARGE_MOLECULE_LAYOUT_LIMITS.mediumDensePartitionRetryHeavyAtomCap
-      : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
+        : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {
     ...threshold,
     heavyAtomCount: singleLinkerPathLikeIsolatedRingChain ? LARGE_MOLECULE_LAYOUT_LIMITS.linearRingChainDensePartitionHeavyAtomCap : denseHeavyAtomCap

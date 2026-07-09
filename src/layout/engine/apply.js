@@ -178,10 +178,7 @@ function preserveDisplayStereoAssignments(molecule, assignments, existingDisplay
   const preservedAssignments = [];
 
   for (const assignment of assignments) {
-    const existing =
-      existingDisplayStereo.byBondId.get(assignment.bondId) ??
-      (assignment.centerId ? existingDisplayStereo.byCenterId.get(assignment.centerId) : null) ??
-      null;
+    const existing = existingDisplayStereo.byBondId.get(assignment.bondId) ?? (assignment.centerId ? existingDisplayStereo.byCenterId.get(assignment.centerId) : null) ?? null;
     if (existing) {
       const bond = molecule.bonds.get(existing.bondId);
       if (bond && bond.atoms.includes(existing.centerId) && !usedBondIds.has(existing.bondId)) {

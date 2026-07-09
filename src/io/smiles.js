@@ -536,7 +536,7 @@ export function tokenize(input, tokens = []) {
 
   for (let i = 0; i < grammar.length; i++) {
     const token = grammar[i];
-    let text = [];
+    let text;
     while ((text = token.expression.exec(input))) {
       tokens.push({ index: text.index, type: token.type, term: text[0], tag: token.tag });
     }
@@ -1602,7 +1602,6 @@ export function decode(tokens) {
   const _implicit = implicitBonds(atoms, bonds, keys);
   atoms = _implicit[0];
   bonds = _implicit[1];
-  keys = _implicit[2];
 
   const _clean = clean(atoms, bonds);
   atoms = _clean[0];

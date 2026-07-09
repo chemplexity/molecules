@@ -1690,8 +1690,14 @@ describe('layout/engine/families/mixed', () => {
       const swappedDeviation = Math.max(angularDifference(exocyclicAngles[0], targetAngles[1]), angularDifference(exocyclicAngles[1], targetAngles[0]));
       const separations = sortedHeavyNeighborSeparations(adjacency, coords, anchorAtomId, layoutGraph);
 
-      assert.ok(separations[0] > 1.3, `expected ${label} methyl/carbonyl roots to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`);
-      assert.ok(Math.min(alignedDeviation, swappedDeviation) < 1e-6, `expected ${label} methyl/carbonyl roots to occupy the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(
+        separations[0] > 1.3,
+        `expected ${label} methyl/carbonyl roots to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+      );
+      assert.ok(
+        Math.min(alignedDeviation, swappedDeviation) < 1e-6,
+        `expected ${label} methyl/carbonyl roots to occupy the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`
+      );
       assert.ok(measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) < 1e-9, `expected ${label} exterior fan penalty to be clean`);
     };
 
@@ -1725,8 +1731,14 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.fallback.mode, null);
-    assert.ok(separations[0] > 1.3, `expected C2 methyl/carboxyl exits to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`);
-    assert.ok(Math.min(alignedDeviation, swappedDeviation) < 1e-6, `expected C2 methyl/carboxyl exits on the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(
+      separations[0] > 1.3,
+      `expected C2 methyl/carboxyl exits to avoid 60-degree pinching, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      Math.min(alignedDeviation, swappedDeviation) < 1e-6,
+      `expected C2 methyl/carboxyl exits on the balanced exterior slots, got max deviation ${((Math.min(alignedDeviation, swappedDeviation) * 180) / Math.PI).toFixed(2)} degrees`
+    );
     assert.ok(measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, anchorAtomId) < 1e-9, 'expected the C2 exterior fan penalty to be clean');
   });
 

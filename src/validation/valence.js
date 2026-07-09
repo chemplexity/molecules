@@ -252,10 +252,7 @@ export function validateValence(molecule) {
     const hasValidBondOrder = isAromaticAtom
       ? maxAllowedBondOrder !== null && acceptedBondOrders.some(bondOrder => bondOrder <= maxAllowedBondOrder)
       : acceptedBondOrders.some(bondOrder => allowed.includes(bondOrder));
-    const hasCarbonAttachedBondOverflow =
-      atom.name === 'C' &&
-      maxAllowedBondOrder !== null &&
-      attachedBondCount > maxAllowedBondOrder;
+    const hasCarbonAttachedBondOverflow = atom.name === 'C' && maxAllowedBondOrder !== null && attachedBondCount > maxAllowedBondOrder;
     const hasLegacyNitrogenValence = isLegacyNeutralPentavalentNitrogen(atom, molecule, totalBO, charge, radical);
 
     if ((!hasValidBondOrder || hasCarbonAttachedBondOverflow) && !hasLegacyNitrogenValence) {
@@ -266,8 +263,8 @@ export function validateValence(molecule) {
       const reason = hasCarbonAttachedBondOverflow
         ? `Attached bond count ${attachedBondCount} exceeds the valence limit for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed up to: ${allowedStr})`
         : isAromaticAtom
-        ? `Aromatic sigma bond order ${bondOrderSummary} exceeds the valence limit for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed up to: ${allowedStr})`
-        : `Bond order ${bondOrderSummary} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
+          ? `Aromatic sigma bond order ${bondOrderSummary} exceeds the valence limit for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed up to: ${allowedStr})`
+          : `Bond order ${bondOrderSummary} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
       warnings.push({
         atomId,
         element: atom.name,

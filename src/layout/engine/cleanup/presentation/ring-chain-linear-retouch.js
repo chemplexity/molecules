@@ -367,9 +367,7 @@ function linkerExitCandidatesForAttachment(layoutGraph, coords, ringSystem, atta
     return [];
   }
   const currentAngle = angleOf(sub(linkerPosition, attachmentPosition));
-  return uniqueAngles(
-    targetAngles.flatMap(targetAngle => [targetAngle - currentAngle, ...ANGLE_CANDIDATE_DELTAS.map(delta => targetAngle - currentAngle + delta)])
-  );
+  return uniqueAngles(targetAngles.flatMap(targetAngle => [targetAngle - currentAngle, ...ANGLE_CANDIDATE_DELTAS.map(delta => targetAngle - currentAngle + delta)]));
 }
 
 function bestLinkerExitRetouch(layoutGraph, inputCoords, ringChain, options, baseAudit, baseExitDeviation) {

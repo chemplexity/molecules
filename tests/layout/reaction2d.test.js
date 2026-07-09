@@ -992,7 +992,11 @@ test('reaction preview keeps saponification alcohol products on retained lactone
   const ringOxygen = productAtomForSource(preview, 'O14');
   const ringAlkeneCarbon = productAtomForSource(preview, 'C8');
   const terminalMethyl = productAtomForSource(preview, 'C1');
-  const alcoholOxygen = oxygenNeighbor(editedAlcoholCarbon, preview.mol, (neighbor, bond) => neighbor.id !== ringAnchor?.id && neighbor.id !== terminalMethyl?.id && (bond?.properties.order ?? 1) === 1);
+  const alcoholOxygen = oxygenNeighbor(
+    editedAlcoholCarbon,
+    preview.mol,
+    (neighbor, bond) => neighbor.id !== ringAnchor?.id && neighbor.id !== terminalMethyl?.id && (bond?.properties.order ?? 1) === 1
+  );
   assert.ok(editedAlcoholCarbon && ringAnchor && ringOxygen && ringAlkeneCarbon && terminalMethyl && alcoholOxygen, 'expected retained lactone-ring saponification product atoms');
 
   for (const [first, second] of [
@@ -1219,7 +1223,8 @@ test('reaction preview clears stereo display when dehydration removes the stereo
   const sourceMol = parseSMILES('C[C@H](CC)O');
   const alcoholCarbon = [...sourceMol.atoms.values()].find(atom => atom.getChirality());
   assert.ok(alcoholCarbon, 'expected chiral alcohol center');
-  const sourceBonds = alcoholCarbon.getNeighbors(sourceMol)
+  const sourceBonds = alcoholCarbon
+    .getNeighbors(sourceMol)
     .filter(neighbor => neighbor.name === 'C')
     .map(neighbor => sourceMol.getBond(alcoholCarbon.id, neighbor.id))
     .filter(Boolean);

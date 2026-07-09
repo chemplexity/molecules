@@ -2016,22 +2016,8 @@ export function generateResonanceStructures(molecule, options = {}) {
         includeIndependentComponentPermutations ||
         _changedComponentCount(state, canonicalComponentState.canonicalBondOrders, canonicalComponentState.canonicalAtomCharges, canonicalComponentState.canonicalAtomRadicals, components) <= 1
     )
-    .filter(
-      state =>
-        (!includeIndependentComponentPermutations && components.length > 1) ||
-        _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude)
-    )
-    .filter(
-      state =>
-        !_isUnstabilizedAlkenePolarizationState(
-          molecule,
-          state,
-          canonicalComponentState.canonicalBondOrders,
-          canonicalComponentState.canonicalAtomCharges,
-          atomIds,
-          bondIds
-        )
-    )
+    .filter(state => (!includeIndependentComponentPermutations && components.length > 1) || _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude))
+    .filter(state => !_isUnstabilizedAlkenePolarizationState(molecule, state, canonicalComponentState.canonicalBondOrders, canonicalComponentState.canonicalAtomCharges, atomIds, bondIds))
     .slice(0, maxContributors);
 
   // Score each state

@@ -75,7 +75,7 @@ body {
 }
 
 #main-sidebar-splitter::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1273,8 +1273,7 @@ body:has(#ring-template-btn.active) .ring-template-bond-hover-target {
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
@@ -1515,7 +1514,10 @@ body:has(#ring-template-btn.active) .ring-template-bond-hover-target {
 }
 
 #plot.paint-mode-cursor {
-  --paint-mode-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%233366ff' fill-opacity='1' stroke='black' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair;
+  --paint-mode-cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='11' fill='%233366ff' fill-opacity='1' stroke='black' stroke-width='2'/%3E%3C/svg%3E")
+      12 12,
+    crosshair;
 }
 
 #plot.paint-mode-cursor,

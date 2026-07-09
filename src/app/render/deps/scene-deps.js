@@ -233,8 +233,7 @@ export function create2DSceneRendererDeps(ctx) {
     },
     events: {
       handle2dBondClick: (event, bondId) => ctx.handle2dBondClick(event, bondId),
-      handle2dBondMouseDownRingTemplate: (event, bondId, anchorA, anchorB, anchorAtomIds = []) =>
-        ctx.handle2dBondMouseDownRingTemplate?.(event, bondId, anchorA, anchorB, anchorAtomIds) ?? false,
+      handle2dBondMouseDownRingTemplate: (event, bondId, anchorA, anchorB, anchorAtomIds = []) => ctx.handle2dBondMouseDownRingTemplate?.(event, bondId, anchorA, anchorB, anchorAtomIds) ?? false,
       handle2dBondMouseDownDrawBond: (event, bond, anchorA, anchorB, options = {}) => ctx.handle2dBondMouseDownDrawBond?.(event, bond, anchorA, anchorB, options) ?? false,
       handle2dBondDblClick: (event, atomIds) => ctx.handle2dBondDblClick(event, atomIds),
       handle2dBondMouseOver: (event, bond, a1, a2, anchorA, anchorB) => ctx.handle2dBondMouseOver(event, bond, a1, a2, anchorA, anchorB),

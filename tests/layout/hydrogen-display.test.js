@@ -71,12 +71,7 @@ test('materializeMetalHydrideCoords avoids placing a metal hydrogen inside a nea
   const aluminum = mol.atoms.get('Al1');
   const hydrogen = mol.atoms.get('H2');
   const carbon = mol.addAtom('C3', 'C');
-  const ringAtoms = [
-    mol.addAtom('R1', 'C'),
-    mol.addAtom('R2', 'C'),
-    mol.addAtom('R3', 'C'),
-    mol.addAtom('R4', 'C')
-  ];
+  const ringAtoms = [mol.addAtom('R1', 'C'), mol.addAtom('R2', 'C'), mol.addAtom('R3', 'C'), mol.addAtom('R4', 'C')];
   aluminum.x = 0;
   aluminum.y = -1.2;
   hydrogen.x = 0;

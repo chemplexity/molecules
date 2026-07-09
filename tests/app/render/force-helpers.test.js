@@ -308,7 +308,7 @@ describe('force-helpers', () => {
         alignReaction2dProductOrientation: () => {},
         spreadReaction2dProductComponents: () => {},
         centerReaction2dPairCoords: () => {}
-    });
+      });
 
     assert.equal(makeHelpers(1.5).forceFitTransform(nodes, 40, { scaleMultiplier: 1.3 }).k, 1.3);
     approxEqual(makeHelpers(0.5).forceFitTransform(nodes, 40, { scaleMultiplier: 1.3 }).k, 3.9);

@@ -1,7 +1,14 @@
 # Change Log
 
+## 2026-07-08
+
+- Update all outdated dev dependencies, migrate ESLint to flat config for ESLint 10, and clean up newly flagged useless assignments.
+- Refresh guide docs for current SMARTS/SMIRKS, descriptor, subpath-import, and reaction-template metadata APIs.
+- Upgrade `clean-jsdoc-theme` to v5 and point JSDoc at the new theme `dist` entrypoint, clearing the previous docs-theme audit advisory.
+
 ## 2026-07-07
 
+- Run daily maintenance checks, bump package version to `2026.7.7`, and verify formatting/lint/build status.
 - Add `data/elements-extended.js`: per-isotope mass number, exact mass, and natural abundance for every element (plus D), with an abundance-weighted `averageMass` field derived from each element's isotope table.
 - Fix a Zr data-entry bug in `data/elements.js` where the neutron count implied an atomic weight of 92.2242 instead of the correct ~91.224 (off by one neutron).
 - Fix inaccurate documentation of the `halfLife` field in `data/elements-extended.js`, which claimed to appear only on zero-abundance isotopes when it's also present on naturally abundant but radioactive isotopes (e.g. K-40, Rb-87, U-235/238).

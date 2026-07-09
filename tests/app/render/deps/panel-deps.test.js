@@ -73,11 +73,7 @@ describe('createResonancePanelDeps', () => {
     deps.updateForce('mol', { preserveView: true });
     deps.takeSnapshot({ clearReactionPreview: false });
 
-    assert.deepEqual(records, [
-      ['resetOrientation'],
-      ['updateForce', 'mol', { preserveView: true }],
-      ['takeSnapshot', { clearReactionPreview: false }]
-    ]);
+    assert.deepEqual(records, [['resetOrientation'], ['updateForce', 'mol', { preserveView: true }], ['takeSnapshot', { clearReactionPreview: false }]]);
   });
 });
 

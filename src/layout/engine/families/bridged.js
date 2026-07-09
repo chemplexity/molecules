@@ -5302,7 +5302,6 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
     const compactAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, compactSelectedCoords, bondLength);
     if (compareBridgedProjectionAudits(compactAudit, selectedAudit) < 0) {
       selectedCoords = compactSelectedCoords;
-      selectedAudit = compactAudit;
     }
   }
   selectedCoords = regularizeBridgedRingSystemGeometry(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);

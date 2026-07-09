@@ -487,7 +487,10 @@ describe('createSelectionOverlayManager', () => {
     manager.redraw2dSelection();
 
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
-    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
+    assert.equal(
+      records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'),
+      false
+    );
   });
 
   it('does not draw the persistent bounds box while selection rotation is active', () => {
@@ -506,7 +509,10 @@ describe('createSelectionOverlayManager', () => {
     manager.redraw2dSelection();
 
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
-    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
+    assert.equal(
+      records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'),
+      false
+    );
   });
 
   it('does not draw a persistent bounds box for hover-only 2D highlights', () => {
@@ -525,7 +531,10 @@ describe('createSelectionOverlayManager', () => {
     manager.redraw2dSelection();
 
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
-    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
+    assert.equal(
+      records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'),
+      false
+    );
   });
 
   it('uses the projected 2D SVG point for stereo-hydrogen atom highlights', () => {
@@ -689,7 +698,13 @@ describe('createSelectionOverlayManager', () => {
 
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
-    assert.equal(records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'), false);
-    assert.equal(records.some(([kind, value]) => kind === 'setSelectionBounds' && value), false);
+    assert.equal(
+      records.some(([kind, name, value]) => kind === 'attr' && name === 'class' && value === 'selection-bounds-rect'),
+      false
+    );
+    assert.equal(
+      records.some(([kind, value]) => kind === 'setSelectionBounds' && value),
+      false
+    );
   });
 });

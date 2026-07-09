@@ -4,7 +4,7 @@ import { generateAndRefine2dCoords } from './index.js';
 import { ensureLandscapeOrientation, findPreferredBackbonePath, shouldPreferFinalLandscapeOrientation } from './engine/orientation.js';
 import { createLayoutGraph } from './engine/model/layout-graph.js';
 import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
-import { ringAtomKey } from '../core/style.js';
+import { ringAtomKey } from '../core/support/style.js';
 
 // ---------------------------------------------------------------------------
 // Element-set constants (module-level to avoid repeated inline allocations)
@@ -2185,7 +2185,15 @@ function idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bon
         : heavyNeighborsB.length === 1 && heavyNeighborsA.length === 2
           ? { terminal: atomB, internal: atomA, outer: heavyNeighborsA.find(nb => nb.id !== atomB.id) }
           : null;
-    if (!descriptor?.outer || descriptor.terminal.x == null || descriptor.terminal.y == null || descriptor.internal.x == null || descriptor.internal.y == null || descriptor.outer.x == null || descriptor.outer.y == null) {
+    if (
+      !descriptor?.outer ||
+      descriptor.terminal.x == null ||
+      descriptor.terminal.y == null ||
+      descriptor.internal.x == null ||
+      descriptor.internal.y == null ||
+      descriptor.outer.x == null ||
+      descriptor.outer.y == null
+    ) {
       continue;
     }
 
@@ -4403,9 +4411,7 @@ export function centerReaction2dPairCoords(mol, previewState, bondLength = 1.5, 
 
   const productComponentCount = Math.max(1, previewState.productComponentAtomIdSets?.length ?? 0);
   const parsedMinGapBondLength = Number(options.minGapBondLength);
-  const gapBondLength = Number.isFinite(parsedMinGapBondLength) && parsedMinGapBondLength > 0
-    ? Math.max(bondLength, parsedMinGapBondLength)
-    : bondLength;
+  const gapBondLength = Number.isFinite(parsedMinGapBondLength) && parsedMinGapBondLength > 0 ? Math.max(bondLength, parsedMinGapBondLength) : bondLength;
   const gap = gapBondLength * (3.8 + Math.max(0, productComponentCount - 1) * 0.55);
   const reactantWidth = reactant.maxX - reactant.minX;
   const productWidth = product.maxX - product.minX;

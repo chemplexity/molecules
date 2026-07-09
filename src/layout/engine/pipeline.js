@@ -353,13 +353,17 @@ const FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MAX_DEVIATION = Math.PI 
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_GAIN = Math.PI / 18;
 const FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MIN_MAX_GAIN = Math.PI / 45;
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_TOTAL_INCREASE = 0.05;
-const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS = Object.freeze([15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_ROTATIONS = Object.freeze(
+  [15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation])
+);
 const FINAL_HIDDEN_H_VINYLIC_FAN_MIN_DEVIATION = Math.PI / 12;
 const FINAL_HIDDEN_H_VINYLIC_FAN_MAX_MOVED_HEAVY_ATOMS = 12;
 const FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_GAIN = (5 * Math.PI) / 180;
 const FINAL_THREE_HEAVY_LEAF_SPREAD_MIN_ACCEPTED_ANGLE = (95 * Math.PI) / 180;
 const FINAL_THREE_HEAVY_LEAF_SPREAD_MAX_ACCEPTED_ANGLE = (165 * Math.PI) / 180;
-const FINAL_THREE_HEAVY_LEAF_SPREAD_ROTATIONS = Object.freeze([-80, -75, -70, -65, -60, -55, -50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_THREE_HEAVY_LEAF_SPREAD_ROTATIONS = Object.freeze(
+  [-80, -75, -70, -65, -60, -55, -50, -45, -40, -35, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80].map(degrees => (degrees * Math.PI) / 180)
+);
 const FINAL_THREE_HEAVY_SUPPORT_RELIEF_ROTATIONS = Object.freeze([-30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_THREE_HEAVY_SUPPORT_RELIEF_MAX_HEAVY_ATOMS = 120;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_MAX_DEVIATION = 0.06;
@@ -5471,7 +5475,9 @@ function finalLargeMoleculeTargetedTerminalLeafVariants(coords, centerAtomId, te
     return [new Map()];
   }
   const radius = distance(centerPosition, leafPosition);
-  return terminalMultipleBondLeafCandidateAngles(coords, centerAtomId, terminalLeafInfo.fixedNeighborIds).map(targetAngle => new Map([[terminalLeafInfo.leafAtomId, add(centerPosition, fromAngle(targetAngle, radius))]]));
+  return terminalMultipleBondLeafCandidateAngles(coords, centerAtomId, terminalLeafInfo.fixedNeighborIds).map(
+    targetAngle => new Map([[terminalLeafInfo.leafAtomId, add(centerPosition, fromAngle(targetAngle, radius))]])
+  );
 }
 
 /**
@@ -5564,8 +5570,7 @@ function maybeRetouchFinalLargeMoleculeTargetedAngleRelief(molecule, layoutGraph
         for (const terminalLeafOverrides of finalLargeMoleculeTargetedTerminalLeafVariants(rotationCandidate.coords, center.centerAtomId, center.terminalLeafInfo)) {
           const candidateCoords = withFinalTargetedAngleOverrides(rotationCandidate.coords, terminalLeafOverrides);
           const focusScore = finalVisibleThreeHeavyFanScore(candidateCoords, center.centerAtomId, center.neighborAtomIds);
-          const minimumMaxGain =
-            rotationCandidate.pairedBranch === true ? FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MIN_MAX_GAIN : FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_GAIN;
+          const minimumMaxGain = rotationCandidate.pairedBranch === true ? FINAL_LARGE_MOLECULE_TARGETED_PAIRED_ANGLE_RELIEF_MIN_MAX_GAIN : FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MIN_MAX_GAIN;
           if (!focusScore || focusScore.maxDeviation > currentFocusScore.maxDeviation - minimumMaxGain) {
             continue;
           }
@@ -5819,7 +5824,9 @@ function nestedRotatedFinalLargeMoleculeDivalentLaneCandidate(layoutGraph, coord
     }
   }
 
-  return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, movedAtomIds: [...movedAtomIds], totalMove, rotationMagnitude: Math.abs(centerRotation) + Math.abs(branchRotation) } : null;
+  return totalMove > PRESENTATION_METRIC_EPSILON
+    ? { coords: candidateCoords, movedAtomIds: [...movedAtomIds], totalMove, rotationMagnitude: Math.abs(centerRotation) + Math.abs(branchRotation) }
+    : null;
 }
 
 /**
@@ -13359,8 +13366,7 @@ function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bon
   const candidateLinkerExitDeviation = pathLikeRingChainLinkerExitDeviation(layoutGraph, candidateCoords);
   const aspectImprovedEnough = shouldRetouchAspect && candidateAspect >= Math.max(MIN_READABLE_PROJECTED_RING_CHAIN_ASPECT, baseAspect * 1.5);
   const linkerExitsImprovedEnough =
-    shouldRetouchLinkerExits &&
-    candidateLinkerExitDeviation < Math.min(MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION, baseLinkerExitDeviation - MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION);
+    shouldRetouchLinkerExits && candidateLinkerExitDeviation < Math.min(MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION, baseLinkerExitDeviation - MAX_PROJECTED_RING_CHAIN_LINKER_EXIT_DEVIATION);
   if (!aspectImprovedEnough && !linkerExitsImprovedEnough) {
     return { coords: finalCoords, changed: false };
   }
@@ -14424,8 +14430,6 @@ export function runPipeline(molecule, options = {}) {
     } else {
       finalCoords = repackedCoords;
       finalCoordsModified = false;
-      orientationApplied = false;
-      landscapeApplied = false;
     }
   }
   if (cleanup.largeDirtyFallbackFastPath === true) {
@@ -15009,10 +15013,7 @@ export function runPipeline(molecule, options = {}) {
           bondLength: normalizedOptions.bondLength,
           bondValidationClasses: placement.bondValidationClasses,
           frozenAtomIds: placement.frozenAtomIds,
-          minDeviation:
-            familySummary.primaryFamily === 'large-molecule'
-              ? undefined
-              : LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION
+          minDeviation: familySummary.primaryFamily === 'large-molecule' ? undefined : LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION
         })
       );
       if (largeAcyclicEtherLinkerContinuationRetouch.changed) {
@@ -15675,12 +15676,17 @@ export function runPipeline(molecule, options = {}) {
   if (finalBridgedLinearSharedCorner.changed) {
     finalCoords = finalBridgedLinearSharedCorner.coords;
     finalCoordsModified = true;
-    onStep?.('Final Bridged Linear Shared-Corner Retouch', 'A saturated shared bridged ring corner opened from a near-linear placement while preserving audit-clean coordinates.', cloneCoords(finalCoords), {
-      movedAtomCount: finalBridgedLinearSharedCorner.movedAtomIds.length,
-      angleBefore: finalBridgedLinearSharedCorner.angleBefore,
-      angleAfter: finalBridgedLinearSharedCorner.angleAfter,
-      maxBondLengthDeviationAfter: finalBridgedLinearSharedCorner.audit?.maxBondLengthDeviation ?? null
-    });
+    onStep?.(
+      'Final Bridged Linear Shared-Corner Retouch',
+      'A saturated shared bridged ring corner opened from a near-linear placement while preserving audit-clean coordinates.',
+      cloneCoords(finalCoords),
+      {
+        movedAtomCount: finalBridgedLinearSharedCorner.movedAtomIds.length,
+        angleBefore: finalBridgedLinearSharedCorner.angleBefore,
+        angleAfter: finalBridgedLinearSharedCorner.angleAfter,
+        maxBondLengthDeviationAfter: finalBridgedLinearSharedCorner.audit?.maxBondLengthDeviation ?? null
+      }
+    );
   }
   const finalSulfonylOxatricycloLactone = timeFinalRetouch('finalSulfonylOxatricycloLactone', () =>
     maybeRetouchFinalSulfonylOxatricycloLactone(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
@@ -16058,7 +16064,7 @@ export function runPipeline(molecule, options = {}) {
       });
     }
     if (finalLabelOverlapCountAfterPrimary !== 0) {
-      let finalLabelOverlapCountAfterConnector = null;
+      let finalLabelOverlapCountAfterConnector;
       const finalConnectorLabelClearance = timeFinalRetouch('finalConnectorLabelClearance', () =>
         maybeApplyGuardedConnectorLabelClearance(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength, normalizedOptions.labelMetrics)
       );

@@ -70,27 +70,33 @@ function makeSelection(node = null, parentChildren = null) {
       return this;
     },
     append(tagName) {
-      const child = makeSelection({
-        tagName,
-        isConnected: true,
-        ownerSVGElement: null,
-        getScreenCTM() {
-          return null;
-        }
-      }, children);
+      const child = makeSelection(
+        {
+          tagName,
+          isConnected: true,
+          ownerSVGElement: null,
+          getScreenCTM() {
+            return null;
+          }
+        },
+        children
+      );
       child.tagName = tagName;
       children.push(child);
       return child;
     },
     insert(tagName, beforeSelector) {
-      const child = makeSelection({
-        tagName,
-        isConnected: true,
-        ownerSVGElement: null,
-        getScreenCTM() {
-          return null;
-        }
-      }, children);
+      const child = makeSelection(
+        {
+          tagName,
+          isConnected: true,
+          ownerSVGElement: null,
+          getScreenCTM() {
+            return null;
+          }
+        },
+        children
+      );
       child.tagName = tagName;
       child.insertBeforeSelector = beforeSelector;
       const beforeIndex = children.findIndex(existing => beforeSelector.split(',').some(selector => selectorPartMatches(existing, selector)));
@@ -137,7 +143,7 @@ function makeHitElement(kind, id, options = {}) {
                 ? ['ring-template-atom-hover-target']
                 : kind === 'ring-template-bond'
                   ? ['ring-template-bond-hover-target']
-              : ['bond-hover-target'];
+                  : ['bond-hover-target'];
   const ownerSVGElement = {
     createSVGPoint() {
       return {
@@ -481,14 +487,7 @@ describe('initGestureInteractions', () => {
       }
     });
 
-    assert.deepEqual(calls, [
-      ['updatePastePreview', 40, 50],
-      ['preventDefault'],
-      ['stopPropagation'],
-      ['stopImmediatePropagation'],
-      ['updatePastePreview', 60, 70],
-      ['placePastePreview']
-    ]);
+    assert.deepEqual(calls, [['updatePastePreview', 40, 50], ['preventDefault'], ['stopPropagation'], ['stopImmediatePropagation'], ['updatePastePreview', 60, 70], ['placePastePreview']]);
   });
 
   it('cancels an active paste preview when a UI control is pressed', () => {
@@ -722,7 +721,10 @@ describe('initGestureInteractions', () => {
       target: { closest: () => null }
     });
 
-    assert.equal(calls.some(call => call[0] === 'placeRingTemplate'), true);
+    assert.equal(
+      calls.some(call => call[0] === 'placeRingTemplate'),
+      true
+    );
   });
 
   it('suppresses the free ring template preview over expanded ring atom and bond hover targets', () => {
@@ -844,7 +846,10 @@ describe('initGestureInteractions', () => {
     assert.ok(firstLine);
     const circles = preview.children.filter(child => child.tagName === 'circle');
     assert.equal(circles.length, 6);
-    assert.equal(circles.every(circle => String(circle.attrs.get('class')).includes('node')), true);
+    assert.equal(
+      circles.every(circle => String(circle.attrs.get('class')).includes('node')),
+      true
+    );
     const x1 = Number(firstLine.attrs.get('x1'));
     const y1 = Number(firstLine.attrs.get('y1'));
     const x2 = Number(firstLine.attrs.get('x2'));
@@ -891,7 +896,10 @@ describe('initGestureInteractions', () => {
     assert.ok(preview);
     const bondLines = preview.children.filter(child => child.tagName === 'line');
     assert.equal(bondLines.length, 9);
-    assert.equal(bondLines.every(line => String(line.attrs.get('class')).split(/\s+/).includes('link')), true);
+    assert.equal(
+      bondLines.every(line => String(line.attrs.get('class')).split(/\s+/).includes('link')),
+      true
+    );
   });
 
   it('rotates the free ring template preview in snapped increments while dragging and commits the preview angle on mouseup', () => {
@@ -933,10 +941,7 @@ describe('initGestureInteractions', () => {
     });
 
     assert.equal(calls.length, 3);
-    assert.deepEqual(calls.slice(0, 2), [
-      ['preventDefault'],
-      ['stopPropagation']
-    ]);
+    assert.deepEqual(calls.slice(0, 2), [['preventDefault'], ['stopPropagation']]);
     assert.equal(calls[2][0], 'placeRingTemplate');
     assert.equal(calls[2][1], 5);
     assert.equal(calls[2][2], 12);
@@ -1144,12 +1149,14 @@ describe('initGestureInteractions', () => {
     };
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -1258,12 +1265,14 @@ describe('initGestureInteractions', () => {
     const calls = [];
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -1498,12 +1507,14 @@ describe('initGestureInteractions', () => {
     };
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -1560,12 +1571,14 @@ describe('initGestureInteractions', () => {
     const calls = [];
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const pivotHandle = {
@@ -1628,12 +1641,14 @@ describe('initGestureInteractions', () => {
   it('does not clear force selection after clicking the pivot without moving it', () => {
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const pivotHandle = {
@@ -1692,12 +1707,14 @@ describe('initGestureInteractions', () => {
   it('suppresses the trailing click after a no-move pivot click over an underlying target', () => {
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const pivotHandle = {
@@ -1764,12 +1781,14 @@ describe('initGestureInteractions', () => {
   it('does not suppress the next toolbar click after moving the pivot', () => {
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -1832,18 +1851,23 @@ describe('initGestureInteractions', () => {
     });
 
     assert.deepEqual(state.getSelectionPivot(), { x: 80, y: 50 });
-    assert.deepEqual(calls.filter(([name]) => name !== 'applySelectionOverlay'), []);
+    assert.deepEqual(
+      calls.filter(([name]) => name !== 'applySelectionOverlay'),
+      []
+    );
   });
 
   it('shows a hand cursor while hovering the selection pivot hit area', () => {
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const pivotHandle = {
@@ -1894,12 +1918,14 @@ describe('initGestureInteractions', () => {
     };
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -1985,12 +2011,14 @@ describe('initGestureInteractions', () => {
       };
       const rect = {
         getAttribute(name) {
-          return {
-            x: '0',
-            y: '0',
-            width: '100',
-            height: '100'
-          }[name] ?? null;
+          return (
+            {
+              x: '0',
+              y: '0',
+              width: '100',
+              height: '100'
+            }[name] ?? null
+          );
         }
       };
       const controls = {
@@ -2090,12 +2118,14 @@ describe('initGestureInteractions', () => {
     };
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -2193,12 +2223,14 @@ describe('initGestureInteractions', () => {
     };
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -2309,12 +2341,14 @@ describe('initGestureInteractions', () => {
     };
     const rect = {
       getAttribute(name) {
-        return {
-          x: '0',
-          y: '0',
-          width: '100',
-          height: '100'
-        }[name] ?? null;
+        return (
+          {
+            x: '0',
+            y: '0',
+            width: '100',
+            height: '100'
+          }[name] ?? null
+        );
       }
     };
     const controls = {
@@ -2508,12 +2542,7 @@ describe('initGestureInteractions', () => {
       target: {}
     });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', [], ['b1']],
-      ['eraseItem', [], ['b1']],
-      ['clearPrimitiveHover'],
-      ['refreshSelectionOverlay']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['eraseItem', [], ['b1']], ['clearPrimitiveHover'], ['refreshSelectionOverlay']]);
   });
 
   it('resets blocked erase hits so the same target cannot keep stale hover', () => {
@@ -2596,12 +2625,7 @@ describe('initGestureInteractions', () => {
       target: {}
     });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', ['C1'], []],
-      ['eraseItem', ['C1'], []],
-      ['clearPrimitiveHover'],
-      ['refreshSelectionOverlay']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['C1'], []], ['eraseItem', ['C1'], []], ['clearPrimitiveHover'], ['refreshSelectionOverlay']]);
   });
 
   it('does not paint adjacent 2D bonds when the brush center is on an atom hit', () => {
@@ -3274,13 +3298,7 @@ describe('initGestureInteractions', () => {
     state.setPaintOpacity(0.35);
 
     initGestureInteractions(context);
-    const existingFill = g
-      .append('g')
-      .attr('class', 'ring-fills')
-      .append('polygon')
-      .attr('class', 'ring-fill')
-      .attr('data-ring-fill-id', 'ring-fill:a1|a2|a3|a4')
-      .style('display', '');
+    const existingFill = g.append('g').attr('class', 'ring-fills').append('polygon').attr('class', 'ring-fill').attr('data-ring-fill-id', 'ring-fill:a1|a2|a3|a4').style('display', '');
     const highlightLayer = g.append('g').attr('class', 'atom-highlights');
     const bondLayer = g.append('g').attr('class', 'bonds');
 
@@ -3389,13 +3407,7 @@ describe('initGestureInteractions', () => {
     state.setPaintTool('eraser');
 
     initGestureInteractions(context);
-    const existingFill = g
-      .append('g')
-      .attr('class', 'ring-fills')
-      .append('polygon')
-      .attr('class', 'ring-fill')
-      .attr('data-ring-fill-id', 'ring-fill:a1|a2|a3|a4')
-      .style('display', '');
+    const existingFill = g.append('g').attr('class', 'ring-fills').append('polygon').attr('class', 'ring-fill').attr('data-ring-fill-id', 'ring-fill:a1|a2|a3|a4').style('display', '');
 
     const blankTarget = { closest: () => null };
     listeners.get('mousemove')({

@@ -127,9 +127,7 @@ function terminalCarbonOppositeCarbonPenalty(descriptor, coords) {
     const firstAngle = angleOf(sub(firstPosition, centerPosition));
     for (let secondIndex = firstIndex + 1; secondIndex < descriptor.records.length; secondIndex++) {
       const second = descriptor.records[secondIndex];
-      const hasTerminalCarbonLeaf =
-        (first.element === 'C' && first.heavyDegree === 1 && second.element === 'C') ||
-        (second.element === 'C' && second.heavyDegree === 1 && first.element === 'C');
+      const hasTerminalCarbonLeaf = (first.element === 'C' && first.heavyDegree === 1 && second.element === 'C') || (second.element === 'C' && second.heavyDegree === 1 && first.element === 'C');
       if (!hasTerminalCarbonLeaf) {
         continue;
       }

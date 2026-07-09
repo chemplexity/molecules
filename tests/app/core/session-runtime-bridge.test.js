@@ -253,12 +253,16 @@ describe('createSessionRuntimeBridge', () => {
     assert.equal(getCurrentMol(), displayMol);
     assert.deepEqual(calls, [
       ['stop'],
-      ['updateForce', 'force-mol', {
-        preservePositions: true,
-        preserveView: true,
-        initialPatchPos: new Map([['a1', { id: 'a1', x: 10, y: 11, vx: 0, vy: 0, anchorX: 12, anchorY: 13 }]]),
-        restartSimulation: false
-      }],
+      [
+        'updateForce',
+        'force-mol',
+        {
+          preservePositions: true,
+          preserveView: true,
+          initialPatchPos: new Map([['a1', { id: 'a1', x: 10, y: 11, vx: 0, vy: 0, anchorX: 12, anchorY: 13 }]]),
+          restartSimulation: false
+        }
+      ],
       ['restoreNodePositions', ['a1']],
       ['syncForcePositions'],
       ['restoreZoomTransform', { x: 2, y: 3, k: 0.75 }]
@@ -282,12 +286,16 @@ describe('createSessionRuntimeBridge', () => {
 
     assert.deepEqual(calls, [
       ['stop'],
-      ['updateForce', 'resonance-pair', {
-        preservePositions: true,
-        preserveView: true,
-        initialPatchPos: new Map([['a1', { id: 'a1', x: 14, y: 15, vx: 0, vy: 0, anchorX: 16, anchorY: 17 }]]),
-        restartSimulation: false
-      }],
+      [
+        'updateForce',
+        'resonance-pair',
+        {
+          preservePositions: true,
+          preserveView: true,
+          initialPatchPos: new Map([['a1', { id: 'a1', x: 14, y: 15, vx: 0, vy: 0, anchorX: 16, anchorY: 17 }]]),
+          restartSimulation: false
+        }
+      ],
       ['restoreNodePositions', ['a1']],
       ['syncForcePositions'],
       ['restoreZoomTransform', { x: 8, y: 9, k: 0.5 }]

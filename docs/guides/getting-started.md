@@ -68,8 +68,8 @@ mol.addBond('b2', 'C2', 'O1');
 import { parseSMILES, molecularFormula, molecularMass } from 'molecules';
 
 const mol = parseSMILES('c1ccccc1'); // benzene
-console.log(molecularFormula(mol)); // C6H6
-console.log(molecularMass(mol)); // 78.11
+console.log(molecularFormula(mol)); // { C: 6, H: 6 }
+console.log(molecularMass(mol)); // 78.1116
 ```
 
 ### Topological indices
@@ -101,11 +101,14 @@ import {
 ### Physicochemical properties
 
 ```js
-import { logP, tpsa, hBondDonors, hBondAcceptors, rotatableBondCount, fsp3, lipinskiRuleOfFive } from 'molecules';
+import { parseSMILES, logP, tpsa, hBondDonors, hBondAcceptors, rotatableBondCount, fsp3, lipinskiRuleOfFive } from 'molecules';
 
 const mol = parseSMILES('CC(=O)Oc1ccccc1C(=O)O'); // aspirin
 const rule = lipinskiRuleOfFive(mol);
-// { mw, logP, hbd, hba, violations }
+// { molecularWeight, logP, hBondDonors, hBondAcceptors, violations, passes }
+
+const sp3 = fsp3(mol);
+// { value: 0.111, atoms: [...] }
 ```
 
 ### Spectral descriptors
@@ -142,12 +145,14 @@ import { parseSMILES, findSMARTS, matchesSMARTS, functionalGroups } from 'molecu
 const mol = parseSMILES('CC(=O)O');
 
 // Built-in functional group detection
-const groups = functionalGroups(mol);
-// e.g. { carboxylicAcid: [...], carbonyl: [...], ... }
+const present = Object.entries(functionalGroups)
+  .filter(([, group]) => matchesSMARTS(mol, group.smarts))
+  .map(([key]) => key);
+// e.g. [ 'carbonyl', 'carboxylicAcid', ... ]
 
 // Custom SMARTS query
-const matches = findSMARTS('[CX3](=O)[OX2H1]', mol);
-console.log(matchesSMARTS('[CX3](=O)[OX2H1]', mol)); // true
+const matches = [...findSMARTS(mol, '[CX3](=O)[OX2H1]')];
+console.log(matchesSMARTS(mol, '[CX3](=O)[OX2H1]')); // true
 ```
 
 ## SMIRKS Reaction Transforms
@@ -157,7 +162,7 @@ import { parseSMILES, applySMIRKS, reactionTemplates } from 'molecules';
 
 // Apply a built-in reaction template
 const alcohol = parseSMILES('CCO');
-const ketone = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
+const aldehyde = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
 
 // Apply a custom SMIRKS transform
 const mol = parseSMILES('CCl');
@@ -251,13 +256,9 @@ import { parseSMILES, toSMILES, toCanonicalSMILES, parseINCHI, toInChI } from 'm
 import { wienerIndex, balabanIndex, logP } from 'molecules/descriptors';
 import { adjacencyMatrix, distanceMatrix } from 'molecules/matrices';
 import { perceiveAromaticity, morganRanks, bfs, dfs } from 'molecules/algorithms';
-import { validateValence } from 'molecules/validation';
-```
-
+import { elements, elementsExtended, moleculeCatalog } from 'molecules/data';
+import { generateCoords, generateAndRefine2dCoords } from 'molecules/layout';
 import { findSMARTS, functionalGroups } from 'molecules/smarts';
-import { perceiveAromaticity, morganRanks } from 'molecules/algorithms';
+import { applySMIRKS, reactionTemplates } from 'molecules/smirks';
 import { validateValence } from 'molecules/validation';
-
-```
-
 ```

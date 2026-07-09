@@ -21,7 +21,7 @@ import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydr
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
 import { getAtomNumberMap, multipleBondAnnotationBlockerAngles, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
-import { ringAtomKey, ringFillDomId } from '../../core/style.js';
+import { ringAtomKey, ringFillDomId } from '../../core/support/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 import { updateSelectionBoundsControls } from './selection-overlay.js';
@@ -340,9 +340,7 @@ function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
   const hasChiralCenters = (molecule.getChiralCenters?.()?.length ?? 0) > 0;
   const needsProjectedOrganometallicSeed = hasProjectedOrganometallicDisplayCandidate(molecule) && hasIncompleteProjectedOrganometallicDisplay(molecule);
   const skipReactionPreviewStereoSeed = isReactionPreviewMol && molecule.__reactionPreview?.skipForceStereoSeed === true;
-  const shouldSeed =
-    needsProjectedOrganometallicSeed ||
-    (!skipReactionPreviewStereoSeed && !hasDisplayStereo && hasChiralCenters);
+  const shouldSeed = needsProjectedOrganometallicSeed || (!skipReactionPreviewStereoSeed && !hasDisplayStereo && hasChiralCenters);
   if (!shouldSeed) {
     return;
   }

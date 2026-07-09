@@ -5401,10 +5401,7 @@ function restoreMixedRootAromaticGeometry(layoutGraph, coords, rootRingSystem, b
   }
 
   const incumbentRegularity = measureAromaticRingRegularity(rings, coords);
-  if (
-    incumbentRegularity.ringCount === 0 ||
-    incumbentRegularity.maxAngleDeviation <= MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION
-  ) {
+  if (incumbentRegularity.ringCount === 0 || incumbentRegularity.maxAngleDeviation <= MACROCYCLE_AROMATIC_RESCUE_TRIGGER_ANGLE_DEVIATION) {
     return { changed: false };
   }
 
@@ -5423,10 +5420,7 @@ function restoreMixedRootAromaticGeometry(layoutGraph, coords, rootRingSystem, b
       continue;
     }
     const candidateRegularity = measureAromaticRingRegularity(rings, candidateCoords);
-    if (
-      candidateRegularity.ringCount === 0 ||
-      candidateRegularity.maxAngleDeviation >= incumbentRegularity.maxAngleDeviation - MACROCYCLE_AROMATIC_RESCUE_TARGET_ANGLE_DEVIATION
-    ) {
+    if (candidateRegularity.ringCount === 0 || candidateRegularity.maxAngleDeviation >= incumbentRegularity.maxAngleDeviation - MACROCYCLE_AROMATIC_RESCUE_TARGET_ANGLE_DEVIATION) {
       continue;
     }
     const candidateAudit = auditMixedPlacement(
@@ -13866,7 +13860,6 @@ function rescueNonRingSuppressedHydrogenFans(layoutGraph, coords, bondLength) {
   const linkedDivalentBalance = balanceNonRingSuppressedHydrogenFanLinkedDivalentBends(layoutGraph, workingCoords, baseAudit, bondLength);
   if (linkedDivalentBalance.changed) {
     workingCoords = linkedDivalentBalance.coords;
-    baseAudit = linkedDivalentBalance.audit;
     changed = true;
   }
 
@@ -18765,7 +18758,6 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
     }
 
     const turnSigns = linker.chainAtomIds.length === 0 ? [1] : [-1, 1];
-    let bestCandidateCoords = null;
     const rawCandidates = [];
     const allowExpandedRingLinkerRotations = (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT && pendingRingSystem.ringSystem.atomIds.length <= 18;
     const linkedRingAttachmentMeta = {
@@ -18854,7 +18846,7 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
         scoreCache: attachedBlockScoreCache
       }
     );
-    bestCandidateCoords = bestCandidate?.transformedCoords ?? null;
+    const bestCandidateCoords = bestCandidate?.transformedCoords ?? null;
 
     if (!bestCandidateCoords) {
       remaining.push(pendingRingSystem);
@@ -23548,10 +23540,7 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
     }
   }
 
-  const ringAttachedLinearMultipleCrowdingRelief = resolveRingAttachedLinearMultipleCrowding(layoutGraph, bestPlacement.coords, bestPlacement.bondValidationClasses, bondLength);
-  if (ringAttachedLinearMultipleCrowdingRelief.changed) {
-    bestAudit = auditMixedPlacement(layoutGraph, bestPlacement, bondLength);
-  }
+  resolveRingAttachedLinearMultipleCrowding(layoutGraph, bestPlacement.coords, bestPlacement.bondValidationClasses, bondLength);
 
   return {
     ...bestPlacement,

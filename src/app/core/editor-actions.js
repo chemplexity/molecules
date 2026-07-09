@@ -146,8 +146,7 @@ export function createEditorActions(deps) {
     if (mode === 'force') {
       const forceResult = result.force ?? {};
       const aux = forceResult.beforeRender?.(context);
-      const shouldRefitUnlockedForceEdit =
-        options.viewportPolicy === ViewportPolicy.restoreEdit && (reactionEdit?.restored || resonanceReset);
+      const shouldRefitUnlockedForceEdit = options.viewportPolicy === ViewportPolicy.restoreEdit && (reactionEdit?.restored || resonanceReset);
       const forceOptions = {
         ...(forceResult.options ?? { preservePositions: true, preserveView: true }),
         ...(shouldRefitUnlockedForceEdit ? { preserveView: false } : {}),

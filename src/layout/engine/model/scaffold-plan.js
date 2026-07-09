@@ -314,7 +314,7 @@ function preferredTerminalMixedRootCandidate(layoutGraph, component, candidates)
     return null;
   }
 
-  let preferred = null;
+  let preferred;
   if (nonIsolatedCandidates.length === 1) {
     const distances = graphDistances(adjacency, nonIsolatedCandidates[0].id);
     preferred = [...terminalCandidates].sort((firstCandidate, secondCandidate) => {

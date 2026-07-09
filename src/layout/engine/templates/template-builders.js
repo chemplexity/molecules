@@ -5462,11 +5462,18 @@ export function buildTemplateLibrary() {
         }
       }
     ),
-    createTemplate('oxa-azabicyclo-sulfonyl-core', 'bridged', 53.85508125, createOxaAzabicycloSulfonylCoreTemplate(), geometrySpec('normalized-xy', createOxaAzabicycloSulfonylCoreGeometry(), BRIDGED_VALIDATION), {
-      matchContext: {
-        exocyclicNeighbors: [{ templateAtomId: 'S10', element: 'O', bondOrder: 2, minCount: 2, maxCount: 2 }]
+    createTemplate(
+      'oxa-azabicyclo-sulfonyl-core',
+      'bridged',
+      53.85508125,
+      createOxaAzabicycloSulfonylCoreTemplate(),
+      geometrySpec('normalized-xy', createOxaAzabicycloSulfonylCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [{ templateAtomId: 'S10', element: 'O', bondOrder: 2, minCount: 2, maxCount: 2 }]
+        }
       }
-    }),
+    ),
     createTemplate(
       'ammonium-benzocyclobutane-core',
       'bridged',

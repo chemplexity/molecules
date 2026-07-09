@@ -146,9 +146,7 @@ function patchBounds(patch, atomIds) {
 }
 
 function moleculeBounds(mol, atomIds) {
-  const points = [...atomIds]
-    .map(atomId => mol.atoms.get(atomId))
-    .filter(atom => atom?.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+  const points = [...atomIds].map(atomId => mol.atoms.get(atomId)).filter(atom => atom?.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
   const xs = points.map(point => point.x);
   const ys = points.map(point => point.y);
   return {
@@ -314,9 +312,7 @@ describe('reaction preview restore', () => {
 
       updateReactionTemplatesPanel();
 
-      const rowText = rows
-        .map(row => row.children?.map(cell => cell.textContent || cell.children?.map(child => child.textContent).join('')).join(' '))
-        .join(' ');
+      const rowText = rows.map(row => row.children?.map(cell => cell.textContent || cell.children?.map(child => child.textContent).join('')).join(' ')).join(' ');
       assert.match(rowText, /Aldehyde Oxidation/);
       assert.match(rowText, /Carbonyl Reduction/);
     } finally {

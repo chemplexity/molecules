@@ -162,7 +162,12 @@ function finiteRingPolygons(molecule) {
   }
   return molecule
     .getRings()
-    .map(ringAtomIds => ringAtomIds.map(atomId => molecule.atoms.get(atomId)).filter(isFinitePoint).map(atom => ({ x: atom.x, y: atom.y })))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(atomId => molecule.atoms.get(atomId))
+        .filter(isFinitePoint)
+        .map(atom => ({ x: atom.x, y: atom.y }))
+    )
     .filter(polygon => polygon.length >= 3);
 }
 

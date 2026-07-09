@@ -1,6 +1,6 @@
 /** @module app/interactions/clipboard */
 
-import { createMoleculeFragment, mergeMoleculeFragment } from '../../core/molecule-fragment.js';
+import { createMoleculeFragment, mergeMoleculeFragment } from '../../core/support/molecule-fragment.js';
 import {
   ARO_STROKE,
   PI_STROKE,
@@ -270,9 +270,7 @@ function placeMissingForceHydrogens(fragment, model, pointByAtomId) {
 }
 
 function heavyNeighborAtoms(atom, model) {
-  return (model.bondsByAtomId.get(atom.id) ?? [])
-    .map(bond => model.atomById.get(otherAtomId(bond, atom.id)))
-    .filter(neighbor => neighbor && neighbor.name !== 'H');
+  return (model.bondsByAtomId.get(atom.id) ?? []).map(bond => model.atomById.get(otherAtomId(bond, atom.id))).filter(neighbor => neighbor && neighbor.name !== 'H');
 }
 
 function hiddenHydrogenCount(atom, model, options = {}) {
@@ -486,7 +484,14 @@ function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
     }
     const hw = labelHalfW(label, fontSize);
     const hh = labelHalfH(label, fontSize);
-    bgLayer.append('rect').attr('class', 'atom-bg').attr('x', point.x - hw).attr('y', point.y - hh).attr('width', hw * 2).attr('height', hh * 2).attr('rx', 2);
+    bgLayer
+      .append('rect')
+      .attr('class', 'atom-bg')
+      .attr('x', point.x - hw)
+      .attr('y', point.y - hh)
+      .attr('width', hw * 2)
+      .attr('height', hh * 2)
+      .attr('rx', 2);
   }
 
   const labelLayer = layer.append('g').attr('class', 'atom-labels');
@@ -504,8 +509,27 @@ function draw2dPreview(context, layer, fragment, model, pointByAtomId) {
       const metrics = chargeBadgeMetrics(chargeLabel, fontSize);
       const x = labelHalfW(label, fontSize) + metrics.radius * 0.75;
       const y = -labelHalfH(label, fontSize) * 0.55;
-      group.append('circle').attr('class', 'atom-charge-ring').attr('cx', x).attr('cy', y).attr('r', metrics.radius).attr('fill', 'white').attr('stroke', '#111111').attr('stroke-width', 0.9).attr('opacity', atomDisplayOpacity(atom));
-      group.append('text').attr('class', 'atom-charge-text').attr('x', x).attr('y', y).style('font-size', `${metrics.fontSize}px`).attr('fill', '#111111').attr('opacity', atomDisplayOpacity(atom)).attr('text-anchor', 'middle').attr('dominant-baseline', 'central').text(chargeLabel);
+      group
+        .append('circle')
+        .attr('class', 'atom-charge-ring')
+        .attr('cx', x)
+        .attr('cy', y)
+        .attr('r', metrics.radius)
+        .attr('fill', 'white')
+        .attr('stroke', '#111111')
+        .attr('stroke-width', 0.9)
+        .attr('opacity', atomDisplayOpacity(atom));
+      group
+        .append('text')
+        .attr('class', 'atom-charge-text')
+        .attr('x', x)
+        .attr('y', y)
+        .style('font-size', `${metrics.fontSize}px`)
+        .attr('fill', '#111111')
+        .attr('opacity', atomDisplayOpacity(atom))
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .text(chargeLabel);
     }
   }
 }
@@ -582,7 +606,17 @@ function drawForcePreview(layer, fragment, model, pointByAtomId) {
     const label = labelByAtomId.get(atom.id) ?? atom.name;
     const opacity = atomDisplayOpacity(atom);
     const radius = atomRadius(atom.properties?.protons, 'force');
-    atomLayer.append('circle').attr('class', 'node').attr('cx', point.x).attr('cy', point.y).attr('r', radius).attr('fill', atomDisplayColor(atom, 'force')).attr('fill-opacity', opacity).attr('stroke', strokeColor(atom.name)).attr('stroke-opacity', opacity).attr('stroke-width', 1);
+    atomLayer
+      .append('circle')
+      .attr('class', 'node')
+      .attr('cx', point.x)
+      .attr('cy', point.y)
+      .attr('r', radius)
+      .attr('fill', atomDisplayColor(atom, 'force'))
+      .attr('fill-opacity', opacity)
+      .attr('stroke', strokeColor(atom.name))
+      .attr('stroke-opacity', opacity)
+      .attr('stroke-width', 1);
     const fill = (() => {
       if (atom.name === 'H' && !atom.properties?.style) {
         return '#111';
@@ -612,8 +646,29 @@ function drawForcePreview(layer, fragment, model, pointByAtomId) {
       const metrics = chargeBadgeMetrics(chargeLabel, 11);
       const x = point.x + radius + metrics.radius * 0.65;
       const y = point.y - radius * 0.75;
-      atomLayer.append('circle').attr('class', 'charge-label-ring').attr('cx', x).attr('cy', y).attr('r', metrics.radius).attr('fill', 'white').attr('stroke', '#111111').attr('stroke-width', 0.9).attr('opacity', opacity);
-      atomLayer.append('text').attr('class', 'charge-label-text').attr('x', x).attr('y', y).attr('font-family', 'Arial, Helvetica, sans-serif').attr('font-size', `${metrics.fontSize}px`).attr('font-weight', '700').attr('fill', '#111111').attr('opacity', opacity).attr('text-anchor', 'middle').attr('dominant-baseline', 'central').text(chargeLabel);
+      atomLayer
+        .append('circle')
+        .attr('class', 'charge-label-ring')
+        .attr('cx', x)
+        .attr('cy', y)
+        .attr('r', metrics.radius)
+        .attr('fill', 'white')
+        .attr('stroke', '#111111')
+        .attr('stroke-width', 0.9)
+        .attr('opacity', opacity);
+      atomLayer
+        .append('text')
+        .attr('class', 'charge-label-text')
+        .attr('x', x)
+        .attr('y', y)
+        .attr('font-family', 'Arial, Helvetica, sans-serif')
+        .attr('font-size', `${metrics.fontSize}px`)
+        .attr('font-weight', '700')
+        .attr('fill', '#111111')
+        .attr('opacity', opacity)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .text(chargeLabel);
     }
   }
 }
@@ -693,23 +748,12 @@ function forcePatchForFragment(fragment, mergeResult, center, forceScale) {
 }
 
 function finiteRect(rect) {
-  return (
-    rect &&
-    Number.isFinite(Number(rect.left)) &&
-    Number.isFinite(Number(rect.right)) &&
-    Number.isFinite(Number(rect.top)) &&
-    Number.isFinite(Number(rect.bottom))
-  );
+  return rect && Number.isFinite(Number(rect.left)) && Number.isFinite(Number(rect.right)) && Number.isFinite(Number(rect.top)) && Number.isFinite(Number(rect.bottom));
 }
 
 function rectInside(inner, outer, padding = PASTE_VIEWPORT_PADDING) {
   return (
-    finiteRect(inner) &&
-    finiteRect(outer) &&
-    inner.left >= outer.left + padding &&
-    inner.right <= outer.right - padding &&
-    inner.top >= outer.top + padding &&
-    inner.bottom <= outer.bottom - padding
+    finiteRect(inner) && finiteRect(outer) && inner.left >= outer.left + padding && inner.right <= outer.right - padding && inner.top >= outer.top + padding && inner.bottom <= outer.bottom - padding
   );
 }
 
@@ -754,7 +798,7 @@ export function createClipboardActions(context) {
               .filter(node => node.id != null && node.x != null && node.y != null)
               .map(node => [node.id, { x: node.x, y: node.y }])
           )
-        : converted2dForceAtomPositions(context, mol) ?? rendered2dAtomPositions(context, mol);
+        : (converted2dForceAtomPositions(context, mol) ?? rendered2dAtomPositions(context, mol));
     clipboardFragment = createMoleculeFragment(mol, {
       atomIds: selectedAtomIds.size > 0 || selectedBondIds.size > 0 ? selectedAtomIds : null,
       bondIds: selectedAtomIds.size > 0 || selectedBondIds.size > 0 ? selectedBondIds : null,

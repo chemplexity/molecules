@@ -1413,7 +1413,6 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
     const polyoxoRescueAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, polyoxoRescuePlacement, bondLength);
     if (isBetterOrganometallicPlacement(polyoxoRescueAudit, bestAudit) || isAcceptablePolyoxoRescuePlacement(polyoxoRescueAudit, bestAudit)) {
       bestPlacement = polyoxoRescuePlacement;
-      bestAudit = polyoxoRescueAudit;
     }
   }
 

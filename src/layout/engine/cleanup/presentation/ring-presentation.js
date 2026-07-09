@@ -1434,7 +1434,6 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
   }
 
   if (includeRingSubstituent && hasDirectAttachedRingRootNeed(currentState)) {
-    const previousStepCount = currentState.steps.length;
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
@@ -1445,7 +1444,6 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
       }),
       options
     );
-    usedDirectAttachedRingRootRetidy = usedDirectAttachedRingRootRetidy || currentState.steps.length > previousStepCount;
   }
 
   if (usedAttachedRingFallback && includeRingSubstituent) {

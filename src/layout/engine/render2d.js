@@ -4,7 +4,7 @@ import { Resvg } from '@resvg/resvg-js';
 
 import { parseSMILES } from '../../io/smiles.js';
 import { parseINCHI } from '../../io/inchi.js';
-import { ringFillDomId, styleColor, styleOpacity } from '../../core/style.js';
+import { ringFillDomId, styleColor, styleOpacity } from '../../core/support/style.js';
 import { collect2dHydrogenLabelCounts, hideHydrogensFor2d } from '../hydrogen-display.js';
 import { buildRingFillShape } from '../ring-fill-shape.js';
 import { applyCoords } from './apply.js';
@@ -368,7 +368,7 @@ export function renderMolSVG(
     kekulize(molecule);
   }
 
-  let bondLength = 1.5;
+  let bondLength;
   try {
     const resolved = resolveLayoutSource(molecule, layoutResult, coords, layoutOptions);
     bondLength = resolved.bondLength;
@@ -582,7 +582,14 @@ export function renderMolSVG(
     }
   }
 
-  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...ringFillElements, ...bondElements, ...labelElements, ...lonePairElements, ...chiralElements].join('\n');
+  const svgContent = [
+    `<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`,
+    ...ringFillElements,
+    ...bondElements,
+    ...labelElements,
+    ...lonePairElements,
+    ...chiralElements
+  ].join('\n');
 
   return { svgContent, cellW, cellH };
 }

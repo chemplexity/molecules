@@ -332,13 +332,13 @@ describe('initOptionsModal', () => {
     assert.equal(calls[0][0], 'preventDefault');
     assert.equal(calls[1][0], 'updateRenderOptions');
     assert.equal(calls[1][1].twoDAtomFontSize, 18);
-    assert.deepEqual(calls.slice(2), [
-      ['setFontSize', 18],
-      ['draw2d']
-    ]);
+    assert.deepEqual(calls.slice(2), [['setFontSize', 18], ['draw2d']]);
 
     docListeners.get('keydown')({ key: 'Enter', preventDefault: () => calls.push(['hiddenPreventDefault']) });
-    assert.equal(calls.some(call => call[0] === 'hiddenPreventDefault'), false);
+    assert.equal(
+      calls.some(call => call[0] === 'hiddenPreventDefault'),
+      false
+    );
   });
 
   it('applies updated force-layout options through updateForce', () => {

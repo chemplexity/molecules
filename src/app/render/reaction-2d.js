@@ -15,7 +15,7 @@ import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds,
 import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
 import { clearMoleculeResonanceElectronFlow } from './resonance-arrows.js';
-import { ringAtomKey } from '../../core/style.js';
+import { ringAtomKey } from '../../core/support/style.js';
 import { tokenizeChemText } from '../../utils/index.js';
 
 let ctx = {};
@@ -117,9 +117,7 @@ function _formatReactionConditionValue(key, value) {
   if (key !== 'temperature') {
     return text;
   }
-  return text
-    .replace(/\brt\b/gi, '25 \u00b0C')
-    .replace(/(-?\d+(?:\.\d+)?)\s*(?:\u00b0\s*)?C\b/g, '$1 \u00b0C');
+  return text.replace(/\brt\b/gi, '25 \u00b0C').replace(/(-?\d+(?:\.\d+)?)\s*(?:\u00b0\s*)?C\b/g, '$1 \u00b0C');
 }
 
 /**
@@ -1367,13 +1365,15 @@ export function _chooseReactionPreviewForceArrow(
  * @param {object} [options] - Optional spacing controls.
  */
 export function _centerReaction2dPairCoords(mol, bondLength = 1.5, options = {}) {
-  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
-    ? {
-        reactantAtomIds: _reactionPreviewReactantAtomIds,
-        productAtomIds: _reactionPreviewProductAtomIds,
-        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-      }
-    : null);
+  const previewState =
+    mol?.__reactionPreview ??
+    (_hasReactionPreview()
+      ? {
+          reactantAtomIds: _reactionPreviewReactantAtomIds,
+          productAtomIds: _reactionPreviewProductAtomIds,
+          productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+        }
+      : null);
   if (!previewState || !mol) {
     return;
   }
@@ -1386,11 +1386,13 @@ export function _centerReaction2dPairCoords(mol, bondLength = 1.5, options = {})
  * @param {number} [bondLength] - Target bond length used for spacing calculations.
  */
 export function _spreadReaction2dProductComponents(mol, bondLength = 1.5) {
-  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
-    ? {
-        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-      }
-    : null);
+  const previewState =
+    mol?.__reactionPreview ??
+    (_hasReactionPreview()
+      ? {
+          productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+        }
+      : null);
   if (!previewState || !mol || (previewState.productComponentAtomIdSets?.length ?? 0) < 2) {
     return;
   }
@@ -1982,13 +1984,15 @@ function _drawReactionArrowLabels(arrowLayer, previewState, { x1, y1, x2, y2, ar
  * @param {import('../../core/Molecule.js').Molecule|null} [mol] - Optional rendered molecule carrying preview metadata.
  */
 export function _drawReactionPreviewArrow2d(toSVGPt, atoms, mol = null) {
-  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
-    ? {
-        reactantAtomIds: _reactionPreviewReactantAtomIds,
-        productAtomIds: _reactionPreviewProductAtomIds,
-        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-      }
-    : null);
+  const previewState =
+    mol?.__reactionPreview ??
+    (_hasReactionPreview()
+      ? {
+          reactantAtomIds: _reactionPreviewReactantAtomIds,
+          productAtomIds: _reactionPreviewProductAtomIds,
+          productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+        }
+      : null);
   const reactantAtomIds = previewState?.reactantAtomIds;
   const productAtomIds = previewState?.productAtomIds;
   if (!reactantAtomIds?.size || !productAtomIds?.size) {
@@ -2060,13 +2064,15 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms, mol = null) {
  */
 export function _renderReactionPreviewArrowForce(nodes, mol = null) {
   ctx.g.selectAll('g.reaction-preview-arrow').remove();
-  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
-    ? {
-        reactantAtomIds: _reactionPreviewReactantAtomIds,
-        productAtomIds: _reactionPreviewProductAtomIds,
-        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-      }
-    : null);
+  const previewState =
+    mol?.__reactionPreview ??
+    (_hasReactionPreview()
+      ? {
+          reactantAtomIds: _reactionPreviewReactantAtomIds,
+          productAtomIds: _reactionPreviewProductAtomIds,
+          productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+        }
+      : null);
   const reactantAtomIds = previewState?.reactantAtomIds;
   const productAtomIds = previewState?.productAtomIds;
   if (!reactantAtomIds?.size || !productAtomIds?.size) {
@@ -2342,23 +2348,25 @@ export function _reapplyActiveReactionPreview() {
  * @param {number} [bondLength] - Target layout bond length used by product geometry repairs.
  */
 export function _alignReaction2dProductOrientation(mol, bondLength = 1.5) {
-  const previewState = mol?.__reactionPreview ?? (_hasReactionPreview()
-    ? {
-        reactantAtomIds: _reactionPreviewReactantAtomIds,
-        productAtomIds: _reactionPreviewProductAtomIds,
-        productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
-        mappedAtomPairs: _reactionPreviewMappedAtomPairs,
-        editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
-        preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
-        preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
-        preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
-        preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
-        forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
-        forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
-        forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
-        reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
-      }
-    : null);
+  const previewState =
+    mol?.__reactionPreview ??
+    (_hasReactionPreview()
+      ? {
+          reactantAtomIds: _reactionPreviewReactantAtomIds,
+          productAtomIds: _reactionPreviewProductAtomIds,
+          productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
+          mappedAtomPairs: _reactionPreviewMappedAtomPairs,
+          editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
+          preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
+          preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
+          preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
+          preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
+          forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
+          forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
+          forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
+          reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
+        }
+      : null);
   if (!previewState?.mappedAtomPairs?.length) {
     return;
   }

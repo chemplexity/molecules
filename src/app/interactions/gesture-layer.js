@@ -1,7 +1,7 @@
 /** @module app/interactions/gesture-layer */
 
 import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
-import { ringFillDomId } from '../../core/style.js';
+import { ringFillDomId } from '../../core/support/style.js';
 import { atomColor, atomDisplayColor, atomDisplayOpacity, atomRadius, singleBondWidth, strokeColor } from '../render/helpers.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { finiteNumber, nearestPointWithinRadius, SELECTION_PIVOT_ATOM_SNAP_RADIUS } from './geometry-utils.js';
@@ -187,17 +187,11 @@ export function initGestureInteractions(context) {
 
   function ringTemplateModeAllowsFreePreview() {
     const mode = context.state.viewState.getMode();
-    return (
-      isRingTemplateMode() &&
-      (mode === '2d' || mode === 'force') &&
-      context.ringTemplateDrag?.anchoredPreviewActive !== true
-    );
+    return isRingTemplateMode() && (mode === '2d' || mode === 'force') && context.ringTemplateDrag?.anchoredPreviewActive !== true;
   }
 
   function isRingTemplateFreePreviewBlockedTarget(event) {
-    return !!event.target?.closest?.(
-      '.atom-hit, .bond-hit, .node, .bond-hover-target, .ring-template-atom-hover-target, .ring-template-bond-hover-target, .link, .separator'
-    );
+    return !!event.target?.closest?.('.atom-hit, .bond-hit, .node, .bond-hover-target, .ring-template-atom-hover-target, .ring-template-bond-hover-target, .link, .separator');
   }
 
   function updateRingTemplatePreviewStateAtEvent(event, phase = 'hover') {
@@ -247,9 +241,7 @@ export function initGestureInteractions(context) {
       }),
       { x: 0, y: 0 }
     );
-    const doubleBondIndices = ringTemplatePreview.template === 'benzene'
-      ? ringTemplatePreviewDoubleBondIndices(positions.length)
-      : new Set();
+    const doubleBondIndices = ringTemplatePreview.template === 'benzene' ? ringTemplatePreviewDoubleBondIndices(positions.length) : new Set();
     const previewCarbon = { name: 'C', properties: {} };
     const renderOptions = context.options?.getRenderOptions?.() ?? {};
     const bondStrokeWidth = isForce ? singleBondWidth(1) : `${renderOptions.twoDBondThickness ?? 1.8}px`;
@@ -480,10 +472,7 @@ export function initGestureInteractions(context) {
     }
     const mode = context.state.viewState.getMode();
     const isSelectableMode = mode === '2d' || mode === 'force';
-    const active =
-      isSelectableMode &&
-      context.state.overlayState.getSelectMode() &&
-      selectionPivotDescriptorFromEvent(event) !== null;
+    const active = isSelectableMode && context.state.overlayState.getSelectMode() && selectionPivotDescriptorFromEvent(event) !== null;
     setSelectionPivotCursor(active);
     return active;
   }
@@ -690,10 +679,7 @@ export function initGestureInteractions(context) {
     }
     const [pointerX, pointerY] = context.pointer(event, g.node());
     const startAngle = Math.atan2(pointerY - center.y, pointerX - center.x);
-    const rotation =
-      mode === 'force'
-        ? captureForceSelectionRotation(mol, atomIds, center)
-        : capture2dSelectionRotation(mol, atomIds, center);
+    const rotation = mode === 'force' ? captureForceSelectionRotation(mol, atomIds, center) : capture2dSelectionRotation(mol, atomIds, center);
     if (!rotation) {
       return false;
     }
@@ -929,10 +915,7 @@ export function initGestureInteractions(context) {
       return false;
     }
     const [startX, startY] = context.pointer(event, g.node());
-    const move =
-      mode === 'force'
-        ? captureForceSelectionBoundsMove(mol, atomIds, { x: startX, y: startY })
-        : capture2dSelectionBoundsMove(mol, atomIds, { x: startX, y: startY });
+    const move = mode === 'force' ? captureForceSelectionBoundsMove(mol, atomIds, { x: startX, y: startY }) : capture2dSelectionBoundsMove(mol, atomIds, { x: startX, y: startY });
     if (!move) {
       return false;
     }
@@ -1342,7 +1325,12 @@ export function initGestureInteractions(context) {
   }
 
   function elementClassContains(element, className) {
-    return element?.classList?.contains?.(className) ?? String(element?.getAttribute?.('class') ?? '').split(/\s+/).includes(className);
+    return (
+      element?.classList?.contains?.(className) ??
+      String(element?.getAttribute?.('class') ?? '')
+        .split(/\s+/)
+        .includes(className)
+    );
   }
 
   function elementTagName(element) {
@@ -1541,12 +1529,7 @@ export function initGestureInteractions(context) {
   }
 
   function isPaintHitElement(element) {
-    return (
-      element?.classList?.contains?.('atom-hit') ||
-      element?.classList?.contains?.('bond-hit') ||
-      element?.classList?.contains?.('node') ||
-      element?.classList?.contains?.('bond-hover-target')
-    );
+    return element?.classList?.contains?.('atom-hit') || element?.classList?.contains?.('bond-hit') || element?.classList?.contains?.('node') || element?.classList?.contains?.('bond-hover-target');
   }
 
   function isForceBondPaintHit(element) {
@@ -1782,10 +1765,7 @@ export function initGestureInteractions(context) {
     const [x, y] = context.pointer(event, g.node());
     const point = { x, y };
     let best = null;
-    const forceNodeById =
-      mode === 'force' && typeof context.simulation.nodes === 'function'
-        ? new Map(context.simulation.nodes().map(node => [node.id, node]))
-        : null;
+    const forceNodeById = mode === 'force' && typeof context.simulation.nodes === 'function' ? new Map(context.simulation.nodes().map(node => [node.id, node])) : null;
 
     const rings = mol.getRings();
     for (const ringAtomIds of rings) {
@@ -2397,9 +2377,7 @@ export function initGestureInteractions(context) {
       suppressSelectionPivotClick = false;
       const plotEl = context.dom?.plotEl ?? null;
       const svgNode = svg?.node?.() ?? null;
-      const suppressTarget =
-        (plotEl?.contains?.(event.target) ?? false) ||
-        (svgNode?.contains?.(event.target) ?? false);
+      const suppressTarget = (plotEl?.contains?.(event.target) ?? false) || (svgNode?.contains?.(event.target) ?? false);
       if (!suppressTarget) {
         return;
       }
