@@ -1,7 +1,7 @@
 /** @module app/interactions/structural-edit-actions */
 
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
-import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
+import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId, stereoBondTypeForCenter } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 import { normalizeRingAtomIds, normalizeRingFillStyle, normalizeVisualStyle, ringAtomKey } from '../../core/support/style.js';
@@ -15,6 +15,7 @@ const RING_TEMPLATE_REUSE_DISTANCE_FACTOR = 0.2;
 const TAU = Math.PI * 2;
 const GEOMETRY_EPSILON = 1e-6;
 const RESONANCE_PRODUCT_ATOM_ID_PREFIX = '__resonance_product__:';
+const STEREO_HYDROGEN_DISPLAY_PREFERENCE = '__stereoHydrogenDisplayPreference';
 
 function screenCoordinate(transform, axis, value) {
   if (axis === 'x' && typeof transform?.applyX === 'function') {
@@ -1064,6 +1065,82 @@ function resolveChargeToolNextValue(currentCharge, chargeTool, explicitNextCharg
   return currentCharge + (decrement ? -signedStep : signedStep);
 }
 
+function displayedStereoHydrogenPreference(mol, centerId) {
+  const center = mol?.atoms?.get?.(centerId) ?? null;
+  if (!center?.getChirality?.()) {
+    return null;
+  }
+  for (const bondId of center.bonds ?? []) {
+    const bond = mol.bonds.get(bondId);
+    const displayAs = bond?.properties?.display?.as ?? null;
+    if (displayAs !== 'wedge' && displayAs !== 'dash') {
+      continue;
+    }
+    const displayCenterId = bond.properties.display?.centerId ?? centerId;
+    if (displayCenterId !== centerId) {
+      continue;
+    }
+    const otherAtom = mol.atoms.get(bond.getOtherAtom(centerId));
+    if (otherAtom?.name === 'H') {
+      return { target: 'H' };
+    }
+  }
+  return center.properties?.[STEREO_HYDROGEN_DISPLAY_PREFERENCE] ?? null;
+}
+
+function rememberStereoHydrogenDisplayPreference(mol, centerId, preference) {
+  const center = mol?.atoms?.get?.(centerId) ?? null;
+  if (!center?.properties || preference?.target !== 'H') {
+    return;
+  }
+  Object.defineProperty(center.properties, STEREO_HYDROGEN_DISPLAY_PREFERENCE, {
+    value: { target: 'H' },
+    configurable: true,
+    enumerable: false,
+    writable: true
+  });
+}
+
+function restoreStereoHydrogenDisplayPreference(mol, centerId, fallbackPreference = null) {
+  const center = mol?.atoms?.get?.(centerId) ?? null;
+  const preference = center?.properties?.[STEREO_HYDROGEN_DISPLAY_PREFERENCE] ?? fallbackPreference;
+  if (preference?.target !== 'H') {
+    return false;
+  }
+  if (!center.getChirality?.()) {
+    delete center.properties[STEREO_HYDROGEN_DISPLAY_PREFERENCE];
+    return false;
+  }
+  const hydrogen = center.getNeighbors(mol).find(neighbor => neighbor?.name === 'H' && neighbor.visible === false);
+  const hydrogenBond = hydrogen ? mol.getBond(centerId, hydrogen.id) : null;
+  if (!hydrogenBond) {
+    return false;
+  }
+  const assignment = stereoBondTypeForCenter(mol, centerId, hydrogenBond.id);
+  if (!assignment) {
+    return false;
+  }
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    const displayAs = bond?.properties?.display?.as ?? null;
+    if (displayAs !== 'wedge' && displayAs !== 'dash') {
+      continue;
+    }
+    const displayCenterId = bond.properties.display?.centerId ?? (bond.atoms?.includes?.(centerId) ? centerId : null);
+    if (displayCenterId !== centerId) {
+      continue;
+    }
+    delete bond.properties.display.as;
+    delete bond.properties.display.centerId;
+    delete bond.properties.display.manual;
+  }
+  hydrogenBond.properties.display ??= {};
+  hydrogenBond.properties.display.as = assignment.type;
+  hydrogenBond.properties.display.centerId = centerId;
+  delete hydrogenBond.properties.display.manual;
+  delete center.properties[STEREO_HYDROGEN_DISPLAY_PREFERENCE];
+  return true;
+}
+
 function normalizeStyleOrNull(style) {
   try {
     return normalizeVisualStyle(style);
@@ -1928,6 +2005,7 @@ export function createStructuralEditActions(context) {
         if (resolvedNextCharge === currentCharge) {
           return { cancelled: true };
         }
+        const stereoHydrogenPreference = displayedStereoHydrogenPreference(mol, targetAtomId);
 
         try {
           mol.setAtomCharge(targetAtomId, resolvedNextCharge);
@@ -1939,6 +2017,9 @@ export function createStructuralEditActions(context) {
         repairImplicitHydrogensWhenValenceImproves(mol, affected);
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+        if (!restoreStereoHydrogenDisplayPreference(mol, targetAtomId, stereoHydrogenPreference)) {
+          rememberStereoHydrogenDisplayPreference(mol, targetAtomId, stereoHydrogenPreference);
+        }
         const initialPatchPos = mode === 'force' ? mergeResonanceResetForcePatch(mol, resonanceReset, buildForceInitialPatchPos([targetAtomId])) : null;
 
         return {

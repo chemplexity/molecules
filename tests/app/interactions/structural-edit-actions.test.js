@@ -8,7 +8,7 @@ import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { refreshAromaticity } from '../../../src/algorithms/aromaticity.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
-import { kekulize } from '../../../src/layout/mol2d-helpers.js';
+import { kekulize, syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 import { validateValence } from '../../../src/validation/index.js';
 
 function makeAtom(id, name) {
@@ -3687,6 +3687,64 @@ describe('createStructuralEditActions', () => {
     );
     assert.equal(mol.atomCount, originalAtomCount - 1);
     assert.equal(mol.bondCount, originalBondCount - 1);
+  });
+
+  it('restores a displayed stereochemical hydrogen after a charge round trip on a chiral carbon', () => {
+    const mol = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+    syncDisplayStereo(mol);
+    const centerId = 'C5';
+    const initialHBond = [...mol.bonds.values()].find(
+      bond =>
+        bond.properties.display?.centerId === centerId &&
+        (bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash') &&
+        bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H')
+    );
+
+    assert.ok(initialHBond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: centerId } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.changeAtomCharge(centerId, {
+      chargeTool: 'positive',
+      zoomSnapshot: 'zoom-snapshot'
+    });
+    syncDisplayStereo(mol);
+
+    assert.equal(mol.atoms.get(centerId)?.getCharge?.() ?? mol.atoms.get(centerId)?.properties?.charge, 1);
+    assert.equal(
+      [...mol.bonds.values()].some(
+        bond =>
+          bond.properties.display?.centerId === centerId &&
+          bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H')
+      ),
+      false
+    );
+
+    actions.changeAtomCharge(centerId, {
+      chargeTool: 'negative',
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mol.atoms.get(centerId)?.getCharge?.() ?? mol.atoms.get(centerId)?.properties?.charge, 0);
+    const restoredStereoBonds = [...mol.bonds.values()].filter(
+      bond =>
+        bond.properties.display?.centerId === centerId &&
+        (bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+    );
+    const restoredHBond = restoredStereoBonds.find(bond => bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H'));
+    assert.equal(restoredStereoBonds.length, 1);
+    assert.ok(restoredHBond);
+    assert.equal(restoredHBond.properties.display.as, 'wedge');
   });
 
   it('does not auto-add extra hydrogens for implausible multi-positive oxygen charge edits', () => {

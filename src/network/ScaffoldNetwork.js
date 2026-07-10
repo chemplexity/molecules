@@ -7,6 +7,114 @@ import { toCanonicalSMILES } from '../io/index.js';
 import { Molecule } from '../core/Molecule.js';
 import { renderMolSVG } from '../layout/render2d.js';
 
+const NETWORK_RENDER_OPTIONS = { atomLabelBackplates: false, chargeBadgeBackplates: false, centerAtomLabels: true };
+const ORGANIC_SUBSET_IMPLICIT_VALENCE = Object.freeze({
+  B: 3,
+  C: 4,
+  N: 3,
+  O: 2,
+  P: 3,
+  S: 2,
+  F: 1,
+  Cl: 1,
+  Br: 1,
+  I: 1
+});
+
+function retainedHeavyBondOrder(molecule, atomId) {
+  const atom = molecule.atoms.get(atomId);
+  if (!atom) {
+    return 0;
+  }
+  let order = 0;
+  for (const bondId of atom.bonds ?? []) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const other = molecule.atoms.get(bond.getOtherAtom(atomId));
+    if (!other || other.name === 'H') {
+      continue;
+    }
+    order += bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+  }
+  return order;
+}
+
+function repairNeutralizedScaffoldHydrogens(molecule, atomId) {
+  const atom = molecule.atoms.get(atomId);
+  const targetValence = ORGANIC_SUBSET_IMPLICIT_VALENCE[atom?.name];
+  if (!atom || targetValence == null) {
+    return;
+  }
+
+  const hydrogenIds = [];
+  for (const bondId of [...atom.bonds]) {
+    const bond = molecule.bonds.get(bondId);
+    const otherId = bond?.getOtherAtom(atomId);
+    const other = molecule.atoms.get(otherId);
+    if (other?.name === 'H' && (other.bonds?.length ?? 0) === 1) {
+      hydrogenIds.push(otherId);
+    }
+  }
+
+  const hydrogenCount = Math.max(0, Math.round((targetValence - retainedHeavyBondOrder(molecule, atomId)) * 1000) / 1000);
+  const roundedHydrogenCount = Math.round(hydrogenCount);
+  const desiredHydrogenCount = Math.abs(hydrogenCount - roundedHydrogenCount) <= 1e-6 ? roundedHydrogenCount : hydrogenIds.length;
+
+  for (const hydrogenId of hydrogenIds.slice(desiredHydrogenCount)) {
+    molecule.removeAtom?.(hydrogenId);
+  }
+  for (let index = hydrogenIds.length; index < desiredHydrogenCount; index++) {
+    const hydrogen = molecule.addAtom?.(null, 'H', {}, { recompute: false });
+    if (!hydrogen) {
+      continue;
+    }
+    hydrogen.visible = false;
+    hydrogen.x = atom.x;
+    hydrogen.y = atom.y;
+    hydrogen.z = atom.z;
+    molecule.addBond?.(null, atomId, hydrogen.id, { order: 1 }, false);
+  }
+}
+
+function neutralizeScaffoldForGrouping(scaffoldMol) {
+  const neutralScaffold = scaffoldMol.clone();
+  const neutralizedAtomIds = [];
+  for (const atom of neutralScaffold.atoms.values()) {
+    if (atom.name === 'H') {
+      continue;
+    }
+    if ((atom.properties.charge ?? 0) !== 0) {
+      atom.setCharge?.(0);
+      neutralizedAtomIds.push(atom.id);
+    }
+  }
+  for (const atomId of neutralizedAtomIds) {
+    repairNeutralizedScaffoldHydrogens(neutralScaffold, atomId);
+  }
+  neutralScaffold._recomputeProperties?.();
+  return neutralScaffold;
+}
+
+function scaffoldGroupingInfo(molecule, scaffoldOptions = {}) {
+  const scaffoldMol = extractMurckoScaffold(molecule, scaffoldOptions);
+  if (scaffoldMol.atoms.size === 0) {
+    return {
+      indexKey: 'ACYCLIC',
+      canonicalSmiles: null,
+      scaffoldMol: new Molecule()
+    };
+  }
+  const neutralScaffoldMol = neutralizeScaffoldForGrouping(scaffoldMol);
+  const canonicalSmiles = toCanonicalSMILES(neutralScaffoldMol);
+  return {
+    indexKey: canonicalSmiles ?? 'ACYCLIC',
+    canonicalSmiles,
+    scaffoldMol: canonicalSmiles !== null ? neutralScaffoldMol : new Molecule()
+  };
+}
+
 /**
  * An abstraction over ReactionNetwork that groups molecules by their Murcko scaffolds
  * and aggregates their chemical reactions into scaffold-level transformations.
@@ -16,9 +124,11 @@ export class ScaffoldNetwork {
    * @param {import('./ReactionNetwork.js').ReactionNetwork} reactionNetwork - Source reaction network to summarize by scaffold.
    * @param {object} [options] - Network synchronization options.
    * @param {boolean} [options.autoSync] - Whether to dynamically update scaffolds when underlying network changes.
+   * @param {boolean} [options.preserveExocyclicMultipleBonds] - Whether scaffold identity keeps terminal heteroatoms attached by multiple bonds to retained scaffold atoms.
    */
-  constructor(reactionNetwork, { autoSync = true } = {}) {
+  constructor(reactionNetwork, { autoSync = true, preserveExocyclicMultipleBonds = false } = {}) {
     this.reactionNetwork = reactionNetwork;
+    this.scaffoldOptions = { preserveExocyclicMultipleBonds };
 
     /** @type {Map<string, ScaffoldNode>} */
     this.scaffoldNodes = new Map();
@@ -88,24 +198,14 @@ export class ScaffoldNetwork {
    * @private
    */
   _processMolecule(molNode) {
-    const scaffoldMol = extractMurckoScaffold(molNode.molecule);
-
-    let canonicalSmiles = null;
-    if (scaffoldMol.atoms.size > 0) {
-      canonicalSmiles = toCanonicalSMILES(scaffoldMol);
-    }
-
-    // Group all acyclic/empty scaffolds under a generic signature
-    const indexKey = canonicalSmiles !== null ? canonicalSmiles : 'ACYCLIC';
+    const { indexKey, canonicalSmiles, scaffoldMol } = scaffoldGroupingInfo(molNode.molecule, this.scaffoldOptions);
 
     let scaffoldId;
     if (this._scaffoldSmilesIndex.has(indexKey)) {
       scaffoldId = this._scaffoldSmilesIndex.get(indexKey);
     } else {
       scaffoldId = `scaff_${this._scaffoldCounter++}`;
-      // for acyclic we just keep an empty Molecule instance
-      const nodeScaffoldMol = canonicalSmiles !== null ? scaffoldMol : new Molecule();
-      const newScaffoldNode = new ScaffoldNode(scaffoldId, canonicalSmiles, nodeScaffoldMol);
+      const newScaffoldNode = new ScaffoldNode(scaffoldId, canonicalSmiles, scaffoldMol);
       this.scaffoldNodes.set(scaffoldId, newScaffoldNode);
       this._scaffoldSmilesIndex.set(indexKey, scaffoldId);
     }
@@ -124,9 +224,7 @@ export class ScaffoldNetwork {
   _processReaction(rxnNode) {
     const getScaffoldIdForMol = molId => {
       const molNode = this.reactionNetwork.moleculeNodes.get(molId);
-      const scaffoldMol = extractMurckoScaffold(molNode.molecule);
-      const canonicalSmiles = scaffoldMol.atoms.size > 0 ? toCanonicalSMILES(scaffoldMol) : null;
-      const indexKey = canonicalSmiles !== null ? canonicalSmiles : 'ACYCLIC';
+      const { indexKey } = scaffoldGroupingInfo(molNode.molecule, this.scaffoldOptions);
       return this._scaffoldSmilesIndex.get(indexKey);
     };
 
@@ -206,7 +304,7 @@ export class ScaffoldNetwork {
       let renderObject = null;
       if (node.molecule && node.molecule.atoms.size > 0) {
         try {
-          renderObject = renderMolSVG(node.molecule.clone());
+          renderObject = renderMolSVG(node.molecule.clone(), NETWORK_RENDER_OPTIONS);
         } catch {
           // ignore layout failure
         }
@@ -281,7 +379,7 @@ export class ScaffoldNetwork {
       let renderObject = null;
       if (node.molecule && node.molecule.atoms.size > 0) {
         try {
-          renderObject = renderMolSVG(node.molecule.clone());
+          renderObject = renderMolSVG(node.molecule.clone(), NETWORK_RENDER_OPTIONS);
         } catch {
           // ignore layout failure
         }

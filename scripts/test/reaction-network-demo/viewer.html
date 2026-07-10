@@ -421,8 +421,13 @@
         </div>
 
         <div class="toggle-row">
-          <input type="checkbox" id="scaffolds-input" />
+          <input type="checkbox" id="scaffolds-input" checked />
           <label for="scaffolds-input">View Scaffold Network</label>
+        </div>
+
+        <div class="toggle-row">
+          <input type="checkbox" id="decorated-scaffolds-input" checked />
+          <label for="decorated-scaffolds-input">Decorated Scaffolds</label>
         </div>
 
         <button id="generate-btn">Generate Network</button>
@@ -579,6 +584,7 @@
         const maxNodes = document.getElementById('maxnodes-input').value;
         const flatten = document.getElementById('flatten-input').checked;
         const scaffolds = document.getElementById('scaffolds-input').checked;
+        const decoratedScaffolds = document.getElementById('decorated-scaffolds-input').checked;
 
         if (!smiles) {
           status.textContent = 'Please enter a SMILES string.';
@@ -589,7 +595,7 @@
         btn.innerHTML = '<span class="spinner"></span> Generating…';
         status.textContent = '';
 
-        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}&scaffolds=${scaffolds}`;
+        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}&scaffolds=${scaffolds}&decoratedScaffolds=${decoratedScaffolds}`;
 
         try {
           const res = await fetch(url);

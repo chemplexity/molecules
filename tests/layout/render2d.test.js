@@ -139,6 +139,7 @@ test('renderMolSVG wraps charge labels in a thin outlined circle', () => {
   assert.ok(rendered, 'expected SVG render output');
   assert.equal((rendered.svgContent.match(/class="atom-charge-ring"/g) ?? []).length, 1);
   assert.equal((rendered.svgContent.match(/class="atom-charge-text"/g) ?? []).length, 1);
+  assert.match(rendered.svgContent, /class="atom-charge-ring"[^>]+fill="white"/);
   assert.match(rendered.svgContent, />\+<\/text>/);
 });
 
@@ -182,6 +183,40 @@ test('renderMolSVG renders custom atom label opacity', () => {
   assert.match(rendered.svgContent, /<text [^>]*fill="#3366ff" opacity="0.55"[^>]*><tspan>(?:OH|HO)<\/tspan><\/text>/);
 });
 
+test('renderMolSVG can render centered transparent atom labels for network thumbnails', () => {
+  const mol = parseSMILES('CO');
+  for (const atom of mol.atoms.values()) {
+    if (atom.name === 'C') {
+      atom.x = 0;
+      atom.y = 0;
+    } else if (atom.name === 'O') {
+      atom.x = 1.5;
+      atom.y = 0;
+    } else {
+      atom.x = 0;
+      atom.y = 0;
+    }
+  }
+
+  const rendered = renderMolSVG(mol, { skipLayout: true, atomLabelBackplates: false, chargeBadgeBackplates: false, centerAtomLabels: true });
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.doesNotMatch(rendered.svgContent, /fill="white" rx="2"/);
+  assert.match(
+    rendered.svgContent,
+    /<text x="91\.00" y="40\.00"[^>]*text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle"><tspan>OH<\/tspan><\/text>/
+  );
+});
+
+test('renderMolSVG can render transparent charge badges for network thumbnails', () => {
+  const mol = parseSMILES('[NH4+]');
+  const rendered = renderMolSVG(mol, { atomLabelBackplates: false, chargeBadgeBackplates: false, centerAtomLabels: true });
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.match(rendered.svgContent, /class="atom-charge-ring"[^>]+fill="none"/);
+  assert.match(rendered.svgContent, /class="atom-charge-text"[^>]+text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle"/);
+});
+
 test('atomColor uses the expanded CPK palette while preserving protected metals', () => {
   assert.equal(atomColor('Mg'), '#8AFF00');
   assert.equal(atomColor('Fe'), '#E06633');
@@ -216,6 +251,17 @@ test('renderMolSVG does not mutate hidden stereo hydrogen coordinates while rend
   assert.deepEqual(afterFirstRender, before);
   assert.deepEqual(afterSecondRender, before);
   assert.equal(secondRender.svgContent, firstRender.svgContent);
+});
+
+test('renderMolSVG labels projected stereochemical hydrogens', () => {
+  const mol = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
+  const rendered = renderMolSVG(mol);
+
+  assert.ok(rendered, 'expected SVG render output');
+  assert.ok((rendered.svgContent.match(/<tspan>H<\/tspan>/g) ?? []).length >= 2);
+  assert.match(rendered.svgContent, /<text [^>]*fill="#333333"[^>]*><tspan>H<\/tspan><\/text>/);
+  assert.doesNotMatch(rendered.svgContent, /<rect [^>]*fill="white"[^>]*\/>\n<text [^>]*><tspan>H<\/tspan><\/text>/);
+  assert.match(rendered.svgContent, /<(?:polygon|line) /);
 });
 
 test('generateAndRefine2dCoords levels one clearly dominant multi-ring scaffold by that scaffold axis', () => {

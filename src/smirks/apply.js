@@ -604,7 +604,7 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
   }
 
   if (hadCoords && !skipCoordGen) {
-    generateCoords(result);
+    generateCoords(result, { preserveStereoDisplay: true });
   }
 
   result._recomputeProperties();

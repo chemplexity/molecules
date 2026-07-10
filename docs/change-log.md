@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-07-09
+
+- Show the reaction-network demo's scaffold network by default, including default-on handling for omitted `scaffolds` query parameters.
+- Center reaction-network thumbnail atom labels on their atoms, explicitly middle-align label text, and remove opaque backplates from atom labels and charge badges.
+- Group scaffold-network entities by charge-neutral scaffold identity so formal-charge-only variants do not create separate scaffold nodes.
+- Add an optional decorated-scaffold mode that preserves terminal exocyclic multiple-bond heteroatoms, with a reaction-network demo toggle for strict versus decorated scaffold grouping.
+- Render projected stereochemical hydrogen labels without an opaque white backplate so stereo H labels stay visually lightweight.
+- Preserve displayed stereochemical hydrogens through reaction-network products and charge round trips, including restoring the hidden-H wedge/dash display after temporary charge edits remove and regenerate the H.
+- Strip stereochemistry from generated Murcko scaffolds so scaffold nodes do not inherit wrong stereo-H orientation or invent stereochemical hydrogens.
+
 ## 2026-07-08
 
 - Update all outdated dev dependencies, migrate ESLint to flat config for ESLint 10, and clean up newly flagged useless assignments.

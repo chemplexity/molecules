@@ -94,3 +94,41 @@ test('ScaffoldNetwork groups common scaffolds correctly', () => {
   assert.strictEqual(selfTransforms[0].reactants[0], benzeneScaffoldNode.id);
   assert.strictEqual(selfTransforms[0].products[0], benzeneScaffoldNode.id);
 });
+
+test('ScaffoldNetwork groups charged and neutral variants under the same scaffold entity', () => {
+  const reactionNetwork = new ReactionNetwork();
+  const benzene = parseSMILES('c1ccccc1');
+  const chargedBenzene = parseSMILES('[c+]1ccccc1');
+
+  reactionNetwork.addMolecule(benzene);
+  reactionNetwork.addMolecule(chargedBenzene);
+
+  const scaffoldNetwork = new ScaffoldNetwork(reactionNetwork);
+  scaffoldNetwork.sync();
+
+  assert.strictEqual(scaffoldNetwork.scaffoldNodes.size, 1, 'charge-only scaffold variants should collapse');
+  const [scaffoldNode] = scaffoldNetwork.scaffoldNodes.values();
+  assert.strictEqual(scaffoldNode.smiles, 'c1ccccc1');
+  assert.strictEqual(scaffoldNode.moleculeIds.length, 2);
+});
+
+test('ScaffoldNetwork can separate decorated carbonyl scaffolds when configured', () => {
+  const reactionNetwork = new ReactionNetwork();
+  const cyclohexane = parseSMILES('C1CCCCC1');
+  const cyclohexanone = parseSMILES('O=C1CCCCC1');
+
+  reactionNetwork.addMolecule(cyclohexane);
+  reactionNetwork.addMolecule(cyclohexanone);
+
+  const strictScaffoldNetwork = new ScaffoldNetwork(reactionNetwork);
+  strictScaffoldNetwork.sync();
+  assert.strictEqual(strictScaffoldNetwork.scaffoldNodes.size, 1);
+
+  const decoratedScaffoldNetwork = new ScaffoldNetwork(reactionNetwork, { preserveExocyclicMultipleBonds: true });
+  decoratedScaffoldNetwork.sync();
+  const scaffoldSmiles = new Set([...decoratedScaffoldNetwork.scaffoldNodes.values()].map(node => node.smiles));
+
+  assert.strictEqual(decoratedScaffoldNetwork.scaffoldNodes.size, 2);
+  assert.ok(scaffoldSmiles.has('C1CCCCC1'));
+  assert.ok(scaffoldSmiles.has('C1CCC(CC1)=O'));
+});

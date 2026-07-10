@@ -549,6 +549,20 @@ export class Molecule {
 
       // Replace references to atom IDs inside bond
       bond.atoms = bond.atoms.map(aId => oldToNewAtom.get(aId));
+      const displayCenterId = bond.properties.display?.centerId;
+      if (displayCenterId != null) {
+        const nextCenterId = oldToNewAtom.get(displayCenterId);
+        if (nextCenterId != null && bond.atoms.includes(nextCenterId)) {
+          bond.properties.display.centerId = nextCenterId;
+        } else if (bond.properties.display) {
+          delete bond.properties.display.as;
+          delete bond.properties.display.centerId;
+          delete bond.properties.display.manual;
+          if (Object.keys(bond.properties.display).length === 0) {
+            delete bond.properties.display;
+          }
+        }
+      }
     }
 
     // Replace references to bond IDs inside atom

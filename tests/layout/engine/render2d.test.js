@@ -212,6 +212,22 @@ describe('layout/engine/render2d', () => {
     assert.equal(secondRender.svgContent, firstRender.svgContent);
   });
 
+  it('renders projected stereochemical hydrogens with visible labels', () => {
+    const molecule = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
+    const layoutResult = generateCoords(molecule);
+    applyCoords(molecule, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+    const rendered = renderMolSVG(molecule);
+
+    assert.ok(rendered, 'expected SVG render output');
+    assert.ok((rendered.svgContent.match(/<tspan>H<\/tspan>/g) ?? []).length >= 2);
+    assert.match(rendered.svgContent, /<text [^>]*fill="#333333"[^>]*><tspan>H<\/tspan><\/text>/);
+    assert.doesNotMatch(rendered.svgContent, /<rect [^>]*fill="white"[^>]*\/>\n<text [^>]*><tspan>H<\/tspan><\/text>/);
+  });
+
   it('trims bond endpoints so visible nitrogen labels are not stroked through', () => {
     const rendered = renderMolSVGFromSMILES('CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C');
 

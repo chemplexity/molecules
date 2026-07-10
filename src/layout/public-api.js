@@ -65,6 +65,7 @@ function buildRefinementFixedCoords(molecule, existingCoords, options = {}) {
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
  * @param {number} [options.maxPasses] - Legacy alias for `maxCleanupPasses`.
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
+ * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
  * @returns {Map<number, {x: number, y: number}>} The placed coordinates keyed by atom id.
  */
 export function generateCoords(molecule, options = {}) {
@@ -79,7 +80,8 @@ export function generateCoords(molecule, options = {}) {
   applyCoords(molecule, result, {
     clearUnplaced: true,
     hiddenHydrogenMode: 'coincident',
-    syncStereoDisplay: true
+    syncStereoDisplay: true,
+    preserveStereoDisplay: options.preserveStereoDisplay ?? false
   });
   return result.coords;
 }
@@ -100,6 +102,7 @@ export function generateCoords(molecule, options = {}) {
  * @param {boolean} [options.freezeRings] - Whether current ring atom coordinates should stay fixed during refinement.
  * @param {Set<number>} [options.touchedAtoms] - Atom ids that should be treated as locally edited during refinement.
  * @param {Set<number>} [options.touchedBonds] - Bond ids that should be treated as locally edited during refinement.
+ * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
  * @returns {Map<number, {x: number, y: number}>} The placed coordinates keyed by atom id.
  */
 export function refineExistingCoords(molecule, options = {}) {
@@ -125,7 +128,8 @@ export function refineExistingCoords(molecule, options = {}) {
   applyCoords(molecule, result, {
     preserveExisting: true,
     hiddenHydrogenMode: 'coincident',
-    syncStereoDisplay: true
+    syncStereoDisplay: true,
+    preserveStereoDisplay: options.preserveStereoDisplay ?? false
   });
   return result.coords;
 }
@@ -141,13 +145,14 @@ export function refineExistingCoords(molecule, options = {}) {
  * @param {boolean} [options.freezeRings] - Configuration sub-option.
  * @param {boolean} [options.freezeChiralCenters] - Configuration sub-option.
  * @param {boolean} [options.allowBranchReflect] - Configuration sub-option.
+ * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
  * @returns {void} Coordinates are written directly onto the atoms in `mol`.
  */
 export function generateAndRefine2dCoords(
   mol,
-  { suppressH = true, bondLength = 1.5, maxPasses = 6, finalLandscapeOrientation = true, freezeRings = true, freezeChiralCenters = false, allowBranchReflect = true } = {}
+  { suppressH = true, bondLength = 1.5, maxPasses = 6, finalLandscapeOrientation = true, freezeRings = true, freezeChiralCenters = false, allowBranchReflect = true, preserveStereoDisplay = false } = {}
 ) {
-  generateCoords(mol, { suppressH, bondLength, finalLandscapeOrientation });
+  generateCoords(mol, { suppressH, bondLength, finalLandscapeOrientation, preserveStereoDisplay });
   return refineExistingCoords(mol, {
     suppressH,
     bondLength,
@@ -155,6 +160,7 @@ export function generateAndRefine2dCoords(
     finalLandscapeOrientation,
     freezeRings,
     freezeChiralCenters,
-    allowBranchReflect
+    allowBranchReflect,
+    preserveStereoDisplay
   });
 }

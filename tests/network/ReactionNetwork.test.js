@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ReactionNetwork } from '../../src/network/ReactionNetwork.js';
 import { parseSMILES, toCanonicalSMILES } from '../../src/io/index.js';
+import { renderMolSVG } from '../../src/layout/render2d.js';
+import { reactionTemplates } from '../../src/smirks/index.js';
 
 describe('ReactionNetwork', () => {
   it('addMolecule deduplicates identically built molecules leveraging Canonical SMILES', () => {
@@ -57,6 +59,52 @@ describe('ReactionNetwork', () => {
     const rxns = network.executeReactionTemplate([ch4], '[C:1]>>[C:1]=O', { enzyme: 'TemplateMaster' });
 
     assert.ok(Array.isArray(rxns));
+  });
+
+  it('exports molecule thumbnails with transparent atom labels for network viewers', () => {
+    const network = new ReactionNetwork();
+    network.addMolecule(parseSMILES('CO'));
+    network.addMolecule(parseSMILES('[NH4+]'));
+
+    const graph = network.exportDirectedGraph({ flatten: true });
+    const moleculeNode = graph.nodes.find(node => node.type === 'molecule' && /<tspan>(?:OH|HO)<\/tspan>/.test(node.svg ?? ''));
+    const chargedNode = graph.nodes.find(node => node.type === 'molecule' && /class="atom-charge-ring"/.test(node.svg ?? ''));
+
+    assert.ok(moleculeNode?.svg, 'expected exported molecule SVG');
+    assert.doesNotMatch(moleculeNode.svg, /fill="white" rx="2"/);
+    assert.match(moleculeNode.svg, /text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle"><tspan>(?:OH|HO)<\/tspan><\/text>/);
+    assert.ok(chargedNode?.svg, 'expected exported charged molecule SVG');
+    assert.match(chargedNode.svg, /class="atom-charge-ring"[^>]+fill="none"/);
+  });
+
+  it('executeReactionTemplate preserves displayed stereo hydrogens on unchanged centers', () => {
+    const network = new ReactionNetwork();
+    const seed = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    const rxns = network.executeReactionTemplate([seed], reactionTemplates.alkeneHydrogenation.smirks, { enzyme: 'H2' });
+
+    assert.ok(rxns.length >= 2, 'expected both alkene hydrogenation sites to generate products');
+
+    for (const rxn of rxns) {
+      for (const productId of rxn.products) {
+        const product = network.moleculeNodes.get(productId)?.molecule;
+        assert.ok(product, `expected product molecule ${productId}`);
+
+        const displayedTypes = [...product.bonds.values()]
+          .filter(bond => bond.properties.display?.as && bond.atoms.some(atomId => product.atoms.get(atomId)?.name === 'H'))
+          .map(bond => bond.properties.display.as);
+
+        assert.ok(displayedTypes.length >= 2, 'expected inherited displayed stereochemical hydrogens');
+        assert.deepEqual(new Set(displayedTypes), new Set(['wedge']));
+
+        const renderedClone = product.clone();
+        renderMolSVG(renderedClone);
+        const renderedTypes = [...renderedClone.bonds.values()]
+          .filter(bond => bond.properties.display?.as && bond.atoms.some(atomId => renderedClone.atoms.get(atomId)?.name === 'H'))
+          .map(bond => bond.properties.display.as);
+
+        assert.deepEqual(renderedTypes, displayedTypes);
+      }
+    }
   });
 
   it('removeMolecule explicitly cascades ensuring flawless memory garbage collection for orphaned hubs', () => {

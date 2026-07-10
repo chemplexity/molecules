@@ -16,7 +16,7 @@ import { reactionTemplates } from '../../../src/smirks/index.js';
 
 const PORT = 3737;
 
-function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
+function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds) {
   const network = new ReactionNetwork();
   const processedSmiles = new Set();
   const attemptedReactions = new Set();
@@ -108,7 +108,7 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
   console.log(`  Total nodes: ${network.moleculeNodes.size}, unique SMILES: ${seenSmiles.size}\n`);
 
   if (scaffolds) {
-    const scafNet = new ScaffoldNetwork(network); // autoSync runs sync immediately
+    const scafNet = new ScaffoldNetwork(network, { preserveExocyclicMultipleBonds: decoratedScaffolds }); // autoSync runs sync immediately
     return scafNet.exportHierarchicalGraph(network.exportDirectedGraph({ flatten }));
   }
 
@@ -129,7 +129,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname !== '/generate') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found. Use GET /generate?smiles=...&depth=3&flatten=true&maxNodes=100' }));
+    res.end(JSON.stringify({ error: 'Not found. Use GET /generate?smiles=...&depth=3&flatten=true&maxNodes=100&scaffolds=true&decoratedScaffolds=true' }));
     return;
   }
 
@@ -137,12 +137,13 @@ const server = http.createServer((req, res) => {
   const depth = parseInt(url.searchParams.get('depth') || '3', 10);
   const flatten = url.searchParams.get('flatten') === 'true';
   const maxNodes = parseInt(url.searchParams.get('maxNodes') || '100', 10);
-  const scaffolds = url.searchParams.get('scaffolds') === 'true';
+  const scaffolds = url.searchParams.get('scaffolds') !== 'false';
+  const decoratedScaffolds = url.searchParams.get('decoratedScaffolds') !== 'false';
 
-  console.log(`[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds}`);
+  console.log(`[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds} decoratedScaffolds=${decoratedScaffolds}`);
 
   try {
-    const data = generateNetwork(smiles, depth, flatten, maxNodes, scaffolds);
+    const data = generateNetwork(smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds);
     console.log(`[✓] Done: ${data.nodes.length} nodes, ${data.links.length} links`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));

@@ -12,7 +12,6 @@ import { generateCoords } from './api.js';
 import { getRingAtomIds } from './topology/ring-analysis.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from './stereo/wedge-geometry.js';
 import {
-  atomBBox,
   atomColor,
   computeChargeBadgePlacement,
   computeLonePairDotPositions,
@@ -54,7 +53,11 @@ function escapeXml(value) {
 }
 
 function atomDisplayColor(atom) {
-  return styleColor(atom?.properties?.style) ?? atomColor(atom?.name ?? 'C');
+  const styledColor = styleColor(atom?.properties?.style);
+  if (styledColor) {
+    return styledColor;
+  }
+  return atom?.name === 'H' || atom?.name === 'D' ? '#333333' : atomColor(atom?.name ?? 'C');
 }
 
 function atomDisplayOpacity(atom) {
@@ -383,12 +386,30 @@ export function renderMolSVG(
 
   const projectedCoords = projectHiddenStereoHydrogens(molecule, bondLength);
   const stereoMap = collectStereoDisplayMap(molecule);
-  const atoms = [...molecule.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
+  const displayedStereoHydrogenIds = new Set();
+  for (const [bondId] of stereoMap) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const [firstAtom, secondAtom] = bond.getAtomObjects(molecule);
+    const hydrogen = firstAtom?.name === 'H' && firstAtom.visible === false ? firstAtom : secondAtom?.name === 'H' && secondAtom.visible === false ? secondAtom : null;
+    if (hydrogen) {
+      displayedStereoHydrogenIds.add(hydrogen.id);
+    }
+  }
+  const atoms = [...molecule.atoms.values()].filter(atom => renderPosition(atom, projectedCoords, molecule) && (atom.visible !== false || displayedStereoHydrogenIds.has(atom.id)));
   if (atoms.length === 0) {
     return null;
   }
 
-  const { minX, maxX, minY, maxY, cx, cy } = atomBBox(atoms);
+  const renderPoints = atoms.map(atom => renderPosition(atom, projectedCoords, molecule)).filter(Boolean);
+  const minX = Math.min(...renderPoints.map(point => point.x));
+  const maxX = Math.max(...renderPoints.map(point => point.x));
+  const minY = Math.min(...renderPoints.map(point => point.y));
+  const maxY = Math.max(...renderPoints.map(point => point.y));
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
   const molWidth = Math.max((maxX - minX) * SCALE, 1);
   const molHeight = Math.max((maxY - minY) * SCALE, 1);
   const cellW = Math.max(molWidth + CELL_PAD * 2, 90);
@@ -515,9 +536,11 @@ export function renderMolSVG(
     const halfHeight = labelHalfH(label, FONT_SIZE);
     const { dx, dy } = ringLabelOffset(atom, molecule, toSVG, label, FONT_SIZE);
 
-    labelElements.push(
-      `<rect x="${(x + dx - halfWidth).toFixed(2)}" y="${(y + dy - halfHeight).toFixed(2)}" width="${(halfWidth * 2).toFixed(2)}" height="${(halfHeight * 2).toFixed(2)}" fill="white" rx="2"/>`
-    );
+    if (atom.name !== 'H' && atom.name !== 'D') {
+      labelElements.push(
+        `<rect x="${(x + dx - halfWidth).toFixed(2)}" y="${(y + dy - halfHeight).toFixed(2)}" width="${(halfWidth * 2).toFixed(2)}" height="${(halfHeight * 2).toFixed(2)}" fill="white" rx="2"/>`
+      );
+    }
 
     let textContent = '';
     let index = 0;

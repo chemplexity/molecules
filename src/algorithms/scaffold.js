@@ -13,6 +13,13 @@ const ORGANIC_SUBSET_IMPLICIT_VALENCE = Object.freeze({
   I: 1
 });
 
+function _clonePlainObject(value) {
+  if (value == null) {
+    return {};
+  }
+  return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+}
+
 function _countRetainedHeavyBondOrder(scaffold, atomId) {
   const atom = scaffold.atoms.get(atomId);
   if (!atom) {
@@ -31,6 +38,53 @@ function _countRetainedHeavyBondOrder(scaffold, atomId) {
     heavyBondOrder += bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
   }
   return heavyBondOrder;
+}
+
+function _isTerminalMultipleBondHeteroatom(molecule, atomId, bond) {
+  const atom = molecule.atoms.get(atomId);
+  if (!atom || atom.name === 'H' || atom.name === 'C') {
+    return false;
+  }
+  if ((atom.bonds?.length ?? 0) !== 1) {
+    return false;
+  }
+  if (bond.properties?.aromatic) {
+    return false;
+  }
+  return (bond.properties?.order ?? 1) >= 2;
+}
+
+function _copyAtomCoordinates(sourceAtom, targetAtom) {
+  targetAtom.visible = sourceAtom.visible;
+  targetAtom.x = sourceAtom.x;
+  targetAtom.y = sourceAtom.y;
+  targetAtom.z = sourceAtom.z;
+  targetAtom.tags = [...(sourceAtom.tags ?? [])];
+}
+
+function _restoreExocyclicMultipleBondHeteroatoms(scaffold, molecule) {
+  let restored = false;
+  for (const bond of molecule.bonds.values()) {
+    if (bond.properties?.aromatic || (bond.properties?.order ?? 1) < 2) {
+      continue;
+    }
+    const [atomAId, atomBId] = bond.atoms;
+    const atomAInScaffold = scaffold.atoms.has(atomAId);
+    const atomBInScaffold = scaffold.atoms.has(atomBId);
+    const terminalAtomId = atomAInScaffold && !atomBInScaffold ? atomBId : atomBInScaffold && !atomAInScaffold ? atomAId : null;
+    const anchorAtomId = terminalAtomId === atomAId ? atomBId : terminalAtomId === atomBId ? atomAId : null;
+    if (!terminalAtomId || !anchorAtomId || !_isTerminalMultipleBondHeteroatom(molecule, terminalAtomId, bond)) {
+      continue;
+    }
+    const sourceAtom = molecule.atoms.get(terminalAtomId);
+    const restoredAtom = scaffold.addAtom(terminalAtomId, sourceAtom.name, _clonePlainObject(sourceAtom.properties), { recompute: false });
+    _copyAtomCoordinates(sourceAtom, restoredAtom);
+    scaffold.addBond(bond.id, anchorAtomId, terminalAtomId, _clonePlainObject(bond.properties), false);
+    restored = true;
+  }
+  if (restored) {
+    scaffold._recomputeProperties();
+  }
 }
 
 function _normalizeScaffoldHydrogens(scaffold) {
@@ -65,6 +119,23 @@ function _normalizeScaffoldHydrogens(scaffold) {
   scaffold._recomputeProperties();
 }
 
+function _clearScaffoldStereo(scaffold) {
+  for (const atom of scaffold.atoms.values()) {
+    atom.setChirality(null);
+  }
+  for (const bond of scaffold.bonds.values()) {
+    bond.properties.stereo = null;
+    if (bond.properties.display) {
+      delete bond.properties.display.as;
+      delete bond.properties.display.centerId;
+      delete bond.properties.display.manual;
+      if (Object.keys(bond.properties.display).length === 0) {
+        delete bond.properties.display;
+      }
+    }
+  }
+}
+
 /**
  * Extracts the maximum spanning backbone (longest path) of an acyclic molecule.
  * Used as a fallback when Murcko scaffold derivation completely dissolves an acyclic structure.
@@ -72,7 +143,7 @@ function _normalizeScaffoldHydrogens(scaffold) {
  * @param {import('../core/Molecule.js').Molecule} molecule - The input acyclic molecule.
  * @returns {import('../core/Molecule.js').Molecule} The acyclic backbone.
  */
-function _extractAcyclicBackbone(molecule) {
+function _extractAcyclicBackbone(molecule, { preserveExocyclicMultipleBonds = false } = {}) {
   const backbone = molecule.clone();
 
   // 1. Remove all explicit hydrogens
@@ -101,6 +172,11 @@ function _extractAcyclicBackbone(molecule) {
     bond.properties.aromatic = false;
   }
 
+  if (preserveExocyclicMultipleBonds) {
+    _restoreExocyclicMultipleBondHeteroatoms(backbone, molecule);
+  }
+
+  _clearScaffoldStereo(backbone);
   _normalizeScaffoldHydrogens(backbone);
   backbone.resetIds();
   return backbone;
@@ -111,9 +187,11 @@ function _extractAcyclicBackbone(molecule) {
  * removing terminal atoms (degree <= 1) until only rings and linker
  * chains remain. Acyclic molecules will be reduced to an empty graph.
  * @param {import('../core/Molecule.js').Molecule} molecule - The input molecule.
+ * @param {object} [options] - Scaffold extraction options.
+ * @param {boolean} [options.preserveExocyclicMultipleBonds] - Whether to keep terminal heteroatoms attached by multiple bonds to retained scaffold atoms.
  * @returns {import('../core/Molecule.js').Molecule} A new molecule representing the Murcko scaffold.
  */
-export function extractMurckoScaffold(molecule) {
+export function extractMurckoScaffold(molecule, { preserveExocyclicMultipleBonds = false } = {}) {
   const scaffold = molecule.clone();
   let changed = true;
 
@@ -130,12 +208,17 @@ export function extractMurckoScaffold(molecule) {
 
   // Intercept pure acyclic destruction to map an explicit backbone
   if (scaffold.atoms.size === 0 && molecule.atoms.size > 0) {
-    return _extractAcyclicBackbone(molecule);
+    return _extractAcyclicBackbone(molecule, { preserveExocyclicMultipleBonds });
+  }
+
+  if (preserveExocyclicMultipleBonds) {
+    _restoreExocyclicMultipleBondHeteroatoms(scaffold, molecule);
   }
 
   // Restore serializer-compatible hidden hydrogens so canonical SMILES for the
   // resulting scaffold uses ordinary organic-subset atoms (e.g. `C1CCCCC1`
   // instead of `[C]1[C][C][C][C][C]1`) after side chains have been pruned.
+  _clearScaffoldStereo(scaffold);
   _normalizeScaffoldHydrogens(scaffold);
 
   // Normalize sequential IDs for clean output comparisons and serialization

@@ -5,9 +5,12 @@ import { ReactionNode } from './ReactionNode.js';
 import { toCanonicalSMILES, parseSMILES } from '../io/index.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { findSMARTS } from '../smarts/index.js';
+import { generateAndRefine2dCoords } from '../layout/index.js';
 import { renderMolSVG } from '../layout/render2d.js';
 import { computeFormulaDelta } from '../descriptors/molecular.js';
 import { extractMurckoScaffold } from '../algorithms/scaffold.js';
+
+const NETWORK_RENDER_OPTIONS = { atomLabelBackplates: false, chargeBadgeBackplates: false, centerAtomLabels: true };
 
 /**
  * Stores molecules and reactions in a bipartite reaction network.
@@ -228,6 +231,14 @@ export class ReactionNetwork {
       }
     }
 
+    if (reactantParent.getChiralCenters().length > 0) {
+      try {
+        generateAndRefine2dCoords(reactantParent, { suppressH: true, bondLength: 1.5, maxPasses: 6, preserveStereoDisplay: true });
+      } catch {
+        // Reaction execution should not depend on 2D display seeding.
+      }
+    }
+
     const reactantSmarts = smirks_template.split('>>')[0].trim();
     const mappings = [...findSMARTS(reactantParent, reactantSmarts)];
     const uniqueProducts = new Map();
@@ -240,17 +251,7 @@ export class ReactionNetwork {
 
       fullProductGraph.resetIds();
       const rawComponents = this._splitDisconnectedComponents(fullProductGraph);
-      const separatedComponents = rawComponents.map(component => {
-        try {
-          const canonicalSmiles = toCanonicalSMILES(component);
-          if (!canonicalSmiles) {
-            return component;
-          }
-          return parseSMILES(canonicalSmiles);
-        } catch {
-          return component;
-        }
-      });
+      const separatedComponents = rawComponents;
 
       const sortedCanons = separatedComponents.map(component => toCanonicalSMILES(component)).sort();
       const macroKey = sortedCanons.join(' + ');
@@ -498,7 +499,7 @@ export class ReactionNetwork {
     const exportData = { nodes: [], links: [] };
 
     for (const node of this.moleculeNodes.values()) {
-      const renderObject = renderMolSVG(node.molecule.clone());
+      const renderObject = renderMolSVG(node.molecule.clone(), NETWORK_RENDER_OPTIONS);
       const cellWidth = renderObject ? renderObject.cellW : 100;
       const cellHeight = renderObject ? renderObject.cellH : 100;
 

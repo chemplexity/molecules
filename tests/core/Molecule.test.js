@@ -54,6 +54,17 @@ describe('Molecule.resetIds', () => {
     assert.equal(mol._bondIndex.get('0,1'), '0');
     assert.equal(mol._bondIndex.get('1,2'), '1');
   });
+
+  it('rewrites stereo display center ids when atom ids are normalized', () => {
+    const mol = new Molecule();
+    mol.addAtom('_rxn_product__0:C1', 'C');
+    mol.addAtom('_rxn_product__0:H2', 'H');
+    mol.addBond('stereo_bond', '_rxn_product__0:C1', '_rxn_product__0:H2', { display: { as: 'wedge', centerId: '_rxn_product__0:C1' } }, false);
+
+    mol.resetIds();
+
+    assert.deepEqual(mol.bonds.get('0').properties.display, { as: 'wedge', centerId: '0' });
+  });
 });
 
 describe('Molecule.repairImplicitHydrogens', () => {
