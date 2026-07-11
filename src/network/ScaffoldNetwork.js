@@ -97,13 +97,37 @@ function neutralizeScaffoldForGrouping(scaffoldMol) {
   return neutralScaffold;
 }
 
-function scaffoldGroupingInfo(molecule, scaffoldOptions = {}) {
+function scaffoldHeavyAtomCount(scaffoldMol) {
+  return [...(scaffoldMol?.atoms?.values?.() ?? [])].filter(atom => atom?.name !== 'H').length;
+}
+
+function svgPayloadFromRenderObject(renderObject) {
+  if (!renderObject) {
+    return { svg: null, width: 120, height: 120 };
+  }
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${renderObject.cellW} ${renderObject.cellH}" width="${renderObject.cellW}" height="${renderObject.cellH}">${renderObject.svgContent}</svg>`,
+    width: renderObject.cellW,
+    height: renderObject.cellH
+  };
+}
+
+function scaffoldGroupingInfo(molecule, { minScaffoldHeavyAtoms = 1, ...scaffoldOptions } = {}) {
   const scaffoldMol = extractMurckoScaffold(molecule, scaffoldOptions);
   if (scaffoldMol.atoms.size === 0) {
     return {
       indexKey: 'ACYCLIC',
       canonicalSmiles: null,
-      scaffoldMol: new Molecule()
+      scaffoldMol: new Molecule(),
+      filtered: minScaffoldHeavyAtoms > 0
+    };
+  }
+  if (scaffoldHeavyAtomCount(scaffoldMol) < minScaffoldHeavyAtoms) {
+    return {
+      indexKey: null,
+      canonicalSmiles: null,
+      scaffoldMol,
+      filtered: true
     };
   }
   const neutralScaffoldMol = neutralizeScaffoldForGrouping(scaffoldMol);
@@ -111,8 +135,20 @@ function scaffoldGroupingInfo(molecule, scaffoldOptions = {}) {
   return {
     indexKey: canonicalSmiles ?? 'ACYCLIC',
     canonicalSmiles,
-    scaffoldMol: canonicalSmiles !== null ? neutralScaffoldMol : new Molecule()
+    scaffoldMol: canonicalSmiles !== null ? neutralScaffoldMol : new Molecule(),
+    filtered: canonicalSmiles === null
   };
+}
+
+function renderStandaloneScaffold(scaffoldMol, renderOptions) {
+  if (!scaffoldMol || scaffoldMol.atoms.size === 0) {
+    return svgPayloadFromRenderObject(null);
+  }
+  try {
+    return svgPayloadFromRenderObject(renderMolSVG(scaffoldMol.clone(), renderOptions));
+  } catch {
+    return svgPayloadFromRenderObject(null);
+  }
 }
 
 /**
@@ -125,10 +161,27 @@ export class ScaffoldNetwork {
    * @param {object} [options] - Network synchronization options.
    * @param {boolean} [options.autoSync] - Whether to dynamically update scaffolds when underlying network changes.
    * @param {boolean} [options.preserveExocyclicMultipleBonds] - Whether scaffold identity keeps terminal heteroatoms attached by multiple bonds to retained scaffold atoms.
+   * @param {boolean} [options.preserveLargeSubstituentBackbones] - Whether scaffold identity keeps substantial acyclic branches attached to retained scaffold atoms.
+   * @param {number} [options.minSubstituentHeavyAtoms] - Minimum non-H branch size retained when `preserveLargeSubstituentBackbones` is enabled.
+   * @param {number} [options.minScaffoldHeavyAtoms] - Minimum number of non-H atoms required to create a scaffold node.
    */
-  constructor(reactionNetwork, { autoSync = true, preserveExocyclicMultipleBonds = false } = {}) {
+  constructor(
+    reactionNetwork,
+    {
+      autoSync = true,
+      preserveExocyclicMultipleBonds = false,
+      preserveLargeSubstituentBackbones = false,
+      minSubstituentHeavyAtoms = 4,
+      minScaffoldHeavyAtoms = 1
+    } = {}
+  ) {
     this.reactionNetwork = reactionNetwork;
-    this.scaffoldOptions = { preserveExocyclicMultipleBonds };
+    this.scaffoldOptions = {
+      preserveExocyclicMultipleBonds,
+      preserveLargeSubstituentBackbones,
+      minSubstituentHeavyAtoms: Math.max(1, Math.floor(Number(minSubstituentHeavyAtoms) || 4)),
+      minScaffoldHeavyAtoms: Math.max(0, Math.floor(Number(minScaffoldHeavyAtoms) || 0))
+    };
 
     /** @type {Map<string, ScaffoldNode>} */
     this.scaffoldNodes = new Map();
@@ -198,7 +251,10 @@ export class ScaffoldNetwork {
    * @private
    */
   _processMolecule(molNode) {
-    const { indexKey, canonicalSmiles, scaffoldMol } = scaffoldGroupingInfo(molNode.molecule, this.scaffoldOptions);
+    const { indexKey, canonicalSmiles, scaffoldMol, filtered } = scaffoldGroupingInfo(molNode.molecule, this.scaffoldOptions);
+    if (filtered || !indexKey) {
+      return;
+    }
 
     let scaffoldId;
     if (this._scaffoldSmilesIndex.has(indexKey)) {
@@ -291,27 +347,44 @@ export class ScaffoldNetwork {
     return list;
   }
 
+  _renderScaffoldNode(node, renderOptions) {
+    const representativeMoleculeId = node.moleculeIds[0];
+    const representativeNode = representativeMoleculeId ? this.reactionNetwork.moleculeNodes.get(representativeMoleculeId) : null;
+    if (!representativeNode?.molecule) {
+      return renderStandaloneScaffold(node.molecule, renderOptions);
+    }
+
+    try {
+      const placedMolecule = representativeNode.molecule.clone();
+      const representativeRender = renderMolSVG(placedMolecule, renderOptions);
+      if (!representativeRender) {
+        return renderStandaloneScaffold(node.molecule, renderOptions);
+      }
+
+      const { scaffoldMol, filtered } = scaffoldGroupingInfo(placedMolecule, this.scaffoldOptions);
+      if (filtered || !scaffoldMol || scaffoldMol.atoms.size === 0) {
+        return renderStandaloneScaffold(node.molecule, renderOptions);
+      }
+
+      const displayScaffold = neutralizeScaffoldForGrouping(scaffoldMol);
+      return svgPayloadFromRenderObject(renderMolSVG(displayScaffold, { ...renderOptions, skipLayout: true }));
+    } catch {
+      return renderStandaloneScaffold(node.molecule, renderOptions);
+    }
+  }
+
   /**
    * Exports the scaffold network as `{ nodes, links }` for D3 visualization.
    * Renders the Murcko framework as an internal SVG.
    * @returns {{nodes: object[], links: object[]}} Exported graph payload.
    */
-  exportDirectedGraph() {
+  exportDirectedGraph({ bondLength = 1.5 } = {}) {
     const nodes = [];
     const links = [];
+    const renderOptions = { ...NETWORK_RENDER_OPTIONS, bondLength };
 
     for (const node of this.scaffoldNodes.values()) {
-      let renderObject = null;
-      if (node.molecule && node.molecule.atoms.size > 0) {
-        try {
-          renderObject = renderMolSVG(node.molecule.clone(), NETWORK_RENDER_OPTIONS);
-        } catch {
-          // ignore layout failure
-        }
-      }
-
-      const cellWidth = renderObject ? renderObject.cellW : 120;
-      const cellHeight = renderObject ? renderObject.cellH : 120;
+      const renderPayload = this._renderScaffoldNode(node, renderOptions);
 
       nodes.push({
         id: node.id,
@@ -319,11 +392,9 @@ export class ScaffoldNetwork {
         molecule: node.molecule,
         formula: node.smiles === null ? 'Acyclic Group' : `Scaffold: ${node.moleculeIds.length} mols`,
         smiles: node.smiles || 'ACYCLIC',
-        svg: renderObject
-          ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${renderObject.cellW} ${renderObject.cellH}" width="${cellWidth}" height="${cellHeight}">${renderObject.svgContent}</svg>`
-          : null,
-        width: cellWidth,
-        height: cellHeight,
+        svg: renderPayload.svg,
+        width: renderPayload.width,
+        height: renderPayload.height,
         moleculeIds: node.moleculeIds
       });
     }
@@ -361,11 +432,14 @@ export class ScaffoldNetwork {
    * Exports a hierarchical graph mixing the base molecule/reaction network
    * with Scaffold nodes and membership edges connecting Scaffolds down to their constituent molecules.
    * @param {{nodes: object[], links: object[]}} baseGraph - The exported payload from ReactionNetwork.
+   * @param {object} [options] - Export options.
+   * @param {number} [options.bondLength] - Target layout bond length for rendered scaffold thumbnails.
    * @returns {{nodes: object[], links: object[]}} The combined hierarchical graph.
    */
-  exportHierarchicalGraph(baseGraph) {
+  exportHierarchicalGraph(baseGraph, { bondLength = 1.5 } = {}) {
     const nodes = [...baseGraph.nodes];
     const links = [...baseGraph.links];
+    const renderOptions = { ...NETWORK_RENDER_OPTIONS, bondLength };
 
     const baseNodeIds = new Set(baseGraph.nodes.map(n => n.id));
 
@@ -376,17 +450,7 @@ export class ScaffoldNetwork {
         continue;
       }
 
-      let renderObject = null;
-      if (node.molecule && node.molecule.atoms.size > 0) {
-        try {
-          renderObject = renderMolSVG(node.molecule.clone(), NETWORK_RENDER_OPTIONS);
-        } catch {
-          // ignore layout failure
-        }
-      }
-
-      const cellWidth = renderObject ? renderObject.cellW : 120;
-      const cellHeight = renderObject ? renderObject.cellH : 120;
+      const renderPayload = this._renderScaffoldNode(node, renderOptions);
 
       nodes.push({
         id: node.id,
@@ -394,11 +458,9 @@ export class ScaffoldNetwork {
         molecule: node.molecule,
         formula: `Scaffold: ${node.moleculeIds.length} instance(s)`,
         smiles: node.smiles,
-        svg: renderObject
-          ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${renderObject.cellW} ${renderObject.cellH}" width="${cellWidth}" height="${cellHeight}">${renderObject.svgContent}</svg>`
-          : null,
-        width: cellWidth,
-        height: cellHeight
+        svg: renderPayload.svg,
+        width: renderPayload.width,
+        height: renderPayload.height
       });
 
       // Add membership links

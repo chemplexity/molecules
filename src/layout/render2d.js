@@ -329,6 +329,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
  * @param {boolean} [options.atomLabelBackplates] - Whether to draw white rectangles behind non-H atom labels.
  * @param {boolean} [options.chargeBadgeBackplates] - Whether to fill charge badge circles with white.
  * @param {boolean} [options.centerAtomLabels] - Whether to center the full atom label text on the atom coordinate.
+ * @param {number} [options.bondLength] - Target layout bond length in angstroms.
  * @returns {{svgContent: string, cellW: number, cellH: number}|null} SVG fragment or null.
  */
 export function renderMolSVG(
@@ -340,7 +341,8 @@ export function renderMolSVG(
     skipLayout = false,
     atomLabelBackplates = true,
     chargeBadgeBackplates = true,
-    centerAtomLabels = false
+    centerAtomLabels = false,
+    bondLength = 1.5
   } = {}
 ) {
   if (!mol || mol.atoms.size === 0) {
@@ -360,13 +362,13 @@ export function renderMolSVG(
 
   try {
     if (!skipLayout) {
-      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6, preserveStereoDisplay: true });
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength, maxPasses: 6, preserveStereoDisplay: true });
     }
   } catch {
     return null;
   }
 
-  const projectedCoords = projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
+  const projectedCoords = projectHiddenStereoHydrogens(mol, bondLength * 0.75);
 
   const stereoMap = pickStereoWedges(mol);
   const displayedStereoHydrogenIds = new Set();

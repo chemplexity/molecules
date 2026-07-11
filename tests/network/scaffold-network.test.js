@@ -4,6 +4,10 @@ import { ReactionNetwork } from '../../src/network/ReactionNetwork.js';
 import { ScaffoldNetwork } from '../../src/network/ScaffoldNetwork.js';
 import { parseSMILES } from '../../src/io/index.js';
 
+function svgLines(svg) {
+  return svg?.match(/<line[^>]+>/g) ?? [];
+}
+
 test('ScaffoldNetwork groups common scaffolds correctly', () => {
   const reactionNetwork = new ReactionNetwork();
 
@@ -112,6 +116,22 @@ test('ScaffoldNetwork groups charged and neutral variants under the same scaffol
   assert.strictEqual(scaffoldNode.moleculeIds.length, 2);
 });
 
+test('ScaffoldNetwork can filter out one-heavy-atom simple scaffolds', () => {
+  const reactionNetwork = new ReactionNetwork();
+
+  reactionNetwork.addMolecule(parseSMILES('C'));
+  reactionNetwork.addMolecule(parseSMILES('Cl'));
+  reactionNetwork.addMolecule(parseSMILES('[H]Cl'));
+  reactionNetwork.addMolecule(parseSMILES('CC'));
+
+  const scaffoldNetwork = new ScaffoldNetwork(reactionNetwork, { minScaffoldHeavyAtoms: 2 });
+  scaffoldNetwork.sync();
+  const scaffoldSmiles = new Set([...scaffoldNetwork.scaffoldNodes.values()].map(node => node.smiles));
+
+  assert.strictEqual(scaffoldNetwork.scaffoldNodes.size, 1);
+  assert.deepStrictEqual(scaffoldSmiles, new Set(['CC']));
+});
+
 test('ScaffoldNetwork can separate decorated carbonyl scaffolds when configured', () => {
   const reactionNetwork = new ReactionNetwork();
   const cyclohexane = parseSMILES('C1CCCCC1');
@@ -131,4 +151,46 @@ test('ScaffoldNetwork can separate decorated carbonyl scaffolds when configured'
   assert.strictEqual(decoratedScaffoldNetwork.scaffoldNodes.size, 2);
   assert.ok(scaffoldSmiles.has('C1CCCCC1'));
   assert.ok(scaffoldSmiles.has('C1CCC(CC1)=O'));
+});
+
+test('ScaffoldNetwork exports scaffold thumbnails using the requested render bond length', () => {
+  const reactionNetwork = new ReactionNetwork();
+  reactionNetwork.addMolecule(parseSMILES('C1CCCCC1CCC2CCCCC2'));
+
+  const scaffoldNetwork = new ScaffoldNetwork(reactionNetwork);
+  scaffoldNetwork.sync();
+  const compact = scaffoldNetwork.exportDirectedGraph({ bondLength: 0.5 }).nodes[0];
+  const expanded = scaffoldNetwork.exportDirectedGraph({ bondLength: 2.5 }).nodes[0];
+
+  assert.ok(expanded.width > compact.width, 'expected larger bond length to increase scaffold thumbnail width');
+});
+
+test('ScaffoldNetwork renders scaffold thumbnails from representative molecule geometry', () => {
+  const reactionNetwork = new ReactionNetwork();
+  reactionNetwork.addMolecule(parseSMILES('CC1C=CCC1'));
+
+  const baseGraph = reactionNetwork.exportDirectedGraph({ flatten: true });
+  const scaffoldNetwork = new ScaffoldNetwork(reactionNetwork);
+  scaffoldNetwork.sync();
+  const graph = scaffoldNetwork.exportHierarchicalGraph(baseGraph);
+
+  const moleculeNode = graph.nodes.find(node => node.type === 'molecule');
+  const scaffoldNode = graph.nodes.find(node => node.type === 'scaffold');
+
+  assert.ok(moleculeNode?.svg, 'expected molecule thumbnail');
+  assert.ok(scaffoldNode?.svg, 'expected scaffold thumbnail');
+  assert.deepStrictEqual(svgLines(scaffoldNode.svg).slice(0, 3), svgLines(moleculeNode.svg).slice(0, 3));
+});
+
+test('ScaffoldNetwork can retain substantial substituent backbones when configured', () => {
+  const reactionNetwork = new ReactionNetwork();
+  reactionNetwork.addMolecule(parseSMILES('CCC(CC(CC1C(C)[NH+]=C(C)N1CCO)O)O'));
+
+  const strictScaffoldNetwork = new ScaffoldNetwork(reactionNetwork, { autoSync: false });
+  strictScaffoldNetwork.sync();
+  const extendedScaffoldNetwork = new ScaffoldNetwork(reactionNetwork, { autoSync: false, preserveLargeSubstituentBackbones: true });
+  extendedScaffoldNetwork.sync();
+
+  assert.deepStrictEqual(new Set([...strictScaffoldNetwork.scaffoldNodes.values()].map(node => node.smiles)), new Set(['C1=NCCN1']));
+  assert.deepStrictEqual(new Set([...extendedScaffoldNetwork.scaffoldNodes.values()].map(node => node.smiles)), new Set(['CCC(CC(CC1CN=CN1)O)O']));
 });

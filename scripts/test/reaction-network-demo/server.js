@@ -10,112 +10,69 @@
  */
 
 import http from 'http';
-import { ReactionNetwork, ScaffoldNetwork } from '../../../src/network/index.js';
-import { parseSMILES, toCanonicalSMILES } from '../../../src/io/index.js';
-import { reactionTemplates } from '../../../src/smirks/index.js';
+import { Worker } from 'node:worker_threads';
+import { exampleMoleculeComplex } from '../../../examples/example-molecules-complex.js';
+import { generateMoleculePreview, normalizeDemoBondLength } from './network-generator.js';
 
 const PORT = 3737;
+let activeGeneration = null;
+let generationCounter = 0;
 
-function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds) {
-  const network = new ReactionNetwork();
-  const processedSmiles = new Set();
-  const attemptedReactions = new Set();
+function runGenerationJob(params) {
+  if (activeGeneration) {
+    const error = new Error('Another generation is already running.');
+    error.statusCode = 409;
+    return Promise.reject(error);
+  }
 
-  const seedMolecule = parseSMILES(seedSmiles);
-  const seedNode = network.addMolecule(seedMolecule);
+  const id = ++generationCounter;
+  const worker = new Worker(new URL('./network-generation-worker.js', import.meta.url), { workerData: params });
+  const job = { id, worker, cancelled: false, settled: false };
+  activeGeneration = job;
 
-  let currentQueue = [{ molecule: seedNode.molecule, depth: 0 }];
-  const globalPrintedIds = new Set([seedNode.id]);
-  const templates = Object.values(reactionTemplates);
-
-  while (currentQueue.length > 0) {
-    const nextQueue = [];
-
-    for (const { molecule, depth } of currentQueue) {
-      if (depth >= maxDepth) {
-        continue;
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      if (activeGeneration?.id === id) {
+        activeGeneration = null;
       }
+    };
 
-      if (network.moleculeNodes.size >= maxNodes) {
-        currentQueue = [];
-        break;
+    worker.once('message', message => {
+      if (job.settled) {
+        return;
       }
-
-      const canon = toCanonicalSMILES(molecule);
-      if (processedSmiles.has(canon)) {
-        continue;
+      job.settled = true;
+      cleanup();
+      if (message?.ok) {
+        resolve(message.data);
+      } else {
+        reject(new Error(message?.error || 'Generation worker failed.'));
       }
-      processedSmiles.add(canon);
+    });
 
-      for (const template of templates) {
-        const attemptKey = `${canon}||${template.name}`;
-        if (attemptedReactions.has(attemptKey)) {
-          continue;
-        }
-        attemptedReactions.add(attemptKey);
-
-        let createdReactions = [];
-        try {
-          createdReactions = network.executeReactionTemplate([molecule], template.smirks, { templateName: template.name });
-        } catch {
-          continue;
-        }
-
-        for (const rxn of createdReactions) {
-          for (const prodId of rxn.products) {
-            const prodMolNode = network.moleculeNodes.get(prodId);
-            if (!prodMolNode) {
-              continue;
-            }
-            const prodCanon = toCanonicalSMILES(prodMolNode.molecule);
-
-            if (!globalPrintedIds.has(prodId)) {
-              globalPrintedIds.add(prodId);
-              if (!processedSmiles.has(prodCanon)) {
-                nextQueue.push({ molecule: prodMolNode.molecule, depth: depth + 1 });
-              }
-            }
-          }
-        }
+    worker.once('error', error => {
+      if (job.settled) {
+        return;
       }
-    }
+      job.settled = true;
+      cleanup();
+      reject(error);
+    });
 
-    currentQueue = nextQueue;
-  }
-
-  // ── Diagnostic: dump all stored molecule SMILES to detect dedup failures ──
-  console.log('\n[DIAG] Molecule index after BFS:');
-  const seenSmiles = new Map();
-  for (const [id, node] of network.moleculeNodes) {
-    const s = toCanonicalSMILES(node.molecule);
-    if (!seenSmiles.has(s)) {
-      seenSmiles.set(s, []);
-    }
-    seenSmiles.get(s).push(id);
-  }
-  let dupeCount = 0;
-  for (const [s, ids] of seenSmiles) {
-    if (ids.length > 1) {
-      console.log(`  [DUPE] "${s}" stored as ${ids.join(', ')}`);
-      dupeCount++;
-    } else {
-      console.log(`  [OK]   ${ids[0]}: "${s}"`);
-    }
-  }
-  if (dupeCount === 0) {
-    console.log('  No duplicates detected.');
-  }
-  console.log(`  Total nodes: ${network.moleculeNodes.size}, unique SMILES: ${seenSmiles.size}\n`);
-
-  if (scaffolds) {
-    const scafNet = new ScaffoldNetwork(network, { preserveExocyclicMultipleBonds: decoratedScaffolds }); // autoSync runs sync immediately
-    return scafNet.exportHierarchicalGraph(network.exportDirectedGraph({ flatten }));
-  }
-
-  return network.exportDirectedGraph({ flatten });
+    worker.once('exit', code => {
+      if (job.settled) {
+        return;
+      }
+      job.settled = true;
+      cleanup();
+      const error = new Error(job.cancelled ? 'Generation cancelled.' : `Generation worker exited with code ${code}.`);
+      error.statusCode = job.cancelled ? 499 : 500;
+      reject(error);
+    });
+  });
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
@@ -127,9 +84,52 @@ const server = http.createServer((req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  if (url.pathname === '/cancel-generation') {
+    if (!activeGeneration) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ cancelled: false }));
+      return;
+    }
+
+    const job = activeGeneration;
+    job.cancelled = true;
+    await job.worker.terminate();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ cancelled: true, id: job.id }));
+    return;
+  }
+
+  if (url.pathname === '/random-smiles') {
+    const index = Math.floor(Math.random() * exampleMoleculeComplex.length);
+    const smiles = exampleMoleculeComplex[index];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ smiles, index, count: exampleMoleculeComplex.length }));
+    return;
+  }
+
+  if (url.pathname === '/preview') {
+    const smiles = url.searchParams.get('smiles') || 'C';
+    const bondLength = normalizeDemoBondLength(url.searchParams.get('bondLength'));
+    try {
+      const data = generateMoleculePreview(smiles, { bondLength });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch (e) {
+      console.error(`[✗] Preview error:`, e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   if (url.pathname !== '/generate') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found. Use GET /generate?smiles=...&depth=3&flatten=true&maxNodes=100&scaffolds=true&decoratedScaffolds=true' }));
+    res.end(
+      JSON.stringify({
+        error:
+          'Not found. Use GET /generate?smiles=...&depth=3&flatten=true&maxNodes=100&scaffolds=true&decoratedScaffolds=true&extendedScaffolds=true&hideSimpleScaffolds=true&bondLength=1.5, GET /preview?smiles=...&bondLength=1.5, GET /random-smiles, or GET /cancel-generation'
+      })
+    );
     return;
   }
 
@@ -139,17 +139,22 @@ const server = http.createServer((req, res) => {
   const maxNodes = parseInt(url.searchParams.get('maxNodes') || '100', 10);
   const scaffolds = url.searchParams.get('scaffolds') !== 'false';
   const decoratedScaffolds = url.searchParams.get('decoratedScaffolds') !== 'false';
+  const extendedScaffolds = url.searchParams.get('extendedScaffolds') !== 'false';
+  const hideSimpleScaffolds = url.searchParams.get('hideSimpleScaffolds') !== 'false';
+  const bondLength = normalizeDemoBondLength(url.searchParams.get('bondLength'));
 
-  console.log(`[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds} decoratedScaffolds=${decoratedScaffolds}`);
+  console.log(
+    `[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds} decoratedScaffolds=${decoratedScaffolds} extendedScaffolds=${extendedScaffolds} hideSimpleScaffolds=${hideSimpleScaffolds} bondLength=${bondLength}`
+  );
 
   try {
-    const data = generateNetwork(smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds);
+    const data = await runGenerationJob({ smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength });
     console.log(`[✓] Done: ${data.nodes.length} nodes, ${data.links.length} links`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
   } catch (e) {
     console.error(`[✗] Error:`, e.message);
-    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.writeHead(e.statusCode || 500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: e.message }));
   }
 });

@@ -87,7 +87,7 @@ export class ReactionNetwork {
 
     const id = `mol_${this._moleculeCounter++}`;
     const clone = molecule.clone();
-    const node = new MoleculeNode(id, clone);
+    const node = new MoleculeNode(id, clone, smiles);
 
     this.moleculeNodes.set(id, node);
     this._smilesIndex.set(smiles, id);
@@ -493,13 +493,15 @@ export class ReactionNetwork {
    *   molecule node and attaches it as `node.scaffold` (canonical SMILES of the stripped core,
    *   or `null` for fully acyclic molecules). Adds one `extractMurckoScaffold` call per molecule
    *   node — safe for networks up to ~500 nodes; consider disabling for very large graphs.
+   * @param {number} [options.bondLength] - Target layout bond length for rendered molecule thumbnails.
    * @returns {{nodes: object[], links: object[]}} Exported graph payload.
    */
-  exportDirectedGraph({ flatten = false, scaffold = false } = {}) {
+  exportDirectedGraph({ flatten = false, scaffold = false, bondLength = 1.5 } = {}) {
     const exportData = { nodes: [], links: [] };
+    const renderOptions = { ...NETWORK_RENDER_OPTIONS, bondLength };
 
     for (const node of this.moleculeNodes.values()) {
-      const renderObject = renderMolSVG(node.molecule.clone(), NETWORK_RENDER_OPTIONS);
+      const renderObject = renderMolSVG(node.molecule.clone(), renderOptions);
       const cellWidth = renderObject ? renderObject.cellW : 100;
       const cellHeight = renderObject ? renderObject.cellH : 100;
 
@@ -515,7 +517,7 @@ export class ReactionNetwork {
           }
           return `${formula}<sup>${Math.abs(charge) === 1 ? (charge > 0 ? '+' : '-') : `${Math.abs(charge)}${charge > 0 ? '+' : '-'}`}</sup>`;
         })(),
-        smiles: toCanonicalSMILES(node.molecule),
+        smiles: node.canonicalSmiles,
         svg: renderObject
           ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${renderObject.cellW} ${renderObject.cellH}" width="${cellWidth}" height="${cellHeight}">${renderObject.svgContent}</svg>`
           : null,
@@ -579,7 +581,7 @@ export class ReactionNetwork {
         key,
         {
           id: value.id,
-          smiles: toCanonicalSMILES(value.molecule),
+          smiles: value.canonicalSmiles,
           consumedIn: value.consumedIn,
           producedBy: value.producedBy
         }
@@ -609,7 +611,7 @@ export class ReactionNetwork {
 
     for (const [key, value] of data.moleculeNodes) {
       const molecule = parseSMILES(value.smiles);
-      const node = new MoleculeNode(value.id, molecule);
+      const node = new MoleculeNode(value.id, molecule, value.smiles);
       node.consumedIn = value.consumedIn;
       node.producedBy = value.producedBy;
       this.moleculeNodes.set(key, node);

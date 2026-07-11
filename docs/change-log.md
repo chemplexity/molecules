@@ -1,5 +1,18 @@
 # Change Log
 
+## 2026-07-10
+
+- Add a configurable minimum-heavy-atom filter for scaffold nodes and enable it in the reaction-network demo to hide one-heavy-atom scaffolds such as Cl, HCl, and CH4.
+- Cache canonical SMILES on reaction-network molecule nodes and reuse it in the demo BFS, diagnostics, exports, and JSON round trips to avoid repeated per-node canonicalization.
+- Add conservative reaction-template prefilters to the reaction-network demo so templates whose required elements, aromatic atoms, or multiple-bond features are absent skip the expensive SMARTS matcher.
+- Add a Random button to the reaction-network demo that loads a seed from the complex SMILES example corpus for generation.
+- Auto-fit the reaction-network demo viewport once the generated D3 layout settles, using the open side drawers as viewport insets so all nodes remain visible.
+- Run reaction-network demo generation in a worker thread so the Generate button can become a real Cancel control, and render a one-node molecule preview after choosing a random complex SMILES seed.
+- Add an extended-scaffold option, enabled in the reaction-network demo, that retains substantial acyclic substituent backbones attached to retained ring cores so ring-opened products do not collapse to tiny scaffold fragments.
+- Add a reaction-network demo Bond Length slider and pass its value through preview, generation, molecule thumbnail export, and scaffold thumbnail export.
+- Render scaffold-network thumbnails from a representative member molecule's placed geometry when possible, keeping unspecified double bonds visually consistent with regular molecule nodes.
+- Keep the reaction-network demo Node Distance and Bond Length sliders visible from initial load and through random-preview clears so the controls do not overlap or jump.
+
 ## 2026-07-09
 
 - Show the reaction-network demo's scaffold network by default, including default-on handling for omitted `scaffolds` query parameters.

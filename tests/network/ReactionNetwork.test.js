@@ -18,6 +18,7 @@ describe('ReactionNetwork', () => {
     const node2 = network.addMolecule(m2);
 
     assert.equal(node1, node2);
+    assert.equal(node1.canonicalSmiles, 'C');
     assert.equal(network.moleculeNodes.size, 1);
     assert.equal(network._smilesIndex.size, 1);
   });
@@ -75,6 +76,16 @@ describe('ReactionNetwork', () => {
     assert.match(moleculeNode.svg, /text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle"><tspan>(?:OH|HO)<\/tspan><\/text>/);
     assert.ok(chargedNode?.svg, 'expected exported charged molecule SVG');
     assert.match(chargedNode.svg, /class="atom-charge-ring"[^>]+fill="none"/);
+  });
+
+  it('exports molecule thumbnails using the requested render bond length', () => {
+    const network = new ReactionNetwork();
+    network.addMolecule(parseSMILES('CCCCCCCC'));
+
+    const compact = network.exportDirectedGraph({ flatten: true, bondLength: 0.5 }).nodes[0];
+    const expanded = network.exportDirectedGraph({ flatten: true, bondLength: 2.5 }).nodes[0];
+
+    assert.ok(expanded.width > compact.width, 'expected larger bond length to increase thumbnail width');
   });
 
   it('executeReactionTemplate preserves displayed stereo hydrogens on unchanged centers', () => {
@@ -156,6 +167,10 @@ describe('ReactionNetwork', () => {
     network.addReaction([parseSMILES('C')], [parseSMILES('O')]);
 
     const dump = network.toJSON();
+    assert.deepEqual(
+      dump.moleculeNodes.map(([, node]) => node.smiles).sort(),
+      ['C', 'O']
+    );
 
     const network2 = new ReactionNetwork();
     network2.fromJSON(dump);
@@ -164,6 +179,10 @@ describe('ReactionNetwork', () => {
     assert.equal(network2.reactionNodes.size, 1);
     assert.equal(network2._moleculeCounter, 2);
     assert.equal(network2._reactionCounter, 1);
+    assert.deepEqual(
+      [...network2.moleculeNodes.values()].map(node => node.canonicalSmiles).sort(),
+      ['C', 'O']
+    );
 
     const sourceNodes = network.exportDirectedGraph({ flatten: true });
     const reloadedNodes = network2.exportDirectedGraph({ flatten: true });

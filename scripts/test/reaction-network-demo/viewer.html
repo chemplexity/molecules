@@ -123,6 +123,38 @@
         border-color: #999;
         background: #fff;
       }
+      .input-action-row {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+      }
+      .input-action-row input {
+        min-width: 0;
+        flex: 1;
+      }
+      #random-btn {
+        flex: 0 0 auto;
+        padding: 0 11px;
+        border: 1px solid #d7d7d7;
+        border-radius: 8px;
+        background: #fff;
+        color: #222;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+      }
+      #random-btn:hover {
+        border-color: #aaa;
+        background: #f4f4f5;
+      }
+      #random-btn:disabled {
+        color: #aaa;
+        border-color: #e5e5e5;
+        cursor: default;
+      }
       .row {
         display: flex;
         gap: 10px;
@@ -166,6 +198,12 @@
       }
       #generate-btn:hover {
         background: #333;
+      }
+      #generate-btn.cancel {
+        background: #b91c1c;
+      }
+      #generate-btn.cancel:hover {
+        background: #991b1b;
       }
       #generate-btn:disabled {
         background: #aaa;
@@ -402,7 +440,10 @@
         <p class="subtitle">Requires <code>server.js</code> on port 3737.</p>
 
         <label for="smiles-input">SMILES</label>
-        <input type="text" id="smiles-input" placeholder="e.g. CCO" value="CCO" spellcheck="false" />
+        <div class="input-action-row">
+          <input type="text" id="smiles-input" placeholder="e.g. CCO" value="CCO" spellcheck="false" />
+          <button id="random-btn" title="Load a random complex SMILES case">Random</button>
+        </div>
 
         <div class="row">
           <div>
@@ -430,15 +471,33 @@
           <label for="decorated-scaffolds-input">Decorated Scaffolds</label>
         </div>
 
+        <div class="toggle-row">
+          <input type="checkbox" id="extended-scaffolds-input" checked />
+          <label for="extended-scaffolds-input">Extended Scaffolds</label>
+        </div>
+
+        <div class="toggle-row">
+          <input type="checkbox" id="hide-simple-scaffolds-input" checked />
+          <label for="hide-simple-scaffolds-input">Hide Simple Scaffolds</label>
+        </div>
+
         <button id="generate-btn">Generate Network</button>
         <div id="status"></div>
 
-        <div class="slider-row" id="distance-row" style="display: none">
+        <div class="slider-row" id="distance-row">
           <div class="slider-header">
             <label for="distance-slider">Node Distance</label>
             <span class="slider-val" id="distance-val">0</span>
           </div>
           <input type="range" id="distance-slider" min="-3000" max="600" value="0" step="5" />
+        </div>
+
+        <div class="slider-row">
+          <div class="slider-header">
+            <label for="bond-length-slider">Bond Length</label>
+            <span class="slider-val" id="bond-length-val">1.5</span>
+          </div>
+          <input type="range" id="bond-length-slider" min="0.5" max="2.5" value="1.5" step="0.1" />
         </div>
       </div>
 
@@ -576,29 +635,88 @@
       });
 
       const btn = document.getElementById('generate-btn');
+      const randomBtn = document.getElementById('random-btn');
       const status = document.getElementById('status');
+      let currentGenerationController = null;
+      let isGenerating = false;
+
+      const bondLengthSlider = document.getElementById('bond-length-slider');
+      const bondLengthVal = document.getElementById('bond-length-val');
+      bondLengthSlider.addEventListener('input', () => {
+        bondLengthVal.textContent = Number(bondLengthSlider.value).toFixed(1);
+      });
+
+      function visibleGraphViewport() {
+        const drawerInset = drawer.classList.contains('collapsed') ? 48 : 342;
+        const infoInset = infoDrawer.classList.contains('collapsed') ? 48 : 312;
+        const topInset = 36;
+        const bottomInset = 36;
+        return {
+          x: drawerInset,
+          y: topInset,
+          width: Math.max(220, width - drawerInset - infoInset),
+          height: Math.max(180, height - topInset - bottomInset)
+        };
+      }
+
+      function clearGraph() {
+        g.selectAll('*').remove();
+        updateInfoPanel(null, [], new Map());
+      }
+
+      function setGenerationState(active) {
+        isGenerating = active;
+        btn.disabled = false;
+        randomBtn.disabled = active;
+        btn.classList.toggle('cancel', active);
+        btn.innerHTML = active ? 'Cancel' : 'Generate Network';
+      }
+
+      async function cancelGeneration() {
+        if (!isGenerating) {
+          return;
+        }
+
+        status.textContent = 'Cancelling generation…';
+        try {
+          await fetch('http://localhost:3737/cancel-generation');
+        } catch (e) {
+          console.error(e);
+        }
+        currentGenerationController?.abort();
+        setGenerationState(false);
+      }
 
       async function generate() {
+        if (isGenerating) {
+          await cancelGeneration();
+          return;
+        }
+
         const smiles = document.getElementById('smiles-input').value.trim();
         const depth = document.getElementById('depth-input').value;
         const maxNodes = document.getElementById('maxnodes-input').value;
         const flatten = document.getElementById('flatten-input').checked;
         const scaffolds = document.getElementById('scaffolds-input').checked;
         const decoratedScaffolds = document.getElementById('decorated-scaffolds-input').checked;
+        const extendedScaffolds = document.getElementById('extended-scaffolds-input').checked;
+        const hideSimpleScaffolds = document.getElementById('hide-simple-scaffolds-input').checked;
+        const bondLength = bondLengthSlider.value;
 
         if (!smiles) {
           status.textContent = 'Please enter a SMILES string.';
           return;
         }
 
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> Generating…';
+        const controller = new AbortController();
+        currentGenerationController = controller;
+        setGenerationState(true);
         status.textContent = '';
 
-        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}&scaffolds=${scaffolds}&decoratedScaffolds=${decoratedScaffolds}`;
+        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}&scaffolds=${scaffolds}&decoratedScaffolds=${decoratedScaffolds}&extendedScaffolds=${extendedScaffolds}&hideSimpleScaffolds=${hideSimpleScaffolds}&bondLength=${bondLength}`;
 
         try {
-          const res = await fetch(url);
+          const res = await fetch(url, { signal: controller.signal });
           if (!res.ok) {
             const e = await res.json();
             throw new Error(e.error || res.statusText);
@@ -607,15 +725,65 @@
           status.textContent = `${data.nodes.length} nodes · ${data.links.length} links`;
           renderGraph(data);
         } catch (e) {
+          if (e.name === 'AbortError') {
+            status.textContent = 'Generation cancelled.';
+          } else {
+            status.textContent = `Error: ${e.message}`;
+            console.error(e);
+          }
+        } finally {
+          if (currentGenerationController === controller) {
+            currentGenerationController = null;
+            setGenerationState(false);
+          }
+        }
+      }
+
+      async function renderMoleculePreview(smiles, loadedMessage) {
+        clearGraph();
+        status.textContent = 'Rendering molecule preview…';
+
+        const res = await fetch(`http://localhost:3737/preview?smiles=${encodeURIComponent(smiles)}&bondLength=${bondLengthSlider.value}`);
+        if (!res.ok) {
+          const e = await res.json();
+          throw new Error(e.error || res.statusText);
+        }
+
+        const data = await res.json();
+        renderGraph(data);
+        status.textContent = loadedMessage;
+      }
+
+      async function loadRandomSmiles() {
+        if (isGenerating) {
+          return;
+        }
+
+        randomBtn.disabled = true;
+        btn.disabled = true;
+        status.textContent = 'Loading random complex case…';
+        clearGraph();
+
+        try {
+          const res = await fetch('http://localhost:3737/random-smiles');
+          if (!res.ok) {
+            const e = await res.json();
+            throw new Error(e.error || res.statusText);
+          }
+          const data = await res.json();
+          document.getElementById('smiles-input').value = data.smiles;
+          await renderMoleculePreview(data.smiles, `Loaded random case ${data.index + 1} of ${data.count}`);
+        } catch (e) {
           status.textContent = `Error: ${e.message}`;
           console.error(e);
         } finally {
+          randomBtn.disabled = false;
           btn.disabled = false;
-          btn.innerHTML = 'Generate Network';
         }
       }
 
       btn.addEventListener('click', generate);
+      randomBtn.addEventListener('click', loadRandomSmiles);
       document.getElementById('smiles-input').addEventListener('keydown', e => {
         if (e.key === 'Enter') generate();
       });
@@ -667,6 +835,39 @@
           return 20;
         };
 
+        const fitGraphToView = ({ animate = true } = {}) => {
+          if (!data.nodes.length) {
+            return;
+          }
+
+          const padding = 44;
+          let minX = Infinity;
+          let minY = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+
+          for (const d of data.nodes) {
+            const r = nodeRadius(d) + padding;
+            minX = Math.min(minX, d.x - r);
+            minY = Math.min(minY, d.y - r);
+            maxX = Math.max(maxX, d.x + r);
+            maxY = Math.max(maxY, d.y + r);
+          }
+
+          const graphW = Math.max(1, maxX - minX);
+          const graphH = Math.max(1, maxY - minY);
+          const viewport = visibleGraphViewport();
+          const scale = Math.max(0.04, Math.min(1.35, Math.min(viewport.width / graphW, viewport.height / graphH)));
+          const graphCx = (minX + maxX) / 2;
+          const graphCy = (minY + maxY) / 2;
+          const targetCx = viewport.x + viewport.width / 2;
+          const targetCy = viewport.y + viewport.height / 2;
+          const transform = d3.zoomIdentity.translate(targetCx - graphCx * scale, targetCy - graphCy * scale).scale(scale);
+
+          const target = animate ? svg.transition().duration(650) : svg;
+          target.call(zoomBehavior.transform, transform);
+        };
+
         // Pre-position nodes in a radial spiral so simulation starts spread out
         // instead of all piling at (0,0) and needing many ticks to untangle.
         const cx = width / 2,
@@ -706,15 +907,15 @@
           .force('collide', d3.forceCollide().radius(nodeRadius).strength(0.85).iterations(4))
           .alphaDecay(0.015)
           .velocityDecay(0.4);
+        let shouldAutoFitOnSettle = true;
 
-        // Show slider and wire it to live-update link distance
-        const distRow = document.getElementById('distance-row');
+        // Wire the always-visible slider to live-update link distance.
         const distSlider = document.getElementById('distance-slider');
         const distVal = document.getElementById('distance-val');
-        distRow.style.display = 'block';
         distVal.textContent = linkGap;
 
         distSlider.addEventListener('input', () => {
+          shouldAutoFitOnSettle = false;
           linkGap = parseInt(distSlider.value, 10);
           distVal.textContent = linkGap;
           simulation.force('link').distance(linkDistFn);
@@ -753,6 +954,7 @@
             d3
               .drag()
               .on('start', (event, d) => {
+                shouldAutoFitOnSettle = false;
                 if (!event.active) simulation.alphaTarget(0.3).restart();
                 d.fx = d.x;
                 d.fy = d.y;
@@ -1105,6 +1307,14 @@
 
           applyNodeTransforms();
         }); // end simulation.on("tick")
+
+        simulation.on('end', () => {
+          if (!shouldAutoFitOnSettle) {
+            return;
+          }
+          shouldAutoFitOnSettle = false;
+          fitGraphToView();
+        });
       } // end renderGraph
     </script>
   </body>

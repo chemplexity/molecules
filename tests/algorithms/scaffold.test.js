@@ -33,6 +33,15 @@ describe('Murcko Scaffold Extraction', () => {
     assert.equal(toCanonicalSMILES(diarylKetone), 'c1ccc(cc1)C(c2ccccc2)=O');
   });
 
+  it('can preserve substantial acyclic substituent backbones attached to a small ring core', () => {
+    const ringOpenedCore = parseSMILES('CCC(CC(CC1C(C)[NH+]=C(C)N1CCO)O)O');
+    const strictScaffold = extractMurckoScaffold(ringOpenedCore);
+    const extendedScaffold = extractMurckoScaffold(ringOpenedCore, { preserveLargeSubstituentBackbones: true });
+
+    assert.equal(toCanonicalSMILES(strictScaffold), 'C=1[N]CC[NH+]1');
+    assert.equal(toCanonicalSMILES(extendedScaffold), 'CCC(CC(CC1C[N]C=[NH+]1)O)O');
+  });
+
   it('should strip stereochemistry from pruned ring scaffolds', () => {
     const mol = parseSMILES('C[C@H]1CCCC[C@H]1O');
     const scaffold = extractMurckoScaffold(mol);
