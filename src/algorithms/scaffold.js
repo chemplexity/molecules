@@ -230,6 +230,8 @@ function _clearScaffoldStereo(scaffold) {
  * Used as a fallback when Murcko scaffold derivation completely dissolves an acyclic structure.
  * @private
  * @param {import('../core/Molecule.js').Molecule} molecule - The input acyclic molecule.
+ * @param {object} [options] - Scaffold extraction options.
+ * @param {boolean} [options.preserveExocyclicMultipleBonds] - Whether to keep terminal exocyclic multiple-bond heteroatoms. Defaults to false.
  * @returns {import('../core/Molecule.js').Molecule} The acyclic backbone.
  */
 function _extractAcyclicBackbone(molecule, { preserveExocyclicMultipleBonds = false } = {}) {

@@ -133,6 +133,40 @@ describe('toCanonicalSMILES — structural cases', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Amine oxide normalization
+// ---------------------------------------------------------------------------
+
+describe('toCanonicalSMILES — amine oxide normalization', () => {
+  it('preserves an already charge-separated tertiary amine oxide (e.g. TMAO) as [N+]...[O-]', () => {
+    assert.equal(canonical('C[N+](C)(C)[O-]'), 'C[N+](C)(C)[O-]');
+  });
+
+  it('promotes an over-valent neutral trisubstituted N(R)(R)(R)=O to the charge-separated form', () => {
+    assert.equal(canonical('CN(CC)(CC)=O'), canonical('C[N+](CC)(CC)[O-]'));
+  });
+
+  it('promotes an over-valent neutral disubstituted N(R)(R)=O to the charge-separated form, filling the 4th N+ valence slot with H', () => {
+    assert.equal(canonical('CCN(C)=O'), canonical('CC[NH+](C)[O-]'));
+  });
+
+  it('does not touch a genuine neutral nitroso compound R-N=O (only one other substituent)', () => {
+    const mol = parseSMILES(canonical('O=Nc1ccccc1'));
+    const n = [...mol.atoms.values()].find(atom => atom.name === 'N');
+    assert.equal(n.getCharge(), 0);
+    const doubleBondToO = n.bonds.some(bondId => {
+      const bond = mol.bonds.get(bondId);
+      const other = mol.atoms.get(bond.getOtherAtom(n.id));
+      return other?.name === 'O' && (bond.properties.order ?? 1) === 2;
+    });
+    assert.equal(doubleBondToO, true, 'nitroso N=O bond should be untouched');
+  });
+
+  it('does not touch a nitro group (already excluded by the double-bonded-O guard)', () => {
+    assert.equal(canonical('[N+](=O)([O-])c1ccccc1'), canonical('O=[N+]([O-])c1ccccc1'));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // sameMolecule
 // ---------------------------------------------------------------------------
 

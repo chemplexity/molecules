@@ -62,6 +62,17 @@ describe('ReactionNetwork', () => {
     assert.ok(Array.isArray(rxns));
   });
 
+  it('executeReactionTemplate correctly merges two independently-parsed reactants for a bimolecular template', () => {
+    const network = new ReactionNetwork();
+    const acid = parseSMILES('CC(=O)O');
+    const alcohol = parseSMILES('CO');
+    const rxns = network.executeReactionTemplate([acid, alcohol], reactionTemplates.esterification.smirks);
+
+    assert.equal(rxns.length, 1);
+    const productSmiles = rxns[0].products.map(id => toCanonicalSMILES(network.moleculeNodes.get(id).molecule)).sort();
+    assert.deepEqual(productSmiles, [toCanonicalSMILES(parseSMILES('CC(=O)OC')), toCanonicalSMILES(parseSMILES('O'))].sort());
+  });
+
   it('exports molecule thumbnails with transparent atom labels for network viewers', () => {
     const network = new ReactionNetwork();
     network.addMolecule(parseSMILES('CO'));
@@ -167,10 +178,7 @@ describe('ReactionNetwork', () => {
     network.addReaction([parseSMILES('C')], [parseSMILES('O')]);
 
     const dump = network.toJSON();
-    assert.deepEqual(
-      dump.moleculeNodes.map(([, node]) => node.smiles).sort(),
-      ['C', 'O']
-    );
+    assert.deepEqual(dump.moleculeNodes.map(([, node]) => node.smiles).sort(), ['C', 'O']);
 
     const network2 = new ReactionNetwork();
     network2.fromJSON(dump);
@@ -179,10 +187,7 @@ describe('ReactionNetwork', () => {
     assert.equal(network2.reactionNodes.size, 1);
     assert.equal(network2._moleculeCounter, 2);
     assert.equal(network2._reactionCounter, 1);
-    assert.deepEqual(
-      [...network2.moleculeNodes.values()].map(node => node.canonicalSmiles).sort(),
-      ['C', 'O']
-    );
+    assert.deepEqual([...network2.moleculeNodes.values()].map(node => node.canonicalSmiles).sort(), ['C', 'O']);
 
     const sourceNodes = network.exportDirectedGraph({ flatten: true });
     const reloadedNodes = network2.exportDirectedGraph({ flatten: true });

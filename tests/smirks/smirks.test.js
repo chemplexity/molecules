@@ -383,4 +383,21 @@ describe('applySMIRKS', () => {
     assert.ok(product);
     assert.equal(sortDotSmiles(toSMILES(product)), 'Nc1ccccc1.O.O');
   });
+
+  it('adding a new substituent directly to a bare aromatic ring position preserves ring aromaticity', () => {
+    const rxn = '[cH:1]>>[c:1]O';
+    const product = applySMIRKS(parseSMILES('c1ccccc1'), rxn);
+    assert.ok(product);
+    for (const atom of product.atoms.values()) {
+      if (atom.name === 'C') {
+        assert.equal(atom.isAromatic(), true, `ring carbon ${atom.id} should remain aromatic`);
+      }
+    }
+    for (const bond of product.bonds.values()) {
+      const atomsAreRingCarbons = bond.atoms.every(id => product.atoms.get(id)?.name === 'C');
+      if (atomsAreRingCarbons) {
+        assert.equal(bond.properties.aromatic, true, 'ring C-C bonds should remain aromatic');
+      }
+    }
+  });
 });

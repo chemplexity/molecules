@@ -488,6 +488,21 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
       if (pBond.getStereo()) {
         explicitBondStereoSpecs.set(newBond.id, pBond.getStereo());
       }
+      // A kept atom gaining a brand-new bond needs to shed one pendant hydrogen
+      // to make room for it. Do this immediately (rather than leaving it to the
+      // later repairImplicitHydrogens pass) so a stale hydrogen doesn't inflate
+      // this atom's apparent bond order before `kekulize()` runs — an inflated
+      // count there can wrongly exclude a ring atom from the aromatic pi-bond
+      // matching, corrupting the whole ring's Kekule structure.
+      for (const targetId of [tA, tB]) {
+        if (!keptTargetIds.has(targetId) || explicitHydrogenSpecs.has(targetId)) {
+          continue;
+        }
+        const pendantCount = _pendantHydrogenIds(result, targetId).length;
+        if (pendantCount > 0) {
+          _setExplicitHydrogenCount(result, targetId, pendantCount - 1);
+        }
+      }
     }
   }
 

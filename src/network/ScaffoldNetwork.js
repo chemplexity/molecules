@@ -376,6 +376,8 @@ export class ScaffoldNetwork {
   /**
    * Exports the scaffold network as `{ nodes, links }` for D3 visualization.
    * Renders the Murcko framework as an internal SVG.
+   * @param {object} [options] - Export options.
+   * @param {number} [options.bondLength] - Bond length used when rendering node thumbnails. Defaults to 1.5.
    * @returns {{nodes: object[], links: object[]}} Exported graph payload.
    */
   exportDirectedGraph({ bondLength = 1.5 } = {}) {

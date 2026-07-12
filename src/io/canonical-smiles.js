@@ -3055,39 +3055,45 @@ function _normalizeSulfoxide(mol) {
 }
 
 function _normalizeAmineOxide(mol) {
-  // Convert aliphatic [N+]([O-]) to N=O (amine oxide zwitterion → dative-bond form).
-  // InChI sometimes reconstructs amine N-oxides (R3N=O) as [N+](R3)[O-].
-  // Excludes: (1) nitro groups [N+](=O)[O-] (N already has another double bond to O);
-  //           (2) aromatic N-oxides (handled elsewhere, e.g. pyridine-N-oxide).
-  for (const [, atom] of mol.atoms) {
-    if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 1 || atom.properties.aromatic) {
+  // Promote hypervalent neutral N(R...)=O (an amine/nitrone oxide written with a
+  // formal double bond, as some source SMILES do) to the charge-separated
+  // [N+](R...)[O-] Lewis structure InChI reconstructs. A neutral trivalent
+  // nitrogen can carry a double bond to a terminal O only when it has at most
+  // one other substituent (a genuine nitroso compound, R-N=O, total bond order
+  // 3). With two or more other substituents the total bond order exceeds 3, so
+  // the structure is only valid once N carries a +1 charge and the N-O bond is
+  // reduced to a single bond with O at -1 — mirroring `_normalizeNitroGroup`.
+  for (const atom of mol.atoms.values()) {
+    if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0 || atom.properties.aromatic) {
       continue;
     }
-    // Confirm N is not already carrying another double bond to O (nitro guard).
-    const hasDoubleO = atom.bonds.some(bId => {
-      const b = mol.bonds.get(bId);
-      if (!b || (b.properties.order ?? 1) !== 2) {
-        return false;
-      }
-      const other = mol.atoms.get(b.getOtherAtom(atom.id));
-      return other?.name === 'O';
-    });
-    if (hasDoubleO) {
-      continue;
-    }
-    // Find the single-bond O- neighbor.
-    for (const bId of atom.bonds) {
-      const b = mol.bonds.get(bId);
-      if (!b) {
+
+    let doubleBondO = null;
+    let otherBondOrderSum = 0;
+    for (const bondId of atom.bonds) {
+      const bond = mol.bonds.get(bondId);
+      if (!bond) {
         continue;
       }
-      const other = mol.atoms.get(b.getOtherAtom(atom.id));
-      if (other?.name === 'O' && (other.properties.charge ?? 0) === -1 && (b.properties.order ?? 1) === 1) {
-        atom.setCharge(0);
-        other.setCharge(0);
-        b.properties.order = 2;
-        break;
+      const order = bond.properties.order ?? 1;
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      if (!doubleBondO && other?.name === 'O' && (other.properties.charge ?? 0) === 0 && order === 2) {
+        const oHeavyDegree = other.bonds.filter(bId => {
+          const b = mol.bonds.get(bId);
+          return b && mol.atoms.get(b.getOtherAtom(other.id))?.name !== 'H';
+        }).length;
+        if (oHeavyDegree === 1) {
+          doubleBondO = { bond, other };
+          continue;
+        }
       }
+      otherBondOrderSum += order;
+    }
+
+    if (doubleBondO && otherBondOrderSum + 2 > 3) {
+      atom.setCharge(1);
+      doubleBondO.other.setCharge(-1);
+      doubleBondO.bond.properties.order = 1;
     }
   }
 }

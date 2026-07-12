@@ -73,6 +73,17 @@ export class ReactionNetwork {
   }
 
   /**
+   * Looks up the registered node for a molecule without mutating the network.
+   * @param {import('../core/Molecule.js').Molecule} molecule - Molecule to look up.
+   * @returns {MoleculeNode|undefined} The registered node, or `undefined` when not present.
+   */
+  getMoleculeNode(molecule) {
+    const smiles = toCanonicalSMILES(molecule);
+    const nodeId = this._smilesIndex.get(smiles);
+    return nodeId != null ? this.moleculeNodes.get(nodeId) : undefined;
+  }
+
+  /**
    * Adds a molecule to the network. Identical molecules merge into the same node.
    * @param {import('../core/Molecule.js').Molecule} molecule - The molecule to add.
    * @returns {MoleculeNode} The created or retrieved node.
@@ -220,15 +231,9 @@ export class ReactionNetwork {
       return [];
     }
 
-    const reactantParent = reactants[0].clone();
+    let reactantParent = reactants[0].clone();
     for (let index = 1; index < reactants.length; index++) {
-      const reactantClone = reactants[index].clone();
-      for (const [atomId, atom] of reactantClone.atoms) {
-        reactantParent.atoms.set(`tmp_${index}_${atomId}`, atom);
-      }
-      for (const [bondId, bond] of reactantClone.bonds) {
-        reactantParent.bonds.set(`tmp_${index}_${bondId}`, bond);
-      }
+      reactantParent = reactantParent.merge(reactants[index]);
     }
 
     if (reactantParent.getChiralCenters().length > 0) {

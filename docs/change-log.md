@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-07-11
+
+- Add `MetabolicNetwork`, a class wrapping `ReactionNetwork` (composition, matching the existing `ScaffoldNetwork` pattern) that cascades a curated Phase I/II biotransformation SMIRKS rule set across generations from one or more seed molecules, with seed/generation tracking, `maxGenerations`/`maxNodes` explosion control, and phase/enzyme-family metabolite queries.
+- Add `src/smirks/metabolism-reference.js` (`metabolismTemplates`), a catalogue of 15 xenobiotic biotransformation SMIRKS templates (benzylic hydroxylation, N/O-demethylation, oxidative deamination, epoxidation, sulfoxidation, glucuronidation, sulfation, acetylation, methylation, glycine conjugation, plus reuse of existing generic hydrolysis/dehalogenation/nitro-reduction templates), each tagged with `phase` and `enzymeFamily`.
+- Add `ReactionNetwork.getMoleculeNode(molecule)`, a small read-only lookup used by `MetabolicNetwork` to resolve a molecule to its registered node without reaching into private fields.
+- Fix `ReactionNetwork.executeReactionTemplate` silently producing zero reactions for any bimolecular SMIRKS template (`esterification`, `amineAcylation`, `amineAlkylation`, `dielsAlder`): the ad hoc reactant-merging loop never remapped `bond.atoms`/`atom.bonds`/`_bondIndex` after renaming colliding atom/bond ids, silently corrupting the joined graph. Now delegates to the already-correct `Molecule.prototype.merge`.
+- Fix a SMIRKS engine bug where adding a new substituent directly to a bare aromatic ring position (e.g. `[cH:1]>>[c:1]O`) corrupted the whole ring: a kept atom's stale pendant hydrogen was never removed when it gained a new bond, inflating its apparent bond order before `kekulize()` ran and breaking the ring's alternating Kekulé matching. `apply.js` now trims one pendant hydrogen from a kept atom at the moment a new bond is formed to it.
+- Fix `toCanonicalSMILES` rendering charge-separated amine N-oxides (e.g. trimethylamine N-oxide) as an invalid neutral pentavalent-nitrogen `N=O` string. The normalization was demoting an already-valid `[N+]-[O-]` zwitterion instead of promoting genuinely invalid neutral over-valent `N(R)(R)(R)=O` input (as `_normalizeNitroGroup` correctly does for nitro groups) — corrected to normalize in that direction instead, verified against the full 36,148-row InChI round-trip corpus with no regressions.
+- Re-add `aromaticHydroxylation` and `tertiaryAmineNOxidation` to `metabolismTemplates` now that both underlying engine bugs are fixed.
+
 ## 2026-07-10
 
 - Add a configurable minimum-heavy-atom filter for scaffold nodes and enable it in the reaction-network demo to hide one-heavy-atom scaffolds such as Cl, HCl, and CH4.
