@@ -607,6 +607,68 @@ describe('createPrimitiveEventHandlers', () => {
     assert.equal(placement[4].anchorCenterAngle, -Math.PI / 2);
   });
 
+  it('commits the hovered bond ring-template preview when an atom-started drag ends over a bond', () => {
+    const listeners = new Map();
+    const svgRoot = makeSvgRoot();
+    const documentMock = {
+      addEventListener(type, handler) {
+        listeners.set(type, handler);
+      },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) {
+          listeners.delete(type);
+        }
+      }
+    };
+    let pointer = [10, 20];
+    const bond = { id: 'b1', atoms: ['a1', 'a2'] };
+    const mol2d = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C', x: 10, y: 20 }],
+        ['a2', { id: 'a2', name: 'C', x: 100, y: 20 }]
+      ]),
+      bonds: new Map([[bond.id, bond]]),
+      getBond(atomIdA, atomIdB) {
+        return [...this.bonds.values()].find(candidate => candidate.atoms.includes(atomIdA) && candidate.atoms.includes(atomIdB)) ?? null;
+      }
+    };
+    const { context, calls, setMode, setRingTemplateMode, setRingTemplateSize } = makeContext({
+      document: documentMock,
+      mol2d,
+      pointer: () => pointer,
+      dom: {
+        gNode: () => svgRoot
+      }
+    });
+    setMode('2d');
+    setRingTemplateMode(true);
+    setRingTemplateSize(5);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dAtomMouseDownDrawBond({ preventDefault() {}, stopPropagation() {} }, 'a1');
+    pointer = [50, 90];
+    listeners.get('mousemove')?.({ preventDefault() {} });
+    handlers.handle2dBondMouseOver({ clientX: 50, clientY: 90 }, bond, mol2d.atoms.get('a1'), mol2d.atoms.get('a2'), { x: 10, y: 20 }, { x: 100, y: 20 });
+    listeners.get('mouseup')({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const placements = calls.filter(call => call[0] === 'placeRingTemplate');
+    assert.equal(placements.length, 1);
+    assert.deepEqual(placements[0], [
+      'placeRingTemplate',
+      5,
+      50,
+      90,
+      {
+        anchorBondId: 'b1',
+        anchorBondSide: 1,
+        allowBondPositionReuse: true
+      }
+    ]);
+  });
+
   for (const modifierKey of ['ctrlKey', 'metaKey']) {
     it(`commits anchored ring template placement with free rotation when ${modifierKey} is held`, () => {
       const listeners = new Map();

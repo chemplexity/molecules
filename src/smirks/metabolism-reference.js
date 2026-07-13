@@ -15,6 +15,8 @@
  *   `phase`        — `'I'` (oxidative/reductive/hydrolytic) or `'II'` (conjugative)
  *   `enzymeFamily` — representative enzyme family responsible in vivo
  *   `summary`      — short transformation summary
+ *   `cofactor`     — cofactor(s) net-consumed by the enzyme in vivo (not modeled structurally)
+ *   `byproducts`   — cofactor-derived byproduct(s) released in vivo (not modeled structurally)
  *   `notes`        — general template notes
  *   `limitations`  — known scope/selectivity limitations
  *
@@ -58,6 +60,8 @@ export const ENZYME_FAMILY = Object.freeze({
  * @property {'I'|'II'} phase - Metabolism phase.
  * @property {string} enzymeFamily - Representative enzyme family.
  * @property {string} summary - Short transformation summary.
+ * @property {string[]} cofactor - Cofactor(s) net-consumed by the enzyme in vivo.
+ * @property {string[]} byproducts - Cofactor-derived byproduct(s) released in vivo.
  * @property {string[]} notes - General template notes.
  * @property {string[]} limitations - Known scope/selectivity limitations.
  */
@@ -70,6 +74,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Aromatic methyl -> benzylic alcohol',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Represents CYP450 hydroxylation of an aromatic ring methyl substituent.'],
     limitations: ['Limited to unsubstituted aromatic methyl groups.', 'Does not model further oxidation to the aldehyde/acid oxidation state.']
   },
@@ -79,6 +85,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'N-methyl amine -> amine + formaldehyde',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Represents oxidative N-demethylation via an unstable carbinolamine intermediate, abstracted directly to the amine and formaldehyde products.'],
     limitations: ['Does not distinguish primary/secondary/tertiary amine substitution, amide nitrogens, or aromatic ring nitrogens.', 'Fires once per N-methyl group present.']
   },
@@ -88,6 +96,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Aromatic C-H -> phenol',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Represents CYP450 arene oxidation collapsed directly to the phenol product, without an explicit arene-oxide intermediate.'],
     limitations: ['Fires on every aromatic C-H position with no regioselectivity encoded; real CYP450 site-of-metabolism preference is not modeled.']
   },
@@ -97,6 +107,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Aryl methyl ether -> phenol + formaldehyde',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Restricted to aryl methyl ethers (e.g. anisole-type substrates).'],
     limitations: ['Aliphatic methyl ethers are intentionally out of scope for this template (see the generic `etherCleavage` template for those).']
   },
@@ -106,6 +118,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.MAO,
     summary: 'Primary aliphatic amine -> aldehyde + ammonia',
+    cofactor: ['O2'],
+    byproducts: ['H2O2'],
     notes: ['Represents monoamine-oxidase-style oxidative deamination of a primary amine on a CH2 carbon.'],
     limitations: ['Limited to primary amines on an unbranched (CH2) carbon.', 'Does not represent the imine intermediate or further aldehyde oxidation.']
   },
@@ -115,6 +129,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Tertiary amine -> N-oxide',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Represents CYP450/flavin monooxygenase oxidation of a tertiary amine to the N-oxide.'],
     limitations: ['Excludes amide/carbamate nitrogens via a structural guard, but does not otherwise rank substrate preference.']
   },
@@ -124,6 +140,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Alkene -> epoxide',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Represents CYP450 epoxidation of a non-aromatic alkene.'],
     limitations: ['Limited to neutral alkene carbons (aromatic ring bonds are not matched).', 'Does not encode regio- or stereoselectivity of the resulting epoxide.']
   },
@@ -133,6 +151,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Sulfide -> sulfoxide',
+    cofactor: ['O2', 'NADPH'],
+    byproducts: ['H2O', 'NADP+'],
     notes: ['Reuses the generic `sulfideOxidationToSulfoxide` organic-chemistry template; CYP450/flavin monooxygenase perform the same net transformation in vivo.'],
     limitations: ['Does not model further oxidation to the sulfone.']
   },
@@ -142,6 +162,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.ESTERASE,
     summary: 'Ester -> carboxylic acid + alcohol',
+    cofactor: ['H2O'],
+    byproducts: [],
     notes: ['Reuses the generic `esterHydrolysis` organic-chemistry template.'],
     limitations: ['Does not distinguish esterase isoform specificity.']
   },
@@ -151,6 +173,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.AMIDASE,
     summary: 'Amide -> carboxylic acid + amine',
+    cofactor: ['H2O'],
+    byproducts: [],
     notes: ['Reuses the generic `amideHydrolysis` organic-chemistry template.'],
     limitations: ['Amide hydrolysis in vivo is often slower/more selective than the unrestricted structural match suggests.']
   },
@@ -160,6 +184,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.CYP450,
     summary: 'Alkyl halide -> alkane',
+    cofactor: ['NADPH'],
+    byproducts: ['NADP+'],
     notes: ['Reuses the generic `dehalogenation` organic-chemistry template.'],
     limitations: ['Real reductive dehalogenation is substrate- and halide-dependent.']
   },
@@ -169,6 +195,8 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.I,
     enzymeFamily: ENZYME_FAMILY.GUT_FLORA,
     summary: 'Nitro group -> amine',
+    cofactor: ['NAD(P)H'],
+    byproducts: ['H2O'],
     notes: ['Reuses the generic `nitroReduction` organic-chemistry template; in vivo this is frequently gut-flora-mediated.'],
     limitations: ['Does not model partial reduction intermediates (nitroso, hydroxylamino).']
   },
@@ -178,7 +206,9 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.II,
     enzymeFamily: ENZYME_FAMILY.UGT,
     summary: 'Hydroxyl -> O-glucuronide',
-    notes: ['Appends a glucuronic acid unit via an O-glycosidic bond, in place of the cofactor-consuming UDP-glucuronic acid mechanism.'],
+    cofactor: ['UDP-glucuronic acid (UDPGA)'],
+    byproducts: ['UDP'],
+    notes: ['Appends a glucuronic acid unit via an O-glycosidic bond.'],
     limitations: [
       'Fires on any hydroxyl, including carboxylic acid -OH (forming an acyl glucuronide) and non-phenolic aliphatic alcohols; real UGT substrate selectivity is not encoded.',
       'The appended sugar ring is written without stereochemistry.'
@@ -190,7 +220,9 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.II,
     enzymeFamily: ENZYME_FAMILY.SULT,
     summary: 'Hydroxyl -> O-sulfate',
-    notes: ['Appends a sulfate ester in place of the cofactor-consuming PAPS mechanism.'],
+    cofactor: ["PAPS (3'-phosphoadenosine-5'-phosphosulfate)"],
+    byproducts: ["PAP (3'-phosphoadenosine-5'-phosphate)"],
+    notes: ['Appends a sulfate ester.'],
     limitations: ['Fires on any hydroxyl, including carboxylic acid -OH; real SULT substrate selectivity (favoring phenols) is not encoded.']
   },
   acetylation: {
@@ -199,7 +231,9 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.II,
     enzymeFamily: ENZYME_FAMILY.NAT,
     summary: 'Primary amine -> acetamide',
-    notes: ['Appends an acetyl group in place of the cofactor-consuming acetyl-CoA mechanism.'],
+    cofactor: ['acetyl-CoA'],
+    byproducts: ['CoA-SH'],
+    notes: ['Appends an acetyl group.'],
     limitations: ['Does not distinguish aromatic (arylamine, the typical NAT substrate) from aliphatic primary amines.']
   },
   methylation: {
@@ -208,7 +242,9 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.II,
     enzymeFamily: ENZYME_FAMILY.COMT,
     summary: 'Phenol -> methyl ether',
-    notes: ['Appends a methyl group in place of the cofactor-consuming SAM mechanism.'],
+    cofactor: ['SAM (S-adenosylmethionine)'],
+    byproducts: ['SAH (S-adenosylhomocysteine)'],
+    notes: ['Appends a methyl group.'],
     limitations: ['COMT specifically requires a catechol (ortho-dihydroxy) motif in vivo; this template fires on any phenolic -OH.']
   },
   glycineConjugation: {
@@ -217,7 +253,12 @@ export const metabolismTemplates = {
     phase: METABOLISM_PHASE.II,
     enzymeFamily: ENZYME_FAMILY.GLYCINE_N_ACYLTRANSFERASE,
     summary: 'Carboxylic acid -> glycine amide conjugate + water',
-    notes: ['Represents the two-step acyl-CoA-mediated glycine conjugation abstracted to a single acid-to-amide transform.'],
+    cofactor: ['ATP'],
+    byproducts: ['AMP', 'PPi'],
+    notes: [
+      'Represents the two-step acyl-CoA-mediated glycine conjugation abstracted to a single acid-to-amide transform.',
+      'CoA-SH is used to form the intermediate acyl-CoA thioester and is regenerated (not net-consumed) once glycine displaces it, so it is omitted from `cofactor`/`byproducts`.'
+    ],
     limitations: ['Real glycine conjugation favors small aromatic/aralkyl acids; this template fires on any carboxylic acid.']
   }
 };

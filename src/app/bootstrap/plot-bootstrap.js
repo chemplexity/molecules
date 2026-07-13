@@ -73,6 +73,9 @@ export function initPlotBootstrap({ d3, document, getInteractionModeActive, onFo
       if (event.type === 'wheel') {
         return true;
       }
+      if (event.button === 1) {
+        return true;
+      }
       if (getInteractionModeActive(event)) {
         return false;
       }

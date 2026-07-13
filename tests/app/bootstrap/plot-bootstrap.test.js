@@ -94,6 +94,8 @@ describe('plot-bootstrap helpers', () => {
 
     assert.equal(result.zoom.filterFn({ type: 'wheel', button: 0 }), true);
     assert.equal(result.zoom.filterFn({ type: 'mousedown', button: 0, ctrlKey: false }), false);
+    assert.equal(result.zoom.filterFn({ type: 'mousedown', button: 1, ctrlKey: false }), true);
+    assert.equal(result.zoom.filterFn({ type: 'mousedown', button: 2, ctrlKey: false }), false);
 
     interactionModeActive = false;
     assert.equal(result.zoom.filterFn({ type: 'mousedown', button: 0, ctrlKey: false }), true);

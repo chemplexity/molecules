@@ -1409,8 +1409,19 @@ export function createPrimitiveEventHandlers(context) {
       upEvent.preventDefault?.();
       upEvent.stopPropagation?.();
       clearPendingRingTemplateListeners(state);
-      removeRingTemplatePreview();
       pendingRingTemplate = null;
+      if (pendingBondRingTemplateHover) {
+        const bondState = pendingBondRingTemplateHover;
+        bondState.hasDragged = bondState.hasDragged || state.dragged;
+        clearPendingBondRingTemplateHover(bondState);
+        suppressNextRingTemplateClick = true;
+        commitPendingBondRingTemplate(bondState, upEvent);
+        setTimeout(() => {
+          suppressNextRingTemplateClick = false;
+        }, 0);
+        return;
+      }
+      removeRingTemplatePreview();
       suppressNextRingTemplateClick = true;
       commitPendingRingTemplate(state);
       setTimeout(() => {

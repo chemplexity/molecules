@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-07-12
+
+- Let middle-mouse dragging pan the molecule viewport in any tool mode while preserving existing left-button draw/select/edit interactions.
+- Fix atom-started ring-template drags that hover onto a bond before mouseup so the committed ring uses the hovered bond-anchored preview instead of the stale atom anchor.
+- Remove the obsolete standalone `scripts/test/reaction-network-demo/reaction-network-test.js` CLI now that the reaction-network demo generation path lives in the worker-backed server.
+- Fold the reaction-network demo helper modules into `server.js`, keeping preview generation, template prefiltering, worker-backed cancellation, and scaffold/bond-length export options in one demo server file.
+- Add `cofactor`/`byproducts` fields to every `metabolismTemplates` entry (e.g. glucuronidation consumes UDP-glucuronic acid and releases UDP; acetylation consumes acetyl-CoA and releases CoA-SH), documenting the enzyme cofactor chemistry that each structural SMIRKS transform abstracts away.
+
 ## 2026-07-11
 
 - Add `MetabolicNetwork`, a class wrapping `ReactionNetwork` (composition, matching the existing `ScaffoldNetwork` pattern) that cascades a curated Phase I/II biotransformation SMIRKS rule set across generations from one or more seed molecules, with seed/generation tracking, `maxGenerations`/`maxNodes` explosion control, and phase/enzyme-family metabolite queries.

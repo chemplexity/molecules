@@ -25,6 +25,8 @@ describe('metabolismTemplates — schema', () => {
       assert.ok(entry.enzymeFamily.length > 0, 'enzymeFamily is non-empty');
       assert.equal(typeof entry.summary, 'string');
       assert.ok(entry.summary.length > 0, 'summary is non-empty');
+      assert.ok(Array.isArray(entry.cofactor), 'cofactor is an array');
+      assert.ok(Array.isArray(entry.byproducts), 'byproducts is an array');
       assert.ok(Array.isArray(entry.notes), 'notes is an array');
       assert.ok(Array.isArray(entry.limitations), 'limitations is an array');
     });
