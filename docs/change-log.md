@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-07-13
+
+- Add eight reaction-template SMIRKS entries with metadata for alkene epoxidation, epoxide hydrolysis, alkene dihydroxylation, Baeyer-Villiger oxidation, acetal hydrolysis, oxime formation/hydrolysis, and carboxylic acid to acid chloride conversion.
+- Add a bottom-left reaction-network demo settings panel that lists every reaction SMIRKS template with an enabled checkbox, defaulting all templates on and sending the selected template keys to generation so individual transforms can be disabled.
+
 ## 2026-07-12
 
 - Let middle-mouse dragging pan the molecule viewport in any tool mode while preserving existing left-button draw/select/edit interactions.

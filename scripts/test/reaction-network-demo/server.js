@@ -341,7 +341,27 @@ function generateMoleculePreview(seedSmiles, { bondLength = 1.5 } = {}) {
   return network.exportDirectedGraph({ flatten: true, bondLength: normalizeDemoBondLength(bondLength) });
 }
 
-function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength = 1.5) {
+function normalizeEnabledTemplateKeys(value) {
+  if (value == null) {
+    return null;
+  }
+  return new Set(
+    String(value)
+      .split(',')
+      .map(key => key.trim())
+      .filter(key => Object.prototype.hasOwnProperty.call(reactionTemplates, key))
+  );
+}
+
+function reactionTemplatePayload() {
+  return Object.entries(reactionTemplates).map(([key, template]) => ({
+    key,
+    name: template.name ?? key,
+    smirks: template.smirks ?? ''
+  }));
+}
+
+function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength = 1.5, enabledTemplateKeys = null) {
   const network = new ReactionNetwork();
   const processedSmiles = new Set();
   const attemptedReactions = new Set();
@@ -353,7 +373,11 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, dec
 
   let currentQueue = [{ node: seedNode, depth: 0 }];
   const globalPrintedIds = new Set([seedNode.id]);
-  const templateEntries = buildTemplatePrefilterEntries(Object.values(reactionTemplates));
+  const templateEntries = buildTemplatePrefilterEntries(
+    Object.entries(reactionTemplates)
+      .filter(([key]) => enabledTemplateKeys === null || enabledTemplateKeys.has(key))
+      .map(([, template]) => template)
+  );
 
   const featuresForNode = node => {
     if (!moleculeFeatureCache.has(node.id)) {
@@ -525,7 +549,8 @@ if (!isMainThread) {
       workerData.decoratedScaffolds,
       workerData.extendedScaffolds,
       workerData.hideSimpleScaffolds,
-      workerData.bondLength
+      workerData.bondLength,
+      workerData.enabledTemplateKeys
     );
     parentPort.postMessage({ ok: true, data });
   } catch (error) {
@@ -570,6 +595,12 @@ if (!isMainThread) {
       return;
     }
 
+    if (url.pathname === '/templates') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ templates: reactionTemplatePayload() }));
+      return;
+    }
+
     if (url.pathname === '/preview') {
       const smiles = url.searchParams.get('smiles') || 'C';
       const bondLength = normalizeDemoBondLength(url.searchParams.get('bondLength'));
@@ -590,7 +621,7 @@ if (!isMainThread) {
       res.end(
         JSON.stringify({
           error:
-            'Not found. Use GET /generate?smiles=...&depth=3&flatten=true&maxNodes=100&scaffolds=true&decoratedScaffolds=true&extendedScaffolds=true&hideSimpleScaffolds=true&bondLength=1.5, GET /preview?smiles=...&bondLength=1.5, GET /random-smiles, or GET /cancel-generation'
+            'Not found. Use GET /generate?smiles=...&depth=3&flatten=true&maxNodes=100&scaffolds=true&decoratedScaffolds=true&extendedScaffolds=true&hideSimpleScaffolds=true&bondLength=1.5&enabledTemplates=alcoholOxidation,esterHydrolysis, GET /templates, GET /preview?smiles=...&bondLength=1.5, GET /random-smiles, or GET /cancel-generation'
         })
       );
       return;
@@ -605,13 +636,14 @@ if (!isMainThread) {
     const extendedScaffolds = url.searchParams.get('extendedScaffolds') !== 'false';
     const hideSimpleScaffolds = url.searchParams.get('hideSimpleScaffolds') !== 'false';
     const bondLength = normalizeDemoBondLength(url.searchParams.get('bondLength'));
+    const enabledTemplateKeys = normalizeEnabledTemplateKeys(url.searchParams.has('enabledTemplates') ? url.searchParams.get('enabledTemplates') : null);
 
     console.log(
-      `[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds} decoratedScaffolds=${decoratedScaffolds} extendedScaffolds=${extendedScaffolds} hideSimpleScaffolds=${hideSimpleScaffolds} bondLength=${bondLength}`
+      `[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds} decoratedScaffolds=${decoratedScaffolds} extendedScaffolds=${extendedScaffolds} hideSimpleScaffolds=${hideSimpleScaffolds} bondLength=${bondLength} enabledTemplates=${enabledTemplateKeys === null ? 'all' : enabledTemplateKeys.size}`
     );
 
     try {
-      const data = await runGenerationJob({ smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength });
+      const data = await runGenerationJob({ smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength, enabledTemplateKeys });
       console.log(`[✓] Done: ${data.nodes.length} nodes, ${data.links.length} links`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));

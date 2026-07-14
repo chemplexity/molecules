@@ -135,8 +135,11 @@ const BASE_REACTION_TEMPLATES = {
     name: 'Alkene Hydrogenation',
     smirks: '[C+0;!$([C]-[*+,-]):1]=[C+0;!$([C]-[*+,-]):2]>>[C:1][C:2]'
   },
+  alkeneEpoxidation: { name: 'Alkene Epoxidation', smirks: '[C+0;!$([C]-[*+,-]):1]=[C+0;!$([C]-[*+,-]):2]>>[C:1]1O[C:2]1' },
+  alkeneDihydroxylation: { name: 'Alkene Dihydroxylation', smirks: '[C+0;!$([C]-[*+,-]):1]=[C+0;!$([C]-[*+,-]):2]>>[C:1](O)[C:2]O' },
   alkynePartialReduction: { name: 'Alkyne Partial Reduction', smirks: '[C+0;!$([C]-[*+,-]):1]#[C+0;!$([C]-[*+,-]):2]>>[C:1]=[C:2]' },
   alkyneFullReduction: { name: 'Alkyne Full Reduction', smirks: '[C+0;!$([C]-[*+,-]):1]#[C+0;!$([C]-[*+,-]):2]>>[C:1][C:2]' },
+  baeyerVilligerOxidation: { name: 'Baeyer-Villiger Oxidation', smirks: '[C:1][C+0:2](=[O+0:3])[C:4]>>[C:1][O][C:2](=[O:3])[C:4]' },
   benzylicOxidation: { name: 'Benzylic Oxidation', smirks: '[c:2][CH3:1]>>[c:2][C:1]=O' },
 
   // ---------------------------------------------------------------------------
@@ -152,6 +155,7 @@ const BASE_REACTION_TEMPLATES = {
   },
   nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C+0:1]#[N+0:2]>>[C:1]=[N:2]' },
   etherCleavage: { name: 'Ether Cleavage', smirks: '[C;X4;!$(C=O):1][O:2][C;X4;!$(C=O):3]>>[C:1][OH:2].[C:3]O' },
+  epoxideHydrolysis: { name: 'Epoxide Hydrolysis', smirks: '[C:1]1[O:3][C:2]1>>[C:1]([OH:3])[C:2]O' },
 
   // ---------------------------------------------------------------------------
   // Acyl chemistry
@@ -176,11 +180,18 @@ const BASE_REACTION_TEMPLATES = {
     name: 'Amine Alkylation',
     smirks: '[C;X4&(H2,H3):1][Cl:2].[N+0;!H0;!$([N]-[C](=O)):3]>>[C:1][N+0:3].[ClH0-:2]'
   },
+  acetalHydrolysis: { name: 'Acetal Hydrolysis', smirks: '[C;!$(C=O):1]([O:2][C:3])([O:4][C:5])>>[C:1]=O.[C:3][OH:2].[C:5][OH:4]' },
+  ketoneOximeFormation: {
+    name: 'Ketone Oxime Formation',
+    smirks: '[C;X3;!$([C](=[O])[O,N,S,F,Cl,Br,I]):1]=[O:2].[NH2:3][OH:4]>>[C:1]=[N:3][OH:4].[OH2:2]'
+  },
+  oximeHydrolysis: { name: 'Oxime Hydrolysis', smirks: '[C:1]=[N:2][OH:3]>>[C:1]=O.[NH2:2][OH:3]' },
   imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C+0:1]=[N+0;!$([N]-[N,O,S]):2]>>[C:1]=O.[N:2]' },
   nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C+0:1]#[N+0:2]>>[C:1](=O)[N:2]' },
   nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C+0:1]#[N+0:2]>>[C:1](=O)O.[N:2]' },
   lactoneHydrolysis: { name: 'Lactone Hydrolysis', smirks: '[C;r:1](=[O:2])[O;r:3][C:4]>>[C:1](=[O:2])[OH:3].[C:4]O' },
   lactamHydrolysis: { name: 'Lactam Hydrolysis', smirks: '[C;r:1](=[O:2])[N;r:3]>>[C:1](=[O:2])O.[N:3]' },
+  carboxylicAcidToAcidChloride: { name: 'Carboxylic Acid To Acid Chloride', smirks: '[C:1](=[O:2])[OH:3]>>[C:1](=[O:2])[Cl:3]' },
   acidChlorideHydrolysis: { name: 'Acid Chloride Hydrolysis', smirks: '[C:1](=[O:2])[Cl:3]>>[C:1](=[O:2])[OH:3]' },
   carboxylicAcidDeprotonation: {
     name: 'Carboxylic Acid Deprotonation',
@@ -313,6 +324,37 @@ const REACTION_TEMPLATE_METADATA = {
     notes: ['The template represents catalytic addition of hydrogen across a neutral alkene.'],
     limitations: ['Does not encode stereochemical delivery or catalyst poisoning effects.']
   },
+  alkeneEpoxidation: {
+    category: CATEGORY.oxidationReduction,
+    summary: 'Alkene -> epoxide',
+    variants: [
+      variant({
+        id: 'mcpba',
+        label: 'mCPBA',
+        reagents: ['mCPBA'],
+        solvents: ['CH2Cl2'],
+        conditions: { temperature: '0 °C to 25 °C' },
+        byproducts: ['m-chlorobenzoic acid']
+      }),
+      variant({ id: 'dmdo', label: 'DMDO', role: 'alternative', reagents: ['DMDO'], solvents: ['acetone'], conditions: { temperature: '0 °C to 25 °C' } })
+    ],
+    byproducts: ['oxidant-derived reduced species'],
+    selectivity: selectivity({ stereochemistry: 'concerted oxygen transfer; alkene-face selectivity and epoxide stereochemistry are not encoded' }),
+    notes: ['Represents formal oxygen transfer across a carbon-carbon double bond.'],
+    limitations: ['Does not distinguish electron-rich, electron-poor, or sterically hindered alkenes.', 'Does not encode facial selectivity or stereospecificity.']
+  },
+  alkeneDihydroxylation: {
+    category: CATEGORY.oxidationReduction,
+    summary: 'Alkene -> vicinal diol',
+    variants: [
+      variant({ id: 'oso4-nmo', label: 'OsO4, NMO', reagents: ['NMO'], catalysts: ['OsO4'], solvents: ['t-BuOH', 'water'], conditions: { temperature: '0 °C to 25 °C' } }),
+      variant({ id: 'cold-kmno4', label: 'cold KMnO4', role: 'alternative', reagents: ['KMnO4'], solvents: ['water'], conditions: { temperature: '0 °C to 25 °C', pH: 'basic' } })
+    ],
+    byproducts: ['oxidant-derived reduced species'],
+    selectivity: selectivity({ stereochemistry: 'syn dihydroxylation is common experimentally, but relative stereochemistry is not encoded' }),
+    notes: ['Represents formal addition of two hydroxyl groups across an alkene.'],
+    limitations: ['Does not model oxidative cleavage under stronger permanganate conditions.', 'Does not encode stereochemical outcome.']
+  },
   alkynePartialReduction: {
     category: CATEGORY.oxidationReduction,
     summary: 'Alkyne -> alkene',
@@ -350,6 +392,18 @@ const REACTION_TEMPLATE_METADATA = {
     ],
     notes: ['Represents complete catalytic hydrogenation of an alkyne.'],
     limitations: ['The SMIRKS is limited to neutral alkyne carbons and skips alkynes directly adjacent to charged atoms.', 'Does not model intermediate alkene accumulation.']
+  },
+  baeyerVilligerOxidation: {
+    category: CATEGORY.oxidationReduction,
+    summary: 'Ketone -> ester by oxygen insertion',
+    variants: [
+      variant({ id: 'mcpba', label: 'mCPBA', reagents: ['mCPBA'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['m-chlorobenzoic acid'] }),
+      variant({ id: 'peracetic-acid', label: 'peracetic acid', role: 'alternative', reagents: ['peracetic acid'], solvents: ['AcOH'], conditions: { temperature: '0 °C to 25 °C' } })
+    ],
+    byproducts: ['oxidant-derived carboxylic acid'],
+    selectivity: selectivity({ regioselectivity: 'migratory aptitude controls insertion experimentally, but this template encodes only one insertion orientation' }),
+    notes: ['Represents formal oxygen insertion next to a ketone carbonyl.'],
+    limitations: ['Does not encode migratory aptitude, stereoelectronic effects, or lactone formation from cyclic ketones.']
   },
   benzylicOxidation: {
     category: CATEGORY.oxidationReduction,
@@ -470,6 +524,20 @@ const REACTION_TEMPLATE_METADATA = {
     notes: ['The template depicts C-O cleavage and alcohol formation.'],
     limitations: ['Regioselectivity depends on substrate class; aryl methyl ether demethylation is not separately encoded.']
   },
+  epoxideHydrolysis: {
+    category: CATEGORY.substitution,
+    summary: 'Epoxide -> vicinal diol',
+    variants: [
+      variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
+      variant({ id: 'aqueous-base', label: 'aq. base', role: 'alternative', reagents: ['NaOH'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'basic' } })
+    ],
+    selectivity: selectivity({
+      regioselectivity: 'acidic and basic ring opening often favor different carbons; not encoded',
+      stereochemistry: 'anti opening is common experimentally, but stereochemistry is not encoded'
+    }),
+    notes: ['Represents hydrolytic opening of an epoxide ring to a vicinal diol.'],
+    limitations: ['Does not distinguish acid-promoted, base-promoted, or substrate-controlled regioselectivity.', 'Does not encode stereochemical inversion at the attacked carbon.']
+  },
   esterHydrolysis: {
     category: CATEGORY.acylChemistry,
     summary: 'Ester -> carboxylic acid + alcohol',
@@ -575,6 +643,38 @@ const REACTION_TEMPLATE_METADATA = {
     notes: ['Represents substitution of a primary alkyl chloride by a neutral amine.'],
     limitations: ['Overalkylation and elimination are not modeled.']
   },
+  acetalHydrolysis: {
+    category: CATEGORY.substitution,
+    summary: 'Acetal -> carbonyl + alcohols',
+    variants: [
+      variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
+      variant({ id: 'ptsoh-acetone-water', label: 'p-TsOH, aq. acetone', role: 'alternative', reagents: ['H2O'], catalysts: ['p-TsOH'], solvents: ['acetone', 'water'], conditions: { temperature: '25 °C to heat' } })
+    ],
+    notes: ['Represents acid-catalyzed hydrolysis of an acetal or ketal back to a carbonyl and alcohol fragments.'],
+    limitations: ['Does not encode hemiacetal intermediates or equilibrium.', 'Cyclic acetals may be fragmented schematically rather than as a single diol product.']
+  },
+  ketoneOximeFormation: {
+    category: CATEGORY.substitution,
+    summary: 'Carbonyl + hydroxylamine -> oxime',
+    variants: [
+      variant({ id: 'hydroxylamine-buffer', label: 'NH2OH, buffer', reagents: ['NH2OH'], solvents: ['EtOH', 'water'], conditions: { temperature: '25 °C to reflux', pH: 'mildly acidic to neutral' } }),
+      variant({ id: 'hydroxylamine-hcl-base', label: 'NH2OH.HCl, base', role: 'alternative', reagents: ['NH2OH.HCl', 'base'], solvents: ['EtOH', 'water'], conditions: { temperature: '25 °C to reflux' } })
+    ],
+    byproducts: ['H2O'],
+    selectivity: selectivity({ stereochemistry: 'E/Z oxime geometry is not encoded' }),
+    notes: ['Represents condensation of a carbonyl compound with hydroxylamine.'],
+    limitations: ['Does not distinguish aldehyde versus ketone rates or acid/base optimum.', 'Oxime E/Z isomerism and dehydration side reactions are not modeled.']
+  },
+  oximeHydrolysis: {
+    category: CATEGORY.substitution,
+    summary: 'Oxime -> carbonyl + hydroxylamine',
+    variants: [
+      variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
+      variant({ id: 'acidic-acetone-water', label: 'acidic aq. acetone', role: 'alternative', reagents: ['H2O'], catalysts: ['acid'], solvents: ['acetone', 'water'], conditions: { temperature: '25 °C to heat' } })
+    ],
+    notes: ['Represents hydrolysis of an oxime back to the parent carbonyl and hydroxylamine.'],
+    limitations: ['Does not represent oxime E/Z isomers, Beckmann rearrangement, or nitrone/nitrile oxide pathways.']
+  },
   imineHydrolysis: {
     category: CATEGORY.substitution,
     summary: 'Imine -> carbonyl + amine',
@@ -638,6 +738,18 @@ const REACTION_TEMPLATE_METADATA = {
     ],
     notes: ['Represents ring-opening hydrolysis of a lactam.'],
     limitations: ['Many lactams require forcing conditions.']
+  },
+  carboxylicAcidToAcidChloride: {
+    category: CATEGORY.acylChemistry,
+    summary: 'Carboxylic acid -> acid chloride',
+    variants: [
+      variant({ id: 'socl2', label: 'SOCl2', reagents: ['SOCl2'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['SO2', 'HCl'] }),
+      variant({ id: 'oxalyl-chloride', label: 'oxalyl chloride', role: 'alternative', reagents: ['oxalyl chloride'], catalysts: ['DMF'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['CO', 'CO2', 'HCl'] }),
+      variant({ id: 'pcl5', label: 'PCl5', role: 'alternative', reagents: ['PCl5'], solvents: [], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['POCl3', 'HCl'] })
+    ],
+    byproducts: ['chlorinating-agent byproducts'],
+    notes: ['Represents activation of a carboxylic acid as an acid chloride.'],
+    limitations: ['Does not model reagent stoichiometry, acid-base salt formation, or sensitive functional-group compatibility.']
   },
   acidChlorideHydrolysis: {
     category: CATEGORY.acylChemistry,

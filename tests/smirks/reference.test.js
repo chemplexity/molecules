@@ -93,6 +93,26 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), 'CC');
   });
 
+  it('new oxidation and hydrolysis templates produce valence-clean example products', () => {
+    const examples = [
+      ['alkeneEpoxidation', 'C=C', 'C1CO1'],
+      ['epoxideHydrolysis', 'C1OC1', 'OCCO'],
+      ['alkeneDihydroxylation', 'C=C', 'OCCO'],
+      ['baeyerVilligerOxidation', 'CC(C)=O', 'COC(C)=O'],
+      ['acetalHydrolysis', 'COCOC', 'C=O.CO.OC', sortDotSmiles],
+      ['ketoneOximeFormation', 'CC(C)=O.NO', 'CC(C)=NO.O'],
+      ['oximeHydrolysis', 'CC(C)=NO', 'CC(C)=O.NO'],
+      ['carboxylicAcidToAcidChloride', 'CC(=O)O', 'CC(=O)Cl']
+    ];
+
+    for (const [key, reactantSmiles, expectedSmiles, normalize = value => value] of examples) {
+      const product = applySMIRKS(parseSMILES(reactantSmiles), reactionTemplates[key].smirks);
+      assert.ok(product, `${key} should produce a product`);
+      assert.deepEqual(validateValence(product), [], `${key} should produce a valence-clean product`);
+      assert.equal(normalize(toSMILES(product)), expectedSmiles);
+    }
+  });
+
   it('aldehydeOxidation converts an aldehyde to a carboxylic acid', () => {
     const product = applySMIRKS(parseSMILES('CC=O'), reactionTemplates.aldehydeOxidation.smirks);
     assert.ok(product);
