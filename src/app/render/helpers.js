@@ -35,8 +35,18 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   reactionFontSize: 16,
   twoDBondThickness: 1.8,
   forceAtomSizeMultiplier: 1,
-  forceBondThicknessMultiplier: 1
+  forceBondThicknessMultiplier: 1,
+  selectionHighlightColor: '#96c8ff',
+  functionalGroupHighlightColor: '#82d250',
+  physicochemicalHighlightColor: '#f6e36e'
 });
+
+const DEFAULT_HIGHLIGHT_OUTLINES = new Map([
+  ['#96c8ff', '#2864d2'],
+  ['#82d250', '#468c28'],
+  ['#f6e36e', '#c2a818']
+]);
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
 
 export let PI_STROKE = { stroke: '#FFFFFF', width: '2px' };
 export let ARO_STROKE = { stroke: '#696969', width: '3px', dashArray: '3,3' };
@@ -48,6 +58,30 @@ function _clampOptionValue(value, limits) {
     return null;
   }
   return Math.min(limits.max, Math.max(limits.min, value));
+}
+
+function _normalizeHexColor(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return HEX_COLOR_RE.test(trimmed) ? trimmed.toLowerCase() : null;
+}
+
+function _rgbToHex(channel) {
+  return Math.min(255, Math.max(0, Math.round(channel))).toString(16).padStart(2, '0');
+}
+
+function _deriveHighlightOutline(fillColor) {
+  const normalized = _normalizeHexColor(fillColor) ?? DEFAULT_RENDER_OPTIONS.functionalGroupHighlightColor;
+  const defaultOutline = DEFAULT_HIGHLIGHT_OUTLINES.get(normalized);
+  if (defaultOutline) {
+    return defaultOutline;
+  }
+  const red = Number.parseInt(normalized.slice(1, 3), 16);
+  const green = Number.parseInt(normalized.slice(3, 5), 16);
+  const blue = Number.parseInt(normalized.slice(5, 7), 16);
+  return `#${_rgbToHex(red * 0.58)}${_rgbToHex(green * 0.58)}${_rgbToHex(blue * 0.58)}`;
 }
 
 function _syncDerivedRenderConstants() {
@@ -152,6 +186,12 @@ export function updateRenderOptions(nextOptions = {}) {
       merged.forceBondThicknessMultiplier = clamped;
     }
   }
+  for (const colorOptionName of ['selectionHighlightColor', 'functionalGroupHighlightColor', 'physicochemicalHighlightColor']) {
+    const normalized = _normalizeHexColor(nextOptions[colorOptionName]);
+    if (normalized) {
+      merged[colorOptionName] = normalized;
+    }
+  }
   _renderOptions = merged;
   _syncDerivedRenderConstants();
   return getRenderOptions();
@@ -180,6 +220,43 @@ export const HIGHLIGHT_STYLE_PALETTES = {
 export function getHighlightStyleVariant(styleName = 'default', index = 0) {
   const palette = HIGHLIGHT_STYLE_PALETTES[styleName] ?? HIGHLIGHT_STYLE_PALETTES.default;
   return palette[((index % palette.length) + palette.length) % palette.length];
+}
+
+/**
+ * Builds a highlight fill/outline pair from a configured fill color.
+ * @param {string} fillColor - Six-digit CSS hex color.
+ * @returns {{fill: string, outline: string}} Highlight fill and outline colors.
+ */
+export function highlightStyleFromColor(fillColor) {
+  const fill = _normalizeHexColor(fillColor) ?? DEFAULT_RENDER_OPTIONS.functionalGroupHighlightColor;
+  return {
+    fill,
+    outline: _deriveHighlightOutline(fill)
+  };
+}
+
+/**
+ * Returns the current selection highlight style.
+ * @returns {{fill: string, outline: string}} Selection highlight fill and outline.
+ */
+export function getSelectionHighlightStyle() {
+  return highlightStyleFromColor(_renderOptions.selectionHighlightColor);
+}
+
+/**
+ * Returns the current default functional-group highlight style.
+ * @returns {{fill: string, outline: string}} Functional-group highlight fill and outline.
+ */
+export function getFunctionalGroupHighlightStyle() {
+  return highlightStyleFromColor(_renderOptions.functionalGroupHighlightColor);
+}
+
+/**
+ * Returns the current physicochemical highlight style.
+ * @returns {{fill: string, outline: string}} Physicochemical highlight fill and outline.
+ */
+export function getPhysicochemicalHighlightStyle() {
+  return highlightStyleFromColor(_renderOptions.physicochemicalHighlightColor);
 }
 
 /**

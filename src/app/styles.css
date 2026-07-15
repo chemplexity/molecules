@@ -284,6 +284,30 @@ body.resizing-main-sidebar #sidebar {
   background: #fff;
 }
 
+.option-color-row input[type='color'] {
+  width: 44px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid #ced8dc;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.option-color-row input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.option-color-row input[type='color']::-webkit-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.option-color-row input[type='color']::-moz-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
 .option-row select {
   width: 88px;
   padding: 6px 8px;
@@ -299,6 +323,7 @@ body.resizing-main-sidebar #sidebar {
 }
 
 .option-row input[type='number']:focus,
+.option-color-row input[type='color']:focus,
 .option-row select:focus {
   outline: none;
   border-color: #7db7c4;
@@ -418,6 +443,20 @@ body.resizing-main-sidebar #sidebar {
   border: none;
   border-bottom: 1px solid #757575;
   background: transparent;
+}
+
+.group input.invalid-chemical-input {
+  color: #c82f2f;
+  border-bottom-color: #c82f2f;
+}
+
+.group input.invalid-chemical-input ~ label {
+  color: #c82f2f;
+}
+
+.group input.invalid-chemical-input ~ .bar::before,
+.group input.invalid-chemical-input ~ .bar::after {
+  background: #c82f2f;
 }
 
 .group input:focus {

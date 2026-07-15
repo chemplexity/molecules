@@ -41,6 +41,9 @@ describe('initOptionsModal', () => {
     const showValenceWarningsEl = makeCheckbox();
     const showAtomTooltipsEl = makeCheckbox();
     const layoutBondLengthEl = makeInput();
+    const selectionHighlightColorEl = makeInput();
+    const functionalGroupHighlightColorEl = makeInput();
+    const physicochemicalHighlightColorEl = makeInput();
     const twoDAtomColoringEl = makeCheckbox();
     const twoDAtomFontSizeEl = makeInput();
     const atomNumberingFontSizeEl = makeInput();
@@ -60,6 +63,9 @@ describe('initOptionsModal', () => {
       showValenceWarnings: true,
       showAtomTooltips: true,
       layoutBondLength: 1.5,
+      selectionHighlightColor: '#96c8ff',
+      functionalGroupHighlightColor: '#82d250',
+      physicochemicalHighlightColor: '#f6e36e',
       twoDColorStyle: 'color-atoms',
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
@@ -76,6 +82,9 @@ describe('initOptionsModal', () => {
       ...currentOptions,
       twoDAtomFontSize: 18,
       layoutBondLength: 1.7,
+      selectionHighlightColor: '#111111',
+      functionalGroupHighlightColor: '#222222',
+      physicochemicalHighlightColor: '#333333',
       atomNumberingFontSize: 12,
       bondEnFontSize: 11,
       bondLengthFontSize: 12,
@@ -93,6 +102,9 @@ describe('initOptionsModal', () => {
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
         getLayoutBondLengthElement: () => layoutBondLengthEl,
+        getSelectionHighlightColorElement: () => selectionHighlightColorEl,
+        getFunctionalGroupHighlightColorElement: () => functionalGroupHighlightColorEl,
+        getPhysicochemicalHighlightColorElement: () => physicochemicalHighlightColorEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
@@ -154,6 +166,9 @@ describe('initOptionsModal', () => {
     assert.equal(showValenceWarningsEl.checked, true);
     assert.equal(showAtomTooltipsEl.checked, true);
     assert.equal(layoutBondLengthEl.value, '1.5');
+    assert.equal(selectionHighlightColorEl.value, '#96c8ff');
+    assert.equal(functionalGroupHighlightColorEl.value, '#82d250');
+    assert.equal(physicochemicalHighlightColorEl.value, '#f6e36e');
     assert.equal(twoDAtomFontSizeEl.value, '14');
     assert.equal(atomNumberingFontSizeEl.value, '10');
     assert.equal(bondEnFontSizeEl.value, '10');
@@ -164,6 +179,9 @@ describe('initOptionsModal', () => {
 
     resetBtnEl.trigger('click');
     assert.equal(layoutBondLengthEl.value, '1.7');
+    assert.equal(selectionHighlightColorEl.value, '#111111');
+    assert.equal(functionalGroupHighlightColorEl.value, '#222222');
+    assert.equal(physicochemicalHighlightColorEl.value, '#333333');
     assert.equal(twoDAtomFontSizeEl.value, '18');
     assert.equal(atomNumberingFontSizeEl.value, '12');
     assert.equal(bondEnFontSizeEl.value, '11');
@@ -189,6 +207,9 @@ describe('initOptionsModal', () => {
           showValenceWarnings: true,
           showAtomTooltips: false,
           layoutBondLength: 3,
+          selectionHighlightColor: '#111111',
+          functionalGroupHighlightColor: '#222222',
+          physicochemicalHighlightColor: '#333333',
           twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 24,
           atomNumberingFontSize: 24,
@@ -228,6 +249,9 @@ describe('initOptionsModal', () => {
     const showValenceWarningsEl = makeCheckbox(true);
     const showAtomTooltipsEl = makeCheckbox(true);
     const layoutBondLengthEl = makeInput('1.5');
+    const selectionHighlightColorEl = makeInput('#96c8ff');
+    const functionalGroupHighlightColorEl = makeInput('#82d250');
+    const physicochemicalHighlightColorEl = makeInput('#f6e36e');
     const twoDAtomColoringEl = makeInput('color-atoms');
     const twoDAtomFontSizeEl = makeInput('14');
     const atomNumberingFontSizeEl = makeInput('10');
@@ -258,6 +282,9 @@ describe('initOptionsModal', () => {
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
         getLayoutBondLengthElement: () => layoutBondLengthEl,
+        getSelectionHighlightColorElement: () => selectionHighlightColorEl,
+        getFunctionalGroupHighlightColorElement: () => functionalGroupHighlightColorEl,
+        getPhysicochemicalHighlightColorElement: () => physicochemicalHighlightColorEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
@@ -289,6 +316,9 @@ describe('initOptionsModal', () => {
           showValenceWarnings: true,
           showAtomTooltips: true,
           layoutBondLength: 1.5,
+          selectionHighlightColor: '#96c8ff',
+          functionalGroupHighlightColor: '#82d250',
+          physicochemicalHighlightColor: '#f6e36e',
           twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 14,
           atomNumberingFontSize: 10,
@@ -347,6 +377,9 @@ describe('initOptionsModal', () => {
     const showValenceWarningsEl = makeCheckbox(true);
     const showAtomTooltipsEl = makeCheckbox(true);
     const layoutBondLengthEl = makeInput('1.5');
+    const selectionHighlightColorEl = makeInput('#96c8ff');
+    const functionalGroupHighlightColorEl = makeInput('#82d250');
+    const physicochemicalHighlightColorEl = makeInput('#f6e36e');
     const twoDAtomColoringEl = makeCheckbox(true);
     const twoDAtomFontSizeEl = makeInput('14');
     const atomNumberingFontSizeEl = makeInput('10');
@@ -365,6 +398,9 @@ describe('initOptionsModal', () => {
       showValenceWarnings: true,
       showAtomTooltips: true,
       layoutBondLength: 1.5,
+      selectionHighlightColor: '#96c8ff',
+      functionalGroupHighlightColor: '#82d250',
+      physicochemicalHighlightColor: '#f6e36e',
       twoDColorStyle: 'color-atoms',
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
@@ -387,6 +423,9 @@ describe('initOptionsModal', () => {
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
         getLayoutBondLengthElement: () => layoutBondLengthEl,
+        getSelectionHighlightColorElement: () => selectionHighlightColorEl,
+        getFunctionalGroupHighlightColorElement: () => functionalGroupHighlightColorEl,
+        getPhysicochemicalHighlightColorElement: () => physicochemicalHighlightColorEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
@@ -460,6 +499,9 @@ describe('initOptionsModal', () => {
           showValenceWarnings: true,
           showAtomTooltips: true,
           layoutBondLength: 2,
+          selectionHighlightColor: '#96c8ff',
+          functionalGroupHighlightColor: '#82d250',
+          physicochemicalHighlightColor: '#f6e36e',
           twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 14,
           atomNumberingFontSize: 10,

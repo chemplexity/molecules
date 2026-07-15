@@ -9,6 +9,7 @@ describe('finalizeAppBootstrap', () => {
     let capturedPlotInteractionDeps = null;
     let capturedGestureInteractionDeps = null;
     let capturedAppShellDeps = null;
+    let capturedOptionsModalDeps = null;
 
     const ctx = {
       factories: {
@@ -54,7 +55,8 @@ describe('finalizeAppBootstrap', () => {
         initGestureInteractions(deps) {
           capturedGestureInteractionDeps = deps;
         },
-        initOptionsModal() {
+        initOptionsModal(deps) {
+          capturedOptionsModalDeps = deps;
           return { open() {} };
         },
         initPlotInteractions(deps) {
@@ -237,7 +239,16 @@ describe('finalizeAppBootstrap', () => {
           return {};
         },
         getLayoutBondLengthElement() {
-          return {};
+          return { id: 'layout-bond-length' };
+        },
+        getSelectionHighlightColorElement() {
+          return { id: 'selection-highlight-color' };
+        },
+        getFunctionalGroupHighlightColorElement() {
+          return { id: 'functional-group-highlight-color' };
+        },
+        getPhysicochemicalHighlightColorElement() {
+          return { id: 'physicochemical-highlight-color' };
         },
         get2DAtomColoringElement() {
           return {};
@@ -389,6 +400,10 @@ describe('finalizeAppBootstrap', () => {
     finalizeAppBootstrap(ctx);
 
     assert.equal(capturedPlotInteractionDeps.state.getChargeTool(), 'positive');
+    assert.deepEqual(capturedOptionsModalDeps.dom.getLayoutBondLengthElement(), { id: 'layout-bond-length' });
+    assert.deepEqual(capturedOptionsModalDeps.dom.getSelectionHighlightColorElement(), { id: 'selection-highlight-color' });
+    assert.deepEqual(capturedOptionsModalDeps.dom.getFunctionalGroupHighlightColorElement(), { id: 'functional-group-highlight-color' });
+    assert.deepEqual(capturedOptionsModalDeps.dom.getPhysicochemicalHighlightColorElement(), { id: 'physicochemical-highlight-color' });
     assert.deepEqual(capturedGestureInteractionDeps.helpers.toSelectionSVGPt2d({ x: 4, y: 5 }), { x: 4, y: 5 });
     assert.deepEqual(capturedGestureInteractionDeps.options.getRenderOptions(), { showAtomTooltips: true, layoutBondLength: 0.5 });
     assert.deepEqual(capturedGestureInteractionDeps.constants, { scale: 60, forceBondLength: 41 });

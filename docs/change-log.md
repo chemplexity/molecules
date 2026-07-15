@@ -1,5 +1,12 @@
 # Change Log
 
+## 2026-07-14
+
+- Mark the SMILES/InChI input red with `aria-invalid` feedback when parsing fails, and clear the warning after a valid molecule renders.
+- Preserve source-style BOC tert-butyl quadrants for the kinase-inhibitor reaction-preview products (`0:C2` after halide hydrolysis and `1:C2` after ester hydrolysis), while keeping the tertiary chloride hydrolysis center open.
+- Add global Options controls for selection, functional-group, and physicochemical highlight colors, with color pickers wired into the live highlight renderers.
+- Keep reaction-preview alkene epoxidation products as exact equilateral oxirane triangles after retained scaffold alignment, including the bridged bicyclic default-molecule case.
+
 ## 2026-07-13
 
 - Add eight reaction-template SMIRKS entries with metadata for alkene epoxidation, epoxide hydrolysis, alkene dihydroxylation, Baeyer-Villiger oxidation, acetal hydrolysis, oxime formation/hydrolysis, and carboxylic acid to acid chloride conversion.

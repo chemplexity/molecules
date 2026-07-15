@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { create2DHighlightRenderer, createForceHighlightRenderer, _setHighlight, clearHighlightState, initHighlights } from '../../../src/app/render/highlights.js';
+import { getDefaultRenderOptions, updateRenderOptions } from '../../../src/app/render/helpers.js';
 
 class FakeSelection {
   constructor(records) {
@@ -90,6 +91,7 @@ describe('create2DHighlightRenderer', () => {
 
   afterEach(() => {
     clearHighlightState();
+    updateRenderOptions(getDefaultRenderOptions());
   });
 
   it('clears any existing 2D highlight layer even when there are no active highlights', () => {
@@ -122,6 +124,7 @@ describe('create2DHighlightRenderer', () => {
 
   it('renders highlighted atoms and bonds into the extracted 2D highlight layer', () => {
     const records = [];
+    updateRenderOptions({ functionalGroupHighlightColor: '#123456' });
     const atomA = makeAtom('a1', { x: 10, y: 10 });
     const atomB = makeAtom('a2', { x: 40, y: 10 });
     atomA._neighbors = ['a2'];
@@ -166,6 +169,7 @@ describe('create2DHighlightRenderer', () => {
     assert.notEqual(layerInsert[2], ':first-child');
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'fill' && value === '#123456'));
   });
 
   it('renders highlighted atoms and bonds into the extracted force highlight layer', () => {

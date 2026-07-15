@@ -1,11 +1,31 @@
 /** @module app/core/input-flow */
 
+const INVALID_INPUT_CLASS = 'invalid-chemical-input';
+
 /**
  * Creates the input flow manager that handles parsing, rendering, format switching, and clearing of molecules from user input.
  * @param {object} deps - Dependency object providing state, dom, history, snapshot, molecule, collection, examples, parsers, overlays, renderers, highlights, force, and analysis.
  * @returns {object} Object with `setInputFormat`, `clearMolecule`, `parseAndRenderSmiles`, `parseAndRenderInchi`, `parseInputWithAutoFormat`, `parseInput`, and `takeInputFormatSnapshot`.
  */
 export function createInputFlowManager(deps) {
+  function setInputInvalid(message = 'Invalid chemical input') {
+    const inputEl = deps.dom.getInputElement?.();
+    inputEl?.classList?.toggle?.(INVALID_INPUT_CLASS, true);
+    inputEl?.setAttribute?.('aria-invalid', 'true');
+    if (inputEl) {
+      inputEl.title = message;
+    }
+  }
+
+  function clearInputInvalid() {
+    const inputEl = deps.dom.getInputElement?.();
+    inputEl?.classList?.toggle?.(INVALID_INPUT_CLASS, false);
+    inputEl?.removeAttribute?.('aria-invalid');
+    if (inputEl?.title) {
+      inputEl.title = '';
+    }
+  }
+
   function takeInputFormatSnapshot({ prevInputMode, visibleInputValue } = {}) {
     const currentMolSmiles = deps.molecule.getMolSmiles?.() ?? '';
     const currentMolInchi = deps.molecule.getMolInchi?.() ?? '';
@@ -39,6 +59,7 @@ export function createInputFlowManager(deps) {
     deps.state.setInputMode(fmt);
     deps.dom.setInputFormatButtons(fmt);
     deps.dom.setInputLabel(fmt === 'inchi' ? 'Input InChI notation...' : 'Input SMILES notation...');
+    clearInputInvalid();
 
     let nextValue = preserveInput ? (inputValue ?? inputEl.value) : '';
     if (!preserveInput && fmt === 'smiles' && prev === 'inchi') {
@@ -62,6 +83,7 @@ export function createInputFlowManager(deps) {
   }
 
   function clearMolecule() {
+    clearInputInvalid();
     if (deps.state.getCurrentMol() || deps.state.getMol2d()) {
       deps.history.takeSnapshot({ clearReactionPreview: false });
     }
@@ -105,11 +127,13 @@ export function createInputFlowManager(deps) {
   function parseAndRenderSmiles(smiles, options = {}) {
     const { previousSnapshot = null } = options;
     if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 2000) {
-      return;
+      setInputInvalid('Invalid SMILES input');
+      return false;
     }
     if (smiles === deps.state.getCurrentSmiles() && deps.state.getMode() === 'force' && !deps.overlays.hasReactionPreview()) {
+      clearInputInvalid();
       deps.analysis.updatePanels(deps.state.getCurrentMol(), { recomputeResonance: false });
-      return;
+      return true;
     }
 
     let mol;
@@ -118,13 +142,16 @@ export function createInputFlowManager(deps) {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn('SMILES parse error:', error.message);
-      return;
+      setInputInvalid('Invalid SMILES input');
+      return false;
     }
 
     if (!mol || mol.atoms.size === 0) {
-      return;
+      setInputInvalid('Invalid SMILES input');
+      return false;
     }
 
+    clearInputInvalid();
     const snapshotToUse = previousSnapshot ?? capturePreviousSnapshot();
     deps.overlays.clearReactionPreviewState();
     if (deps.state.getCurrentMol() || deps.state.getMol2d()) {
@@ -136,12 +163,14 @@ export function createInputFlowManager(deps) {
     deps.state.setCurrentSmiles(smiles);
     deps.state.setCurrentInchi(null);
     deps.renderers.renderMol(mol, { preserveHistory: true });
+    return true;
   }
 
   function parseAndRenderInchi(inchi, options = {}) {
     const { previousSnapshot = null } = options;
     if (typeof inchi !== 'string' || inchi.length === 0 || inchi.length > 2000) {
-      return;
+      setInputInvalid('Invalid InChI input');
+      return false;
     }
 
     let mol;
@@ -150,13 +179,16 @@ export function createInputFlowManager(deps) {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn('InChI parse error:', error.message);
-      return;
+      setInputInvalid('Invalid InChI input');
+      return false;
     }
 
     if (!mol || mol.atoms.size === 0) {
-      return;
+      setInputInvalid('Invalid InChI input');
+      return false;
     }
 
+    clearInputInvalid();
     const snapshotToUse = previousSnapshot ?? capturePreviousSnapshot();
     deps.overlays.clearReactionPreviewState();
     if (deps.state.getCurrentMol() || deps.state.getMol2d()) {
@@ -168,13 +200,14 @@ export function createInputFlowManager(deps) {
     deps.state.setCurrentSmiles(null);
     deps.state.setCurrentInchi(inchi);
     deps.renderers.renderMol(mol, { preserveHistory: true });
+    return true;
   }
 
   function parseInputWithAutoFormat(rawValue) {
     const value = typeof rawValue === 'string' ? rawValue.trim() : '';
     if (value.length === 0) {
       clearMolecule();
-      return;
+      return false;
     }
 
     const detectedFormat = deps.parsers.detectChemicalStringFormat(value);
@@ -189,23 +222,24 @@ export function createInputFlowManager(deps) {
     }
 
     if (parseFormat === 'inchi') {
-      parseAndRenderInchi(value, { previousSnapshot });
+      return parseAndRenderInchi(value, { previousSnapshot });
     } else {
-      parseAndRenderSmiles(value, { previousSnapshot });
+      return parseAndRenderSmiles(value, { previousSnapshot });
     }
   }
 
   function parseInput(value) {
     if (!value) {
-      return;
+      clearInputInvalid();
+      return false;
     }
     const inputEl = deps.dom.getInputElement();
     inputEl.value = value;
     deps.collection.syncPickerForInputValue?.(value);
     if (deps.state.getInputMode() === 'inchi') {
-      parseAndRenderInchi(value);
+      return parseAndRenderInchi(value);
     } else {
-      parseAndRenderSmiles(value);
+      return parseAndRenderSmiles(value);
     }
   }
 

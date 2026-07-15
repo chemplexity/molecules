@@ -79,6 +79,28 @@ function heavyNeighbors(atom, mol) {
   return atom.getNeighbors(mol).filter(neighbor => neighbor.name !== 'H');
 }
 
+function assertProjectedTertButylQuadrants(center, neighbors, messagePrefix) {
+  const roundedAngles = [];
+  for (let firstIndex = 0; firstIndex < neighbors.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighbors.length; secondIndex++) {
+      roundedAngles.push(Math.round(angleDeg(neighbors[firstIndex], center, neighbors[secondIndex])));
+    }
+  }
+  roundedAngles.sort((a, b) => a - b);
+  assert.deepEqual(roundedAngles, [90, 90, 90, 90, 180, 180], messagePrefix);
+}
+
+function assertReadableTertButylFan(center, neighbors, messagePrefix) {
+  const angles = [];
+  for (let firstIndex = 0; firstIndex < neighbors.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighbors.length; secondIndex++) {
+      angles.push(angleDeg(neighbors[firstIndex], center, neighbors[secondIndex]));
+    }
+  }
+  const summary = angles.map(angle => angle.toFixed(1)).join(', ');
+  assert.ok(Math.min(...angles) >= 75 && Math.max(...angles) <= 180, `${messagePrefix}, got ${summary}°`);
+}
+
 function oxygenNeighbor(atom, mol, predicate = () => true) {
   return atom.getNeighbors(mol).find(neighbor => neighbor.name === 'O' && predicate(neighbor, mol.getBond(atom.id, neighbor.id)));
 }
@@ -906,6 +928,31 @@ test('reaction preview keeps tert-butyl alcohol products open after ester cleava
   }
 });
 
+test('reaction preview keeps tertiary hydrolysis and tert-butyl ester products open for the kinase inhibitor example', () => {
+  const smiles = 'CC(C)(C)OC(=O)N1CC2=NN=CN2C2=CC=C(C=C2C1)C1(Cl)CCC(CC1)N1C=CC=N1';
+  const halidePreview = preparePreview(smiles, reactionTemplates.halideHydrolysis.smirks);
+  const retainedTertButylCenter = productAtomForSource(halidePreview, 'C2');
+  const retainedTertButylNeighbors = heavyNeighbors(retainedTertButylCenter, halidePreview.mol).filter(neighbor => halidePreview.productAtomIds.has(neighbor.id));
+  assert.equal(retainedTertButylNeighbors.length, 4, 'expected retained tert-butyl product center');
+  assertProjectedTertButylQuadrants(retainedTertButylCenter, retainedTertButylNeighbors, 'expected retained tert-butyl halide-hydrolysis fan to preserve source quadrants');
+
+  const hydrolysisCenter = productAtomForSource(halidePreview, 'C22');
+  const hydrolysisNeighbors = heavyNeighbors(hydrolysisCenter, halidePreview.mol).filter(neighbor => halidePreview.productAtomIds.has(neighbor.id));
+  assert.equal(hydrolysisNeighbors.length, 4, 'expected tertiary halide-hydrolysis product center');
+  for (let firstIndex = 0; firstIndex < hydrolysisNeighbors.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < hydrolysisNeighbors.length; secondIndex++) {
+      const localAngle = angleDeg(hydrolysisNeighbors[firstIndex], hydrolysisCenter, hydrolysisNeighbors[secondIndex]);
+      assert.ok(localAngle > 70 && localAngle < 170, `expected tertiary hydrolysis fan to stay open, got ${localAngle.toFixed(1)}°`);
+    }
+  }
+
+  const esterPreview = preparePreview(smiles, reactionTemplates.esterHydrolysis.smirks);
+  const tertButylCenter = productAtomForSource(esterPreview, 'C2');
+  const tertButylNeighbors = heavyNeighbors(tertButylCenter, esterPreview.mol).filter(neighbor => esterPreview.productAtomIds.has(neighbor.id));
+  assert.equal(tertButylNeighbors.length, 4, 'expected tert-butyl alcohol product center');
+  assertProjectedTertButylQuadrants(tertButylCenter, tertButylNeighbors, 'expected tert-butyl ester-hydrolysis fan to preserve source quadrants');
+});
+
 test('reaction preview refits retained scaffold ester-cleavage centers after scaffold snapping', () => {
   const smiles = 'CC1=CC2=C(C=C1CC1=CC=CC(Cl)=C1Cl)C(=O)C(OC([O-])=O)=CN2CCO';
   for (const template of [reactionTemplates.esterHydrolysis, reactionTemplates.saponification]) {
@@ -1036,7 +1083,7 @@ test('reaction preview keeps amide hydrolysis carbonate-like centers locally tri
   }
 });
 
-test('reaction preview keeps retained BOC tert-butyl fans open after amide hydrolysis', () => {
+test('reaction preview keeps retained BOC tert-butyl fans readable after amide hydrolysis', () => {
   const smiles = 'CC(N(C)C(=O)OC(C)(C)C)C(=O)NC1C[NH2+]CCC2CCC(N2C1=O)C(=O)NC1CCCC2=CC=CC=C12';
   const sourceMol = parseSMILES(smiles);
   const reactantSmarts = reactionTemplates.amideHydrolysis.smirks.split('>>')[0];
@@ -1051,15 +1098,7 @@ test('reaction preview keeps retained BOC tert-butyl fans open after amide hydro
     const heavyNeighbors = bocCenter.getNeighbors(preview.mol).filter(nb => productComponent?.has(nb.id) && nb.name !== 'H');
     assert.equal(heavyNeighbors.length, 4, `expected four heavy neighbors at retained BOC center for mapping ${mappingIndex}`);
 
-    const pairAngles = [];
-    for (let firstIndex = 0; firstIndex < heavyNeighbors.length; firstIndex++) {
-      for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighbors.length; secondIndex++) {
-        pairAngles.push(angleDeg(heavyNeighbors[firstIndex], bocCenter, heavyNeighbors[secondIndex]));
-      }
-    }
-    const angleSummary = pairAngles.map(angle => angle.toFixed(1)).join(', ');
-    assert.ok(Math.max(...pairAngles) < 170, `expected retained BOC fan to avoid square opposition for mapping ${mappingIndex}, got ${angleSummary}°`);
-    assert.ok(Math.min(...pairAngles) > 70, `expected retained BOC fan to avoid pinched angles for mapping ${mappingIndex}, got ${angleSummary}°`);
+    assertReadableTertButylFan(bocCenter, heavyNeighbors, `expected retained BOC fan to stay readable for mapping ${mappingIndex}`);
   }
 });
 

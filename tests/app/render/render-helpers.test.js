@@ -1,7 +1,23 @@
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Atom } from '../../../src/core/index.js';
-import { atomColor, atomTooltipHtml, getHighlightStyleVariant, HIGHLIGHT_STYLE_PALETTES, isRadioactiveElement, strokeColor } from '../../../src/app/render/helpers.js';
+import {
+  atomColor,
+  atomTooltipHtml,
+  getDefaultRenderOptions,
+  getFunctionalGroupHighlightStyle,
+  getHighlightStyleVariant,
+  getPhysicochemicalHighlightStyle,
+  getSelectionHighlightStyle,
+  HIGHLIGHT_STYLE_PALETTES,
+  isRadioactiveElement,
+  strokeColor,
+  updateRenderOptions
+} from '../../../src/app/render/helpers.js';
+
+afterEach(() => {
+  updateRenderOptions(getDefaultRenderOptions());
+});
 
 describe('getHighlightStyleVariant', () => {
   it('starts the default rainbow with the existing green highlight', () => {
@@ -20,6 +36,18 @@ describe('getHighlightStyleVariant', () => {
 
   it('falls back to the default palette for unknown styles', () => {
     assert.deepEqual(getHighlightStyleVariant('missing-style', 2), HIGHLIGHT_STYLE_PALETTES.default[2]);
+  });
+
+  it('returns configured live highlight colors with derived outlines', () => {
+    updateRenderOptions({
+      selectionHighlightColor: '#654321',
+      functionalGroupHighlightColor: '#123456',
+      physicochemicalHighlightColor: '#abcdef'
+    });
+
+    assert.deepEqual(getSelectionHighlightStyle(), { fill: '#654321', outline: '#3b2713' });
+    assert.deepEqual(getFunctionalGroupHighlightStyle(), { fill: '#123456', outline: '#0a1e32' });
+    assert.deepEqual(getPhysicochemicalHighlightStyle(), { fill: '#abcdef', outline: '#63778b' });
   });
 });
 

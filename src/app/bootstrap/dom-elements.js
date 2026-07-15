@@ -56,6 +56,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const showValenceWarnings = document.getElementById('options-show-valence-warnings');
   const showAtomTooltips = document.getElementById('options-show-atom-tooltips');
   const layoutBondLength = document.getElementById('options-layout-bond-length');
+  const selectionHighlightColor = document.getElementById('options-selection-highlight-color');
+  const functionalGroupHighlightColor = document.getElementById('options-functional-group-highlight-color');
+  const physicochemicalHighlightColor = document.getElementById('options-physicochemical-highlight-color');
   const atomColoring2d = document.getElementById('options-2d-color-style');
   const atomFontSize2d = document.getElementById('options-2d-atom-font-size');
   const atomNumberingFontSize = document.getElementById('options-atom-numbering-font-size');
@@ -145,6 +148,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getShowValenceWarningsElement: () => showValenceWarnings,
     getShowAtomTooltipsElement: () => showAtomTooltips,
     getLayoutBondLengthElement: () => layoutBondLength,
+    getSelectionHighlightColorElement: () => selectionHighlightColor,
+    getFunctionalGroupHighlightColorElement: () => functionalGroupHighlightColor,
+    getPhysicochemicalHighlightColorElement: () => physicochemicalHighlightColor,
     get2DAtomColoringElement: () => atomColoring2d,
     get2DAtomFontSizeElement: () => atomFontSize2d,
     getAtomNumberingFontSizeElement: () => atomNumberingFontSize,

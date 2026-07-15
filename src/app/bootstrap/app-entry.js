@@ -46,7 +46,8 @@ import {
   singleBondWidth,
   atomRadius,
   bondTooltipHtml,
-  atomTooltipHtml
+  atomTooltipHtml,
+  getSelectionHighlightStyle
 } from '../render/helpers.js';
 import {
   _setHighlight,
@@ -606,8 +607,8 @@ const forceSelectionRenderer = createForceSelectionRenderer(
     hasExplicitSelection: () => !runtimeState.selectionDragActive && !runtimeState.selectionRotationActive && (runtimeState.selectedAtomIds.size > 0 || runtimeState.selectedBondIds.size > 0),
     getSelectionRotationActive: () => runtimeState.selectionRotationActive,
     getSelectionPivot: () => runtimeState.selectionPivot,
-    getSelectionColor: () => 'rgb(150, 200, 255)',
-    getSelectionOutline: () => 'rgb(40, 100, 210)',
+    getSelectionColor: () => getSelectionHighlightStyle().fill,
+    getSelectionOutline: () => getSelectionHighlightStyle().outline,
     getBondSelectionRadius: () => 6,
     getAtomSelectionRadius: () => 13,
     getOutlineWidth: () => 2,

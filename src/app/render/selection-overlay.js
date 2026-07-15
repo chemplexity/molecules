@@ -1,9 +1,9 @@
 /** @module app/render/selection-overlay */
 
 import { labelHalfW, getAtomLabel } from '../../layout/mol2d-helpers.js';
+import { getSelectionHighlightStyle } from './helpers.js';
 
 const SELECTION_BOUNDS_PAD = 6;
-const SELECTION_BOUNDS_STROKE = 'rgb(80, 140, 255)';
 const SELECTION_BOUNDS_DASH = '5,3';
 const SELECTION_BOUNDS_STROKE_WIDTH = 1.5;
 const SELECTION_BOUNDS_OPACITY = 0.4;
@@ -13,6 +13,10 @@ const SELECTION_PIVOT_HIT_RADIUS = 16;
 const SELECTION_PIVOT_ARM = 8;
 const SELECTION_PIVOT_STROKE = '#666666';
 const SELECTION_PIVOT_OPACITY = 0.58;
+
+function selectionBoundsStroke() {
+  return getSelectionHighlightStyle().outline;
+}
 
 function emptyBounds() {
   return {
@@ -122,7 +126,7 @@ function appendSelectionRotateHandle(handleLayer) {
     .attr('d', 'M 20 11 A 8 8 0 0 0 4.5 8.5 M 4 4 V 8.5 H 8.5 M 4 13 A 8 8 0 0 0 19.5 15.5 M 20 20 V 15.5 H 15.5')
     .attr('transform', 'translate(-12 -12) scale(0.9)')
     .attr('fill', 'none')
-    .attr('stroke', SELECTION_BOUNDS_STROKE)
+    .attr('stroke', selectionBoundsStroke())
     .attr('stroke-width', 2.4)
     .attr('stroke-linecap', 'round')
     .attr('stroke-linejoin', 'round')
@@ -214,7 +218,7 @@ function drawSelectionBoundsControls(selectionLayer, bounds, pivot = null) {
     .append('rect')
     .attr('class', 'selection-bounds-rect')
     .attr('fill', 'none')
-    .attr('stroke', SELECTION_BOUNDS_STROKE)
+    .attr('stroke', selectionBoundsStroke())
     .attr('stroke-width', SELECTION_BOUNDS_STROKE_WIDTH)
     .attr('stroke-dasharray', SELECTION_BOUNDS_DASH)
     .attr('opacity', SELECTION_BOUNDS_OPACITY)
@@ -355,8 +359,9 @@ export function createSelectionOverlayManager(ctx) {
     const atoms = [...mol.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
     const fontSize = ctx.constants.getFontSize();
 
-    const selectionColor = 'rgb(150, 200, 255)';
-    const selectionOutline = 'rgb(40,  100, 210)';
+    const selectionStyle = getSelectionHighlightStyle();
+    const selectionColor = selectionStyle.fill;
+    const selectionOutline = selectionStyle.outline;
     const outlineWidth = 2;
     const bondSelectionPad = 5;
     const atomSelectionPad = 12;

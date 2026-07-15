@@ -13,12 +13,18 @@ describe('app/render/helpers', () => {
     assert.equal(getDefaultRenderOptions().layoutBondLength, 1.5);
     assert.equal(getDefaultRenderOptions().bondEnFontSize, 10);
     assert.equal(getDefaultRenderOptions().reactionFontSize, 16);
+    assert.equal(getDefaultRenderOptions().selectionHighlightColor, '#96c8ff');
+    assert.equal(getDefaultRenderOptions().functionalGroupHighlightColor, '#82d250');
+    assert.equal(getDefaultRenderOptions().physicochemicalHighlightColor, '#f6e36e');
     assert.equal(getDefaultRenderOptions().showReactionReagents, true);
     assert.equal(getDefaultRenderOptions().showReactionConditions, false);
     assert.equal(getRenderOptions().twoDAtomFontSize, 14);
     assert.equal(getRenderOptions().layoutBondLength, 1.5);
     assert.equal(getRenderOptions().bondEnFontSize, 10);
     assert.equal(getRenderOptions().reactionFontSize, 16);
+    assert.equal(getRenderOptions().selectionHighlightColor, '#96c8ff');
+    assert.equal(getRenderOptions().functionalGroupHighlightColor, '#82d250');
+    assert.equal(getRenderOptions().physicochemicalHighlightColor, '#f6e36e');
     assert.equal(getRenderOptions().showReactionReagents, true);
     assert.equal(getRenderOptions().showReactionConditions, false);
     assert.equal('legacy2dRendererToggle' in getDefaultRenderOptions(), false);
@@ -44,6 +50,18 @@ describe('app/render/helpers', () => {
 
     const lowClamped = updateRenderOptions({ reactionFontSize: 6 });
     assert.equal(lowClamped.reactionFontSize, 8);
+  });
+
+  it('normalizes valid highlight colors and ignores invalid color strings', () => {
+    const updated = updateRenderOptions({
+      selectionHighlightColor: '#ABCDEF',
+      functionalGroupHighlightColor: ' #123456 ',
+      physicochemicalHighlightColor: 'not-a-color'
+    });
+
+    assert.equal(updated.selectionHighlightColor, '#abcdef');
+    assert.equal(updated.functionalGroupHighlightColor, '#123456');
+    assert.equal(updated.physicochemicalHighlightColor, '#f6e36e');
   });
 
   it('falls back to a finite offset instead of NaN for coincident bond endpoints', () => {

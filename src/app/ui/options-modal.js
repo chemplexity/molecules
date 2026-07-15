@@ -12,6 +12,9 @@ export function initOptionsModal(context) {
   const showValenceWarningsEl = context.dom.getShowValenceWarningsElement();
   const showAtomTooltipsEl = context.dom.getShowAtomTooltipsElement();
   const layoutBondLengthEl = context.dom.getLayoutBondLengthElement();
+  const selectionHighlightColorEl = context.dom.getSelectionHighlightColorElement();
+  const functionalGroupHighlightColorEl = context.dom.getFunctionalGroupHighlightColorElement();
+  const physicochemicalHighlightColorEl = context.dom.getPhysicochemicalHighlightColorElement();
   const twoDAtomColoringEl = context.dom.get2DAtomColoringElement();
   const twoDAtomFontSizeEl = context.dom.get2DAtomFontSizeElement();
   const atomNumberingFontSizeEl = context.dom.getAtomNumberingFontSizeElement();
@@ -42,10 +45,22 @@ export function initOptionsModal(context) {
     return clamped;
   }
 
+  function normalizeColorInputValue(inputEl, fallbackValue) {
+    const value = typeof inputEl.value === 'string' ? inputEl.value.trim().toLowerCase() : '';
+    if (/^#[0-9a-f]{6}$/.test(value)) {
+      return value;
+    }
+    inputEl.value = fallbackValue;
+    return fallbackValue;
+  }
+
   function syncForm(options = context.options.getRenderOptions()) {
     showValenceWarningsEl.checked = options.showValenceWarnings;
     showAtomTooltipsEl.checked = options.showAtomTooltips;
     layoutBondLengthEl.value = formatOptionNumber(options.layoutBondLength);
+    selectionHighlightColorEl.value = options.selectionHighlightColor ?? '#96c8ff';
+    functionalGroupHighlightColorEl.value = options.functionalGroupHighlightColor ?? '#82d250';
+    physicochemicalHighlightColorEl.value = options.physicochemicalHighlightColor ?? '#f6e36e';
     twoDAtomColoringEl.value = options.twoDColorStyle ?? 'color-atoms';
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
     atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
@@ -76,6 +91,9 @@ export function initOptionsModal(context) {
       showValenceWarnings: showValenceWarningsEl.checked,
       showAtomTooltips: showAtomTooltipsEl.checked,
       layoutBondLength,
+      selectionHighlightColor: normalizeColorInputValue(selectionHighlightColorEl, currentOptions.selectionHighlightColor),
+      functionalGroupHighlightColor: normalizeColorInputValue(functionalGroupHighlightColorEl, currentOptions.functionalGroupHighlightColor),
+      physicochemicalHighlightColor: normalizeColorInputValue(physicochemicalHighlightColorEl, currentOptions.physicochemicalHighlightColor),
       twoDColorStyle: twoDAtomColoringEl.value,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
       atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),

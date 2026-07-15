@@ -9,7 +9,23 @@ function makeManager(overrides = {}) {
   let currentInchi = overrides.currentInchi ?? null;
   let currentMol = overrides.currentMol ?? null;
   let mol2d = overrides.mol2d ?? null;
-  const inputEl = { value: overrides.inputValue ?? '' };
+  const inputEl = {
+    value: overrides.inputValue ?? '',
+    title: '',
+    attributes: new Map(),
+    classList: {
+      toggled: new Map(),
+      toggle(name, value) {
+        this.toggled.set(name, value);
+      }
+    },
+    setAttribute(name, value) {
+      this.attributes.set(name, value);
+    },
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    }
+  };
   const calls = [];
 
   const manager = createInputFlowManager({
@@ -271,5 +287,43 @@ describe('createInputFlowManager', () => {
       ['parseSMILES', 1001]
     );
     assert.equal(getState().currentSmiles, longSmiles);
+  });
+
+  it('marks invalid SMILES input and clears the warning after a valid parse', () => {
+    const { manager, calls, inputEl, getState } = makeManager({
+      parseSMILES: value => {
+        if (value === 'bad') {
+          throw new Error('invalid smiles');
+        }
+        return { atoms: new Map([['a1', {}]]) };
+      }
+    });
+
+    assert.equal(manager.parseInput('bad'), false);
+    assert.equal(inputEl.classList.toggled.get('invalid-chemical-input'), true);
+    assert.equal(inputEl.attributes.get('aria-invalid'), 'true');
+    assert.equal(inputEl.title, 'Invalid SMILES input');
+    assert.equal(getState().currentSmiles, null);
+    assert.equal(calls.some(([name]) => name === 'renderMol'), false);
+
+    assert.equal(manager.parseInput('CCO'), true);
+    assert.equal(inputEl.classList.toggled.get('invalid-chemical-input'), false);
+    assert.equal(inputEl.attributes.has('aria-invalid'), false);
+    assert.equal(inputEl.title, '');
+    assert.equal(getState().currentSmiles, 'CCO');
+    assert.equal(calls.some(([name]) => name === 'renderMol'), true);
+  });
+
+  it('marks invalid InChI input', () => {
+    const { manager, inputEl, getState } = makeManager({
+      inputMode: 'inchi',
+      parseINCHI: () => ({ atoms: new Map() })
+    });
+
+    assert.equal(manager.parseInput('InChI=bad'), false);
+    assert.equal(inputEl.classList.toggled.get('invalid-chemical-input'), true);
+    assert.equal(inputEl.attributes.get('aria-invalid'), 'true');
+    assert.equal(inputEl.title, 'Invalid InChI input');
+    assert.equal(getState().currentInchi, null);
   });
 });

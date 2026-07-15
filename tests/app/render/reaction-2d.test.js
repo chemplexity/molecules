@@ -787,6 +787,32 @@ describe('reaction preview restore', () => {
     assert.ok(drift < 1e-6, `expected force preview product geometry to match line display geometry, got ${drift.toExponential(3)} Å`);
   });
 
+  it('keeps reaction-preview alkene epoxidation caps equilateral after scaffold alignment', () => {
+    const smiles = 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O';
+    const sourceMol = parseSMILES(smiles);
+    generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
+    const smirks = reactionTemplates.alkeneEpoxidation.smirks;
+    const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+    assert.ok(mapping, 'expected the first alkene epoxidation site to match');
+
+    const preview = buildReaction2dMol(sourceMol, smirks, mapping, { bondLength: 1.5 });
+    assert.ok(preview, 'expected epoxidation preview to build');
+    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+
+    const oxiraneRing = preview.mol.getRings().find(ringAtomIds => ringAtomIds.length === 3 && ringAtomIds.every(atomId => preview.productAtomIds.has(atomId)));
+    assert.ok(oxiraneRing, 'expected product oxirane ring');
+    const sideLengths = oxiraneRing.map((atomId, index) => {
+      const a = preview.mol.atoms.get(atomId);
+      const b = preview.mol.atoms.get(oxiraneRing[(index + 1) % oxiraneRing.length]);
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    });
+    const minSide = Math.min(...sideLengths);
+    const maxSide = Math.max(...sideLengths);
+
+    assert.ok(maxSide - minSide < 1e-6, `expected equilateral oxirane, got sides ${sideLengths.map(length => length.toFixed(4)).join(', ')}`);
+    assert.ok(Math.abs(sideLengths[0] - 1.5) < 1e-6, `expected target bond length, got ${sideLengths[0].toFixed(4)}`);
+  });
+
   it('keeps the live source molecule properties when restoring the saved 2d entry display', () => {
     const { context, renderCalls, zoomRestores } = makeReaction2dContext();
     const sourceMol = parseSMILES('CC=O');

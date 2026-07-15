@@ -3,6 +3,7 @@
 import { findSMARTS, parseSMARTS, functionalGroups } from '../../smarts/index.js';
 import { getAtomLabel, labelHalfW } from '../../layout/mol2d-helpers.js';
 import { createNavButton } from './panel-row.js';
+import { getFunctionalGroupHighlightStyle, getPhysicochemicalHighlightStyle } from './helpers.js';
 
 let ctx = {};
 
@@ -31,6 +32,10 @@ const FORCE_HIGHLIGHT_BEFORE_SELECTOR = [
   ':scope > g.force-bond-lengths',
   ':scope > g.force-atom-numbering'
 ].join(', ');
+
+function getActiveHighlightStyle() {
+  return getHighlightStyle() === 'physchem' ? getPhysicochemicalHighlightStyle() : getFunctionalGroupHighlightStyle();
+}
 
 /**
  * Initializes the highlights module with the shared app context needed for redrawing after highlight changes.
@@ -99,7 +104,7 @@ export function create2DHighlightRenderer(context) {
     const hCounts = context.state.getHCounts();
     const toSVGPt = context.helpers.toSVGPt;
     const atoms = [...mol.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
-    const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
+    const highlightStyle = getActiveHighlightStyle();
     const outlinePadding = 2;
     const highlightLayer = graphSelection.insert('g', TWO_D_HIGHLIGHT_BEFORE_SELECTOR).attr('class', 'atom-highlights').attr('opacity', 0.45);
 
@@ -185,7 +190,7 @@ export function createForceHighlightRenderer(context) {
       return;
     }
 
-    const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
+    const highlightStyle = getActiveHighlightStyle();
     const highlightRadius = context.constants.getHighlightRadius();
     const outlineWidth = context.constants.getOutlineWidth();
     const highlightLayer = graphSelection.insert('g', FORCE_HIGHLIGHT_BEFORE_SELECTOR).attr('class', 'fg-highlight-layer').attr('opacity', 0.45);

@@ -978,6 +978,7 @@ function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5)
   finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
   idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAtomIds, bondLength);
   idealizeReaction2dTerminalAlkyneContinuations(mol, componentAtomIds, bondLength);
+  idealizeReaction2dEditedFourHeavyTerminalSubstitutionFans(mol, componentAtomIds, bondLength);
 }
 
 /**
@@ -1123,6 +1124,100 @@ function restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomId
       placement.atom.x = placement.x;
       placement.atom.y = placement.y;
     }
+    const stats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
+    if (stats.maxBond > bondLength * 1.85 || stats.minNonbonded < bondLength * 0.5) {
+      restoreReaction2dCoords(mol, beforeSnapshot);
+    }
+  }
+}
+
+function sourceReaction2dHeteroNeighborForTertButyl(reactantCenter, mol) {
+  if (!reactantCenter) {
+    return null;
+  }
+  return reactantCenter.getNeighbors(mol).find(neighbor => _TERMINAL_HETEROATOMS.has(neighbor.name) && neighbor.name !== 'H' && Number.isFinite(neighbor.x) && Number.isFinite(neighbor.y)) ?? null;
+}
+
+/**
+ * Preserves source tert-butyl quadrants on product-side BOC/tert-butanol
+ * centers. The general reaction-preview tert-butyl fallback uses a staggered
+ * 80/160 projection, but mapped BOC tert-butyl groups are already clean in the
+ * source drawing and should retain that recognizable cross in products.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
+function preserveReaction2dSourceTertButylFans(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol?.__reactionPreview?.reactantAtomIds?.size || !componentAtomIds?.size) {
+    return;
+  }
+
+  for (const centerId of componentAtomIds) {
+    const center = mol.atoms.get(centerId);
+    if (!center || center.name !== 'C' || center.x == null || center.y == null || center.isInRing(mol)) {
+      continue;
+    }
+    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(centerId)) ? mol.atoms.get(sourceAtomId(centerId)) : null;
+    if (!reactantCenter || reactantCenter.name !== 'C' || reactantCenter.x == null || reactantCenter.y == null || reactantCenter.isInRing(mol)) {
+      continue;
+    }
+
+    const infos = center
+      .getNeighbors(mol)
+      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H')
+      .map(atom => {
+        const bond = mol.getBond(center.id, atom.id);
+        return {
+          atom,
+          order: bond?.properties.order ?? 1,
+          targetLength: scaledReaction2dBondLength(bond?.properties.order ?? 1, bondLength)
+        };
+      });
+    if (infos.length !== 4 || infos.some(info => info.order !== 1)) {
+      continue;
+    }
+
+    const terminalCarbonLeaves = infos.filter(info => {
+      if (info.atom.name !== 'C' || info.atom.isInRing(mol)) {
+        return false;
+      }
+      const sourceId = sourceAtomId(info.atom.id);
+      const reactantLeaf = mol.__reactionPreview.reactantAtomIds.has(sourceId) ? mol.atoms.get(sourceId) : null;
+      if (!reactantLeaf || reactantLeaf.name !== 'C' || reactantLeaf.x == null || reactantLeaf.y == null) {
+        return false;
+      }
+      const productHeavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
+      const reactantHeavyNeighbors = reactantLeaf.getNeighbors(mol).filter(nb => mol.__reactionPreview.reactantAtomIds.has(nb.id) && nb.name !== 'H');
+      return productHeavyNeighbors.length === 1 && productHeavyNeighbors[0]?.id === center.id && reactantHeavyNeighbors.length === 1 && reactantHeavyNeighbors[0]?.id === reactantCenter.id;
+    });
+    const terminalHetero = infos.find(info => _TERMINAL_HETEROATOMS.has(info.atom.name));
+    if (terminalCarbonLeaves.length !== 3 || !terminalHetero) {
+      continue;
+    }
+
+    const sourceHetero = sourceReaction2dHeteroNeighborForTertButyl(reactantCenter, mol);
+    if (!sourceHetero || sourceHetero.x == null || sourceHetero.y == null) {
+      continue;
+    }
+
+    const beforeSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
+    center.x = reactantCenter.x;
+    center.y = reactantCenter.y;
+    for (const leaf of terminalCarbonLeaves) {
+      const reactantLeaf = mol.atoms.get(sourceAtomId(leaf.atom.id));
+      leaf.atom.x = reactantLeaf.x;
+      leaf.atom.y = reactantLeaf.y;
+    }
+
+    const sourceHeteroDx = sourceHetero.x - reactantCenter.x;
+    const sourceHeteroDy = sourceHetero.y - reactantCenter.y;
+    const sourceHeteroLen = Math.hypot(sourceHeteroDx, sourceHeteroDy);
+    if (sourceHeteroLen >= 1e-6) {
+      terminalHetero.atom.x = center.x + (sourceHeteroDx / sourceHeteroLen) * terminalHetero.targetLength;
+      terminalHetero.atom.y = center.y + (sourceHeteroDy / sourceHeteroLen) * terminalHetero.targetLength;
+    }
+
     const stats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
     if (stats.maxBond > bondLength * 1.85 || stats.minNonbonded < bondLength * 0.5) {
       restoreReaction2dCoords(mol, beforeSnapshot);
@@ -1387,6 +1482,73 @@ function restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAto
     ) {
       restoreReaction2dCoords(mol, beforeSnapshot);
     }
+  }
+}
+
+/**
+ * Keeps reaction-preview epoxidation caps visually exact after retained
+ * scaffold atoms are restored from the reactant frame. The two mapped alkene
+ * carbons stay aligned to the source molecule; the newly added oxygen is placed
+ * at the equilateral apex on the same side chosen by the isolated product
+ * layout.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {Map<string, {x: number, y: number}>} isolatedSnapshot - Fitted isolated-product coords.
+ * @returns {void}
+ */
+function idealizeReaction2dEditedOxiraneTriangles(mol, componentAtomIds, isolatedSnapshot) {
+  const preview = mol?.__reactionPreview;
+  if (!preview?.reactantAtomIds?.size || !componentAtomIds?.size) {
+    return;
+  }
+
+  for (const ringAtomIds of mol.getRings?.() ?? []) {
+    if (ringAtomIds.length !== 3 || !ringAtomIds.every(atomId => componentAtomIds.has(atomId))) {
+      continue;
+    }
+
+    const newOxygenIds = ringAtomIds.filter(atomId => {
+      const atom = mol.atoms.get(atomId);
+      return atom?.name === 'O' && !preview.reactantAtomIds.has(sourceAtomId(atomId));
+    });
+    if (newOxygenIds.length !== 1) {
+      continue;
+    }
+
+    const oxygen = mol.atoms.get(newOxygenIds[0]);
+    const baseAtoms = ringAtomIds
+      .filter(atomId => atomId !== oxygen.id)
+      .map(atomId => mol.atoms.get(atomId))
+      .filter(Boolean);
+    if (baseAtoms.length !== 2 || baseAtoms.some(atom => atom.name === 'H' || !preview.reactantAtomIds.has(sourceAtomId(atom.id)))) {
+      continue;
+    }
+    if (!mol.getBond(baseAtoms[0].id, baseAtoms[1].id) || !mol.getBond(baseAtoms[0].id, oxygen.id) || !mol.getBond(baseAtoms[1].id, oxygen.id)) {
+      continue;
+    }
+    if (!baseAtoms.every(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y))) {
+      continue;
+    }
+
+    const [a, b] = baseAtoms;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const baseLength = Math.hypot(dx, dy);
+    if (!(baseLength > 1e-6)) {
+      continue;
+    }
+
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
+    const perpX = -dy / baseLength;
+    const perpY = dx / baseLength;
+    const reference = isolatedSnapshot?.get(oxygen.id) ?? (Number.isFinite(oxygen.x) && Number.isFinite(oxygen.y) ? oxygen : null);
+    const signedSide = reference ? (reference.x - midX) * perpX + (reference.y - midY) * perpY : 1;
+    const side = signedSide < 0 ? -1 : 1;
+    const height = (Math.sqrt(3) / 2) * baseLength;
+
+    oxygen.x = midX + perpX * height * side;
+    oxygen.y = midY + perpY * height * side;
   }
 }
 
@@ -2391,6 +2553,132 @@ function reaction2dFourNeighborOppositionPenalty(center, infos, placements = [])
     }
   }
   return penalty;
+}
+
+function reaction2dFourNeighborReadableFanPenalty(center, infos, placements = []) {
+  if (!center || infos.length !== 4 || center.x == null || center.y == null) {
+    return 0;
+  }
+  const placedByAtomId = new Map(placements.map(placement => [placement.atom.id, placement]));
+  const centerPoint = placedByAtomId.get(center.id) ?? center;
+  let penalty = 0;
+  for (let firstIndex = 0; firstIndex < infos.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < infos.length; secondIndex++) {
+      const firstPoint = placedByAtomId.get(infos[firstIndex].atom.id) ?? infos[firstIndex].atom;
+      const secondPoint = placedByAtomId.get(infos[secondIndex].atom.id) ?? infos[secondIndex].atom;
+      const angle = reaction2dBondAngle(firstPoint, centerPoint, secondPoint);
+      if (angle == null) {
+        continue;
+      }
+      const minAngle = (70 * Math.PI) / 180;
+      const maxAngle = (170 * Math.PI) / 180;
+      if (angle < minAngle) {
+        penalty += (minAngle - angle) ** 2;
+      } else if (angle > maxAngle) {
+        penalty += (angle - maxAngle) ** 2;
+      }
+    }
+  }
+  return penalty;
+}
+
+function reaction2dTerminalSubstitutionLeaf(info, center, mol, componentAtomIds) {
+  if (!info?.atom || !center || !mol?.__reactionPreview?.editedProductAtomIds?.has(center.id)) {
+    return false;
+  }
+  if (!_TERMINAL_HETEROATOMS.has(info.atom.name) && !_HALOGENS.has(info.atom.name)) {
+    return false;
+  }
+  const heavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
+  return heavyNeighbors.length === 1 && heavyNeighbors[0]?.id === center.id;
+}
+
+/**
+ * Repositions terminal substitution leaves, such as the oxygen created by
+ * tertiary halide hydrolysis, into the open gap left by the retained carbon
+ * anchors. This fixes local 50-degree pinches without moving the retained ring
+ * scaffold or the saturated center itself.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
+function idealizeReaction2dEditedFourHeavyTerminalSubstitutionFans(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+
+  for (const centerId of componentAtomIds) {
+    if (!mol.__reactionPreview.editedProductAtomIds.has(centerId)) {
+      continue;
+    }
+    const center = mol.atoms.get(centerId);
+    if (!center || center.name === 'H' || center.x == null || center.y == null) {
+      continue;
+    }
+
+    const infos = center
+      .getNeighbors(mol)
+      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null)
+      .map(atom => {
+        const bond = mol.getBond(center.id, atom.id);
+        return {
+          atom,
+          order: bond?.properties.order ?? 1,
+          targetLength: scaledReaction2dBondLength(bond?.properties.order ?? 1, bondLength)
+        };
+      });
+    if (infos.length !== 4 || infos.some(info => info.order !== 1)) {
+      continue;
+    }
+
+    const terminalLeaves = infos.filter(info => reaction2dTerminalSubstitutionLeaf(info, center, mol, componentAtomIds));
+    if (terminalLeaves.length !== 1) {
+      continue;
+    }
+    const terminal = terminalLeaves[0];
+    const anchors = infos.filter(info => info !== terminal);
+    if (anchors.length !== 3 || anchors.some(info => info.atom.name !== 'C')) {
+      continue;
+    }
+
+    const anchorAngles = anchors
+      .map(info => Math.atan2(info.atom.y - center.y, info.atom.x - center.x))
+      .sort((a, b) => a - b);
+    const candidateAngles = [Math.atan2(terminal.atom.y - center.y, terminal.atom.x - center.x)];
+    for (let index = 0; index < anchorAngles.length; index++) {
+      const nextIndex = (index + 1) % anchorAngles.length;
+      const gap = nextIndex === 0 ? anchorAngles[nextIndex] + 2 * Math.PI - anchorAngles[index] : anchorAngles[nextIndex] - anchorAngles[index];
+      candidateAngles.push(anchorAngles[index] + gap / 2);
+    }
+
+    const currentPlacement = { atom: terminal.atom, x: terminal.atom.x, y: terminal.atom.y };
+    const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [currentPlacement], bondLength) + 140 * reaction2dFourNeighborReadableFanPenalty(center, infos);
+    let best = {
+      score: currentScore,
+      placement: currentPlacement
+    };
+
+    for (const angle of candidateAngles) {
+      const placement = {
+        atom: terminal.atom,
+        x: center.x + Math.cos(angle) * terminal.targetLength,
+        y: center.y + Math.sin(angle) * terminal.targetLength
+      };
+      const score =
+        reaction2dCandidateLayoutScore(mol, componentAtomIds, [placement], bondLength) +
+        140 * reaction2dFourNeighborReadableFanPenalty(center, infos, [placement]) +
+        0.03 * ((placement.x - terminal.atom.x) ** 2 + (placement.y - terminal.atom.y) ** 2);
+      if (score < best.score) {
+        best = { score, placement };
+      }
+    }
+
+    if (best.placement !== currentPlacement && best.score < currentScore - 1e-9) {
+      terminal.atom.x = best.placement.x;
+      terminal.atom.y = best.placement.y;
+    }
+  }
 }
 
 /**
@@ -4257,8 +4545,10 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     if (!mappedRingMembershipChanged) {
       restoreMappedReaction2dRetainedScaffoldCoords(mol, componentAtomIds);
       restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength);
+      preserveReaction2dSourceTertButylFans(mol, componentAtomIds, bondLength);
       restoreReaction2dCompactBridgedCagesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
       restoreReaction2dEditedRingSulfoxidesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
+      idealizeReaction2dEditedOxiraneTriangles(mol, componentAtomIds, fittedIsolatedSnapshot);
       idealizeReaction2dEditedRingExocyclicTermini(mol, componentAtomIds, bondLength);
       idealizeReaction2dEditedSaturatedRingAnchorFans(mol, componentAtomIds, bondLength);
     }
@@ -4269,11 +4559,13 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     }
     restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     idealizeReaction2dEditedSaturatedHalogenFans(mol, componentAtomIds, bondLength);
+    idealizeReaction2dEditedFourHeavyTerminalSubstitutionFans(mol, componentAtomIds, bondLength);
     finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
     finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     idealizeReaction2dEditedTwoHeavyImineCenters(mol, componentAtomIds, bondLength);
     idealizeReaction2dTerminalHeteroCarbonylContinuations(mol, componentAtomIds, bondLength);
     restoreReaction2dRetainedTertButylFansFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength);
+    preserveReaction2dSourceTertButylFans(mol, componentAtomIds, bondLength);
     restoreReaction2dCompactBridgedCagesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     restoreReaction2dEditedRingSulfoxidesFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
@@ -4283,6 +4575,8 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     restoreReaction2dPinchedEditedRingSystemsFromIsolated(mol, componentAtomIds, fittedIsolatedSnapshot, bondLength, getProductLayoutGraph());
     idealizeReaction2dTerminalReducedAlkenePairs(mol, componentAtomIds, bondLength);
     idealizeReaction2dEditedTerminalRingLeaves(mol, componentAtomIds, bondLength);
+    idealizeReaction2dEditedOxiraneTriangles(mol, componentAtomIds, fittedIsolatedSnapshot);
+    idealizeReaction2dEditedFourHeavyTerminalSubstitutionFans(mol, componentAtomIds, bondLength);
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
     reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
 

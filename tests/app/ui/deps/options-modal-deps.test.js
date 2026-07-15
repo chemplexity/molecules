@@ -12,6 +12,9 @@ describe('createOptionsModalDeps', () => {
         getShowValenceWarningsElement: () => 'valence',
         getShowAtomTooltipsElement: () => 'tooltips',
         getLayoutBondLengthElement: () => 'layoutBondLength',
+        getSelectionHighlightColorElement: () => 'selectionHighlightColor',
+        getFunctionalGroupHighlightColorElement: () => 'functionalGroupHighlightColor',
+        getPhysicochemicalHighlightColorElement: () => 'physicochemicalHighlightColor',
         get2DAtomColoringElement: () => 'atomColoring',
         get2DAtomFontSizeElement: () => 'fontSize',
         getAtomNumberingFontSizeElement: () => 'atomNumberingFontSize',
@@ -62,6 +65,9 @@ describe('createOptionsModalDeps', () => {
     assert.equal(deps.doc.id, 'doc');
     assert.equal(deps.dom.getOverlayElement(), 'overlay');
     assert.equal(deps.dom.getLayoutBondLengthElement(), 'layoutBondLength');
+    assert.equal(deps.dom.getSelectionHighlightColorElement(), 'selectionHighlightColor');
+    assert.equal(deps.dom.getFunctionalGroupHighlightColorElement(), 'functionalGroupHighlightColor');
+    assert.equal(deps.dom.getPhysicochemicalHighlightColorElement(), 'physicochemicalHighlightColor');
     assert.equal(deps.dom.getAtomNumberingFontSizeElement(), 'atomNumberingFontSize');
     assert.equal(deps.dom.getShowReactionReagentsElement(), 'reactionReagents');
     assert.equal(deps.dom.getShowReactionConditionsElement(), 'reactionConditions');
