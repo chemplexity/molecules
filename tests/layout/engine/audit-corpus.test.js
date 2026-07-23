@@ -47,6 +47,23 @@ describe('layout/engine/audit-corpus', () => {
     assert.ok(AUDIT_CORPUS.length > 0);
   });
 
+  it('lays out corpus row 5370 with complete finite coordinates', () => {
+    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 5370);
+    assert.ok(entry);
+
+    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+
+    for (const [atomId, atom] of result.layoutGraph.atoms) {
+      assert.ok(atom.element === 'H' || result.coords.has(atomId), `expected coordinates for non-hydrogen atom ${atomId}`);
+    }
+    for (const [atomId, position] of result.coords) {
+      assert.ok(Number.isFinite(position.x), `expected finite x coordinate for ${atomId}`);
+      assert.ok(Number.isFinite(position.y), `expected finite y coordinate for ${atomId}`);
+    }
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
+
   for (const entry of RUN_LAYOUT_STRESS_TESTS ? AUDIT_CORPUS : []) {
     stressIt(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
       const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);

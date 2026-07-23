@@ -81,6 +81,7 @@ import { packComponentPlacements } from './placement/fragment-packing.js';
 import { assignBondValidationClass } from './placement/bond-validation.js';
 import { ensureLandscapeOrientation, findPreferredBackbonePath, levelCoords, normalizeOrientation } from './orientation.js';
 import { computeBounds } from './geometry/bounds.js';
+import { coordOverlayWithOverrides } from './geometry/coord-overlay.js';
 import { layoutKamadaKawai } from './geometry/kk-layout.js';
 import { pointInPolygon } from './geometry/polygon.js';
 import { cloneCoords, rotateAround } from './geometry/transforms.js';
@@ -5380,7 +5381,7 @@ function finalLargeMoleculeTargetedAngleReliefRotationCandidate(layoutGraph, coo
     return null;
   }
 
-  const candidateCoords = cloneCoords(coords);
+  const overrides = new Map();
   let totalMove = 0;
   for (const atomId of subtreeAtomIds) {
     const position = coords.get(atomId);
@@ -5388,9 +5389,10 @@ function finalLargeMoleculeTargetedAngleReliefRotationCandidate(layoutGraph, coo
       continue;
     }
     const rotatedPosition = add(centerPosition, rotate(sub(position, centerPosition), rotation));
-    candidateCoords.set(atomId, rotatedPosition);
+    overrides.set(atomId, rotatedPosition);
     totalMove += distance(position, rotatedPosition);
   }
+  const candidateCoords = coordOverlayWithOverrides(coords, overrides);
   return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, movedAtomIds: subtreeAtomIds, movedHeavyAtomCount, totalMove } : null;
 }
 
@@ -5487,14 +5489,7 @@ function finalLargeMoleculeTargetedTerminalLeafVariants(coords, centerAtomId, te
  * @returns {Map<string, {x: number, y: number}>} Merged coordinate map.
  */
 function withFinalTargetedAngleOverrides(coords, overrides) {
-  if (overrides.size === 0) {
-    return coords;
-  }
-  const candidateCoords = cloneCoords(coords);
-  for (const [atomId, position] of overrides) {
-    candidateCoords.set(atomId, position);
-  }
-  return candidateCoords;
+  return coordOverlayWithOverrides(coords, overrides);
 }
 
 /**
@@ -5644,7 +5639,7 @@ function maybeRetouchFinalLargeMoleculeTargetedAngleRelief(molecule, layoutGraph
     if (!bestCandidate) {
       break;
     }
-    currentCoords = bestCandidate.coords;
+    currentCoords = new Map(bestCandidate.coords);
     currentAudit = bestCandidate.audit;
     currentAggregateScore = bestCandidate.aggregateScore;
     for (const atomId of bestCandidate.movedAtomIds) {
@@ -5757,7 +5752,7 @@ function rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, coords, cent
     }
   }
 
-  const candidateCoords = cloneCoords(coords);
+  const overrides = new Map();
   let totalMove = 0;
   for (const atomId of subtreeAtomIds) {
     const position = coords.get(atomId);
@@ -5765,10 +5760,11 @@ function rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, coords, cent
       continue;
     }
     const rotatedPosition = add(centerPosition, rotate(sub(position, centerPosition), rotation));
-    candidateCoords.set(atomId, rotatedPosition);
+    overrides.set(atomId, rotatedPosition);
     totalMove += Math.hypot(rotatedPosition.x - position.x, rotatedPosition.y - position.y);
   }
 
+  const candidateCoords = coordOverlayWithOverrides(coords, overrides);
   return totalMove > PRESENTATION_METRIC_EPSILON ? { coords: candidateCoords, movedAtomIds: subtreeAtomIds, totalMove, rotationMagnitude: Math.abs(rotation) } : null;
 }
 
@@ -5804,16 +5800,17 @@ function nestedRotatedFinalLargeMoleculeDivalentLaneCandidate(layoutGraph, coord
     }
   }
 
-  const candidateCoords = cloneCoords(primaryCandidate.coords);
+  const overrides = new Map();
   const movedAtomIds = new Set(primaryCandidate.movedAtomIds);
   for (const atomId of branchSubtreeAtomIds) {
     const position = primaryCandidate.coords.get(atomId);
     if (!position) {
       continue;
     }
-    candidateCoords.set(atomId, add(rootPosition, rotate(sub(position, rootPosition), branchRotation)));
+    overrides.set(atomId, add(rootPosition, rotate(sub(position, rootPosition), branchRotation)));
     movedAtomIds.add(atomId);
   }
+  const candidateCoords = coordOverlayWithOverrides(primaryCandidate.coords, overrides);
 
   let totalMove = 0;
   for (const atomId of movedAtomIds) {
@@ -5926,7 +5923,7 @@ function maybeRetouchFinalLargeMoleculeDivalentLaneRelief(molecule, layoutGraph,
   return bestCandidate
     ? {
         changed: true,
-        coords: bestCandidate.coords,
+        coords: new Map(bestCandidate.coords),
         movedAtomIds: bestCandidate.movedAtomIds,
         audit: bestCandidate.audit,
         score: bestCandidate.score
@@ -6091,7 +6088,7 @@ function maybeSpreadFinalLargeMoleculeBackbone(molecule, layoutGraph, finalCoord
     if (!bestCandidate) {
       break;
     }
-    currentCoords = bestCandidate.coords;
+    currentCoords = new Map(bestCandidate.coords);
     currentAudit = bestCandidate.audit;
     currentScore = bestCandidate.score;
     currentSpread = bestCandidate.spread;
@@ -6171,7 +6168,7 @@ function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords
     if (!bestCandidate) {
       break;
     }
-    currentCoords = bestCandidate.coords;
+    currentCoords = new Map(bestCandidate.coords);
     currentAudit = bestCandidate.audit;
     currentScore = bestCandidate.score;
     for (const atomId of bestCandidate.movedAtomIds) {

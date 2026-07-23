@@ -499,13 +499,15 @@ export class ReactionNetwork {
    *   or `null` for fully acyclic molecules). Adds one `extractMurckoScaffold` call per molecule
    *   node — safe for networks up to ~500 nodes; consider disabling for very large graphs.
    * @param {number} [options.bondLength] - Target layout bond length for rendered molecule thumbnails.
+   * @param {(progress: {completed: number, total: number, state: 'starting'|'complete', nodeId: string}) => void} [options.onProgress] - Called immediately before and after each molecule thumbnail is exported.
    * @returns {{nodes: object[], links: object[]}} Exported graph payload.
    */
-  exportDirectedGraph({ flatten = false, scaffold = false, bondLength = 1.5 } = {}) {
+  exportDirectedGraph({ flatten = false, scaffold = false, bondLength = 1.5, onProgress = null } = {}) {
     const exportData = { nodes: [], links: [] };
     const renderOptions = { ...NETWORK_RENDER_OPTIONS, bondLength };
 
     for (const node of this.moleculeNodes.values()) {
+      onProgress?.({ completed: exportData.nodes.length, total: this.moleculeNodes.size, state: 'starting', nodeId: node.id });
       const renderObject = renderMolSVG(node.molecule.clone(), renderOptions);
       const cellWidth = renderObject ? renderObject.cellW : 100;
       const cellHeight = renderObject ? renderObject.cellH : 100;
@@ -536,6 +538,7 @@ export class ReactionNetwork {
       }
 
       exportData.nodes.push(nodeData);
+      onProgress?.({ completed: exportData.nodes.length, total: this.moleculeNodes.size, state: 'complete', nodeId: node.id });
     }
 
     if (!flatten) {

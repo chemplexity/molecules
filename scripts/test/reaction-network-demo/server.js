@@ -19,6 +19,7 @@ import { exampleMoleculeComplex } from '../../../examples/example-molecules-comp
 import { parseSMILES } from '../../../src/io/index.js';
 import { ReactionNetwork, ScaffoldNetwork } from '../../../src/network/index.js';
 import { reactionTemplates } from '../../../src/smirks/index.js';
+import { chemicalSpaceDescriptorProfile } from '../../../src/descriptors/index.js';
 
 const PORT = 3737;
 let activeGeneration = null;
@@ -338,7 +339,34 @@ function normalizeDemoBondLength(value) {
 function generateMoleculePreview(seedSmiles, { bondLength = 1.5 } = {}) {
   const network = new ReactionNetwork();
   network.addMolecule(parseSMILES(seedSmiles));
-  return network.exportDirectedGraph({ flatten: true, bondLength: normalizeDemoBondLength(bondLength) });
+  return attachChemicalSpaceDescriptors(network, network.exportDirectedGraph({ flatten: true, bondLength: normalizeDemoBondLength(bondLength) }));
+}
+
+/**
+ * Adds precomputed, serializable chemical-space values to the molecule nodes
+ * in one exported reaction-network graph. The reaction network owns immutable
+ * molecule snapshots during generation, so canonical SMILES is a stable cache
+ * key for this request.
+ * @param {ReactionNetwork} network - Source reaction network.
+ * @param {{nodes: object[], links: object[]}} graph - Exported D3 graph data.
+ * @param {(progress: {completed: number, total: number}) => void} [onProgress] - Descriptor-computation progress callback.
+ * @returns {{nodes: object[], links: object[]}} The enriched graph.
+ */
+function attachChemicalSpaceDescriptors(network, graph, onProgress = null) {
+  const descriptorCache = new Map();
+  const moleculeGraphNodes = graph.nodes.filter(graphNode => network.moleculeNodes.has(graphNode.id));
+  let completed = 0;
+  for (const graphNode of moleculeGraphNodes) {
+    const moleculeNode = network.moleculeNodes.get(graphNode.id);
+    const cacheKey = moleculeNode.canonicalSmiles;
+    if (!descriptorCache.has(cacheKey)) {
+      descriptorCache.set(cacheKey, chemicalSpaceDescriptorProfile(moleculeNode.molecule));
+    }
+    graphNode.descriptors = descriptorCache.get(cacheKey);
+    completed++;
+    onProgress?.({ completed, total: moleculeGraphNodes.length });
+  }
+  return graph;
 }
 
 function normalizeEnabledTemplateKeys(value) {
@@ -361,12 +389,15 @@ function reactionTemplatePayload() {
   }));
 }
 
-function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength = 1.5, enabledTemplateKeys = null) {
+function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength = 1.5, enabledTemplateKeys = null, onProgress = () => {}) {
   const network = new ReactionNetwork();
   const processedSmiles = new Set();
   const attemptedReactions = new Set();
   const moleculeFeatureCache = new Map();
   let prefilterSkipCount = 0;
+  let processedMoleculeCount = 0;
+  let completedDepth = 0;
+  let lastProgressAt = 0;
 
   const seedMolecule = parseSMILES(seedSmiles);
   const seedNode = network.addMolecule(seedMolecule);
@@ -386,10 +417,51 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, dec
     return moleculeFeatureCache.get(node.id);
   };
 
+  const reportProgress = ({ activeDepth = null, queuedMoleculeCount = currentQueue.length, phase = 'expanding', pipelineCompleted = null, pipelineTotal = null, pipelineItemName = null, pipelineItemState = null, force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now - lastProgressAt < 100) {
+      return;
+    }
+    lastProgressAt = now;
+    onProgress({
+      phase,
+      activeDepth,
+      completedDepth,
+      maxDepth,
+      processedMoleculeCount,
+      queuedMoleculeCount,
+      moleculeCount: network.moleculeNodes.size,
+      maxNodes,
+      attemptedTransformCount: attemptedReactions.size,
+      prefilterSkipCount,
+      pipelineCompleted,
+      pipelineTotal,
+      pipelineItemName,
+      pipelineItemState
+    });
+  };
+
+  const reportPipelineProgress = (phase, { completed = 0, total = 0, state = null, nodeId = null, force = false } = {}) => {
+    const item = nodeId ? network.moleculeNodes.get(nodeId) : null;
+    reportProgress({
+      phase,
+      queuedMoleculeCount: 0,
+      pipelineCompleted: completed,
+      pipelineTotal: total,
+      pipelineItemName: item?.molecule.getName() ?? nodeId,
+      pipelineItemState: state,
+      force
+    });
+  };
+
+  reportProgress({ activeDepth: 1, queuedMoleculeCount: currentQueue.length, force: true });
+
   generationLoop: while (currentQueue.length > 0) {
     const nextQueue = [];
+    const activeDepth = currentQueue[0]?.depth ?? maxDepth;
 
-    for (const { node, depth } of currentQueue) {
+    for (let queueIndex = 0; queueIndex < currentQueue.length; queueIndex++) {
+      const { node, depth } = currentQueue[queueIndex];
       if (depth >= maxDepth) {
         continue;
       }
@@ -403,6 +475,11 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, dec
         continue;
       }
       processedSmiles.add(canon);
+      processedMoleculeCount++;
+      reportProgress({
+        activeDepth: depth + 1,
+        queuedMoleculeCount: currentQueue.length - queueIndex - 1 + nextQueue.length
+      });
 
       const features = featuresForNode(node);
       for (const { template, requirements } of templateEntries) {
@@ -443,8 +520,16 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, dec
       }
     }
 
+    completedDepth = Math.min(maxDepth, Math.max(completedDepth, activeDepth + 1));
+    reportProgress({
+      activeDepth: Math.min(maxDepth, activeDepth + 2),
+      queuedMoleculeCount: nextQueue.length,
+      force: true
+    });
     currentQueue = nextQueue;
   }
+
+  reportPipelineProgress('rendering', { total: network.moleculeNodes.size, force: true });
 
   console.log(`[DIAG] Template prefilter skipped ${prefilterSkipCount} template attempts.`);
   console.log('\n[DIAG] Molecule index after BFS:');
@@ -471,20 +556,44 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, dec
   console.log(`  Total nodes: ${network.moleculeNodes.size}, unique SMILES: ${seenSmiles.size}\n`);
   const normalizedBondLength = normalizeDemoBondLength(bondLength);
 
+  const baseGraph = network.exportDirectedGraph({
+    flatten,
+    bondLength: normalizedBondLength,
+    onProgress: progress => reportPipelineProgress('rendering', { ...progress, force: progress.state === 'starting' })
+  });
+  reportPipelineProgress('rendering', { completed: network.moleculeNodes.size, total: network.moleculeNodes.size, force: true });
+
   if (scaffolds) {
+    reportPipelineProgress('scaffold-building', { total: network.moleculeNodes.size, force: true });
     const scafNet = new ScaffoldNetwork(network, {
       preserveExocyclicMultipleBonds: decoratedScaffolds,
       preserveLargeSubstituentBackbones: extendedScaffolds,
       minSubstituentHeavyAtoms: 4,
-      minScaffoldHeavyAtoms: hideSimpleScaffolds ? 2 : 1
+      minScaffoldHeavyAtoms: hideSimpleScaffolds ? 2 : 1,
+      onProgress: progress => reportPipelineProgress('scaffold-building', progress)
     });
-    return scafNet.exportHierarchicalGraph(network.exportDirectedGraph({ flatten, bondLength: normalizedBondLength }), { bondLength: normalizedBondLength });
+    reportPipelineProgress('scaffold-building', { completed: network.moleculeNodes.size, total: network.moleculeNodes.size, force: true });
+
+    const scaffoldTotal = [...scafNet.scaffoldNodes.values()].filter(node => node.smiles !== null).length;
+    reportPipelineProgress('scaffold-rendering', { total: scaffoldTotal, force: true });
+    const graph = scafNet.exportHierarchicalGraph(baseGraph, {
+      bondLength: normalizedBondLength,
+      onProgress: progress => reportPipelineProgress('scaffold-rendering', { ...progress, force: progress.state === 'starting' })
+    });
+    reportPipelineProgress('scaffold-rendering', { completed: scaffoldTotal, total: scaffoldTotal, force: true });
+    reportPipelineProgress('descriptors', { total: network.moleculeNodes.size, force: true });
+    const enrichedGraph = attachChemicalSpaceDescriptors(network, graph, progress => reportPipelineProgress('descriptors', progress));
+    reportPipelineProgress('finalizing', { completed: 1, total: 1, force: true });
+    return enrichedGraph;
   }
 
-  return network.exportDirectedGraph({ flatten, bondLength: normalizedBondLength });
+  reportPipelineProgress('descriptors', { total: network.moleculeNodes.size, force: true });
+  const enrichedGraph = attachChemicalSpaceDescriptors(network, baseGraph, progress => reportPipelineProgress('descriptors', progress));
+  reportPipelineProgress('finalizing', { completed: 1, total: 1, force: true });
+  return enrichedGraph;
 }
 
-function runGenerationJob(params) {
+function runGenerationJob(params, { onProgress = () => {} } = {}) {
   if (activeGeneration) {
     const error = new Error('Another generation is already running.');
     error.statusCode = 409;
@@ -503,7 +612,11 @@ function runGenerationJob(params) {
       }
     };
 
-    worker.once('message', message => {
+    worker.on('message', message => {
+      if (message?.type === 'progress') {
+        onProgress(message.progress);
+        return;
+      }
       if (job.settled) {
         return;
       }
@@ -550,11 +663,13 @@ if (!isMainThread) {
       workerData.extendedScaffolds,
       workerData.hideSimpleScaffolds,
       workerData.bondLength,
-      workerData.enabledTemplateKeys
+      workerData.enabledTemplateKeys,
+      progress => parentPort.postMessage({ type: 'progress', progress })
     );
-    parentPort.postMessage({ ok: true, data });
+    parentPort.postMessage({ type: 'complete', ok: true, data });
   } catch (error) {
     parentPort.postMessage({
+      type: 'complete',
       ok: false,
       error: error instanceof Error ? error.message : String(error)
     });
@@ -641,6 +756,36 @@ if (!isMainThread) {
     console.log(
       `[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds} decoratedScaffolds=${decoratedScaffolds} extendedScaffolds=${extendedScaffolds} hideSimpleScaffolds=${hideSimpleScaffolds} bondLength=${bondLength} enabledTemplates=${enabledTemplateKeys === null ? 'all' : enabledTemplateKeys.size}`
     );
+
+    const wantsEventStream = req.headers.accept?.includes('text/event-stream');
+    const writeEvent = (event, payload) => {
+      if (!res.writableEnded) {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+      }
+    };
+
+    if (wantsEventStream) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive'
+      });
+      res.flushHeaders?.();
+      try {
+        const data = await runGenerationJob(
+          { smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength, enabledTemplateKeys },
+          { onProgress: progress => writeEvent('progress', progress) }
+        );
+        console.log(`[✓] Done: ${data.nodes.length} nodes, ${data.links.length} links`);
+        writeEvent('complete', data);
+      } catch (e) {
+        console.error(`[✗] Error:`, e.message);
+        writeEvent('error', { error: e.message });
+      } finally {
+        res.end();
+      }
+      return;
+    }
 
     try {
       const data = await runGenerationJob({ smiles, depth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength, enabledTemplateKeys });

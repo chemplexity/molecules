@@ -27,6 +27,8 @@ export {
 
 export { graphEntropy, topologicalEntropy } from './information.js';
 
+export { chemicalSpaceDescriptorProfile, CHEMICAL_SPACE_DESCRIPTOR_OPTIONS } from './chemical-space.js';
+
 export { logP, tpsa, hBondDonors, hBondAcceptors, rotatableBondCount, fsp3, lipinskiRuleOfFive, bondElectronegativityDifference, bondPolarities, meanBondPolarity } from './physicochemical.js';
 
 export { adjacencySpectrum, laplacianSpectrum, spectralRadius, estradaIndex } from './spectral.js';

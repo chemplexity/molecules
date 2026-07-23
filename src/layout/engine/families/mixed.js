@@ -4342,7 +4342,11 @@ function auditRingSystemPlacement(layoutGraph, ringSystem, placement, bondLength
 function ringCentersForCoords(rings, coords) {
   const ringCenters = new Map();
   for (const ring of rings) {
-    ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => coords.get(atomId))));
+    const positions = ring.atomIds.map(atomId => coords.get(atomId));
+    if (positions.some(position => !position)) {
+      continue;
+    }
+    ringCenters.set(ring.id, centroid(positions));
   }
   return ringCenters;
 }

@@ -164,6 +164,7 @@ export class ScaffoldNetwork {
    * @param {boolean} [options.preserveLargeSubstituentBackbones] - Whether scaffold identity keeps substantial acyclic branches attached to retained scaffold atoms.
    * @param {number} [options.minSubstituentHeavyAtoms] - Minimum non-H branch size retained when `preserveLargeSubstituentBackbones` is enabled.
    * @param {number} [options.minScaffoldHeavyAtoms] - Minimum number of non-H atoms required to create a scaffold node.
+   * @param {(progress: {completed: number, total: number}) => void} [options.onProgress] - Called while existing molecule nodes are assigned to scaffolds.
    */
   constructor(
     reactionNetwork,
@@ -172,7 +173,8 @@ export class ScaffoldNetwork {
       preserveExocyclicMultipleBonds = false,
       preserveLargeSubstituentBackbones = false,
       minSubstituentHeavyAtoms = 4,
-      minScaffoldHeavyAtoms = 1
+      minScaffoldHeavyAtoms = 1,
+      onProgress = null
     } = {}
   ) {
     this.reactionNetwork = reactionNetwork;
@@ -200,6 +202,7 @@ export class ScaffoldNetwork {
 
     this._processedMolecules = new Set();
     this._processedReactions = new Set();
+    this._onProgress = onProgress;
 
     this.autoSync = autoSync;
 
@@ -229,11 +232,15 @@ export class ScaffoldNetwork {
    */
   sync() {
     // 1. Process all new molecules
+    let completedMolecules = 0;
+    const totalMolecules = this.reactionNetwork.moleculeNodes.size;
     for (const [molId, molNode] of this.reactionNetwork.moleculeNodes.entries()) {
       if (!this._processedMolecules.has(molId)) {
         this._processMolecule(molNode);
         this._processedMolecules.add(molId);
       }
+      completedMolecules++;
+      this._onProgress?.({ completed: completedMolecules, total: totalMolecules });
     }
 
     // 2. Process all new reactions
@@ -436,14 +443,17 @@ export class ScaffoldNetwork {
    * @param {{nodes: object[], links: object[]}} baseGraph - The exported payload from ReactionNetwork.
    * @param {object} [options] - Export options.
    * @param {number} [options.bondLength] - Target layout bond length for rendered scaffold thumbnails.
+   * @param {(progress: {completed: number, total: number, state: 'starting'|'complete', nodeId: string}) => void} [options.onProgress] - Called immediately before and after each scaffold thumbnail is exported.
    * @returns {{nodes: object[], links: object[]}} The combined hierarchical graph.
    */
-  exportHierarchicalGraph(baseGraph, { bondLength = 1.5 } = {}) {
+  exportHierarchicalGraph(baseGraph, { bondLength = 1.5, onProgress = null } = {}) {
     const nodes = [...baseGraph.nodes];
     const links = [...baseGraph.links];
     const renderOptions = { ...NETWORK_RENDER_OPTIONS, bondLength };
 
     const baseNodeIds = new Set(baseGraph.nodes.map(n => n.id));
+    const totalScaffolds = [...this.scaffoldNodes.values()].filter(node => node.smiles !== null).length;
+    let completedScaffolds = 0;
 
     // Add scaffold nodes
     for (const node of this.scaffoldNodes.values()) {
@@ -452,6 +462,7 @@ export class ScaffoldNetwork {
         continue;
       }
 
+      onProgress?.({ completed: completedScaffolds, total: totalScaffolds, state: 'starting', nodeId: node.id });
       const renderPayload = this._renderScaffoldNode(node, renderOptions);
 
       nodes.push({
@@ -464,6 +475,8 @@ export class ScaffoldNetwork {
         width: renderPayload.width,
         height: renderPayload.height
       });
+      completedScaffolds++;
+      onProgress?.({ completed: completedScaffolds, total: totalScaffolds, state: 'complete', nodeId: node.id });
 
       // Add membership links
       for (const molId of node.moleculeIds) {
