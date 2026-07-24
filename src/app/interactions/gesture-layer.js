@@ -72,6 +72,7 @@ export function initGestureInteractions(context) {
   let ringTemplatePreviewLayer = null;
   let acyclicChainDrag = null;
   let acyclicChainPreviewLayer = null;
+  let acyclicChainInvalidAnchorLayer = null;
 
   const DEFAULT_PAINT_R = 12;
   const ERASE_R = 14;
@@ -91,6 +92,58 @@ export function initGestureInteractions(context) {
   function clearAcyclicChainPreview() {
     acyclicChainPreviewLayer?.remove?.();
     acyclicChainPreviewLayer = null;
+  }
+
+  function clearAcyclicChainInvalidAnchor() {
+    acyclicChainInvalidAnchorLayer?.remove?.();
+    acyclicChainInvalidAnchorLayer = null;
+  }
+
+  function chainBondTargetFromEvent(event) {
+    const element = event.target?.closest?.('.bond-hit, .bond-hover-target, .ring-template-bond-hover-target, .ring-template-bond-priority-target, .link, [data-bond-id]');
+    if (!element) {
+      return null;
+    }
+    const datum = context.helpers.getDatum(element);
+    const bondId = datum?.id ?? element.getAttribute?.('data-bond-id') ?? element.closest?.('[data-bond-id]')?.getAttribute?.('data-bond-id') ?? null;
+    const lineElement =
+      element.matches?.('line') || element.matches?.('path')
+        ? element
+        : element.querySelector?.('.bond-hit, .bond-hover-target, .ring-template-bond-hover-target, .ring-template-bond-priority-target, .link, line') ?? null;
+    let x1 = Number(lineElement?.getAttribute?.('x1'));
+    let y1 = Number(lineElement?.getAttribute?.('y1'));
+    let x2 = Number(lineElement?.getAttribute?.('x2'));
+    let y2 = Number(lineElement?.getAttribute?.('y2'));
+    if (![x1, y1, x2, y2].every(Number.isFinite)) {
+      const source = datum?.source;
+      const target = datum?.target;
+      x1 = Number(source?.x);
+      y1 = Number(source?.y);
+      x2 = Number(target?.x);
+      y2 = Number(target?.y);
+    }
+    return bondId && [x1, y1, x2, y2].every(Number.isFinite) ? { bondId, x1, y1, x2, y2 } : null;
+  }
+
+  function showInvalidChainBondAnchor(target) {
+    clearAcyclicChainInvalidAnchor();
+    context.view.clearPrimitiveHover();
+    context.renderers.applySelectionOverlay?.();
+    acyclicChainInvalidAnchorLayer = g.append('g').attr('class', 'acyclic-chain-invalid-anchor-layer').attr('pointer-events', 'none').attr('opacity', 0.45);
+    for (const { stroke, width } of [
+      { stroke: '#9c2929', width: 34 },
+      { stroke: '#ff6b6b', width: 30 }
+    ]) {
+      acyclicChainInvalidAnchorLayer
+        .append('line')
+        .attr('x1', target.x1)
+        .attr('y1', target.y1)
+        .attr('x2', target.x2)
+        .attr('y2', target.y2)
+        .attr('stroke', stroke)
+        .attr('stroke-width', width)
+        .attr('stroke-linecap', 'round');
+    }
   }
 
   function isAcyclicChainMode() {
@@ -124,14 +177,17 @@ export function initGestureInteractions(context) {
         y: previous.y + Math.sin(segmentAngle) * length
       });
     }
+    if (acyclicChainDrag?.snapAtomId && acyclicChainDrag.snapPoint && points.length > 1) {
+      points[points.length - 1] = { ...acyclicChainDrag.snapPoint };
+    }
     return points;
   }
 
-  function forceChainPreviewHydrogens(points, firstNewPointIndex) {
+  function forceChainPreviewHydrogens(points, firstNewPointIndex, lastNewPointExclusive = points.length) {
     const hydrogens = [];
     const layoutBondLength = Number(context.options?.getRenderOptions?.().layoutBondLength) || 1.5;
     const distance = FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(layoutBondLength);
-    for (let index = firstNewPointIndex; index < points.length; index++) {
+    for (let index = firstNewPointIndex; index < lastNewPointExclusive; index++) {
       const point = points[index];
       const neighborPoints = [index > 0 ? points[index - 1] : null, index + 1 < points.length ? points[index + 1] : null].filter(Boolean);
       const hydrogenCount = Math.max(0, 4 - neighborPoints.length);
@@ -179,7 +235,9 @@ export function initGestureInteractions(context) {
       .attr('stroke-linejoin', 'round');
     if (forceMode) {
       const firstNewPointIndex = acyclicChainDrag.anchorAtomId ? 1 : 0;
-      const hydrogens = forceChainPreviewHydrogens(points, firstNewPointIndex);
+      const lastNewPointExclusive = acyclicChainDrag.snapAtomId ? points.length - 1 : points.length;
+      const newPoints = points.slice(firstNewPointIndex, lastNewPointExclusive);
+      const hydrogens = forceChainPreviewHydrogens(points, firstNewPointIndex, lastNewPointExclusive);
       acyclicChainPreviewLayer
         .selectAll('line.acyclic-chain-preview-h-bond')
         .data(hydrogens)
@@ -195,7 +253,7 @@ export function initGestureInteractions(context) {
         .attr('stroke-linecap', 'round');
       acyclicChainPreviewLayer
         .selectAll('circle.acyclic-chain-preview-atom')
-        .data(points.slice(firstNewPointIndex))
+        .data(newPoints)
         .enter()
         .append('circle')
         .attr('class', 'acyclic-chain-preview-atom node')
@@ -220,7 +278,7 @@ export function initGestureInteractions(context) {
       if (!svg.node()?.classList?.contains?.('labels-hidden')) {
         acyclicChainPreviewLayer
           .selectAll('text.acyclic-chain-preview-carbon-label')
-          .data(points.slice(firstNewPointIndex))
+          .data(newPoints)
           .enter()
           .append('text')
           .attr('class', 'acyclic-chain-preview-carbon-label')
@@ -2625,6 +2683,15 @@ export function initGestureInteractions(context) {
       if (context.overlays.hasReactionPreview() || context.overlays.hasActiveResonanceView?.()) {
         return;
       }
+      clearAcyclicChainInvalidAnchor();
+      const invalidBondTarget = chainBondTargetFromEvent(event);
+      if (invalidBondTarget) {
+        showInvalidChainBondAnchor(invalidBondTarget);
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        return;
+      }
       const [pointerX, pointerY] = context.pointer(event, g.node());
       const anchor = chainAnchorFromEvent(event);
       const start = anchor?.point ?? { x: pointerX, y: pointerY };
@@ -2866,8 +2933,17 @@ export function initGestureInteractions(context) {
         acyclicChainDrag.angle = angle;
         acyclicChainDrag.zigSign = chooseAcyclicChainZigSign(acyclicChainDrag.anchorAtomId, acyclicChainDrag.start, angle);
         acyclicChainDrag.count = acyclicChainCount(distance, !!acyclicChainDrag.anchorAtomId);
-        renderAcyclicChainPreview();
       }
+      const snapTarget = !acyclicChainDrag.anchorAtomId ? chainAnchorFromEvent(event) : null;
+      acyclicChainDrag.snapAtomId = snapTarget?.id ?? null;
+      acyclicChainDrag.snapPoint = snapTarget?.point ?? null;
+      if (snapTarget?.id) {
+        context.view.showPrimitiveHover([snapTarget.id], []);
+      } else {
+        context.view.clearPrimitiveHover();
+        context.renderers.applySelectionOverlay?.();
+      }
+      renderAcyclicChainPreview();
       return;
     }
     lastPaintPreviewEvent = event;
@@ -2917,6 +2993,12 @@ export function initGestureInteractions(context) {
   doc.addEventListener(PAINT_SETTINGS_CHANGED_EVENT, refreshPaintPreview);
 
   doc.addEventListener('mouseup', event => {
+    if (acyclicChainInvalidAnchorLayer) {
+      clearAcyclicChainInvalidAnchor();
+      context.view.clearPrimitiveHover();
+      context.renderers.applySelectionOverlay?.();
+      return;
+    }
     if (acyclicChainDrag) {
       if (event.button === 0) {
         const drag = acyclicChainDrag;
@@ -2929,6 +3011,7 @@ export function initGestureInteractions(context) {
         context.view.clearPrimitiveHover();
         context.actions.placeAcyclicChain?.(drag.count, drag.start.x, drag.start.y, {
           anchorAtomId: drag.anchorAtomId,
+          targetAtomId: drag.snapAtomId,
           angle: drag.angle,
           zigSign: drag.zigSign,
           forcePoints

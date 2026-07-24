@@ -1650,6 +1650,7 @@ export function createStructuralEditActions(context) {
   function placeAcyclicChain(count, ox, oy, options = {}) {
     const atomCount = Math.max(options.anchorAtomId ? 1 : 2, Math.min(50, Math.round(Number(count) || 0)));
     const anchorAtomId = options.anchorAtomId ?? null;
+    const targetAtomId = options.targetAtomId ?? null;
     const screenAngle = Number.isFinite(options.angle) ? options.angle : 0;
     const mode = context.getMode();
     if (!context.molecule.getActive?.() && context.molecule.ensureActive) {
@@ -1667,12 +1668,15 @@ export function createStructuralEditActions(context) {
         viewportPolicy: ViewportPolicy.restoreEdit,
         zoomSnapshot,
         preflight: ({ mol, mode: editMode }) =>
-          (editMode === '2d' || editMode === 'force') && (!anchorAtomId || isReactionPreviewEditableAtomId(mol, anchorAtomId))
+          (editMode === '2d' || editMode === 'force') &&
+          (!anchorAtomId || isReactionPreviewEditableAtomId(mol, anchorAtomId)) &&
+          (!targetAtomId || isReactionPreviewEditableAtomId(mol, targetAtomId))
       },
       ({ mol, mode: editMode }) => {
         mol = mol ?? context.molecule.ensureActive?.();
         const anchorAtom = anchorAtomId ? mol?.atoms?.get?.(anchorAtomId) : null;
-        if (!mol || (anchorAtomId && !anchorAtom) || anchorAtom?.name === 'H') {
+        const targetAtom = targetAtomId ? mol?.atoms?.get?.(targetAtomId) : null;
+        if (!mol || (anchorAtomId && !anchorAtom) || (targetAtomId && !targetAtom) || anchorAtom?.name === 'H' || targetAtom?.name === 'H') {
           return { cancelled: true };
         }
 
@@ -1692,6 +1696,11 @@ export function createStructuralEditActions(context) {
         if (anchorAtom && editMode === 'force' && previewForcePoints) {
           anchorAtom.x = start.x;
           anchorAtom.y = start.y;
+        }
+        if (targetAtom && editMode === 'force' && previewForcePoints) {
+          const targetPoint = previewForcePoints[previewForcePoints.length - 1];
+          targetAtom.x = targetPoint.x;
+          targetAtom.y = targetPoint.y;
         }
 
         const atomIds = anchorAtom ? [anchorAtom.id] : [];
@@ -1716,12 +1725,19 @@ export function createStructuralEditActions(context) {
               x: point.x + Math.cos(segmentAngle) * bondLength,
               y: point.y + Math.sin(segmentAngle) * bondLength
             };
-          const atom = mol.addAtom(null, 'C', {}, { recompute: false });
-          atom.x = point.x;
-          atom.y = point.y;
-          mol.addBond(null, atomIds[atomIds.length - 1], atom.id, { order: 1 }, false);
+          const isSnappedEndpoint = targetAtom && index === segmentCount - 1;
+          const atom = isSnappedEndpoint ? targetAtom : mol.addAtom(null, 'C', {}, { recompute: false });
+          if (!isSnappedEndpoint) {
+            atom.x = point.x;
+            atom.y = point.y;
+          }
+          if (!mol.getBond?.(atomIds[atomIds.length - 1], atom.id)) {
+            mol.addBond(null, atomIds[atomIds.length - 1], atom.id, { order: 1 }, false);
+          }
           atomIds.push(atom.id);
-          newAtomIds.push(atom.id);
+          if (!isSnappedEndpoint) {
+            newAtomIds.push(atom.id);
+          }
         }
         mol.repairImplicitHydrogens?.(atomIds);
         mol._recomputeProperties?.();

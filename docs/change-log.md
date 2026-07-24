@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-07-24
+
+- Reject bond-started chain gestures and show the pressed bond with a selection-style translucent red highlight and darker border instead of beginning a chain.
+- Snap blank-started chain endpoints onto existing atoms and reuse the target atom on commit instead of creating an overlapping carbon.
+
 ## 2026-07-23
 
 - Add an acyclic carbon-chain tool with drag-controlled length and direction, accurate live previews, blank-canvas or atom-anchored placement, undo support, and 2D/force-layout editing.
