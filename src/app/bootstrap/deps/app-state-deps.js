@@ -117,6 +117,10 @@ export function createAppStateBridgeDeps(ctx) {
       setRingTemplateMode: value => {
         ctx.setRingTemplateMode?.(value);
       },
+      getAcyclicChainMode: () => ctx.runtimeState.acyclicChainMode === true,
+      setAcyclicChainMode: value => {
+        ctx.runtimeState.acyclicChainMode = value === true;
+      },
       getRingTemplateSize: () => ctx.getRingTemplateSize?.() ?? 6,
       setRingTemplateSize: value => {
         ctx.setRingTemplateSize?.(value);

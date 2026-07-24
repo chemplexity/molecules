@@ -566,6 +566,7 @@ const selectionOverlayManager = createSelectionOverlayManager(
     getSelectMode: () => runtimeState.selectMode,
     getDrawBondMode: () => runtimeState.drawBondMode,
     getRingTemplateMode: () => runtimeState.ringTemplateMode,
+    getAcyclicChainMode: () => runtimeState.acyclicChainMode,
     getEraseMode: () => runtimeState.eraseMode,
     getChargeTool: () => runtimeState.chargeTool,
     getSelectionModifierActive: () => runtimeState.selectionModifierActive,

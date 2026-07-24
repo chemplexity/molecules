@@ -281,6 +281,7 @@ export function createSelectionOverlayManagerDeps(ctx) {
       getSelectMode: () => ctx.getSelectMode(),
       getDrawBondMode: () => ctx.getDrawBondMode(),
       getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
+      getAcyclicChainMode: () => ctx.getAcyclicChainMode?.() ?? false,
       getEraseMode: () => ctx.getEraseMode(),
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
       getSelectionModifierActive: () => ctx.getSelectionModifierActive(),

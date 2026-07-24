@@ -1683,6 +1683,7 @@ body:has(#ring-template-btn.active) .ring-template-bond-hover-target {
 
 #draw-bond-btn.active,
 #ring-template-btn.active,
+#acyclic-chain-btn.active,
 #charge-positive-btn.active,
 #charge-negative-btn.active {
   background: #5090f0;
@@ -1692,9 +1693,15 @@ body:has(#ring-template-btn.active) .ring-template-bond-hover-target {
 
 #draw-bond-btn.active:hover,
 #ring-template-btn.active:hover,
+#acyclic-chain-btn.active:hover,
 #charge-positive-btn.active:hover,
 #charge-negative-btn.active:hover {
   background: #4080e0;
+}
+
+body:has(#acyclic-chain-btn.active) .svg-plot,
+body:has(#acyclic-chain-btn.active) .svg-plot * {
+  cursor: default !important;
 }
 
 #draw-bond-drawer,

@@ -3,6 +3,7 @@
 import { pointInPolygon } from '../../layout/engine/geometry/polygon.js';
 import { ringFillDomId } from '../../core/support/style.js';
 import { atomColor, atomDisplayColor, atomDisplayOpacity, atomRadius, singleBondWidth, strokeColor } from '../render/helpers.js';
+import { FORCE_LAYOUT_H_BOND_LENGTH, forceLayoutBondScale } from '../render/force-helpers.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
 import { finiteNumber, nearestPointWithinRadius, SELECTION_PIVOT_ATOM_SNAP_RADIUS } from './geometry-utils.js';
 
@@ -69,6 +70,8 @@ export function initGestureInteractions(context) {
   let lastPaintPreviewEvent = null;
   let ringTemplatePreview = null;
   let ringTemplatePreviewLayer = null;
+  let acyclicChainDrag = null;
+  let acyclicChainPreviewLayer = null;
 
   const DEFAULT_PAINT_R = 12;
   const ERASE_R = 14;
@@ -84,6 +87,230 @@ export function initGestureInteractions(context) {
     ':scope > g.atom-bgs',
     ':scope > g.atom-labels'
   ].join(', ');
+
+  function clearAcyclicChainPreview() {
+    acyclicChainPreviewLayer?.remove?.();
+    acyclicChainPreviewLayer = null;
+  }
+
+  function isAcyclicChainMode() {
+    return context.state.overlayState.getAcyclicChainMode?.() ?? false;
+  }
+
+  function acyclicChainBondLength() {
+    const layoutBondLength = Number(context.options?.getRenderOptions?.().layoutBondLength) || 1.5;
+    if (context.state.viewState.getMode() === 'force') {
+      return (context.constants.forceBondLength ?? 30) * (layoutBondLength / 1.5);
+    }
+    return (context.constants.scale ?? 40) * layoutBondLength;
+  }
+
+  function acyclicChainCount(distance, anchored) {
+    const advance = Math.max(1, acyclicChainBondLength() * Math.cos(Math.PI / 6));
+    const bonds = Math.max(anchored ? 1 : 1, Math.min(anchored ? 50 : 49, Math.round(distance / advance)));
+    return anchored ? bonds : bonds + 1;
+  }
+
+  function acyclicChainPoints(start, angle, count, anchored) {
+    const points = [{ ...start }];
+    const segmentCount = anchored ? count : count - 1;
+    const length = acyclicChainBondLength();
+    const zigSign = acyclicChainDrag?.zigSign === -1 ? -1 : 1;
+    for (let index = 0; index < segmentCount; index++) {
+      const segmentAngle = angle + zigSign * (index % 2 === 0 ? 1 : -1) * (Math.PI / 6);
+      const previous = points[points.length - 1];
+      points.push({
+        x: previous.x + Math.cos(segmentAngle) * length,
+        y: previous.y + Math.sin(segmentAngle) * length
+      });
+    }
+    return points;
+  }
+
+  function forceChainPreviewHydrogens(points, firstNewPointIndex) {
+    const hydrogens = [];
+    const layoutBondLength = Number(context.options?.getRenderOptions?.().layoutBondLength) || 1.5;
+    const distance = FORCE_LAYOUT_H_BOND_LENGTH * forceLayoutBondScale(layoutBondLength);
+    for (let index = firstNewPointIndex; index < points.length; index++) {
+      const point = points[index];
+      const neighborPoints = [index > 0 ? points[index - 1] : null, index + 1 < points.length ? points[index + 1] : null].filter(Boolean);
+      const hydrogenCount = Math.max(0, 4 - neighborPoints.length);
+      const occupiedAngles = neighborPoints.map(neighbor => Math.atan2(neighbor.y - point.y, neighbor.x - point.x));
+      const chosenAngles = [];
+      for (let hydrogenIndex = 0; hydrogenIndex < hydrogenCount; hydrogenIndex++) {
+        let bestAngle = 0;
+        let bestClearance = -1;
+        for (let candidateIndex = 0; candidateIndex < 24; candidateIndex++) {
+          const candidate = (candidateIndex / 24) * TAU;
+          const clearance = [...occupiedAngles, ...chosenAngles].reduce((minimum, angle) => Math.min(minimum, angleDistance(candidate, angle)), Math.PI);
+          if (clearance > bestClearance) {
+            bestClearance = clearance;
+            bestAngle = candidate;
+          }
+        }
+        chosenAngles.push(bestAngle);
+        hydrogens.push({
+          parent: point,
+          x: point.x + Math.cos(bestAngle) * distance,
+          y: point.y + Math.sin(bestAngle) * distance
+        });
+      }
+    }
+    return hydrogens;
+  }
+
+  function renderAcyclicChainPreview() {
+    clearAcyclicChainPreview();
+    if (!acyclicChainDrag) {
+      return;
+    }
+    const points = acyclicChainPoints(acyclicChainDrag.start, acyclicChainDrag.angle, acyclicChainDrag.count, !!acyclicChainDrag.anchorAtomId);
+    acyclicChainPreviewLayer = g.append('g').attr('class', 'acyclic-chain-preview-layer').attr('pointer-events', 'none');
+    const forceMode = context.state.viewState.getMode() === 'force';
+    const renderOptions = context.options?.getRenderOptions?.() ?? {};
+    acyclicChainPreviewLayer
+      .append('path')
+      .attr('class', forceMode ? 'link' : 'bond')
+      .attr('d', points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`).join(' '))
+      .attr('fill', 'none')
+      .attr('stroke', forceMode ? '#696969' : '#111')
+      .attr('stroke-width', forceMode ? singleBondWidth(1) : renderOptions.twoDBondThickness ?? 1.8)
+      .attr('stroke-linecap', 'round')
+      .attr('stroke-linejoin', 'round');
+    if (forceMode) {
+      const firstNewPointIndex = acyclicChainDrag.anchorAtomId ? 1 : 0;
+      const hydrogens = forceChainPreviewHydrogens(points, firstNewPointIndex);
+      acyclicChainPreviewLayer
+        .selectAll('line.acyclic-chain-preview-h-bond')
+        .data(hydrogens)
+        .enter()
+        .append('line')
+        .attr('class', 'acyclic-chain-preview-h-bond link')
+        .attr('x1', hydrogen => hydrogen.parent.x)
+        .attr('y1', hydrogen => hydrogen.parent.y)
+        .attr('x2', hydrogen => hydrogen.x)
+        .attr('y2', hydrogen => hydrogen.y)
+        .attr('stroke', '#696969')
+        .attr('stroke-width', singleBondWidth(1))
+        .attr('stroke-linecap', 'round');
+      acyclicChainPreviewLayer
+        .selectAll('circle.acyclic-chain-preview-atom')
+        .data(points.slice(firstNewPointIndex))
+        .enter()
+        .append('circle')
+        .attr('class', 'acyclic-chain-preview-atom node')
+        .attr('cx', point => point.x)
+        .attr('cy', point => point.y)
+        .attr('r', atomRadius(6))
+        .attr('fill', atomColor('C', 'force'))
+        .attr('stroke', strokeColor('C'))
+        .attr('stroke-width', 1);
+      acyclicChainPreviewLayer
+        .selectAll('circle.acyclic-chain-preview-hydrogen')
+        .data(hydrogens)
+        .enter()
+        .append('circle')
+        .attr('class', 'acyclic-chain-preview-hydrogen node')
+        .attr('cx', hydrogen => hydrogen.x)
+        .attr('cy', hydrogen => hydrogen.y)
+        .attr('r', atomRadius(1))
+        .attr('fill', atomColor('H', 'force'))
+        .attr('stroke', strokeColor('H'))
+        .attr('stroke-width', 1);
+      if (!svg.node()?.classList?.contains?.('labels-hidden')) {
+        acyclicChainPreviewLayer
+          .selectAll('text.acyclic-chain-preview-carbon-label')
+          .data(points.slice(firstNewPointIndex))
+          .enter()
+          .append('text')
+          .attr('class', 'acyclic-chain-preview-carbon-label')
+          .attr('x', point => point.x)
+          .attr('y', point => point.y)
+          .attr('fill', '#fff')
+          .attr('font-family', 'Arial, Helvetica, sans-serif')
+          .attr('font-size', 9)
+          .attr('font-weight', 'bold')
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'central')
+          .text('C');
+        acyclicChainPreviewLayer
+          .selectAll('text.acyclic-chain-preview-hydrogen-label')
+          .data(hydrogens)
+          .enter()
+          .append('text')
+          .attr('class', 'acyclic-chain-preview-hydrogen-label')
+          .attr('x', hydrogen => hydrogen.x)
+          .attr('y', hydrogen => hydrogen.y)
+          .attr('fill', '#111')
+          .attr('font-family', 'Arial, Helvetica, sans-serif')
+          .attr('font-size', 9)
+          .attr('font-weight', 'bold')
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'central')
+          .text('H');
+      }
+    }
+    const end = points[points.length - 1];
+    acyclicChainPreviewLayer
+      .append('text')
+      .attr('class', 'acyclic-chain-count')
+      .attr('x', end.x + 10)
+      .attr('y', end.y - 8)
+      .attr('fill', '#111')
+      .attr('font-size', 13)
+      .attr('font-weight', 700)
+      .attr('paint-order', 'stroke')
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 4)
+      .text(String(acyclicChainDrag.count));
+  }
+
+  function angleDistance(a, b) {
+    return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  }
+
+  function chooseAcyclicChainZigSign(anchorAtomId, anchorPoint, dragAngle) {
+    if (!anchorAtomId) {
+      return 1;
+    }
+    const forceMode = context.state.viewState.getMode() === 'force';
+    const molecule = forceMode ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    const anchor = molecule?.atoms?.get?.(anchorAtomId);
+    const neighbor = anchor
+      ?.getNeighbors?.(molecule)
+      ?.find?.(atom => atom && atom.visible !== false && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+    if (!neighbor) {
+      return 1;
+    }
+    const neighborPoint = forceMode ? { x: neighbor.x, y: neighbor.y } : toSelectionSVGPt2d(neighbor);
+    if (!neighborPoint) {
+      return 1;
+    }
+    const neighborAngle = Math.atan2(neighborPoint.y - anchorPoint.y, neighborPoint.x - anchorPoint.x);
+    const preferredAngle = (Math.PI * 2) / 3;
+    const score = sign => Math.abs(angleDistance(dragAngle + sign * (Math.PI / 6), neighborAngle) - preferredAngle);
+    return score(-1) < score(1) ? -1 : 1;
+  }
+
+  function chainAnchorFromEvent(event) {
+    const element = event.target?.closest?.('.atom-hit, .node, .ring-template-atom-hover-target, [data-atom-id]');
+    const datum = element ? context.helpers.getDatum(element) : null;
+    const id = datum?.id ?? datum?.atom?.id ?? element?.getAttribute?.('data-atom-id') ?? element?.closest?.('[data-atom-id]')?.getAttribute?.('data-atom-id') ?? null;
+    if (!id) {
+      return null;
+    }
+    const molecule =
+      context.state.viewState.getMode() === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    const atom = molecule?.atoms?.get?.(id);
+    if (!atom || atom.name === 'H') {
+      return null;
+    }
+    if (context.state.viewState.getMode() === 'force') {
+      return Number.isFinite(datum?.x) && Number.isFinite(datum?.y) ? { id, point: { x: datum.x, y: datum.y } } : null;
+    }
+    const point = toSelectionSVGPt2d(atom);
+    return point ? { id, point } : null;
+  }
 
   function selectionEventPoint(event, clampToPlot = false) {
     const rect = svg.node().getBoundingClientRect();
@@ -2388,6 +2615,38 @@ export function initGestureInteractions(context) {
     true
   );
 
+  svg.node()?.addEventListener?.(
+    'mousedown',
+    event => {
+      const mode = context.state.viewState.getMode();
+      if (!isAcyclicChainMode() || event.button !== 0 || (mode !== '2d' && mode !== 'force')) {
+        return;
+      }
+      if (context.overlays.hasReactionPreview() || context.overlays.hasActiveResonanceView?.()) {
+        return;
+      }
+      const [pointerX, pointerY] = context.pointer(event, g.node());
+      const anchor = chainAnchorFromEvent(event);
+      const start = anchor?.point ?? { x: pointerX, y: pointerY };
+      acyclicChainDrag = {
+        start,
+        origin: { x: pointerX, y: pointerY },
+        angle: 0,
+        zigSign: chooseAcyclicChainZigSign(anchor?.id ?? null, start, 0),
+        count: anchor ? 1 : 2,
+        anchorAtomId: anchor?.id ?? null
+      };
+      if (anchor?.id) {
+        context.view.showPrimitiveHover([anchor.id], []);
+      }
+      renderAcyclicChainPreview();
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    },
+    true
+  );
+
   svg.on('mousedown.paste', event => {
     placePasteFromPointer(event);
   });
@@ -2594,6 +2853,23 @@ export function initGestureInteractions(context) {
   });
 
   doc.addEventListener('mousemove', event => {
+    if (acyclicChainDrag) {
+      const [x, y] = context.pointer(event, g.node());
+      const dx = x - acyclicChainDrag.origin.x;
+      const dy = y - acyclicChainDrag.origin.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 2) {
+        let angle = Math.atan2(dy, dx);
+        if (!event.altKey) {
+          angle = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12);
+        }
+        acyclicChainDrag.angle = angle;
+        acyclicChainDrag.zigSign = chooseAcyclicChainZigSign(acyclicChainDrag.anchorAtomId, acyclicChainDrag.start, angle);
+        acyclicChainDrag.count = acyclicChainCount(distance, !!acyclicChainDrag.anchorAtomId);
+        renderAcyclicChainPreview();
+      }
+      return;
+    }
     lastPaintPreviewEvent = event;
     if (selectionPivotDrag) {
       updateSelectionPivotDrag(event);
@@ -2641,6 +2917,25 @@ export function initGestureInteractions(context) {
   doc.addEventListener(PAINT_SETTINGS_CHANGED_EVENT, refreshPaintPreview);
 
   doc.addEventListener('mouseup', event => {
+    if (acyclicChainDrag) {
+      if (event.button === 0) {
+        const drag = acyclicChainDrag;
+        const forcePoints =
+          context.state.viewState.getMode() === 'force'
+            ? acyclicChainPoints(drag.start, drag.angle, drag.count, !!drag.anchorAtomId).map(point => ({ ...point }))
+            : null;
+        acyclicChainDrag = null;
+        clearAcyclicChainPreview();
+        context.view.clearPrimitiveHover();
+        context.actions.placeAcyclicChain?.(drag.count, drag.start.x, drag.start.y, {
+          anchorAtomId: drag.anchorAtomId,
+          angle: drag.angle,
+          zigSign: drag.zigSign,
+          forcePoints
+        });
+      }
+      return;
+    }
     if (event.button === 0 && finishSelectionPivotDrag(event)) {
       return;
     }

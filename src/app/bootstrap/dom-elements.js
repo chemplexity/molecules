@@ -21,6 +21,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const selectButton = document.getElementById('select-mode-btn');
   const drawBondButton = document.getElementById('draw-bond-btn');
   const ringTemplateButton = document.getElementById('ring-template-btn');
+  const acyclicChainButton = document.getElementById('acyclic-chain-btn');
   const styleBrushButton = document.getElementById('style-brush-btn');
   const forceStyleBrushButton = document.getElementById('force-style-brush-btn');
   const paintColorSelector = document.getElementById('paint-color-selector');
@@ -119,6 +120,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getSelectButtonElement: () => selectButton,
     getDrawBondButtonElement: () => drawBondButton,
     getRingTemplateButtonElement: () => ringTemplateButton,
+    getAcyclicChainButtonElement: () => acyclicChainButton,
     getStyleBrushButtonElement: () => styleBrushButton,
     getForceStyleBrushButtonElement: () => forceStyleBrushButton,
     getStyleBrushButtonElements: () => [styleBrushButton, forceStyleBrushButton].filter(Boolean),

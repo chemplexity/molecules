@@ -325,8 +325,14 @@ export function createSelectionOverlayManager(ctx) {
 
     if (ctx.state.getSelectedAtomIds().size === 0 && ctx.state.getSelectedBondIds().size === 0) {
       return {
-        atomIds: ctx.state.getSelectMode() || ctx.state.getDrawBondMode() || ctx.state.getRingTemplateMode?.() || ctx.state.getEraseMode() ? liveHoveredAtomIds : new Set(),
-        bondIds: ctx.state.getSelectMode() || ctx.state.getDrawBondMode() || ctx.state.getRingTemplateMode?.() || ctx.state.getEraseMode() ? liveHoveredBondIds : new Set()
+        atomIds:
+          ctx.state.getSelectMode() || ctx.state.getDrawBondMode() || ctx.state.getRingTemplateMode?.() || ctx.state.getAcyclicChainMode?.() || ctx.state.getEraseMode()
+            ? liveHoveredAtomIds
+            : new Set(),
+        bondIds:
+          ctx.state.getSelectMode() || ctx.state.getDrawBondMode() || ctx.state.getRingTemplateMode?.() || ctx.state.getAcyclicChainMode?.() || ctx.state.getEraseMode()
+            ? liveHoveredBondIds
+            : new Set()
       };
     }
 
@@ -459,7 +465,14 @@ export function createSelectionOverlayManager(ctx) {
   }
 
   function showPrimitiveHover(atomIds = [], bondIds = []) {
-    if (!ctx.state.getSelectMode() && !ctx.state.getDrawBondMode() && !ctx.state.getRingTemplateMode?.() && !ctx.state.getEraseMode() && !ctx.state.getChargeTool?.()) {
+    if (
+      !ctx.state.getSelectMode() &&
+      !ctx.state.getDrawBondMode() &&
+      !ctx.state.getRingTemplateMode?.() &&
+      !ctx.state.getAcyclicChainMode?.() &&
+      !ctx.state.getEraseMode() &&
+      !ctx.state.getChargeTool?.()
+    ) {
       return;
     }
     setPrimitiveHover(atomIds, bondIds);

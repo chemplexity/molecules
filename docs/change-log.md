@@ -1,9 +1,14 @@
 # Change Log
 
+## 2026-07-23
+
+- Add an acyclic carbon-chain tool with drag-controlled length and direction, accurate live previews, blank-canvas or atom-anchored placement, undo support, and 2D/force-layout editing.
+- Refine chain-tool activation, icon, counter, cursor, anchor highlighting, attached-chain geometry, edge-drag viewport preservation, and force previews with final hydrogen bond lengths, label-toggle support, and exact released coordinates.
+
 ## 2026-07-22
 
-- Fix the layout-engine crash on audit corpus row 5370 by excluding incomplete rings from centroid calculations during partial macrocycle/bridged/spiro rescue candidate construction.
-- Use sparse coordinate overlays consistently for large-molecule final angle-relief probes, materializing only accepted candidates; the row-4860 hotspot benchmark reduced total runtime from 45.36s to 43.18s and peak resident memory from approximately 346 MB to 239 MB.
+- Fix the layout-engine crash by excluding incomplete rings from centroid calculations during partial macrocycle/bridged/spiro rescue candidate construction.
+- Use sparse coordinate overlays consistently for large-molecule final angle-relief probes, materializing only accepted candidates.
 
 ## 2026-07-14
 

@@ -44,6 +44,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     selectMode: false,
     drawBondMode: false,
     ringTemplateMode: false,
+    acyclicChainMode: false,
     ringTemplateSize: 6,
     eraseMode: false,
     paintMode: false,

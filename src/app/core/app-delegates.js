@@ -66,6 +66,9 @@ export function createAppDelegates(deps) {
     placeRingTemplate(size, ox, oy, options = {}) {
       return deps.structuralEditActions.placeRingTemplate(size, ox, oy, options);
     },
+    placeAcyclicChain(count, ox, oy, options = {}) {
+      return deps.structuralEditActions.placeAcyclicChain(count, ox, oy, options);
+    },
     replaceForceHydrogenWithDrawElement(atomId, mol = deps.state.getCurrentMol()) {
       return deps.structuralEditActions.replaceForceHydrogenWithDrawElement(atomId, mol);
     },

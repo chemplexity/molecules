@@ -1647,6 +1647,111 @@ export function createStructuralEditActions(context) {
     );
   }
 
+  function placeAcyclicChain(count, ox, oy, options = {}) {
+    const atomCount = Math.max(options.anchorAtomId ? 1 : 2, Math.min(50, Math.round(Number(count) || 0)));
+    const anchorAtomId = options.anchorAtomId ?? null;
+    const screenAngle = Number.isFinite(options.angle) ? options.angle : 0;
+    const mode = context.getMode();
+    if (!context.molecule.getActive?.() && context.molecule.ensureActive) {
+      context.molecule.ensureActive();
+    }
+    const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransformSnapshot() : null;
+
+    return context.controller.performStructuralEdit(
+      'place-acyclic-chain',
+      {
+        overlayPolicy: ReactionPreviewPolicy.prepareEditTargets,
+        reactionPreviewPayload: { atomId: anchorAtomId },
+        resonancePolicy: ResonancePolicy.normalizeForEdit,
+        snapshotPolicy: SnapshotPolicy.take,
+        viewportPolicy: ViewportPolicy.restoreEdit,
+        zoomSnapshot,
+        preflight: ({ mol, mode: editMode }) =>
+          (editMode === '2d' || editMode === 'force') && (!anchorAtomId || isReactionPreviewEditableAtomId(mol, anchorAtomId))
+      },
+      ({ mol, mode: editMode }) => {
+        mol = mol ?? context.molecule.ensureActive?.();
+        const anchorAtom = anchorAtomId ? mol?.atoms?.get?.(anchorAtomId) : null;
+        if (!mol || (anchorAtomId && !anchorAtom) || anchorAtom?.name === 'H') {
+          return { cancelled: true };
+        }
+
+        const layoutBondLength = context.options?.getRenderOptions?.().layoutBondLength ?? DEFAULT_2D_BOND_LENGTH;
+        const bondLength = editMode === 'force' ? forceRingTemplateBondLength(context.constants.forceBondLength ?? 30, layoutBondLength) : layoutBondLength;
+        const baseAngle = editMode === '2d' ? -screenAngle : screenAngle;
+        const previewForcePoints =
+          editMode === 'force' && Array.isArray(options.forcePoints) && options.forcePoints.length >= (anchorAtom ? atomCount + 1 : atomCount)
+            ? options.forcePoints.map(position => ({ x: Number(position.x), y: Number(position.y) })).filter(position => Number.isFinite(position.x) && Number.isFinite(position.y))
+            : null;
+        const start = anchorAtom
+          ? (previewForcePoints?.[0] ?? { x: anchorAtom.x, y: anchorAtom.y })
+          : (previewForcePoints?.[0] ?? getRingTemplatePlacementCenter(mol, editMode, ox, oy));
+        if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) {
+          return { cancelled: true };
+        }
+        if (anchorAtom && editMode === 'force' && previewForcePoints) {
+          anchorAtom.x = start.x;
+          anchorAtom.y = start.y;
+        }
+
+        const atomIds = anchorAtom ? [anchorAtom.id] : [];
+        const newAtomIds = [];
+        const additions = anchorAtom ? atomCount : atomCount;
+        let point = { ...start };
+        if (!anchorAtom) {
+          const first = mol.addAtom(null, 'C', {}, { recompute: false });
+          first.x = point.x;
+          first.y = point.y;
+          atomIds.push(first.id);
+          newAtomIds.push(first.id);
+        }
+        const segmentCount = anchorAtom ? additions : additions - 1;
+        const requestedZigSign = options.zigSign === -1 ? -1 : 1;
+        for (let index = 0; index < segmentCount; index++) {
+          const zigDirection = (editMode === '2d' ? -1 : 1) * requestedZigSign;
+          const zig = zigDirection * (index % 2 === 0 ? 1 : -1) * (Math.PI / 6);
+          const segmentAngle = baseAngle + zig;
+          point =
+            previewForcePoints?.[atomIds.length] ?? {
+              x: point.x + Math.cos(segmentAngle) * bondLength,
+              y: point.y + Math.sin(segmentAngle) * bondLength
+            };
+          const atom = mol.addAtom(null, 'C', {}, { recompute: false });
+          atom.x = point.x;
+          atom.y = point.y;
+          mol.addBond(null, atomIds[atomIds.length - 1], atom.id, { order: 1 }, false);
+          atomIds.push(atom.id);
+          newAtomIds.push(atom.id);
+        }
+        mol.repairImplicitHydrogens?.(atomIds);
+        mol._recomputeProperties?.();
+        context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+        const chainPatchPos =
+          editMode === 'force' ? new Map(atomIds.map(id => [id, { x: mol.atoms.get(id).x, y: mol.atoms.get(id).y }])) : null;
+
+        return {
+          clearSelection: true,
+          clearPrimitiveHover: true,
+          twoD: editMode === '2d' ? { drawOnly: true, preserveGeometry: true } : null,
+          force:
+            editMode === 'force'
+              ? {
+                  options: {
+                    preservePositions: true,
+                    preserveView: true,
+                    initialPatchPos: chainPatchPos,
+                    restartSimulation: false
+                  },
+                  afterRender: () => {
+                    context.force.patchNodePositions(chainPatchPos, { alpha: 0, restart: false });
+                  }
+                }
+              : null
+        };
+      }
+    );
+  }
+
   function dearomatizeBondAromaticComponent(mol, startBondId) {
     const visitedBondIds = new Set();
     const atomIds = new Set();
@@ -2305,6 +2410,7 @@ export function createStructuralEditActions(context) {
     paintStyleTargets,
     paintRingFill,
     placeRingTemplate,
+    placeAcyclicChain,
     replaceForceHydrogenWithDrawElement
   };
 }

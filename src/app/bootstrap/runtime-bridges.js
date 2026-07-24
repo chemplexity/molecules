@@ -68,6 +68,10 @@ export function initializeRuntimeBridges(deps) {
       setRingTemplateMode: value => {
         deps.runtimeState.ringTemplateMode = value;
       },
+      getAcyclicChainMode: () => deps.runtimeState.acyclicChainMode,
+      setAcyclicChainMode: value => {
+        deps.runtimeState.acyclicChainMode = value;
+      },
       getRingTemplateSize: () => deps.runtimeState.ringTemplateSize,
       setRingTemplateSize: value => {
         deps.runtimeState.ringTemplateSize = value;

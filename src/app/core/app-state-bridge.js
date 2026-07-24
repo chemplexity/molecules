@@ -70,6 +70,8 @@ export function createAppStateBridge(deps) {
       setDrawBondMode: deps.overlayState.setDrawBondMode,
       getRingTemplateMode: deps.overlayState.getRingTemplateMode ?? (() => false),
       setRingTemplateMode: deps.overlayState.setRingTemplateMode ?? (() => {}),
+      getAcyclicChainMode: deps.overlayState.getAcyclicChainMode ?? (() => false),
+      setAcyclicChainMode: deps.overlayState.setAcyclicChainMode ?? (() => {}),
       getRingTemplateSize: deps.overlayState.getRingTemplateSize ?? (() => 6),
       setRingTemplateSize: deps.overlayState.setRingTemplateSize ?? (() => {}),
       getEraseMode: deps.overlayState.getEraseMode,

@@ -277,7 +277,8 @@ export function finalizeAppBootstrap(ctx) {
       eraseItem: (atomIds, bondIds) => ctx.actions.editingActions.eraseItem(atomIds, bondIds),
       paintStyleTargets: (atomIds, bondIds, style, options = {}) => appDelegates.paintStyleTargets(atomIds, bondIds, style, options),
       paintRingFill: (atomIds, style, options = {}) => appDelegates.paintRingFill(atomIds, style, options),
-      placeRingTemplate: (size, ox, oy, options = {}) => appDelegates.placeRingTemplate(size, ox, oy, options)
+      placeRingTemplate: (size, ox, oy, options = {}) => appDelegates.placeRingTemplate(size, ox, oy, options),
+      placeAcyclicChain: (count, ox, oy, options = {}) => appDelegates.placeAcyclicChain(count, ox, oy, options)
     },
     clipboard: ctx.actions.clipboardActions,
     options: {
@@ -487,6 +488,7 @@ export function finalizeAppBootstrap(ctx) {
         setPaintBrushSize: size => ctx.actions.selectionActions.setPaintBrushSize(size),
         setPaintOpacity: opacity => ctx.actions.selectionActions.setPaintOpacity(opacity),
         toggleDrawBondMode: () => ctx.actions.selectionActions.toggleDrawBondMode(),
+        toggleAcyclicChainMode: () => ctx.actions.selectionActions.toggleAcyclicChainMode(),
         handleDrawBondButtonClick: () => ctx.actions.selectionActions.handleDrawBondButtonClick(),
         handleRingTemplateButtonClick: () => (ctx.actions.selectionActions.handleRingTemplateButtonClick ?? ctx.actions.selectionActions.toggleRingTemplateMode)?.(),
         setRingTemplateSize: size => ctx.actions.selectionActions.setRingTemplateSize(size),

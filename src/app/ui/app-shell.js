@@ -253,6 +253,7 @@ export function initAppShell(context) {
   bindGlobal(win, 'setPaintBrushSize', size => context.selection.setPaintBrushSize(size));
   bindGlobal(win, 'setPaintOpacity', opacity => context.selection.setPaintOpacity(opacity));
   bindGlobal(win, 'toggleDrawBondMode', () => context.selection.toggleDrawBondMode());
+  bindGlobal(win, 'toggleAcyclicChainMode', () => context.selection.toggleAcyclicChainMode());
   bindGlobal(win, 'handleDrawBondButtonClick', () => context.selection.handleDrawBondButtonClick());
   bindGlobal(win, 'handleRingTemplateButtonClick', () => context.selection.handleRingTemplateButtonClick());
   bindGlobal(win, 'setRingTemplateSize', size => context.selection.setRingTemplateSize(size));

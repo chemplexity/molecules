@@ -990,6 +990,8 @@ export function createSelectionActions(context) {
   }
 
   function enterPaintMode() {
+    context.state.overlayState.setAcyclicChainMode?.(false);
+    doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
     setPaintMode(true);
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
@@ -1016,6 +1018,7 @@ export function createSelectionActions(context) {
       !context.state.overlayState.getSelectMode() &&
       !context.state.overlayState.getDrawBondMode() &&
       !(context.state.overlayState.getRingTemplateMode?.() ?? false) &&
+      !(context.state.overlayState.getAcyclicChainMode?.() ?? false) &&
       !context.state.overlayState.getEraseMode() &&
       !(context.state.overlayState.getPaintMode?.() ?? false) &&
       (context.state.overlayState.getChargeTool?.() ?? null) == null
@@ -1025,6 +1028,7 @@ export function createSelectionActions(context) {
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
     context.state.overlayState.setRingTemplateMode?.(false);
+    context.state.overlayState.setAcyclicChainMode?.(false);
     context.state.overlayState.setEraseMode(false);
     setPaintMode(false);
     context.state.overlayState.setChargeTool?.(null);
@@ -1039,6 +1043,7 @@ export function createSelectionActions(context) {
     context.dom.selectButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
     context.dom.ringTemplateButton?.classList?.remove('active');
+    doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
     context.dom.eraseButton.classList.remove('active');
     rerenderToolOverlay();
   }
@@ -1050,6 +1055,7 @@ export function createSelectionActions(context) {
     context.state.overlayState.setSelectMode(true);
     context.state.overlayState.setDrawBondMode(false);
     context.state.overlayState.setRingTemplateMode?.(false);
+    context.state.overlayState.setAcyclicChainMode?.(false);
     context.state.overlayState.setEraseMode(false);
     setPaintMode(false);
     context.state.overlayState.setChargeTool?.(null);
@@ -1064,6 +1070,7 @@ export function createSelectionActions(context) {
     context.dom.panButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
     context.dom.ringTemplateButton?.classList?.remove('active');
+    doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
     context.dom.eraseButton.classList.remove('active');
   }
 
@@ -1103,6 +1110,8 @@ export function createSelectionActions(context) {
     context.state.overlayState.setDrawBondMode(next);
     const btn = context.dom.drawBondButton;
     if (next) {
+      context.state.overlayState.setAcyclicChainMode?.(false);
+      doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
       clearActiveSelectionForTool();
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setRingTemplateMode?.(false);
@@ -1141,6 +1150,8 @@ export function createSelectionActions(context) {
     context.state.overlayState.setRingTemplateMode?.(next);
     const btn = context.dom.ringTemplateButton;
     if (next) {
+      context.state.overlayState.setAcyclicChainMode?.(false);
+      doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
       clearActiveSelectionForTool();
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setDrawBondMode(false);
@@ -1176,6 +1187,8 @@ export function createSelectionActions(context) {
     context.state.overlayState.setEraseMode(next);
     const btn = context.dom.eraseButton;
     if (next) {
+      context.state.overlayState.setAcyclicChainMode?.(false);
+      doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setDrawBondMode(false);
       context.state.overlayState.setRingTemplateMode?.(false);
@@ -1220,6 +1233,8 @@ export function createSelectionActions(context) {
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
     context.state.overlayState.setRingTemplateMode?.(false);
+    context.state.overlayState.setAcyclicChainMode?.(false);
+    doc?.getElementById?.('acyclic-chain-btn')?.classList?.remove('active');
     context.state.overlayState.setEraseMode(false);
     setPaintMode(false);
     context.drawBond.cancelDrawBond();
@@ -1293,6 +1308,39 @@ export function createSelectionActions(context) {
     toggleRingTemplateMode();
   }
 
+  function toggleAcyclicChainMode() {
+    const next = !(context.state.overlayState.getAcyclicChainMode?.() ?? false);
+    context.state.overlayState.setAcyclicChainMode?.(next);
+    const button = doc?.getElementById?.('acyclic-chain-btn');
+    if (next) {
+      clearActiveSelectionForTool();
+      context.state.overlayState.setSelectMode(false);
+      context.state.overlayState.setDrawBondMode(false);
+      context.state.overlayState.setRingTemplateMode?.(false);
+      context.state.overlayState.setEraseMode(false);
+      setPaintMode(false);
+      context.state.overlayState.setChargeTool?.(null);
+      context.drawBond.cancelDrawBond();
+      context.view.clearPrimitiveHover();
+      context.dom.panButton.classList.remove('active');
+      context.dom.selectButton.classList.remove('active');
+      context.dom.drawBondButton.classList.remove('active');
+      context.dom.ringTemplateButton?.classList?.remove('active');
+      context.dom.eraseButton.classList.remove('active');
+      clearElementButtons();
+      clearBondDrawTypeButtons();
+      clearChargeButtons();
+      closeDrawBondDrawer();
+      closeRingTemplateDrawer();
+      button?.classList?.add('active');
+    } else {
+      context.view.clearPrimitiveHover();
+      context.dom.panButton.classList.add('active');
+      button?.classList?.remove('active');
+    }
+    rerenderToolOverlay();
+  }
+
   return {
     togglePanMode,
     toggleSelectMode,
@@ -1303,6 +1351,7 @@ export function createSelectionActions(context) {
     setPaintOpacity,
     toggleDrawBondMode,
     toggleRingTemplateMode,
+    toggleAcyclicChainMode,
     setRingTemplateSize,
     toggleEraseMode,
     setChargeTool,
