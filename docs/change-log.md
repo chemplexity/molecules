@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-07-25
+
+- Realign the ring-template drawer with the ring button after adding the chain tool above it.
+- Keep the first force-mode chain-preview bond behind its anchor atom by trimming the visible segment to the atom edge.
+
 ## 2026-07-24
 
 - Reject bond-started chain gestures and show the pressed bond with a selection-style translucent red highlight and darker border instead of beginning a chain.

@@ -224,10 +224,22 @@ export function initGestureInteractions(context) {
     acyclicChainPreviewLayer = g.append('g').attr('class', 'acyclic-chain-preview-layer').attr('pointer-events', 'none');
     const forceMode = context.state.viewState.getMode() === 'force';
     const renderOptions = context.options?.getRenderOptions?.() ?? {};
+    const bondPathPoints = points.map(point => ({ ...point }));
+    if (forceMode && acyclicChainDrag.anchorAtomId && bondPathPoints.length > 1) {
+      const anchor = context.state.documentState.getCurrentMol()?.atoms?.get?.(acyclicChainDrag.anchorAtomId);
+      const dx = bondPathPoints[1].x - bondPathPoints[0].x;
+      const dy = bondPathPoints[1].y - bondPathPoints[0].y;
+      const length = Math.hypot(dx, dy) || 1;
+      const clearance = atomRadius(anchor?.properties?.protons ?? 6);
+      bondPathPoints[0] = {
+        x: bondPathPoints[0].x + (dx / length) * clearance,
+        y: bondPathPoints[0].y + (dy / length) * clearance
+      };
+    }
     acyclicChainPreviewLayer
       .append('path')
       .attr('class', forceMode ? 'link' : 'bond')
-      .attr('d', points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`).join(' '))
+      .attr('d', bondPathPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`).join(' '))
       .attr('fill', 'none')
       .attr('stroke', forceMode ? '#696969' : '#111')
       .attr('stroke-width', forceMode ? singleBondWidth(1) : renderOptions.twoDBondThickness ?? 1.8)
