@@ -263,6 +263,7 @@ export function createDragGestureActionDeps(ctx) {
     state: {
       getDrawBondMode: () => ctx.getDrawBondMode(),
       getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
+      getAcyclicChainMode: () => ctx.getAcyclicChainMode?.() ?? false,
       getEraseMode: () => ctx.getEraseMode(),
       getPaintMode: () => ctx.getPaintMode?.() ?? false,
       getChargeTool: () => ctx.getChargeTool?.() ?? null,

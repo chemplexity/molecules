@@ -218,6 +218,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       createDrag: () => ctx.createDrag(),
       getDrawBondMode: () => ctx.getDrawBondMode(),
       getRingTemplateMode: () => ctx.getRingTemplateMode?.() ?? false,
+      getAcyclicChainMode: () => ctx.getAcyclicChainMode?.() ?? false,
       getEraseMode: () => ctx.getEraseMode(),
       getPaintMode: () => ctx.getPaintMode?.() ?? false,
       getChargeTool: () => ctx.getChargeTool?.() ?? null,

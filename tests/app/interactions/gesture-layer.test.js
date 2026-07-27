@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initGestureInteractions } from '../../../src/app/interactions/gesture-layer.js';
+import { initGestureInteractions, resolveForceChainAnchor } from '../../../src/app/interactions/gesture-layer.js';
 
 function selectorPartMatches(selection, selector) {
   const normalized = selector.trim().replace(/^:scope\s*>\s*/, '');
@@ -421,6 +421,32 @@ function makeBaseContext(overrides = {}) {
 }
 
 describe('initGestureInteractions', () => {
+  it('resolves a force hydrogen chain start to the displayed heavy parent node', () => {
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'], x: 50, y: 60 };
+    const carbon = { id: 'c1', name: 'C', bonds: ['b1'], x: 10, y: 20 };
+    const molecule = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', carbon]
+      ]),
+      bonds: new Map([
+        [
+          'b1',
+          {
+            id: 'b1',
+            atoms: ['c1', 'h1'],
+            getOtherAtom: atomId => (atomId === 'h1' ? 'c1' : 'h1')
+          }
+        ]
+      ])
+    };
+
+    assert.deepEqual(resolveForceChainAnchor(molecule, hydrogen, id => (id === 'c1' ? { id, x: 15, y: 25 } : null)), {
+      id: 'c1',
+      point: { x: 15, y: 25 }
+    });
+  });
+
   it('starts a blank-space draw-bond gesture through the extracted SVG handler', () => {
     let started = null;
     const { context, svg, state } = makeBaseContext({

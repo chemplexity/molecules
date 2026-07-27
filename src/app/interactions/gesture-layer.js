@@ -16,6 +16,30 @@ const SELECTION_ROTATION_SNAP = Math.PI / 12;
 const SELECTION_PIVOT_HIT_RADIUS = 24;
 const TAU = Math.PI * 2;
 
+export function resolveForceChainAnchor(molecule, atomNode, getForceNodeById = null) {
+  let atom = molecule?.atoms?.get?.(atomNode?.id);
+  if (!atom) {
+    return null;
+  }
+  let node = atomNode;
+  if (atom.name === 'H') {
+    const bondIds = atom.bonds ? [...atom.bonds] : [...(molecule?.bonds?.values?.() ?? [])].filter(bond => bond?.atoms?.includes?.(atom.id)).map(bond => bond.id);
+    const parent = bondIds
+      .map(bondId => {
+        const bond = molecule?.bonds?.get?.(bondId);
+        const parentId = bond?.getOtherAtom?.(atom.id) ?? bond?.atoms?.find?.(atomId => atomId !== atom.id);
+        return molecule?.atoms?.get?.(parentId) ?? null;
+      })
+      .find(candidate => candidate && candidate.name !== 'H' && candidate.visible !== false);
+    if (!parent) {
+      return null;
+    }
+    atom = parent;
+    node = getForceNodeById?.(parent.id) ?? parent;
+  }
+  return Number.isFinite(node?.x) && Number.isFinite(node?.y) ? { id: atom.id, point: { x: node.x, y: node.y } } : null;
+}
+
 /**
  * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
  * @param {MouseEvent} event - The mouse event to test.
@@ -329,9 +353,6 @@ export function initGestureInteractions(context) {
       .attr('fill', '#111')
       .attr('font-size', 13)
       .attr('font-weight', 700)
-      .attr('paint-order', 'stroke')
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 4)
       .text(String(acyclicChainDrag.count));
   }
 
@@ -365,21 +386,62 @@ export function initGestureInteractions(context) {
   function chainAnchorFromEvent(event) {
     const element = event.target?.closest?.('.atom-hit, .node, .ring-template-atom-hover-target, [data-atom-id]');
     const datum = element ? context.helpers.getDatum(element) : null;
-    const id = datum?.id ?? datum?.atom?.id ?? element?.getAttribute?.('data-atom-id') ?? element?.closest?.('[data-atom-id]')?.getAttribute?.('data-atom-id') ?? null;
+    let id = datum?.id ?? datum?.atom?.id ?? element?.getAttribute?.('data-atom-id') ?? element?.closest?.('[data-atom-id]')?.getAttribute?.('data-atom-id') ?? null;
     if (!id) {
       return null;
     }
-    const molecule =
-      context.state.viewState.getMode() === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
-    const atom = molecule?.atoms?.get?.(id);
-    if (!atom || atom.name === 'H') {
+    const forceMode = context.state.viewState.getMode() === 'force';
+    const molecule = forceMode ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
+    let atom = molecule?.atoms?.get?.(id);
+    if (!atom) {
       return null;
     }
-    if (context.state.viewState.getMode() === 'force') {
-      return Number.isFinite(datum?.x) && Number.isFinite(datum?.y) ? { id, point: { x: datum.x, y: datum.y } } : null;
+    let forceNode = datum;
+    if (forceMode && atom.name === 'H') {
+      const bondIds = atom.bonds ? [...atom.bonds] : [...(molecule?.bonds?.values?.() ?? [])].filter(bond => bond?.atoms?.includes?.(id)).map(bond => bond.id);
+      const parent = bondIds
+        .map(bondId => {
+          const bond = molecule?.bonds?.get?.(bondId);
+          const parentId = bond?.getOtherAtom?.(id) ?? bond?.atoms?.find?.(atomId => atomId !== id);
+          return molecule?.atoms?.get?.(parentId) ?? null;
+        })
+        .find(candidate => candidate && candidate.name !== 'H' && candidate.visible !== false);
+      if (!parent) {
+        return null;
+      }
+      atom = parent;
+      id = parent.id;
+      forceNode = context.helpers.getForceNodeById?.(id) ?? parent;
+    } else if (atom.name === 'H') {
+      return null;
+    }
+    if (forceMode) {
+      return Number.isFinite(forceNode?.x) && Number.isFinite(forceNode?.y) ? { id, point: { x: forceNode.x, y: forceNode.y } } : null;
     }
     const point = toSelectionSVGPt2d(atom);
     return point ? { id, point } : null;
+  }
+
+  function chainAnchorFromForceNode(atomNode) {
+    return resolveForceChainAnchor(context.state.documentState.getCurrentMol(), atomNode, context.helpers.getForceNodeById);
+  }
+
+  function beginAcyclicChainDrag(event, explicitAnchor = null) {
+    const [pointerX, pointerY] = context.pointer(event, g.node());
+    const anchor = explicitAnchor ?? chainAnchorFromEvent(event);
+    const start = anchor?.point ?? { x: pointerX, y: pointerY };
+    acyclicChainDrag = {
+      start,
+      origin: { x: pointerX, y: pointerY },
+      angle: 0,
+      zigSign: chooseAcyclicChainZigSign(anchor?.id ?? null, start, 0),
+      count: anchor ? 1 : 2,
+      anchorAtomId: anchor?.id ?? null
+    };
+    if (anchor?.id) {
+      context.view.showPrimitiveHover([anchor.id], []);
+    }
+    renderAcyclicChainPreview();
   }
 
   function selectionEventPoint(event, clampToPlot = false) {
@@ -2704,27 +2766,23 @@ export function initGestureInteractions(context) {
         event.stopImmediatePropagation?.();
         return;
       }
-      const [pointerX, pointerY] = context.pointer(event, g.node());
-      const anchor = chainAnchorFromEvent(event);
-      const start = anchor?.point ?? { x: pointerX, y: pointerY };
-      acyclicChainDrag = {
-        start,
-        origin: { x: pointerX, y: pointerY },
-        angle: 0,
-        zigSign: chooseAcyclicChainZigSign(anchor?.id ?? null, start, 0),
-        count: anchor ? 1 : 2,
-        anchorAtomId: anchor?.id ?? null
-      };
-      if (anchor?.id) {
-        context.view.showPrimitiveHover([anchor.id], []);
-      }
-      renderAcyclicChainPreview();
+      beginAcyclicChainDrag(event);
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
     },
     true
   );
+
+  svg.node()?.addEventListener?.('acyclic-chain-force-anchor', event => {
+    const sourceEvent = event.detail?.sourceEvent;
+    const anchor = chainAnchorFromForceNode(event.detail?.atom);
+    if (!sourceEvent || !anchor || !isAcyclicChainMode() || context.state.viewState.getMode() !== 'force') {
+      return;
+    }
+    clearAcyclicChainInvalidAnchor();
+    beginAcyclicChainDrag(sourceEvent, anchor);
+  });
 
   svg.on('mousedown.paste', event => {
     placePasteFromPointer(event);
@@ -2946,11 +3004,14 @@ export function initGestureInteractions(context) {
         acyclicChainDrag.zigSign = chooseAcyclicChainZigSign(acyclicChainDrag.anchorAtomId, acyclicChainDrag.start, angle);
         acyclicChainDrag.count = acyclicChainCount(distance, !!acyclicChainDrag.anchorAtomId);
       }
-      const snapTarget = !acyclicChainDrag.anchorAtomId ? chainAnchorFromEvent(event) : null;
+      const hoveredAtom = chainAnchorFromEvent(event);
+      const snapTarget = hoveredAtom?.id !== acyclicChainDrag.anchorAtomId ? hoveredAtom : null;
       acyclicChainDrag.snapAtomId = snapTarget?.id ?? null;
       acyclicChainDrag.snapPoint = snapTarget?.point ?? null;
       if (snapTarget?.id) {
-        context.view.showPrimitiveHover([snapTarget.id], []);
+        context.view.showPrimitiveHover([acyclicChainDrag.anchorAtomId, snapTarget.id].filter(Boolean), []);
+      } else if (acyclicChainDrag.anchorAtomId) {
+        context.view.showPrimitiveHover([acyclicChainDrag.anchorAtomId], []);
       } else {
         context.view.clearPrimitiveHover();
         context.renderers.applySelectionOverlay?.();

@@ -1654,6 +1654,15 @@ export function createPrimitiveEventHandlers(context) {
     return true;
   }
 
+  function suppressAcyclicChainTooltip() {
+    if (!(context.state.overlayState.getAcyclicChainMode?.() ?? false)) {
+      return false;
+    }
+    context.tooltipState.setSelectionValenceTooltipAtomId(null);
+    context.tooltip.hide();
+    return true;
+  }
+
   function setPlacementRedirectedHover(atomIds = [], bondIds = []) {
     const redirectedAtomIds = context.state.overlayState.getPlacementRedirectedHoverAtomIds?.();
     const redirectedBondIds = context.state.overlayState.getPlacementRedirectedHoverBondIds?.();
@@ -1833,9 +1842,17 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     maybeRefreshDrawBondHover(bond.id, 'bond');
+    const chainTooltipSuppressed = suppressAcyclicChainTooltip();
     const paintTooltipSuppressed = suppressPaintModeTooltip();
-    if (isRingTemplateMode() || paintTooltipSuppressed || context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) {
-      if (!paintTooltipSuppressed) {
+    if (
+      isRingTemplateMode() ||
+      chainTooltipSuppressed ||
+      paintTooltipSuppressed ||
+      context.state.overlayState.getSelectMode() ||
+      context.state.overlayState.getDrawBondMode() ||
+      context.state.overlayState.getEraseMode()
+    ) {
+      if (!chainTooltipSuppressed && !paintTooltipSuppressed) {
         context.tooltip.hide();
       }
       return;
@@ -1945,7 +1962,7 @@ export function createPrimitiveEventHandlers(context) {
     }
     if (showRingTemplateHoverOnAtom(event, atom.id, atom)) {
       const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
-      if (valenceWarning && !chargeTool && !suppressPaintModeTooltip() && showAtomTooltips) {
+      if (valenceWarning && !chargeTool && !suppressAcyclicChainTooltip() && !suppressPaintModeTooltip() && showAtomTooltips) {
         context.tooltipState.setSelectionValenceTooltipAtomId(atom.id);
         context.tooltip.showImmediate(context.formatters.atomTooltipHtml(atom, mol, valenceWarning, '2d'), event);
       }
@@ -1961,7 +1978,14 @@ export function createPrimitiveEventHandlers(context) {
     maybeRefreshDrawBondHover(atom.id, 'atom');
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
     const valenceWarningHoverMode = context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
-    if (chargeTool || suppressPaintModeTooltip() || !showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || (valenceWarningHoverMode && !valenceWarning)) {
+    if (
+      chargeTool ||
+      suppressAcyclicChainTooltip() ||
+      suppressPaintModeTooltip() ||
+      !showAtomTooltips ||
+      (context.state.overlayState.getEraseMode() && !valenceWarning) ||
+      (valenceWarningHoverMode && !valenceWarning)
+    ) {
       return;
     }
     if (valenceWarningHoverMode && valenceWarning) {
@@ -2112,9 +2136,17 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     maybeRefreshDrawBondHover(bondId, 'bond');
+    const chainTooltipSuppressed = suppressAcyclicChainTooltip();
     const paintTooltipSuppressed = suppressPaintModeTooltip();
-    if (isRingTemplateMode() || paintTooltipSuppressed || context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) {
-      if (!paintTooltipSuppressed) {
+    if (
+      isRingTemplateMode() ||
+      chainTooltipSuppressed ||
+      paintTooltipSuppressed ||
+      context.state.overlayState.getSelectMode() ||
+      context.state.overlayState.getDrawBondMode() ||
+      context.state.overlayState.getEraseMode()
+    ) {
+      if (!chainTooltipSuppressed && !paintTooltipSuppressed) {
         context.tooltip.hide();
       }
       return;
@@ -2308,7 +2340,7 @@ export function createPrimitiveEventHandlers(context) {
     const atom = molecule.atoms.get(atomNode.id);
     if (showRingTemplateHoverOnAtom(event, atomNode.id, atomNode)) {
       const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
-      if (atom && valenceWarning && !chargeTool && !suppressPaintModeTooltip() && showAtomTooltips) {
+      if (atom && valenceWarning && !chargeTool && !suppressAcyclicChainTooltip() && !suppressPaintModeTooltip() && showAtomTooltips) {
         context.tooltipState.setSelectionValenceTooltipAtomId(atomNode.id);
         context.tooltip.showImmediate(context.formatters.atomTooltipHtml(atom, molecule, valenceWarning, 'force'), event);
       }
@@ -2338,7 +2370,14 @@ export function createPrimitiveEventHandlers(context) {
     }
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
     const valenceWarningHoverMode = context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode() || isRingTemplateMode();
-    if (chargeTool || suppressPaintModeTooltip() || !showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || (valenceWarningHoverMode && !valenceWarning)) {
+    if (
+      chargeTool ||
+      suppressAcyclicChainTooltip() ||
+      suppressPaintModeTooltip() ||
+      !showAtomTooltips ||
+      (context.state.overlayState.getEraseMode() && !valenceWarning) ||
+      (valenceWarningHoverMode && !valenceWarning)
+    ) {
       return;
     }
     if (valenceWarningHoverMode && valenceWarning) {

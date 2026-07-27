@@ -15,6 +15,21 @@ import {
   PI_STROKE,
   ARO_STROKE
 } from './helpers.js';
+
+export function handleForceAcyclicChainMouseDown(context, event, atomNode, element) {
+  if (!(context.overlay.getAcyclicChainMode?.() ?? false)) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+  const svgNode = element?.ownerSVGElement;
+  const CustomEventCtor = svgNode?.ownerDocument?.defaultView?.CustomEvent;
+  if (svgNode && CustomEventCtor) {
+    svgNode.dispatchEvent(new CustomEventCtor('acyclic-chain-force-anchor', { detail: { sourceEvent: event, atom: atomNode } }));
+  }
+  return true;
+}
 import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, heavyDegree, secondaryDir, syncDisplayStereo } from '../../layout/mol2d-helpers.js';
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
@@ -714,6 +729,9 @@ export function createForceSceneRenderer(ctx) {
       .attr('stroke', d => strokeColor(d.name))
       .attr('stroke-opacity', d => atomDisplayOpacity(atomForNode(d)))
       .attr('stroke-width', 1)
+      .on('mousedown.acyclic-chain', function handleAcyclicChainMouseDown(event, d) {
+        handleForceAcyclicChainMouseDown(ctx, event, d, this);
+      })
       .call(ctx.drag.createForceAtomDrag(ctx.simulation))
       .on('mousedown.drawbond', (event, d) => {
         ctx.events.handleForceAtomMouseDownDrawBond(event, d);
@@ -745,6 +763,9 @@ export function createForceSceneRenderer(ctx) {
       .attr('fill', 'transparent')
       .attr('stroke', 'none')
       .style('cursor', 'grab')
+      .on('mousedown.acyclic-chain', function handleAcyclicChainMouseDown(event, d) {
+        handleForceAcyclicChainMouseDown(ctx, event, d, this);
+      })
       .on('mousedown.drawbond', (event, d) => {
         ctx.events.handleForceAtomMouseDownDrawBond(event, d);
       })

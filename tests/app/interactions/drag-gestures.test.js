@@ -23,6 +23,7 @@ function makeContext(overrides = {}) {
   let drawBondMode = false;
   let eraseMode = false;
   let paintMode = false;
+  let acyclicChainMode = false;
   let selectionPivot = overrides.selectionPivot ?? null;
   const calls = [];
   const dragStubs = [];
@@ -37,6 +38,7 @@ function makeContext(overrides = {}) {
     },
     state: {
       getDrawBondMode: () => drawBondMode,
+      getAcyclicChainMode: () => acyclicChainMode,
       getEraseMode: () => eraseMode,
       getPaintMode: () => paintMode,
       getSelectionPivot: () => selectionPivot,
@@ -100,6 +102,9 @@ function makeContext(overrides = {}) {
     setPaintMode: value => {
       paintMode = value;
     },
+    setAcyclicChainMode: value => {
+      acyclicChainMode = value;
+    },
     getSelectionPivot: () => selectionPivot
   };
 }
@@ -135,6 +140,32 @@ describe('createDragGestureActions', () => {
     assert.equal(actions.createForceBondDrag(simulation, { id: 'mol' }).filterFn({}), true);
     assert.equal(actions.create2dAtomDrag({ atoms: new Map() }, 'a1', dragOptions).filterFn({}), true);
     assert.equal(actions.create2dBondDrag({ atoms: new Map() }, 'b1', dragOptions).filterFn({}), true);
+  });
+
+  it('blocks atom and bond drag gestures while acyclic-chain mode is active', () => {
+    const simulation = {
+      nodes: () => [],
+      alphaTarget() {
+        return simulation;
+      },
+      restart() {
+        return simulation;
+      }
+    };
+    const { actions, setAcyclicChainMode } = makeContext();
+    const dragOptions = {
+      captureDragState: () => null,
+      redrawDragTargets() {},
+      pointer: () => [0, 0],
+      scale: 1,
+      draw() {}
+    };
+
+    setAcyclicChainMode(true);
+    assert.equal(actions.createForceAtomDrag(simulation).filterFn({}), false);
+    assert.equal(actions.createForceBondDrag(simulation, { id: 'mol' }).filterFn({}), false);
+    assert.equal(actions.create2dAtomDrag({ atoms: new Map() }, 'a1', dragOptions).filterFn({}), false);
+    assert.equal(actions.create2dBondDrag({ atoms: new Map() }, 'b1', dragOptions).filterFn({}), false);
   });
 
   it('takes a force-atom drag snapshot only on first movement', () => {

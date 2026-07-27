@@ -1676,7 +1676,14 @@ export function createStructuralEditActions(context) {
         mol = mol ?? context.molecule.ensureActive?.();
         const anchorAtom = anchorAtomId ? mol?.atoms?.get?.(anchorAtomId) : null;
         const targetAtom = targetAtomId ? mol?.atoms?.get?.(targetAtomId) : null;
-        if (!mol || (anchorAtomId && !anchorAtom) || (targetAtomId && !targetAtom) || anchorAtom?.name === 'H' || targetAtom?.name === 'H') {
+        if (
+          !mol ||
+          (anchorAtomId && !anchorAtom) ||
+          (targetAtomId && !targetAtom) ||
+          (anchorAtom && targetAtom && anchorAtom.id === targetAtom.id) ||
+          anchorAtom?.name === 'H' ||
+          targetAtom?.name === 'H'
+        ) {
           return { cancelled: true };
         }
 

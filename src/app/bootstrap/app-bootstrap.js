@@ -311,7 +311,8 @@ export function finalizeAppBootstrap(ctx) {
     helpers: {
       toSVGPt2d: atom => ctx.render.render2DHelpers.toSVGPt2d(atom),
       toSelectionSVGPt2d: atom => ctx.render.scene2DRenderer.toSVGPt?.(atom) ?? ctx.render.render2DHelpers.toSVGPt2d(atom),
-      getDatum: element => ctx.helpers.getDatum(element)
+      getDatum: element => ctx.helpers.getDatum(element),
+      getForceNodeById: atomId => ctx.getForceNodeById(atomId)
     },
     simulation: ctx.dom.simulation,
     svg: ctx.dom.svg,

@@ -116,6 +116,9 @@ export function createForceSceneRendererDeps(ctx) {
       syncSelectionToMolecule: mol => ctx.syncSelectionToMolecule(mol),
       clearSelection: () => ctx.clearSelection()
     },
+    overlay: {
+      getAcyclicChainMode: () => ctx.getAcyclicChainMode?.() ?? false
+    },
     cache: {
       reset: () => ctx.resetCache(),
       setValenceWarningCircles: selection => ctx.setValenceWarningCircles(selection),
@@ -211,7 +214,8 @@ export function create2DSceneRendererDeps(ctx) {
     },
     overlay: {
       getDrawBondMode: () => ctx.getDrawBondMode(),
-      getDrawBondType: () => ctx.getDrawBondType?.()
+      getDrawBondType: () => ctx.getDrawBondType?.(),
+      getAcyclicChainMode: () => ctx.getAcyclicChainMode?.() ?? false
     },
     helpers: {
       valenceWarningMapFor: molecule => ctx.valenceWarningMapFor(molecule),

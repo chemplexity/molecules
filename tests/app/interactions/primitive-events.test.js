@@ -86,6 +86,7 @@ function makeContext(overrides = {}) {
   let paintColor = '#3366ff';
   let paintOpacity = 1;
   let ringTemplateMode = false;
+  let acyclicChainMode = false;
   let ringTemplateSize = 6;
   let drawBondType = 'triple';
   let mode = 'force';
@@ -119,6 +120,7 @@ function makeContext(overrides = {}) {
         getPaintColor: () => paintColor,
         getPaintOpacity: () => paintOpacity,
         getRingTemplateMode: () => ringTemplateMode,
+        getAcyclicChainMode: () => acyclicChainMode,
         getRingTemplateSize: () => ringTemplateSize,
         getChargeTool: () => chargeTool,
         getHoveredAtomIds: () => hoveredAtomIds,
@@ -283,6 +285,9 @@ function makeContext(overrides = {}) {
     },
     setRingTemplateMode: value => {
       ringTemplateMode = value;
+    },
+    setAcyclicChainMode: value => {
+      acyclicChainMode = value;
     },
     setRingTemplateSize: value => {
       ringTemplateSize = value;
@@ -3026,6 +3031,21 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['hide']]);
   });
 
+  it('suppresses 2D bond tooltips while acyclic-chain mode is active', () => {
+    const { context, calls, setAcyclicChainMode, setMode } = makeContext();
+    setMode('2d');
+    setAcyclicChainMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dBondMouseOver({ clientX: 5, clientY: 6 }, { id: 'b1' }, { id: 'a1' }, { id: 'a2' });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', [], ['b1']],
+      ['setSelectionValenceTooltipAtomId', null],
+      ['hide']
+    ]);
+  });
+
   it('suppresses force bond tooltips while charge mode is active', () => {
     const { context, calls, setChargeTool } = makeContext();
     setChargeTool('negative');
@@ -3057,6 +3077,26 @@ describe('createPrimitiveEventHandlers', () => {
     });
 
     assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['hide']]);
+  });
+
+  it('suppresses force bond tooltips while acyclic-chain mode is active', () => {
+    const { context, calls, setAcyclicChainMode } = makeContext();
+    setAcyclicChainMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceBondMouseOver({ clientX: 5, clientY: 6 }, 'b1', {
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]]),
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'O' }]
+      ])
+    });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', [], ['b1']],
+      ['setSelectionValenceTooltipAtomId', null],
+      ['hide']
+    ]);
   });
 
   it('does not let blocked force product-side bonds become draw-bond hover targets', () => {
@@ -3486,6 +3526,36 @@ describe('createPrimitiveEventHandlers', () => {
     handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1' }, { id: 'mol' }, { message: 'warn' });
 
     assert.deepEqual(calls, [['showPrimitiveHover', ['a1'], []]]);
+  });
+
+  it('suppresses 2D atom tooltips while acyclic-chain mode is active', () => {
+    const { context, calls, setAcyclicChainMode, setMode } = makeContext();
+    setMode('2d');
+    setAcyclicChainMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1' }, { id: 'mol' }, { message: 'warn' });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['a1'], []],
+      ['setSelectionValenceTooltipAtomId', null],
+      ['hide']
+    ]);
+  });
+
+  it('suppresses force atom tooltips while acyclic-chain mode is active', () => {
+    const { context, calls, setAcyclicChainMode } = makeContext();
+    setAcyclicChainMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    const molecule = { atoms: new Map([['a1', { id: 'a1', name: 'C' }]]) };
+
+    handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1', name: 'C' }, molecule, { message: 'warn' });
+
+    assert.deepEqual(calls, [
+      ['showPrimitiveHover', ['a1'], []],
+      ['setSelectionValenceTooltipAtomId', null],
+      ['hide']
+    ]);
   });
 
   it('suppresses atom and valence tooltips while paint mode is active', () => {

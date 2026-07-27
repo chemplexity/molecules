@@ -1,5 +1,12 @@
 # Change Log
 
+## 2026-07-26
+
+- Let atom-anchored chain gestures finish on and merge with another existing atom.
+- Hide atom and bond tooltips in 2D and force layouts while the chain tool is active.
+- Remove the white background halo from the dragged chain-length number.
+- Redirect force-mode chain starts on hydrogen nodes to their bonded heavy atom without triggering node dragging.
+
 ## 2026-07-25
 
 - Realign the ring-template drawer with the ring button after adding the chain tool above it.

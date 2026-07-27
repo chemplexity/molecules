@@ -237,7 +237,13 @@ const { plotEl, tooltip, inputEl, collectionSelectEl, svg, g, zoom } = initPlotB
   d3,
   document,
   getInteractionModeActive: event =>
-    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.ringTemplateMode || runtimeState.eraseMode || runtimeState.paintMode || runtimeState.chargeTool != null) &&
+    (runtimeState.selectMode ||
+      runtimeState.drawBondMode ||
+      runtimeState.ringTemplateMode ||
+      runtimeState.acyclicChainMode ||
+      runtimeState.eraseMode ||
+      runtimeState.paintMode ||
+      runtimeState.chargeTool != null) &&
     (runtimeState.mode === '2d' || runtimeState.mode === 'force') &&
     (event.type === 'mousedown' || event.type === 'dblclick') &&
     event.button === 0,
@@ -428,6 +434,7 @@ const forceSceneRenderer = createForceSceneRenderer(
     },
     syncSelectionToMolecule: mol => selectionStateHelpers.syncSelectionToMolecule(mol),
     clearSelection: () => runtimeState.clearSelection(),
+    getAcyclicChainMode: () => runtimeState.acyclicChainMode,
     resetCache: () => runtimeState.resetRenderCaches(),
     setValenceWarningCircles: selection => {
       runtimeState.forceValenceWarningCircles = selection;
@@ -514,6 +521,7 @@ const scene2DRenderer = create2DSceneRenderer(
     clearSelection: () => runtimeState.clearSelection(),
     getDrawBondMode: () => runtimeState.drawBondMode,
     getDrawBondType: () => runtimeState.drawBondType,
+    getAcyclicChainMode: () => runtimeState.acyclicChainMode,
     valenceWarningMapFor: molecule => runtimeState.valenceWarningMapFor(molecule),
     toSVGPt: atom => render2DHelpers.toSVGPt2d(atom),
     secondaryDir,
@@ -948,6 +956,7 @@ const { navigationActions, selectionActions, clipboardActions, editingActions, d
       createDrag: () => d3.drag(),
       getDrawBondMode: () => runtimeState.drawBondMode,
       getRingTemplateMode: () => runtimeState.ringTemplateMode,
+      getAcyclicChainMode: () => runtimeState.acyclicChainMode,
       getEraseMode: () => runtimeState.eraseMode,
       getPaintMode: () => runtimeState.paintMode,
       getChargeTool: () => runtimeState.chargeTool,
