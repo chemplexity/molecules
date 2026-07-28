@@ -54,6 +54,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const inputLabel = document.getElementById('input-label');
   const examplesElement = document.getElementById('examples-list');
   const optionsOverlay = document.getElementById('options-overlay');
+  const openJsonInput = document.getElementById('open-json-input');
   const showValenceWarnings = document.getElementById('options-show-valence-warnings');
   const showAtomTooltips = document.getElementById('options-show-atom-tooltips');
   const layoutBondLength = document.getElementById('options-layout-bond-length');
@@ -147,6 +148,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getInputLabelElement: () => inputLabel,
     getExamplesElement: () => examplesElement,
     getOptionsOverlayElement: () => optionsOverlay,
+    getOpenJsonInputElement: () => openJsonInput,
     getShowValenceWarningsElement: () => showValenceWarnings,
     getShowAtomTooltipsElement: () => showAtomTooltips,
     getLayoutBondLengthElement: () => layoutBondLength,

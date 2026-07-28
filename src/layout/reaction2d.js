@@ -2642,9 +2642,7 @@ function idealizeReaction2dEditedFourHeavyTerminalSubstitutionFans(mol, componen
       continue;
     }
 
-    const anchorAngles = anchors
-      .map(info => Math.atan2(info.atom.y - center.y, info.atom.x - center.x))
-      .sort((a, b) => a - b);
+    const anchorAngles = anchors.map(info => Math.atan2(info.atom.y - center.y, info.atom.x - center.x)).sort((a, b) => a - b);
     const candidateAngles = [Math.atan2(terminal.atom.y - center.y, terminal.atom.x - center.x)];
     for (let index = 0; index < anchorAngles.length; index++) {
       const nextIndex = (index + 1) % anchorAngles.length;

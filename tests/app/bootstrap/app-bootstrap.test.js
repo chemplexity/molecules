@@ -10,6 +10,7 @@ describe('finalizeAppBootstrap', () => {
     let capturedGestureInteractionDeps = null;
     let capturedAppShellDeps = null;
     let capturedOptionsModalDeps = null;
+    const reactionPreviewSource = { id: 'reactant-source' };
 
     const ctx = {
       factories: {
@@ -203,7 +204,7 @@ describe('finalizeAppBootstrap', () => {
           return true;
         },
         getReactionPreviewSourceMol() {
-          return null;
+          return reactionPreviewSource;
         },
         getReactionPreviewMappedAtomPairs() {
           return [];
@@ -393,6 +394,12 @@ describe('finalizeAppBootstrap', () => {
         },
         toInChI() {
           return '';
+        },
+        toJSON() {
+          return '{}';
+        },
+        fromJSON() {
+          return {};
         }
       }
     };
@@ -407,6 +414,7 @@ describe('finalizeAppBootstrap', () => {
     assert.deepEqual(capturedGestureInteractionDeps.helpers.toSelectionSVGPt2d({ x: 4, y: 5 }), { x: 4, y: 5 });
     assert.deepEqual(capturedGestureInteractionDeps.options.getRenderOptions(), { showAtomTooltips: true, layoutBondLength: 0.5 });
     assert.deepEqual(capturedGestureInteractionDeps.constants, { scale: 60, forceBondLength: 41 });
+    assert.equal(capturedAppShellDeps.documentActions.getActiveMolecule(), reactionPreviewSource);
     capturedGestureInteractionDeps.force.syncPositions();
     capturedGestureInteractionDeps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' }, { skipSnapshot: true });
     capturedGestureInteractionDeps.actions.paintRingFill(['r1', 'r2', 'r3'], { color: '#ffcc00' });

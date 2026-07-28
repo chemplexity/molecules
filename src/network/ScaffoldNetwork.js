@@ -168,14 +168,7 @@ export class ScaffoldNetwork {
    */
   constructor(
     reactionNetwork,
-    {
-      autoSync = true,
-      preserveExocyclicMultipleBonds = false,
-      preserveLargeSubstituentBackbones = false,
-      minSubstituentHeavyAtoms = 4,
-      minScaffoldHeavyAtoms = 1,
-      onProgress = null
-    } = {}
+    { autoSync = true, preserveExocyclicMultipleBonds = false, preserveLargeSubstituentBackbones = false, minSubstituentHeavyAtoms = 4, minScaffoldHeavyAtoms = 1, onProgress = null } = {}
   ) {
     this.reactionNetwork = reactionNetwork;
     this.scaffoldOptions = {

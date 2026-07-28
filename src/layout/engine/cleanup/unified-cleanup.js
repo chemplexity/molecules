@@ -366,13 +366,11 @@ function shouldSkipRotationProbe(visibleHeavyAtomCount, baseOverlapCount, bestCa
 }
 
 function shouldAcceptCandidate(baseState, candidate, epsilon, options = {}) {
-  if (
-    !(
-      candidate.overlapReduction > 0 ||
-      candidate.improvement > epsilon ||
-      (candidate.presentationImprovement > epsilon && candidate.overlapCount <= baseState.overlapCount && candidate.bondLengthFailureCount <= baseState.bondDeviation.failingBondCount)
-    )
-  ) {
+  if (!(
+    candidate.overlapReduction > 0 ||
+    candidate.improvement > epsilon ||
+    (candidate.presentationImprovement > epsilon && candidate.overlapCount <= baseState.overlapCount && candidate.bondLengthFailureCount <= baseState.bondDeviation.failingBondCount)
+  )) {
     return false;
   }
   if (protectLargeMoleculeBackbone(options) && candidate.overlapCount > baseState.overlapCount) {

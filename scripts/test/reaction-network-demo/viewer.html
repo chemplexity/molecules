@@ -766,7 +766,10 @@
       }
       .chemical-space-dot {
         cursor: pointer;
-        transition: fill 0.12s, stroke 0.12s, r 0.12s;
+        transition:
+          fill 0.12s,
+          stroke 0.12s,
+          r 0.12s;
       }
       #chemical-space-resize-handle {
         position: absolute;
@@ -945,13 +948,7 @@
 
     <button id="template-settings-btn" type="button" title="Reaction SMIRKS settings" aria-label="Reaction SMIRKS settings" aria-expanded="false">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path
-          d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
+        <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
         <path
           d="M19.4 15a1.9 1.9 0 0 0 .38 2.1l.05.05a2.2 2.2 0 0 1-3.11 3.11l-.05-.05a1.9 1.9 0 0 0-2.1-.38 1.9 1.9 0 0 0-1.15 1.74V22a2.2 2.2 0 0 1-4.4 0v-.09a1.9 1.9 0 0 0-1.15-1.74 1.9 1.9 0 0 0-2.1.38l-.05.05a2.2 2.2 0 0 1-3.11-3.11l.05-.05a1.9 1.9 0 0 0 .38-2.1 1.9 1.9 0 0 0-1.74-1.15H2a2.2 2.2 0 0 1 0-4.4h.09a1.9 1.9 0 0 0 1.74-1.15 1.9 1.9 0 0 0-.38-2.1L3.4 6.49a2.2 2.2 0 0 1 3.11-3.11l.05.05a1.9 1.9 0 0 0 2.1.38A1.9 1.9 0 0 0 9.81 2.1V2a2.2 2.2 0 0 1 4.4 0v.09a1.9 1.9 0 0 0 1.15 1.74 1.9 1.9 0 0 0 2.1-.38l.05-.05a2.2 2.2 0 0 1 3.11 3.11l-.05.05a1.9 1.9 0 0 0-.38 2.1 1.9 1.9 0 0 0 1.74 1.15H22a2.2 2.2 0 0 1 0 4.4h-.09A1.9 1.9 0 0 0 19.4 15Z"
           stroke="currentColor"
@@ -1229,7 +1226,7 @@
 
       function setChemicalSpaceHighlight(id, { locked = false } = {}) {
         chemicalSpaceHighlightedId = id ?? null;
-        chemicalSpaceLockedId = locked ? id ?? null : chemicalSpaceLockedId;
+        chemicalSpaceLockedId = locked ? (id ?? null) : chemicalSpaceLockedId;
         refreshChemicalSpaceDotStyles();
       }
 
@@ -1287,8 +1284,16 @@
         const xDomain = paddedDomain(points.map(point => point.descriptors[xKey]));
         const yDomain = paddedDomain(points.map(point => point.descriptors[yKey]));
         chemicalSpacePlotBounds = { margin, innerWidth, innerHeight };
-        const x = d3.scaleLinear().domain(domainForChemicalSpaceView(xDomain, chemicalSpaceView.xStart, chemicalSpaceView.xEnd)).range([0, innerWidth]).nice();
-        const y = d3.scaleLinear().domain(domainForChemicalSpaceView(yDomain, chemicalSpaceView.yStart, chemicalSpaceView.yEnd)).range([innerHeight, 0]).nice();
+        const x = d3
+          .scaleLinear()
+          .domain(domainForChemicalSpaceView(xDomain, chemicalSpaceView.xStart, chemicalSpaceView.xEnd))
+          .range([0, innerWidth])
+          .nice();
+        const y = d3
+          .scaleLinear()
+          .domain(domainForChemicalSpaceView(yDomain, chemicalSpaceView.yStart, chemicalSpaceView.yEnd))
+          .range([innerHeight, 0])
+          .nice();
         const root = chemicalSpaceChart.attr('viewBox', `0 0 ${chartWidth} ${chartHeight}`).append('g').attr('transform', `translate(${margin.left},${margin.top})`);
         const yAxis = d3.axisLeft(y).ticks(4).tickSize(-innerWidth).tickFormat(d3.format('~s'));
         const xAxis = d3.axisBottom(x).ticks(5).tickFormat(d3.format('~s'));
@@ -1297,7 +1302,10 @@
         grid.select('.domain').remove();
         grid.selectAll('.tick text').remove();
         root.append('g').attr('class', 'chemical-space-axis').attr('transform', `translate(0,${innerHeight})`).call(xAxis);
-        root.append('g').attr('class', 'chemical-space-axis').call(d3.axisLeft(y).ticks(4).tickFormat(d3.format('~s')));
+        root
+          .append('g')
+          .attr('class', 'chemical-space-axis')
+          .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format('~s')));
         root
           .append('text')
           .attr('class', 'chemical-space-axis-label')

@@ -160,6 +160,7 @@ body.resizing-main-sidebar #sidebar {
   text-decoration: none;
 }
 
+.footer-icon-btn,
 #options-btn {
   width: 30px;
   height: 30px;
@@ -176,6 +177,24 @@ body.resizing-main-sidebar #sidebar {
     transform 0.15s ease;
 }
 
+.footer-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+}
+
+.footer-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.footer-icon-btn:hover,
 #options-btn:hover {
   background: #f2f8fa;
   border-color: #a9cfd7;

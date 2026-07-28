@@ -17,6 +17,88 @@ function serializeCurrentMol(getMol, serialize) {
   }
 }
 
+function safeJsonFilename(molecule) {
+  const base = String(molecule?.name || 'molecule')
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${base || 'molecule'}.json`;
+}
+
+/**
+ * Saves a complete molecule JSON document through Save As when available.
+ * @param {object} context - App shell context.
+ * @returns {Promise<boolean>} Whether a molecule was available and saved.
+ */
+export async function saveMoleculeDocument(context) {
+  const molecule = context.documentActions.getActiveMolecule();
+  if (!molecule) {
+    return false;
+  }
+  const json = context.documentActions.serialize(molecule);
+  const filename = safeJsonFilename(molecule);
+  if (typeof context.win.showSaveFilePicker === 'function') {
+    try {
+      const handle = await context.win.showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: 'Molecule JSON',
+            accept: { 'application/json': ['.json'] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return true;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        return false;
+      }
+      context.win.alert?.(`Could not save molecule JSON: ${error.message}`);
+      return false;
+    }
+  }
+  const doc = context.dom.getDocument?.() ?? context.win.document;
+  const urlApi = context.win.URL ?? URL;
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = urlApi.createObjectURL(blob);
+  const anchor = doc.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.hidden = true;
+  doc.body?.appendChild?.(anchor);
+  anchor.click();
+  anchor.remove?.();
+  if (typeof context.win.setTimeout === 'function') {
+    context.win.setTimeout(() => urlApi.revokeObjectURL(url), 0);
+  } else {
+    urlApi.revokeObjectURL(url);
+  }
+  return true;
+}
+
+/**
+ * Reads and restores a selected molecule JSON file.
+ * @param {object} context - App shell context.
+ * @param {File} file - Selected JSON file.
+ * @returns {Promise<boolean>} Whether the document loaded successfully.
+ */
+export async function loadMoleculeDocument(context, file) {
+  if (!file) {
+    return false;
+  }
+  try {
+    const molecule = context.documentActions.deserialize(await file.text());
+    context.documentActions.load(molecule);
+    return true;
+  } catch (error) {
+    context.win.alert?.(`Could not open molecule JSON: ${error.message}`);
+    return false;
+  }
+}
+
 const MAIN_SIDEBAR_WIDTH_STORAGE_KEY = 'molecules.mainSidebarWidthPx';
 const MIN_MAIN_DRAWING_WIDTH_PX = 320;
 const MIN_SIDEBAR_WIDTH_PX = 220;
@@ -232,8 +314,17 @@ export function initAppShell(context) {
   bindGlobal(win, 'copyForceSvg', () => context.exportActions.copyForceSvg());
   bindGlobal(win, 'copySvg2d', () => context.exportActions.copySvg2d());
   bindGlobal(win, 'savePng2d', () => context.exportActions.savePng2d());
+  bindGlobal(win, 'saveMoleculeJson', () => saveMoleculeDocument(context));
+  bindGlobal(win, 'openMoleculeJson', () => context.dom.getOpenJsonInputElement()?.click());
 
   bindGlobal(win, 'openOptionsModal', () => context.options.open());
+
+  const openJsonInput = context.dom.getOpenJsonInputElement?.();
+  openJsonInput?.addEventListener('change', async () => {
+    const file = openJsonInput.files?.[0] ?? null;
+    await loadMoleculeDocument(context, file);
+    openJsonInput.value = '';
+  });
 
   bindGlobal(win, 'toggleLabels', () => {
     const svgEl = context.dom.getPlotElement();

@@ -54,7 +54,10 @@ export function createDragGestureActions(context) {
   function createForceAtomDrag(simulation) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !isRingTemplateModeActive() && !isAcyclicChainModeActive() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
+      .filter(
+        _event =>
+          !context.state.getDrawBondMode() && !isRingTemplateModeActive() && !isAcyclicChainModeActive() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.()
+      )
       .on('start', (event, datum) => {
         if (context.state.getDrawBondMode() || isRingTemplateModeActive() || isAcyclicChainModeActive() || isPaintModeActive()) {
           return;
@@ -256,7 +259,10 @@ export function createDragGestureActions(context) {
   function create2dBondDrag(molecule, bondId, options) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !isRingTemplateModeActive() && !isAcyclicChainModeActive() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
+      .filter(
+        _event =>
+          !context.state.getDrawBondMode() && !isRingTemplateModeActive() && !isAcyclicChainModeActive() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.()
+      )
       .on('start', function start2dBondDrag(event) {
         if (context.state.getDrawBondMode() || isRingTemplateModeActive() || isAcyclicChainModeActive() || isPaintModeActive()) {
           return;
@@ -297,7 +303,10 @@ export function createDragGestureActions(context) {
   function create2dAtomDrag(molecule, atomId, options = {}) {
     return context.d3
       .createDrag()
-      .filter(_event => !context.state.getDrawBondMode() && !isRingTemplateModeActive() && !isAcyclicChainModeActive() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.())
+      .filter(
+        _event =>
+          !context.state.getDrawBondMode() && !isRingTemplateModeActive() && !isAcyclicChainModeActive() && !context.state.getEraseMode() && !isPaintModeActive() && !context.state.getChargeTool?.()
+      )
       .on('start', function start2dAtomDrag(event) {
         if (context.state.getDrawBondMode() || isRingTemplateModeActive() || isAcyclicChainModeActive() || isPaintModeActive()) {
           return;

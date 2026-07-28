@@ -13,6 +13,7 @@ export function createAppShellDeps(deps) {
       getDocument: deps.dom.getDocument,
       getPlotElement: deps.dom.getPlotElement,
       getLabelToggleElement: deps.dom.getLabelToggleElement,
+      getOpenJsonInputElement: deps.dom.getOpenJsonInputElement,
       getContentMainElement: deps.dom.getContentMainElement,
       getSidebarElement: deps.dom.getSidebarElement,
       getMainSidebarSplitterElement: deps.dom.getMainSidebarSplitterElement
@@ -26,6 +27,12 @@ export function createAppShellDeps(deps) {
       copyForceSvg: deps.exportActions.copyForceSvg,
       copySvg2d: deps.exportActions.copySvg2d,
       savePng2d: deps.exportActions.savePng2d
+    },
+    documentActions: {
+      getActiveMolecule: deps.documentActions.getActiveMolecule,
+      serialize: deps.documentActions.serialize,
+      deserialize: deps.documentActions.deserialize,
+      load: deps.documentActions.load
     },
     options: {
       open: deps.options.open

@@ -1668,9 +1668,7 @@ export function createStructuralEditActions(context) {
         viewportPolicy: ViewportPolicy.restoreEdit,
         zoomSnapshot,
         preflight: ({ mol, mode: editMode }) =>
-          (editMode === '2d' || editMode === 'force') &&
-          (!anchorAtomId || isReactionPreviewEditableAtomId(mol, anchorAtomId)) &&
-          (!targetAtomId || isReactionPreviewEditableAtomId(mol, targetAtomId))
+          (editMode === '2d' || editMode === 'force') && (!anchorAtomId || isReactionPreviewEditableAtomId(mol, anchorAtomId)) && (!targetAtomId || isReactionPreviewEditableAtomId(mol, targetAtomId))
       },
       ({ mol, mode: editMode }) => {
         mol = mol ?? context.molecule.ensureActive?.();
@@ -1694,9 +1692,7 @@ export function createStructuralEditActions(context) {
           editMode === 'force' && Array.isArray(options.forcePoints) && options.forcePoints.length >= (anchorAtom ? atomCount + 1 : atomCount)
             ? options.forcePoints.map(position => ({ x: Number(position.x), y: Number(position.y) })).filter(position => Number.isFinite(position.x) && Number.isFinite(position.y))
             : null;
-        const start = anchorAtom
-          ? (previewForcePoints?.[0] ?? { x: anchorAtom.x, y: anchorAtom.y })
-          : (previewForcePoints?.[0] ?? getRingTemplatePlacementCenter(mol, editMode, ox, oy));
+        const start = anchorAtom ? (previewForcePoints?.[0] ?? { x: anchorAtom.x, y: anchorAtom.y }) : (previewForcePoints?.[0] ?? getRingTemplatePlacementCenter(mol, editMode, ox, oy));
         if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) {
           return { cancelled: true };
         }
@@ -1727,11 +1723,10 @@ export function createStructuralEditActions(context) {
           const zigDirection = (editMode === '2d' ? -1 : 1) * requestedZigSign;
           const zig = zigDirection * (index % 2 === 0 ? 1 : -1) * (Math.PI / 6);
           const segmentAngle = baseAngle + zig;
-          point =
-            previewForcePoints?.[atomIds.length] ?? {
-              x: point.x + Math.cos(segmentAngle) * bondLength,
-              y: point.y + Math.sin(segmentAngle) * bondLength
-            };
+          point = previewForcePoints?.[atomIds.length] ?? {
+            x: point.x + Math.cos(segmentAngle) * bondLength,
+            y: point.y + Math.sin(segmentAngle) * bondLength
+          };
           const isSnappedEndpoint = targetAtom && index === segmentCount - 1;
           const atom = isSnappedEndpoint ? targetAtom : mol.addAtom(null, 'C', {}, { recompute: false });
           if (!isSnappedEndpoint) {
@@ -1749,8 +1744,7 @@ export function createStructuralEditActions(context) {
         mol.repairImplicitHydrogens?.(atomIds);
         mol._recomputeProperties?.();
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
-        const chainPatchPos =
-          editMode === 'force' ? new Map(atomIds.map(id => [id, { x: mol.atoms.get(id).x, y: mol.atoms.get(id).y }])) : null;
+        const chainPatchPos = editMode === 'force' ? new Map(atomIds.map(id => [id, { x: mol.atoms.get(id).x, y: mol.atoms.get(id).y }])) : null;
 
         return {
           clearSelection: true,

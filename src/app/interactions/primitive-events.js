@@ -671,7 +671,7 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function shouldRedirectForceHydrogenForPlacement() {
-    return isRingTemplateMode() || context.state.overlayState.getDrawBondMode();
+    return isRingTemplateMode() || context.state.overlayState.getDrawBondMode() || (context.state.overlayState.getAcyclicChainMode?.() ?? false);
   }
 
   function forceHydrogenRedirectTarget(atomNode, molecule) {
@@ -715,6 +715,22 @@ export function createPrimitiveEventHandlers(context) {
       atom: parentAtom,
       node: context.helpers.getForceNodeById?.(parentAtom.id) ?? parentAtom
     };
+  }
+
+  function startAcyclicChainFromForceNode(event, atomNode) {
+    if (!(context.state.overlayState.getAcyclicChainMode?.() ?? false) || !atomNode) {
+      return false;
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    const svgNode = context.dom.gNode?.()?.ownerSVGElement;
+    const CustomEventCtor = svgNode?.ownerDocument?.defaultView?.CustomEvent;
+    if (svgNode && CustomEventCtor) {
+      svgNode.dispatchEvent(new CustomEventCtor('acyclic-chain-force-anchor', { detail: { sourceEvent: event, atom: atomNode } }));
+      return true;
+    }
+    return false;
   }
 
   function forceHydrogenEndpointUnderPointer(event, bond, molecule) {
@@ -2180,6 +2196,10 @@ export function createPrimitiveEventHandlers(context) {
     const currentMol = context.state.documentState.getCurrentMol?.();
     if (isSuppressedForceHydrogenTarget(atom, currentMol)) {
       const redirect = forceHydrogenRedirectTarget(atom, currentMol);
+      if ((context.state.overlayState.getAcyclicChainMode?.() ?? false) && redirect) {
+        startAcyclicChainFromForceNode(event, redirect.node);
+        return;
+      }
       if (isRingTemplateMode()) {
         if (redirect && startRingTemplateOnAtom(event, redirect.id, redirect.node)) {
           return;
@@ -2193,6 +2213,9 @@ export function createPrimitiveEventHandlers(context) {
       } else {
         return;
       }
+    }
+    if (startAcyclicChainFromForceNode(event, atom)) {
+      return;
     }
     if (startRingTemplateOnAtom(event, atom.id, atom)) {
       return;

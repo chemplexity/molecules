@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { generateCoords } from '../../../src/layout/public-api.js';
-import { createForceSceneRenderer, handleForceAcyclicChainMouseDown } from '../../../src/app/render/force-scene.js';
+import { createForceSceneRenderer } from '../../../src/app/render/force-scene.js';
 
 class FakeSelection {
   constructor(records, nodeRef = {}, dataValue = []) {
@@ -402,38 +402,6 @@ function makeOctahedralForceSeedMolecule() {
 }
 
 describe('createForceSceneRenderer', () => {
-  it('intercepts a force atom press and forwards it to the chain gesture while chain mode is active', () => {
-    const dispatched = [];
-    class TestCustomEvent {
-      constructor(type, options) {
-        this.type = type;
-        this.detail = options.detail;
-      }
-    }
-    const svgNode = {
-      ownerDocument: { defaultView: { CustomEvent: TestCustomEvent } },
-      dispatchEvent(event) {
-        dispatched.push(event);
-      }
-    };
-    const calls = [];
-    const sourceEvent = {
-      preventDefault: () => calls.push('preventDefault'),
-      stopPropagation: () => calls.push('stopPropagation'),
-      stopImmediatePropagation: () => calls.push('stopImmediatePropagation')
-    };
-    const hydrogen = { id: 'h1', name: 'H', x: 10, y: 20 };
-
-    assert.equal(
-      handleForceAcyclicChainMouseDown({ overlay: { getAcyclicChainMode: () => true } }, sourceEvent, hydrogen, { ownerSVGElement: svgNode }),
-      true
-    );
-    assert.deepEqual(calls, ['preventDefault', 'stopPropagation', 'stopImmediatePropagation']);
-    assert.equal(dispatched[0].type, 'acyclic-chain-force-anchor');
-    assert.equal(dispatched[0].detail.sourceEvent, sourceEvent);
-    assert.equal(dispatched[0].detail.atom, hydrogen);
-  });
-
   it('preserves the current force viewport when asked and reapplies overlays', () => {
     const { renderer, records } = makeRenderer({
       preserveView: true,

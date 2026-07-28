@@ -69,7 +69,9 @@ function _normalizeHexColor(value) {
 }
 
 function _rgbToHex(channel) {
-  return Math.min(255, Math.max(0, Math.round(channel))).toString(16).padStart(2, '0');
+  return Math.min(255, Math.max(0, Math.round(channel)))
+    .toString(16)
+    .padStart(2, '0');
 }
 
 function _deriveHighlightOutline(fillColor) {

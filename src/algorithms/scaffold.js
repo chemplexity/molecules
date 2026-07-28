@@ -284,10 +284,7 @@ function _extractAcyclicBackbone(molecule, { preserveExocyclicMultipleBonds = fa
  * @param {number} [options.minSubstituentHeavyAtoms] - Minimum non-H branch size restored when `preserveLargeSubstituentBackbones` is enabled.
  * @returns {import('../core/Molecule.js').Molecule} A new molecule representing the Murcko scaffold.
  */
-export function extractMurckoScaffold(
-  molecule,
-  { preserveExocyclicMultipleBonds = false, preserveLargeSubstituentBackbones = false, minSubstituentHeavyAtoms = 4 } = {}
-) {
+export function extractMurckoScaffold(molecule, { preserveExocyclicMultipleBonds = false, preserveLargeSubstituentBackbones = false, minSubstituentHeavyAtoms = 4 } = {}) {
   const scaffold = molecule.clone();
   let changed = true;
 

@@ -116,9 +116,6 @@ export function createForceSceneRendererDeps(ctx) {
       syncSelectionToMolecule: mol => ctx.syncSelectionToMolecule(mol),
       clearSelection: () => ctx.clearSelection()
     },
-    overlay: {
-      getAcyclicChainMode: () => ctx.getAcyclicChainMode?.() ?? false
-    },
     cache: {
       reset: () => ctx.resetCache(),
       setValenceWarningCircles: selection => ctx.setValenceWarningCircles(selection),

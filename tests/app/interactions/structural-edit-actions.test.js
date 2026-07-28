@@ -3722,11 +3722,7 @@ describe('createStructuralEditActions', () => {
 
     assert.equal(mol.atoms.get(centerId)?.getCharge?.() ?? mol.atoms.get(centerId)?.properties?.charge, 1);
     assert.equal(
-      [...mol.bonds.values()].some(
-        bond =>
-          bond.properties.display?.centerId === centerId &&
-          bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H')
-      ),
+      [...mol.bonds.values()].some(bond => bond.properties.display?.centerId === centerId && bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H')),
       false
     );
 
@@ -3737,9 +3733,7 @@ describe('createStructuralEditActions', () => {
 
     assert.equal(mol.atoms.get(centerId)?.getCharge?.() ?? mol.atoms.get(centerId)?.properties?.charge, 0);
     const restoredStereoBonds = [...mol.bonds.values()].filter(
-      bond =>
-        bond.properties.display?.centerId === centerId &&
-        (bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+      bond => bond.properties.display?.centerId === centerId && (bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
     );
     const restoredHBond = restoredStereoBonds.find(bond => bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H'));
     assert.equal(restoredStereoBonds.length, 1);

@@ -1,11 +1,16 @@
 # Change Log
 
+## 2026-07-27
+
+- Expand molecule JSON import/export to preserve metadata, coordinates, visibility, exact IDs, tags, and all chemical and graphic properties while retaining minimal JSON compatibility.
+- Add footer Save As and Open controls beside Settings for saving complete molecule JSON documents to a chosen filename/location and loading them with coordinates and graphic properties intact; active reaction previews save only their reactant source.
+
 ## 2026-07-26
 
 - Let atom-anchored chain gestures finish on and merge with another existing atom.
 - Hide atom and bond tooltips in 2D and force layouts while the chain tool is active.
 - Remove the white background halo from the dragged chain-length number.
-- Redirect force-mode chain starts on hydrogen nodes to their bonded heavy atom without triggering node dragging.
+- Redirect force-mode hydrogen hover and chain starts to the bonded heavy atom without triggering node or viewport dragging.
 
 ## 2026-07-25
 

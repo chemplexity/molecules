@@ -223,7 +223,9 @@ export function createFinalizeAppBootstrapDeps(ctx) {
     },
     io: {
       toSMILES: ctx.toSMILES,
-      toInChI: ctx.toInChI
+      toInChI: ctx.toInChI,
+      toJSON: ctx.toJSON,
+      fromJSON: ctx.fromJSON
     }
   };
 }

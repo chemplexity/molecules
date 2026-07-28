@@ -133,7 +133,7 @@ export function initGestureInteractions(context) {
     const lineElement =
       element.matches?.('line') || element.matches?.('path')
         ? element
-        : element.querySelector?.('.bond-hit, .bond-hover-target, .ring-template-bond-hover-target, .ring-template-bond-priority-target, .link, line') ?? null;
+        : (element.querySelector?.('.bond-hit, .bond-hover-target, .ring-template-bond-hover-target, .ring-template-bond-priority-target, .link, line') ?? null);
     let x1 = Number(lineElement?.getAttribute?.('x1'));
     let y1 = Number(lineElement?.getAttribute?.('y1'));
     let x2 = Number(lineElement?.getAttribute?.('x2'));
@@ -266,7 +266,7 @@ export function initGestureInteractions(context) {
       .attr('d', bondPathPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x},${point.y}`).join(' '))
       .attr('fill', 'none')
       .attr('stroke', forceMode ? '#696969' : '#111')
-      .attr('stroke-width', forceMode ? singleBondWidth(1) : renderOptions.twoDBondThickness ?? 1.8)
+      .attr('stroke-width', forceMode ? singleBondWidth(1) : (renderOptions.twoDBondThickness ?? 1.8))
       .attr('stroke-linecap', 'round')
       .attr('stroke-linejoin', 'round');
     if (forceMode) {
@@ -367,9 +367,7 @@ export function initGestureInteractions(context) {
     const forceMode = context.state.viewState.getMode() === 'force';
     const molecule = forceMode ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();
     const anchor = molecule?.atoms?.get?.(anchorAtomId);
-    const neighbor = anchor
-      ?.getNeighbors?.(molecule)
-      ?.find?.(atom => atom && atom.visible !== false && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
+    const neighbor = anchor?.getNeighbors?.(molecule)?.find?.(atom => atom && atom.visible !== false && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y));
     if (!neighbor) {
       return 1;
     }
@@ -2757,6 +2755,9 @@ export function initGestureInteractions(context) {
       if (context.overlays.hasReactionPreview() || context.overlays.hasActiveResonanceView?.()) {
         return;
       }
+      if (mode === 'force' && event.target?.closest?.('.node, .ring-template-atom-hover-target')) {
+        return;
+      }
       clearAcyclicChainInvalidAnchor();
       const invalidBondTarget = chainBondTargetFromEvent(event);
       if (invalidBondTarget) {
@@ -3075,10 +3076,7 @@ export function initGestureInteractions(context) {
     if (acyclicChainDrag) {
       if (event.button === 0) {
         const drag = acyclicChainDrag;
-        const forcePoints =
-          context.state.viewState.getMode() === 'force'
-            ? acyclicChainPoints(drag.start, drag.angle, drag.count, !!drag.anchorAtomId).map(point => ({ ...point }))
-            : null;
+        const forcePoints = context.state.viewState.getMode() === 'force' ? acyclicChainPoints(drag.start, drag.angle, drag.count, !!drag.anchorAtomId).map(point => ({ ...point })) : null;
         acyclicChainDrag = null;
         clearAcyclicChainPreview();
         context.view.clearPrimitiveHover();

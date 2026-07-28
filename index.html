@@ -427,6 +427,19 @@
         </div>
         <div id="content-source">
           <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+          <button id="save-json-btn" class="footer-icon-btn" type="button" title="Save molecule" aria-label="Save molecule" onclick="saveMoleculeJson()">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 3.5h12.5L21 7v13.5H3V3.5z" />
+              <path d="M7 3.5h8v6H7zM7 14h10v6.5H7z" />
+            </svg>
+          </button>
+          <button id="open-json-btn" class="footer-icon-btn" type="button" title="Open molecule" aria-label="Open molecule" onclick="openMoleculeJson()">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.5 7.5h6l2-2h9v3H6.2L3.5 18.7z" />
+              <path d="M6.2 9h15.3l-3.2 9.5H3.5z" />
+            </svg>
+          </button>
+          <input id="open-json-input" type="file" accept=".json,application/json" hidden />
           <button id="options-btn" type="button" title="Options" onclick="openOptionsModal()">⚙</button>
         </div>
       </div>

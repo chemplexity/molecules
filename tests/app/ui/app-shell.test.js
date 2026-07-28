@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initAppShell, initMainSidebarResizer } from '../../../src/app/ui/app-shell.js';
+import { initAppShell, initMainSidebarResizer, loadMoleculeDocument, saveMoleculeDocument } from '../../../src/app/ui/app-shell.js';
 
 function makeResizableElement({ width = 0, right = width } = {}) {
   const listeners = new Map();
@@ -38,6 +38,78 @@ function makeResizableElement({ width = 0, right = width } = {}) {
 }
 
 describe('initAppShell', () => {
+  it('downloads the active molecule as JSON when Save As is unavailable', async () => {
+    const records = [];
+    const anchor = {
+      click() {
+        records.push(['click', this.download, this.href]);
+      },
+      remove() {
+        records.push(['remove']);
+      }
+    };
+    const context = {
+      win: {
+        URL: {
+          createObjectURL(blob) {
+            records.push(['blob', blob.type, blob.size]);
+            return 'blob:molecule';
+          },
+          revokeObjectURL(url) {
+            records.push(['revoke', url]);
+          }
+        },
+        setTimeout(callback) {
+          callback();
+        }
+      },
+      dom: {
+        getDocument: () => ({
+          body: {
+            appendChild(element) {
+              records.push(['append', element === anchor]);
+            }
+          },
+          createElement: tag => {
+            assert.equal(tag, 'a');
+            return anchor;
+          }
+        })
+      },
+      documentActions: {
+        getActiveMolecule: () => ({ name: 'Painted Molecule' }),
+        serialize: () => '{"atoms":[],"bonds":[]}'
+      }
+    };
+
+    assert.equal(await saveMoleculeDocument(context), true);
+    assert.deepEqual(records, [['blob', 'application/json', 23], ['append', true], ['click', 'Painted-Molecule.json', 'blob:molecule'], ['remove'], ['revoke', 'blob:molecule']]);
+  });
+
+  it('loads selected JSON and reports invalid documents', async () => {
+    const loaded = [];
+    const alerts = [];
+    const context = {
+      win: {
+        alert: message => alerts.push(message)
+      },
+      documentActions: {
+        deserialize: json => {
+          if (json === 'bad') {
+            throw new Error('invalid document');
+          }
+          return { id: 'restored' };
+        },
+        load: molecule => loaded.push(molecule)
+      }
+    };
+
+    assert.equal(await loadMoleculeDocument(context, { text: async () => '{"atoms":[],"bonds":[]}' }), true);
+    assert.deepEqual(loaded, [{ id: 'restored' }]);
+    assert.equal(await loadMoleculeDocument(context, { text: async () => 'bad' }), false);
+    assert.deepEqual(alerts, ['Could not open molecule JSON: invalid document']);
+  });
+
   it('registers global bridges, handles resize, and bootstraps the initial molecule', () => {
     const records = [];
     const listeners = new Map();
@@ -315,6 +387,36 @@ describe('initAppShell', () => {
       ['takeInputFormatSnapshot', { foo: 'bar' }],
       ['deleteSelection']
     ]);
+  });
+
+  it('uses the system Save As picker when available', async () => {
+    const records = [];
+    const context = {
+      win: {
+        async showSaveFilePicker(options) {
+          records.push(['picker', options.suggestedName, options.types[0].accept]);
+          return {
+            async createWritable() {
+              return {
+                async write(value) {
+                  records.push(['write', value]);
+                },
+                async close() {
+                  records.push(['close']);
+                }
+              };
+            }
+          };
+        }
+      },
+      documentActions: {
+        getActiveMolecule: () => ({ name: 'Custom Name' }),
+        serialize: () => '{"atoms":[],"bonds":[]}'
+      }
+    };
+
+    assert.equal(await saveMoleculeDocument(context), true);
+    assert.deepEqual(records, [['picker', 'Custom-Name.json', { 'application/json': ['.json'] }], ['write', '{"atoms":[],"bonds":[]}'], ['close']]);
   });
 
   it('skips resize work without an active molecule and routes 2D resize to the 2D handler', () => {

@@ -389,7 +389,19 @@ function reactionTemplatePayload() {
   }));
 }
 
-function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, decoratedScaffolds, extendedScaffolds, hideSimpleScaffolds, bondLength = 1.5, enabledTemplateKeys = null, onProgress = () => {}) {
+function generateNetwork(
+  seedSmiles,
+  maxDepth,
+  flatten,
+  maxNodes,
+  scaffolds,
+  decoratedScaffolds,
+  extendedScaffolds,
+  hideSimpleScaffolds,
+  bondLength = 1.5,
+  enabledTemplateKeys = null,
+  onProgress = () => {}
+) {
   const network = new ReactionNetwork();
   const processedSmiles = new Set();
   const attemptedReactions = new Set();
@@ -417,7 +429,16 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds, dec
     return moleculeFeatureCache.get(node.id);
   };
 
-  const reportProgress = ({ activeDepth = null, queuedMoleculeCount = currentQueue.length, phase = 'expanding', pipelineCompleted = null, pipelineTotal = null, pipelineItemName = null, pipelineItemState = null, force = false } = {}) => {
+  const reportProgress = ({
+    activeDepth = null,
+    queuedMoleculeCount = currentQueue.length,
+    phase = 'expanding',
+    pipelineCompleted = null,
+    pipelineTotal = null,
+    pipelineItemName = null,
+    pipelineItemState = null,
+    force = false
+  } = {}) => {
     const now = Date.now();
     if (!force && now - lastProgressAt < 100) {
       return;

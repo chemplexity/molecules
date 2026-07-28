@@ -14,6 +14,7 @@ import { parseSMILES, toSMILES } from '../../io/smiles.js';
 import { Molecule } from '../../core/Molecule.js';
 import { parseINCHI, toInChI } from '../../io/inchi.js';
 import { detectChemicalStringFormat } from '../../io/detect.js';
+import { toJSON, fromJSON } from '../../io/json.js';
 import { moleculeCatalog } from '../../data/molecule-catalog.js';
 import { validateValence } from '../../validation/index.js';
 import { refreshAromaticity } from '../../algorithms/aromaticity.js';
@@ -434,7 +435,6 @@ const forceSceneRenderer = createForceSceneRenderer(
     },
     syncSelectionToMolecule: mol => selectionStateHelpers.syncSelectionToMolecule(mol),
     clearSelection: () => runtimeState.clearSelection(),
-    getAcyclicChainMode: () => runtimeState.acyclicChainMode,
     resetCache: () => runtimeState.resetRenderCaches(),
     setValenceWarningCircles: selection => {
       runtimeState.forceValenceWarningCircles = selection;
@@ -1089,6 +1089,8 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     plotEl,
     toSMILES,
     toInChI,
+    toJSON,
+    fromJSON,
     appState,
     getSelectedAtomIds: () => runtimeState.selectedAtomIds,
     getSelectedBondIds: () => runtimeState.selectedBondIds,
@@ -1401,6 +1403,8 @@ finalizeAppBootstrap(
     atomTooltipHtml,
     toSMILES,
     toInChI,
+    toJSON,
+    fromJSON,
     forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
     scale: SCALE
   })

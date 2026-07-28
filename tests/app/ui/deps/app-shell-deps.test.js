@@ -11,6 +11,7 @@ describe('createAppShellDeps', () => {
         getDocument: () => 'document',
         getPlotElement: () => 'plot',
         getLabelToggleElement: () => 'labelToggle',
+        getOpenJsonInputElement: () => 'jsonInput',
         getContentMainElement: () => 'contentMain',
         getSidebarElement: () => 'sidebar',
         getMainSidebarSplitterElement: () => 'splitter'
@@ -24,6 +25,12 @@ describe('createAppShellDeps', () => {
         copyForceSvg: () => 'copyForceSvg',
         copySvg2d: () => 'copySvg2d',
         savePng2d: () => 'savePng2d'
+      },
+      documentActions: {
+        getActiveMolecule: () => 'activeMolecule',
+        serialize: value => `serialize:${value}`,
+        deserialize: value => `deserialize:${value}`,
+        load: value => `load:${value}`
       },
       options: {
         open: () => 'open'
@@ -86,11 +93,15 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.win.id, 'window');
     assert.equal(deps.dom.getDocument(), 'document');
     assert.equal(deps.dom.getPlotElement(), 'plot');
+    assert.equal(deps.dom.getOpenJsonInputElement(), 'jsonInput');
     assert.equal(deps.dom.getContentMainElement(), 'contentMain');
     assert.equal(deps.dom.getSidebarElement(), 'sidebar');
     assert.equal(deps.dom.getMainSidebarSplitterElement(), 'splitter');
     assert.equal(deps.history.undo(), 'undo');
     assert.equal(deps.exportActions.copyForceSvg(), 'copyForceSvg');
+    assert.equal(deps.documentActions.serialize('mol'), 'serialize:mol');
+    assert.equal(deps.documentActions.deserialize('json'), 'deserialize:json');
+    assert.equal(deps.documentActions.load('mol'), 'load:mol');
     assert.equal(deps.options.open(), 'open');
     assert.equal(deps.navigation.autoZoom(), 'autoZoom');
     assert.equal(deps.navigation.toggleMode(), 'toggleMode');

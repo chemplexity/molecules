@@ -202,10 +202,7 @@ test('renderMolSVG can render centered transparent atom labels for network thumb
 
   assert.ok(rendered, 'expected SVG render output');
   assert.doesNotMatch(rendered.svgContent, /fill="white" rx="2"/);
-  assert.match(
-    rendered.svgContent,
-    /<text x="91\.00" y="40\.00"[^>]*text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle"><tspan>OH<\/tspan><\/text>/
-  );
+  assert.match(rendered.svgContent, /<text x="91\.00" y="40\.00"[^>]*text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle"><tspan>OH<\/tspan><\/text>/);
 });
 
 test('renderMolSVG can render transparent charge badges for network thumbnails', () => {

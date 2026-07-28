@@ -141,6 +141,8 @@ describe('finalize-bootstrap dependency builder', () => {
       atomTooltipHtml() {},
       toSMILES() {},
       toInChI() {},
+      toJSON: value => `json:${value}`,
+      fromJSON: value => `molecule:${value}`,
       forceBondLength: 41,
       scale: 60
     });
@@ -148,6 +150,8 @@ describe('finalize-bootstrap dependency builder', () => {
     assert.equal(deps.state.hasDrawBondState(), true);
     assert.deepEqual(deps.constants, { forceBondLength: 41, scale: 60 });
     assert.equal(deps.forceHelpers, forceHelpers);
+    assert.equal(deps.io.toJSON('mol'), 'json:mol');
+    assert.equal(deps.io.fromJSON('json'), 'molecule:json');
     deps.state.setDrawBondHoverSuppressed(true);
     deps.history.takeSnapshot();
     assert.equal(drawBondHoverSuppressed, true);

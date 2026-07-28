@@ -158,6 +158,68 @@ describe('toJSON / fromJSON', () => {
     assert.ok(parsed.bonds !== undefined);
   });
 
+  it('round-trips molecule metadata, coordinates, visibility, IDs, tags, and graphic properties', () => {
+    const mol = parseSMILES('C1CC1');
+    mol.id = 'molecule-1';
+    mol.uuid = 'molecule-uuid';
+    mol.name = 'styled cyclopropane';
+    mol.tags = ['example', { source: 'test' }];
+    const atoms = [...mol.atoms.values()];
+    atoms[0].uuid = 'atom-uuid';
+    atoms[0].tags = ['anchor'];
+    atoms[0].x = 1.25;
+    atoms[0].y = -2.5;
+    atoms[0].z = 0.75;
+    atoms[0].visible = false;
+    atoms[0].properties.style = { color: '#3366ff', opacity: 0.8 };
+    atoms[0].properties.customGraphicFlag = { shape: 'diamond' };
+    const bond = [...mol.bonds.values()][0];
+    bond.uuid = 'bond-uuid';
+    bond.tags = ['highlighted'];
+    bond.properties.style = { color: '#ff6633', opacity: 0.4 };
+    bond.properties.display = { as: 'dash', centerId: atoms[0].id, manual: true };
+    mol.setRingFill(
+      atoms.map(atom => atom.id),
+      { color: '#ffe66d', opacity: 0.25 }
+    );
+
+    const restored = fromJSON(toJSON(mol));
+    const restoredAtom = restored.atoms.get(atoms[0].id);
+    const restoredBond = restored.bonds.get(bond.id);
+
+    assert.equal(restored.id, 'molecule-1');
+    assert.equal(restored.uuid, 'molecule-uuid');
+    assert.equal(restored.name, 'styled cyclopropane');
+    assert.deepEqual(restored.tags, ['example', { source: 'test' }]);
+    assert.equal(restoredAtom.uuid, 'atom-uuid');
+    assert.deepEqual(restoredAtom.tags, ['anchor']);
+    assert.deepEqual({ x: restoredAtom.x, y: restoredAtom.y, z: restoredAtom.z, visible: restoredAtom.visible }, { x: 1.25, y: -2.5, z: 0.75, visible: false });
+    assert.deepEqual(restoredAtom.properties.style, { color: '#3366ff', opacity: 0.8 });
+    assert.deepEqual(restoredAtom.properties.customGraphicFlag, { shape: 'diamond' });
+    assert.equal(restoredBond.uuid, 'bond-uuid');
+    assert.deepEqual(restoredBond.tags, ['highlighted']);
+    assert.deepEqual(restoredBond.properties.style, { color: '#ff6633', opacity: 0.4 });
+    assert.deepEqual(restoredBond.properties.display, { as: 'dash', centerId: atoms[0].id, manual: true });
+    assert.deepEqual(restored.getRingFills(), mol.getRingFills());
+  });
+
+  it('imports legacy unversioned molecule JSON', () => {
+    const restored = fromJSON(
+      JSON.stringify({
+        atoms: [
+          { id: 'a1', name: 'C', bonds: ['b1'], properties: { charge: 0 } },
+          { id: 'a2', name: 'O', bonds: ['b1'], properties: { charge: -1 } }
+        ],
+        bonds: [{ id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1 } }]
+      })
+    );
+
+    assert.equal(restored.atomCount, 2);
+    assert.equal(restored.bondCount, 1);
+    assert.equal(restored.bonds.has('b1'), true);
+    assert.equal(restored.atoms.get('a2').properties.charge, -1);
+  });
+
   it('fromJSON throws on invalid JSON', () => {
     assert.throws(() => fromJSON('{invalid json}'));
   });

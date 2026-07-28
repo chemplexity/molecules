@@ -3039,11 +3039,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handle2dBondMouseOver({ clientX: 5, clientY: 6 }, { id: 'b1' }, { id: 'a1' }, { id: 'a2' });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', [], ['b1']],
-      ['setSelectionValenceTooltipAtomId', null],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['setSelectionValenceTooltipAtomId', null], ['hide']]);
   });
 
   it('suppresses force bond tooltips while charge mode is active', () => {
@@ -3092,11 +3088,7 @@ describe('createPrimitiveEventHandlers', () => {
       ])
     });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', [], ['b1']],
-      ['setSelectionValenceTooltipAtomId', null],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', [], ['b1']], ['setSelectionValenceTooltipAtomId', null], ['hide']]);
   });
 
   it('does not let blocked force product-side bonds become draw-bond hover targets', () => {
@@ -3405,6 +3397,99 @@ describe('createPrimitiveEventHandlers', () => {
     assert.deepEqual(calls, [['start', 'c1', 10, 20]]);
   });
 
+  it('redirects force hydrogen hover to its parent while acyclic-chain mode is active', () => {
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const carbon = { id: 'c1', name: 'C', bonds: ['b1'], x: 10, y: 20 };
+    const bond = {
+      id: 'b1',
+      atoms: ['c1', 'h1'],
+      properties: {},
+      getOtherAtom: atomId => (atomId === 'h1' ? 'c1' : 'h1')
+    };
+    const molecule = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', carbon]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { context, calls, placementRedirectedHoverAtomIds, setAcyclicChainMode } = makeContext({
+      currentMol: molecule,
+      helpers: {
+        getForceNodeById: id => (id === 'c1' ? { ...carbon, x: 10, y: 20 } : null)
+      }
+    });
+    setAcyclicChainMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+
+    handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'h1', name: 'H' }, molecule, null);
+
+    assert.deepEqual(calls[0], ['showPrimitiveHover', ['c1'], []]);
+    assert.deepEqual([...placementRedirectedHoverAtomIds], ['c1']);
+    assert.equal(
+      calls.some(call => call[0] === 'showPrimitiveHover' && call[1]?.includes?.('h1')),
+      false
+    );
+  });
+
+  it('starts a force chain from the hydrogen parent on mouse down', () => {
+    const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
+    const carbonNode = { id: 'c1', name: 'C', bonds: ['b1'], x: 10, y: 20 };
+    const molecule = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', carbonNode]
+      ]),
+      bonds: new Map([
+        [
+          'b1',
+          {
+            id: 'b1',
+            atoms: ['c1', 'h1'],
+            properties: {},
+            getOtherAtom: atomId => (atomId === 'h1' ? 'c1' : 'h1')
+          }
+        ]
+      ])
+    };
+    const dispatched = [];
+    class TestCustomEvent {
+      constructor(type, options) {
+        this.type = type;
+        this.detail = options.detail;
+      }
+    }
+    const svgNode = {
+      ownerDocument: { defaultView: { CustomEvent: TestCustomEvent } },
+      dispatchEvent: event => dispatched.push(event)
+    };
+    const { context, setAcyclicChainMode } = makeContext({
+      currentMol: molecule,
+      helpers: {
+        getForceNodeById: id => (id === 'c1' ? carbonNode : null)
+      },
+      dom: {
+        gNode: () => ({ ownerSVGElement: svgNode })
+      }
+    });
+    setAcyclicChainMode(true);
+    const handlers = createPrimitiveEventHandlers(context);
+    const eventCalls = [];
+    const event = {
+      preventDefault: () => eventCalls.push('preventDefault'),
+      stopPropagation: () => eventCalls.push('stopPropagation'),
+      stopImmediatePropagation: () => eventCalls.push('stopImmediatePropagation')
+    };
+
+    handlers.handleForceAtomMouseDownDrawBond(event, { id: 'h1', name: 'H' });
+
+    assert.deepEqual(eventCalls, ['preventDefault', 'stopPropagation', 'stopImmediatePropagation']);
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].type, 'acyclic-chain-force-anchor');
+    assert.equal(dispatched[0].detail.atom, carbonNode);
+    assert.equal(dispatched[0].detail.sourceEvent, event);
+  });
+
   it('keeps displayed stereochemical force hydrogens hoverable', () => {
     const hydrogen = { id: 'h1', name: 'H', bonds: ['b1'] };
     const carbon = { id: 'c1', name: 'C', getChirality: () => 'R' };
@@ -3536,11 +3621,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handle2dAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1' }, { id: 'mol' }, { message: 'warn' });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', ['a1'], []],
-      ['setSelectionValenceTooltipAtomId', null],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['a1'], []], ['setSelectionValenceTooltipAtomId', null], ['hide']]);
   });
 
   it('suppresses force atom tooltips while acyclic-chain mode is active', () => {
@@ -3551,11 +3632,7 @@ describe('createPrimitiveEventHandlers', () => {
 
     handlers.handleForceAtomMouseOver({ clientX: 5, clientY: 6 }, { id: 'a1', name: 'C' }, molecule, { message: 'warn' });
 
-    assert.deepEqual(calls, [
-      ['showPrimitiveHover', ['a1'], []],
-      ['setSelectionValenceTooltipAtomId', null],
-      ['hide']
-    ]);
+    assert.deepEqual(calls, [['showPrimitiveHover', ['a1'], []], ['setSelectionValenceTooltipAtomId', null], ['hide']]);
   });
 
   it('suppresses atom and valence tooltips while paint mode is active', () => {

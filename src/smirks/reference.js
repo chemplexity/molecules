@@ -648,7 +648,15 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Acetal -> carbonyl + alcohols',
     variants: [
       variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
-      variant({ id: 'ptsoh-acetone-water', label: 'p-TsOH, aq. acetone', role: 'alternative', reagents: ['H2O'], catalysts: ['p-TsOH'], solvents: ['acetone', 'water'], conditions: { temperature: '25 °C to heat' } })
+      variant({
+        id: 'ptsoh-acetone-water',
+        label: 'p-TsOH, aq. acetone',
+        role: 'alternative',
+        reagents: ['H2O'],
+        catalysts: ['p-TsOH'],
+        solvents: ['acetone', 'water'],
+        conditions: { temperature: '25 °C to heat' }
+      })
     ],
     notes: ['Represents acid-catalyzed hydrolysis of an acetal or ketal back to a carbonyl and alcohol fragments.'],
     limitations: ['Does not encode hemiacetal intermediates or equilibrium.', 'Cyclic acetals may be fragmented schematically rather than as a single diol product.']
@@ -658,7 +666,14 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Carbonyl + hydroxylamine -> oxime',
     variants: [
       variant({ id: 'hydroxylamine-buffer', label: 'NH2OH, buffer', reagents: ['NH2OH'], solvents: ['EtOH', 'water'], conditions: { temperature: '25 °C to reflux', pH: 'mildly acidic to neutral' } }),
-      variant({ id: 'hydroxylamine-hcl-base', label: 'NH2OH.HCl, base', role: 'alternative', reagents: ['NH2OH.HCl', 'base'], solvents: ['EtOH', 'water'], conditions: { temperature: '25 °C to reflux' } })
+      variant({
+        id: 'hydroxylamine-hcl-base',
+        label: 'NH2OH.HCl, base',
+        role: 'alternative',
+        reagents: ['NH2OH.HCl', 'base'],
+        solvents: ['EtOH', 'water'],
+        conditions: { temperature: '25 °C to reflux' }
+      })
     ],
     byproducts: ['H2O'],
     selectivity: selectivity({ stereochemistry: 'E/Z oxime geometry is not encoded' }),
@@ -670,7 +685,15 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Oxime -> carbonyl + hydroxylamine',
     variants: [
       variant({ id: 'aqueous-acid', label: 'aq. acid', reagents: ['H2O'], catalysts: ['acid'], solvents: ['water'], conditions: { temperature: '25 °C to heat', pH: 'acidic' } }),
-      variant({ id: 'acidic-acetone-water', label: 'acidic aq. acetone', role: 'alternative', reagents: ['H2O'], catalysts: ['acid'], solvents: ['acetone', 'water'], conditions: { temperature: '25 °C to heat' } })
+      variant({
+        id: 'acidic-acetone-water',
+        label: 'acidic aq. acetone',
+        role: 'alternative',
+        reagents: ['H2O'],
+        catalysts: ['acid'],
+        solvents: ['acetone', 'water'],
+        conditions: { temperature: '25 °C to heat' }
+      })
     ],
     notes: ['Represents hydrolysis of an oxime back to the parent carbonyl and hydroxylamine.'],
     limitations: ['Does not represent oxime E/Z isomers, Beckmann rearrangement, or nitrone/nitrile oxide pathways.']
@@ -744,7 +767,16 @@ const REACTION_TEMPLATE_METADATA = {
     summary: 'Carboxylic acid -> acid chloride',
     variants: [
       variant({ id: 'socl2', label: 'SOCl2', reagents: ['SOCl2'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['SO2', 'HCl'] }),
-      variant({ id: 'oxalyl-chloride', label: 'oxalyl chloride', role: 'alternative', reagents: ['oxalyl chloride'], catalysts: ['DMF'], solvents: ['CH2Cl2'], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['CO', 'CO2', 'HCl'] }),
+      variant({
+        id: 'oxalyl-chloride',
+        label: 'oxalyl chloride',
+        role: 'alternative',
+        reagents: ['oxalyl chloride'],
+        catalysts: ['DMF'],
+        solvents: ['CH2Cl2'],
+        conditions: { temperature: '0 °C to 25 °C' },
+        byproducts: ['CO', 'CO2', 'HCl']
+      }),
       variant({ id: 'pcl5', label: 'PCl5', role: 'alternative', reagents: ['PCl5'], solvents: [], conditions: { temperature: '0 °C to 25 °C' }, byproducts: ['POCl3', 'HCl'] })
     ],
     byproducts: ['chlorinating-agent byproducts'],

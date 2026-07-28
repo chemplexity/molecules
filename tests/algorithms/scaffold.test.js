@@ -48,8 +48,14 @@ describe('Murcko Scaffold Extraction', () => {
     const rendered = renderMolSVG(scaffold.clone());
 
     assert.equal(toCanonicalSMILES(scaffold), 'C1CCCCC1');
-    assert.equal([...scaffold.atoms.values()].some(atom => atom.getChirality()), false);
-    assert.equal([...scaffold.bonds.values()].some(bond => bond.properties.stereo || bond.properties.display?.as), false);
+    assert.equal(
+      [...scaffold.atoms.values()].some(atom => atom.getChirality()),
+      false
+    );
+    assert.equal(
+      [...scaffold.bonds.values()].some(bond => bond.properties.stereo || bond.properties.display?.as),
+      false
+    );
     assert.equal(rendered?.svgContent.includes('<tspan>H</tspan>'), false);
   });
 
@@ -58,8 +64,14 @@ describe('Murcko Scaffold Extraction', () => {
     const scaffold = extractMurckoScaffold(mol);
     const rendered = renderMolSVG(scaffold.clone());
 
-    assert.equal([...scaffold.atoms.values()].some(atom => atom.getChirality()), false);
-    assert.equal([...scaffold.bonds.values()].some(bond => bond.properties.stereo || bond.properties.display?.as), false);
+    assert.equal(
+      [...scaffold.atoms.values()].some(atom => atom.getChirality()),
+      false
+    );
+    assert.equal(
+      [...scaffold.bonds.values()].some(bond => bond.properties.stereo || bond.properties.display?.as),
+      false
+    );
     assert.equal(rendered?.svgContent.includes('<tspan>H</tspan>'), false);
   });
 });

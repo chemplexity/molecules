@@ -304,14 +304,20 @@ describe('createInputFlowManager', () => {
     assert.equal(inputEl.attributes.get('aria-invalid'), 'true');
     assert.equal(inputEl.title, 'Invalid SMILES input');
     assert.equal(getState().currentSmiles, null);
-    assert.equal(calls.some(([name]) => name === 'renderMol'), false);
+    assert.equal(
+      calls.some(([name]) => name === 'renderMol'),
+      false
+    );
 
     assert.equal(manager.parseInput('CCO'), true);
     assert.equal(inputEl.classList.toggled.get('invalid-chemical-input'), false);
     assert.equal(inputEl.attributes.has('aria-invalid'), false);
     assert.equal(inputEl.title, '');
     assert.equal(getState().currentSmiles, 'CCO');
-    assert.equal(calls.some(([name]) => name === 'renderMol'), true);
+    assert.equal(
+      calls.some(([name]) => name === 'renderMol'),
+      true
+    );
   });
 
   it('marks invalid InChI input', () => {

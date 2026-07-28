@@ -17527,25 +17527,23 @@ function attachedBlockPrimaryScoreIsPerfect(score) {
   if (!score) {
     return false;
   }
-  if (
-    !(
-      score.overlapCount === 0 &&
-      score.heavyBondCrossingPriorityCount === 0 &&
-      score.fusedJunctionContinuationPenalty <= IMPROVEMENT_EPSILON &&
-      score.parentVisibleTrigonalPenalty <= IMPROVEMENT_EPSILON &&
-      score.parentOutwardPenalty <= IMPROVEMENT_EPSILON &&
-      score.projectedTetrahedralParentPenalty <= IMPROVEMENT_EPSILON &&
-      score.parentExteriorPenalty <= IMPROVEMENT_EPSILON &&
-      score.exactContinuationPenalty <= IMPROVEMENT_EPSILON &&
-      score.exactTerminalMultipleSlotPenalty <= IMPROVEMENT_EPSILON &&
-      score.trigonalBisectorPenalty <= IMPROVEMENT_EPSILON &&
-      score.ringExitPenalty <= IMPROVEMENT_EPSILON &&
-      score.ringExitMaxPenalty <= IMPROVEMENT_EPSILON &&
-      score.attachmentExteriorPenalty <= IMPROVEMENT_EPSILON &&
-      score.junctionCrowdingPenalty <= IMPROVEMENT_EPSILON &&
-      score.terminalLabelClearancePenalty <= IMPROVEMENT_EPSILON
-    )
-  ) {
+  if (!(
+    score.overlapCount === 0 &&
+    score.heavyBondCrossingPriorityCount === 0 &&
+    score.fusedJunctionContinuationPenalty <= IMPROVEMENT_EPSILON &&
+    score.parentVisibleTrigonalPenalty <= IMPROVEMENT_EPSILON &&
+    score.parentOutwardPenalty <= IMPROVEMENT_EPSILON &&
+    score.projectedTetrahedralParentPenalty <= IMPROVEMENT_EPSILON &&
+    score.parentExteriorPenalty <= IMPROVEMENT_EPSILON &&
+    score.exactContinuationPenalty <= IMPROVEMENT_EPSILON &&
+    score.exactTerminalMultipleSlotPenalty <= IMPROVEMENT_EPSILON &&
+    score.trigonalBisectorPenalty <= IMPROVEMENT_EPSILON &&
+    score.ringExitPenalty <= IMPROVEMENT_EPSILON &&
+    score.ringExitMaxPenalty <= IMPROVEMENT_EPSILON &&
+    score.attachmentExteriorPenalty <= IMPROVEMENT_EPSILON &&
+    score.junctionCrowdingPenalty <= IMPROVEMENT_EPSILON &&
+    score.terminalLabelClearancePenalty <= IMPROVEMENT_EPSILON
+  )) {
     return false;
   }
   ensureAttachedBlockPresentationState(score);

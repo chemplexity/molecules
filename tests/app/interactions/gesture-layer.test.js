@@ -441,10 +441,13 @@ describe('initGestureInteractions', () => {
       ])
     };
 
-    assert.deepEqual(resolveForceChainAnchor(molecule, hydrogen, id => (id === 'c1' ? { id, x: 15, y: 25 } : null)), {
-      id: 'c1',
-      point: { x: 15, y: 25 }
-    });
+    assert.deepEqual(
+      resolveForceChainAnchor(molecule, hydrogen, id => (id === 'c1' ? { id, x: 15, y: 25 } : null)),
+      {
+        id: 'c1',
+        point: { x: 15, y: 25 }
+      }
+    );
   });
 
   it('starts a blank-space draw-bond gesture through the extracted SVG handler', () => {

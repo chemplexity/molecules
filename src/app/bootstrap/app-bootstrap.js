@@ -457,6 +457,7 @@ export function finalizeAppBootstrap(ctx) {
         getDocument: () => ctx.dom.getDocument(),
         getPlotElement: () => ctx.dom.getSvgPlotElement(),
         getLabelToggleElement: () => ctx.dom.getLabelToggleElement(),
+        getOpenJsonInputElement: () => ctx.dom.getOpenJsonInputElement(),
         getContentMainElement: () => ctx.dom.getContentMainElement(),
         getSidebarElement: () => ctx.dom.getSidebarElement(),
         getMainSidebarSplitterElement: () => ctx.dom.getMainSidebarSplitterElement()
@@ -470,6 +471,17 @@ export function finalizeAppBootstrap(ctx) {
         copyForceSvg: () => ctx.export.copyForceSvg(),
         copySvg2d: () => ctx.export.copySvg2d(),
         savePng2d: () => ctx.export.savePng2d()
+      },
+      documentActions: {
+        getActiveMolecule: () => ctx.overlays.getReactionPreviewSourceMol() ?? (ctx.state.getMode() === 'force' ? ctx.state.getCurrentMol() : ctx.state.getMol2d()),
+        serialize: molecule => ctx.io.toJSON(molecule),
+        deserialize: json => ctx.io.fromJSON(json),
+        load: molecule => {
+          appDelegates.renderMol(molecule, {
+            preserveGeometry: true,
+            preserveView: false
+          });
+        }
       },
       options: {
         open: () => optionsModal.open()
