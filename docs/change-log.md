@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-07-28
+
+- Expand the Topological panel with ABC, geometric-arithmetic, harmonic, sum-connectivity, eccentric connectivity, Wiener polarity, Schultz, Gutman, forgotten, Narumi-Katayama, and Hosoya indexes.
+
 ## 2026-07-27
 
 - Expand molecule JSON import/export to preserve metadata, coordinates, visibility, exact IDs, tags, and all chemical and graphic properties while retaining minimal JSON compatibility.

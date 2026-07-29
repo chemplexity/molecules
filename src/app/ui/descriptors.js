@@ -2,7 +2,28 @@
 
 import { molecularFormula, molecularMass } from '../../descriptors/molecular.js';
 import { allMatrices } from '../../matrices/index.js';
-import { wienerIndex, hyperWienerIndex, balabanIndex, randicIndex, zagreb1, zagreb2, hararyIndex, plattIndex, szegedIndex } from '../../descriptors/topological.js';
+import {
+  abcIndex,
+  balabanIndex,
+  eccentricConnectivityIndex,
+  forgottenIndex,
+  gaIndex,
+  gutmanIndex,
+  hararyIndex,
+  harmonicIndex,
+  hosoyaIndex,
+  hyperWienerIndex,
+  narumiKatayamaIndex,
+  plattIndex,
+  randicIndex,
+  schultzIndex,
+  sumConnectivityIndex,
+  szegedIndex,
+  wienerIndex,
+  wienerPolarityIndex,
+  zagreb1,
+  zagreb2
+} from '../../descriptors/topological.js';
 import {
   logP,
   tpsa,
@@ -70,6 +91,60 @@ function detailHighlightGroups(detail, molecule, label = '') {
   return [];
 }
 
+const HOSOYA_MAX_HEAVY_ATOMS = 18;
+
+/**
+ * Computes the rows displayed by the topological descriptor panel.
+ * @param {object} molecule - Molecule graph to analyze.
+ * @param {number} [extraH] - Additional implicit hydrogen count.
+ * @returns {Array<[string, number|null]>} Label/value rows.
+ */
+export function topologicalDescriptorRows(molecule, extraH = 0) {
+  const heavyCount = [...molecule.atoms.values()].filter(atom => atom.name !== 'H').length;
+  let rows = [
+    ['Atoms (total)', molecule.atoms.size + extraH],
+    ['Heavy atoms', heavyCount],
+    ['Bonds', molecule.bonds.size]
+  ];
+
+  try {
+    if (heavyCount >= 2) {
+      const { adjacency, degree, distance, reciprocal } = allMatrices(molecule);
+      let J = null;
+      try {
+        J = balabanIndex(distance, adjacency);
+      } catch {
+        // Leave Balaban index blank when the graph is not suitable.
+      }
+      rows = rows.concat([
+        ['Wiener Index (W)', wienerIndex(distance)],
+        ['Hyper-Wiener (WW)', hyperWienerIndex(distance)],
+        ['Harary Index (H)', hararyIndex(reciprocal)],
+        ['Balaban Index (J)', J],
+        ['Randić Index (χ)', randicIndex(adjacency, degree)],
+        ['Zagreb M1', zagreb1(degree)],
+        ['Zagreb M2', zagreb2(adjacency, degree)],
+        ['Platt Index (F)', plattIndex(adjacency, degree)],
+        ['Szeged Index (Sz)', szegedIndex(distance, adjacency)],
+        ['Atom-Bond Connectivity (ABC)', abcIndex(adjacency, degree)],
+        ['Geometric-Arithmetic (GA)', gaIndex(adjacency, degree)],
+        ['Harmonic Index', harmonicIndex(adjacency, degree)],
+        ['Sum-Connectivity (χs)', sumConnectivityIndex(adjacency, degree)],
+        ['Eccentric Connectivity (ξ)', eccentricConnectivityIndex(adjacency, degree, distance)],
+        ['Wiener Polarity (Wp)', wienerPolarityIndex(distance)],
+        ['Schultz Index (MTI)', schultzIndex(degree, distance)],
+        ['Gutman Index (Gut)', gutmanIndex(degree, distance)],
+        ['Forgotten Index (F₃)', forgottenIndex(degree)],
+        ['Narumi-Katayama (NK)', narumiKatayamaIndex(degree)],
+        ['Hosoya Index (Z)', heavyCount <= HOSOYA_MAX_HEAVY_ATOMS ? hosoyaIndex(molecule) : null]
+      ]);
+    }
+  } catch {
+    // Keep the descriptor panel usable if a calculation fails.
+  }
+  return rows;
+}
+
 /**
  * Recalculates and renders graph-theoretical descriptors for the given molecule into the descriptor panel.
  * @param {object} molecule - Molecule object whose descriptors will be computed.
@@ -81,52 +156,7 @@ export function updateDescriptors(molecule, extraH = 0) {
     return;
   }
 
-  let heavyCount = 0;
-  for (const atom of molecule.atoms.values()) {
-    if (atom.name !== 'H') {
-      heavyCount++;
-    }
-  }
-
-  let rows = [
-    ['Atoms (total)', molecule.atoms.size + extraH],
-    ['Heavy atoms', heavyCount],
-    ['Bonds', molecule.bonds.size]
-  ];
-
-  try {
-    if (heavyCount >= 2) {
-      const { adjacency, degree, distance, reciprocal } = allMatrices(molecule);
-      const W = wienerIndex(distance);
-      const WW = hyperWienerIndex(distance);
-      const H = hararyIndex(reciprocal);
-      const chi = randicIndex(adjacency, degree);
-      const M1 = zagreb1(degree);
-      const M2 = zagreb2(adjacency, degree);
-      const F = plattIndex(adjacency, degree);
-      const Sz = szegedIndex(distance, adjacency);
-      let J = null;
-      try {
-        J = balabanIndex(distance, adjacency);
-      } catch {
-        // Leave Balaban index blank when the graph is not suitable.
-      }
-      rows = rows.concat([
-        ['Wiener Index (W)', W],
-        ['Hyper-Wiener (WW)', WW],
-        ['Harary Index (H)', H],
-        ['Balaban Index (J)', J],
-        ['Randić Index (χ)', chi],
-        ['Zagreb M1', M1],
-        ['Zagreb M2', M2],
-        ['Platt Index (F)', F],
-        ['Szeged Index (Sz)', Sz]
-      ]);
-    }
-  } catch {
-    // Keep the descriptor panel usable if a calculation fails.
-  }
-
+  const rows = topologicalDescriptorRows(molecule, extraH);
   tbody.innerHTML = rows.map(([label, val]) => `<tr><td>${label}</td><td>${fmtVal(val)}</td></tr>`).join('');
   updatePhysicochemical(molecule);
 }
