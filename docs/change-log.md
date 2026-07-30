@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-07-29
+
+- Add a keyboard-shortcut guide beside Settings, with grouped editing, drawing, and canvas commands; open or close it with `?`, and dismiss it with Escape, the close button, or a backdrop click.
+
 ## 2026-07-28
 
 - Expand the Topological panel with ABC, geometric-arithmetic, harmonic, sum-connectivity, eccentric connectivity, Wiener polarity, Schultz, Gutman, forgotten, Narumi-Katayama, and Hosoya indexes.
