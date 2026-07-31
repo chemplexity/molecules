@@ -150,7 +150,10 @@ describe('initAppShell', () => {
       win,
       dom: {
         getPlotElement: () => plotEl,
-        getLabelToggleElement: () => labelToggleEl
+        getLabelToggleElement: () => labelToggleEl,
+        getInputElement: () => ({
+          focus: () => records.push(['focusInput'])
+        })
       },
       history: {
         undo: () => {
@@ -273,6 +276,9 @@ describe('initAppShell', () => {
         parseInput: value => {
           records.push(['parseInput', value]);
         },
+        clearMolecule: () => {
+          records.push(['clearMolecule']);
+        },
         setInputFormat: (fmt, options = {}) => {
           records.push(['setInputFormat', fmt, options]);
         },
@@ -334,6 +340,7 @@ describe('initAppShell', () => {
     win._parseSmiles('CCN');
     win._parseInchi('InChI=1S/CH4/h1H4');
     win._parseInput('CCO');
+    win.clearInputMolecule();
     win._setInputFormat('inchi', { preserveSelection: true });
     win._renderExamples();
     win._pickRandomMolecule();
@@ -381,6 +388,10 @@ describe('initAppShell', () => {
       ['parseSmiles', 'CCN'],
       ['parseInchi', 'InChI=1S/CH4/h1H4'],
       ['parseInput', 'CCO'],
+      ['clearMolecule'],
+      ['setInputValue', ''],
+      ['syncCollectionPicker', ''],
+      ['focusInput'],
       ['setInputFormat', 'inchi', { preserveSelection: true }],
       ['renderExamples'],
       ['pickRandomMolecule'],

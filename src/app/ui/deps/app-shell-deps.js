@@ -12,6 +12,7 @@ export function createAppShellDeps(deps) {
     dom: {
       getDocument: deps.dom.getDocument,
       getPlotElement: deps.dom.getPlotElement,
+      getInputElement: deps.dom.getInputElement,
       getLabelToggleElement: deps.dom.getLabelToggleElement,
       getOpenJsonInputElement: deps.dom.getOpenJsonInputElement,
       getContentMainElement: deps.dom.getContentMainElement,
@@ -80,6 +81,7 @@ export function createAppShellDeps(deps) {
       parseSmiles: deps.input.parseSmiles,
       parseInchi: deps.input.parseInchi,
       parseInput: deps.input.parseInput,
+      clearMolecule: deps.input.clearMolecule,
       setInputFormat: deps.input.setInputFormat,
       renderExamples: deps.input.renderExamples,
       pickRandomMolecule: deps.input.pickRandomMolecule,

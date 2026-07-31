@@ -540,6 +540,7 @@ export function finalizeAppBootstrap(ctx) {
         parseSmiles: smiles => ctx.input.inputFlowManager.parseAndRenderSmiles(smiles),
         parseInchi: inchi => ctx.input.inputFlowManager.parseAndRenderInchi(inchi),
         parseInput: value => ctx.input.inputFlowManager.parseInput(value),
+        clearMolecule: () => ctx.input.inputFlowManager.clearMolecule(),
         setInputFormat: (fmt, options = {}) => ctx.input.inputFlowManager.setInputFormat(fmt, options),
         renderExamples: () => ctx.input.inputControls.renderExamples(),
         pickRandomMolecule: () => ctx.input.inputControls.pickRandomMolecule(),

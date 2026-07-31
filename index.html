@@ -31,7 +31,8 @@
         <div id="user-input">
           <form onsubmit="return false;">
             <div class="group">
-              <input type="text" id="smiles-input" autocomplete="off" spellcheck="false" />
+              <input type="text" id="smiles-input" placeholder=" " autocomplete="off" spellcheck="false" />
+              <button id="clear-input-btn" type="button" title="Clear molecule" aria-label="Clear molecule" onclick="clearInputMolecule()">×</button>
               <span class="highlight"></span>
               <span class="bar"></span>
               <label for="smiles-input" id="input-label">Input SMILES notation...</label>

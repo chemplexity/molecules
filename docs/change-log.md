@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-07-30
+
+- Add a compact clear-molecule button to the right edge of the SMILES/InChI input, hidden while the input is empty and returning focus to the field after clearing.
+- Preserve the input text in the clear action's undo snapshot so Undo restores both the molecule and its SMILES/InChI text.
+
 ## 2026-07-29
 
 - Add a keyboard-shortcut guide beside Settings, with grouped editing, drawing, and canvas commands; open or close it with `?`, and dismiss it with Escape, the close button, or a backdrop click.

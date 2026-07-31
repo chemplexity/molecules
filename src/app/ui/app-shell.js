@@ -361,6 +361,12 @@ export function initAppShell(context) {
   bindGlobal(win, '_parseSmiles', smiles => context.input.parseSmiles(smiles));
   bindGlobal(win, '_parseInchi', inchi => context.input.parseInchi(inchi));
   bindGlobal(win, '_parseInput', value => context.input.parseInput(value));
+  bindGlobal(win, 'clearInputMolecule', () => {
+    context.input.clearMolecule();
+    context.initialState.setInputValue('');
+    context.initialState.syncCollectionPicker('');
+    context.dom.getInputElement()?.focus();
+  });
   bindGlobal(win, '_setInputFormat', (fmt, options = {}) => context.input.setInputFormat(fmt, options));
   bindGlobal(win, '_renderExamples', () => context.input.renderExamples());
   bindGlobal(win, '_pickRandomMolecule', () => context.input.pickRandomMolecule());

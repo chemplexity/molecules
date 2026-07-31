@@ -603,11 +603,44 @@ body.resizing-main-sidebar #sidebar {
 .group input {
   width: 100%;
   font-size: 16px;
-  padding: 10px 10px 10px 5px;
+  padding: 10px 38px 10px 5px;
   display: block;
   border: none;
   border-bottom: 1px solid #757575;
   background: transparent;
+}
+
+#clear-input-btn {
+  position: absolute;
+  top: 5px;
+  right: 3px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #8a969b;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 26px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+#clear-input-btn:hover,
+#clear-input-btn:focus-visible {
+  color: #455b64;
+  background: #eef4f6;
+}
+
+.group:has(#smiles-input:placeholder-shown) #clear-input-btn {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .group input.invalid-chemical-input {
