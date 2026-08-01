@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-01
+
+- Add a shuffle button beside the Molecule Catalog selector that loads non-repeating random catalog entries compatible with the active SMILES or InChI mode.
+
 ## 2026-07-31
 
 - Fix SMILES/InChI switching after clearing and undoing in 2D mode by converting the restored active 2D molecule instead of looking only in force-layout state.

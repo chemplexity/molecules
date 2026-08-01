@@ -224,4 +224,53 @@ describe('createInputControls', () => {
       Math.random = originalRandom;
     }
   });
+
+  it('loads random catalog entries and keeps the picker synchronized', () => {
+    const inputEl = createElement();
+    const collectionSelectEl = createElement();
+    const examplesEl = createElement();
+    const records = [];
+    const originalRandom = Math.random;
+
+    Math.random = () => 0;
+
+    try {
+      const controls = createInputControls({
+        data: {
+          exampleMolecules: [],
+          randomMolecule: [],
+          moleculeCatalog: [
+            {
+              id: 'catalog',
+              name: 'Catalog',
+              molecules: [
+                { id: 'one', name: 'One', smiles: 'C' },
+                { id: 'two', name: 'Two', smiles: 'CC' }
+              ]
+            }
+          ]
+        },
+        state: {
+          getInputMode: () => 'smiles'
+        },
+        dom: {
+          getInputElement: () => inputEl,
+          getCollectionSelectElement: () => collectionSelectEl,
+          getExamplesElement: () => examplesEl
+        },
+        actions: {
+          parseInput: () => {},
+          parseInputWithAutoFormat: value => records.push([collectionSelectEl.value, inputEl.value, value])
+        }
+      });
+
+      controls.pickRandomCatalogMolecule();
+      controls.pickRandomCatalogMolecule();
+
+      assert.equal(new Set(records.map(([id]) => id)).size, 2);
+      assert.ok(records.every(([id, inputValue, parsedValue]) => id && inputValue === parsedValue));
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
 });

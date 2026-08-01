@@ -7,7 +7,7 @@ function escapeForInlineJs(value) {
 /**
  * Creates the input controls that manage the molecule catalog picker, example links, random molecule selection, debug stress selection, and SMILES/InChI input field bindings.
  * @param {object} deps - Dependency object providing data, state, dom, and actions.
- * @returns {object} Object with `bind`, `renderExamples`, `pickRandomMolecule`, `pickDebugMolecule`, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
+ * @returns {object} Object with `bind`, `renderExamples`, random selection helpers, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
  */
 export function createInputControls(deps) {
   const collectionEntries = deps.data.moleculeCatalog.flatMap(collection =>
@@ -23,6 +23,10 @@ export function createInputControls(deps) {
     inchi: deps.data.randomMolecule.filter(molecule => molecule.inchi)
   };
   const randomSelectionStateByMode = new Map([
+    ['smiles', { bag: [], recentKeys: [] }],
+    ['inchi', { bag: [], recentKeys: [] }]
+  ]);
+  const catalogSelectionStateByMode = new Map([
     ['smiles', { bag: [], recentKeys: [] }],
     ['inchi', { bag: [], recentKeys: [] }]
   ]);
@@ -146,6 +150,19 @@ export function createInputControls(deps) {
     deps.actions.parseInput(inputMode === 'inchi' ? molecule.inchi : molecule.smiles);
   }
 
+  function pickRandomCatalogMolecule() {
+    const inputMode = currentRandomPoolMode();
+    const pool = inputMode === 'inchi' ? collectionEntries.filter(entry => entry.inchi) : collectionEntries;
+    const entry = nextRandomItem(pool, catalogSelectionStateByMode.get(inputMode), molecule => molecule.id);
+    if (!entry) {
+      return;
+    }
+    const value = collectionValueForMode(entry, inputMode);
+    deps.dom.getCollectionSelectElement().value = entry.id;
+    deps.dom.getInputElement().value = value;
+    deps.actions.parseInputWithAutoFormat(value);
+  }
+
   function pickDebugMolecule() {
     const smiles = nextDebugMolecule();
     if (!smiles) {
@@ -207,6 +224,7 @@ export function createInputControls(deps) {
     bind,
     renderExamples,
     pickRandomMolecule,
+    pickRandomCatalogMolecule,
     pickDebugMolecule,
     getCollectionInputValue,
     syncCollectionPickerForInputValue

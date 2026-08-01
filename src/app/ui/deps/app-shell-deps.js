@@ -86,6 +86,7 @@ export function createAppShellDeps(deps) {
       setInputFormat: deps.input.setInputFormat,
       renderExamples: deps.input.renderExamples,
       pickRandomMolecule: deps.input.pickRandomMolecule,
+      pickRandomCatalogMolecule: deps.input.pickRandomCatalogMolecule,
       pickDebugMolecule: deps.input.pickDebugMolecule,
       getCanonicalMol: deps.input.getCanonicalMol,
       toSmiles: deps.input.toSmiles,

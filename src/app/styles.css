@@ -40,7 +40,7 @@ body {
   margin: auto;
   padding: 5px;
   padding-top: 25px;
-  padding-right: 280px;
+  padding-right: 320px;
 }
 
 #content-main {
@@ -2103,12 +2103,16 @@ body:has(#acyclic-chain-btn.active) .svg-plot * {
   position: absolute;
   top: 58px;
   right: 12px;
-  width: 240px;
+  width: 280px;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 #collection-select {
-  width: 100%;
+  min-width: 0;
+  flex: 1;
   height: 34px;
   padding: 0 10px;
   border: 1px solid #d6d6d6;
@@ -2123,4 +2127,37 @@ body:has(#acyclic-chain-btn.active) .svg-plot * {
 #collection-select:focus {
   border-color: #5264ae;
   box-shadow: 0 0 0 2px rgba(82, 100, 174, 0.08);
+}
+
+#catalog-shuffle-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border: 1px solid #d6d6d6;
+  border-radius: 10px;
+  background: #fff;
+  color: #68747a;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+#catalog-shuffle-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#catalog-shuffle-btn:hover,
+#catalog-shuffle-btn:focus-visible {
+  color: #5264ae;
+  background: #f5f6fb;
+  border-color: #aeb6dc;
 }

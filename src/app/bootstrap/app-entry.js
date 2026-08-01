@@ -157,6 +157,9 @@ window.renderExamples = () => {
 window.pickRandomMolecule = () => {
   window._pickRandomMolecule?.();
 };
+window.pickRandomCatalogMolecule = () => {
+  window._pickRandomCatalogMolecule?.();
+};
 window.pickDebugMolecule = () => {
   window._pickDebugMolecule?.();
 };
