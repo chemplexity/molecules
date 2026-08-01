@@ -17,7 +17,8 @@ export function createAppShellDeps(deps) {
       getOpenJsonInputElement: deps.dom.getOpenJsonInputElement,
       getContentMainElement: deps.dom.getContentMainElement,
       getSidebarElement: deps.dom.getSidebarElement,
-      getMainSidebarSplitterElement: deps.dom.getMainSidebarSplitterElement
+      getMainSidebarSplitterElement: deps.dom.getMainSidebarSplitterElement,
+      getSidebarCollapseButtonElement: deps.dom.getSidebarCollapseButtonElement
     },
     history: {
       undo: deps.history.undo,

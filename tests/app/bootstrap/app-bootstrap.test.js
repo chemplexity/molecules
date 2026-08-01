@@ -10,7 +10,8 @@ describe('finalizeAppBootstrap', () => {
     let capturedGestureInteractionDeps = null;
     let capturedAppShellDeps = null;
     let capturedOptionsModalDeps = null;
-    const reactionPreviewSource = { id: 'reactant-source' };
+    let reactionPreviewSource = { id: 'reactant-source' };
+    const restored2dMolecule = { id: 'restored-2d-molecule' };
 
     const ctx = {
       factories: {
@@ -93,7 +94,7 @@ describe('finalizeAppBootstrap', () => {
         getMode: () => '2d',
         getCurrentMol: () => null,
         setCurrentMol() {},
-        getMol2d: () => null,
+        getMol2d: () => restored2dMolecule,
         setMol2d() {},
         clear2dDerivedState() {},
         getStereoMap2d: () => new Map(),
@@ -415,6 +416,8 @@ describe('finalizeAppBootstrap', () => {
     assert.deepEqual(capturedGestureInteractionDeps.options.getRenderOptions(), { showAtomTooltips: true, layoutBondLength: 0.5 });
     assert.deepEqual(capturedGestureInteractionDeps.constants, { scale: 60, forceBondLength: 41 });
     assert.equal(capturedAppShellDeps.documentActions.getActiveMolecule(), reactionPreviewSource);
+    reactionPreviewSource = null;
+    assert.equal(capturedAppShellDeps.input.getCanonicalMol(), restored2dMolecule);
     capturedGestureInteractionDeps.force.syncPositions();
     capturedGestureInteractionDeps.actions.paintStyleTargets(['a1'], ['b1'], { color: '#3366ff' }, { skipSnapshot: true });
     capturedGestureInteractionDeps.actions.paintRingFill(['r1', 'r2', 'r3'], { color: '#ffcc00' });

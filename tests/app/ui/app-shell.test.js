@@ -7,10 +7,30 @@ function makeResizableElement({ width = 0, right = width } = {}) {
   const listeners = new Map();
   const attributes = new Map();
   const styleValues = new Map();
+  const classes = new Set();
   return {
     listeners,
     attributes,
     styleValues,
+    classes,
+    classList: {
+      toggle(name, force) {
+        if (force === true) {
+          classes.add(name);
+          return true;
+        }
+        if (force === false) {
+          classes.delete(name);
+          return false;
+        }
+        if (classes.has(name)) {
+          classes.delete(name);
+          return false;
+        }
+        classes.add(name);
+        return true;
+      }
+    },
     addEventListener(type, handler) {
       listeners.set(type, handler);
     },
@@ -585,6 +605,7 @@ describe('initAppShell', () => {
     const contentMain = makeResizableElement({ width: 1000, right: 1000 });
     const sidebar = makeResizableElement({ width: 290, right: 1000 });
     const splitter = makeResizableElement();
+    const collapseButton = makeResizableElement();
     const docListeners = new Map();
     const bodyClasses = new Set();
     const storage = new Map();
@@ -624,7 +645,8 @@ describe('initAppShell', () => {
           getDocument: () => doc,
           getContentMainElement: () => contentMain,
           getSidebarElement: () => sidebar,
-          getMainSidebarSplitterElement: () => splitter
+          getMainSidebarSplitterElement: () => splitter,
+          getSidebarCollapseButtonElement: () => collapseButton
         }
       },
       {
@@ -656,6 +678,19 @@ describe('initAppShell', () => {
     assert.equal(contentMain.style.getPropertyValue('--sidebar-width'), '220px');
 
     splitter.dispatch('keydown', { key: 'End', preventDefault });
+    assert.equal(contentMain.style.getPropertyValue('--sidebar-width'), '640px');
+
+    collapseButton.dispatch('click');
+    assert.equal(contentMain.classes.has('sidebar-collapsed'), true);
+    assert.equal(collapseButton.attributes.get('aria-expanded'), 'false');
+    assert.equal(collapseButton.textContent, '‹');
+    assert.equal(storage.get('molecules.mainSidebarCollapsed'), 'true');
+
+    collapseButton.dispatch('click');
+    assert.equal(contentMain.classes.has('sidebar-collapsed'), false);
+    assert.equal(collapseButton.attributes.get('aria-expanded'), 'true');
+    assert.equal(collapseButton.textContent, '›');
+    assert.equal(storage.get('molecules.mainSidebarCollapsed'), 'false');
     assert.equal(contentMain.style.getPropertyValue('--sidebar-width'), '640px');
   });
 });

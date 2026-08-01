@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-07-31
+
+- Fix SMILES/InChI switching after clearing and undoing in 2D mode by converting the restored active 2D molecule instead of looking only in force-layout state.
+- Add a collapsible analysis sidebar that expands the drawing canvas to full width, remembers its collapsed state, preserves the prior resized sidebar width, and embeds a bottom-anchored toggle tab directly in the draggable panel divider.
+- Raise the divider tab above the bottom export controls while the sidebar is collapsed.
+
 ## 2026-07-30
 
 - Add a compact clear-molecule button to the right edge of the SMILES/InChI input, hidden while the input is empty and returning focus to the field after clearing.

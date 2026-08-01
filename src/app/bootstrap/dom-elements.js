@@ -82,6 +82,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const contentMain = document.getElementById('content-main');
   const sidebar = document.getElementById('sidebar');
   const mainSidebarSplitter = document.getElementById('main-sidebar-splitter');
+  const sidebarCollapseButton = document.getElementById('sidebar-collapse-btn');
 
   function clearFormula() {
     molecularFormula.innerHTML = '';
@@ -176,6 +177,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getContentMainElement: () => contentMain,
     getSidebarElement: () => sidebar,
     getMainSidebarSplitterElement: () => mainSidebarSplitter,
+    getSidebarCollapseButtonElement: () => sidebarCollapseButton,
     setInputValue: value => {
       inputEl.value = value;
     },

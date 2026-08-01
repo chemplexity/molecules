@@ -460,7 +460,8 @@ export function finalizeAppBootstrap(ctx) {
         getOpenJsonInputElement: () => ctx.dom.getOpenJsonInputElement(),
         getContentMainElement: () => ctx.dom.getContentMainElement(),
         getSidebarElement: () => ctx.dom.getSidebarElement(),
-        getMainSidebarSplitterElement: () => ctx.dom.getMainSidebarSplitterElement()
+        getMainSidebarSplitterElement: () => ctx.dom.getMainSidebarSplitterElement(),
+        getSidebarCollapseButtonElement: () => ctx.dom.getSidebarCollapseButtonElement()
       },
       history: {
         undo: () => ctx.history.undoAction(),
@@ -545,7 +546,7 @@ export function finalizeAppBootstrap(ctx) {
         renderExamples: () => ctx.input.inputControls.renderExamples(),
         pickRandomMolecule: () => ctx.input.inputControls.pickRandomMolecule(),
         pickDebugMolecule: () => ctx.input.inputControls.pickDebugMolecule(),
-        getCanonicalMol: () => ctx.overlays.getReactionPreviewSourceMol() ?? ctx.state.getCurrentMol(),
+        getCanonicalMol: () => ctx.overlays.getReactionPreviewSourceMol() ?? (ctx.state.getMode() === 'force' ? ctx.state.getCurrentMol() : ctx.state.getMol2d()),
         toSmiles: mol => ctx.io.toSMILES(mol),
         toInchi: mol => ctx.io.toInChI(mol),
         takeInputFormatSnapshot: payload => ctx.input.inputFlowManager.takeInputFormatSnapshot(payload)

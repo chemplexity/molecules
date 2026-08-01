@@ -99,6 +99,51 @@ body.resizing-main-sidebar #main-sidebar-splitter::after {
   outline-offset: -2px;
 }
 
+#sidebar-collapse-btn {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  width: 17px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #cbd6da;
+  border-radius: 5px;
+  background: #fff;
+  color: #688089;
+  font-size: 18px;
+  font-weight: 300;
+  line-height: 28px;
+  cursor: pointer;
+  transform: translateX(-50%);
+  box-shadow: 0 1px 3px rgba(20, 34, 41, 0.12);
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+#sidebar-collapse-btn:hover,
+#sidebar-collapse-btn:focus-visible {
+  color: #314b55;
+  background: #eef6f8;
+}
+
+#content-main.sidebar-collapsed #plot {
+  width: 100%;
+}
+
+#content-main.sidebar-collapsed #sidebar {
+  display: none;
+}
+
+#content-main.sidebar-collapsed #main-sidebar-splitter {
+  right: 0;
+  background: none;
+}
+
+#content-main.sidebar-collapsed #sidebar-collapse-btn {
+  bottom: 92px;
+}
+
 body.resizing-main-sidebar {
   cursor: col-resize;
   user-select: none;

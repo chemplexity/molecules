@@ -100,6 +100,7 @@ export async function loadMoleculeDocument(context, file) {
 }
 
 const MAIN_SIDEBAR_WIDTH_STORAGE_KEY = 'molecules.mainSidebarWidthPx';
+const MAIN_SIDEBAR_COLLAPSED_STORAGE_KEY = 'molecules.mainSidebarCollapsed';
 const MIN_MAIN_DRAWING_WIDTH_PX = 320;
 const MIN_SIDEBAR_WIDTH_PX = 220;
 const MAX_SIDEBAR_WIDTH_PX = 640;
@@ -139,6 +140,7 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
   const contentMain = context.dom.getContentMainElement?.();
   const sidebar = context.dom.getSidebarElement?.();
   const splitter = context.dom.getMainSidebarSplitterElement?.();
+  const collapseButton = context.dom.getSidebarCollapseButtonElement?.();
   const doc = context.dom.getDocument?.() ?? win.document ?? null;
   const storage = storageForWindow(win);
 
@@ -151,6 +153,28 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
 
   let hasCustomWidth = false;
   let dragging = false;
+  let collapsed = false;
+
+  function syncCollapsedState(nextCollapsed, { persist = false, notify = false } = {}) {
+    collapsed = !!nextCollapsed;
+    contentMain.classList?.toggle?.('sidebar-collapsed', collapsed);
+    collapseButton?.setAttribute?.('aria-expanded', String(!collapsed));
+    collapseButton?.setAttribute?.('aria-label', collapsed ? 'Expand side panel' : 'Collapse side panel');
+    if (collapseButton) {
+      collapseButton.title = collapsed ? 'Expand side panel' : 'Collapse side panel';
+      collapseButton.textContent = collapsed ? '‹' : '›';
+    }
+    if (persist) {
+      try {
+        storage?.setItem?.(MAIN_SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+      } catch {
+        // Ignore storage failures; collapsing should keep working for the session.
+      }
+    }
+    if (notify) {
+      onResize();
+    }
+  }
 
   function containerRect() {
     return contentMain.getBoundingClientRect();
@@ -238,6 +262,9 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
   }
 
   function handlePointerDown(event) {
+    if (collapsed) {
+      return;
+    }
     if (event.button != null && event.button !== 0) {
       return;
     }
@@ -284,6 +311,16 @@ export function initMainSidebarResizer(context, { onResize = () => {} } = {}) {
 
   splitter.addEventListener?.('pointerdown', handlePointerDown);
   splitter.addEventListener?.('keydown', handleKeyDown);
+  collapseButton?.addEventListener?.('click', event => {
+    event.stopPropagation?.();
+    syncCollapsedState(!collapsed, { persist: true, notify: true });
+  });
+
+  try {
+    syncCollapsedState(storage?.getItem?.(MAIN_SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true');
+  } catch {
+    syncCollapsedState(false);
+  }
 
   return {
     clampToContainer() {
