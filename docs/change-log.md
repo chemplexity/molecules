@@ -5,6 +5,7 @@
 - Bound final large-molecule angle-relief candidate audits so difficult peptide and glycopeptide layouts complete in predictable time.
 - Treat unresolved planar heavy-bond crossings as audit failures with a generic-scaffold fallback, while preserving the accepted single macrocycle closure crossing.
 - Extend the late large-molecule residual retry to repair crossing-only improvements and add focused regression coverage.
+- Preserve full angle relief for medium ring-rich peptides and exempt inherently projected bridged cages from planar crossing fallback decisions.
 
 ## 2026-08-01
 

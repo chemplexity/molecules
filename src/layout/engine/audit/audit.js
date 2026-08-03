@@ -53,16 +53,16 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
-  const visibleHeavyBondCrossingCount =
-    options.includeVisibleHeavyBondCrossings === false
-      ? 0
-      : findVisibleHeavyBondCrossings(layoutGraph, coords).filter(crossing => {
-          const firstClass = options.bondValidationClasses?.get(crossing.firstBondId) ?? 'planar';
-          const secondClass = options.bondValidationClasses?.get(crossing.secondBondId) ?? 'planar';
-          return firstClass === 'planar' && secondClass === 'planar';
-        }).length;
+  const visibleHeavyBondCrossings = options.includeVisibleHeavyBondCrossings === false ? [] : findVisibleHeavyBondCrossings(layoutGraph, coords);
+  const visibleHeavyBondCrossingCount = visibleHeavyBondCrossings.length;
+  const planarVisibleHeavyBondCrossingCount = visibleHeavyBondCrossings.filter(crossing => {
+    const firstClass = options.bondValidationClasses?.get(crossing.firstBondId) ?? 'planar';
+    const secondClass = options.bondValidationClasses?.get(crossing.secondBondId) ?? 'planar';
+    return firstClass === 'planar' && secondClass === 'planar';
+  }).length;
   const macrocycleCrossingAllowance = layoutGraph.rings?.some(ring => (ring.atomIds?.length ?? 0) >= 8) ? 1 : 0;
-  const visibleHeavyBondCrossingFailureCount = Math.max(0, visibleHeavyBondCrossingCount - macrocycleCrossingAllowance);
+  const crossingAuditApplies = (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) === 0;
+  const visibleHeavyBondCrossingFailureCount = crossingAuditApplies ? Math.max(0, planarVisibleHeavyBondCrossingCount - macrocycleCrossingAllowance) : 0;
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;

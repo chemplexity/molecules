@@ -344,6 +344,7 @@ const FINAL_TERMINAL_LABEL_LEAF_ROTATIONS = Object.freeze(
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze([5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 40;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_CANDIDATE_AUDITS = 600;
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_UNBOUNDED_MAX_HEAVY_ATOMS = 120;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 320;
@@ -6138,7 +6139,9 @@ function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords
   let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
   const movedAtomIds = new Set();
   let changed = false;
-  let remainingCandidateAudits = FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_CANDIDATE_AUDITS;
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
+  let remainingCandidateAudits =
+    heavyAtomCount <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_UNBOUNDED_MAX_HEAVY_ATOMS ? Number.POSITIVE_INFINITY : FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_CANDIDATE_AUDITS;
   for (let passIndex = 0; passIndex < FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES; passIndex++) {
     let bestCandidate = null;
     const tryCandidate = candidate => {
