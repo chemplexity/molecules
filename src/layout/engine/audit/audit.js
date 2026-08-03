@@ -1,7 +1,7 @@
 /** @module audit/audit */
 
 import { recommendFallback } from './fallback.js';
-import { detectCollapsedMacrocycles, findSevereOverlaps, countVisibleHeavyBondCrossings, measureBondLengthDeviation, measureLabelOverlap, measureRingSubstituentReadability } from './invariants.js';
+import { detectCollapsedMacrocycles, findSevereOverlaps, findVisibleHeavyBondCrossings, measureBondLengthDeviation, measureLabelOverlap, measureRingSubstituentReadability } from './invariants.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function summarizeSevereOverlaps(overlaps, severeOverlapThreshold) {
@@ -53,7 +53,16 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
-  const visibleHeavyBondCrossingCount = options.includeVisibleHeavyBondCrossings === false ? 0 : countVisibleHeavyBondCrossings(layoutGraph, coords);
+  const visibleHeavyBondCrossingCount =
+    options.includeVisibleHeavyBondCrossings === false
+      ? 0
+      : findVisibleHeavyBondCrossings(layoutGraph, coords).filter(crossing => {
+          const firstClass = options.bondValidationClasses?.get(crossing.firstBondId) ?? 'planar';
+          const secondClass = options.bondValidationClasses?.get(crossing.secondBondId) ?? 'planar';
+          return firstClass === 'planar' && secondClass === 'planar';
+        }).length;
+  const macrocycleCrossingAllowance = layoutGraph.rings?.some(ring => (ring.atomIds?.length ?? 0) >= 8) ? 1 : 0;
+  const visibleHeavyBondCrossingFailureCount = Math.max(0, visibleHeavyBondCrossingCount - macrocycleCrossingAllowance);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;
@@ -61,10 +70,17 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bridgedReadabilityFailure = false;
   const ringSubstituentReadabilityFailure = ringSubstituentReadability.failingSubstituentCount > 0;
   const ok =
-    overlaps.length === 0 && bondDeviation.failingBondCount === 0 && collapsedMacrocycles.length === 0 && !stereoContradiction && !bridgedReadabilityFailure && !ringSubstituentReadabilityFailure;
+    overlaps.length === 0 &&
+    visibleHeavyBondCrossingFailureCount === 0 &&
+    bondDeviation.failingBondCount === 0 &&
+    collapsedMacrocycles.length === 0 &&
+    !stereoContradiction &&
+    !bridgedReadabilityFailure &&
+    !ringSubstituentReadabilityFailure;
   const fallback = recommendFallback({
     bondLengthFailureCount: bondDeviation.failingBondCount,
     severeOverlapCount: heavyAtomOverlapCount,
+    visibleHeavyBondCrossingCount: visibleHeavyBondCrossingFailureCount,
     collapsedMacrocycleCount: collapsedMacrocycles.length,
     stereoContradiction,
     bridgedReadabilityFailure,
@@ -79,6 +95,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     worstOverlapDeficit: overlapSummary.worstOverlapDeficit,
     severeOverlapPenalty: overlapSummary.severeOverlapPenalty,
     visibleHeavyBondCrossingCount,
+    visibleHeavyBondCrossingFailureCount,
     labelOverlapCount: labelOverlap.pairCount,
     maxBondLengthDeviation: bondDeviation.maxDeviation,
     meanBondLengthDeviation: bondDeviation.meanDeviation,

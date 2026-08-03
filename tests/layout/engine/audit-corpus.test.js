@@ -64,6 +64,23 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 
+  it('bounds row 4860 peptide retouch work and reports unresolved planar geometry', { timeout: 30_000 }, () => {
+    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 4860);
+    assert.ok(entry);
+
+    const startedAt = performance.now();
+    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+    const elapsedMs = performance.now() - startedAt;
+    const audit = result.metadata.audit;
+
+    assert.ok(elapsedMs < 25_000, `expected bounded peptide layout below 25s, got ${Math.round(elapsedMs)}ms`);
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(audit.ok, false);
+    assert.ok(audit.visibleHeavyBondCrossingFailureCount > 0);
+    assert.equal(audit.fallback.mode, 'generic-scaffold');
+    assert.ok(audit.fallback.reasons.includes('visible-heavy-bond-crossings'));
+  });
+
   for (const entry of RUN_LAYOUT_STRESS_TESTS ? AUDIT_CORPUS : []) {
     stressIt(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
       const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);

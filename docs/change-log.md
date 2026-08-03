@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-08-02
+
+- Bound final large-molecule angle-relief candidate audits so difficult peptide and glycopeptide layouts complete in predictable time.
+- Treat unresolved planar heavy-bond crossings as audit failures with a generic-scaffold fallback, while preserving the accepted single macrocycle closure crossing.
+- Extend the late large-molecule residual retry to repair crossing-only improvements and add focused regression coverage.
+
 ## 2026-08-01
 
 - Add a shuffle button beside the Molecule Catalog selector that loads non-repeating random catalog entries compatible with the active SMILES or InChI mode.

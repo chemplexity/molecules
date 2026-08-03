@@ -39,4 +39,22 @@ describe('layout/engine/audit/fallback', () => {
     assert.equal(fallback.mode, 'generic-scaffold');
     assert.deepEqual(fallback.reasons, ['bond-length-failures', 'severe-overlaps']);
   });
+
+  it('suggests a generic fallback for visible planar heavy-bond crossings', () => {
+    assert.deepEqual(
+      recommendFallback({
+        bondLengthFailureCount: 0,
+        severeOverlapCount: 0,
+        visibleHeavyBondCrossingCount: 2,
+        collapsedMacrocycleCount: 0,
+        stereoContradiction: false,
+        bridgedReadabilityFailure: false,
+        ringSubstituentReadabilityFailureCount: 0
+      }),
+      {
+        mode: 'generic-scaffold',
+        reasons: ['visible-heavy-bond-crossings']
+      }
+    );
+  });
 });

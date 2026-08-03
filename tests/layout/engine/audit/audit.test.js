@@ -139,7 +139,8 @@ describe('layout/engine/audit/audit', () => {
 
     assert.ok(fullAudit.visibleHeavyBondCrossingCount > 0);
     assert.equal(okOnlyAudit.visibleHeavyBondCrossingCount, 0);
-    assert.equal(okOnlyAudit.ok, fullAudit.ok);
+    assert.equal(fullAudit.ok, false);
+    assert.equal(okOnlyAudit.ok, true);
   });
 
   it('returns identical audit results when severe-overlap scratch is reused', () => {

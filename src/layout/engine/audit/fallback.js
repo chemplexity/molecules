@@ -4,6 +4,7 @@
  * Recommends the next fallback depiction strategy from the current audit result.
  * @param {object} audit - Audit summary.
  * @param {number} [audit.bondLengthFailureCount] - Count of failing bonds.
+ * @param {number} [audit.visibleHeavyBondCrossingCount] - Count of planar visible heavy-bond crossings.
  * @returns {{mode: string|null, reasons: string[]}} Fallback recommendation.
  */
 export function recommendFallback(audit) {
@@ -16,6 +17,10 @@ export function recommendFallback(audit) {
   }
   if (audit.severeOverlapCount > 0) {
     reasons.push('severe-overlaps');
+    mode = mode ?? 'generic-scaffold';
+  }
+  if ((audit.visibleHeavyBondCrossingCount ?? 0) > 0) {
+    reasons.push('visible-heavy-bond-crossings');
     mode = mode ?? 'generic-scaffold';
   }
   if (audit.collapsedMacrocycleCount > 0) {

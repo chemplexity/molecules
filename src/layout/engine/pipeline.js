@@ -343,6 +343,7 @@ const FINAL_TERMINAL_LABEL_LEAF_ROTATIONS = Object.freeze(
 );
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze([5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 40;
+const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_CANDIDATE_AUDITS = 600;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 320;
@@ -6137,12 +6138,14 @@ function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords
   let currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, currentCoords, placement, bondLength);
   const movedAtomIds = new Set();
   let changed = false;
+  let remainingCandidateAudits = FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_CANDIDATE_AUDITS;
   for (let passIndex = 0; passIndex < FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES; passIndex++) {
     let bestCandidate = null;
     const tryCandidate = candidate => {
-      if (!candidate) {
+      if (!candidate || remainingCandidateAudits <= 0) {
         return;
       }
+      remainingCandidateAudits--;
       const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
       if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
         return;
@@ -6160,9 +6163,12 @@ function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords
         score: candidateScore
       };
     };
-    for (const descriptor of finalLargeMoleculeAngleReliefDescriptors(layoutGraph, currentCoords)) {
+    candidateSearch: for (const descriptor of finalLargeMoleculeAngleReliefDescriptors(layoutGraph, currentCoords)) {
       for (const rotation of FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS) {
         tryCandidate(rotatedFinalLargeMoleculeAngleReliefCandidate(layoutGraph, currentCoords, descriptor.centerAtomId, descriptor.rootAtomId, rotation));
+        if (remainingCandidateAudits <= 0) {
+          break candidateSearch;
+        }
       }
     }
     if (!bestCandidate) {
@@ -6175,6 +6181,9 @@ function maybeRelieveFinalLargeMoleculeAngles(molecule, layoutGraph, finalCoords
       movedAtomIds.add(atomId);
     }
     changed = true;
+    if (remainingCandidateAudits <= 0) {
+      break;
+    }
   }
 
   return {
@@ -16287,7 +16296,10 @@ export function runPipeline(molecule, options = {}) {
         bondValidationClasses: placement.bondValidationClasses
       })
     );
-    if ((lateLargeMoleculeResidualAudit.severeOverlapCount ?? 0) > 0) {
+    if (
+      (lateLargeMoleculeResidualAudit.severeOverlapCount ?? 0) > 0 ||
+      (lateLargeMoleculeResidualAudit.visibleHeavyBondCrossingFailureCount ?? 0) > 0
+    ) {
       const lateLargeMoleculeResidualRetouch = timeFinalRetouch('lateLargeMoleculeResidualRetouch', () =>
         runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
           bondLength: normalizedOptions.bondLength,
@@ -16300,8 +16312,14 @@ export function runPipeline(molecule, options = {}) {
           bondValidationClasses: placement.bondValidationClasses
         });
         const maxDeviationSlack = normalizedOptions.bondLength * 0.15;
+        const overlapImproved =
+          (candidateAudit.severeOverlapCount ?? 0) < (lateLargeMoleculeResidualAudit.severeOverlapCount ?? 0);
+        const crossingImproved =
+          (candidateAudit.severeOverlapCount ?? 0) <= (lateLargeMoleculeResidualAudit.severeOverlapCount ?? 0) &&
+          (candidateAudit.visibleHeavyBondCrossingFailureCount ?? 0) <
+            (lateLargeMoleculeResidualAudit.visibleHeavyBondCrossingFailureCount ?? 0);
         if (
-          (candidateAudit.severeOverlapCount ?? 0) < (lateLargeMoleculeResidualAudit.severeOverlapCount ?? 0) &&
+          (overlapImproved || crossingImproved) &&
           finalAuditCountsDoNotWorsen(candidateAudit, lateLargeMoleculeResidualAudit) &&
           (candidateAudit.maxBondLengthDeviation ?? 0) <= (lateLargeMoleculeResidualAudit.maxBondLengthDeviation ?? 0) + maxDeviationSlack + 1e-9
         ) {
@@ -16309,7 +16327,7 @@ export function runPipeline(molecule, options = {}) {
           finalCoordsModified = true;
           onStep?.(
             'Late Large Molecule Residual Retouch',
-            'Final large-molecule peptide contacts separated after branch and stereo retouches left a residual severe overlap.',
+            'Final large-molecule peptide contacts or bond crossings repaired after branch and stereo retouches left residual geometry.',
             cloneCoords(finalCoords),
             {
               movedAtomCount: lateLargeMoleculeResidualRetouch.movedAtomIds.length,
