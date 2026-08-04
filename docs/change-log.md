@@ -1,11 +1,16 @@
 # Change Log
 
+## 2026-08-03
+
+- Preserve full angle relief for medium ring-rich peptides and exempt inherently projected bridged cages from planar crossing fallback decisions.
+- Preserve clean large-molecule geometry checkpoints and restore them if a later presentation retouch introduces a new audited defect.
+- Add targeted peptide branch routing that unfolds collision-local amide-repeat suffixes with guarded rigid rotations, clearing row 4860's residual atom contacts without stretching bonds.
+
 ## 2026-08-02
 
 - Bound final large-molecule angle-relief candidate audits so difficult peptide and glycopeptide layouts complete in predictable time.
 - Treat unresolved planar heavy-bond crossings as audit failures with a generic-scaffold fallback, while preserving the accepted single macrocycle closure crossing.
 - Extend the late large-molecule residual retry to repair crossing-only improvements and add focused regression coverage.
-- Preserve full angle relief for medium ring-rich peptides and exempt inherently projected bridged cages from planar crossing fallback decisions.
 
 ## 2026-08-01
 

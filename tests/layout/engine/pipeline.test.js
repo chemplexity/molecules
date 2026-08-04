@@ -26,7 +26,7 @@ import { findPreferredBackbonePath } from '../../../src/layout/engine/orientatio
 import { describePathLikeIsolatedRingChain } from '../../../src/layout/engine/topology/isolated-ring-chain.js';
 import { measureSmallRingExteriorGapSpreadPenalty, smallRingExteriorTargetAngles } from '../../../src/layout/engine/placement/branch-placement.js';
 import { layoutSupportedComponents } from '../../../src/layout/engine/placement/component-layout.js';
-import { classifyFamily, runPipeline } from '../../../src/layout/engine/pipeline.js';
+import { classifyFamily, runPipeline, shouldRestoreLargeMoleculeCleanCheckpoint } from '../../../src/layout/engine/pipeline.js';
 import { resolveProfile } from '../../../src/layout/engine/profile.js';
 import { resolvePolicy } from '../../../src/layout/engine/standards/profile-policy.js';
 import {
@@ -43,6 +43,45 @@ import {
 
 const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
 const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+
+describe('large-molecule clean checkpoint preservation', () => {
+  const cleanAudit = {
+    ok: true,
+    fallback: { mode: null },
+    severeOverlapCount: 0,
+    visibleHeavyBondCrossingCount: 0,
+    bondLengthFailureCount: 0
+  };
+
+  it('restores a clean checkpoint when a later retouch introduces a defect', () => {
+    assert.equal(
+      shouldRestoreLargeMoleculeCleanCheckpoint(cleanAudit, {
+        ...cleanAudit,
+        ok: false,
+        severeOverlapCount: 1
+      }),
+      true
+    );
+  });
+
+  it('keeps an equally clean final retouch result', () => {
+    assert.equal(shouldRestoreLargeMoleculeCleanCheckpoint(cleanAudit, cleanAudit), false);
+  });
+
+  it('does not restore a checkpoint that was already dirty', () => {
+    assert.equal(
+      shouldRestoreLargeMoleculeCleanCheckpoint(
+        {
+          ...cleanAudit,
+          ok: false,
+          severeOverlapCount: 1
+        },
+        cleanAudit
+      ),
+      false
+    );
+  });
+});
 const stressDescribe = RUN_LAYOUT_STRESS_TESTS ? describe : describe.skip;
 
 const GLYCOPEPTIDE_MACROCYCLE_SMILES =

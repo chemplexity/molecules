@@ -345,6 +345,10 @@ const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_ROTATIONS = Object.freeze([5, 8, 10, 12,
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_PASSES = 40;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_CANDIDATE_AUDITS = 600;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_UNBOUNDED_MAX_HEAVY_ATOMS = 120;
+const FINAL_PEPTIDE_BRANCH_ROUTING_MAX_PASSES = 4;
+const FINAL_PEPTIDE_BRANCH_ROUTING_MIN_AMIDE_COUNT = 4;
+const FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS = 100;
+const FINAL_PEPTIDE_BRANCH_ROUTING_ROTATIONS = Object.freeze([2, 3, 5, 8, 10, 15, 20, 30, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MIN_MAX_DEVIATION = 0.35;
 const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 180;
 const FINAL_LARGE_MOLECULE_TARGETED_ANGLE_RELIEF_MAX_HEAVY_ATOMS = 320;
@@ -906,6 +910,17 @@ function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit, options = {}) {
     }
   }
   return !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false));
+}
+
+/**
+ * Returns whether a clean large-molecule geometry checkpoint should replace a
+ * later final-retouch result that introduced a new audited defect.
+ * @param {object|null} checkpointAudit - Audit captured for the clean checkpoint.
+ * @param {object|null} finalAudit - Audit for the current final coordinates.
+ * @returns {boolean} True when restoring the checkpoint is safer.
+ */
+export function shouldRestoreLargeMoleculeCleanCheckpoint(checkpointAudit, finalAudit) {
+  return checkpointAudit?.ok === true && checkpointAudit?.fallback?.mode == null && !finalAuditCountsDoNotWorsen(finalAudit, checkpointAudit);
 }
 
 function compactBridgedValidationPromotionRingSystem(layoutGraph, ringSystem) {
@@ -5948,6 +5963,189 @@ function maybeRetouchFinalLargeMoleculeDivalentLaneRelief(molecule, layoutGraph,
 function shouldRunFinalLargeMoleculeAngleRelief(layoutGraph, familySummary) {
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? layoutGraph.atoms?.size ?? 0;
   return familySummary.primaryFamily === 'large-molecule' && heavyAtomCount <= FINAL_LARGE_MOLECULE_ANGLE_RELIEF_MAX_HEAVY_ATOMS;
+}
+
+function countLargeMoleculeAmideCenters(layoutGraph) {
+  let count = 0;
+  for (const atom of layoutGraph.atoms.values()) {
+    if (atom.element !== 'C') {
+      continue;
+    }
+    let hasCarbonylOxygen = false;
+    let hasAmideNitrogen = false;
+    for (const bond of layoutGraph.bondsByAtomId.get(atom.id) ?? []) {
+      const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const neighbor = layoutGraph.atoms.get(neighborAtomId);
+      if (neighbor?.element === 'O' && (bond.order ?? 1) === 2) {
+        hasCarbonylOxygen = true;
+      }
+      if (neighbor?.element === 'N' && (bond.order ?? 1) === 1) {
+        hasAmideNitrogen = true;
+      }
+    }
+    if (hasCarbonylOxygen && hasAmideNitrogen) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function finalPeptideRoutingCandidateIsBetter(candidateAudit, candidateMovedHeavyAtomCount, bestCandidate) {
+  if (!bestCandidate) {
+    return true;
+  }
+  for (const key of ['severeOverlapCount', 'visibleHeavyBondCrossingFailureCount', 'visibleHeavyBondCrossingCount']) {
+    const candidateValue = candidateAudit[key] ?? 0;
+    const bestValue = bestCandidate.audit[key] ?? 0;
+    if (candidateValue !== bestValue) {
+      return candidateValue < bestValue;
+    }
+  }
+  const candidatePenalty = candidateAudit.severeOverlapPenalty ?? 0;
+  const bestPenalty = bestCandidate.audit.severeOverlapPenalty ?? 0;
+  if (Math.abs(candidatePenalty - bestPenalty) > PRESENTATION_METRIC_EPSILON) {
+    return candidatePenalty < bestPenalty;
+  }
+  return candidateMovedHeavyAtomCount < bestCandidate.movedHeavyAtomCount;
+}
+
+function finalPeptideRoutingFocusBondIds(layoutGraph, audit) {
+  const focusAtomIds = new Set();
+  for (const overlap of audit.severeOverlaps ?? []) {
+    focusAtomIds.add(overlap.firstAtomId);
+    focusAtomIds.add(overlap.secondAtomId);
+  }
+  for (const crossing of audit.visibleHeavyBondCrossings ?? []) {
+    for (const atomId of crossing.firstAtomIds) {
+      focusAtomIds.add(atomId);
+    }
+    for (const atomId of crossing.secondAtomIds) {
+      focusAtomIds.add(atomId);
+    }
+  }
+  const bondIds = new Set();
+  let frontier = [...focusAtomIds];
+  const visitedAtomIds = new Set(frontier);
+  for (let depth = 0; depth < 2; depth++) {
+    const nextFrontier = [];
+    for (const atomId of frontier) {
+      for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        bondIds.add(bond.id);
+        const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+        if (!visitedAtomIds.has(neighborAtomId)) {
+          visitedAtomIds.add(neighborAtomId);
+          nextFrontier.push(neighborAtomId);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+  return bondIds;
+}
+
+/**
+ * Unfolds collision-local peptide suffixes through small rigid rotations around
+ * acyclic single bonds. Only audit-preserving moves are accepted.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinates.
+ * @param {object} placement - Placement result containing frozen atoms and validation classes.
+ * @param {number} bondLength - Target depiction bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], passes: number, audit: object|null}} Routing result.
+ */
+function maybeRouteFinalLargeMoleculePeptideBranches(layoutGraph, inputCoords, placement, bondLength) {
+  if (countLargeMoleculeAmideCenters(layoutGraph) < FINAL_PEPTIDE_BRANCH_ROUTING_MIN_AMIDE_COUNT) {
+    return { changed: false, coords: inputCoords, movedAtomIds: [], passes: 0, audit: null };
+  }
+  let coords = inputCoords;
+  let currentAudit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if ((currentAudit.severeOverlapCount ?? 0) === 0) {
+    return { changed: false, coords: inputCoords, movedAtomIds: [], passes: 0, audit: currentAudit };
+  }
+
+  const movedAtomIds = new Set();
+  let passes = 0;
+  while (passes < FINAL_PEPTIDE_BRANCH_ROUTING_MAX_PASSES && (currentAudit.severeOverlapCount ?? 0) > 0) {
+    const severeOverlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+    const visibleHeavyBondCrossings = findVisibleHeavyBondCrossings(layoutGraph, coords);
+    const focusBondIds = finalPeptideRoutingFocusBondIds(layoutGraph, {
+      severeOverlaps,
+      visibleHeavyBondCrossings
+    });
+    let bestCandidate = null;
+
+    for (const bondId of focusBondIds) {
+      const bond = layoutGraph.bonds.get(bondId);
+      if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      for (const [anchorAtomId, rootAtomId] of [
+        [bond.a, bond.b],
+        [bond.b, bond.a]
+      ]) {
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+        const movedHeavyAtomCount = subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
+        if (
+          movedHeavyAtomCount < 2 ||
+          movedHeavyAtomCount > FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS ||
+          subtreeAtomIds.some(atomId => placement.frozenAtomIds?.has(atomId))
+        ) {
+          continue;
+        }
+        const pivot = coords.get(anchorAtomId);
+        if (!pivot) {
+          continue;
+        }
+        for (const rotation of FINAL_PEPTIDE_BRANCH_ROUTING_ROTATIONS) {
+          const candidateCoords = cloneCoords(coords);
+          for (const atomId of subtreeAtomIds) {
+            candidateCoords.set(atomId, rotateAround(coords.get(atomId), pivot, rotation));
+          }
+          const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+            bondLength,
+            bondValidationClasses: placement.bondValidationClasses
+          });
+          const overlapImproved =
+            (candidateAudit.severeOverlapCount ?? 0) < (currentAudit.severeOverlapCount ?? 0) ||
+            ((candidateAudit.severeOverlapCount ?? 0) === (currentAudit.severeOverlapCount ?? 0) &&
+              (candidateAudit.severeOverlapPenalty ?? 0) + PRESENTATION_METRIC_EPSILON < (currentAudit.severeOverlapPenalty ?? 0));
+          if (!overlapImproved || !finalAuditCountsDoNotWorsen(candidateAudit, currentAudit)) {
+            continue;
+          }
+          if (finalPeptideRoutingCandidateIsBetter(candidateAudit, movedHeavyAtomCount, bestCandidate)) {
+            bestCandidate = {
+              coords: candidateCoords,
+              audit: candidateAudit,
+              movedAtomIds: subtreeAtomIds,
+              movedHeavyAtomCount
+            };
+          }
+        }
+      }
+    }
+    if (!bestCandidate) {
+      break;
+    }
+    coords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    for (const atomId of bestCandidate.movedAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    passes++;
+  }
+
+  return {
+    changed: passes > 0,
+    coords,
+    movedAtomIds: [...movedAtomIds],
+    passes,
+    audit: currentAudit
+  };
 }
 
 /**
@@ -14306,6 +14504,24 @@ export function runPipeline(molecule, options = {}) {
   let finalCoordsModified = false;
   let orientationApplied = false;
   let landscapeApplied = false;
+  const preserveLargeMoleculeCleanGeometry = familySummary.primaryFamily === 'large-molecule' || placement.placedFamilies.includes('large-molecule');
+  let largeMoleculeCleanCheckpoint = null;
+  const captureLargeMoleculeCleanCheckpoint = stage => {
+    if (!preserveLargeMoleculeCleanGeometry) {
+      return;
+    }
+    const audit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (audit.ok === true && audit.fallback?.mode == null) {
+      largeMoleculeCleanCheckpoint = {
+        stage,
+        coords: cloneCoords(finalCoords),
+        audit
+      };
+    }
+  };
   let finalCompactBridgedKamadaKawaiRescueAttempted = false;
   const applyFinalCompactBridgedKamadaKawaiRescue = () => {
     if (familySummary.primaryFamily !== 'bridged') {
@@ -14598,6 +14814,7 @@ export function runPipeline(molecule, options = {}) {
       return buildPipelineResult(molecule, finalCoords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState, audit);
     }
   }
+  captureLargeMoleculeCleanCheckpoint('pre-final-retouch');
   if (cleanup.finalStageName === 'selectedGeometryCheckpoint') {
     const finalDivalentContinuationRetouch = timeFinalRetouch('finalDivalentContinuationRetouch', () =>
       maybeRetouchFinalDivalentContinuations(layoutGraph, finalCoords, placement, familySummary, normalizedOptions.bondLength, onStep)
@@ -15354,6 +15571,7 @@ export function runPipeline(molecule, options = {}) {
         }
       );
     }
+    captureLargeMoleculeCleanCheckpoint('large-molecule-residual-retouch');
   }
   const postAttachedRingOrganometallicMetalBranchFanRetouch = applyFinalOrganometallicMetalBranchFanRetouch();
   if (postAttachedRingOrganometallicMetalBranchFanRetouch.changed) {
@@ -15555,6 +15773,7 @@ export function runPipeline(molecule, options = {}) {
         });
       }
     }
+    captureLargeMoleculeCleanCheckpoint('large-molecule-presentation-retouch');
   }
   const finalSmallRingSnap = timeFinalRetouch('finalSmallRingSnap', () => {
     return maybeSnapFinalSmallFourRings(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
@@ -16346,6 +16565,32 @@ export function runPipeline(molecule, options = {}) {
       }
     }
   }
+  if (preserveLargeMoleculeCleanGeometry) {
+    const finalPeptideBranchRouting = timeFinalRetouch('finalPeptideBranchRouting', () =>
+      maybeRouteFinalLargeMoleculePeptideBranches(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+    );
+    if (finalPeptideBranchRouting.changed) {
+      const auditBefore = auditLayout(layoutGraph, finalCoords, {
+        bondLength: normalizedOptions.bondLength,
+        bondValidationClasses: placement.bondValidationClasses
+      });
+      finalCoords = finalPeptideBranchRouting.coords;
+      finalCoordsModified = true;
+      onStep?.(
+        'Final Peptide Branch Routing',
+        'Folded amide-repeat suffixes were opened through small rigid rotations around collision-local peptide bonds.',
+        cloneCoords(finalCoords),
+        {
+          passes: finalPeptideBranchRouting.passes,
+          movedAtomCount: finalPeptideBranchRouting.movedAtomIds.length,
+          severeOverlapCountBefore: auditBefore.severeOverlapCount,
+          severeOverlapCountAfter: finalPeptideBranchRouting.audit?.severeOverlapCount ?? null,
+          visibleHeavyBondCrossingCountBefore: auditBefore.visibleHeavyBondCrossingCount,
+          visibleHeavyBondCrossingCountAfter: finalPeptideBranchRouting.audit?.visibleHeavyBondCrossingCount ?? null
+        }
+      );
+    }
+  }
   const lateTerminalRingLeafIntrusionRetouch = timeFinalRetouch('lateTerminalRingLeafIntrusionRetouch', () =>
     runTerminalCarbonRingLeafIntrusionRetidy(layoutGraph, finalCoords, {
       bondLength: normalizedOptions.bondLength,
@@ -16364,6 +16609,30 @@ export function runPipeline(molecule, options = {}) {
   if (lateProjectedRingChainRetouch.changed) {
     finalCoords = lateProjectedRingChainRetouch.coords;
     finalCoordsModified = true;
+  }
+  if (largeMoleculeCleanCheckpoint) {
+    const finalGeometryAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    if (shouldRestoreLargeMoleculeCleanCheckpoint(largeMoleculeCleanCheckpoint.audit, finalGeometryAudit)) {
+      finalCoords = cloneCoords(largeMoleculeCleanCheckpoint.coords);
+      finalCoordsModified = true;
+      onStep?.(
+        'Large Molecule Clean Checkpoint Restore',
+        'A clean large-molecule geometry checkpoint was restored after later presentation retouches introduced a new audited defect.',
+        cloneCoords(finalCoords),
+        {
+          checkpointStage: largeMoleculeCleanCheckpoint.stage,
+          severeOverlapCountBefore: finalGeometryAudit.severeOverlapCount,
+          severeOverlapCountAfter: largeMoleculeCleanCheckpoint.audit.severeOverlapCount,
+          visibleHeavyBondCrossingCountBefore: finalGeometryAudit.visibleHeavyBondCrossingCount,
+          visibleHeavyBondCrossingCountAfter: largeMoleculeCleanCheckpoint.audit.visibleHeavyBondCrossingCount,
+          bondLengthFailureCountBefore: finalGeometryAudit.bondLengthFailureCount,
+          bondLengthFailureCountAfter: largeMoleculeCleanCheckpoint.audit.bondLengthFailureCount
+        }
+      );
+    }
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

@@ -35,7 +35,6 @@ const HOSOYA_MAX_HEAVY_ATOMS = 18;
  * The selected indices all share an adjacency / degree / distance-matrix input,
  * allowing {@link chemicalSpaceDescriptorProfile} to construct those matrices once
  * for a molecule and expose a set of immediately plottable values.
- *
  * @type {ReadonlyArray<{key: string, label: string}>}
  */
 export const CHEMICAL_SPACE_DESCRIPTOR_OPTIONS = Object.freeze([
@@ -96,7 +95,6 @@ function _plotValue(value) {
  * convention of the library's topological descriptors. Molecular weight still
  * includes every atom. Disconnected heavy-atom graphs keep their molecular
  * statistics but return null for graph-distance indices rather than throwing.
- *
  * @param {import('../core/Molecule.js').Molecule} molecule - Molecule to profile.
  * @returns {Record<string, number|boolean|null>} Serializable profile.
  */

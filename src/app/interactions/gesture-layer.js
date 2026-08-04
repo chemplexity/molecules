@@ -16,6 +16,14 @@ const SELECTION_ROTATION_SNAP = Math.PI / 12;
 const SELECTION_PIVOT_HIT_RADIUS = 24;
 const TAU = Math.PI * 2;
 
+/**
+ * Resolves a force-chain gesture started on an explicit hydrogen to its bonded
+ * visible heavy-atom anchor.
+ * @param {object} molecule - Active molecule graph.
+ * @param {object} atomNode - Force node under the pointer.
+ * @param {Function|null} [getForceNodeById] - Optional force-node lookup.
+ * @returns {{atom: object, node: object}|null} Heavy-atom anchor and force node.
+ */
 export function resolveForceChainAnchor(molecule, atomNode, getForceNodeById = null) {
   let atom = molecule?.atoms?.get?.(atomNode?.id);
   if (!atom) {

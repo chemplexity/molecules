@@ -64,7 +64,7 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 
-  it('bounds row 4860 peptide retouch work and reports unresolved planar geometry', { timeout: 30_000 }, () => {
+  it('bounds row 4860 peptide retouch work, clears folded contacts, and reports unresolved crossings', { timeout: 30_000 }, () => {
     const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 4860);
     assert.ok(entry);
 
@@ -75,6 +75,7 @@ describe('layout/engine/audit-corpus', () => {
 
     assert.ok(elapsedMs < 25_000, `expected bounded peptide layout below 25s, got ${Math.round(elapsedMs)}ms`);
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(audit.severeOverlapCount, 0);
     assert.equal(audit.ok, false);
     assert.ok(audit.visibleHeavyBondCrossingFailureCount > 0);
     assert.equal(audit.fallback.mode, 'generic-scaffold');
