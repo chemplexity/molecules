@@ -1,10 +1,14 @@
 # Change Log
 
+## 2026-08-04
+
+- Resolve row 4860's remaining peptide-backbone crossings with a bounded paired-rotation search that requires zero overlaps and preserves bond-length and audit quality.
+
 ## 2026-08-03
 
 - Preserve full angle relief for medium ring-rich peptides and exempt inherently projected bridged cages from planar crossing fallback decisions.
 - Preserve clean large-molecule geometry checkpoints and restore them if a later presentation retouch introduces a new audited defect.
-- Add targeted peptide branch routing that unfolds collision-local amide-repeat suffixes with guarded rigid rotations, clearing row 4860's residual atom contacts without stretching bonds.
+- Add targeted peptide branch routing that unfolds collision-local amide-repeat suffixes with guarded rigid rotations.
 
 ## 2026-08-02
 

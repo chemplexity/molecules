@@ -21,8 +21,8 @@ const TAU = Math.PI * 2;
  * visible heavy-atom anchor.
  * @param {object} molecule - Active molecule graph.
  * @param {object} atomNode - Force node under the pointer.
- * @param {Function|null} [getForceNodeById] - Optional force-node lookup.
- * @returns {{atom: object, node: object}|null} Heavy-atom anchor and force node.
+ * @param {((atomId: string) => object|null)|null} [getForceNodeById] - Optional force-node lookup.
+ * @returns {{id: string, point: {x: number, y: number}}|null} Heavy-atom anchor id and position.
  */
 export function resolveForceChainAnchor(molecule, atomNode, getForceNodeById = null) {
   let atom = molecule?.atoms?.get?.(atomNode?.id);
