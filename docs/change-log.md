@@ -1,8 +1,13 @@
 # Change Log
 
+## 2026-08-05
+
+- Route collision-local amide branches before returning from the ultra-large fast path, then isolate paired rotations by connected defect region; the 540-heavy-atom corpus case now clears its label collisions and retains only five contacts and four planar crossings.
+
 ## 2026-08-04
 
-- Resolve row 4860's remaining peptide-backbone crossings with a bounded paired-rotation search that requires zero overlaps and preserves bond-length and audit quality.
+- Resolve remaining peptide-backbone crossings with a bounded paired-rotation search that requires zero overlaps and preserves bond-length and audit quality.
+- Generalize paired peptide routing to clean corpus rows 1409 and 4175, including crossing-only layouts and pairs that must clear a contact and crossing together.
 
 ## 2026-08-03
 

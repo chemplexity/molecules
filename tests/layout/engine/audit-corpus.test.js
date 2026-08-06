@@ -82,6 +82,41 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(audit.fallback.mode, null);
   });
 
+  it('clears residual peptide contacts and crossings in corpus rows 1409 and 4175', { timeout: 20_000 }, () => {
+    for (const sourceIndex of [1409, 4175]) {
+      const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === sourceIndex);
+      assert.ok(entry);
+
+      const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+      const audit = result.metadata.audit;
+
+      assert.equal(result.metadata.primaryFamily, 'large-molecule');
+      assert.equal(audit.severeOverlapCount, 0, `expected row ${sourceIndex} to have no severe overlaps`);
+      assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0, `expected row ${sourceIndex} to have no planar crossings`);
+      assert.equal(audit.bondLengthFailureCount, 0, `expected row ${sourceIndex} to have no bond-length failures`);
+      assert.equal(audit.ok, true, `expected row ${sourceIndex} to pass its final audit`);
+      assert.equal(audit.fallback.mode, null);
+    }
+  });
+
+  it('reduces residual contacts and crossings in ultra-large corpus row 21714', { timeout: 40_000 }, () => {
+    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 21714);
+    assert.ok(entry);
+
+    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+    const audit = result.metadata.audit;
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.ok(audit.severeOverlapCount <= 5, `expected at most 5 severe overlaps, got ${audit.severeOverlapCount}`);
+    assert.ok(
+      audit.visibleHeavyBondCrossingFailureCount <= 4,
+      `expected at most 4 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
+    );
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.fallback.mode, entry.expected.fallbackMode);
+  });
+
   for (const entry of RUN_LAYOUT_STRESS_TESTS ? AUDIT_CORPUS : []) {
     stressIt(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
       const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);
