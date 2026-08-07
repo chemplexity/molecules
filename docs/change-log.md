@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-06
+
+- Stabilize large-peptide regressions under concurrent CI load by using proven six-contact ceiling and removing runner-speed-dependent wall-clock assertion.
+
 ## 2026-08-05
 
 - Route collision-local amide branches before returning from the ultra-large fast path, then isolate paired rotations by connected defect region; the 540-heavy-atom corpus case now clears its label collisions and retains only five contacts and four planar crossings.
