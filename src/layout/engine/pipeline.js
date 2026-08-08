@@ -23,6 +23,7 @@ import {
 import { runTerminalAcyclicChainRetouch } from './cleanup/presentation/terminal-chain-retouch.js';
 import {
   runOrganometallicAromaticRingRetouch,
+  runOrganometallicCoordinateLabelClearanceRetouch,
   runOrganometallicCoordinateLigandOutwardRetouch,
   runOrganometallicMetalBranchFanRetouch,
   runOrganometallicRingAtomOverlapRetouch,
@@ -15436,6 +15437,21 @@ export function runPipeline(molecule, options = {}) {
         severeOverlapCountAfter: organometallicRingSidechainFanRetouch.severeOverlapCountAfter,
         visibleHeavyBondCrossingCountBefore: organometallicRingSidechainFanRetouch.visibleHeavyBondCrossingCountBefore,
         visibleHeavyBondCrossingCountAfter: organometallicRingSidechainFanRetouch.visibleHeavyBondCrossingCountAfter
+      });
+    }
+    const organometallicCoordinateLabelClearanceRetouch = timeFinalRetouch('organometallicCoordinateLabelClearanceRetouch', () =>
+      runOrganometallicCoordinateLabelClearanceRetouch(layoutGraph, finalCoords, {
+        bondLength: normalizedOptions.bondLength,
+        bondValidationClasses: placement.bondValidationClasses
+      })
+    );
+    if (organometallicCoordinateLabelClearanceRetouch.changed) {
+      finalCoords = organometallicCoordinateLabelClearanceRetouch.coords;
+      finalCoordsModified = true;
+      onStep?.('Organometallic Coordinate Label Clearance', 'Crowded coordinate ligands moved into open metal-centered lanes without changing covalent geometry.', cloneCoords(finalCoords), {
+        movedAtomCount: organometallicCoordinateLabelClearanceRetouch.movedAtomIds.length,
+        severeOverlapCountAfter: organometallicCoordinateLabelClearanceRetouch.audit.severeOverlapCount,
+        labelOverlapCountAfter: organometallicCoordinateLabelClearanceRetouch.audit.labelOverlapCount
       });
     }
   }

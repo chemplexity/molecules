@@ -2,6 +2,7 @@
 
 import { auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps } from '../../audit/invariants.js';
+import { findLabelOverlaps } from '../../geometry/label-box.js';
 import { isMetalAtom } from '../../topology/metal-centers.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, scale, sub } from '../../geometry/vec2.js';
 import { atomPairKey } from '../../constants.js';
@@ -25,6 +26,11 @@ const RING_SIDECHAIN_FAN_MAX_LAYOUT_HEAVY_ATOMS = 120;
 const RING_SIDECHAIN_FAN_MAX_MOVED_HEAVY_ATOMS = 12;
 const RING_SIDECHAIN_FAN_MAX_PATH_ATOMS = 7;
 const RING_SIDECHAIN_FAN_ROTATIONS = Object.freeze([15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const COORDINATE_LABEL_CLEARANCE_MAX_LAYOUT_HEAVY_ATOMS = 80;
+const COORDINATE_LABEL_CLEARANCE_MAX_PASSES = 4;
+const COORDINATE_LABEL_CLEARANCE_TRANSLATIONS = Object.freeze([0.1, 0.15, 0.2, 0.25]);
+const COORDINATE_LABEL_CLEARANCE_TRANSLATION_ANGLES = Object.freeze([0, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180].map(degrees => (degrees * Math.PI) / 180));
+const COORDINATE_LABEL_CLEARANCE_ROTATIONS = Object.freeze([15, 30, 45, 60, 75, 90, 120, 150, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 
 function otherBondAtomId(bond, atomId) {
   return bond.a === atomId ? bond.b : bond.a;
@@ -824,6 +830,143 @@ export function runOrganometallicMetalBranchFanRetouch(layoutGraph, coords, opti
     severeOverlapCountAfter: bestCandidate.audit.severeOverlapCount,
     visibleHeavyBondCrossingCountBefore: baseAudit.visibleHeavyBondCrossingCount,
     visibleHeavyBondCrossingCountAfter: bestCandidate.audit.visibleHeavyBondCrossingCount
+  };
+}
+
+function coordinateClearanceCandidateIsSafe(candidateAudit, baseAudit) {
+  return (
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
+    candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount &&
+    candidateAudit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount &&
+    !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+  );
+}
+
+function coordinateClearanceScore(audit, move) {
+  return (
+    audit.severeOverlapCount * 1e7 +
+    audit.labelOverlapCount * 1e5 +
+    audit.visibleHeavyBondCrossingCount * 1e4 +
+    audit.bondLengthFailureCount * 1e4 +
+    audit.ringSubstituentReadabilityFailureCount * 1e4 +
+    move
+  );
+}
+
+/**
+ * Clears residual metal-cluster contacts and label collisions by translating
+ * multiply coordinated ligands away from nonbonded metals and rotating terminal
+ * coordinate ligands around their metal anchors. Covalent geometry is unchanged.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Input coordinate map.
+ * @param {{bondLength?: number, bondValidationClasses?: Map<string, 'planar'|'bridged'|'haptic'>}} [options] - Retouch options.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object}} Retouch result.
+ */
+export function runOrganometallicCoordinateLabelClearanceRetouch(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const layoutHeavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  let currentCoords = coords;
+  let currentAudit = auditLayout(layoutGraph, currentCoords, {
+    bondLength,
+    bondValidationClasses: options.bondValidationClasses
+  });
+  if (
+    layoutHeavyAtomCount > COORDINATE_LABEL_CLEARANCE_MAX_LAYOUT_HEAVY_ATOMS ||
+    ((currentAudit.severeOverlapCount ?? 0) === 0 && (currentAudit.labelOverlapCount ?? 0) === 0)
+  ) {
+    return { changed: false, coords, movedAtomIds: [], audit: currentAudit };
+  }
+
+  const movedAtomIds = new Set();
+  let changed = false;
+  for (let pass = 0; pass < COORDINATE_LABEL_CLEARANCE_MAX_PASSES; pass++) {
+    let bestCandidate = null;
+    const considerCandidate = (candidateCoords, atomId, move) => {
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+        bondLength,
+        bondValidationClasses: options.bondValidationClasses
+      });
+      if (!coordinateClearanceCandidateIsSafe(candidateAudit, currentAudit)) {
+        return;
+      }
+      const score = coordinateClearanceScore(candidateAudit, move);
+      if (score >= coordinateClearanceScore(currentAudit, 0) || (bestCandidate && score >= bestCandidate.score)) {
+        return;
+      }
+      bestCandidate = { coords: candidateCoords, audit: candidateAudit, atomId, score };
+    };
+
+    for (const overlap of findSevereOverlaps(layoutGraph, currentCoords, bondLength)) {
+      for (const [ligandAtomId, blockerAtomId] of [
+        [overlap.firstAtomId, overlap.secondAtomId],
+        [overlap.secondAtomId, overlap.firstAtomId]
+      ]) {
+        if (isMetalAtomId(layoutGraph, ligandAtomId) || !isMetalAtomId(layoutGraph, blockerAtomId)) {
+          continue;
+        }
+        const metalAnchorIds = coordinateMetalNeighborIds(layoutGraph, ligandAtomId);
+        if (metalAnchorIds.length < 2 || metalAnchorIds.includes(blockerAtomId)) {
+          continue;
+        }
+        const ligandPosition = currentCoords.get(ligandAtomId);
+        const blockerPosition = currentCoords.get(blockerAtomId);
+        if (!ligandPosition || !blockerPosition) {
+          continue;
+        }
+        const awayAngle = angleOf(sub(ligandPosition, blockerPosition));
+        if (!Number.isFinite(awayAngle)) {
+          continue;
+        }
+        for (const translationFactor of COORDINATE_LABEL_CLEARANCE_TRANSLATIONS) {
+          const move = bondLength * translationFactor;
+          for (const angleOffset of COORDINATE_LABEL_CLEARANCE_TRANSLATION_ANGLES) {
+            const candidateCoords = new Map(currentCoords);
+            candidateCoords.set(ligandAtomId, add(ligandPosition, scale(fromAngle(awayAngle + angleOffset), move)));
+            considerCandidate(candidateCoords, ligandAtomId, move);
+          }
+        }
+      }
+    }
+
+    for (const labelOverlap of findLabelOverlaps(layoutGraph, currentCoords, bondLength)) {
+      for (const ligandAtomId of [labelOverlap.firstAtomId, labelOverlap.secondAtomId]) {
+        const metalAnchorIds = coordinateMetalNeighborIds(layoutGraph, ligandAtomId);
+        if (metalAnchorIds.length !== 1 || (layoutGraph.atoms.get(ligandAtomId)?.heavyDegree ?? 0) !== 1) {
+          continue;
+        }
+        const ligandPosition = currentCoords.get(ligandAtomId);
+        const anchorPosition = currentCoords.get(metalAnchorIds[0]);
+        if (!ligandPosition || !anchorPosition) {
+          continue;
+        }
+        const radius = distance(ligandPosition, anchorPosition);
+        const currentAngle = angleOf(sub(ligandPosition, anchorPosition));
+        for (const rotation of COORDINATE_LABEL_CLEARANCE_ROTATIONS) {
+          const candidateCoords = new Map(currentCoords);
+          candidateCoords.set(ligandAtomId, add(anchorPosition, scale(fromAngle(currentAngle + rotation), radius)));
+          considerCandidate(candidateCoords, ligandAtomId, Math.abs(rotation) * radius);
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    currentAudit = bestCandidate.audit;
+    movedAtomIds.add(bestCandidate.atomId);
+    changed = true;
+    if ((currentAudit.severeOverlapCount ?? 0) === 0 && (currentAudit.labelOverlapCount ?? 0) === 0) {
+      break;
+    }
+  }
+
+  return {
+    changed,
+    coords: currentCoords,
+    movedAtomIds: [...movedAtomIds],
+    audit: currentAudit
   };
 }
 

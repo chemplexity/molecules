@@ -285,12 +285,13 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: '[Ta]12([Ta]3([Br])[Ta]([Ta]([Br])([Br])[Ta]1([Br])([Br])[Ta]([Br])([Br])3([Br])[Br])([Br])[Br])([Br])[Br]2',
     expected: {
       primaryFamily: 'organometallic',
-      maxSevereOverlapCount: 9,
-      maxBondLengthFailureCount: 2,
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 0.5,
+      maxLabelOverlapCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,

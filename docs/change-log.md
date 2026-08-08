@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-07
+
+- Clear crowded polynuclear metal-cluster contacts and coordinate-ligand label collisions with bounded ligand translations and metal-centered rotations.
+
 ## 2026-08-06
 
 - Stabilize large-peptide regressions under concurrent CI load by using proven six-contact ceiling and removing runner-speed-dependent wall-clock assertion.
