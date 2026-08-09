@@ -200,6 +200,9 @@ const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_MAX_RING_SYSTEM_ATOMS = 24;
 const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_AROMATIC_CORE_MAX_RING_SYSTEM_ATOMS = 36;
 const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_AROMATIC_CORE_MIN_RING_COUNT = 4;
 const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_MAX_BASE_CROSSINGS = 3;
+const FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_MAX_HEAVY_ATOMS = 100;
+const FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_MAX_SUBTREE_HEAVY_ATOMS = 3;
+const FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_ROTATIONS = Object.freeze([15, 20, 25, 30, 45, 60, 90, 120, 150, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_INITIAL_OFFSET_FACTOR = 0.024;
 const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_DEFAULT_REPULSION_DISTANCE_FACTOR = 0.6333333333333333;
 const FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_MAX_BOND_DEVIATION = 0.2;
@@ -12623,6 +12626,147 @@ function bridgedSingleOverlapRelaxationCanReplace(candidateAudit, baseAudit) {
   return (baseAudit.severeOverlapCount ?? 0) > 0;
 }
 
+function finalBridgedPairedTerminalBranchDescriptors(layoutGraph, coords, placement, focusAtomIds, bondLength) {
+  const descriptors = [];
+  const seen = new Set();
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    for (const [anchorAtomId, rootAtomId] of [
+      [bond.a, bond.b],
+      [bond.b, bond.a]
+    ]) {
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+      const subtreeHeavyAtomIds = subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+      if (
+        subtreeHeavyAtomIds.length === 0 ||
+        subtreeHeavyAtomIds.length > FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_MAX_SUBTREE_HEAVY_ATOMS ||
+        subtreeHeavyAtomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId)) ||
+        subtreeAtomIds.some(atomId => placement.frozenAtomIds?.has(atomId))
+      ) {
+        continue;
+      }
+      const nearFocus = subtreeHeavyAtomIds.some(atomId => {
+        const position = coords.get(atomId);
+        return [...focusAtomIds].some(focusAtomId => {
+          const focusPosition = coords.get(focusAtomId);
+          return position && focusPosition && Math.hypot(position.x - focusPosition.x, position.y - focusPosition.y) < bondLength * 1.5;
+        });
+      });
+      if (!nearFocus) {
+        continue;
+      }
+      const key = `${anchorAtomId}:${rootAtomId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      descriptors.push({
+        anchorAtomId,
+        rootAtomId,
+        subtreeAtomIds,
+        subtreeAtomIdSet: new Set(subtreeAtomIds),
+        subtreeHeavyAtomIds
+      });
+    }
+  }
+  return descriptors;
+}
+
+function rotateFinalBridgedTerminalBranch(coords, descriptor, rotation) {
+  const pivot = coords.get(descriptor.anchorAtomId);
+  if (!pivot) {
+    return null;
+  }
+  const candidateCoords = new Map(coords);
+  for (const atomId of descriptor.subtreeAtomIds) {
+    candidateCoords.set(atomId, rotateAround(coords.get(atomId), pivot, rotation));
+  }
+  return candidateCoords;
+}
+
+function maybeRetouchFinalBridgedPairedTerminalBranchContacts(layoutGraph, finalCoords, placement, bondLength) {
+  const baseAudit = auditLayout(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
+  if (
+    heavyAtomCount > FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_MAX_HEAVY_ATOMS ||
+    (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 ||
+    (baseAudit.severeOverlapCount ?? 0) !== 1 ||
+    (baseAudit.bondLengthFailureCount ?? 0) !== 0 ||
+    (baseAudit.visibleHeavyBondCrossingFailureCount ?? 0) !== 0 ||
+    (baseAudit.labelOverlapCount ?? 0) !== 0
+  ) {
+    return { changed: false, coords: finalCoords, movedAtomIds: [], audit: baseAudit };
+  }
+  const overlap = findSevereOverlaps(layoutGraph, finalCoords, bondLength)[0];
+  if (!overlap) {
+    return { changed: false, coords: finalCoords, movedAtomIds: [], audit: baseAudit };
+  }
+  const overlapAtomIds = new Set([overlap.firstAtomId, overlap.secondAtomId]);
+  const descriptors = finalBridgedPairedTerminalBranchDescriptors(layoutGraph, finalCoords, placement, overlapAtomIds, bondLength);
+  const primaryDescriptors = descriptors.filter(descriptor => descriptor.subtreeHeavyAtomIds.some(atomId => overlapAtomIds.has(atomId)));
+  let bestCandidate = null;
+  for (const primaryDescriptor of primaryDescriptors) {
+    for (const secondaryDescriptor of descriptors) {
+      if (
+        secondaryDescriptor === primaryDescriptor ||
+        secondaryDescriptor.subtreeAtomIds.some(atomId => primaryDescriptor.subtreeAtomIdSet.has(atomId)) ||
+        primaryDescriptor.subtreeAtomIds.includes(secondaryDescriptor.anchorAtomId) ||
+        secondaryDescriptor.subtreeAtomIds.includes(primaryDescriptor.anchorAtomId)
+      ) {
+        continue;
+      }
+      for (const primaryRotation of FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_ROTATIONS) {
+        const primaryCoords = rotateFinalBridgedTerminalBranch(finalCoords, primaryDescriptor, primaryRotation);
+        if (!primaryCoords) {
+          continue;
+        }
+        for (const secondaryRotation of FINAL_BRIDGED_PAIRED_TERMINAL_BRANCH_ROTATIONS) {
+          const candidateCoords = rotateFinalBridgedTerminalBranch(primaryCoords, secondaryDescriptor, secondaryRotation);
+          if (!candidateCoords) {
+            continue;
+          }
+          const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+            bondLength,
+            bondValidationClasses: placement.bondValidationClasses
+          });
+          if (
+            candidateAudit.ok !== true ||
+            (candidateAudit.severeOverlapCount ?? 0) !== 0 ||
+            (candidateAudit.bondLengthFailureCount ?? 0) !== 0 ||
+            (candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0) ||
+            (candidateAudit.labelOverlapCount ?? 0) !== 0 ||
+            (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) > (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) ||
+            (candidateAudit.stereoContradiction ?? false)
+          ) {
+            continue;
+          }
+          const movedAtomIds = [...new Set([...primaryDescriptor.subtreeAtomIds, ...secondaryDescriptor.subtreeAtomIds])];
+          const candidate = {
+            coords: candidateCoords,
+            audit: candidateAudit,
+            movedAtomIds,
+            rotationMagnitude: Math.abs(primaryRotation) + Math.abs(secondaryRotation),
+            totalMove: finalAcyclicBranchContactCandidateMove(finalCoords, candidateCoords, movedAtomIds)
+          };
+          if (
+            !bestCandidate ||
+            candidate.rotationMagnitude < bestCandidate.rotationMagnitude - PRESENTATION_METRIC_EPSILON ||
+            (Math.abs(candidate.rotationMagnitude - bestCandidate.rotationMagnitude) <= PRESENTATION_METRIC_EPSILON && candidate.totalMove < bestCandidate.totalMove)
+          ) {
+            bestCandidate = candidate;
+          }
+        }
+      }
+    }
+  }
+  return bestCandidate ? { changed: true, ...bestCandidate } : { changed: false, coords: finalCoords, movedAtomIds: [], audit: baseAudit };
+}
+
 function maybeRelaxFinalBridgedSingleOverlaps(layoutGraph, finalCoords, placement, bondLength) {
   const baseAudit = auditLayout(layoutGraph, finalCoords, {
     bondLength,
@@ -14785,6 +14929,25 @@ export function runPipeline(molecule, options = {}) {
     if (familySummary.primaryFamily !== 'bridged') {
       return { changed: false, coords: finalCoords, movedAtomIds: [], audit: null };
     }
+    const pairedTerminalBranchRetouch = timeFinalRetouch('finalBridgedPairedTerminalBranchRetouch', () =>
+      maybeRetouchFinalBridgedPairedTerminalBranchContacts(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+    );
+    if (pairedTerminalBranchRetouch.changed) {
+      const currentAudit = auditLayout(layoutGraph, finalCoords, {
+        bondLength: normalizedOptions.bondLength,
+        bondValidationClasses: placement.bondValidationClasses
+      });
+      finalCoords = pairedTerminalBranchRetouch.coords;
+      finalCoordsModified = true;
+      onStep?.('Final Bridged Paired Branch Retouch', 'Two short bridged-cage substituents rotated together to clear a trapped contact.', cloneCoords(finalCoords), {
+        movedAtomCount: pairedTerminalBranchRetouch.movedAtomIds.length,
+        severeOverlapCountBefore: currentAudit.severeOverlapCount,
+        severeOverlapCountAfter: pairedTerminalBranchRetouch.audit?.severeOverlapCount ?? null,
+        visibleHeavyBondCrossingCountBefore: currentAudit.visibleHeavyBondCrossingCount,
+        visibleHeavyBondCrossingCountAfter: pairedTerminalBranchRetouch.audit?.visibleHeavyBondCrossingCount ?? null
+      });
+      return pairedTerminalBranchRetouch;
+    }
     const finalBridgedSingleOverlapRelaxation = timeFinalRetouch('finalBridgedSingleOverlapRelaxation', () =>
       maybeRelaxFinalBridgedSingleOverlaps(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
     );
@@ -16697,9 +16860,32 @@ export function runPipeline(molecule, options = {}) {
       }
     );
   }
-  const finalBridgedSingleOverlapRelaxation = timeFinalRetouch('finalBridgedSingleOverlapRelaxation', () =>
-    maybeRelaxFinalBridgedSingleOverlaps(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
-  );
+  const finalBridgedPairedTerminalBranchRetouch =
+    familySummary.primaryFamily === 'bridged'
+      ? timeFinalRetouch('finalBridgedPairedTerminalBranchRetouch', () =>
+          maybeRetouchFinalBridgedPairedTerminalBranchContacts(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+        )
+      : { changed: false };
+  if (finalBridgedPairedTerminalBranchRetouch.changed) {
+    const currentAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    finalCoords = finalBridgedPairedTerminalBranchRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Bridged Paired Branch Retouch', 'Two short bridged-cage substituents rotated together to clear a trapped contact.', cloneCoords(finalCoords), {
+      movedAtomCount: finalBridgedPairedTerminalBranchRetouch.movedAtomIds.length,
+      severeOverlapCountBefore: currentAudit.severeOverlapCount,
+      severeOverlapCountAfter: finalBridgedPairedTerminalBranchRetouch.audit?.severeOverlapCount ?? null,
+      visibleHeavyBondCrossingCountBefore: currentAudit.visibleHeavyBondCrossingCount,
+      visibleHeavyBondCrossingCountAfter: finalBridgedPairedTerminalBranchRetouch.audit?.visibleHeavyBondCrossingCount ?? null
+    });
+  }
+  const finalBridgedSingleOverlapRelaxation = finalBridgedPairedTerminalBranchRetouch.changed
+    ? { changed: false }
+    : timeFinalRetouch('finalBridgedSingleOverlapRelaxation', () =>
+        maybeRelaxFinalBridgedSingleOverlaps(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+      );
   if (finalBridgedSingleOverlapRelaxation.changed) {
     const currentAudit = auditLayout(layoutGraph, finalCoords, {
       bondLength: normalizedOptions.bondLength,

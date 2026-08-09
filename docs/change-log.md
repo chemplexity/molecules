@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-08
+
+- Clear trapped substituent contacts around bridged cages with bounded paired branch rotations that preserve ring geometry and audited layout quality.
+
 ## 2026-08-07
 
 - Clear crowded polynuclear metal-cluster contacts and coordinate-ligand label collisions with bounded ligand translations and metal-centered rotations.

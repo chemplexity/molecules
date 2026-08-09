@@ -329,12 +329,13 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC[C@]1(O)C[C@H]2CN(CCc3c([nH]c4ccc(C)cc34)[C@@](C2)(C(=O)OC)c5cc6c(cc5OC)N(C=O)[C@H]7[C@](O)([C@H](OC(=O)C)[C@]8(CC)CC=CN9CC[C@]67[C@H]89)C(=O)OC)C1',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 8,
-      maxBondLengthFailureCount: 26,
-      maxBondLengthDeviation: 3.25,
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.17,
+      maxLabelOverlapCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
