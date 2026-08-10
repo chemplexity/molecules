@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-09
+
+- Shorten residual stretched bridged-ring closures with bounded compact-tail translations after final validation settles.
+
 ## 2026-08-08
 
 - Clear trapped substituent contacts around bridged cages with bounded paired branch rotations that preserve ring geometry and audited layout quality.

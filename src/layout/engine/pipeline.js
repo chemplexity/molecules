@@ -3432,6 +3432,36 @@ function stretchedBridgedRingBondAdjacentTailAtomIds(layoutGraph, coords, startA
   return [...movedAtomIds].filter(atomId => coords.has(atomId));
 }
 
+function stretchedBridgedRingBondCompactNeighborTailGroups(layoutGraph, coords, startAtomId, blockedAtomId) {
+  const endpointAtomIds = stretchedBridgedRingBondAcyclicBranchAtomIds(layoutGraph, coords, startAtomId);
+  if (endpointAtomIds.length === 0) {
+    return [];
+  }
+  const groups = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(startAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || !bond.inRing) {
+      continue;
+    }
+    const neighborAtomId = bond.a === startAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (
+      neighborAtomId === blockedAtomId ||
+      !neighborAtom ||
+      neighborAtom.element === 'H' ||
+      neighborAtom.chirality != null ||
+      (neighborAtom.heavyDegree ?? 0) > 3
+    ) {
+      continue;
+    }
+    const movedAtomIds = [...new Set([...endpointAtomIds, ...stretchedBridgedRingBondAcyclicBranchAtomIds(layoutGraph, coords, neighborAtomId)])];
+    const heavyAtomCount = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
+    if (heavyAtomCount >= 2 && heavyAtomCount <= FINAL_STRETCHED_BRIDGED_RING_BOND_ADJACENT_TAIL_MAX_HEAVY_ATOMS) {
+      groups.push(movedAtomIds);
+    }
+  }
+  return groups;
+}
+
 function compactBridgedRemoteTwoAtomPathBond(layoutGraph, firstAtomId, secondAtomId) {
   return layoutGraph.bondByAtomPair?.get(atomPairKey(firstAtomId, secondAtomId)) ?? null;
 }
@@ -4148,6 +4178,8 @@ function stretchedBridgedRingBondDescriptors(layoutGraph, coords, placement, bon
     const secondSideMovedAtomIds = stretchedBridgedRingBondSideAtomIds(layoutGraph, coords, bond.b, bond.a);
     const firstAdjacentTailMovedAtomIds = stretchedBridgedRingBondAdjacentTailAtomIds(layoutGraph, coords, bond.a, bond.b);
     const secondAdjacentTailMovedAtomIds = stretchedBridgedRingBondAdjacentTailAtomIds(layoutGraph, coords, bond.b, bond.a);
+    const firstCompactNeighborTailGroups = stretchedBridgedRingBondCompactNeighborTailGroups(layoutGraph, coords, bond.a, bond.b);
+    const secondCompactNeighborTailGroups = stretchedBridgedRingBondCompactNeighborTailGroups(layoutGraph, coords, bond.b, bond.a);
     if (firstMovedAtomIds.length === 0 && secondMovedAtomIds.length === 0) {
       continue;
     }
@@ -4162,6 +4194,8 @@ function stretchedBridgedRingBondDescriptors(layoutGraph, coords, placement, bon
       secondSideMovedAtomIds,
       firstAdjacentTailMovedAtomIds,
       secondAdjacentTailMovedAtomIds,
+      firstCompactNeighborTailGroups,
+      secondCompactNeighborTailGroups,
       requiredShift
     });
   }
@@ -4270,8 +4304,13 @@ function maybeRetouchFinalStretchedBridgedRingBond(molecule, layoutGraph, finalC
   let bestCandidate = null;
   for (const descriptor of descriptors) {
     for (const shiftFactor of FINAL_STRETCHED_BRIDGED_RING_BOND_SHIFT_FACTORS) {
-      for (const mode of ['first', 'second', 'both', 'firstSide', 'secondSide', 'firstAdjacentTail', 'secondAdjacentTail']) {
-        const candidate = stretchedBridgedRingBondCandidate(finalCoords, descriptor, shiftFactor, mode);
+      const candidateModes = [
+        ...['first', 'second', 'both', 'firstSide', 'secondSide', 'firstAdjacentTail', 'secondAdjacentTail'].map(mode => ({ descriptor, mode })),
+        ...descriptor.firstCompactNeighborTailGroups.map(firstMovedAtomIds => ({ descriptor: { ...descriptor, firstMovedAtomIds }, mode: 'first' })),
+        ...descriptor.secondCompactNeighborTailGroups.map(secondMovedAtomIds => ({ descriptor: { ...descriptor, secondMovedAtomIds }, mode: 'second' }))
+      ];
+      for (const candidateMode of candidateModes) {
+        const candidate = stretchedBridgedRingBondCandidate(finalCoords, candidateMode.descriptor, shiftFactor, candidateMode.mode);
         if (!candidate) {
           continue;
         }
@@ -16960,6 +16999,27 @@ export function runPipeline(molecule, options = {}) {
         maxBondLengthDeviationAfter: finalCompactBridgedValidationPromotion.audit?.maxBondLengthDeviation ?? null
       }
     );
+  }
+  const finalLateStretchedBridgedRingBond = timeFinalRetouch('finalLateStretchedBridgedRingBond', () =>
+    maybeRetouchFinalStretchedBridgedRingBond(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+  );
+  if (finalLateStretchedBridgedRingBond.changed) {
+    const currentAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    finalCoords = finalLateStretchedBridgedRingBond.coords;
+    if (finalLateStretchedBridgedRingBond.bondValidationClasses instanceof Map) {
+      placement.bondValidationClasses = finalLateStretchedBridgedRingBond.bondValidationClasses;
+    }
+    finalCoordsModified = true;
+    onStep?.('Final Late Stretched Bridged Ring-Bond Retouch', 'A residual bridged ring closure was shortened with its compact neighboring tail after validation settled.', cloneCoords(finalCoords), {
+      movedAtomCount: finalLateStretchedBridgedRingBond.movedAtomIds.length,
+      bondLengthFailureCountBefore: currentAudit.bondLengthFailureCount,
+      bondLengthFailureCountAfter: finalLateStretchedBridgedRingBond.audit?.bondLengthFailureCount ?? null,
+      maxBondLengthDeviationBefore: currentAudit.maxBondLengthDeviation,
+      maxBondLengthDeviationAfter: finalLateStretchedBridgedRingBond.audit?.maxBondLengthDeviation ?? null
+    });
   }
   if (familySummary.primaryFamily === 'large-molecule' || placement.placedFamilies.includes('large-molecule')) {
     const lateLargeMoleculeResidualAudit = timeFinalRetouch('lateLargeMoleculeResidualNeed', () =>

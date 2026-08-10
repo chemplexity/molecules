@@ -1993,14 +1993,14 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'COC[C@@H]1CC[C@@H]2[C@@H](C)[C@H](O)[C@@H](O[C@H]3O[C@@H](COC(C)(C)C=C)[C@H](O)[C@@H](OC(C)=O)[C@@H]3O)C3=C(C[C@@H](O)[C@]3(C)\\C=C1/2)[C@H](C)COC(C)=O',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 1,
-      maxBondLengthFailureCount: 1,
-      maxBondLengthDeviation: 0.74,
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.5,
       maxLabelOverlapCount: 0,
       maxRingSubstituentReadabilityFailureCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     }
   },
   {
