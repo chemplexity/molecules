@@ -2750,12 +2750,13 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC1CC2=C3CC4CN1C2C12NC=NC31C42',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 1,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.51,
+      maxBondLengthDeviation: 0.57,
+      maxLabelOverlapCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
@@ -2770,17 +2771,18 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC1COC23C4CNC12CCC3(C)CN4',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 2,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.22,
+      maxBondLengthDeviation: 0.52,
+      maxLabelOverlapCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
       finalOverlapsAtMostPlacement: true,
-      finalMaxDeviationAtMostPlacement: true
+      finalMaxDeviationAtMostPlacement: false
     }
   },
   {
@@ -3168,18 +3170,18 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CN1CCC23NC(=O)CC(C2C1)C1=CC(Cl)=CC=C1O3',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 3,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 1e-6,
-      maxLabelOverlapCount: 1,
+      maxBondLengthDeviation: 0.56,
+      maxLabelOverlapCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
       finalOverlapsAtMostPlacement: true,
-      finalMaxDeviationAtMostPlacement: true
+      finalMaxDeviationAtMostPlacement: false
     }
   },
   {

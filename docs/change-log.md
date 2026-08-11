@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-08-10
+
+- Rescue compact bridged cages with trapped internal contacts by pairing a guarded whole-cage spring seed with final closure repair.
+- Extend the guarded cage rescue to clear multi-contact heterocyclic cages and their associated label collisions when only one closure needs repair.
+
 ## 2026-08-09
 
 - Shorten residual stretched bridged-ring closures with bounded compact-tail translations after final validation settles.

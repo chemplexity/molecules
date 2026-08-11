@@ -267,6 +267,10 @@ const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_THRESHOLD = 0.02;
 const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_PROMOTED_KK_THRESHOLD = 0.05;
 const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_ITERATIONS = 1000;
 const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_INNER_ITERATIONS = 20;
+const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_BOND_FAILURES = 1;
+const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_DEVIATION_FACTOR = 0.5;
+const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_OVERLAPS = 3;
+const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_LABEL_OVERLAPS = 1;
 const FINAL_STRETCHED_BRIDGED_AROMATIC_RING_BOND_MAX_HEAVY_ATOMS = 40;
 const FINAL_STRETCHED_BRIDGED_AROMATIC_RING_BOND_MAX_DISTANCE_FACTOR = BRIDGED_VALIDATION.maxBondLengthFactor + 0.2;
 const FINAL_STRETCHED_BRIDGED_AROMATIC_RING_BOND_SHIFT_FACTORS = Object.freeze([0.12, 0.15, 1 / 6, 0.2, 0.23, 0.27]);
@@ -2415,6 +2419,64 @@ function maybeRetouchFinalCompactBridgedWholeComponentKamadaKawai(molecule, layo
   };
 }
 
+function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
+  const unchanged = () => ({ changed: false, coords: finalCoords, movedAtomIds: [], audit: currentAudit });
+  if (
+    !compactBridgedWholeComponentKamadaKawaiStructureIsEligible(layoutGraph) ||
+    (currentAudit.severeOverlapCount ?? 0) < 1 ||
+    (currentAudit.severeOverlapCount ?? 0) > FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_OVERLAPS ||
+    (currentAudit.bondLengthFailureCount ?? 0) !== 0 ||
+    (currentAudit.labelOverlapCount ?? 0) > FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_LABEL_OVERLAPS ||
+    (currentAudit.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
+    (currentAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
+    (currentAudit.stereoContradiction ?? false)
+  ) {
+    return unchanged();
+  }
+
+  const heavyAtomIds = [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H' && atom.visible !== false && finalCoords.has(atom.id)).map(atom => atom.id);
+  if (heavyAtomIds.length === 0 || heavyAtomIds.length > FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_HEAVY_ATOMS) {
+    return unchanged();
+  }
+  const kkResult = layoutKamadaKawai(layoutGraph.sourceMolecule ?? molecule, heavyAtomIds, {
+    bondLength,
+    threshold: FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_THRESHOLD,
+    innerThreshold: FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_THRESHOLD,
+    maxIterations: FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_ITERATIONS,
+    maxInnerIterations: FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_INNER_ITERATIONS
+  });
+  if (kkResult.coords.size !== heavyAtomIds.length) {
+    return unchanged();
+  }
+
+  const candidateCoords = cloneCoords(finalCoords);
+  for (const atomId of heavyAtomIds) {
+    candidateCoords.set(atomId, kkResult.coords.get(atomId));
+  }
+  const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, heavyAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
+  const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
+  if (
+    (candidateAudit.severeOverlapCount ?? 0) !== 0 ||
+    (candidateAudit.bondLengthFailureCount ?? 0) > FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_BOND_FAILURES ||
+    (candidateAudit.visibleHeavyBondCrossingFailureCount ?? 0) !== 0 ||
+    (candidateAudit.labelOverlapCount ?? 0) !== 0 ||
+    (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
+    (candidateAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
+    (candidateAudit.stereoContradiction ?? false) ||
+    (candidateAudit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) > bondLength * FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_DEVIATION_FACTOR
+  ) {
+    return unchanged();
+  }
+  return {
+    changed: true,
+    coords: candidateCoords,
+    bondValidationClasses: candidateBondValidationClasses,
+    movedAtomIds: changedAtomIdsBetweenCoords(finalCoords, candidateCoords),
+    audit: candidateAudit
+  };
+}
+
 function stretchedBridgedAromaticRingBondDescriptors(layoutGraph, coords, baseAudit, bondLength) {
   if (
     !baseAudit ||
@@ -4130,7 +4192,7 @@ function stretchedBridgedRingBondDescriptors(layoutGraph, coords, placement, bon
     (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
     (baseAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
     (baseAudit.stereoContradiction ?? false) ||
-    (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 3 ||
+    (baseAudit.visibleHeavyBondCrossingCount ?? 0) > 4 ||
     visibleHeavyAtomCountForCoords(layoutGraph, coords) > FINAL_STRETCHED_BRIDGED_RING_BOND_MAX_HEAVY_ATOMS
   ) {
     return [];
@@ -16999,6 +17061,22 @@ export function runPipeline(molecule, options = {}) {
         maxBondLengthDeviationAfter: finalCompactBridgedValidationPromotion.audit?.maxBondLengthDeviation ?? null
       }
     );
+  }
+  const finalCompactBridgedOverlapKamadaKawaiSeed =
+    familySummary.primaryFamily === 'bridged'
+      ? timeFinalRetouch('finalCompactBridgedOverlapKamadaKawaiSeed', () =>
+          maybeSeedFinalCompactBridgedOverlapKamadaKawai(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+        )
+      : { changed: false };
+  if (finalCompactBridgedOverlapKamadaKawaiSeed.changed) {
+    finalCoords = finalCompactBridgedOverlapKamadaKawaiSeed.coords;
+    placement.bondValidationClasses = finalCompactBridgedOverlapKamadaKawaiSeed.bondValidationClasses;
+    finalCoordsModified = true;
+    onStep?.('Final Compact Bridged Overlap KK Seed', 'A compact bridged cage was re-seeded to clear its trapped contact before final closure repair.', cloneCoords(finalCoords), {
+      movedAtomCount: finalCompactBridgedOverlapKamadaKawaiSeed.movedAtomIds.length,
+      severeOverlapCountAfter: finalCompactBridgedOverlapKamadaKawaiSeed.audit?.severeOverlapCount ?? null,
+      bondLengthFailureCountAfter: finalCompactBridgedOverlapKamadaKawaiSeed.audit?.bondLengthFailureCount ?? null
+    });
   }
   const finalLateStretchedBridgedRingBond = timeFinalRetouch('finalLateStretchedBridgedRingBond', () =>
     maybeRetouchFinalStretchedBridgedRingBond(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
