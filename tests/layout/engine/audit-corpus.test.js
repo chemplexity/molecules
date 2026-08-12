@@ -199,6 +199,40 @@ describe('layout/engine/audit-corpus', () => {
     }
   });
 
+  it('keeps previously repaired compact polycycles audit-clean', () => {
+    for (const sourceIndex of [3086, 7418, 6991, 25846, 23712]) {
+      const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === sourceIndex);
+      assert.ok(entry);
+
+      const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+      const audit = result.metadata.audit;
+
+      assert.equal(audit.severeOverlapCount, 0, `expected ${entry.name} to have no severe overlaps`);
+      assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0, `expected ${entry.name} to have no planar crossings`);
+      assert.equal(audit.labelOverlapCount, 0, `expected ${entry.name} to have no label overlaps`);
+      assert.equal(audit.bondLengthFailureCount, 0, `expected ${entry.name} to have no bond-length failures`);
+      assert.equal(audit.ok, true, `expected ${entry.name} to pass its final audit`);
+      assert.equal(audit.fallback.mode, null);
+    }
+  });
+
+  it('re-solves a dense carbon cage without trapped vertex contacts', () => {
+    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 21740);
+    assert.ok(entry);
+
+    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+    const audit = result.metadata.audit;
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.stereoContradiction, false);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.fallback.mode, null);
+  });
+
   for (const entry of RUN_LAYOUT_STRESS_TESTS ? AUDIT_CORPUS : []) {
     stressIt(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
       const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);

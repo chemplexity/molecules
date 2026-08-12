@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-08-11
+
+- Tighten clean-layout regression coverage for repaired compact polycycles so contact and bond-length defects cannot silently return.
+- Re-solve dense three-connected carbon cages when fused projection leaves nonbonded vertices trapped in contact.
+
 ## 2026-08-10
 
 - Rescue compact bridged cages with trapped internal contacts by pairing a guarded whole-cage spring seed with final closure repair.

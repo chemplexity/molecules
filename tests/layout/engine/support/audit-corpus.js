@@ -159,7 +159,7 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC(C)(C)[C@H]1COC(=O)[C@H](C\\C=C/C[C@@H](CC(=O)N[C@@H](CO)Cc2ccccc2)C(=O)N1)NC(=O)OCC3c4ccccc4c5ccccc35',
     expected: {
       primaryFamily: 'macrocycle',
-      maxSevereOverlapCount: 1,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 1e-5,
       maxCollapsedMacrocycleCount: 0,
@@ -390,7 +390,7 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: '[H][C@@]12C[C@@]3([H])[C@]4([H])CCC5=CC(=O)C=C[C@]5(C)[C@@]4(F)[C@@H](O)C[C@]3(C)[C@@]1(OC1(CCCC1)O2)C(=O)COC(C)=O',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 3,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 1e-6,
       maxCollapsedMacrocycleCount: 0,
@@ -450,17 +450,17 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'C12C3C4C5C1C6C7C2C8C3C9C4C1C5C6C2C7C8C9C12',
     expected: {
       primaryFamily: 'fused',
-      maxSevereOverlapCount: 5,
-      maxBondLengthFailureCount: 3,
-      maxBondLengthDeviation: 0.85,
+      maxSevereOverlapCount: 0,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.57,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
       finalOverlapsAtMostPlacement: true,
-      finalMaxDeviationAtMostPlacement: true
+      finalMaxDeviationAtMostPlacement: false
     }
   },
   {
@@ -2730,9 +2730,9 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC1(C)CCC[C@]2(C)[C@@H]1C[C@@H](O)[C@@]34[C@H](O)[C@@H]([C@@H](O)C[C@@H]23)C(=C)C4=O',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 1,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.42,
+      maxBondLengthDeviation: 0.14,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: null
@@ -2812,7 +2812,7 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'C[C@@H]1C(=O)O[C@H]2[C@H](O)[C@@]34[C@H]5C[C@@H](C(C)(C)C)[C@@]33[C@@H](O)C(=O)O[C@H]3O[C@@]4(C(=O)O5)[C@@]12O',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 2,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 0.56,
       maxCollapsedMacrocycleCount: 0,
@@ -2854,7 +2854,7 @@ export const AUDIT_CORPUS = Object.freeze([
       primaryFamily: 'bridged',
       maxSevereOverlapCount: 2,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.49,
+      maxBondLengthDeviation: 0.14,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: null
@@ -3151,8 +3151,8 @@ export const AUDIT_CORPUS = Object.freeze([
     expected: {
       primaryFamily: 'bridged',
       maxSevereOverlapCount: 0,
-      maxBondLengthFailureCount: 1,
-      maxBondLengthDeviation: 0.65,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.53,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: null
