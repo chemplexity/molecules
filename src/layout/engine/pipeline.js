@@ -267,10 +267,11 @@ const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_THRESHOLD = 0.02;
 const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_PROMOTED_KK_THRESHOLD = 0.05;
 const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_ITERATIONS = 1000;
 const FINAL_COMPACT_BRIDGED_WHOLE_COMPONENT_KK_MAX_INNER_ITERATIONS = 20;
-const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_BOND_FAILURES = 1;
+const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_BOND_FAILURES = 2;
 const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_DEVIATION_FACTOR = 0.5;
 const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_OVERLAPS = 3;
 const FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_LABEL_OVERLAPS = 1;
+const FINAL_COMPACT_BRIDGED_OVERLAP_KK_PAIRED_CLOSURE_SHIFT_FACTORS = Object.freeze([0.1, 0.13, 0.16, 0.19, 0.22]);
 const FINAL_DENSE_CARBON_CAGE_KK_MIN_HEAVY_ATOMS = 16;
 const FINAL_DENSE_CARBON_CAGE_KK_MAX_HEAVY_ATOMS = 24;
 const FINAL_DENSE_CARBON_CAGE_KK_THRESHOLD = 0.04;
@@ -2422,6 +2423,107 @@ function maybeRetouchFinalCompactBridgedWholeComponentKamadaKawai(molecule, layo
   };
 }
 
+function compactBridgedOverlapKamadaKawaiFailedClosures(layoutGraph, coords, bondLength) {
+  const maxDistance = bondLength + finalRetouchAllowedBondDeviation('bridged', bondLength);
+  return [...layoutGraph.bonds.values()].filter(bond => {
+    if (!bond || bond.kind !== 'covalent' || !bond.inRing || bond.aromatic || !coords.has(bond.a) || !coords.has(bond.b)) {
+      return false;
+    }
+    const firstAtom = layoutGraph.atoms.get(bond.a);
+    const secondAtom = layoutGraph.atoms.get(bond.b);
+    if (!firstAtom || !secondAtom || firstAtom.element === 'H' || secondAtom.element === 'H') {
+      return false;
+    }
+    const firstPosition = coords.get(bond.a);
+    const secondPosition = coords.get(bond.b);
+    return Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) > maxDistance + PRESENTATION_METRIC_EPSILON;
+  });
+}
+
+function compactBridgedOverlapKamadaKawaiClosureCandidate(coords, closures, modes, shifts) {
+  const candidateCoords = cloneCoords(coords);
+  for (let index = 0; index < closures.length; index += 1) {
+    const closure = closures[index];
+    const firstPosition = candidateCoords.get(closure.a);
+    const secondPosition = candidateCoords.get(closure.b);
+    if (!firstPosition || !secondPosition) {
+      return null;
+    }
+    const dx = secondPosition.x - firstPosition.x;
+    const dy = secondPosition.y - firstPosition.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance <= PRESENTATION_METRIC_EPSILON) {
+      return null;
+    }
+    const unitX = dx / distance;
+    const unitY = dy / distance;
+    const mode = modes[index];
+    const shift = shifts[index];
+    if (mode === 'first' || mode === 'both') {
+      const firstShift = mode === 'both' ? shift * 0.5 : shift;
+      candidateCoords.set(closure.a, { x: firstPosition.x + unitX * firstShift, y: firstPosition.y + unitY * firstShift });
+    }
+    if (mode === 'second' || mode === 'both') {
+      const secondShift = mode === 'both' ? shift * 0.5 : shift;
+      candidateCoords.set(closure.b, { x: secondPosition.x - unitX * secondShift, y: secondPosition.y - unitY * secondShift });
+    }
+  }
+  return candidateCoords;
+}
+
+function maybeRepairCompactBridgedOverlapKamadaKawaiClosures(molecule, layoutGraph, coords, placement, bondLength, bondValidationClasses, audit) {
+  if ((audit.bondLengthFailureCount ?? 0) !== 2) {
+    return null;
+  }
+  const closures = compactBridgedOverlapKamadaKawaiFailedClosures(layoutGraph, coords, bondLength);
+  if (closures.length !== 2 || new Set(closures.flatMap(bond => [bond.a, bond.b])).size !== 4) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  for (const firstMode of ['first', 'second', 'both']) {
+    for (const secondMode of ['first', 'second', 'both']) {
+      for (const firstShiftFactor of FINAL_COMPACT_BRIDGED_OVERLAP_KK_PAIRED_CLOSURE_SHIFT_FACTORS) {
+        for (const secondShiftFactor of FINAL_COMPACT_BRIDGED_OVERLAP_KK_PAIRED_CLOSURE_SHIFT_FACTORS) {
+          const candidateCoords = compactBridgedOverlapKamadaKawaiClosureCandidate(
+            coords,
+            closures,
+            [firstMode, secondMode],
+            [bondLength * firstShiftFactor, bondLength * secondShiftFactor]
+          );
+          if (!candidateCoords) {
+            continue;
+          }
+          const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, bondValidationClasses);
+          if (
+            candidateAudit?.ok !== true ||
+            candidateAudit.fallback?.mode != null ||
+            (candidateAudit.severeOverlapCount ?? 0) !== 0 ||
+            (candidateAudit.bondLengthFailureCount ?? 0) !== 0 ||
+            (candidateAudit.visibleHeavyBondCrossingFailureCount ?? 0) !== 0 ||
+            (candidateAudit.labelOverlapCount ?? 0) !== 0 ||
+            (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
+            (candidateAudit.collapsedMacrocycleCount ?? 0) !== 0 ||
+            (candidateAudit.stereoContradiction ?? false)
+          ) {
+            continue;
+          }
+          const candidate = { coords: candidateCoords, audit: candidateAudit };
+          if (
+            !bestCandidate ||
+            (candidateAudit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) < (bestCandidate.audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON ||
+            (Math.abs((candidateAudit.maxBondLengthDeviation ?? 0) - (bestCandidate.audit.maxBondLengthDeviation ?? 0)) <= PRESENTATION_METRIC_EPSILON &&
+              (candidateAudit.meanBondLengthDeviation ?? Number.POSITIVE_INFINITY) < (bestCandidate.audit.meanBondLengthDeviation ?? Number.POSITIVE_INFINITY))
+          ) {
+            bestCandidate = candidate;
+          }
+        }
+      }
+    }
+  }
+  return bestCandidate;
+}
+
 function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, finalCoords, placement, bondLength) {
   const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
   const unchanged = () => ({ changed: false, coords: finalCoords, movedAtomIds: [], audit: currentAudit });
@@ -2458,7 +2560,7 @@ function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, f
     candidateCoords.set(atomId, kkResult.coords.get(atomId));
   }
   const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, heavyAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
-  const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
+  let candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
   if (
     (candidateAudit.severeOverlapCount ?? 0) !== 0 ||
     (candidateAudit.bondLengthFailureCount ?? 0) > FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_BOND_FAILURES ||
@@ -2470,6 +2572,24 @@ function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, f
     (candidateAudit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) > bondLength * FINAL_COMPACT_BRIDGED_OVERLAP_KK_SEED_MAX_DEVIATION_FACTOR
   ) {
     return unchanged();
+  }
+  if ((candidateAudit.bondLengthFailureCount ?? 0) === 2) {
+    const repairedCandidate = maybeRepairCompactBridgedOverlapKamadaKawaiClosures(
+      molecule,
+      layoutGraph,
+      candidateCoords,
+      placement,
+      bondLength,
+      candidateBondValidationClasses,
+      candidateAudit
+    );
+    if (!repairedCandidate) {
+      return unchanged();
+    }
+    for (const [atomId, position] of repairedCandidate.coords) {
+      candidateCoords.set(atomId, position);
+    }
+    candidateAudit = repairedCandidate.audit;
   }
   return {
     changed: true,

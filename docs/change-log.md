@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-12
+
+- Repair paired bridged-cage closures after whole-cage contact relief leaves two independent stretched ring bonds.
+
 ## 2026-08-11
 
 - Tighten clean-layout regression coverage for repaired compact polycycles so contact and bond-length defects cannot silently return.

@@ -2832,17 +2832,17 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC1C2CC2C2OC(N)=NC1C1=NSC=C21',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 3,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 1e-6,
+      maxBondLengthDeviation: 0.51,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
       finalOverlapsAtMostPlacement: true,
-      finalMaxDeviationAtMostPlacement: true
+      finalMaxDeviationAtMostPlacement: false
     }
   },
   {
