@@ -2792,7 +2792,7 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CCC(=O)O[C@@H]1C(=C)[C@H]2C[C@@H]3C4N5C[C@]6(C)CCC[C@]47[C@H]([C@H]2O)[C@]13C[C@]5(O)[C@H]67',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 1,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 0.58,
       maxCollapsedMacrocycleCount: 0,

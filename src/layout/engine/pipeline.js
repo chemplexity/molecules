@@ -10830,7 +10830,7 @@ function compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bond
     const firstRingSystemId = layoutGraph.atomToRingSystemId.get(firstAtomId);
     const secondRingSystemId = layoutGraph.atomToRingSystemId.get(secondAtomId);
     const ringSystem = firstRingSystemId != null && firstRingSystemId === secondRingSystemId ? layoutGraph.ringSystemById.get(firstRingSystemId) : null;
-    if (!ringSystem || (ringSystem.atomIds?.length ?? 0) > 16 || (ringSystem.ringIds?.length ?? 0) < 3 || !hasBridgedConnectionForRingSystem(layoutGraph, ringSystem)) {
+    if (!ringSystem || (ringSystem.atomIds?.length ?? 0) > 24 || (ringSystem.ringIds?.length ?? 0) < 3 || !hasBridgedConnectionForRingSystem(layoutGraph, ringSystem)) {
       continue;
     }
     const sharedRing = (layoutGraph.atomToRings.get(firstAtomId) ?? []).some(firstRing => (layoutGraph.atomToRings.get(secondAtomId) ?? []).some(secondRing => secondRing.id === firstRing.id));
@@ -10899,6 +10899,27 @@ function compactBridgedNonbondedRingOverlapDescriptors(layoutGraph, coords, bond
     if (isNearButNotExactOverlap && firstRetouchable && secondRetouchable) {
       descriptors.push(...compactBridgedRingPathTailReliefDescriptorsForAtom(layoutGraph, coords, ringSystem, firstAtomId, secondAtomId));
       descriptors.push(...compactBridgedRingPathTailReliefDescriptorsForAtom(layoutGraph, coords, ringSystem, secondAtomId, firstAtomId));
+    }
+    const retouchableAtomId = firstRetouchable && secondStationaryBridgehead ? firstAtomId : secondRetouchable && firstStationaryBridgehead ? secondAtomId : null;
+    const stationaryAtomId = retouchableAtomId === firstAtomId ? secondAtomId : retouchableAtomId === secondAtomId ? firstAtomId : null;
+    const retouchableRing = retouchableAtomId ? (layoutGraph.atomToRings.get(retouchableAtomId) ?? [])[0] : null;
+    if (retouchableAtomId && stationaryAtomId && retouchableRing) {
+      const atomIndex = retouchableRing.atomIds.indexOf(retouchableAtomId);
+      const endpointAtomIds = [
+        retouchableRing.atomIds[(atomIndex - 1 + retouchableRing.atomIds.length) % retouchableRing.atomIds.length],
+        retouchableRing.atomIds[(atomIndex + 1) % retouchableRing.atomIds.length]
+      ];
+      descriptors.push({
+        kind: 'singleBridgedPathAtom',
+        atomId: retouchableAtomId,
+        blockerAtomId: stationaryAtomId,
+        firstAtomId: retouchableAtomId,
+        secondAtomId: stationaryAtomId,
+        endpointAtomIds,
+        ringAtomIds: ringSystem.atomIds ?? retouchableRing.atomIds,
+        movedAtomIds: retouchableAtomId === firstAtomId ? firstMovedAtomIds : secondMovedAtomIds
+      });
+      continue;
     }
     descriptors.push({
       firstAtomId,

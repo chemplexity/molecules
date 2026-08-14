@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-14
+
+- Clear trapped ring-path contacts against stationary bridgeheads in larger bridged cages while preserving both adjacent ring bonds.
+
 ## 2026-08-13
 
 - Clear residual contacts in halogenated bridged cages by moving a crowded cage vertex together with its terminal halogen.
