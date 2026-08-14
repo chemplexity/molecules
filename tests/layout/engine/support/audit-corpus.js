@@ -308,13 +308,13 @@ export const AUDIT_CORPUS = Object.freeze([
     expected: {
       primaryFamily: 'organometallic',
       maxSevereOverlapCount: 0,
-      maxBondLengthFailureCount: 1,
-      maxBondLengthDeviation: 0.83,
+      maxBondLengthFailureCount: 0,
+      maxBondLengthDeviation: 0.56,
       maxLabelOverlapCount: 0,
       maxRingSubstituentReadabilityFailureCount: 0,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
@@ -2872,17 +2872,17 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'ClC1C2(Cl)C3C4CC5C3C(Cl)(C2(Cl)Cl)C1(Cl)C5C4=O',
     expected: {
       primaryFamily: 'bridged',
-      maxSevereOverlapCount: 3,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.6,
+      maxBondLengthDeviation: 0.56,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
       finalOverlapsAtMostPlacement: true,
-      finalMaxDeviationAtMostPlacement: true
+      finalMaxDeviationAtMostPlacement: false
     }
   },
   {

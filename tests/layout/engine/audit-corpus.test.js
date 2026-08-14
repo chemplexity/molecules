@@ -250,6 +250,40 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(audit.fallback.mode, null);
   });
 
+  it('moves a halogen-bearing cage vertex to clear the final post-seed contact', () => {
+    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 34750);
+    assert.ok(entry);
+
+    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+    const audit = result.metadata.audit;
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.stereoContradiction, false);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.fallback.mode, null);
+  });
+
+  it('redistributes an isolated organometallic chelate closure stretch', () => {
+    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 10515);
+    assert.ok(entry);
+
+    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+    const audit = result.metadata.audit;
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.stereoContradiction, false);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.fallback.mode, null);
+  });
+
   for (const entry of RUN_LAYOUT_STRESS_TESTS ? AUDIT_CORPUS : []) {
     stressIt(`keeps ${entry.bucket} representative ${entry.name} within its current audit ceiling`, () => {
       const { placementAudit, result } = inspectPlacementAndFinalAudit(entry.smiles, entry.options);

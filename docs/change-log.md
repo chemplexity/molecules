@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-08-13
+
+- Clear residual contacts in halogenated bridged cages by moving a crowded cage vertex together with its terminal halogen.
+- Redistribute isolated organometallic chelate-ring closure strain across adjacent ring atoms without disturbing the metal center.
+
 ## 2026-08-12
 
 - Repair paired bridged-cage closures after whole-cage contact relief leaves two independent stretched ring bonds.
