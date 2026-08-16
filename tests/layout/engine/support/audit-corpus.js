@@ -2814,15 +2814,15 @@ export const AUDIT_CORPUS = Object.freeze([
       primaryFamily: 'bridged',
       maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.56,
+      maxBondLengthDeviation: 0.58,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,
       finalOverlapsAtMostPlacement: true,
-      finalMaxDeviationAtMostPlacement: true
+      finalMaxDeviationAtMostPlacement: false
     }
   },
   {

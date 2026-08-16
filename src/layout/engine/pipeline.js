@@ -11351,6 +11351,54 @@ function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bon
   return descriptors;
 }
 
+function compactBridgedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength) {
+  const overlapAtomIds = collectSevereOverlapAtomIds(layoutGraph, coords, bondLength);
+  if (overlapAtomIds.size < 2) {
+    return [];
+  }
+
+  const descriptors = [];
+  for (const ring of layoutGraph.rings ?? []) {
+    if (ring.aromatic || ring.atomIds.length < 5 || ring.atomIds.length > 6 || !ring.atomIds.every(atomId => coords.has(atomId))) {
+      continue;
+    }
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(ring.atomIds[0]);
+    const ringSystem = ringSystemId != null ? layoutGraph.ringSystemById.get(ringSystemId) : null;
+    const ringIds = new Set(ringSystem?.ringIds ?? []);
+    const hasBridgedRingPair = (layoutGraph.ringConnections ?? []).some(
+      connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+    );
+    if (!ringSystem || (ringSystem.atomIds?.length ?? 0) > 24 || ringIds.size < 3 || !hasBridgedRingPair) {
+      continue;
+    }
+    const uniqueRingAtomIds = ring.atomIds.filter(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom && atom.element !== 'H' && atom.aromatic !== true && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) === 1;
+    });
+    if (uniqueRingAtomIds.length !== 2 || !uniqueRingAtomIds.every(atomId => overlapAtomIds.has(atomId))) {
+      continue;
+    }
+    const orderedPair = orderedAdjacentRingAtomPair(ring, uniqueRingAtomIds[0], uniqueRingAtomIds[1]);
+    if (!orderedPair) {
+      continue;
+    }
+    const ringSystemAtomIdSet = new Set(ringSystem.atomIds ?? ring.atomIds);
+    const movedAtomIds = [...new Set(orderedPair.flatMap(atomId => finalExactBridgedRingPathMoveGroup(layoutGraph, coords, atomId, ringSystemAtomIdSet)))];
+    const movedHeavyAtomIds = movedAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+    if (movedHeavyAtomIds.length < 2 || movedHeavyAtomIds.length > 3 || !orderedPair.every(atomId => movedHeavyAtomIds.includes(atomId))) {
+      continue;
+    }
+    descriptors.push({
+      kind: 'compactFusedPathShift',
+      firstAtomId: orderedPair[0],
+      secondAtomId: orderedPair[1],
+      ringAtomIds: ringSystem.atomIds ?? ring.atomIds,
+      movedAtomIds
+    });
+  }
+  return descriptors;
+}
+
 function isCompactBridgedOverlapRetouchableRingAtom(layoutGraph, coords, atom, atomId) {
   return atom && atom.element !== 'H' && atom.aromatic !== true && coords.has(atomId) && (atom.heavyDegree ?? 0) <= 3 && (layoutGraph.ringCountByAtomId.get(atomId) ?? 0) === 1;
 }
@@ -11696,7 +11744,8 @@ function finalExactBridgedRingPathOverlapDescriptors(layoutGraph, coords, bondLe
       ...compactBridgedExocyclicRootOverlapDescriptors(layoutGraph, coords, bondLength),
       ...compactBridgedTerminalMultipleBondLeafOverlapDescriptors(layoutGraph, coords, bondLength),
       ...compactFusedSpiroNonbondedRingOverlapDescriptors(layoutGraph, coords, bondLength),
-      ...compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength)
+      ...compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength),
+      ...compactBridgedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength)
     ];
   }
 
@@ -11796,6 +11845,12 @@ function finalExactBridgedRingPathOverlapDescriptors(layoutGraph, coords, bondLe
     }
   }
   for (const descriptor of compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength)) {
+    descriptors.push(descriptor);
+    if (descriptors.length > FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS) {
+      return [];
+    }
+  }
+  for (const descriptor of compactBridgedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bondLength)) {
     descriptors.push(descriptor);
     if (descriptors.length > FINAL_EXACT_BRIDGED_RING_PATH_OVERLAP_MAX_DESCRIPTORS) {
       return [];

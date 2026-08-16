@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-15
+
+- Shift crowded peripheral lactone paths as rigid groups to clear paired bridged-cage contacts without breaking ring bonds.
+
 ## 2026-08-14
 
 - Clear trapped ring-path contacts against stationary bridgeheads in larger bridged cages while preserving both adjacent ring bonds.
