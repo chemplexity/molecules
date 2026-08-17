@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-08-16
+
+- Coordinate outward ester-branch rotation with a neighboring bridged-ring path re-arc to clear inward exits without introducing cage contacts.
+- Retry residual large-molecule routing after late presentation stages settle, reducing contacts and crossings that those stages leave behind.
+
 ## 2026-08-15
 
 - Shift crowded peripheral lactone paths as rigid groups to clear paired bridged-cage contacts without breaking ring bonds.

@@ -104,10 +104,10 @@ describe('layout/engine/audit-corpus', () => {
     const audit = result.metadata.audit;
 
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
-    assert.ok(audit.severeOverlapCount <= 6, `expected at most 6 severe overlaps, got ${audit.severeOverlapCount}`);
+    assert.ok(audit.severeOverlapCount <= 4, `expected at most 4 severe overlaps, got ${audit.severeOverlapCount}`);
     assert.ok(
-      audit.visibleHeavyBondCrossingFailureCount <= 6,
-      `expected at most 6 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
+      audit.visibleHeavyBondCrossingFailureCount <= 3,
+      `expected at most 3 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
     );
     assert.equal(audit.labelOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);
@@ -294,7 +294,11 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(result.metadata.primaryFamily, 'bridged');
     assert.equal(audit.severeOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(audit.inwardRingSubstituentCount, 0);
     assert.equal(audit.stereoContradiction, false);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.fallback.mode, null);
   });
 
   it('shifts a crowded peripheral lactone path without breaking its cage bonds', () => {
