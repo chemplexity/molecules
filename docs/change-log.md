@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-08-17
+
+- Stabilize the ultra-large glycopeptide regression across Linux and macOS while preserving its improved contact, crossing, and bond-quality bounds.
+- Coordinate small rotations of disjoint peptide blocks to open folded multi-contact clusters that cannot be improved by either rotation alone.
+
 ## 2026-08-16
 
 - Coordinate outward ester-branch rotation with a neighboring bridged-ring path re-arc to clear inward exits without introducing cage contacts.

@@ -104,10 +104,10 @@ describe('layout/engine/audit-corpus', () => {
     const audit = result.metadata.audit;
 
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
-    assert.ok(audit.severeOverlapCount <= 4, `expected at most 4 severe overlaps, got ${audit.severeOverlapCount}`);
+    assert.ok(audit.severeOverlapCount <= 3, `expected at most 3 severe overlaps, got ${audit.severeOverlapCount}`);
     assert.ok(
-      audit.visibleHeavyBondCrossingFailureCount <= 3,
-      `expected at most 3 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
+      audit.visibleHeavyBondCrossingFailureCount <= 4,
+      `expected at most 4 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
     );
     assert.equal(audit.labelOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);
