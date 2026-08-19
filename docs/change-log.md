@@ -7,6 +7,7 @@
 - Keep focused overlap scoring consistent with accepted compact bridged and fused contacts so safe cleanup candidates are not rejected.
 - Prevent paired peptide cleanup from combining two angle candidates for the same bond into an oversized single-hinge rotation.
 - Report whether coordinated peptide cleanup used nested or disjoint blocks instead of mislabeling every accepted move as disjoint.
+- Use locale-independent peptide candidate ordering so Linux and macOS choose the same bounded rotation shortlist.
 
 ## 2026-08-17
 

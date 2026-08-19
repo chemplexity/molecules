@@ -14701,8 +14701,8 @@ function maybeRetouchFinalUltraLargeClusteredPeptideOverlaps(layoutGraph, finalC
       first.severeOverlapCount - second.severeOverlapCount ||
       first.visibleHeavyBondCrossingCount - second.visibleHeavyBondCrossingCount ||
       Math.abs(first.rotation) - Math.abs(second.rotation) ||
-      first.descriptor.rootAtomId.localeCompare(second.descriptor.rootAtomId) ||
-      first.descriptor.pivotAtomId.localeCompare(second.descriptor.pivotAtomId)
+      (first.descriptor.rootAtomId < second.descriptor.rootAtomId ? -1 : first.descriptor.rootAtomId > second.descriptor.rootAtomId ? 1 : 0) ||
+      (first.descriptor.pivotAtomId < second.descriptor.pivotAtomId ? -1 : first.descriptor.pivotAtomId > second.descriptor.pivotAtomId ? 1 : 0)
   );
 
   let bestCandidate = null;
