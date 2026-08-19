@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-08-18
+
+- Coordinate nested peptide-bond rotations to open folded ring-adjacent contact clusters while preserving labels, bonds, and stereochemistry.
+- Recount only crossings touched by peptide-rotation candidates, avoiding repeated whole-structure scans during ultra-large layout cleanup.
+- Keep focused overlap scoring consistent with accepted compact bridged and fused contacts so safe cleanup candidates are not rejected.
+- Prevent paired peptide cleanup from combining two angle candidates for the same bond into an oversized single-hinge rotation.
+- Report whether coordinated peptide cleanup used nested or disjoint blocks instead of mislabeling every accepted move as disjoint.
+
 ## 2026-08-17
 
 - Stabilize the ultra-large glycopeptide regression across Linux and macOS while preserving its improved contact, crossing, and bond-quality bounds.

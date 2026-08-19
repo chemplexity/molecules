@@ -57,6 +57,7 @@ import {
   collectSevereOverlapAtomIds,
   collectReadableRingSubstituentChildren,
   countVisibleHeavyBondCrossings,
+  countVisibleHeavyBondCrossingsAfterFocusedMove,
   findSevereOverlaps,
   findSevereOverlapsMatching,
   findVisibleHeavyBondCrossings,
@@ -14626,9 +14627,21 @@ function maybeRetouchFinalUltraLargeClusteredPeptideOverlaps(layoutGraph, finalC
   }
 
   const overlapAtomIds = collectSevereOverlapAtomIds(layoutGraph, finalCoords, bondLength);
+  const candidateRootAtomIds = new Set(overlapAtomIds);
+  for (const atomId of overlapAtomIds) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.inRing) {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (finalCoords.has(neighborAtomId)) {
+        candidateRootAtomIds.add(neighborAtomId);
+      }
+    }
+  }
   const descriptors = [];
   const descriptorKeys = new Set();
-  for (const rootAtomId of overlapAtomIds) {
+  for (const rootAtomId of candidateRootAtomIds) {
     const rootAtom = layoutGraph.atoms.get(rootAtomId);
     if (!rootAtom || rootAtom.element === 'H' || layoutGraph.ringAtomIdSet.has(rootAtomId) || (rootAtom.heavyDegree ?? 0) !== 2) {
       continue;
@@ -14671,7 +14684,13 @@ function maybeRetouchFinalUltraLargeClusteredPeptideOverlaps(layoutGraph, finalC
     for (const rotation of FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_ROTATIONS) {
       const coords = rotateDescriptor(finalCoords, descriptor, rotation);
       const severeOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
-      const visibleHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
+      const visibleHeavyBondCrossingCount = countVisibleHeavyBondCrossingsAfterFocusedMove(
+        layoutGraph,
+        finalCoords,
+        coords,
+        descriptor.subtreeAtomIds,
+        baseAudit.visibleHeavyBondCrossingCount ?? 0
+      );
       if (severeOverlapCount <= (baseAudit.severeOverlapCount ?? 0) + 1 && visibleHeavyBondCrossingCount <= (baseAudit.visibleHeavyBondCrossingCount ?? 0) + 1) {
         singleCandidates.push({ coords, descriptor, rotation, severeOverlapCount, visibleHeavyBondCrossingCount });
       }
@@ -14690,16 +14709,39 @@ function maybeRetouchFinalUltraLargeClusteredPeptideOverlaps(layoutGraph, finalC
   const shortlistedCandidates = singleCandidates.slice(0, FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_SINGLE_CANDIDATE_LIMIT);
   for (let firstIndex = 0; firstIndex < shortlistedCandidates.length; firstIndex++) {
     const first = shortlistedCandidates[firstIndex];
-    for (let secondIndex = firstIndex + 1; secondIndex < shortlistedCandidates.length; secondIndex++) {
+    for (let secondIndex = 0; secondIndex < shortlistedCandidates.length; secondIndex++) {
+      if (firstIndex === secondIndex) {
+        continue;
+      }
       const second = shortlistedCandidates[secondIndex];
-      if (
-        first.descriptor.subtreeAtomIds.some(atomId => second.descriptor.subtreeAtomIdSet.has(atomId)) ||
-        first.descriptor.subtreeAtomIdSet.has(second.descriptor.pivotAtomId) ||
-        second.descriptor.subtreeAtomIdSet.has(first.descriptor.pivotAtomId)
-      ) {
+      if (first.descriptor === second.descriptor) {
+        continue;
+      }
+      const overlaps = first.descriptor.subtreeAtomIds.some(atomId => second.descriptor.subtreeAtomIdSet.has(atomId));
+      const firstContainsSecond = second.descriptor.subtreeAtomIds.every(atomId => first.descriptor.subtreeAtomIdSet.has(atomId));
+      const secondContainsFirst = first.descriptor.subtreeAtomIds.every(atomId => second.descriptor.subtreeAtomIdSet.has(atomId));
+      if (overlaps && !firstContainsSecond && !secondContainsFirst) {
+        continue;
+      }
+      if (!overlaps && (first.descriptor.subtreeAtomIdSet.has(second.descriptor.pivotAtomId) || second.descriptor.subtreeAtomIdSet.has(first.descriptor.pivotAtomId))) {
         continue;
       }
       const candidateCoords = rotateDescriptor(first.coords, second.descriptor, second.rotation);
+      const movedAtomIds = [...new Set([...first.descriptor.subtreeAtomIds, ...second.descriptor.subtreeAtomIds])];
+      const approximateOverlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+      const approximateCrossingCount = countVisibleHeavyBondCrossingsAfterFocusedMove(
+        layoutGraph,
+        finalCoords,
+        candidateCoords,
+        movedAtomIds,
+        baseAudit.visibleHeavyBondCrossingCount ?? 0
+      );
+      if (
+        approximateOverlapCount > (baseAudit.severeOverlapCount ?? 0) ||
+        (approximateOverlapCount === (baseAudit.severeOverlapCount ?? 0) && approximateCrossingCount >= (baseAudit.visibleHeavyBondCrossingCount ?? 0))
+      ) {
+        continue;
+      }
       const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
         bondLength,
         bondValidationClasses: placement.bondValidationClasses
@@ -14711,8 +14753,7 @@ function maybeRetouchFinalUltraLargeClusteredPeptideOverlaps(layoutGraph, finalC
       if (!improvesHardResiduals || !finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
         continue;
       }
-      const movedAtomIds = [...new Set([...first.descriptor.subtreeAtomIds, ...second.descriptor.subtreeAtomIds])];
-      const candidate = { coords: candidateCoords, audit: candidateAudit, movedAtomIds };
+      const candidate = { coords: candidateCoords, audit: candidateAudit, movedAtomIds, rotationRelationship: overlaps ? 'nested' : 'disjoint' };
       if (
         !bestCandidate ||
         (candidateAudit.severeOverlapCount ?? 0) < (bestCandidate.audit.severeOverlapCount ?? 0) ||
@@ -15899,8 +15940,9 @@ export function runPipeline(molecule, options = {}) {
         finalCoordsModified = true;
         cleanup.finalStageAudit = null;
         cleanup.finalStageStereo = null;
-        onStep?.('Clustered Peptide Paired Rotation', 'Two disjoint peptide blocks were rotated together to open a residual folded contact cluster.', cloneCoords(finalCoords), {
+        onStep?.('Clustered Peptide Paired Rotation', 'Two peptide blocks were rotated together to open a residual folded contact cluster.', cloneCoords(finalCoords), {
           movedAtomCount: clusteredPeptideRetouch.movedAtomIds.length,
+          rotationRelationship: clusteredPeptideRetouch.rotationRelationship,
           severeOverlapCountAfter: clusteredPeptideRetouch.audit.severeOverlapCount,
           visibleHeavyBondCrossingCountAfter: clusteredPeptideRetouch.audit.visibleHeavyBondCrossingCount
         });

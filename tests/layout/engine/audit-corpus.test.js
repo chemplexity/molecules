@@ -100,14 +100,25 @@ describe('layout/engine/audit-corpus', () => {
     const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 21714);
     assert.ok(entry);
 
-    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
+    const debugSteps = [];
+    const result = runPipeline(parseSMILES(entry.smiles), {
+      ...entry.options,
+      debug: {
+        onStep(label, description, coords, metrics) {
+          debugSteps.push({ label, description, coords, metrics });
+        }
+      }
+    });
     const audit = result.metadata.audit;
+    const pairedRotationStep = debugSteps.find(step => step.label === 'Clustered Peptide Paired Rotation');
 
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
-    assert.ok(audit.severeOverlapCount <= 3, `expected at most 3 severe overlaps, got ${audit.severeOverlapCount}`);
+    assert.equal(pairedRotationStep?.metrics?.rotationRelationship, 'disjoint');
+    assert.doesNotMatch(pairedRotationStep?.description ?? '', /disjoint/i);
+    assert.ok(audit.severeOverlapCount <= 2, `expected at most 2 severe overlaps, got ${audit.severeOverlapCount}`);
     assert.ok(
-      audit.visibleHeavyBondCrossingFailureCount <= 4,
-      `expected at most 4 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
+      audit.visibleHeavyBondCrossingFailureCount <= 2,
+      `expected at most 2 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
     );
     assert.equal(audit.labelOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);

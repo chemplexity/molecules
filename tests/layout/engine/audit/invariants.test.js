@@ -126,6 +126,15 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(overrideOverlapState.minDistance, 0.2);
   });
 
+  it('keeps focused overlap counts aligned with accepted compact bridged contacts', () => {
+    const result = runPipeline(parseSMILES('CNC1=CSC(=O)C2=C1CC1C(C)C2C1=O'));
+    const directOverlapCount = countSevereOverlaps(result.layoutGraph, result.coords, 1.5);
+    const overrideOverlapState = countSevereOverlapsWithOverrides(result.layoutGraph, result.coords, new Map(result.coords), 1.5);
+
+    assert.equal(directOverlapCount, 0);
+    assert.equal(overrideOverlapState.count, directOverlapCount);
+  });
+
   it('returns the same subtree overlap cost when backed by a spatial atom grid', () => {
     const molecule = new Molecule();
     molecule.addAtom('a0', 'C');

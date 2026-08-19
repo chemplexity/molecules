@@ -4820,7 +4820,7 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
     }
     if (separationSquared < thresholdSquared) {
       const separation = Math.sqrt(separationSquared);
-      if (!isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coordsWithOverrides(), atomId, otherAtomId, separation, bondLength)) {
+      if (isSevereOverlapPair(layoutGraph, coordsWithOverrides(), atomId, otherAtomId, separation, bondLength, threshold)) {
         count++;
       }
     }
