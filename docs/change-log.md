@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-19
+
+- Preserve enough peptide-hinge candidates to keep ultra-large contact cleanup stable across floating-point differences between platforms.
+
 ## 2026-08-18
 
 - Coordinate nested peptide-bond rotations to open folded ring-adjacent contact clusters while preserving labels, bonds, and stereochemistry.

@@ -115,7 +115,7 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
     assert.equal(pairedRotationStep?.metrics?.rotationRelationship, 'disjoint');
     assert.doesNotMatch(pairedRotationStep?.description ?? '', /disjoint/i);
-    assert.ok(audit.severeOverlapCount <= 3, `expected at most 3 severe overlaps, got ${audit.severeOverlapCount}`);
+    assert.ok(audit.severeOverlapCount <= 2, `expected at most 2 severe overlaps, got ${audit.severeOverlapCount}`);
     assert.ok(
       audit.visibleHeavyBondCrossingFailureCount <= 4,
       `expected at most 4 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
