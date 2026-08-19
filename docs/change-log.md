@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-19
+
+- Finish platform-specific three-atom peptide contact clusters with a bounded shared-contact hinge search that preserves audit quality.
+
 ## 2026-08-18
 
 - Coordinate nested peptide-bond rotations to open folded ring-adjacent contact clusters while preserving labels, bonds, and stereochemistry.

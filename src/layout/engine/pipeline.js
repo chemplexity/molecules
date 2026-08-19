@@ -408,6 +408,8 @@ const FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_SINGLE_CANDIDATE_LIMIT = 24;
 const FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_ROTATIONS = Object.freeze(
   Array.from({ length: 10 }, (_value, index) => index + 1).flatMap(step => [(step * Math.PI) / 90, (-step * Math.PI) / 90])
 );
+const FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_FINISHING_SMALL_ROTATIONS = Object.freeze([4, -4, 8, -8, 12, -12].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_FINISHING_LARGE_ROTATIONS = Object.freeze([24, -24, 28, -28, 32, -32, 36, -36, 40, -40].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_PATH_LENGTH = 18;
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_RING_COUNT = 8;
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MIN_RING_SYSTEM_COUNT = 4;
@@ -14761,6 +14763,79 @@ function maybeRetouchFinalUltraLargeClusteredPeptideOverlaps(layoutGraph, finalC
           (candidateAudit.visibleHeavyBondCrossingFailureCount ?? 0) < (bestCandidate.audit.visibleHeavyBondCrossingFailureCount ?? 0))
       ) {
         bestCandidate = candidate;
+      }
+    }
+  }
+  if ((bestCandidate?.audit.severeOverlapCount ?? 0) === 3) {
+    const overlapParticipation = new Map();
+    for (const overlap of findSevereOverlaps(layoutGraph, bestCandidate.coords, bondLength)) {
+      overlapParticipation.set(overlap.firstAtomId, (overlapParticipation.get(overlap.firstAtomId) ?? 0) + 1);
+      overlapParticipation.set(overlap.secondAtomId, (overlapParticipation.get(overlap.secondAtomId) ?? 0) + 1);
+    }
+    const sharedAtomIds = [...overlapParticipation]
+      .filter(([, count]) => count >= 2)
+      .map(([atomId]) => atomId)
+      .filter(atomId => {
+        const atom = layoutGraph.atoms.get(atomId);
+        return atom?.element !== 'H' && !layoutGraph.ringAtomIdSet.has(atomId) && (atom.heavyDegree ?? 0) === 2;
+      });
+    const descriptorFor = (coords, rootAtomId, pivotAtomId) => {
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, pivotAtomId)].filter(atomId => coords.has(atomId));
+      return { rootAtomId, pivotAtomId, subtreeAtomIds, subtreeAtomIdSet: new Set(subtreeAtomIds) };
+    };
+    for (const sharedAtomId of sharedAtomIds) {
+      const neighborAtomIds = (layoutGraph.bondsByAtomId.get(sharedAtomId) ?? [])
+        .filter(bond => bond?.kind === 'covalent' && !bond.inRing)
+        .map(bond => (bond.a === sharedAtomId ? bond.b : bond.a))
+        .filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H' && bestCandidate.coords.has(atomId));
+      if (neighborAtomIds.length !== 2) {
+        continue;
+      }
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [neighborAtomIds, [...neighborAtomIds].reverse()]) {
+        const outerAtomIds = (layoutGraph.bondsByAtomId.get(firstNeighborAtomId) ?? [])
+          .filter(bond => bond?.kind === 'covalent' && !bond.inRing)
+          .map(bond => (bond.a === firstNeighborAtomId ? bond.b : bond.a))
+          .filter(atomId => atomId !== sharedAtomId && layoutGraph.atoms.get(atomId)?.element !== 'H' && bestCandidate.coords.has(atomId));
+        if (outerAtomIds.length !== 1) {
+          continue;
+        }
+        const outerDescriptor = descriptorFor(bestCandidate.coords, firstNeighborAtomId, outerAtomIds[0]);
+        const firstSharedDescriptor = descriptorFor(bestCandidate.coords, sharedAtomId, firstNeighborAtomId);
+        const secondSharedDescriptor = descriptorFor(bestCandidate.coords, sharedAtomId, secondNeighborAtomId);
+        for (const outerRotation of FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_FINISHING_SMALL_ROTATIONS) {
+          const outerCoords = rotateDescriptor(bestCandidate.coords, outerDescriptor, outerRotation);
+          for (const sharedRotation of FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_FINISHING_LARGE_ROTATIONS) {
+            const sharedCoords = rotateDescriptor(outerCoords, firstSharedDescriptor, sharedRotation);
+            for (const counterRotation of FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_FINISHING_SMALL_ROTATIONS) {
+              const candidateCoords = rotateDescriptor(sharedCoords, secondSharedDescriptor, counterRotation);
+              if (findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length >= (bestCandidate.audit.severeOverlapCount ?? 0)) {
+                continue;
+              }
+              const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+                bondLength,
+                bondValidationClasses: placement.bondValidationClasses
+              });
+              if (!finalAuditCountsDoNotWorsen(candidateAudit, bestCandidate.audit)) {
+                continue;
+              }
+              const movedAtomIds = [...new Set([...outerDescriptor.subtreeAtomIds, ...firstSharedDescriptor.subtreeAtomIds, ...secondSharedDescriptor.subtreeAtomIds])];
+              bestCandidate = { coords: candidateCoords, audit: candidateAudit, movedAtomIds, rotationRelationship: 'shared-contact' };
+              break;
+            }
+            if ((bestCandidate.audit.severeOverlapCount ?? 0) < 3) {
+              break;
+            }
+          }
+          if ((bestCandidate.audit.severeOverlapCount ?? 0) < 3) {
+            break;
+          }
+        }
+        if ((bestCandidate.audit.severeOverlapCount ?? 0) < 3) {
+          break;
+        }
+      }
+      if ((bestCandidate.audit.severeOverlapCount ?? 0) < 3) {
+        break;
       }
     }
   }
