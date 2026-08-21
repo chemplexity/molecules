@@ -159,19 +159,60 @@ function applyDisplayStereo(bond, display) {
   };
 }
 
+/**
+ * Records copied chiral centers whose source neighborhood was truncated.
+ * @param {object} mol - Source molecule.
+ * @param {object|null} fragment - Copied fragment payload.
+ * @returns {string[]} Source atom IDs whose pasted stereochemistry needs revalidation.
+ */
+function changedStereoCenterIds(mol, fragment) {
+  const copiedAtomIds = new Set((fragment?.atoms ?? []).map(atom => atom.id));
+  const copiedBondIds = new Set((fragment?.bonds ?? []).filter(bond => mol?.bonds?.has?.(bond.id)).map(bond => bond.id));
+  return [...copiedAtomIds].filter(atomId => {
+    const atom = mol?.atoms?.get?.(atomId) ?? null;
+    return !!atom?.getChirality?.() && (atom.bonds ?? []).some(bondId => !copiedBondIds.has(bondId));
+  });
+}
+
+/**
+ * Clears stale display stereo and invalid chirality after a changed center is pasted.
+ * @param {object} mol - Target molecule.
+ * @param {object} fragment - Copied fragment payload.
+ * @param {object} mergeResult - Fragment merge metadata.
+ * @returns {Set<string>} Pasted center IDs that require automatic display selection.
+ */
+function prepareChangedPastedStereo(mol, fragment, mergeResult) {
+  const pastedCenterIds = new Set((fragment?.changedStereoCenterIds ?? []).map(atomId => mergeResult?.atomIdMap?.get?.(atomId)).filter(Boolean));
+  for (const centerId of pastedCenterIds) {
+    const center = mol?.atoms?.get?.(centerId) ?? null;
+    if (center && !center.isChiralCenter?.(mol)) {
+      center.setChirality?.(null);
+    }
+    for (const bondId of center?.bonds ?? []) {
+      clearDisplayStereo(mol?.bonds?.get?.(bondId));
+    }
+  }
+  return pastedCenterIds;
+}
+
 function createPastedStereoMapAdjuster(fragment, mergeResult) {
   const pastedBondIds = new Set(mergeResult?.bondIds ?? []);
+  const changedPastedCenterIds = new Set((fragment?.changedStereoCenterIds ?? []).map(atomId => mergeResult?.atomIdMap?.get?.(atomId)).filter(Boolean));
   const copiedDisplayByBondId = new Map();
   for (const sourceBond of fragment?.bonds ?? []) {
     const pastedBondId = mergeResult?.bondIdMap?.get?.(sourceBond.id) ?? null;
     const display = copiedStereoDisplay(sourceBond.properties?.display, mergeResult?.atomIdMap ?? new Map());
-    if (pastedBondId && display) {
+    if (pastedBondId && display && !changedPastedCenterIds.has(display.centerId)) {
       copiedDisplayByBondId.set(pastedBondId, display);
     }
   }
   return (mol, stereoMap = new Map()) => {
-    const adjusted = new Map([...stereoMap].filter(([bondId]) => !pastedBondIds.has(bondId)));
+    const recomputedBondIds = new Set([...changedPastedCenterIds].flatMap(centerId => mol?.atoms?.get?.(centerId)?.bonds ?? []).filter(bondId => pastedBondIds.has(bondId)));
+    const adjusted = new Map([...stereoMap].filter(([bondId]) => !pastedBondIds.has(bondId) || recomputedBondIds.has(bondId)));
     for (const pastedBondId of pastedBondIds) {
+      if (recomputedBondIds.has(pastedBondId)) {
+        continue;
+      }
       const bond = mol?.bonds?.get?.(pastedBondId) ?? null;
       const copiedDisplay = copiedDisplayByBondId.get(pastedBondId) ?? null;
       if (copiedDisplay) {
@@ -804,6 +845,9 @@ export function createClipboardActions(context) {
       bondIds: selectedAtomIds.size > 0 || selectedBondIds.size > 0 ? selectedBondIds : null,
       forceAtomPositions
     });
+    if (clipboardFragment) {
+      clipboardFragment.changedStereoCenterIds = changedStereoCenterIds(mol, clipboardFragment);
+    }
     return !!clipboardFragment;
   }
 
@@ -904,6 +948,7 @@ export function createClipboardActions(context) {
     if (!mergeResult) {
       return false;
     }
+    const changedPastedCenterIds = prepareChangedPastedStereo(mol, fragment, mergeResult);
     const adjustPastedStereoMap = createPastedStereoMapAdjuster(fragment, mergeResult);
 
     context.selection.clear();
@@ -924,7 +969,7 @@ export function createClipboardActions(context) {
         preserveView: preservePlacedView,
         forcePreservePositions: true,
         forceInitialPatchPos: forcePatchForFragment(fragment, mergeResult, center, context.view.forceScale),
-        suppressForceStereoSeed: true
+        suppressForceStereoSeed: changedPastedCenterIds.size === 0
       });
     } else {
       context.view2D?.syncDerivedState?.(mol, { adjustStereoMap: adjustPastedStereoMap });

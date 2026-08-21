@@ -1,8 +1,13 @@
 # Change Log
 
+## 2026-08-20
+
+- Revalidate stereocenters after pasting fragments with changed substituent neighborhoods.
+
 ## 2026-08-19
 
 - Finish platform-specific three-atom peptide contact clusters with a bounded shared-contact hinge search that preserves audit quality.
+- Refresh the package release version and patched development dependency lockfile, including the `brace-expansion` denial-of-service fix.
 
 ## 2026-08-18
 

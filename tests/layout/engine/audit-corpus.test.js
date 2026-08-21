@@ -116,10 +116,7 @@ describe('layout/engine/audit-corpus', () => {
     assert.match(pairedRotationStep?.metrics?.rotationRelationship ?? '', /^(disjoint|shared-contact)$/);
     assert.doesNotMatch(pairedRotationStep?.description ?? '', /disjoint/i);
     assert.ok(audit.severeOverlapCount <= 2, `expected at most 2 severe overlaps, got ${audit.severeOverlapCount}`);
-    assert.ok(
-      audit.visibleHeavyBondCrossingFailureCount <= 4,
-      `expected at most 4 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`
-    );
+    assert.ok(audit.visibleHeavyBondCrossingFailureCount <= 4, `expected at most 4 planar crossings, got ${audit.visibleHeavyBondCrossingFailureCount}`);
     assert.equal(audit.labelOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);
     assert.equal(audit.fallback.mode, entry.expected.fallbackMode);

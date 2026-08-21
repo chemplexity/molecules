@@ -58,7 +58,7 @@ export function createInputFlowManager(deps) {
 
     deps.state.setInputMode(fmt);
     deps.dom.setInputFormatButtons(fmt);
-    deps.dom.setInputLabel(fmt === 'inchi' ? 'Input InChI notation...' : 'Input SMILES notation...');
+    deps.dom.setInputLabel(fmt === 'inchi' ? 'InChI notation...' : 'SMILES notation...');
     clearInputInvalid();
 
     let nextValue = preserveInput ? (inputValue ?? inputEl.value) : '';

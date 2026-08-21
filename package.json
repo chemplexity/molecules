@@ -1,6 +1,6 @@
 {
   "name": "molecules",
-  "version": "2026.7.27",
+  "version": "2026.8.19",
   "description": "JavaScript cheminformatics toolkit for molecular graphs, SMILES/InChI, SMARTS/SMIRKS, 2D layout, and molecular descriptors",
   "type": "module",
   "sideEffects": false,

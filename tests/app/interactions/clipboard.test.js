@@ -320,7 +320,7 @@ describe('app/interactions/clipboard', () => {
     mol.atoms.get('Cl5').y = -1.3;
     const copiedStereoBond = mol.getBond('C2', 'F4');
     copiedStereoBond.properties.display = { as: 'wedge', centerId: 'C2' };
-    const selectedAtomIds = new Set(['C2', 'H3', 'F4', 'Cl5']);
+    const selectedAtomIds = new Set(['C1', 'C2', 'H3', 'F4', 'Cl5']);
     const selectedBondIds = new Set([...mol.bonds.values()].filter(bond => bond.atoms.every(atomId => selectedAtomIds.has(atomId))).map(bond => bond.id));
     const originalBondIds = new Set(mol.bonds.keys());
     let adjustedStereoMap = null;
@@ -350,9 +350,46 @@ describe('app/interactions/clipboard', () => {
     assert.equal(adjustedStereoMap.get(pastedDisplayBonds[0].id), 'wedge');
   });
 
+  it('removes stale stereochemistry when a pasted center has a truncated neighborhood', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    const copiedStereoBond = mol.getBond('C2', 'F4');
+    copiedStereoBond.properties.display = { as: 'wedge', centerId: 'C2' };
+    const selectedAtomIds = new Set(['C2', 'F4', 'Cl5']);
+    const selectedBondIds = new Set([...mol.bonds.values()].filter(bond => bond.atoms.every(atomId => selectedAtomIds.has(atomId))).map(bond => bond.id));
+    const originalAtomIds = new Set(mol.atoms.keys());
+    let adjustedStereoMap = null;
+    const { clipboard } = createClipboardHarness({
+      mol,
+      selectedAtomIds,
+      selectedBondIds,
+      onSyncDerivedState: (syncedMol, options = {}) => {
+        adjustedStereoMap = options.adjustStereoMap?.(syncedMol, new Map()) ?? new Map();
+      }
+    });
+
+    assert.equal(clipboard.copySelection(), true);
+    assert.equal(clipboard.beginPastePreview(), true);
+    assert.equal(clipboard.placePastePreview(), true);
+
+    const pastedCenter = [...mol.atoms.values()].find(atom => {
+      if (originalAtomIds.has(atom.id) || atom.name !== 'C') {
+        return false;
+      }
+      const neighborNames = atom.getNeighbors(mol).map(neighbor => neighbor.name);
+      return neighborNames.includes('F') && neighborNames.includes('Cl');
+    });
+    assert.ok(pastedCenter);
+    assert.equal(pastedCenter.getChirality(), null);
+    assert.equal(
+      pastedCenter.bonds.some(bondId => ['wedge', 'dash'].includes(mol.bonds.get(bondId)?.properties?.display?.as)),
+      false
+    );
+    assert.equal(adjustedStereoMap.size, 0);
+  });
+
   it('suppresses force auto-stereo seeding when pasting a copied fragment', () => {
     const mol = parseSMILES('C[C@H](F)Cl');
-    const selectedAtomIds = new Set(['C2', 'F4', 'Cl5']);
+    const selectedAtomIds = new Set(mol.atoms.keys());
     const { clipboard, records } = createClipboardHarness({
       mol,
       selectedAtomIds,

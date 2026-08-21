@@ -377,7 +377,10 @@ body.resizing-main-sidebar #sidebar {
   border-radius: 5px;
   background: #f8fafb;
   color: #35474f;
-  font: 600 11px Arial, Helvetica, sans-serif;
+  font:
+    600 11px Arial,
+    Helvetica,
+    sans-serif;
   text-align: center;
   box-shadow: 0 1px 0 #eef1f2;
 }

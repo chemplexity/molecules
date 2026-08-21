@@ -261,7 +261,7 @@ describe('createInputFlowManager', () => {
         }
       ],
       ['setInputFormatButtons', 'smiles'],
-      ['setInputLabel', 'Input SMILES notation...'],
+      ['setInputLabel', 'SMILES notation...'],
       ['syncPickerForInputValue', 'CCC'],
       ['renderExamples']
     ]);

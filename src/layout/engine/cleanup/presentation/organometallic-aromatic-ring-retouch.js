@@ -871,10 +871,7 @@ export function runOrganometallicCoordinateLabelClearanceRetouch(layoutGraph, co
     bondLength,
     bondValidationClasses: options.bondValidationClasses
   });
-  if (
-    layoutHeavyAtomCount > COORDINATE_LABEL_CLEARANCE_MAX_LAYOUT_HEAVY_ATOMS ||
-    ((currentAudit.severeOverlapCount ?? 0) === 0 && (currentAudit.labelOverlapCount ?? 0) === 0)
-  ) {
+  if (layoutHeavyAtomCount > COORDINATE_LABEL_CLEARANCE_MAX_LAYOUT_HEAVY_ATOMS || ((currentAudit.severeOverlapCount ?? 0) === 0 && (currentAudit.labelOverlapCount ?? 0) === 0)) {
     return { changed: false, coords, movedAtomIds: [], audit: currentAudit };
   }
 
