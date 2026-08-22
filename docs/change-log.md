@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-22
+
+- Wait for completed selection bounds to become render-stable in browser tests.
+
 ## 2026-08-20
 
 - Revalidate stereocenters after pasting fragments with changed substituent neighborhoods.

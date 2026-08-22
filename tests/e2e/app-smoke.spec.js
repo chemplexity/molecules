@@ -2773,7 +2773,13 @@ test('dragging the completed selection bounding box moves the selected molecule'
 
   const before = await atomScreenPoint2d(page, 'C1');
   expect(before).toBeTruthy();
-  const bounds = await page.locator('rect.selection-bounds-rect').boundingBox();
+  let bounds = null;
+  await expect
+    .poll(async () => {
+      bounds = await page.locator('rect.selection-bounds-rect').boundingBox();
+      return bounds;
+    })
+    .toBeTruthy();
   expect(bounds).toBeTruthy();
 
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y);
