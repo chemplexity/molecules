@@ -232,10 +232,13 @@ export function finalizeAppBootstrap(ctx) {
     overlays: {
       isReactionPreviewEditableAtomId: id => ctx.overlays.isReactionPreviewEditableAtomId(id)
     },
+    stereo: {
+      getVisibleStereoBondType: bondId => ctx.state.getStereoMap2d?.()?.get(bondId) ?? null
+    },
     actions: {
       deleteSelection: () => ctx.actions.editingActions.deleteSelection(),
       deleteTargets: (atomIds, bondIds, options = {}) => ctx.actions.editingActions.deleteTargets(atomIds, bondIds, options),
-      changeAtomElements: (atomIds, newEl) => changeAtomElements(atomIds, newEl)
+      changeAtomElements: (atomIds, newEl, options = {}) => changeAtomElements(atomIds, newEl, options)
     },
     clipboard: ctx.actions.clipboardActions,
     history: {

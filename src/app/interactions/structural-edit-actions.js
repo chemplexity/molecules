@@ -2013,7 +2013,8 @@ export function createStructuralEditActions(context) {
       zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null,
       overlayPolicy = ReactionPreviewPolicy.prepareEditTargets,
       reactionPreviewPayload = atomIds.length > 0 ? { atomId: atomIds[0] } : null,
-      reactionEdit = null
+      reactionEdit = null,
+      preservedStereoBondTypes = {}
     } = options;
 
     if (!atomIds.length) {
@@ -2047,11 +2048,38 @@ export function createStructuralEditActions(context) {
         if (mode === '2d' && newEl !== 'H') {
           seed2dReplacementCoordsForProjectedHydrogens(mol, toChange);
         }
+        const preservedStereoDisplays = [];
+        if (newEl === 'H') {
+          const seenBondIds = new Set();
+          for (const atomId of toChange) {
+            const atom = mol.atoms.get(atomId);
+            for (const bondId of atom?.bonds ?? []) {
+              const bond = mol.bonds.get(bondId);
+              const displayAs = bond?.properties?.display?.as ?? preservedStereoBondTypes[bondId] ?? null;
+              if (!seenBondIds.has(bondId) && (displayAs === 'wedge' || displayAs === 'dash')) {
+                seenBondIds.add(bondId);
+                preservedStereoDisplays.push({ bondId, display: { ...(bond.properties?.display ?? {}), as: displayAs } });
+              }
+            }
+          }
+        }
         for (const atomId of toChange) {
           mol.changeAtomElement(atomId, newEl);
         }
         const affected = new Set(toChange);
         mol.clearStereoAnnotations(affected);
+        for (const { bondId, display } of preservedStereoDisplays) {
+          const bond = mol.bonds.get(bondId);
+          if (!bond) {
+            continue;
+          }
+          const heavyCenterId = bond.atoms.find(atomId => mol.atoms.get(atomId)?.name !== 'H') ?? display.centerId ?? null;
+          bond.properties.display = {
+            ...display,
+            centerId: heavyCenterId,
+            manual: true
+          };
+        }
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         repairImplicitHydrogensWhenValenceImproves(mol, affected);

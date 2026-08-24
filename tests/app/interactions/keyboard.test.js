@@ -75,8 +75,8 @@ function makeKeyboardContext({
       isReactionPreviewEditableAtomId: () => true
     },
     actions: {
-      changeAtomElements(atomIds, element) {
-        records.push(['changeAtomElements', atomIds, element]);
+      changeAtomElements(atomIds, element, options) {
+        records.push(['changeAtomElements', atomIds, element, ...(options === undefined ? [] : [options])]);
       },
       deleteSelection() {},
       deleteTargets(atomIds, bondIds, options) {
@@ -424,6 +424,69 @@ describe('initKeyboardInteractions', () => {
 
     handlers.get('keydown')({
       key: 'o',
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, []);
+    assert.equal(prevented, true);
+  });
+
+  for (const mode of ['2d', 'force']) {
+    for (const atomId of ['a1', 'a2']) {
+      it(`changes either ${mode} stereobond endpoint to hydrogen with H (${atomId})`, () => {
+        const mol = {
+          atoms: new Map([
+            ['a1', { id: 'a1', name: 'C', bonds: ['b1'] }],
+            ['a2', { id: 'a2', name: 'N', bonds: ['b1'] }]
+          ]),
+          bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { display: { as: 'wedge', centerId: 'a1' } } }]])
+        };
+        const { handlers, records } = makeKeyboardContext({
+          activeMolecule: mol,
+          mode,
+          selectMode: true,
+          hoveredAtomIds: new Set([atomId])
+        });
+        let prevented = false;
+
+        handlers.get('keydown')({
+          key: 'H',
+          metaKey: false,
+          ctrlKey: false,
+          altKey: false,
+          preventDefault() {
+            prevented = true;
+          }
+        });
+
+        assert.deepEqual(records, [['changeAtomElements', [atomId], 'H', { preservedStereoBondTypes: { b1: 'wedge' } }]]);
+        assert.equal(prevented, true);
+      });
+    }
+  }
+
+  it('does not use H to change an atom outside a wedge or dash bond', () => {
+    const mol = {
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C', bonds: ['b1'] }],
+        ['a2', { id: 'a2', name: 'N', bonds: ['b1'] }]
+      ]),
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'], properties: { order: 1 } }]])
+    };
+    const { handlers, records } = makeKeyboardContext({
+      activeMolecule: mol,
+      selectMode: true,
+      hoveredAtomIds: new Set(['a1'])
+    });
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: 'h',
       metaKey: false,
       ctrlKey: false,
       altKey: false,

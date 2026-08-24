@@ -19,6 +19,32 @@ export function initKeyboardInteractions(context) {
     return (atom.bonds ?? []).some(bondId => isStereoHydrogenBond(mol.bonds.get(bondId)));
   }
 
+  /**
+   * Resolves the displayed stereo type from stored bond metadata or the
+   * current derived 2D stereo map.
+   * @param {string} bondId - Bond identifier.
+   * @param {object} mol - Molecule containing the bond.
+   * @returns {string|null} `wedge`, `dash`, or null.
+   */
+  function stereoBondType(bondId, mol) {
+    return mol.bonds.get(bondId)?.properties?.display?.as ?? context.stereo?.getVisibleStereoBondType?.(bondId) ?? null;
+  }
+
+  /**
+   * Returns whether an atom is an endpoint of a displayed wedge or dash bond.
+   * Hydrogen keyboard replacement is limited to these atoms so `H` does not
+   * become a general-purpose element shortcut for ordinary structures.
+   * @param {object} mol - Molecule containing the atom and its bonds.
+   * @param {object|null|undefined} atom - Candidate atom.
+   * @returns {boolean} True when the atom touches a displayed stereobond.
+   */
+  function isStereoBondEndpoint(mol, atom) {
+    return !!atom && (atom.bonds ?? []).some(bondId => {
+      const displayAs = stereoBondType(bondId, mol);
+      return displayAs === 'wedge' || displayAs === 'dash';
+    });
+  }
+
   function canDeleteHoveredAtom(atomId) {
     if (context.state.overlayState.getPlacementRedirectedHoverAtomIds?.().has(atomId)) {
       return false;
@@ -197,7 +223,9 @@ export function initKeyboardInteractions(context) {
         b: 'B',
         B: 'B',
         k: 'K',
-        K: 'K'
+        K: 'K',
+        h: 'H',
+        H: 'H'
       };
       const newEl = elementKeys[event.key];
       if (newEl) {
@@ -211,10 +239,22 @@ export function initKeyboardInteractions(context) {
               return false;
             }
             const atom = mol.atoms.get(id);
-            return atom && atom.name !== newEl;
+            return atom && atom.name !== newEl && (newEl !== 'H' || isStereoBondEndpoint(mol, atom));
           });
           if (toChange.length > 0) {
-            context.actions.changeAtomElements(toChange, newEl);
+            if (newEl === 'H') {
+              const preservedStereoBondTypes = Object.fromEntries(
+                toChange.flatMap(atomId => {
+                  const atom = mol.atoms.get(atomId);
+                  return (atom?.bonds ?? [])
+                    .map(bondId => [bondId, stereoBondType(bondId, mol)])
+                    .filter(([, displayAs]) => displayAs === 'wedge' || displayAs === 'dash');
+                })
+              );
+              context.actions.changeAtomElements(toChange, newEl, { preservedStereoBondTypes });
+            } else {
+              context.actions.changeAtomElements(toChange, newEl);
+            }
           }
         }
         event.preventDefault();
