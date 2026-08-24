@@ -5928,6 +5928,45 @@ test('initial 2D render keeps the C[C@H](F)Cl stereo glyph on the visible heavy 
   await expect(page.locator('g[data-bond-id="3"] .bond-wedge, g[data-bond-id="3"] .bond-hash')).toHaveCount(0);
 });
 
+test('H changes a hovered 2D stereobond endpoint to hydrogen', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C[C@H](F)Cl');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  const endpoint = page.locator('g[data-atom-id="C2"] .atom-hit');
+  await endpoint.click();
+  await endpoint.hover();
+  await page.keyboard.press('H');
+
+  await expect(page.locator('#smiles-input')).not.toHaveValue('C[C@H](F)Cl');
+  await expect(page.locator('g[data-atom-id="C2"] text.atom-label')).toContainText('H');
+});
+
+test('H changes the opposite hovered force stereobond endpoint to hydrogen', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C[C@H](F)Cl');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  const endpoint = await page.evaluate(() => {
+    const circle = Array.from(document.querySelectorAll('circle.node')).find(node => node.__data__?.id === 'F4');
+    const rect = circle?.getBoundingClientRect?.();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+  });
+  expect(endpoint).toBeTruthy();
+  await page.mouse.move(endpoint.x, endpoint.y);
+  await page.keyboard.press('H');
+
+  await expect(page.locator('#smiles-input')).not.toHaveValue('C[C@H](F)Cl');
+  await expect
+    .poll(() => page.evaluate(() => Array.from(document.querySelectorAll('circle.node')).find(node => node.__data__?.id === 'F4')?.__data__?.name ?? null))
+    .toBe('H');
+});
+
 test('switching C[C@H](F)Cl from 2D to force preserves the displayed stereo bond', async ({ page }) => {
   await page.goto('/index.html');
 

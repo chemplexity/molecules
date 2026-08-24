@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-23
+
+- Allow the H shortcut to replace either endpoint of a wedge or dash bond with hydrogen.
+
 ## 2026-08-22
 
 - Wait for completed selection bounds to become render-stable in browser tests.
