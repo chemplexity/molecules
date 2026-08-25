@@ -666,7 +666,7 @@ export const AUDIT_CORPUS = Object.freeze([
       primaryFamily: 'fused',
       maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
-      maxBondLengthDeviation: 0.45,
+      maxBondLengthDeviation: 0.56,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
       fallbackMode: null

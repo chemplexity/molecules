@@ -11398,6 +11398,7 @@ function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bon
     crossingBondIds.add(crossing.secondBondId);
   }
   const overlapAtomIds = collectSevereOverlapAtomIds(layoutGraph, coords, bondLength);
+  const severeOverlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
   for (const ring of layoutGraph.rings ?? []) {
     if (ring.aromatic || ring.atomIds.length < 5 || ring.atomIds.length > 6 || !ring.atomIds.every(atomId => coords.has(atomId))) {
       continue;
@@ -11419,7 +11420,17 @@ function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bon
       continue;
     }
     const pathBond = layoutGraph.bondByAtomPair.get(atomPairKey(orderedPair[0], orderedPair[1]));
-    if (!pathBond || !crossingBondIds.has(pathBond.id)) {
+    const peripheralAtomIdSet = new Set(orderedPair);
+    const boundaryBonds = ring.atomIds.flatMap(atomId => {
+      if (!peripheralAtomIdSet.has(atomId)) {
+        return [];
+      }
+      return (layoutGraph.bondsByAtomId.get(atomId) ?? []).filter(bond => {
+        const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+        return ring.atomIds.includes(neighborAtomId) && !peripheralAtomIdSet.has(neighborAtomId);
+      });
+    });
+    if (!pathBond || ![pathBond, ...boundaryBonds].some(bond => crossingBondIds.has(bond.id))) {
       continue;
     }
     const ringAtomIdSet = new Set(ringSystem?.atomIds ?? ring.atomIds);
@@ -11440,6 +11451,26 @@ function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bon
       firstAtomId: orderedPair[0],
       secondAtomId: orderedPair[1],
       ringAtomIds: ringSystem?.atomIds ?? ring.atomIds,
+      firstMovedAtomIds,
+      secondMovedAtomIds,
+      firstBlockerAtomIds: [...new Set(severeOverlaps.flatMap(overlap => {
+        if (overlap.firstAtomId === orderedPair[0]) {
+          return [overlap.secondAtomId];
+        }
+        if (overlap.secondAtomId === orderedPair[0]) {
+          return [overlap.firstAtomId];
+        }
+        return [];
+      }))],
+      secondBlockerAtomIds: [...new Set(severeOverlaps.flatMap(overlap => {
+        if (overlap.firstAtomId === orderedPair[1]) {
+          return [overlap.secondAtomId];
+        }
+        if (overlap.secondAtomId === orderedPair[1]) {
+          return [overlap.firstAtomId];
+        }
+        return [];
+      }))],
       movedAtomIds
     });
   }
@@ -12174,6 +12205,56 @@ function compactFusedRingPathShiftCandidates(coords, descriptor, bondLength) {
   return candidates;
 }
 
+/**
+ * Generates coordinated, rotation-invariant shifts for both atoms of a
+ * collapsed fused-cage peripheral path.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} descriptor - Peripheral-path descriptor.
+ * @param {number} bondLength - Preferred bond length.
+ * @yields {Map<string, {x: number, y: number}>} One candidate coordinate map.
+ * @returns {Generator<Map<string, {x: number, y: number}>>} Candidate coordinate maps.
+ */
+function* compactFusedPairedPathShiftCandidates(coords, descriptor, bondLength) {
+  const shiftOptions = (atomId, blockerAtomIds) => {
+    const atomPosition = coords.get(atomId);
+    if (!atomPosition || blockerAtomIds.length === 0) {
+      return [];
+    }
+    let awayX = 0;
+    let awayY = 0;
+    for (const blockerAtomId of blockerAtomIds) {
+      const blockerPosition = coords.get(blockerAtomId);
+      if (!blockerPosition) {
+        continue;
+      }
+      const dx = atomPosition.x - blockerPosition.x;
+      const dy = atomPosition.y - blockerPosition.y;
+      const length = Math.hypot(dx, dy) || 1;
+      awayX += dx / length;
+      awayY += dy / length;
+    }
+    const baseAngle = Math.atan2(awayY, awayX);
+    const options = [];
+    for (const angleOffset of [0, 15, -15, 30, -30, 60, -60, 90, -90, 120, -120, 180]) {
+      const angle = baseAngle + (angleOffset * Math.PI) / 180;
+      for (const factor of [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]) {
+        options.push({ x: Math.cos(angle) * bondLength * factor, y: Math.sin(angle) * bondLength * factor });
+      }
+    }
+    return options;
+  };
+  const firstOptions = shiftOptions(descriptor.firstAtomId, descriptor.firstBlockerAtomIds ?? []);
+  const secondOptions = shiftOptions(descriptor.secondAtomId, descriptor.secondBlockerAtomIds ?? []);
+  for (const firstOffset of firstOptions) {
+    for (const secondOffset of secondOptions) {
+      const candidateCoords = cloneCoords(coords);
+      translateAtomGroup(candidateCoords, coords, descriptor.firstMovedAtomIds ?? [], firstOffset);
+      translateAtomGroup(candidateCoords, coords, descriptor.secondMovedAtomIds ?? [], secondOffset);
+      yield candidateCoords;
+    }
+  }
+}
+
 function compactTerminalMultipleBondLeafReliefCandidates(coords, descriptor, bondLength) {
   const ringPosition = coords.get(descriptor.firstAtomId);
   const leafPosition = coords.get(descriptor.leafAtomId);
@@ -12482,7 +12563,10 @@ function maybeRetouchFinalExactBridgedRingPathOverlaps(layoutGraph, finalCoords,
       continue;
     }
     if (descriptor.kind === 'compactFusedPathShift') {
-      for (const candidateCoords of compactFusedRingPathShiftCandidates(finalCoords, descriptor, bondLength)) {
+      const candidateCoordsIterable = descriptor.firstBlockerAtomIds?.length > 0 && descriptor.secondBlockerAtomIds?.length > 0
+        ? compactFusedPairedPathShiftCandidates(finalCoords, descriptor, bondLength)
+        : compactFusedRingPathShiftCandidates(finalCoords, descriptor, bondLength);
+      for (const candidateCoords of candidateCoordsIterable) {
         const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, descriptor.ringAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
         const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
           bondLength,

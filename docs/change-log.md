@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-24
+
+- Coordinate both atoms of collapsed fused-cage peripheral paths to clear trapped contacts without creating audit failures.
+
 ## 2026-08-23
 
 - Allow the H shortcut to replace either endpoint of a wedge or dash bond with hydrogen.
