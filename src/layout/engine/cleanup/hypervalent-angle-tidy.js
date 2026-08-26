@@ -1067,7 +1067,11 @@ function shouldPreserveRingEmbeddedBisOxoCross(layoutGraph, coords, centerAtomId
     return false;
   }
   const oxoSeparation = angularDifference(angleOf(sub(firstPosition, centerPosition)), angleOf(sub(secondPosition, centerPosition)));
-  return oxoSeparation >= RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION;
+  if (oxoSeparation < RING_EMBEDDED_BIS_OXO_CROSS_MIN_OXO_SEPARATION) {
+    return false;
+  }
+  const exteriorFit = fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descriptor);
+  return !exteriorFit || (exteriorFit.overlapCount ?? 0) > 0;
 }
 
 /**

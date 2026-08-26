@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-25
+
+- Let collision-free macrocycle-embedded sulfone oxo pairs use their intended exterior fan instead of preserving an opposed layout.
+
 ## 2026-08-24
 
 - Coordinate both atoms of collapsed fused-cage peripheral paths to clear trapped contacts without creating audit failures.
