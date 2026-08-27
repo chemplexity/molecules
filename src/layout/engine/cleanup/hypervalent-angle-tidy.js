@@ -6,7 +6,15 @@ import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js'
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { incidentRingPolygonsForAtom } from '../geometry/ring-polygons.js';
-import { countSevereOverlaps, countSevereOverlapsMatching, countSevereOverlapsWithOverrides, findSevereOverlaps, findSevereOverlapsMatching, measureBondLengthDeviation } from '../audit/invariants.js';
+import {
+  countSevereOverlaps,
+  countSevereOverlapsMatching,
+  countSevereOverlapsWithOverrides,
+  findSevereOverlaps,
+  findSevereOverlapsMatching,
+  findVisibleHeavyBondCrossings,
+  measureBondLengthDeviation
+} from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { runLocalCleanup } from './local-rotation.js';
 import { resolveOverlaps } from './overlap-resolution.js';
@@ -78,6 +86,10 @@ const DIRECT_LIGAND_BRANCH_RELIEF_ANGLE_CANDIDATES = [
 const DIRECT_LIGAND_BRANCH_RELIEF_MAX_ATOMS = 16;
 const DIRECT_LIGAND_BRANCH_RELIEF_MAX_HEAVY_ATOMS = 8;
 const DIRECT_LIGAND_OVERLAP_RELIEF_MAX_HYPERVALENT_DEVIATION = (Math.PI / 36) ** 2;
+const DIRECT_LIGAND_CROSSING_RELIEF_ANGLE_CANDIDATES = Array.from({ length: 18 }, (_, index) => {
+  const angle = ((index + 1) * Math.PI) / 36;
+  return [-angle, angle];
+}).flat();
 const RING_EMBEDDED_BIS_OXO_MIN_SPREAD = Math.PI / 3;
 const RING_EMBEDDED_BIS_OXO_SPREAD_STEP = Math.PI / 18;
 const RING_EMBEDDED_BIS_OXO_CENTER_SHIFT_STEP = Math.PI / 180;
@@ -3719,6 +3731,131 @@ function relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords
 }
 
 /**
+ * Rotates the smallest adjacent acyclic branch by the least bounded angle that
+ * removes a planar crossing introduced while squaring a hypervalent center.
+ * Direct center ligands stay fixed, and the move is accepted only when the
+ * layout audit improves without another count regressing.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @returns {number} Number of accepted terminal-ligand rotations.
+ */
+function relieveDirectLigandCrossingsWithBranchRotation(layoutGraph, coords, centerAtomId) {
+  const currentAudit = auditLayout(layoutGraph, coords, { bondLength: layoutGraph.options?.bondLength ?? 1.5 });
+  const currentCrossingCount = currentAudit.visibleHeavyBondCrossingCount ?? 0;
+  if (currentCrossingCount === 0) {
+    return 0;
+  }
+
+  const directLigandIds = new Set(directLigandAtomIds(layoutGraph, centerAtomId, coords));
+  const crossingLigandIds = new Set();
+  const descriptorsByKey = new Map();
+  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords)) {
+    const bondPairs = [
+      [crossing.firstAtomIds, crossing.secondAtomIds],
+      [crossing.secondAtomIds, crossing.firstAtomIds]
+    ];
+    for (const [directAtomIds, otherAtomIds] of bondPairs) {
+      if (!directAtomIds?.includes(centerAtomId) || !directAtomIds.some(atomId => directLigandIds.has(atomId)) || otherAtomIds?.length !== 2) {
+        continue;
+      }
+      const crossingLigandAtomId = directAtomIds.find(atomId => atomId !== centerAtomId);
+      if (crossingLigandAtomId) {
+        crossingLigandIds.add(crossingLigandAtomId);
+      }
+      for (const [rootAtomId, anchorAtomId] of [otherAtomIds, [...otherAtomIds].reverse()]) {
+        if (!isSingleCovalentBond(layoutGraph, rootAtomId, anchorAtomId)) {
+          continue;
+        }
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+        if (
+          subtreeAtomIds.length === 0 ||
+          subtreeAtomIds.length > DIRECT_LIGAND_BRANCH_RELIEF_MAX_ATOMS ||
+          subtreeAtomIds.includes(centerAtomId) ||
+          subtreeAtomIds.some(atomId => directLigandIds.has(atomId)) ||
+          heavyAtomCount(layoutGraph, subtreeAtomIds) > DIRECT_LIGAND_BRANCH_RELIEF_MAX_HEAVY_ATOMS
+        ) {
+          continue;
+        }
+        descriptorsByKey.set(`${rootAtomId}:${anchorAtomId}`, { anchorAtomId, subtreeAtomIds });
+      }
+    }
+  }
+  if (descriptorsByKey.size === 0) {
+    return 0;
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of descriptorsByKey.values()) {
+    for (const rotation of DIRECT_LIGAND_CROSSING_RELIEF_ANGLE_CANDIDATES) {
+      const candidateCoords = rotatedBranchReliefCoords(coords, descriptor, rotation);
+      if (!candidateCoords) {
+        continue;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength: layoutGraph.options?.bondLength ?? 1.5 });
+      const candidateCrossingCount = candidateAudit.visibleHeavyBondCrossingCount ?? 0;
+      if (candidateCrossingCount >= currentCrossingCount || !crossCandidateAuditDoesNotRegress(candidateAudit, currentAudit)) {
+        continue;
+      }
+      const candidate = {
+        coords: candidateCoords,
+        audit: candidateAudit,
+        crossingCount: candidateCrossingCount,
+        rotationMagnitude: Math.abs(rotation)
+      };
+      if (
+        !bestCandidate ||
+        candidate.crossingCount < bestCandidate.crossingCount ||
+        (candidate.crossingCount === bestCandidate.crossingCount && candidate.rotationMagnitude < bestCandidate.rotationMagnitude - 1e-12)
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return 0;
+  }
+  const centerDescriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, bestCandidate.coords);
+  const centerPosition = bestCandidate.coords.get(centerAtomId);
+  if (centerDescriptor && centerPosition) {
+    for (const ligandAtomId of crossingLigandIds) {
+      if (!isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)) {
+        continue;
+      }
+      const ligandPosition = bestCandidate.coords.get(ligandAtomId);
+      if (!ligandPosition) {
+        continue;
+      }
+      const ligandAngle = angleOf(sub(ligandPosition, centerPosition));
+      const anchorSingleAtomIds = centerDescriptor.singleNeighborIds.some(atomId => layoutGraph.atoms.get(atomId)?.element !== 'O')
+        ? centerDescriptor.singleNeighborIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'O')
+        : centerDescriptor.singleNeighborIds;
+      const nearestSingleAngle = anchorSingleAtomIds
+        .map(atomId => bestCandidate.coords.get(atomId))
+        .filter(Boolean)
+        .map(position => angleOf(sub(position, centerPosition)))
+        .sort((firstAngle, secondAngle) => angularDifference(ligandAngle, firstAngle) - angularDifference(ligandAngle, secondAngle))[0];
+      if (nearestSingleAngle == null) {
+        continue;
+      }
+      const signedSeparation = Math.atan2(Math.sin(ligandAngle - nearestSingleAngle), Math.cos(ligandAngle - nearestSingleAngle));
+      const clearanceAngle = ligandAngle + Math.sign(signedSeparation || 1) * (Math.PI / 360);
+      const clearanceCoords = rotateTerminalMultipleLigandToAngle(layoutGraph, bestCandidate.coords, centerAtomId, ligandAtomId, clearanceAngle);
+      const clearanceAudit = auditLayout(layoutGraph, clearanceCoords, { bondLength: layoutGraph.options?.bondLength ?? 1.5 });
+      if (crossCandidateAuditDoesNotRegress(clearanceAudit, bestCandidate.audit ?? currentAudit)) {
+        bestCandidate.coords = clearanceCoords;
+        bestCandidate.audit = clearanceAudit;
+      }
+    }
+  }
+  for (const [atomId, position] of bestCandidate.coords) {
+    coords.set(atomId, position);
+  }
+  return 1;
+}
+
+/**
  * Rotates a compact branch near a direct hypervalent ligand when the exact
  * cross pushes a terminal oxo into a small substituent. This keeps the newly
  * squared center intact and only accepts moves that reduce the global severe
@@ -4083,6 +4220,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
       nudges += relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
       nudges += relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords, centerAtomId);
+      nudges += relieveDirectLigandCrossingsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
@@ -4125,6 +4263,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
       nudges += relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
       nudges += relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords, centerAtomId);
+      nudges += relieveDirectLigandCrossingsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
@@ -4186,6 +4325,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
       nudges += relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
       nudges += relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords, centerAtomId);
+      nudges += relieveDirectLigandCrossingsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
       nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
@@ -4234,6 +4374,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
     nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
     nudges += relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
     nudges += relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords, centerAtomId);
+    nudges += relieveDirectLigandCrossingsWithBranchRotation(layoutGraph, coords, centerAtomId);
     nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
     nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
     nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);

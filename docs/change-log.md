@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-26
+
+- Re-square ring-attached sulfonic acid centers after late fan cleanup while rotating small neighboring branches clear of planar crossings.
+
 ## 2026-08-25
 
 - Let collision-free macrocycle-embedded sulfone oxo pairs use their intended exterior fan instead of preserving an opposed layout.

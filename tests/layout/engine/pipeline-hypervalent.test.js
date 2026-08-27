@@ -788,7 +788,7 @@ stressDescribe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'S14', 'C4', 'O15');
     assert.ok(measureBondAngle(result, 'O16', 'S14', 'O17') > (7 * Math.PI) / 8);
     assertBondAngle(result, 'C4', 'S14', 'O16', Math.PI / 2);
-    assert.ok(measureBondAngle(result, 'C4', 'S14', 'O17') > Math.PI / 2);
+    assertBondAngle(result, 'C4', 'S14', 'O17', Math.PI / 2);
   });
 
   it('keeps acyclic sulfonamide oxo ligands orthogonal while moving a nearby pendant ring', () => {

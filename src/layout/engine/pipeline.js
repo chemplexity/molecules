@@ -17035,6 +17035,15 @@ export function runPipeline(molecule, options = {}) {
       });
     }
   }
+  if (!skipDirtyUltraLargeFinalPresentationRetouches) {
+    const postThreeHeavyHypervalentRetouch = timeFinalRetouch('postThreeHeavyHypervalentRetouch', () =>
+      maybeRetouchFinalHypervalentAngles(layoutGraph, finalCoords, placement, normalizedOptions.bondLength, onStep)
+    );
+    if (postThreeHeavyHypervalentRetouch.changed) {
+      finalCoords = postThreeHeavyHypervalentRetouch.coords;
+      finalCoordsModified = true;
+    }
+  }
   const finalLargeMoleculeTargetedAngleRelief = timeFinalRetouch('finalLargeMoleculeTargetedAngleRelief', () => {
     return maybeRetouchFinalLargeMoleculeTargetedAngleRelief(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
   });
