@@ -623,6 +623,37 @@ describe('initGestureInteractions', () => {
     });
   });
 
+  it('refreshes a modified draw-bond endpoint from the mouseup position before commit', () => {
+    const calls = [];
+    const { context, listeners } = makeBaseContext({
+      drawBond: {
+        hasDrawBondState: () => true,
+        start() {},
+        markDragged() {},
+        updatePreview(point, options) {
+          calls.push(['update', point, options]);
+        },
+        commit() {
+          calls.push(['commit']);
+        }
+      }
+    });
+
+    initGestureInteractions(context);
+
+    listeners.get('mouseup')({
+      button: 0,
+      ctrlKey: true,
+      metaKey: false,
+      target: { closest: () => null }
+    });
+
+    assert.deepEqual(calls, [
+      ['update', [12, 34], { ctrlKey: true, metaKey: false }],
+      ['commit']
+    ]);
+  });
+
   it('previews the selected ring template on mousedown and commits on mouseup', () => {
     const { context, svg, calls, state, listeners } = makeBaseContext({
       actions: {

@@ -3127,6 +3127,12 @@ export function initGestureInteractions(context) {
     }
     if (context.drawBond.hasDrawBondState()) {
       if (event.button === 0) {
+        if (event.ctrlKey === true || event.metaKey === true) {
+          context.drawBond.updatePreview(context.pointer(event, g.node()), {
+            ctrlKey: event.ctrlKey === true,
+            metaKey: event.metaKey === true
+          });
+        }
         context.drawBond.commit();
       }
       return;

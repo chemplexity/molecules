@@ -593,10 +593,10 @@ describe('createDrawBondPreviewActions', () => {
       });
 
       actions.start('a1', 0, 0);
-      actions.update([340, 170], { [modifierKey]: true });
+      actions.update([400, 120], { [modifierKey]: true });
 
-      assert.equal(getDrawBondState().ex, 340);
-      assert.equal(getDrawBondState().ey, 170);
+      assert.equal(getDrawBondState().ex, 400);
+      assert.equal(getDrawBondState().ey, 120);
     });
   }
 

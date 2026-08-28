@@ -7078,6 +7078,32 @@ test('the live bond preview reflects the selected bond type while dragging', asy
   await page.mouse.up();
 });
 
+test('holding Control places a new 2D line-tool atom at the mouseup position', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C');
+  await page.locator('#draw-bond-btn').click();
+
+  const source = await atomScreenPoint2d(page, 'C1');
+  expect(source).toBeTruthy();
+  const target = { x: source.cx + 105, y: source.cy - 75 };
+
+  await page.mouse.move(source.cx, source.cy);
+  await page.mouse.down();
+  await page.keyboard.down('Control');
+  await page.mouse.move(target.x - 12, target.y + 8, { steps: 8 });
+  await page.mouse.move(target.x, target.y);
+  await page.mouse.up();
+  await page.keyboard.up('Control');
+
+  await expect(page.locator('g[data-atom-id="C2"]')).toHaveCount(1);
+  await expect
+    .poll(async () => {
+      const placed = await atomScreenPoint2d(page, 'C2');
+      return placed ? Math.hypot(placed.cx - target.x, placed.cy - target.y) : Number.POSITIVE_INFINITY;
+    })
+    .toBeLessThan(2);
+});
+
 test('placing double on an existing double bond is a no-op', async ({ page }) => {
   await page.goto('/index.html');
   await loadSmiles(page, 'CC=O');

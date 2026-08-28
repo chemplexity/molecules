@@ -572,8 +572,8 @@ export function createDrawBondPreviewActions(context) {
     const clamped = Math.min(dist, bondLength);
     if (isFreeRotation(options)) {
       return {
-        x: ox + ((mx - ox) / dist) * clamped,
-        y: oy + ((my - oy) / dist) * clamped
+        x: mx,
+        y: my
       };
     }
     const graphAngle = Math.atan2(oy - my, mx - ox);

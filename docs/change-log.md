@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-27
+
+- Let modified 2D line-tool drags place new atoms at the exact release position instead of clamping them to the standard bond length.
+
 ## 2026-08-26
 
 - Re-square ring-attached sulfonic acid centers after late fan cleanup while rotating small neighboring branches clear of planar crossings.
