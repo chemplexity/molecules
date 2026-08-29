@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-28
+
+- Coordinate consecutive ring-branch hinge rotations to clear trapped contacts and restore outward substituent exits in crowded polycycles.
+
 ## 2026-08-27
 
 - Let modified 2D line-tool drags place new atoms at the exact release position instead of clamping them to the standard bond length.

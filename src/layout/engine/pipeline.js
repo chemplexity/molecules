@@ -64,6 +64,7 @@ import {
   hasSevereOverlaps,
   measureDivalentContinuationDistortion,
   measureLabelOverlap,
+  measureRingSubstituentReadability,
   measureThreeHeavyContinuationDistortion,
   measureTrigonalDistortion
 } from './audit/invariants.js';
@@ -102,6 +103,8 @@ const FINAL_TERMINAL_LEAF_CONTACT_ROTATIONS = Object.freeze(
     .flatMap(offset => [offset, -offset])
 );
 const FINAL_TERMINAL_LEAF_CONTACT_DIRTY_LARGE_ROTATIONS = Object.freeze([10, 20, 30, 45, 60, 90, 120].map(degrees => (degrees * Math.PI) / 180).flatMap(offset => [offset, -offset]));
+const FINAL_CROWDED_RING_BRANCH_ROUTE_ROTATIONS = Object.freeze([0, 50, -50, 60, -60, 100, -100, 110, -110, 120, -120, 130, -130].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_CROWDED_RING_READABILITY_ROTATIONS = Object.freeze([55, -55, 60, -60, 65, -65, 70, -70, 105, -105, 110, -110].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_TERMINAL_PAIRED_HALOGEN_CONTACT_ROTATIONS = Object.freeze([5, 6, 8, 10, 12, 15, 18, 20, 24, 30, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(offset => [offset, -offset]));
 const FINAL_TERMINAL_LEAF_CONTACT_CLEARANCE_FACTOR = 0.6;
 const FINAL_TERMINAL_LEAF_CONTACT_MAX_PASSES = 4;
@@ -1103,6 +1106,192 @@ function hasAuditCleanMixedFinalBranchState(audit) {
     (audit.stereoContradiction ?? false) === false &&
     audit.fallback?.mode == null
   );
+}
+
+/**
+ * Returns sorted visible heavy covalent neighbors, optionally excluding one endpoint.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom whose neighbors are requested.
+ * @param {string|null} [excludedAtomId] - Optional neighbor to omit.
+ * @returns {string[]} Sorted neighboring atom ids.
+ */
+function visibleHeavyCovalentNeighborIds(layoutGraph, atomId, excludedAtomId = null) {
+  const neighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtomId !== excludedAtomId && neighborAtom?.element !== 'H' && neighborAtom?.visible !== false) {
+      neighborIds.push(neighborAtomId);
+    }
+  }
+  return neighborIds.sort((firstAtomId, secondAtomId) => firstAtomId.localeCompare(secondAtomId, 'en', { numeric: true }));
+}
+
+/**
+ * Builds a consecutive acyclic hinge route extending away from a ring anchor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string} rootAtomId - First branch atom beyond the anchor.
+ * @param {string} anchorAtomId - Fixed endpoint of the first hinge.
+ * @param {number} hingeCount - Number of consecutive hinges required.
+ * @returns {Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>|null} Routed hinge descriptors.
+ */
+function finalCrowdedRingBranchHinges(layoutGraph, coords, rootAtomId, anchorAtomId, hingeCount) {
+  const hinges = [];
+  let currentRootAtomId = rootAtomId;
+  let currentAnchorAtomId = anchorAtomId;
+  for (let index = 0; index < hingeCount; index++) {
+    if (!coords.has(currentRootAtomId) || !coords.has(currentAnchorAtomId)) {
+      return null;
+    }
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, currentRootAtomId, currentAnchorAtomId)].filter(atomId => coords.has(atomId));
+    if (subtreeAtomIds.length === 0) {
+      return null;
+    }
+    hinges.push({ anchorAtomId: currentAnchorAtomId, rootAtomId: currentRootAtomId, subtreeAtomIds });
+    const continuationIds = visibleHeavyCovalentNeighborIds(layoutGraph, currentRootAtomId, currentAnchorAtomId);
+    if (index + 1 < hingeCount && continuationIds.length !== 1) {
+      return null;
+    }
+    currentAnchorAtomId = currentRootAtomId;
+    currentRootAtomId = continuationIds[0];
+  }
+  return hinges;
+}
+
+/**
+ * Rotates one routed branch subtree rigidly around its hinge anchor.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {{anchorAtomId: string, subtreeAtomIds: string[]}} hinge - Hinge descriptor.
+ * @param {number} rotation - Rotation in radians.
+ * @returns {Map<string, {x: number, y: number}>|null} Rotated coordinate map.
+ */
+function rotateFinalCrowdedRingBranch(coords, hinge, rotation) {
+  const pivot = coords.get(hinge.anchorAtomId);
+  if (!pivot) {
+    return null;
+  }
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of hinge.subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (position) {
+      candidateCoords.set(atomId, rotateAround(position, pivot, rotation));
+    }
+  }
+  return candidateCoords;
+}
+
+/**
+ * Collects three-hinge ring branches participating in the current severe contact.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Array<{blockerAtomId: string, anchorAtomId: string, hinges: object[]}>} Route descriptors.
+ */
+function finalCrowdedRingOverlapRouteDescriptors(layoutGraph, coords, bondLength) {
+  const descriptors = [];
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    for (const blockerAtomId of [overlap.firstAtomId, overlap.secondAtomId]) {
+      for (const anchorAtomId of visibleHeavyCovalentNeighborIds(layoutGraph, blockerAtomId)) {
+        if (!layoutGraph.ringAtomIdSet.has(anchorAtomId) || layoutGraph.ringAtomIdSet.has(blockerAtomId)) {
+          continue;
+        }
+        const hinges = finalCrowdedRingBranchHinges(layoutGraph, coords, blockerAtomId, anchorAtomId, 3);
+        if (hinges) {
+          descriptors.push({ blockerAtomId, anchorAtomId, hinges });
+        }
+      }
+    }
+  }
+  return descriptors.sort(
+    (firstDescriptor, secondDescriptor) =>
+      firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId, 'en', { numeric: true }) ||
+      firstDescriptor.blockerAtomId.localeCompare(secondDescriptor.blockerAtomId, 'en', { numeric: true })
+  );
+}
+
+/**
+ * Collects two-hinge substituents rooted at ring anchors with readability failures.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @returns {Array<{anchorAtomId: string, childAtomId: string, hinges: object[]}>} Readability-route descriptors.
+ */
+function finalCrowdedRingReadabilityHinges(layoutGraph, coords) {
+  const descriptors = [];
+  for (const anchorAtomId of layoutGraph.ringAtomIdSet) {
+    const readability = measureRingSubstituentReadability(layoutGraph, coords, { focusAtomIds: new Set([anchorAtomId]) });
+    if ((readability.failingSubstituentCount ?? 0) === 0) {
+      continue;
+    }
+    for (const childDescriptor of collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId)) {
+      const hinges = finalCrowdedRingBranchHinges(layoutGraph, coords, childDescriptor.childAtomId, anchorAtomId, 2);
+      if (hinges) {
+        descriptors.push({ anchorAtomId, childAtomId: childDescriptor.childAtomId, hinges });
+      }
+    }
+  }
+  return descriptors.sort(
+    (firstDescriptor, secondDescriptor) =>
+      firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId, 'en', { numeric: true }) ||
+      firstDescriptor.childAtomId.localeCompare(secondDescriptor.childAtomId, 'en', { numeric: true })
+  );
+}
+
+/**
+ * Reroutes a crowded multi-hinge ring branch, then jointly opens a separate
+ * inward two-hinge substituent when neither branch can improve safely alone.
+ * Candidates are accepted only when the complete layout becomes audit-clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} placement - Placement result carrying bond validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object}} Retouch result.
+ */
+function maybeRetouchFinalCrowdedRingBranchRouting(layoutGraph, coords, placement, bondLength) {
+  const baseAudit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses: placement.bondValidationClasses });
+  if (
+    baseAudit.severeOverlapCount !== 1 ||
+    baseAudit.ringSubstituentReadabilityFailureCount !== 1 ||
+    baseAudit.bondLengthFailureCount !== 0 ||
+    baseAudit.labelOverlapCount !== 0 ||
+    baseAudit.collapsedMacrocycleCount !== 0 ||
+    baseAudit.stereoContradiction
+  ) {
+    return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+  }
+
+  for (const routeDescriptor of finalCrowdedRingOverlapRouteDescriptors(layoutGraph, coords, bondLength)) {
+    for (const firstRotation of FINAL_CROWDED_RING_BRANCH_ROUTE_ROTATIONS) {
+      const firstCoords = rotateFinalCrowdedRingBranch(coords, routeDescriptor.hinges[0], firstRotation);
+      for (const secondRotation of FINAL_CROWDED_RING_BRANCH_ROUTE_ROTATIONS) {
+        const secondCoords = rotateFinalCrowdedRingBranch(firstCoords, routeDescriptor.hinges[1], secondRotation);
+        for (const thirdRotation of FINAL_CROWDED_RING_BRANCH_ROUTE_ROTATIONS) {
+          const routedCoords = rotateFinalCrowdedRingBranch(secondCoords, routeDescriptor.hinges[2], thirdRotation);
+          const routedAudit = auditLayout(layoutGraph, routedCoords, { bondLength, bondValidationClasses: placement.bondValidationClasses });
+          if (routedAudit.severeOverlapCount !== 0 || routedAudit.ringSubstituentReadabilityFailureCount > baseAudit.ringSubstituentReadabilityFailureCount) {
+            continue;
+          }
+          for (const readabilityDescriptor of finalCrowdedRingReadabilityHinges(layoutGraph, routedCoords)) {
+            for (const rootRotation of FINAL_CROWDED_RING_READABILITY_ROTATIONS) {
+              const rootCoords = rotateFinalCrowdedRingBranch(routedCoords, readabilityDescriptor.hinges[0], rootRotation);
+              for (const childRotation of FINAL_CROWDED_RING_READABILITY_ROTATIONS) {
+                const candidateCoords = rotateFinalCrowdedRingBranch(rootCoords, readabilityDescriptor.hinges[1], childRotation);
+                const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses: placement.bondValidationClasses });
+                if (candidateAudit.ok === true && candidateAudit.fallback?.mode == null) {
+                  const movedAtomIds = [...new Set([...routeDescriptor.hinges.flatMap(hinge => hinge.subtreeAtomIds), ...readabilityDescriptor.hinges.flatMap(hinge => hinge.subtreeAtomIds)])];
+                  return { changed: true, coords: candidateCoords, movedAtomIds, audit: candidateAudit };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
 }
 
 function smallHeteroRingSubstituentLayoutHeavyAtomCount(layoutGraph, coords) {
@@ -17595,6 +17784,20 @@ export function runPipeline(molecule, options = {}) {
             severeOverlapCountAfter: postAcylAudit.severeOverlapCount
           });
         }
+      }
+      const crowdedRingBranchRouting = maybeRetouchFinalCrowdedRingBranchRouting(layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
+      if (crowdedRingBranchRouting.changed) {
+        const currentAudit = postAcylAudit;
+        finalCoords = crowdedRingBranchRouting.coords;
+        finalCoordsModified = true;
+        postAcylAudit = crowdedRingBranchRouting.audit;
+        onStep?.('Final Crowded Ring Branch Routing', 'Coupled ring-attached branches rotated across consecutive hinges to clear a trapped contact and restore an outward substituent exit.', cloneCoords(finalCoords), {
+          movedAtomCount: crowdedRingBranchRouting.movedAtomIds.length,
+          severeOverlapCountBefore: currentAudit.severeOverlapCount,
+          severeOverlapCountAfter: postAcylAudit.severeOverlapCount,
+          ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
+          ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount
+        });
       }
     });
   }

@@ -4126,6 +4126,22 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(hydroxymethylAngle - (2 * Math.PI) / 3) < 1e-6, `expected hydroxymethyl continuation to stay at 120 degrees, got ${((hydroxymethylAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
+  it('jointly reroutes crowded corrinoid branches to clear contacts and inward exits', () => {
+    const smiles = String.raw`[H]O[Co+]N1\C2=C(C)/C3=N/C(=C\C4=N\C(=C(C)/C5=N[C@@](C)([C@@]1([H])[C@H](CC(=O)N)[C@@]2(C)CCC(=O)NC[C@@H](C)OP(=O)([O-])O[C@H]1[C@@H](O)[C@H](O[C@@H]1CO)N1C=NC2=CC(C)=C(C)C=C12)[C@@](C)(CC(N)=O)[C@@H]5CCC(=O)N)\[C@@](C)(CC(=O)N)[C@@H]4CCC(=O)N)/C(C)(C)[C@@H]3CCC(=O)N`;
+    const result = generateCoords(parseSMILES(smiles), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {
     const graph = createLayoutGraph(makeMacrocycleWithSubstituent());
     const component = graph.components[0];
