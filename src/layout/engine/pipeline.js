@@ -105,6 +105,8 @@ const FINAL_TERMINAL_LEAF_CONTACT_ROTATIONS = Object.freeze(
 const FINAL_TERMINAL_LEAF_CONTACT_DIRTY_LARGE_ROTATIONS = Object.freeze([10, 20, 30, 45, 60, 90, 120].map(degrees => (degrees * Math.PI) / 180).flatMap(offset => [offset, -offset]));
 const FINAL_CROWDED_RING_BRANCH_ROUTE_ROTATIONS = Object.freeze([0, 50, -50, 60, -60, 100, -100, 110, -110, 120, -120, 130, -130].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_CROWDED_RING_READABILITY_ROTATIONS = Object.freeze([55, -55, 60, -60, 65, -65, 70, -70, 105, -105, 110, -110].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_FUSED_CLOSURE_NORMAL_OFFSET_FACTORS = Object.freeze([0, 1 / 12, 7 / 60, 2 / 15, 3 / 20, 1 / 6, 11 / 60, 1 / 5]);
+const FINAL_FUSED_CLOSURE_AXIAL_OFFSET_FACTORS = Object.freeze([0, 1 / 60, 1 / 30, 1 / 20, 1 / 15, 1 / 12]);
 const FINAL_TERMINAL_PAIRED_HALOGEN_CONTACT_ROTATIONS = Object.freeze([5, 6, 8, 10, 12, 15, 18, 20, 24, 30, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(offset => [offset, -offset]));
 const FINAL_TERMINAL_LEAF_CONTACT_CLEARANCE_FACTOR = 0.6;
 const FINAL_TERMINAL_LEAF_CONTACT_MAX_PASSES = 4;
@@ -1292,6 +1294,107 @@ function maybeRetouchFinalCrowdedRingBranchRouting(layoutGraph, coords, placemen
     }
   }
   return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+}
+
+/**
+ * Finds a compressed bridged edge whose endpoints each meet an overstretched
+ * bridged closure, the characteristic three-failure fused-junction pattern.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} bondValidationClasses - Per-bond validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{bond: object, firstStretchedBond: object, secondStretchedBond: object}|null} Matched junction descriptor.
+ */
+function finalFusedClosureJunctionDescriptor(layoutGraph, coords, bondValidationClasses, bondLength) {
+  const minimumDistance = bondLength * BRIDGED_VALIDATION.minBondLengthFactor;
+  const maximumDistance = bondLength * BRIDGED_VALIDATION.maxBondLengthFactor;
+  const bondDistance = bond => {
+    const firstPosition = coords.get(bond.a);
+    const secondPosition = coords.get(bond.b);
+    return firstPosition && secondPosition ? distance(firstPosition, secondPosition) : null;
+  };
+  const stretchedIncidentBond = (atomId, excludedBondId) =>
+    (layoutGraph.bondsByAtomId.get(atomId) ?? []).find(bond => {
+      const measuredDistance = bondDistance(bond);
+      return bond.id !== excludedBondId && bond.kind === 'covalent' && bond.inRing && bondValidationClasses.get(bond.id) === 'bridged' && measuredDistance != null && measuredDistance > maximumDistance;
+    });
+
+  for (const bond of layoutGraph.bonds.values()) {
+    const measuredDistance = bondDistance(bond);
+    if (bond.kind !== 'covalent' || !bond.inRing || bondValidationClasses.get(bond.id) !== 'bridged' || measuredDistance == null || measuredDistance >= minimumDistance) {
+      continue;
+    }
+    const firstStretchedBond = stretchedIncidentBond(bond.a, bond.id);
+    const secondStretchedBond = stretchedIncidentBond(bond.b, bond.id);
+    if (firstStretchedBond && secondStretchedBond) {
+      return { bond, firstStretchedBond, secondStretchedBond };
+    }
+  }
+  return null;
+}
+
+/**
+ * Moves both endpoints of a compressed fused-ring junction toward a shared
+ * face while opening their common edge, accepting only an audit-clean result.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} placement - Placement result carrying validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object}} Retouch result.
+ */
+function maybeRetouchFinalFusedClosureJunction(layoutGraph, coords, placement, bondLength) {
+  const auditOptions = { bondLength, bondValidationClasses: placement.bondValidationClasses };
+  const baseAudit = auditLayout(layoutGraph, coords, auditOptions);
+  if (baseAudit.bondLengthFailureCount !== 3 || baseAudit.severeOverlapCount !== 0 || baseAudit.labelOverlapCount !== 0 || baseAudit.collapsedMacrocycleCount !== 0 || baseAudit.stereoContradiction) {
+    return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+  }
+  const descriptor = finalFusedClosureJunctionDescriptor(layoutGraph, coords, placement.bondValidationClasses, bondLength);
+  if (!descriptor) {
+    return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+  }
+  const firstAtomId = descriptor.bond.a;
+  const secondAtomId = descriptor.bond.b;
+  const firstPosition = coords.get(firstAtomId);
+  const secondPosition = coords.get(secondAtomId);
+  const edgeVector = sub(firstPosition, secondPosition);
+  const edgeLength = Math.hypot(edgeVector.x, edgeVector.y);
+  if (edgeLength <= NUMERIC_EPSILON) {
+    return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+  }
+  const edgeUnit = { x: edgeVector.x / edgeLength, y: edgeVector.y / edgeLength };
+  const normals = [
+    { x: -edgeUnit.y, y: edgeUnit.x },
+    { x: edgeUnit.y, y: -edgeUnit.x }
+  ];
+  let bestCandidate = null;
+  for (const normal of normals) {
+    for (const firstNormalFactor of FINAL_FUSED_CLOSURE_NORMAL_OFFSET_FACTORS) {
+      for (const secondNormalFactor of FINAL_FUSED_CLOSURE_NORMAL_OFFSET_FACTORS) {
+        for (const firstAxialFactor of FINAL_FUSED_CLOSURE_AXIAL_OFFSET_FACTORS) {
+          for (const secondAxialFactor of FINAL_FUSED_CLOSURE_AXIAL_OFFSET_FACTORS) {
+            const candidateCoords = cloneCoords(coords);
+            candidateCoords.set(firstAtomId, add(firstPosition, add({ x: normal.x * bondLength * firstNormalFactor, y: normal.y * bondLength * firstNormalFactor }, { x: edgeUnit.x * bondLength * firstAxialFactor, y: edgeUnit.y * bondLength * firstAxialFactor })));
+            candidateCoords.set(secondAtomId, add(secondPosition, add({ x: normal.x * bondLength * secondNormalFactor, y: normal.y * bondLength * secondNormalFactor }, { x: -edgeUnit.x * bondLength * secondAxialFactor, y: -edgeUnit.y * bondLength * secondAxialFactor })));
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, auditOptions);
+            if (candidateAudit.ok !== true || candidateAudit.fallback?.mode != null) {
+              continue;
+            }
+            const totalMove = bondLength * (firstNormalFactor + secondNormalFactor + firstAxialFactor + secondAxialFactor);
+            if (
+              !bestCandidate ||
+              totalMove < bestCandidate.totalMove - PRESENTATION_METRIC_EPSILON ||
+              (Math.abs(totalMove - bestCandidate.totalMove) <= PRESENTATION_METRIC_EPSILON && candidateAudit.maxBondLengthDeviation < bestCandidate.audit.maxBondLengthDeviation)
+            ) {
+              bestCandidate = { coords: candidateCoords, audit: candidateAudit, totalMove };
+            }
+          }
+        }
+      }
+    }
+  }
+  return bestCandidate
+    ? { changed: true, coords: bestCandidate.coords, movedAtomIds: [firstAtomId, secondAtomId], audit: bestCandidate.audit }
+    : { changed: false, coords, movedAtomIds: [], audit: baseAudit };
 }
 
 function smallHeteroRingSubstituentLayoutHeavyAtomCount(layoutGraph, coords) {
@@ -17799,6 +17902,24 @@ export function runPipeline(molecule, options = {}) {
           ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount
         });
       }
+    });
+  }
+  const finalFusedClosureJunction = timeFinalRetouch('finalFusedClosureJunction', () =>
+    maybeRetouchFinalFusedClosureJunction(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+  );
+  if (finalFusedClosureJunction.changed) {
+    const currentAudit = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    finalCoords = finalFusedClosureJunction.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Fused Closure Junction Retouch', 'A compressed fused-ring junction opened toward a shared face to shorten both neighboring closure bonds.', cloneCoords(finalCoords), {
+      movedAtomCount: finalFusedClosureJunction.movedAtomIds.length,
+      bondLengthFailureCountBefore: currentAudit.bondLengthFailureCount,
+      bondLengthFailureCountAfter: finalFusedClosureJunction.audit.bondLengthFailureCount,
+      maxBondLengthDeviationBefore: currentAudit.maxBondLengthDeviation,
+      maxBondLengthDeviationAfter: finalFusedClosureJunction.audit.maxBondLengthDeviation
     });
   }
   const postBranchExactBridgedRingPathOverlapRetouch = timeFinalRetouch('postBranchExactBridgedRingPathOverlapRetouch', () =>

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-29
+
+- Open compressed fused-ring junctions while shortening their neighboring closure bonds.
+
 ## 2026-08-28
 
 - Coordinate consecutive ring-branch hinge rotations to clear trapped contacts and restore outward substituent exits in crowded polycycles.

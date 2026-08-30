@@ -7094,6 +7094,24 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.placementMs < 7000, `expected cleanup-recoverable macrocycle placement to skip expensive KK replay, got ${result.metadata.timing.placementMs}ms`);
   });
 
+  it('opens compressed fused macrocycle junctions without stretching neighboring closures', () => {
+    const result = runPipeline(
+      parseSMILES(String.raw`CO[C@H]1\C=C\O[C@@]2(C)OC3=C(C2=O)C2=C(C(O)=C3C)C(=O)C(NC(=O)\C(C)=C/C=C/[C@H](C)[C@H](O)[C@@H](C)[C@@H](O)[C@@H](C)[C@H](OC(C)=O)[C@@H]1C)=C1NC3(CCN(CC3)CC(C)C)N=C21`),
+      {
+        suppressH: true,
+        bondLength: 1.5,
+        maxCleanupPasses: 6,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   it('expands compact direct phenyl attachments in peptide-like mixed layouts to clear carbonyl overlaps', () => {
     const result = runPipeline(
       parseSMILES('CC[C@H](C)[C@H](<NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](NC(=O)C)C(c1ccccc1)c2ccccc2>)C(=O)N[C@@H](<C(C)C>)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)O'),
