@@ -403,6 +403,11 @@ const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MAX_TOTAL_INCREASE = 0.08;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_RELIEF_MIN_DEVIATION_GAIN = 0.04;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_MAX_MOVED_HEAVY_ATOMS = 40;
 const FINAL_LARGE_MOLECULE_DIVALENT_LANE_BRANCH_ROTATIONS = Object.freeze([5, 8, 10, 12, 15, 20, 25, 30].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const FINAL_CROWDED_ETHER_PAIRED_HINGE_ROTATIONS = Object.freeze(
+  Array.from({ length: 18 }, (_value, index) => (index + 1) * 10)
+    .map(degrees => (degrees * Math.PI) / 180)
+    .flatMap(rotation => [rotation, -rotation])
+);
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_ROTATIONS = Object.freeze([30, -30, 45, -45, 60, -60].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_LARGE_MOLECULE_BACKBONE_SPREAD_MAX_PASSES = 2;
 const FINAL_ULTRA_LARGE_CLUSTERED_PEPTIDE_MIN_HEAVY_ATOMS = 400;
@@ -6685,6 +6690,108 @@ function nestedRotatedFinalLargeMoleculeDivalentLaneCandidate(layoutGraph, coord
   return totalMove > PRESENTATION_METRIC_EPSILON
     ? { coords: candidateCoords, movedAtomIds: [...movedAtomIds], totalMove, rotationMagnitude: Math.abs(centerRotation) + Math.abs(branchRotation) }
     : null;
+}
+
+/**
+ * Finds an acyclic carbon-oxygen-carbon hinge whose two carbon endpoints form
+ * the sole remaining severe contact and whose terminal side can move safely.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} audit - Current final audit summary.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{centerAtomId: string, oxygenAtomId: string, terminalAtomId: string}|null} Paired-hinge descriptor or null.
+ */
+function finalCrowdedEtherPairedHingeDescriptor(layoutGraph, coords, audit, bondLength) {
+  if (
+    (audit?.severeOverlapCount ?? 0) !== 1 ||
+    (audit?.bondLengthFailureCount ?? 0) !== 0 ||
+    (audit?.visibleHeavyBondCrossingCount ?? 0) !== 0 ||
+    (audit?.ringSubstituentReadabilityFailureCount ?? 0) !== 0 ||
+    (audit?.inwardRingSubstituentCount ?? 0) !== 0 ||
+    (audit?.labelOverlapCount ?? 0) !== 0 ||
+    audit?.stereoContradiction === true
+  ) {
+    return null;
+  }
+  const overlap = findSevereOverlaps(layoutGraph, coords, bondLength)[0];
+  if (!overlap) {
+    return null;
+  }
+  for (const [centerAtomId, terminalAtomId] of [
+    [overlap.firstAtomId, overlap.secondAtomId],
+    [overlap.secondAtomId, overlap.firstAtomId]
+  ]) {
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    const terminalAtom = layoutGraph.atoms.get(terminalAtomId);
+    const centerBonds = visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId);
+    const terminalBonds = visibleHeavyCovalentBonds(layoutGraph, coords, terminalAtomId);
+    if (centerAtom?.element !== 'C' || terminalAtom?.element !== 'C' || centerBonds.length !== 2 || terminalBonds.length !== 1) {
+      continue;
+    }
+    const oxygenBond = centerBonds.find(({ neighborAtomId }) => neighborAtomId === terminalBonds[0].neighborAtomId);
+    const oxygenAtomId = oxygenBond?.neighborAtomId;
+    const oxygenAtom = oxygenAtomId ? layoutGraph.atoms.get(oxygenAtomId) : null;
+    const oxygenBonds = oxygenAtomId ? visibleHeavyCovalentBonds(layoutGraph, coords, oxygenAtomId) : [];
+    if (
+      oxygenAtom?.element !== 'O' ||
+      oxygenBonds.length !== 2 ||
+      oxygenBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1) ||
+      (layoutGraph.atomToRings.get(oxygenAtomId)?.length ?? 0) > 0 ||
+      layoutGraph.fixedCoords?.has(oxygenAtomId) ||
+      layoutGraph.fixedCoords?.has(terminalAtomId)
+    ) {
+      continue;
+    }
+    return { centerAtomId, oxygenAtomId, terminalAtomId };
+  }
+  return null;
+}
+
+/**
+ * Coordinates rotations on both bonds of a crowded terminal ether hinge when
+ * neither individual rotation can clear the final contact.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object|null}} Retouch result.
+ */
+function maybeRetouchFinalCrowdedEtherPairedHinge(molecule, layoutGraph, finalCoords, placement, bondLength) {
+  const baseAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
+  const descriptor = finalCrowdedEtherPairedHingeDescriptor(layoutGraph, finalCoords, baseAudit, bondLength);
+  if (!descriptor) {
+    return { changed: false, coords: finalCoords, movedAtomIds: [], audit: baseAudit };
+  }
+
+  let bestCandidate = null;
+  for (const centerRotation of FINAL_CROWDED_ETHER_PAIRED_HINGE_ROTATIONS) {
+    for (const leafRotation of FINAL_CROWDED_ETHER_PAIRED_HINGE_ROTATIONS) {
+      const candidate = nestedRotatedFinalLargeMoleculeDivalentLaneCandidate(
+        layoutGraph,
+        finalCoords,
+        descriptor.centerAtomId,
+        descriptor.oxygenAtomId,
+        descriptor.terminalAtomId,
+        centerRotation,
+        leafRotation
+      );
+      if (!candidate || findSevereOverlaps(layoutGraph, candidate.coords, bondLength).length > 0) {
+        continue;
+      }
+      const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidate.coords, placement, bondLength);
+      if (candidateAudit.ok !== true || candidateAudit.fallback?.mode != null) {
+        continue;
+      }
+      const score = Math.abs(centerRotation) + Math.abs(leafRotation);
+      if (!bestCandidate || score < bestCandidate.score - PRESENTATION_METRIC_EPSILON || (Math.abs(score - bestCandidate.score) <= PRESENTATION_METRIC_EPSILON && candidate.totalMove < bestCandidate.totalMove)) {
+        bestCandidate = { ...candidate, audit: candidateAudit, score };
+      }
+    }
+  }
+  return bestCandidate
+    ? { changed: true, coords: new Map(bestCandidate.coords), movedAtomIds: bestCandidate.movedAtomIds, audit: bestCandidate.audit }
+    : { changed: false, coords: finalCoords, movedAtomIds: [], audit: baseAudit };
 }
 
 /**
@@ -18405,6 +18512,22 @@ export function runPipeline(molecule, options = {}) {
         }
       }
     }
+  }
+  const finalCrowdedEtherPairedHinge = timeFinalRetouch('finalCrowdedEtherPairedHinge', () =>
+    maybeRetouchFinalCrowdedEtherPairedHinge(workingMolecule, layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
+  );
+  if (finalCrowdedEtherPairedHinge.changed) {
+    const auditBefore = auditLayout(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    finalCoords = finalCrowdedEtherPairedHinge.coords;
+    finalCoordsModified = true;
+    onStep?.('Final Crowded Ether Paired-Hinge Retouch', 'Both bonds of a trapped terminal ether hinge rotated together to clear its remaining contact.', cloneCoords(finalCoords), {
+      movedAtomCount: finalCrowdedEtherPairedHinge.movedAtomIds.length,
+      severeOverlapCountBefore: auditBefore.severeOverlapCount,
+      severeOverlapCountAfter: finalCrowdedEtherPairedHinge.audit?.severeOverlapCount ?? null
+    });
   }
   if (largeMoleculeCleanCheckpoint) {
     const finalGeometryAudit = auditLayout(layoutGraph, finalCoords, {

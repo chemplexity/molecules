@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-30
+
+- Coordinate both bonds of crowded terminal ether hinges to clear trapped macrolide branch contacts.
+
 ## 2026-08-29
 
 - Open compressed fused-ring junctions while shortening their neighboring closure bonds.

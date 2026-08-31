@@ -4142,6 +4142,22 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
+  it('coordinates both terminal ether hinges to clear a trapped macrolide contact', () => {
+    const smiles = 'CC[C@H]1OC(=O)[C@H](C)[C@@H](O[C@H]2C[C@@](C)(OC)[C@@H](O)[C@H](C)O2)[C@H](C)[C@@H](O[C@@H]2O[C@H](C)C[C@@H]([C@H]2O)N(C)C)[C@](C)(O)C[C@@H](C)[C@@H]2N[C@@H](COCCOC)O[C@H]([C@H]2C)[C@]1(C)O';
+    const result = generateCoords(parseSMILES(smiles), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {
     const graph = createLayoutGraph(makeMacrocycleWithSubstituent());
     const component = graph.components[0];
