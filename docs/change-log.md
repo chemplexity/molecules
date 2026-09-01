@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-08-31
+
+- Articulate crowded hydroxymethyl branches away from fused polycyclic ring atoms.
+
 ## 2026-08-30
 
 - Coordinate both bonds of crowded terminal ether hinges to clear trapped macrolide branch contacts.

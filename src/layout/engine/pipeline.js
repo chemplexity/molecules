@@ -163,7 +163,7 @@ const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_LAYOUT_HEAVY_ATOMS = 180;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_MOVED_HEAVY_ATOMS = 16;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_DESCRIPTORS = 10;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_FAN_SLACK = 1e-8;
-const FINAL_ACYCLIC_BRANCH_CONTACT_ROTATIONS = Object.freeze([5, 6, 8, 10, 12, 15, 30, 45, 60, 90, 120, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const FINAL_ACYCLIC_BRANCH_CONTACT_ROTATIONS = Object.freeze([5, 6, 8, 10, 12, 15, 20, 25, 30, 35, 45, 60, 90, 120, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_ACYCLIC_BRANCH_TERMINAL_LEAF_ROOT_ROTATIONS = Object.freeze([150, 155, 160, 165, 170, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_ACYCLIC_BRANCH_TERMINAL_LEAF_ROTATIONS = Object.freeze(
   [0, ...[10, 15, 20, 30, 45, 50, 60, 75, 90, 120, 140, 150, 170, 180].flatMap(degrees => [degrees, -degrees])].map(degrees => (degrees * Math.PI) / 180)
@@ -172,7 +172,7 @@ const FINAL_ACYCLIC_BRANCH_TERMINAL_LEAF_ELEMENTS = new Set(['N', 'O', 'S', 'Se'
 const FINAL_ACYCLIC_BRANCH_CONTACT_MAX_PASSES = 4;
 const FINAL_ACYCLIC_BRANCH_CONTACT_MAX_MOVED_HEAVY_ATOMS = 12;
 const FINAL_FUSED_ACYCLIC_SIDECHAIN_CONTACT_MAX_MOVED_HEAVY_ATOMS = 16;
-const FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_HEAVY_ATOMS = 40;
+const FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_HEAVY_ATOMS = 80;
 const FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_MOVED_HEAVY_ATOMS = 4;
 const FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_VISIBLE_CROSSING_INCREASE = 2;
 const FINAL_COMPACT_BRIDGED_OVERLAP_BOND_REPAIR_MAX_HEAVY_ATOMS = 40;
@@ -9622,7 +9622,7 @@ function finalCompactBridgedHydroxySidechainLeafSubtree(layoutGraph, coords, des
     rootAtom.aromatic ||
     layoutGraph.ringAtomIdSet.has(descriptor.rootAtomId) ||
     !layoutGraph.ringAtomIdSet.has(descriptor.anchorAtomId) ||
-    (rootAtom.heavyDegree ?? 0) < 3 ||
+    (rootAtom.heavyDegree ?? 0) < 2 ||
     (rootAtom.heavyDegree ?? 0) > 4
   ) {
     return [];
@@ -9710,6 +9710,48 @@ function compareFinalCompactBridgedHydroxySidechainCandidates(candidate, incumbe
   return candidate.key.localeCompare(incumbent.key, 'en', { numeric: true });
 }
 
+/**
+ * Finds hydroxymethyl-style branch descriptors through a colliding terminal
+ * oxygen, so the existing paired root/leaf search can articulate both bonds.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {Array<{firstAtomId: string, secondAtomId: string}>} overlaps - Severe contacts.
+ * @returns {object[]} Eligible compact bridged hydroxy-sidechain descriptors.
+ */
+function finalCompactBridgedHydroxyParentDescriptors(layoutGraph, coords, overlaps) {
+  const descriptors = new Map();
+  for (const overlap of overlaps) {
+    for (const leafAtomId of [overlap.firstAtomId, overlap.secondAtomId]) {
+      const leafAtom = layoutGraph.atoms.get(leafAtomId);
+      if (leafAtom?.element !== 'O' || (leafAtom.heavyDegree ?? 0) !== 1 || layoutGraph.ringAtomIdSet.has(leafAtomId)) {
+        continue;
+      }
+      const rootBond = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? []).find(bond => {
+        const neighborAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+        return bond.kind === 'covalent' && !bond.aromatic && !bond.inRing && (bond.order ?? 1) === 1 && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H';
+      });
+      const rootAtomId = rootBond ? (rootBond.a === leafAtomId ? rootBond.b : rootBond.a) : null;
+      if (!rootAtomId) {
+        continue;
+      }
+      for (const anchorBond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+        const anchorAtomId = anchorBond.a === rootAtomId ? anchorBond.b : anchorBond.a;
+        if (anchorAtomId === leafAtomId || !layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
+          continue;
+        }
+        const descriptor = finalAcyclicBranchContactDescriptor(layoutGraph, coords, rootAtomId, anchorAtomId, {
+          maxMovedHeavyAtoms: FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_MOVED_HEAVY_ATOMS
+        });
+        const hydroxyDescriptor = descriptor ? finalCompactBridgedHydroxySidechainDescriptor(layoutGraph, coords, descriptor, overlaps) : null;
+        if (hydroxyDescriptor) {
+          descriptors.set(`${anchorAtomId}:${rootAtomId}`, hydroxyDescriptor);
+        }
+      }
+    }
+  }
+  return [...descriptors.values()];
+}
+
 function maybeRetouchFinalCompactBridgedHydroxySidechainContacts(layoutGraph, finalCoords, placement, bondLength) {
   const baseAudit = auditLayout(layoutGraph, finalCoords, {
     bondLength,
@@ -9718,7 +9760,7 @@ function maybeRetouchFinalCompactBridgedHydroxySidechainContacts(layoutGraph, fi
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
   if (
     heavyAtomCount > FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_HEAVY_ATOMS ||
-    (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 ||
+    (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 && (layoutGraph.traits?.ringCount ?? 0) < 3 ||
     (baseAudit.severeOverlapCount ?? 0) === 0 ||
     (baseAudit.bondLengthFailureCount ?? 0) > 0 ||
     (baseAudit.labelOverlapCount ?? 0) > 0 ||
@@ -9730,11 +9772,15 @@ function maybeRetouchFinalCompactBridgedHydroxySidechainContacts(layoutGraph, fi
   }
 
   const overlaps = findSevereOverlaps(layoutGraph, finalCoords, bondLength);
-  const descriptors = finalAcyclicBranchContactDescriptors(layoutGraph, finalCoords, bondLength, {
+  const descriptorByKey = new Map(finalCompactBridgedHydroxyParentDescriptors(layoutGraph, finalCoords, overlaps).map(descriptor => [`${descriptor.anchorAtomId}:${descriptor.rootAtomId}`, descriptor]));
+  for (const descriptor of finalAcyclicBranchContactDescriptors(layoutGraph, finalCoords, bondLength, {
     maxMovedHeavyAtoms: FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_MOVED_HEAVY_ATOMS
   })
     .map(descriptor => finalCompactBridgedHydroxySidechainDescriptor(layoutGraph, finalCoords, descriptor, overlaps))
-    .filter(Boolean);
+    .filter(Boolean)) {
+    descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.rootAtomId}`, descriptor);
+  }
+  const descriptors = [...descriptorByKey.values()];
   if (descriptors.length === 0) {
     return { coords: finalCoords, changed: false, movedAtomIds: [], audit: baseAudit };
   }

@@ -7500,6 +7500,24 @@ stressDescribe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.totalMs < 3000, `expected terminal alcohol articulation to stay bounded, got ${result.metadata.timing.totalMs}ms`);
   });
 
+  it('articulates hydroxymethyl leaves away from fused polycyclic ring atoms', () => {
+    const smiles = '[H][C@@]12CC[C@]3(O)C[C@H](C[C@@H](O)[C@]3(CO)[C@@]1([H])[C@H](O)C[C@]1(C)[C@H](CC[C@]21O)C1=CC(=O)OC1)O[C@@H]1O[C@@H](C)[C@H](O)[C@@H](O)[C@H]1O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.ok(bugMolecules.includes(smiles), 'expected fused polycyclic hydroxymethyl regression molecule to be registered');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(distance(result.coords.get('O16'), result.coords.get('C19')) > 1.5 * 0.55, 'expected the hydroxyl oxygen to clear the fused-ring carbon');
+  });
+
   it('opens compact bridged cage atoms away from crowded exocyclic ethyl roots', () => {
     const molecule = parseSMILES('CCC1C2CCC(CN=CN)CC1C2N');
     const result = runPipeline(molecule, {
