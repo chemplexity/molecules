@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-01
+
+- Fold short acyclic branches outward from crowded bridged-ring junctions without contacting the cage.
+
 ## 2026-08-31
 
 - Articulate crowded hydroxymethyl branches away from fused polycyclic ring atoms.

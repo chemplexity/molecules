@@ -640,5 +640,6 @@ export const bugMolecules = [
   '[H]O[Co+]N1\\C2=C(C)/C3=N/C(=C\\C4=N\\C(=C(C)/C5=N[C@@](C)([C@@]1([H])[C@H](CC(=O)N)[C@@]2(C)CCC(=O)NC[C@@H](C)OP(=O)([O-])O[C@H]1[C@@H](O)[C@H](O[C@@H]1CO)N1C=NC2=CC(C)=C(C)C=C12)[C@@](C)(CC(N)=O)[C@@H]5CCC(=O)N)\\[C@@](C)(CC(=O)N)[C@@H]4CCC(=O)N)/C(C)(C)[C@@H]3CCC(=O)N',
   'CO[C@H]1\\C=C\\O[C@@]2(C)OC3=C(C2=O)C2=C(C(O)=C3C)C(=O)C(NC(=O)\\C(C)=C/C=C/[C@H](C)[C@H](O)[C@@H](C)[C@@H](O)[C@@H](C)[C@H](OC(C)=O)[C@@H]1C)=C1NC3(CCN(CC3)CC(C)C)N=C21',
   'CC[C@H]1OC(=O)[C@H](C)[C@@H](O[C@H]2C[C@@](C)(OC)[C@@H](O)[C@H](C)O2)[C@H](C)[C@@H](O[C@@H]2O[C@H](C)C[C@@H]([C@H]2O)N(C)C)[C@](C)(O)C[C@@H](C)[C@@H]2N[C@@H](COCCOC)O[C@H]([C@H]2C)[C@]1(C)O',
-  '[H][C@@]12CC[C@]3(O)C[C@H](C[C@@H](O)[C@]3(CO)[C@@]1([H])[C@H](O)C[C@]1(C)[C@H](CC[C@]21O)C1=CC(=O)OC1)O[C@@H]1O[C@@H](C)[C@H](O)[C@@H](O)[C@H]1O'
+  '[H][C@@]12CC[C@]3(O)C[C@H](C[C@@H](O)[C@]3(CO)[C@@]1([H])[C@H](O)C[C@]1(C)[C@H](CC[C@]21O)C1=CC(=O)OC1)O[C@@H]1O[C@@H](C)[C@H](O)[C@@H](O)[C@H]1O',
+  'CC(C)[C@@]1(O)[C@@H](OC(=O)c2ccc[nH]2)[C@]3(O)O[C@]4(NNC(=O)N)[C@@]1(C)[C@]5(O)C[C@@]3(C)[C@@]6(O)CCC(=C)[C@@H](O)[C@]46O5'
 ];

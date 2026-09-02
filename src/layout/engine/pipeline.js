@@ -105,6 +105,9 @@ const FINAL_TERMINAL_LEAF_CONTACT_ROTATIONS = Object.freeze(
 const FINAL_TERMINAL_LEAF_CONTACT_DIRTY_LARGE_ROTATIONS = Object.freeze([10, 20, 30, 45, 60, 90, 120].map(degrees => (degrees * Math.PI) / 180).flatMap(offset => [offset, -offset]));
 const FINAL_CROWDED_RING_BRANCH_ROUTE_ROTATIONS = Object.freeze([0, 50, -50, 60, -60, 100, -100, 110, -110, 120, -120, 130, -130].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_CROWDED_RING_READABILITY_ROTATIONS = Object.freeze([55, -55, 60, -60, 65, -65, 70, -70, 105, -105, 110, -110].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_INWARD_BRIDGED_BRANCH_ROOT_ROTATIONS = Object.freeze([130, -130, 140, -140, 150, -150, 160, -160, 170, -170, 180].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_INWARD_BRIDGED_BRANCH_FOLD_ROTATIONS = Object.freeze([0, 40, -40, 60, -60, 90, -90, 110, -110, 130, -130, 140, -140].map(degrees => (degrees * Math.PI) / 180));
+const FINAL_INWARD_BRIDGED_BRANCH_TIP_ROTATIONS = Object.freeze([0, 20, -20, 30, -30, 40, -40, 50, -50, 60, -60].map(degrees => (degrees * Math.PI) / 180));
 const FINAL_FUSED_CLOSURE_NORMAL_OFFSET_FACTORS = Object.freeze([0, 1 / 12, 7 / 60, 2 / 15, 3 / 20, 1 / 6, 11 / 60, 1 / 5]);
 const FINAL_FUSED_CLOSURE_AXIAL_OFFSET_FACTORS = Object.freeze([0, 1 / 60, 1 / 30, 1 / 20, 1 / 15, 1 / 12]);
 const FINAL_TERMINAL_PAIRED_HALOGEN_CONTACT_ROTATIONS = Object.freeze([5, 6, 8, 10, 12, 15, 18, 20, 24, 30, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(offset => [offset, -offset]));
@@ -1299,6 +1302,72 @@ function maybeRetouchFinalCrowdedRingBranchRouting(layoutGraph, coords, placemen
     }
   }
   return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+}
+
+/**
+ * Folds a short acyclic branch outward from a crowded bridged-ring junction.
+ * Three coordinated hinges are required because rotating the complete branch
+ * outward alone can exchange the inward exit for a severe cage contact.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} placement - Placement result carrying bond validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object}} Retouch result.
+ */
+function maybeRetouchFinalInwardBridgedRingBranch(layoutGraph, coords, placement, bondLength) {
+  const baseAudit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses: placement.bondValidationClasses });
+  if (
+    baseAudit.ringSubstituentReadabilityFailureCount !== 1 ||
+    baseAudit.inwardRingSubstituentCount !== 1 ||
+    baseAudit.severeOverlapCount !== 0 ||
+    baseAudit.visibleHeavyBondCrossingFailureCount !== 0 ||
+    baseAudit.bondLengthFailureCount !== 0 ||
+    baseAudit.labelOverlapCount !== 0 ||
+    baseAudit.collapsedMacrocycleCount !== 0 ||
+    baseAudit.stereoContradiction ||
+    !layoutGraph.ringConnections.some(connection => connection.kind === 'bridged')
+  ) {
+    return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+  }
+
+  let bestCandidate = null;
+  for (const descriptor of finalCrowdedRingReadabilityHinges(layoutGraph, coords)) {
+    const hinges = finalCrowdedRingBranchHinges(layoutGraph, coords, descriptor.childAtomId, descriptor.anchorAtomId, 3);
+    if (!hinges) {
+      continue;
+    }
+    for (const rootRotation of FINAL_INWARD_BRIDGED_BRANCH_ROOT_ROTATIONS) {
+      const rootCoords = rotateFinalCrowdedRingBranch(coords, hinges[0], rootRotation);
+      for (const foldRotation of FINAL_INWARD_BRIDGED_BRANCH_FOLD_ROTATIONS) {
+        const foldCoords = rotateFinalCrowdedRingBranch(rootCoords, hinges[1], foldRotation);
+        for (const tipRotation of FINAL_INWARD_BRIDGED_BRANCH_TIP_ROTATIONS) {
+          const candidateCoords = rotateFinalCrowdedRingBranch(foldCoords, hinges[2], tipRotation);
+          const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses: placement.bondValidationClasses });
+          if (candidateAudit.ok !== true || candidateAudit.fallback?.mode != null) {
+            continue;
+          }
+          const rotationMagnitude = Math.abs(rootRotation) + Math.abs(foldRotation) + Math.abs(tipRotation);
+          if (
+            !bestCandidate ||
+            candidateAudit.visibleHeavyBondCrossingCount < bestCandidate.audit.visibleHeavyBondCrossingCount ||
+            (candidateAudit.visibleHeavyBondCrossingCount === bestCandidate.audit.visibleHeavyBondCrossingCount && rotationMagnitude < bestCandidate.rotationMagnitude)
+          ) {
+            bestCandidate = { coords: candidateCoords, audit: candidateAudit, hinges, rotationMagnitude };
+          }
+        }
+      }
+    }
+  }
+
+  if (!bestCandidate) {
+    return { changed: false, coords, movedAtomIds: [], audit: baseAudit };
+  }
+  return {
+    changed: true,
+    coords: bestCandidate.coords,
+    movedAtomIds: [...new Set(bestCandidate.hinges.flatMap(hinge => hinge.subtreeAtomIds))],
+    audit: bestCandidate.audit
+  };
 }
 
 /**
@@ -18018,6 +18087,27 @@ export function runPipeline(molecule, options = {}) {
               }
             );
           }
+        }
+      }
+      if (
+        (postAcylAudit.severeOverlapCount ?? 0) === 0 &&
+        (postAcylAudit.labelOverlapCount ?? 0) === 0 &&
+        (postAcylAudit.bondLengthFailureCount ?? 0) === 0 &&
+        (postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) === 1
+      ) {
+        const inwardBridgedRingBranchRetouch = maybeRetouchFinalInwardBridgedRingBranch(layoutGraph, finalCoords, placement, normalizedOptions.bondLength);
+        if (inwardBridgedRingBranchRetouch.changed) {
+          const currentAudit = postAcylAudit;
+          finalCoords = inwardBridgedRingBranchRetouch.coords;
+          finalCoordsModified = true;
+          postAcylAudit = inwardBridgedRingBranchRetouch.audit;
+          onStep?.('Final Inward Bridged Ring Branch Retouch', 'A short acyclic branch folded across consecutive hinges to leave a crowded bridged-ring junction without contacting the cage.', cloneCoords(finalCoords), {
+            movedAtomCount: inwardBridgedRingBranchRetouch.movedAtomIds.length,
+            ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
+            ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount,
+            visibleHeavyBondCrossingFailureCountBefore: currentAudit.visibleHeavyBondCrossingFailureCount,
+            visibleHeavyBondCrossingFailureCountAfter: postAcylAudit.visibleHeavyBondCrossingFailureCount
+          });
         }
       }
       if (

@@ -901,6 +901,22 @@ describe('layout/engine/families/bridged', () => {
     );
   });
 
+  it('folds a hydrazide branch outside a crowded bridged-ring junction', () => {
+    const smiles = 'CC(C)[C@@]1(O)[C@@H](OC(=O)c2ccc[nH]2)[C@]3(O)O[C@]4(NNC(=O)N)[C@@]1(C)[C@]5(O)C[C@@]3(C)[C@@]6(O)CCC(=C)[C@@H](O)[C@]46O5';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.inwardRingSubstituentCount, 0);
+  });
+
   it('places larger bridged cages from their templates too', () => {
     const bicycloGraph = createLayoutGraph(makeBicyclo222());
     const bicycloResult = layoutBridgedFamily(bicycloGraph.rings, bicycloGraph.options.bondLength, { layoutGraph: bicycloGraph, templateId: 'bicyclo-2-2-2' });
