@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-02
+
+- Repair paired stretched closures in larger bridged polycycles.
+
 ## 2026-09-01
 
 - Fold short acyclic branches outward from crowded bridged-ring junctions without contacting the cage.

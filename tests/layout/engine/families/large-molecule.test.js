@@ -214,4 +214,23 @@ describe('layout/engine/families/large-molecule', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
   });
+
+  it('repairs paired stretched closures in a large polyunsaturated polycycle', () => {
+    const result = generateCoords(
+      parseSMILES(
+        'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O[C@@H](C(=O)O[C@H]1C[C@@]2(O)[C@@H](OC(=O)C3=CC=CC=C3)[C@@]3([H])[C@@](C)([C@@H](O)C[C@@]4([H])OC[C@@]34OC(=O)C)C(=O)[C@H](OC(=O)C)C(=C1C)C2(C)C)[C@@H](NC(=O)C1=CC=CC=C1)C1=CC=CC=C1'
+      ),
+      {
+        suppressH: true,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
 });
