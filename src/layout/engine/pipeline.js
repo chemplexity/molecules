@@ -371,7 +371,8 @@ const FINAL_LARGE_MOLECULE_ANGLE_RELIEF_UNBOUNDED_MAX_HEAVY_ATOMS = 120;
 const FINAL_PEPTIDE_BRANCH_ROUTING_MAX_PASSES = 4;
 const FINAL_ULTRA_LARGE_PEPTIDE_BRANCH_ROUTING_MAX_PASSES = 12;
 const FINAL_PEPTIDE_BRANCH_ROUTING_MIN_AMIDE_COUNT = 4;
-const FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS = 100;
+const FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS = 120;
+const FINAL_ULTRA_LARGE_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS = 100;
 const FINAL_PEPTIDE_BRANCH_ROUTING_ROTATIONS = Object.freeze([2, 3, 5, 8, 10, 15, 20, 30, 45].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_PEPTIDE_PAIRED_CROSSING_MAX_PROBES = 20_000;
 const FINAL_PEPTIDE_PAIRED_CROSSING_MAX_CLUSTER_PROBES = 2_000;
@@ -7068,6 +7069,8 @@ function finalPeptideRoutingFocusBondIds(layoutGraph, audit) {
 
 function finalPeptideRoutingDescriptors(layoutGraph, coords, placement, focusBondIds) {
   const descriptors = [];
+  const maxSubtreeHeavyAtoms =
+    layoutGraph.traits.heavyAtomCount >= 400 ? FINAL_ULTRA_LARGE_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS : FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS;
   for (const bondId of focusBondIds) {
     const bond = layoutGraph.bonds.get(bondId);
     if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
@@ -7079,7 +7082,7 @@ function finalPeptideRoutingDescriptors(layoutGraph, coords, placement, focusBon
     ]) {
       const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
       const movedHeavyAtomCount = subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
-      if (movedHeavyAtomCount < 2 || movedHeavyAtomCount > FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS || subtreeAtomIds.some(atomId => placement.frozenAtomIds?.has(atomId))) {
+      if (movedHeavyAtomCount < 2 || movedHeavyAtomCount > maxSubtreeHeavyAtoms || subtreeAtomIds.some(atomId => placement.frozenAtomIds?.has(atomId))) {
         continue;
       }
       descriptors.push({

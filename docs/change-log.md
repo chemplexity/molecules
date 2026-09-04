@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-03
+
+- Coordinate larger peptide subtrees to clear isolated backbone crossings.
+
 ## 2026-09-02
 
 - Repair paired stretched closures in larger bridged polycycles.

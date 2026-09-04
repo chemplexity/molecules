@@ -233,4 +233,23 @@ describe('layout/engine/families/large-molecule', () => {
     assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
+
+  it('coordinates peptide-bond rotations to clear an isolated backbone crossing', () => {
+    const result = generateCoords(
+      parseSMILES(
+        'CC[C@H](C)[C@H](NC(=O)[C@@H](N)CO)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](Cc1ccccc1)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](Cc2ccccc2)C(=O)N[C@@H]([C@@H](C)O)C(=O)N[C@@H](Cc3ccc(O)cc3)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](Cc4cnc[nH]4)C(=O)N[C@@H]([C@@H](C)CC)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](Cc5cnc[nH]5)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(C)C)C(=O)NCC(=O)N[C@@H](CCCNC(=N)N)C(=O)O'
+      ),
+      {
+        suppressH: true,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
 });
