@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-04
+
+- Reproject fused-spiro cages and clear crossing exterior oxygen branches.
+
 ## 2026-09-03
 
 - Coordinate larger peptide subtrees to clear isolated backbone crossings.

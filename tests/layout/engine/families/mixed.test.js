@@ -4158,6 +4158,23 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
+  it('keeps a glycoside-attached fused steroid core and its exterior oxygen branches clear', () => {
+    const smiles =
+      '[Na+].CO[C@H]1[C@H](O)[C@@H](CO)O[C@@H](O[C@H]2[C@H](O)[C@@H](CO)O[C@@H](O[C@@H]3[C@@H](C)O[C@@H](O[C@@H]4[C@@H](O)[C@@H](CO[C@H]4O[C@H]5CC[C@@]6(C)[C@@H](CC[C@@H]7C6=C[C@H](O)[C@@]89[C@H](CC[C@@]78C)[C@@](C)(OC9=O)C(=O)CCC(C)C)C5(C)C)OS(=O)(=O)[O-])[C@H](O)[C@H]3O)[C@@H]2O)[C@@H]1O';
+    const result = generateCoords(parseSMILES(smiles), {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {
     const graph = createLayoutGraph(makeMacrocycleWithSubstituent());
     const component = graph.components[0];

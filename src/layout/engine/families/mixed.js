@@ -6175,6 +6175,19 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
         bestPlacement = hybridRescuePlacement;
         bestAudit = hybridRescueAudit;
       }
+
+      const fusedCageRescuePlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutFusedCageKamadaKawai(rings, bondLength, { layoutGraph, templateId }),
+        templateId
+      );
+      const fusedCageRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, fusedCageRescuePlacement, bondLength);
+      if (isBetterRingSystemPlacement(fusedCageRescuePlacement, bestPlacement, fusedCageRescueAudit, bestAudit, true)) {
+        bestPlacement = fusedCageRescuePlacement;
+        bestAudit = fusedCageRescueAudit;
+      }
     }
 
     if (shouldTryCompactBridgedRingSystemRescue(ringSystem, templateId, bestAudit)) {

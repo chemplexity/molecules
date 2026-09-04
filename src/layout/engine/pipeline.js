@@ -14482,7 +14482,6 @@ function maybeRepositionCrossingTerminalMultipleBondLeaves(layoutGraph, finalCoo
 
       const centerPosition = coords.get(endpoint.centerAtomId);
       const leafPosition = coords.get(endpoint.leafAtomId);
-      const baseAngleDeviation = terminalMultipleBondLeafAngleDeviation(coords, endpoint.centerAtomId, endpoint.leafAtomId, neighborAtomIds);
       for (const candidateAngle of terminalMultipleBondLeafCandidateAngles(coords, endpoint.centerAtomId, neighborAtomIds)) {
         const candidateCoords = cloneCoords(coords);
         candidateCoords.set(endpoint.leafAtomId, {
@@ -14497,9 +14496,6 @@ function maybeRepositionCrossingTerminalMultipleBondLeaves(layoutGraph, finalCoo
           continue;
         }
         const angleDeviation = terminalMultipleBondLeafAngleDeviation(candidateCoords, endpoint.centerAtomId, endpoint.leafAtomId, neighborAtomIds);
-        if (angleDeviation > baseAngleDeviation + PRESENTATION_METRIC_EPSILON) {
-          continue;
-        }
         const movement = Math.hypot(candidateCoords.get(endpoint.leafAtomId).x - leafPosition.x, candidateCoords.get(endpoint.leafAtomId).y - leafPosition.y);
         const candidate = {
           audit: candidateAudit,
