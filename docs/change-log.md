@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-07
+
+- Keep attached-ring clearance adjustments within bond-length limits.
+
 ## 2026-09-04
 
 - Reproject fused-spiro cages and clear crossing exterior oxygen branches.

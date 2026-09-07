@@ -17,7 +17,7 @@ import {
 import { auditLayout } from '../../audit/audit.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { pointInPolygon } from '../../geometry/polygon.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import {
   findLayoutBond,
   isExactRingOutwardEligibleSubstituent,
@@ -36,7 +36,7 @@ import { rigidDescriptorKey, rotateRigidDescriptorPositions } from '../rigid-rot
 import { collectCutSubtree } from '../subtree-utils.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
 import { reflectAcrossLine } from '../../geometry/transforms.js';
-import { SEVERE_OVERLAP_FACTOR } from '../../constants.js';
+import { AUDIT_PLANAR_VALIDATION, SEVERE_OVERLAP_FACTOR } from '../../constants.js';
 
 const ATTACHED_RING_ROTATION_TIDY_ANGLES = [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI];
 const ATTACHED_RING_FINE_ROTATION_ANGLES = [Math.PI / 12, -(Math.PI / 12), Math.PI / 4, -(Math.PI / 4)];
@@ -702,14 +702,29 @@ function applyRigidRotationToCoords(coords, subtreeAtomIds, pivotAtomId, rotatio
   return rotatedCoords;
 }
 
-function stretchAttachedRingRootClearance(coords, descriptor, rotation, stretch) {
+/**
+ * Rotates an attached ring and extends its root bond within planar length limits.
+ * The remaining length budget prevents repeated passes from accumulating stretch.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} descriptor - Attached ring and movable subtree.
+ * @param {number} rotation - Candidate rotation in radians.
+ * @param {number} stretch - Requested extension.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Moved positions, or null without length budget.
+ */
+function stretchAttachedRingRootClearance(coords, descriptor, rotation, stretch, bondLength) {
   const rotatedCoords = applyRigidRotationToCoords(coords, descriptor.subtreeAtomIds, descriptor.anchorAtomId, rotation);
   const anchorPosition = coords.get(descriptor.anchorAtomId);
   const rootPosition = rotatedCoords.get(descriptor.rootAtomId);
   if (!anchorPosition || !rootPosition || !(stretch > 0)) {
     return null;
   }
-  const clearanceOffset = fromAngle(angleOf(sub(rootPosition, anchorPosition)), stretch);
+  const remainingStretch = bondLength * AUDIT_PLANAR_VALIDATION.maxBondLengthFactor - distance(rootPosition, anchorPosition);
+  const boundedStretch = Math.min(stretch, remainingStretch);
+  if (boundedStretch <= 1e-9) {
+    return null;
+  }
+  const clearanceOffset = fromAngle(angleOf(sub(rootPosition, anchorPosition)), boundedStretch);
   const overridePositions = new Map();
   for (const atomId of descriptor.subtreeAtomIds) {
     const position = rotatedCoords.get(atomId);
@@ -4806,7 +4821,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
             return overridePositions;
           }
           if (seed.kind === 'root-clearance-stretch') {
-            return stretchAttachedRingRootClearance(inputCoords, inputDescriptor, seed.rotation, seed.stretch);
+            return stretchAttachedRingRootClearance(inputCoords, inputDescriptor, seed.rotation, seed.stretch, bondLength);
           }
           if (seed.kind !== 'composite') {
             return null;

@@ -4175,6 +4175,21 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.metadata.audit.fallback.mode, null);
   });
 
+  it('clears crowded triaryl alcohol branches within bond-length limits at different scales', () => {
+    const smiles = 'ONC(=O)CCCCCCNC(=O)c1ccc(cc1)C(O)(c2ccc(F)cc2F)c3ccc(F)cc3F';
+    for (const bondLength of [0.75, 1.5, 3]) {
+      const result = generateCoords(parseSMILES(smiles), { suppressH: true, bondLength, auditTelemetry: true });
+      for (const audit of [result.metadata.placementAudit, result.metadata.audit]) {
+        assert.equal(audit.ok, true, `expected clean geometry at bond length ${bondLength}`);
+        assert.equal(audit.bondLengthFailureCount, 0);
+        assert.equal(audit.severeOverlapCount, 0);
+        assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+        assert.ok(audit.maxBondLengthDeviation <= bondLength * 0.05 + 1e-9);
+        assert.equal(audit.fallback.mode, null);
+      }
+    }
+  });
+
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {
     const graph = createLayoutGraph(makeMacrocycleWithSubstituent());
     const component = graph.components[0];
