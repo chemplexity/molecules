@@ -537,6 +537,30 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(audit.maxBondLengthDeviation < 0.35);
   });
 
+  it('keeps fused-spiro ring geometry clean despite a predicted branch-slot blocker', () => {
+    const smiles = 'COC(C)C1=NC2=C(C(CC(C)(C)C2)O[Si](C)(C)C(C)(C)C)C2=C1C(OC21CCOCC1)C1=CC=C(C=C1)C(F)(F)F';
+    const result = generateCoords(parseSMILES(smiles), { suppressH: true, bondLength: 1.5, auditTelemetry: true });
+
+    for (const audit of [result.metadata.placementAudit, result.metadata.audit]) {
+      assert.equal(audit.ok, true);
+      assert.equal(audit.severeOverlapCount, 0);
+      assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+      assert.equal(audit.bondLengthFailureCount, 0);
+      assert.ok(audit.maxBondLengthDeviation < 1e-6);
+      assert.equal(audit.fallback.mode, null);
+    }
+  });
+
+  it('preserves valid bridged cage projections when no clean planar scaffold is available', () => {
+    const result = generateCoords(parseSMILES('CC12C3C4C1C5C2C3C45'), { suppressH: true });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   stressIt('rescues fused-plus-spiro bridged hybrids by laying out fused blocks before spiro attachment', () => {
     const graph = createLayoutGraph(parseSMILES('COC(=O)c1cc2c([nH]1)C(=O)C=C3N(C[C@H]4C[C@@]234)C(=O)c5cc6c([nH]5)C(=O)C=C7N(C[C@H]8C[C@@]678)C(=O)OC(C)(C)C'), { suppressH: true });
     const component = graph.components[0];

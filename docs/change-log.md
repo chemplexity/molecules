@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-08
+
+- Prefer clean ring scaffolds over predicted branch clearance to prevent crossed, stretched rings.
+
 ## 2026-09-07
 
 - Keep attached-ring clearance adjustments within bond-length limits.

@@ -5835,6 +5835,17 @@ function isBetterBridgedSmallRingGeometryRegularization(rings, candidatePlacemen
   return bridgedSmallRingGeometryScoreImproves(candidateScore, incumbentScore);
 }
 
+/**
+ * Compares ring scaffold candidates before their external branches are placed.
+ * A clean scaffold outranks predicted branch-slot clearance, which must not
+ * trade valid ring geometry for a crossed or stretched core.
+ * @param {object|null} candidatePlacement - Candidate scaffold placement.
+ * @param {object|null} incumbentPlacement - Current scaffold placement.
+ * @param {object|null} candidateAudit - Candidate geometry and branch-slot audit.
+ * @param {object|null} incumbentAudit - Current geometry and branch-slot audit.
+ * @param {boolean} [bondFirst] - Prioritize bond lengths among dirty candidates.
+ * @returns {boolean} Whether the candidate should replace the incumbent.
+ */
 function isBetterRingSystemPlacement(candidatePlacement, incumbentPlacement, candidateAudit, incumbentAudit, bondFirst = false) {
   if (!candidatePlacement || !candidateAudit) {
     return false;
@@ -5844,6 +5855,11 @@ function isBetterRingSystemPlacement(candidatePlacement, incumbentPlacement, can
   }
   if (introducesSevereRingSystemOverlap(candidateAudit, incumbentAudit)) {
     return false;
+  }
+  const candidateIsClean = candidateAudit.ok === true && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) === 0;
+  const incumbentIsClean = incumbentAudit.ok === true && (incumbentAudit.visibleHeavyBondCrossingCount ?? 0) === 0;
+  if (candidateIsClean !== incumbentIsClean) {
+    return candidateIsClean;
   }
   if ((candidateAudit.ringBranchSlotBlockerCount ?? 0) > (incumbentAudit.ringBranchSlotBlockerCount ?? 0)) {
     return false;
