@@ -126,6 +126,30 @@ describe('layout/engine/api', () => {
     assert.equal(result.metadata.stage, 'coordinates-ready');
   });
 
+  it('refineCoords honors explicit anchors over old coordinates during partial relayout', () => {
+    for (const touchedHints of [{ touchedAtoms: new Set(['a1']) }, { touchedBonds: new Set(['b0']) }]) {
+      const existingCoords = new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['a1', { x: 1.5, y: 0 }],
+        ['c0', { x: 30, y: 3 }],
+        ['c1', { x: 31.5, y: 3 }]
+      ]);
+      const target = { x: 10, y: 10 };
+      const fixedCoords = new Map([['a0', target]]);
+      const result = refineCoords(makeDisconnectedEthanes(), { existingCoords, fixedCoords, ...touchedHints });
+
+      assert.deepEqual(result.coords.get('a0'), target);
+      const neighbor = result.coords.get('a1');
+      assert.ok(Math.abs(Math.hypot(neighbor.x - target.x, neighbor.y - target.y) - 1.5) < 1e-9);
+      assert.deepEqual(result.coords.get('c0'), existingCoords.get('c0'));
+      assert.deepEqual(result.coords.get('c1'), existingCoords.get('c1'));
+      assert.equal(result.metadata.preservedComponentCount, 1);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.deepEqual(existingCoords.get('a0'), { x: 0, y: 0 });
+      assert.deepEqual(fixedCoords.get('a0'), target);
+    }
+  });
+
   it('refineCoords preserves untouched disconnected components from existing coordinates', () => {
     const result = refineCoords(makeDisconnectedEthanes(), {
       existingCoords: new Map([

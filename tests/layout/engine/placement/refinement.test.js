@@ -80,4 +80,21 @@ describe('layout/engine/placement/refinement', () => {
       [['a0', { x: 0, y: 0 }]]
     );
   });
+
+  it('keeps explicit anchors ahead of existing positions while retaining other implicit anchors', () => {
+    const graph = createLayoutGraph(makeDisconnectedEthanes(), {
+      fixedCoords: new Map([['a0', { x: 10, y: 10 }]]),
+      existingCoords: new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['a1', { x: 1.5, y: 0 }]
+      ])
+    });
+    const component = graph.components.find(candidate => candidate.atomIds.includes('a0'));
+    const fixedCoords = buildComponentFixedCoords(graph, component, buildRefinementContext(graph));
+
+    assert.deepEqual(fixedCoords.get('a0'), { x: 10, y: 10 });
+    assert.deepEqual(fixedCoords.get('a1'), { x: 1.5, y: 0 });
+    assert.deepEqual(graph.options.existingCoords.get('a0'), { x: 0, y: 0 });
+    assert.equal(graph.fixedCoords.size, 1);
+  });
 });

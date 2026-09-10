@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-09
+
+- Honor explicit fixed positions over old coordinates during partial relayout.
+
 ## 2026-09-08
 
 - Prefer clean ring scaffolds over predicted branch clearance to prevent crossed, stretched rings.

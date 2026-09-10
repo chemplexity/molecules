@@ -111,7 +111,8 @@ export function preserveComponentPlacement(layoutGraph, component) {
  * Builds the fixed-coordinate map that should anchor a component relayout.
  * During refinement, untouched atoms with existing coordinates become local
  * anchors for the relaid component. Without touched hints, all existing
- * participant coordinates act as a stronger preservation bias.
+ * participant coordinates act as a stronger preservation bias. Explicit fixed
+ * coordinates always take precedence over these inferred existing anchors.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{atomIds: string[]}} component - Component descriptor.
  * @param {{enabled: boolean, hasTouchedHints: boolean, touchedAtomIds: Set<string>}} refinementContext - Refinement context.
@@ -124,6 +125,9 @@ export function buildComponentFixedCoords(layoutGraph, component, refinementCont
   }
 
   for (const atomId of componentParticipantAtomIds(layoutGraph, component)) {
+    if (fixedCoords.has(atomId)) {
+      continue;
+    }
     if (!layoutGraph.options.existingCoords.has(atomId)) {
       continue;
     }
