@@ -7,6 +7,23 @@ function componentParticipantAtomIds(layoutGraph, component) {
 }
 
 /**
+ * Checks whether an explicit anchor requests a change to existing geometry.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{atomIds: string[]}} component - Component to inspect.
+ * @returns {boolean} Whether preserving this component would ignore an anchor.
+ */
+function hasConflictingExistingAnchor(layoutGraph, component) {
+  if (layoutGraph.options.preserveFixed === false) {
+    return false;
+  }
+  return componentParticipantAtomIds(layoutGraph, component).some(atomId => {
+    const fixed = layoutGraph.fixedCoords.get(atomId);
+    const existing = layoutGraph.options.existingCoords.get(atomId);
+    return fixed && existing && (fixed.x !== existing.x || fixed.y !== existing.y);
+  });
+}
+
+/**
  * Returns whether the component contains any ring atom.
  * Cleanup-only refinement is more conservative for ring scaffolds because
  * rerouting a fully placed ring system can degrade an otherwise good layout.
@@ -63,7 +80,8 @@ export function buildRefinementContext(layoutGraph) {
  * This applies both to untouched components during partial relayout and to
  * cleanup-only refinement runs where every participant atom already has an
  * existing coordinate and the component is ring-bearing enough that a full
- * relayout is riskier than preserving the current geometry.
+ * relayout is riskier than preserving the current geometry. A conflicting
+ * explicit anchor always disqualifies verbatim preservation.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{atomIds: string[]}} component - Component descriptor.
  * @param {{enabled: boolean, hasTouchedHints: boolean, touchedAtomIds: Set<string>}} refinementContext - Refinement context.
@@ -71,6 +89,9 @@ export function buildRefinementContext(layoutGraph) {
  */
 export function canPreserveComponentPlacement(layoutGraph, component, refinementContext) {
   if (!refinementContext.enabled) {
+    return false;
+  }
+  if (hasConflictingExistingAnchor(layoutGraph, component)) {
     return false;
   }
   const participantAtomIds = componentParticipantAtomIds(layoutGraph, component);
@@ -113,6 +134,8 @@ export function preserveComponentPlacement(layoutGraph, component) {
  * anchors for the relaid component. Without touched hints, all existing
  * participant coordinates act as a stronger preservation bias. Explicit fixed
  * coordinates always take precedence over these inferred existing anchors.
+ * When a new anchor is the only edit to a component, release its old implicit
+ * anchors so the component can move without being pinned to its previous frame.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{atomIds: string[]}} component - Component descriptor.
  * @param {{enabled: boolean, hasTouchedHints: boolean, touchedAtomIds: Set<string>}} refinementContext - Refinement context.
@@ -121,6 +144,10 @@ export function preserveComponentPlacement(layoutGraph, component) {
 export function buildComponentFixedCoords(layoutGraph, component, refinementContext) {
   const fixedCoords = new Map(layoutGraph.fixedCoords);
   if (!refinementContext.enabled) {
+    return fixedCoords;
+  }
+
+  if (hasConflictingExistingAnchor(layoutGraph, component) && !componentParticipantAtomIds(layoutGraph, component).some(atomId => refinementContext.touchedAtomIds.has(atomId))) {
     return fixedCoords;
   }
 

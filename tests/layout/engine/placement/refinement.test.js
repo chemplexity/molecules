@@ -84,6 +84,7 @@ describe('layout/engine/placement/refinement', () => {
   it('keeps explicit anchors ahead of existing positions while retaining other implicit anchors', () => {
     const graph = createLayoutGraph(makeDisconnectedEthanes(), {
       fixedCoords: new Map([['a0', { x: 10, y: 10 }]]),
+      touchedAtoms: new Set(['a0']),
       existingCoords: new Map([
         ['a0', { x: 0, y: 0 }],
         ['a1', { x: 1.5, y: 0 }]

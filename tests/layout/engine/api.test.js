@@ -150,6 +150,46 @@ describe('layout/engine/api', () => {
     }
   });
 
+  it('refineCoords repositions a preserved ring when its explicit anchor changes', () => {
+    const molecule = parseSMILES('C1CCCCC1.CC');
+    const seed = generateCoords(molecule, { suppressH: true });
+    const before = new Map([...seed.coords].map(([id, position]) => [id, { ...position }]));
+    const target = { x: 10, y: 10 };
+    for (const hints of [{}, { touchedAtoms: new Set(['C8']) }]) {
+      const result = refineCoords(molecule, {
+        suppressH: true,
+        existingCoords: seed.coords,
+        fixedCoords: new Map([['C1', target]]),
+        ...hints
+      });
+
+      assert.deepEqual(result.coords.get('C1'), target);
+      for (let i = 1; i <= 6; i++) {
+        const first = result.coords.get(`C${i}`);
+        const second = result.coords.get(`C${i === 6 ? 1 : i + 1}`);
+        assert.ok(Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - 1.5) < 1e-9);
+      }
+      assert.equal(result.metadata.preservedComponentCount, 0);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.deepEqual(seed.coords, before);
+    }
+  });
+
+  it('refineCoords still preserves rings with compatible or disabled explicit anchors', () => {
+    const molecule = parseSMILES('C1CCCCC1');
+    const seed = generateCoords(molecule, { suppressH: true });
+    for (const options of [
+      { fixedCoords: new Map([['C1', seed.coords.get('C1')]]) },
+      { fixedCoords: new Map([['C1', { x: 10, y: 10 }]]), preserveFixed: false }
+    ]) {
+      const result = refineCoords(molecule, { suppressH: true, existingCoords: seed.coords, ...options });
+      assert.equal(result.metadata.preservedComponentCount, 1);
+      for (let i = 1; i <= 6; i++) {
+        assert.deepEqual(result.coords.get(`C${i}`), seed.coords.get(`C${i}`));
+      }
+    }
+  });
+
   it('refineCoords preserves untouched disconnected components from existing coordinates', () => {
     const result = refineCoords(makeDisconnectedEthanes(), {
       existingCoords: new Map([

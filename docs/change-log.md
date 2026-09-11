@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-09-10
+
+- Honor changed fixed anchors when refining previously preserved components.
+- Remove the option-dependent ethane regression from the molecule catalog.
+
 ## 2026-09-09
 
 - Honor explicit fixed positions over old coordinates during partial relayout.
