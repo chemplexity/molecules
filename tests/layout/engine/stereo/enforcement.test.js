@@ -79,6 +79,64 @@ function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighb
 }
 
 describe('layout/engine/stereo/enforcement', () => {
+  it('keeps an untouched component frozen through pipeline stereo rescue', () => {
+    const existingCoords = coordsFor('F/C=C\\F.CC');
+    const original = structuredClone(existingCoords);
+    const molecule = parseSMILES('F/C=C/F.CC');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      existingCoords,
+      touchedAtoms: new Set(['C5'])
+    });
+    for (const id of ['F1', 'C2', 'C3', 'F4', 'H7', 'H8']) {
+      assert.deepEqual(result.coords.get(id), original.get(id));
+    }
+    assert.equal(result.metadata.audit.stereoContradiction, true);
+    assert.equal(inspectEZStereo(createLayoutGraph(molecule, { suppressH: true }), result.coords).violationCount, 1);
+    assert.deepEqual(existingCoords, original);
+  });
+
+  for (const protectedIds of [['F1'], ['F4'], ['C2', 'C3'], ['F1', 'C2', 'C3', 'F4']]) {
+    for (const constraint of ['fixed', 'frozen', 'disabled']) {
+      it(`respects ${constraint} stereo constraints on ${protectedIds.join(', ')}`, () => {
+        const input = new Map([
+          ['F1', { x: -0.75, y: Math.sqrt(3) * 0.75 }],
+          ['C2', { x: 0, y: 0 }],
+          ['C3', { x: 1.5, y: 0 }],
+          ['F4', { x: 2.25, y: Math.sqrt(3) * 0.75 }]
+        ]);
+        const original = structuredClone(input);
+        const fixedCoords = new Map(protectedIds.map(id => [id, input.get(id)]));
+        const graph = createLayoutGraph(parseSMILES('F/C=C/F'), {
+          suppressH: true,
+          fixedCoords: constraint === 'frozen' ? new Map() : fixedCoords,
+          preserveFixed: constraint !== 'disabled'
+        });
+        assert.equal(inspectEZStereo(graph, input).violationCount, 1);
+        const result = enforceAcyclicEZStereo(graph, input, {
+          frozenAtomIds: constraint === 'frozen' ? new Set(protectedIds) : undefined
+        });
+        const blocked = constraint !== 'disabled' && protectedIds.length === 4;
+        assert.equal(inspectEZStereo(graph, result.coords).violationCount, blocked ? 1 : 0);
+        assert.equal(result.reflections, blocked ? 0 : 1);
+        if (constraint !== 'disabled') {
+          for (const id of protectedIds) {
+            assert.deepEqual(result.coords.get(id), original.get(id));
+          }
+        }
+        for (const bond of graph.bonds.values()) {
+          const a = result.coords.get(bond.a);
+          const b = result.coords.get(bond.b);
+          if (!a || !b) {
+            continue;
+          }
+          assert.ok(Math.abs(Math.hypot(a.x - b.x, a.y - b.y) - 1.5) < 1e-9);
+        }
+        assert.deepEqual(input, original);
+      });
+    }
+  }
+
   it('reflects one side of a medium-ring alkene to enforce trans geometry', () => {
     const graph = graphFor('C1CCC/C=C/CCC1');
     const wrongCoords = coordsFor('C1CCC/C=C\\CCC1');

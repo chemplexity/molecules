@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-11
+
+- Preserve fixed and frozen atom positions during E/Z stereo correction.
+
 ## 2026-09-10
 
 - Honor changed fixed anchors when refining previously preserved components.

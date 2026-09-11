@@ -358,7 +358,25 @@ function buildTerminalBranchReliefCandidates(layoutGraph, coords, movedAtomIds, 
   return candidates;
 }
 
-function buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds) {
+/**
+ * Scores a stereo candidate only if it preserves every protected position.
+ * Tiny rotation roundoff is restored exactly before scoring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates.
+ * @param {object[]} stereoBonds - Supported annotated bonds.
+ * @param {number} bondLength - Target bond length.
+ * @param {Set<string>} movedAtomIds - Atoms affected by the candidate.
+ * @param {Map<string, {x: number, y: number}>} protectedCoords - Input positions that must not move.
+ * @returns {object|null} Scored candidate, or null when a constraint would move.
+ */
+function buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds, protectedCoords) {
+  for (const [atomId, position] of protectedCoords) {
+    const candidate = candidateCoords.get(atomId);
+    if (!candidate || Math.hypot(candidate.x - position.x, candidate.y - position.y) > bondLength * 1e-9) {
+      return null;
+    }
+    candidateCoords.set(atomId, { ...position });
+  }
   const severeOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
   const severeOverlapThreshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const divalentContinuation = measureDivalentContinuationDistortion(layoutGraph, candidateCoords);
@@ -416,7 +434,20 @@ function isBetterStereoCandidate(candidate, incumbent) {
   );
 }
 
-function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIdSet) {
+/**
+ * Finds the best constraint-safe trigonal branch rotation, including local relief.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} bond - Annotated alkene bond.
+ * @param {object[]} stereoBonds - Supported annotated bonds.
+ * @param {number} bondLength - Target bond length.
+ * @param {string} centerAtomId - Vinylic atom whose branches can rotate.
+ * @param {string} otherAtomId - Other vinylic atom.
+ * @param {Set<string>} ringAtomIdSet - Layout ring atom IDs.
+ * @param {Map<string, {x: number, y: number}>} protectedCoords - Input positions that must not move.
+ * @returns {object|null} Best allowed candidate, or null when none is available.
+ */
+function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIdSet, protectedCoords) {
   if (ringAtomIdSet.has(centerAtomId)) {
     return null;
   }
@@ -497,9 +528,9 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
     return null;
   }
 
-  let bestCandidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds);
+  let bestCandidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds, protectedCoords);
   for (const reliefCandidate of buildTerminalBranchReliefCandidates(layoutGraph, candidateCoords, movedAtomIds, bondLength, bond, targetStereo)) {
-    const candidate = buildStereoCandidate(layoutGraph, reliefCandidate.coords, stereoBonds, bondLength, reliefCandidate.movedAtomIds);
+    const candidate = buildStereoCandidate(layoutGraph, reliefCandidate.coords, stereoBonds, bondLength, reliefCandidate.movedAtomIds, protectedCoords);
     if (isBetterStereoCandidate(candidate, bestCandidate)) {
       bestCandidate = candidate;
     }
@@ -524,9 +555,10 @@ const PRIORITY_SUBSTITUENT_SWEEP_OFFSETS = Object.freeze(
  * @param {string} centerAtomId - Vinylic atom whose priority substituent can move.
  * @param {string} otherAtomId - Other vinylic atom.
  * @param {Set<string>} ringAtomIdSet - Layout ring atom ids.
+ * @param {Map<string, {x: number, y: number}>} protectedCoords - Input positions that must not move.
  * @returns {object[]} Stereo candidates.
  */
-function buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIdSet) {
+function buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIdSet, protectedCoords) {
   if (ringAtomIdSet.has(centerAtomId)) {
     return [];
   }
@@ -574,7 +606,10 @@ function buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, ster
     if (actualAlkeneStereo(layoutGraph, candidateCoords, bond) !== targetStereo) {
       continue;
     }
-    candidates.push(buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, sideAtomIds));
+    const candidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, sideAtomIds, protectedCoords);
+    if (candidate) {
+      candidates.push(candidate);
+    }
   }
   return candidates;
 }
@@ -599,11 +634,14 @@ function countMatchedStereo(layoutGraph, coords, stereoBonds) {
  * trigonal centers before falling back to whole-side reflection. Candidates
  * are ranked by total matched alkene-stereo count, collisions, visible bond
  * crossings, local divalent-bend preservation, layout cost, heavy-atom span,
- * then moved heavy-atom count.
+ * then moved heavy-atom count. Fixed and frozen atoms retain their input
+ * positions, including before the placement owner aligns to absolute anchors.
+ * An impossible constrained correction remains visible to the stereo audit.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
  * @param {object} [options] - Enforcement options.
  * @param {number} [options.bondLength] - Target bond length.
+ * @param {Set<string>} [options.frozenAtomIds] - Additional atoms that must not move.
  * @returns {{coords: Map<string, {x: number, y: number}>, reflections: number}} Updated coordinates and reflection count.
  */
 export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
@@ -632,6 +670,13 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
   }
 
   let coords = cloneCoords(inputCoords);
+  const protectedAtomIds = new Set(options.frozenAtomIds ?? []);
+  if (layoutGraph.options.preserveFixed !== false) {
+    for (const atomId of layoutGraph.fixedCoords.keys()) {
+      protectedAtomIds.add(atomId);
+    }
+  }
+  const protectedCoords = new Map([...protectedAtomIds].filter(atomId => inputCoords.has(atomId)).map(atomId => [atomId, inputCoords.get(atomId)]));
   const ringAtomIdSet = buildRingAtomIdSet(layoutGraph);
   let reflections = 0;
 
@@ -645,8 +690,8 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         continue;
       }
 
-      let bestCandidate = buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, bond.a, bond.b, ringAtomIdSet);
-      const secondCenterLocalCandidate = buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, bond.b, bond.a, ringAtomIdSet);
+      let bestCandidate = buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, bond.a, bond.b, ringAtomIdSet, protectedCoords);
+      const secondCenterLocalCandidate = buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, bond.b, bond.a, ringAtomIdSet, protectedCoords);
       if (isBetterStereoCandidate(secondCenterLocalCandidate, bestCandidate)) {
         bestCandidate = secondCenterLocalCandidate;
       }
@@ -668,7 +713,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
           continue;
         }
 
-        const candidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, sideAtomIds);
+        const candidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, sideAtomIds, protectedCoords);
 
         if (isBetterStereoCandidate(candidate, bestCandidate)) {
           bestCandidate = candidate;
@@ -677,8 +722,8 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
 
       if (!bestCandidate || bestCandidate.severeOverlapCount > 0) {
         for (const centerCandidate of [
-          ...buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, bond.a, bond.b, ringAtomIdSet),
-          ...buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, bond.b, bond.a, ringAtomIdSet)
+          ...buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, bond.a, bond.b, ringAtomIdSet, protectedCoords),
+          ...buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, bond.b, bond.a, ringAtomIdSet, protectedCoords)
         ]) {
           if (isBetterStereoCandidate(centerCandidate, bestCandidate)) {
             bestCandidate = centerCandidate;

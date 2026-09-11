@@ -748,7 +748,7 @@ export function buildCleanupStageGraph(context) {
         return incumbent?.audit?.stereoContradiction === true;
       },
       transformFn(parentCoords) {
-        const result = enforceAcyclicEZStereo(layoutGraph, parentCoords, { bondLength });
+        const result = enforceAcyclicEZStereo(layoutGraph, parentCoords, { bondLength, frozenAtomIds: placement.frozenAtomIds });
         // Skip audit entirely when EZ enforcement made no changes — coords are identical
         // to selectedGeometryCheckpoint so re-running auditFinalStereoStage would be redundant.
         return result.reflections > 0 ? result : null;
@@ -851,7 +851,8 @@ export function buildCleanupStageGraph(context) {
         const shouldRunStereoCleanup = presentationChanged || incumbent?.audit?.stereoContradiction === true;
         const stereoCleanup = shouldRunStereoCleanup
           ? enforceAcyclicEZStereo(layoutGraph, stereoInputCoords, {
-              bondLength
+              bondLength,
+              frozenAtomIds: placement.frozenAtomIds
             })
           : { coords: stereoInputCoords, reflections: 0 };
         const stereoInputScore = shouldRunStereoCleanup ? auditFinalStereoWithPresentationMetrics(stereoInputCoords) : null;
@@ -1313,7 +1314,7 @@ export function buildCleanupStageGraph(context) {
 
     if (stereoTouchupStageResult && hasStereoRescueOverlaps(runnerState.allStageResults, runnerState.bestStage)) {
       const stageStart = context.nowMs();
-      runSyntheticStereoStage('postTouchupStereo', 'stereoTouchup', stageStart, enforceAcyclicEZStereo(layoutGraph, stereoTouchupStageResult.coords, { bondLength }));
+      runSyntheticStereoStage('postTouchupStereo', 'stereoTouchup', stageStart, enforceAcyclicEZStereo(layoutGraph, stereoTouchupStageResult.coords, { bondLength, frozenAtomIds: placement.frozenAtomIds }));
     }
 
     return runnerState;

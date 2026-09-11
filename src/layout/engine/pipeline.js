@@ -2441,7 +2441,7 @@ function maybeApplyFinalStereoRescue(molecule, layoutGraph, coords, placement, b
     return { changed: false, coords, currentStereo, currentAudit, candidateStereo: null, candidateAudit: null, reflections: 0 };
   }
 
-  const rescued = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength });
+  const rescued = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength, frozenAtomIds: placement.frozenAtomIds });
   if ((rescued.reflections ?? 0) <= 0) {
     return { changed: false, coords, currentStereo, currentAudit, candidateStereo: null, candidateAudit: null, reflections: 0 };
   }
