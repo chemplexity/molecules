@@ -5129,6 +5129,9 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}
 
 /**
  * Measures bond-length deviation from the target depiction bond length.
+ * Class limits apply independently to compression and extension; deviation
+ * statistics remain absolute distances from the target. Severity uses the
+ * tolerance on the failing side of the interval.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
@@ -5153,7 +5156,7 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
     const deviation = isAcceptedBondLengthDeviation(layoutGraph, coords, bond, distance, bondLength) ? 0 : Math.abs(distance - bondLength);
     const validationSettings = validationSettingsForClass(bondValidationClasses.get(bond.id));
-    const allowedDeviation = bondLength * Math.max(Math.abs(1 - validationSettings.minBondLengthFactor), Math.abs(validationSettings.maxBondLengthFactor - 1));
+    const allowedDeviation = bondLength * (distance < bondLength ? 1 - validationSettings.minBondLengthFactor : validationSettings.maxBondLengthFactor - 1);
     sampleCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);

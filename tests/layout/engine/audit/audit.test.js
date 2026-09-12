@@ -4,12 +4,41 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { auditCandidateSafety, auditLayout } from '../../../../src/layout/engine/audit/audit.js';
-import { buildAtomGrid } from '../../../../src/layout/engine/audit/invariants.js';
+import { buildAtomGrid, measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
+import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, HAPTIC_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { add, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeEAlkene, makeEthane, makeMacrocycle } from '../support/molecules.js';
 
 describe('layout/engine/audit/audit', () => {
+  for (const [validationClass, limits] of [['planar', AUDIT_PLANAR_VALIDATION], ['bridged', BRIDGED_VALIDATION], ['haptic', HAPTIC_VALIDATION]]) {
+    for (const bondLength of [0.75, 1.5, 3]) {
+      it(`checks both ${validationClass} bond-length limits at scale ${bondLength}`, () => {
+        const graph = createLayoutGraph(makeEthane(), { bondLength });
+        const options = { bondLength, bondValidationClasses: new Map([['b0', validationClass]]) };
+        const min = bondLength * limits.minBondLengthFactor;
+        const max = bondLength * limits.maxBondLengthFactor;
+        for (const [distance, failures] of [[0, 1], [min - 1e-7, 1], [min, 0], [min + 1e-7, 0], [bondLength, 0], [max - 1e-7, 0], [max, 0], [max + 1e-7, 1]]) {
+          const coords = new Map([
+            ['a0', { x: 0, y: 0 }],
+            ['a1', { x: distance, y: 0 }]
+          ]);
+          const stats = measureBondLengthDeviation(graph, coords, bondLength, options);
+          assert.equal(stats.failingBondCount, failures, `distance ${distance}`);
+          assert.equal(stats.sampleCount, 1);
+          assert.equal(stats.mildFailingBondCount + stats.severeFailingBondCount, failures);
+          assert.ok(Math.abs(stats.maxDeviation - Math.abs(distance - bondLength)) < 1e-9);
+          assert.equal(stats.meanDeviation, stats.maxDeviation);
+          for (const auditFn of [auditLayout, auditCandidateSafety]) {
+            const audit = auditFn(graph, coords, options);
+            assert.equal(audit.bondLengthFailureCount, failures);
+            assert.equal(audit.ok, failures === 0);
+          }
+        }
+      });
+    }
+  }
+
   it('reports a clean simple layout as passing audit', () => {
     const graph = createLayoutGraph(makeEthane());
     const coords = new Map([

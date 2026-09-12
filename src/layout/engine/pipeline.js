@@ -266,8 +266,11 @@ const FINAL_SMALL_RING_SNAP_MAX_ANGLE_DEVIATION = (4 * Math.PI) / 180;
 const FINAL_HETERO_SPIRO_SMALL_RING_SNAP_MAX_ANGLE_DEVIATION = Math.PI / 4;
 const FINAL_SMALL_RING_SNAP_MIN_ANGLE_IMPROVEMENT = (0.25 * Math.PI) / 180;
 const FINAL_BOND_LENGTH_RELAXATION_MAX_HEAVY_ATOMS = 80;
+const FINAL_BOND_INTERVAL_RELAXATION_MAX_HEAVY_ATOMS = 128;
+const FINAL_BOND_INTERVAL_RELAXATION_PROFILE = Object.freeze({ iterations: 240, stiffness: 0.5, intervals: true, marginFactor: 0.005 });
 const FINAL_BOND_LENGTH_RELAXATION_MIN_DEVIATION_FACTOR = 0.2;
 const FINAL_BOND_LENGTH_RELAXATION_PROFILES = Object.freeze([
+  FINAL_BOND_INTERVAL_RELAXATION_PROFILE,
   Object.freeze({ iterations: 240, stiffness: 0.06 }),
   Object.freeze({ iterations: 480, stiffness: 0.08 }),
   Object.freeze({ iterations: 800, stiffness: 0.08 })
@@ -2659,7 +2662,7 @@ function finalBondLengthRelaxationIsEligible(layoutGraph, audit, bondLength) {
     return false;
   }
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
-  if (heavyAtomCount > FINAL_BOND_LENGTH_RELAXATION_MAX_HEAVY_ATOMS) {
+  if (heavyAtomCount > FINAL_BOND_INTERVAL_RELAXATION_MAX_HEAVY_ATOMS) {
     return false;
   }
   if (
@@ -2685,12 +2688,30 @@ function finalBondLengthRelaxationBonds(layoutGraph, coords) {
   return bonds;
 }
 
-function relaxedFinalBondLengthCoords(layoutGraph, inputCoords, bondLength, profile) {
+/**
+ * Relaxes bond lengths toward ideal distances or the interior of their class
+ * interval. Interval projection leaves bonds inside the safety margin alone
+ * until a neighboring repair displaces them. Hidden hydrogens do not constrain
+ * heavy-atom projection; fixed and frozen atoms remain stationary.
+ * @param {object} layoutGraph - Layout graph.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Input coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} profile - Bounded iteration and stiffness settings.
+ * @param {Map<string, string>} bondValidationClasses - Per-bond validation classes.
+ * @param {Set<string>} [frozenAtomIds] - Additional atoms protected by placement.
+ * @returns {Map<string, {x: number, y: number}>} Candidate coordinates.
+ */
+function relaxedFinalBondLengthCoords(layoutGraph, inputCoords, bondLength, profile, bondValidationClasses, frozenAtomIds = new Set()) {
   const coords = cloneCoords(inputCoords);
-  const bonds = finalBondLengthRelaxationBonds(layoutGraph, coords);
+  const bonds = finalBondLengthRelaxationBonds(layoutGraph, coords).filter(bond =>
+    !profile.intervals || [bond.a, bond.b].every(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom.element !== 'H' && atom.visible !== false;
+    })
+  );
   const movableAtomIds = new Set();
   for (const atomId of coords.keys()) {
-    if (!layoutGraph.fixedCoords?.has(atomId)) {
+    if (!layoutGraph.fixedCoords?.has(atomId) && !frozenAtomIds.has(atomId)) {
       movableAtomIds.add(atomId);
     }
   }
@@ -2715,7 +2736,14 @@ function relaxedFinalBondLengthCoords(layoutGraph, inputCoords, bondLength, prof
       if (!firstMovable && !secondMovable) {
         continue;
       }
-      const shift = (currentLength - bondLength) * profile.stiffness;
+      let targetLength = bondLength;
+      if (profile.intervals) {
+        const settings = finalRetouchValidationSettings(bondValidationClasses?.get(bond.id));
+        const minimum = bondLength * (settings.minBondLengthFactor + profile.marginFactor);
+        const maximum = bondLength * (settings.maxBondLengthFactor - profile.marginFactor);
+        targetLength = Math.max(minimum, Math.min(maximum, currentLength));
+      }
+      const shift = (currentLength - targetLength) * profile.stiffness;
       const unitX = dx / currentLength;
       const unitY = dy / currentLength;
       if (firstMovable && secondMovable) {
@@ -2774,7 +2802,10 @@ function maybeRelaxFinalBondLengthFailures(molecule, layoutGraph, finalCoords, p
 
   let bestCandidate = null;
   for (const profile of FINAL_BOND_LENGTH_RELAXATION_PROFILES) {
-    const candidateCoords = relaxedFinalBondLengthCoords(layoutGraph, finalCoords, bondLength, profile);
+    if (!profile.intervals && layoutGraph.traits.heavyAtomCount > FINAL_BOND_LENGTH_RELAXATION_MAX_HEAVY_ATOMS) {
+      continue;
+    }
+    const candidateCoords = relaxedFinalBondLengthCoords(layoutGraph, finalCoords, bondLength, profile, placement.bondValidationClasses, placement.frozenAtomIds);
     const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength);
     if (!finalAuditCountsDoNotWorsen(candidateAudit, currentAudit) || (candidateAudit.bondLengthFailureCount ?? 0) >= (currentAudit.bondLengthFailureCount ?? 0)) {
       continue;
@@ -3219,12 +3250,20 @@ function maybeRetouchFinalDenseCarbonCageKamadaKawai(molecule, layoutGraph, fina
     return unchanged();
   }
 
-  const candidateCoords = cloneCoords(finalCoords);
+  let candidateCoords = cloneCoords(finalCoords);
   for (const atomId of heavyAtomIds) {
     candidateCoords.set(atomId, kkResult.coords.get(atomId));
   }
   const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, heavyAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
-  const candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
+  let candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
+  if (candidateAudit.bondLengthFailureCount > 0 && candidateAudit.severeOverlapCount === 0) {
+    const intervalCoords = relaxedFinalBondLengthCoords(layoutGraph, candidateCoords, bondLength, FINAL_BOND_INTERVAL_RELAXATION_PROFILE, candidateBondValidationClasses, placement.frozenAtomIds);
+    const intervalAudit = auditFinalRetouchCoords(molecule, layoutGraph, intervalCoords, placement, bondLength, candidateBondValidationClasses);
+    if (finalAuditCountsDoNotWorsen(intervalAudit, candidateAudit) && intervalAudit.bondLengthFailureCount < candidateAudit.bondLengthFailureCount) {
+      candidateCoords = intervalCoords;
+      candidateAudit = intervalAudit;
+    }
+  }
   if (
     candidateAudit?.ok !== true ||
     candidateAudit.fallback?.mode != null ||
@@ -4636,7 +4675,8 @@ function pairedBridgedHingeBondFailures(layoutGraph, coords, placement, bondLeng
     const firstPosition = coords.get(bond.a);
     const secondPosition = coords.get(bond.b);
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
-    const allowedDeviation = finalRetouchAllowedBondDeviation('bridged', bondLength);
+    const settings = finalRetouchValidationSettings('bridged');
+    const allowedDeviation = bondLength * (distance < bondLength ? 1 - settings.minBondLengthFactor : settings.maxBondLengthFactor - 1);
     const deviation = Math.abs(distance - bondLength);
     if (deviation <= allowedDeviation + PRESENTATION_METRIC_EPSILON) {
       continue;

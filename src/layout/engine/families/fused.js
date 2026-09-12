@@ -25,7 +25,8 @@ const FUSED_RESCUE_LIMITS = Object.freeze({
 const DENSE_FUSED_CAGE_POLISH = Object.freeze({
   iterations: 80,
   nonbondedSeparationFactor: 0.6,
-  minBondLengthFactor: 0.7,
+  // Relax toward the interval interior so finite iterations clear its lower bound.
+  minBondLengthFactor: 0.75,
   maxBondLengthFactor: 1.3,
   overlapRepulsion: 0.2,
   bondTension: 0.4,
