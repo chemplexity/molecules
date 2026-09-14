@@ -15,6 +15,40 @@ function averageDisplacement(firstCoords, secondCoords, atomIds) {
 }
 
 describe('layout/engine/geometry/kk-layout', () => {
+  it('scales nonbonded acceptance clearance without accepting relative overlaps', () => {
+    const molecule = parseSMILES('C.C');
+    const atomIds = [...molecule.atoms.values()].filter(atom => atom.name !== 'H').map(atom => atom.id);
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const referenceDistance of [0.49, 0.51]) {
+        const coords = new Map([
+          [atomIds[0], { x: 0, y: 0 }],
+          [atomIds[1], { x: referenceDistance * bondLength / 1.5, y: 0 }]
+        ]);
+        assert.equal(isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLength), referenceDistance > 0.5);
+      }
+    }
+  });
+
+  it('uses equivalent convergence tolerances when the depiction scale changes', () => {
+    const molecule = makeUnmatchedBridgedCage();
+    const atomIds = [...molecule.atoms.keys()];
+    const reference = layoutKamadaKawai(molecule, atomIds);
+    assert.equal(reference.converged, true);
+    for (const bondLength of [0.75, 3]) {
+      const result = layoutKamadaKawai(molecule, atomIds, { bondLength });
+      const scale = bondLength / 1.5;
+      assert.equal(result.converged, true);
+      assert.equal(result.ok, reference.ok);
+      assert.ok(result.energy <= 0.1 * scale ** 4);
+      assert.ok(Math.abs(result.energy / scale ** 4 - reference.energy) < 1e-9);
+      for (const atomId of atomIds) {
+        const position = result.coords.get(atomId);
+        const expected = reference.coords.get(atomId);
+        assert.ok(Math.hypot(position.x / scale - expected.x, position.y / scale - expected.y) < 1e-7);
+      }
+    }
+  });
+
   it('lays out a small unmatched bridged cage with finite coordinates', () => {
     const molecule = makeUnmatchedBridgedCage();
     const atomIds = [...molecule.atoms.keys()];

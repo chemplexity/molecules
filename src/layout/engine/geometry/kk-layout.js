@@ -212,6 +212,8 @@ function buildBondedPairSet(molecule, atomIdSet) {
 
 /**
  * Returns whether a Kamada-Kawai coordinate set clears basic validity gates.
+ * Nonbonded clearance scales with the target bond length, retaining the
+ * established 0.5 clearance at the reference bond length of 1.5.
  * @param {object} molecule - Molecule-like graph.
  * @param {string[]} atomIds - Atom IDs included in the layout.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
@@ -259,7 +261,7 @@ export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLen
       if (isBonded) {
         continue;
       }
-      if (Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) < 0.5) {
+      if (Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) < bondLength / 3) {
         return false;
       }
     }
@@ -278,8 +280,8 @@ export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLen
  * @param {{x: number, y: number}} [options.center] - Target layout center.
  * @param {number} [options.bondLength] - Target bond length.
  * @param {number} [options.maxComponentSize] - Size cutoff.
- * @param {number} [options.threshold] - Outer convergence threshold.
- * @param {number} [options.innerThreshold] - Inner convergence threshold.
+ * @param {number} [options.threshold] - Outer squared-gradient threshold at the reference bond length 1.5.
+ * @param {number} [options.innerThreshold] - Inner squared-gradient threshold at the reference bond length 1.5.
  * @param {number} [options.maxIterations] - Outer iteration cap.
  * @param {number} [options.maxInnerIterations] - Inner iteration cap.
  * @param {boolean} [options.incrementalEnergyUpdates] - Whether to update KK gradients incrementally after a node move.
@@ -456,18 +458,24 @@ export function layoutKamadaKawai(
 
   updateAllEnergy();
 
+  // Spring strength and displacement each scale with bond length, so the
+  // squared gradient scales with its fourth power. Keep convergence relative
+  // to depiction size while preserving the established default-size behavior.
+  const convergenceScale = (bondLength / 1.5) ** 4;
+  const outerThreshold = threshold * convergenceScale;
+  const nodeThreshold = innerThreshold * convergenceScale;
   let currentEnergy = Infinity;
   let iteration = 0;
   while (iteration < effectiveMaxIterations) {
     iteration++;
     const { index, energy } = highestEnergyNode();
     currentEnergy = energy;
-    if (index < 0 || !Number.isFinite(energy) || energy <= threshold) {
+    if (index < 0 || !Number.isFinite(energy) || energy <= outerThreshold) {
       break;
     }
     let innerEnergy = energy;
     let innerIteration = 0;
-    while (innerIteration < maxInnerIterations && innerEnergy > innerThreshold) {
+    while (innerIteration < maxInnerIterations && innerEnergy > nodeThreshold) {
       innerIteration++;
       updatePosition(index);
       innerEnergy = nodeEnergy(index);
@@ -481,7 +489,7 @@ export function layoutKamadaKawai(
 
   return {
     coords: resultCoords,
-    converged: Number.isFinite(currentEnergy) && currentEnergy <= threshold,
+    converged: Number.isFinite(currentEnergy) && currentEnergy <= outerThreshold,
     energy: currentEnergy,
     ok: isKamadaKawaiLayoutAcceptable(molecule, atomIds, resultCoords, bondLength, bondedPairs),
     skipped: false

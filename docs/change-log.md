@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-13
+
+- Scale spring-layout convergence tolerances to prevent overlaps in smaller cage depictions.
+
 ## 2026-09-12
 
 - Enforce asymmetric bond-length limits and repair compressed cage and ring geometry.

@@ -224,22 +224,24 @@ describe('layout/engine/audit-corpus', () => {
     }
   });
 
-  it('re-solves a dense carbon cage without trapped vertex contacts', () => {
-    const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 21740);
-    assert.ok(entry);
+  for (const bondLength of [0.75, 1.5, 3]) {
+    it(`re-solves a dense carbon cage without trapped vertex contacts at bond length ${bondLength}`, () => {
+      const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 21740);
+      assert.ok(entry);
 
-    const result = runPipeline(parseSMILES(entry.smiles), entry.options);
-    const audit = result.metadata.audit;
+      const result = runPipeline(parseSMILES(entry.smiles), { ...entry.options, bondLength });
+      const audit = result.metadata.audit;
 
-    assert.equal(result.metadata.primaryFamily, 'fused');
-    assert.equal(audit.severeOverlapCount, 0);
-    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
-    assert.equal(audit.labelOverlapCount, 0);
-    assert.equal(audit.bondLengthFailureCount, 0);
-    assert.equal(audit.stereoContradiction, false);
-    assert.equal(audit.ok, true);
-    assert.equal(audit.fallback.mode, null);
-  });
+      assert.equal(result.metadata.primaryFamily, 'fused');
+      assert.equal(audit.severeOverlapCount, 0);
+      assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+      assert.equal(audit.labelOverlapCount, 0);
+      assert.equal(audit.bondLengthFailureCount, 0);
+      assert.equal(audit.stereoContradiction, false);
+      assert.equal(audit.ok, true);
+      assert.equal(audit.fallback.mode, null);
+    });
+  }
 
   it('repairs paired cage closures after clearing stacked heterocycle vertices', () => {
     const entry = AUDIT_CORPUS.find(candidate => candidate.sourceIndex === 27074);
