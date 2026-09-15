@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-14
+
+- Fix double-counted hidden hydrogens in the `applyCoords()` API's `appliedAtomCount` summary; displayed atom counts and molecule drawings are unaffected.
+
 ## 2026-09-13
 
 - Scale spring-layout convergence tolerances to prevent overlaps in smaller cage depictions.

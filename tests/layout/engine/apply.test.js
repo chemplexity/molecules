@@ -5,6 +5,48 @@ import { generateCoords, refineCoords } from '../../../src/layout/engine/api.js'
 import { makeEthane, makeHiddenHydrogenStereocenter, makeProjectedOctahedralCobaltComplex, makeProjectedTetrahedralZincComplex } from './support/molecules.js';
 
 describe('layout/engine/apply', () => {
+  for (const hiddenHydrogenMode of ['coincident', 'inherit']) {
+    for (const coverage of ['full', 'preserve', 'clear']) {
+      it(`counts explicitly placed hidden hydrogens once with ${hiddenHydrogenMode} and ${coverage} coordinates`, () => {
+        const molecule = makeHiddenHydrogenStereocenter();
+        for (const atom of molecule.atoms.values()) {
+          atom.x = -1;
+          atom.y = -2;
+        }
+        const coords = new Map([...molecule.atoms.keys()].filter(id => coverage === 'full' || id === 'h0').map((id, index) => [id, { x: index + 3, y: 7 }]));
+        const original = structuredClone(coords);
+        const options = { hiddenHydrogenMode, preserveExisting: coverage === 'preserve', clearUnplaced: coverage === 'clear' };
+        for (let repetition = 0; repetition < 2; repetition++) {
+          const summary = applyCoords(molecule, coords, options);
+          assert.equal(summary.appliedAtomCount, coords.size);
+          assert.equal(summary.preservedAtomCount, coverage === 'preserve' ? 4 : 0);
+          assert.equal(summary.clearedAtomCount, coverage === 'clear' ? 4 : 0);
+          assert.equal(summary.appliedAtomCount + summary.preservedAtomCount + summary.clearedAtomCount, molecule.atoms.size);
+          for (const atom of molecule.atoms.values()) {
+            const expected = coords.get(atom.id) ?? (coverage === 'clear' ? { x: null, y: null } : { x: -1, y: -2 });
+            assert.deepEqual({ x: atom.x, y: atom.y }, expected);
+          }
+          assert.deepEqual(coords, original);
+        }
+      });
+    }
+  }
+
+  for (const preserveExisting of [true, false]) {
+    it(`accounts for omitted inherited hidden hydrogen when preserveExisting is ${preserveExisting}`, () => {
+      const molecule = makeHiddenHydrogenStereocenter();
+      const hydrogen = molecule.atoms.get('h0');
+      hydrogen.x = 8;
+      hydrogen.y = 9;
+      const coords = new Map([...molecule.atoms.keys()].filter(id => id !== 'h0').map(id => [id, { x: 1, y: 2 }]));
+      const summary = applyCoords(molecule, coords, { hiddenHydrogenMode: 'inherit', preserveExisting, clearUnplaced: true });
+      assert.equal(summary.appliedAtomCount, 4);
+      assert.equal(summary.preservedAtomCount, preserveExisting ? 1 : 0);
+      assert.equal(summary.clearedAtomCount, preserveExisting ? 0 : 1);
+      assert.deepEqual({ x: hydrogen.x, y: hydrogen.y }, preserveExisting ? { x: 8, y: 9 } : { x: null, y: null });
+    });
+  }
+
   it('applies a full layout result onto molecule atom coordinates', () => {
     const molecule = makeEthane();
     const result = generateCoords(molecule);

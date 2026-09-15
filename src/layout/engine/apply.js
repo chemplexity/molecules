@@ -129,20 +129,24 @@ function resolveOptions(result, options) {
   };
 }
 
+/**
+ * Handles hidden hydrogens omitted from the supplied coordinate map after
+ * parent coordinates have been applied. Explicitly placed atoms have already
+ * been applied and counted by the main pass.
+ * @param {object} molecule - Target molecule graph.
+ * @param {Map<string, {x: number, y: number}>} coords - Supplied coordinates.
+ * @param {'inherit'|'coincident'} hiddenHydrogenMode - Hidden hydrogen placement policy.
+ * @param {boolean} preserveExisting - Preserve omitted atoms with finite coordinates.
+ * @param {boolean} clearUnplaced - Clear remaining omitted atoms.
+ * @returns {{appliedCount: number, preservedCount: number, clearedCount: number}} Counts for omitted hidden hydrogens only.
+ */
 function applyHiddenHydrogenMode(molecule, coords, hiddenHydrogenMode, preserveExisting, clearUnplaced) {
   let appliedCount = 0;
   let preservedCount = 0;
   let clearedCount = 0;
 
   for (const atom of molecule.atoms.values()) {
-    if (atom.name !== 'H' || atom.visible !== false) {
-      continue;
-    }
-    if (coords.has(atom.id)) {
-      const position = coords.get(atom.id);
-      atom.x = position.x;
-      atom.y = position.y;
-      appliedCount++;
+    if (atom.name !== 'H' || atom.visible !== false || coords.has(atom.id)) {
       continue;
     }
 
@@ -223,7 +227,8 @@ function syncAppliedStereoDisplay(molecule, coords, result, options = {}) {
 /**
  * Applies a coordinate map or layout result back onto an existing molecule.
  * This bridge mutates `atom.x`/`atom.y` on the target molecule without changing
- * chemistry or graph topology.
+ * chemistry or graph topology. Summary counts describe distinct atoms, not
+ * the number of coordinate writes.
  * @param {object} molecule - Target molecule graph.
  * @param {Map<string, {x: number, y: number}>|object} coordsOrResult - Coordinate map or full layout result.
  * @param {object} [options] - Application options.
