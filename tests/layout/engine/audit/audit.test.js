@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { Molecule } from '../../../../src/core/index.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
@@ -10,15 +11,161 @@ import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { add, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeEAlkene, makeEthane, makeMacrocycle } from '../support/molecules.js';
 
+/**
+ * Builds two crossed ethane bonds plus an independently placed ring scaffold.
+ * @param {string} ringSmiles - Carbon ring scaffold.
+ * @param {boolean} connected - Whether to connect all fragments with acyclic bonds.
+ * @returns {{molecule: object, coords: Map<string, {x: number, y: number}>}} Audit fixture.
+ */
+function crossingBesideRing(ringSmiles, connected) {
+  const molecule = new Molecule();
+  const coords = new Map([
+    ['a', { x: -0.75, y: 0 }],
+    ['b', { x: 0.75, y: 0 }],
+    ['c', { x: 0, y: -0.75 }],
+    ['d', { x: 0, y: 0.75 }]
+  ]);
+  for (const id of coords.keys()) {
+    molecule.addAtom(id, 'C');
+  }
+  molecule.addBond('ab', 'a', 'b', {}, false);
+  molecule.addBond('cd', 'c', 'd', {}, false);
+  const ring = parseSMILES(ringSmiles);
+  const placed = runPipeline(ring, { suppressH: true });
+  const ringIds = [];
+  for (const atom of ring.atoms.values()) {
+    if (atom.name === 'H') {
+      continue;
+    }
+    const id = `ring-${atom.id}`;
+    molecule.addAtom(id, 'C');
+    ringIds.push(id);
+    const position = placed.coords.get(atom.id);
+    coords.set(id, { x: position.x + 30, y: position.y });
+  }
+  for (const bond of ring.bonds.values()) {
+    const [a, b] = bond.atoms.map(id => `ring-${id}`);
+    if (coords.has(a) && coords.has(b)) {
+      molecule.addBond(`ring-${bond.id}`, a, b, {}, false);
+    }
+  }
+  if (connected) {
+    const anchor = ringIds.reduce((left, id) => (coords.get(id).x < coords.get(left).x ? id : left));
+    molecule.addBond('link-fragments', 'b', 'd', {}, false);
+    molecule.addBond('link-ring', 'b', anchor, {}, false);
+  }
+  return { molecule, coords };
+}
+
 describe('layout/engine/audit/audit', () => {
-  for (const [validationClass, limits] of [['planar', AUDIT_PLANAR_VALIDATION], ['bridged', BRIDGED_VALIDATION], ['haptic', HAPTIC_VALIDATION]]) {
+  for (const ringSmiles of ['C1CCCCCCC1', 'C1CC2CCC1C2']) {
+    for (const connected of [false, true]) {
+      it(`does not let ${ringSmiles} hide an unrelated crossing with connected=${connected}`, () => {
+        const { molecule, coords } = crossingBesideRing(ringSmiles, connected);
+        const graph = createLayoutGraph(molecule);
+        assert.equal(graph.components.length, connected ? 1 : 3);
+        const audit = auditLayout(graph, coords);
+        assert.equal(audit.visibleHeavyBondCrossingFailureCount, 1);
+        assert.equal(audit.ok, false);
+        assert.ok(audit.fallback.reasons.includes('visible-heavy-bond-crossings'));
+      });
+    }
+  }
+
+  for (const ringCount of [1, 2]) {
+    it(`retains one internal crossing allowance for each of ${ringCount} macrocycles`, () => {
+      const molecule = new Molecule();
+      const coords = new Map();
+      const points = [
+        [-1, -1],
+        [-0.3, -0.3],
+        [1, 1],
+        [1, 0],
+        [1, -1],
+        [0.3, -0.3],
+        [-1, 1],
+        [-1, 0]
+      ];
+      for (let ring = 0; ring < ringCount; ring++) {
+        for (let index = 0; index < 8; index++) {
+          const id = `${ring}-${index}`;
+          molecule.addAtom(id, 'C');
+          coords.set(id, { x: points[index][0] + ring * 30, y: points[index][1] });
+        }
+        for (let index = 0; index < 8; index++) {
+          molecule.addBond(`b${ring}-${index}`, `${ring}-${index}`, `${ring}-${(index + 1) % 8}`, {}, false);
+        }
+      }
+      const audit = auditLayout(createLayoutGraph(molecule), coords);
+      assert.equal(audit.visibleHeavyBondCrossingCount, ringCount);
+      assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    });
+  }
+
+  it('retains projected internal crossings in a bridged ring system', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CC2CCC1C2'), { suppressH: true });
+    const ids = [...graph.atoms.values()].filter(atom => atom.element !== 'H').map(atom => atom.id);
+    const coords = new Map(ids.map((id, index) => [id, { x: 3 * Math.cos((index * 2 * Math.PI) / ids.length), y: 3 * Math.sin((index * 2 * Math.PI) / ids.length) }]));
+    const audit = auditLayout(graph, coords);
+    assert.ok(graph.traits.bridgedRingConnectionCount > 0);
+    assert.ok(audit.visibleHeavyBondCrossingCount > 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+  });
+
+  it('does not spend a macrocycle allowance more than once within a ring system', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CCCCCCC1'), { suppressH: true });
+    const order = [0, 2, 4, 6, 1, 3, 5, 7];
+    const coords = new Map(
+      graph.rings[0].atomIds.map((id, index) => [
+        id,
+        {
+          x: 3 * Math.cos((order[index] * Math.PI) / 4),
+          y: 3 * Math.sin((order[index] * Math.PI) / 4)
+        }
+      ])
+    );
+    const audit = auditLayout(graph, coords);
+    assert.ok(audit.visibleHeavyBondCrossingCount > 1);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, audit.visibleHeavyBondCrossingCount - 1);
+  });
+
+  it('does not exempt crossings between separate macrocycles', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CCCCCCC1.C1CCCCCCC1'), { suppressH: true });
+    const coords = new Map();
+    for (const [index, ring] of graph.rings.entries()) {
+      ring.atomIds.forEach((id, vertex) =>
+        coords.set(id, {
+          x: 2 * Math.cos((vertex * Math.PI) / 4) + index * 2.3,
+          y: 2 * Math.sin((vertex * Math.PI) / 4) + index * 0.2
+        })
+      );
+    }
+    const audit = auditLayout(graph, coords);
+    assert.ok(audit.visibleHeavyBondCrossingCount > 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, audit.visibleHeavyBondCrossingCount);
+  });
+
+  for (const [validationClass, limits] of [
+    ['planar', AUDIT_PLANAR_VALIDATION],
+    ['bridged', BRIDGED_VALIDATION],
+    ['haptic', HAPTIC_VALIDATION]
+  ]) {
     for (const bondLength of [0.75, 1.5, 3]) {
       it(`checks both ${validationClass} bond-length limits at scale ${bondLength}`, () => {
         const graph = createLayoutGraph(makeEthane(), { bondLength });
         const options = { bondLength, bondValidationClasses: new Map([['b0', validationClass]]) };
         const min = bondLength * limits.minBondLengthFactor;
         const max = bondLength * limits.maxBondLengthFactor;
-        for (const [distance, failures] of [[0, 1], [min - 1e-7, 1], [min, 0], [min + 1e-7, 0], [bondLength, 0], [max - 1e-7, 0], [max, 0], [max + 1e-7, 1]]) {
+        for (const [distance, failures] of [
+          [0, 1],
+          [min - 1e-7, 1],
+          [min, 0],
+          [min + 1e-7, 0],
+          [bondLength, 0],
+          [max - 1e-7, 0],
+          [max, 0],
+          [max + 1e-7, 1]
+        ]) {
           const coords = new Map([
             ['a0', { x: 0, y: 0 }],
             ['a1', { x: distance, y: 0 }]

@@ -20,6 +20,46 @@ function summarizeSevereOverlaps(overlaps, severeOverlapThreshold) {
 }
 
 /**
+ * Counts planar crossing failures, limiting projection exceptions to internal
+ * bonds of the same ring system. Each macrocyclic system may spend its own
+ * single-crossing allowance; unrelated fragments and external branches cannot.
+ * Explicit per-bond projection classes retain their existing interpretation.
+ * @param {object} layoutGraph - Layout graph and ring-system indexes.
+ * @param {object[]} crossings - Visible heavy-bond crossings.
+ * @param {Map<string, string>} [bondValidationClasses] - Per-bond projection classes.
+ * @returns {number} Crossings not covered by a local projection exception.
+ */
+function countCrossingFailures(layoutGraph, crossings, bondValidationClasses) {
+  const usedMacrocycleAllowances = new Set();
+  let failures = 0;
+  for (const crossing of crossings) {
+    const firstClass = bondValidationClasses?.get(crossing.firstBondId) ?? 'planar';
+    const secondClass = bondValidationClasses?.get(crossing.secondBondId) ?? 'planar';
+    if (firstClass !== 'planar' || secondClass !== 'planar') {
+      continue;
+    }
+    const firstBond = layoutGraph.bonds.get(crossing.firstBondId);
+    const secondBond = layoutGraph.bonds.get(crossing.secondBondId);
+    const ringSystemId = firstBond?.inRing ? layoutGraph.atomToRingSystemId.get(firstBond.a) : null;
+    const sameRingSystem = ringSystemId != null && secondBond?.inRing && [firstBond.b, secondBond.a, secondBond.b].every(atomId => layoutGraph.atomToRingSystemId.get(atomId) === ringSystemId);
+    if (sameRingSystem) {
+      const connections = layoutGraph.ringConnectionsByRingSystemId.get(ringSystemId) ?? [];
+      if (connections.some(connection => connection.kind === 'bridged')) {
+        continue;
+      }
+      const system = layoutGraph.ringSystemById.get(ringSystemId);
+      const hasMacrocycle = system.ringIds.some(ringId => layoutGraph.ringById.get(ringId).atomIds.length >= 8);
+      if (hasMacrocycle && !usedMacrocycleAllowances.has(ringSystemId)) {
+        usedMacrocycleAllowances.add(ringSystemId);
+        continue;
+      }
+    }
+    failures++;
+  }
+  return failures;
+}
+
+/**
  * Audits a laid-out coordinate set against the current layout safety checks.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -55,14 +95,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   });
   const visibleHeavyBondCrossings = options.includeVisibleHeavyBondCrossings === false ? [] : findVisibleHeavyBondCrossings(layoutGraph, coords);
   const visibleHeavyBondCrossingCount = visibleHeavyBondCrossings.length;
-  const planarVisibleHeavyBondCrossingCount = visibleHeavyBondCrossings.filter(crossing => {
-    const firstClass = options.bondValidationClasses?.get(crossing.firstBondId) ?? 'planar';
-    const secondClass = options.bondValidationClasses?.get(crossing.secondBondId) ?? 'planar';
-    return firstClass === 'planar' && secondClass === 'planar';
-  }).length;
-  const macrocycleCrossingAllowance = layoutGraph.rings?.some(ring => (ring.atomIds?.length ?? 0) >= 8) ? 1 : 0;
-  const crossingAuditApplies = (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) === 0;
-  const visibleHeavyBondCrossingFailureCount = crossingAuditApplies ? Math.max(0, planarVisibleHeavyBondCrossingCount - macrocycleCrossingAllowance) : 0;
+  const visibleHeavyBondCrossingFailureCount = countCrossingFailures(layoutGraph, visibleHeavyBondCrossings, options.bondValidationClasses);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;

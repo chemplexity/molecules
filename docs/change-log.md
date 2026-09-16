@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-15
+
+- Scope ring-based bond-crossing audit exceptions to their own ring systems so unrelated crossings remain failures.
+
 ## 2026-09-14
 
 - Fix double-counted hidden hydrogens in the `applyCoords()` API's `appliedAtomCount` summary; displayed atom counts and molecule drawings are unaffected.
