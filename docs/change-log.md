@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-16
+
+- Make candidate safety checks reject bond crossings consistently with the final layout audit, preserving valid ring-projection exceptions.
+
 ## 2026-09-15
 
 - Scope ring-based bond-crossing audit exceptions to their own ring systems so unrelated crossings remain failures.

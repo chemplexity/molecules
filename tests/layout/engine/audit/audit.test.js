@@ -12,6 +12,28 @@ import { add, centroid, rotate, sub } from '../../../../src/layout/engine/geomet
 import { makeEAlkene, makeEthane, makeMacrocycle } from '../support/molecules.js';
 
 /**
+ * Checks all candidate safety fields against their full-audit counterparts.
+ * @param {object} graph - Layout graph.
+ * @param {Map<string, {x: number, y: number}>} coords - Supplied geometry.
+ * @param {object} [options] - Shared audit options.
+ * @returns {object} Full audit summary.
+ */
+function assertSafetyParity(graph, coords, options = {}) {
+  const full = auditLayout(graph, coords, options);
+  const safety = auditCandidateSafety(graph, coords, options);
+  assert.equal(safety.ok, full.ok);
+  assert.equal('fallback' in safety, false);
+  assert.equal('labelOverlapCount' in safety, false);
+  assert.equal(safety.visibleHeavyBondCrossingCount, full.visibleHeavyBondCrossingCount);
+  assert.equal(safety.visibleHeavyBondCrossingFailureCount, full.visibleHeavyBondCrossingFailureCount);
+  for (const [key, value] of Object.entries(safety)) {
+    assert.deepEqual(value, full[key], key);
+  }
+  assert.deepEqual(auditCandidateSafety(graph, coords, { ...options, includeFallback: true }).fallback, full.fallback);
+  return full;
+}
+
+/**
  * Builds two crossed ethane bonds plus an independently placed ring scaffold.
  * @param {string} ringSmiles - Carbon ring scaffold.
  * @param {boolean} connected - Whether to connect all fragments with acyclic bonds.
@@ -58,13 +80,44 @@ function crossingBesideRing(ringSmiles, connected) {
 }
 
 describe('layout/engine/audit/audit', () => {
+  for (const validationClass of ['planar', 'bridged', 'haptic']) {
+    it(`matches candidate crossing safety for ${validationClass} bonds and clean alternatives`, () => {
+      const molecule = new Molecule();
+      const coords = new Map([
+        ['a', { x: -0.75, y: 0 }],
+        ['b', { x: 0.75, y: 0 }],
+        ['c', { x: 0, y: -0.75 }],
+        ['d', { x: 0, y: 0.75 }]
+      ]);
+      for (const id of coords.keys()) {
+        molecule.addAtom(id, 'C');
+      }
+      molecule.addBond('ab', 'a', 'b', {}, false);
+      molecule.addBond('cd', 'c', 'd', {}, false);
+      const graph = createLayoutGraph(molecule);
+      assert.equal(assertSafetyParity(graph, coords).ok, false);
+      const options = { bondValidationClasses: new Map([['ab', validationClass]]) };
+      const audit = assertSafetyParity(graph, coords, options);
+      assert.equal(audit.severeOverlapCount, 0);
+      assert.equal(audit.bondLengthFailureCount, 0);
+      assert.equal(audit.visibleHeavyBondCrossingCount, 1);
+      assert.equal(audit.visibleHeavyBondCrossingFailureCount, validationClass === 'planar' ? 1 : 0);
+      assert.equal(audit.ok, validationClass !== 'planar');
+      assert.equal(audit.fallback.reasons.includes('visible-heavy-bond-crossings'), validationClass === 'planar');
+      assert.equal(assertSafetyParity(graph, coords, { ...options, includeVisibleHeavyBondCrossings: false }).ok, true);
+      coords.set('c', { x: 3, y: -0.75 });
+      coords.set('d', { x: 3, y: 0.75 });
+      assert.equal(assertSafetyParity(graph, coords, options).ok, true);
+    });
+  }
+
   for (const ringSmiles of ['C1CCCCCCC1', 'C1CC2CCC1C2']) {
     for (const connected of [false, true]) {
       it(`does not let ${ringSmiles} hide an unrelated crossing with connected=${connected}`, () => {
         const { molecule, coords } = crossingBesideRing(ringSmiles, connected);
         const graph = createLayoutGraph(molecule);
         assert.equal(graph.components.length, connected ? 1 : 3);
-        const audit = auditLayout(graph, coords);
+        const audit = assertSafetyParity(graph, coords);
         assert.equal(audit.visibleHeavyBondCrossingFailureCount, 1);
         assert.equal(audit.ok, false);
         assert.ok(audit.fallback.reasons.includes('visible-heavy-bond-crossings'));
@@ -96,7 +149,7 @@ describe('layout/engine/audit/audit', () => {
           molecule.addBond(`b${ring}-${index}`, `${ring}-${index}`, `${ring}-${(index + 1) % 8}`, {}, false);
         }
       }
-      const audit = auditLayout(createLayoutGraph(molecule), coords);
+      const audit = assertSafetyParity(createLayoutGraph(molecule), coords);
       assert.equal(audit.visibleHeavyBondCrossingCount, ringCount);
       assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
     });
@@ -108,6 +161,7 @@ describe('layout/engine/audit/audit', () => {
     const coords = new Map(ids.map((id, index) => [id, { x: 3 * Math.cos((index * 2 * Math.PI) / ids.length), y: 3 * Math.sin((index * 2 * Math.PI) / ids.length) }]));
     const audit = auditLayout(graph, coords);
     assert.ok(graph.traits.bridgedRingConnectionCount > 0);
+    assertSafetyParity(graph, coords);
     assert.ok(audit.visibleHeavyBondCrossingCount > 0);
     assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
   });
@@ -126,6 +180,7 @@ describe('layout/engine/audit/audit', () => {
     );
     const audit = auditLayout(graph, coords);
     assert.ok(audit.visibleHeavyBondCrossingCount > 1);
+    assertSafetyParity(graph, coords);
     assert.equal(audit.visibleHeavyBondCrossingFailureCount, audit.visibleHeavyBondCrossingCount - 1);
   });
 
@@ -143,6 +198,7 @@ describe('layout/engine/audit/audit', () => {
     const audit = auditLayout(graph, coords);
     assert.ok(audit.visibleHeavyBondCrossingCount > 0);
     assert.equal(audit.visibleHeavyBondCrossingFailureCount, audit.visibleHeavyBondCrossingCount);
+    assertSafetyParity(graph, coords);
   });
 
   for (const [validationClass, limits] of [

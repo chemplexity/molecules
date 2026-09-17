@@ -151,7 +151,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
  *
  * This is intended for inner-loop candidate probes that only need pass/fail
  * safety and core regression counts. It deliberately skips metadata that does
- * not affect `ok`, such as label-overlap counts, visible crossing counts, and
+ * not affect `ok`, such as label-overlap counts and
  * fallback recommendation details.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -165,7 +165,8 @@ export function auditLayout(layoutGraph, coords, options = {}) {
  * @param {Map<string, 'planar'|'bridged'|'haptic'>} [options.bondValidationClasses] - Per-bond validation classes.
  * @param {object} [options.stereo] - Stereo summary produced by the stereo phase.
  * @param {boolean} [options.includeFallback] - Whether to include a fallback recommendation derived from safety counts.
- * @returns {{ok: boolean, severeOverlapCount: number, minSevereOverlapDistance: number|null, worstOverlapDeficit: number, severeOverlapPenalty: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, mildBondLengthFailureCount: number, severeBondLengthFailureCount: number, bondLengthSampleCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean, ringSubstituentReadabilityFailureCount: number, inwardRingSubstituentCount: number, outwardAxisRingSubstituentFailureCount: number, fallback?: object}} Candidate safety audit summary.
+ * @param {boolean} [options.includeVisibleHeavyBondCrossings] - Whether to check visible heavy-bond crossings (defaults to true, matching the full audit).
+ * @returns {{ok: boolean, visibleHeavyBondCrossingCount: number, visibleHeavyBondCrossingFailureCount: number, severeOverlapCount: number, minSevereOverlapDistance: number|null, worstOverlapDeficit: number, severeOverlapPenalty: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, mildBondLengthFailureCount: number, severeBondLengthFailureCount: number, bondLengthSampleCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean, ringSubstituentReadabilityFailureCount: number, inwardRingSubstituentCount: number, outwardAxisRingSubstituentFailureCount: number, fallback?: object}} Candidate safety audit summary.
  */
 export function auditCandidateSafety(layoutGraph, coords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
@@ -181,6 +182,9 @@ export function auditCandidateSafety(layoutGraph, coords, options = {}) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
+  const visibleHeavyBondCrossings = options.includeVisibleHeavyBondCrossings === false ? [] : findVisibleHeavyBondCrossings(layoutGraph, coords);
+  const visibleHeavyBondCrossingCount = visibleHeavyBondCrossings.length;
+  const visibleHeavyBondCrossingFailureCount = countCrossingFailures(layoutGraph, visibleHeavyBondCrossings, options.bondValidationClasses);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;
@@ -188,13 +192,20 @@ export function auditCandidateSafety(layoutGraph, coords, options = {}) {
   const bridgedReadabilityFailure = false;
   const ringSubstituentReadabilityFailure = ringSubstituentReadability.failingSubstituentCount > 0;
   const ok =
-    overlaps.length === 0 && bondDeviation.failingBondCount === 0 && collapsedMacrocycles.length === 0 && !stereoContradiction && !bridgedReadabilityFailure && !ringSubstituentReadabilityFailure;
+    overlaps.length === 0 &&
+    visibleHeavyBondCrossingFailureCount === 0 &&
+    bondDeviation.failingBondCount === 0 &&
+    collapsedMacrocycles.length === 0 &&
+    !stereoContradiction &&
+    !bridgedReadabilityFailure &&
+    !ringSubstituentReadabilityFailure;
   const overlapSummary = summarizeSevereOverlaps(overlaps, severeOverlapThreshold);
   const fallback =
     options.includeFallback === true
       ? recommendFallback({
           bondLengthFailureCount: bondDeviation.failingBondCount,
           severeOverlapCount: overlaps.length,
+          visibleHeavyBondCrossingCount: visibleHeavyBondCrossingFailureCount,
           collapsedMacrocycleCount: collapsedMacrocycles.length,
           stereoContradiction,
           bridgedReadabilityFailure,
@@ -204,6 +215,8 @@ export function auditCandidateSafety(layoutGraph, coords, options = {}) {
 
   const summary = {
     ok,
+    visibleHeavyBondCrossingCount,
+    visibleHeavyBondCrossingFailureCount,
     severeOverlapCount: overlaps.length,
     minSevereOverlapDistance: overlapSummary.minSevereOverlapDistance,
     worstOverlapDeficit: overlapSummary.worstOverlapDeficit,
