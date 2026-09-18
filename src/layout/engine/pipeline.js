@@ -52,7 +52,7 @@ import {
 } from './cleanup/hypervalent-angle-tidy.js';
 import { buildCleanupTelemetry, buildStageTelemetryFromCleanupTelemetry, createEmptyCleanupTelemetry, createEmptyStageTelemetry } from './cleanup/telemetry.js';
 import { runSiloxaneArylBranchClearance } from './cleanup/presentation/projected-tetrahedral-clearance.js';
-import { auditLayout } from './audit/audit.js';
+import { auditFinalLayout, auditLayout } from './audit/audit.js';
 import {
   collectSevereOverlapAtomIds,
   collectReadableRingSubstituentChildren,
@@ -16131,16 +16131,19 @@ function runStereoPhase(molecule, layoutGraph, coords, timingState = null, cache
  * @returns {object} Final pipeline result.
  */
 function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState = null, cachedAudit = null) {
-  const auditStart = timingState && cachedAudit == null ? nowMs() : 0;
-  const audit =
-    cachedAudit ??
-    auditLayout(layoutGraph, coords, {
+  const auditStart = timingState ? nowMs() : 0;
+  const audit = auditFinalLayout(
+    layoutGraph,
+    coords,
+    {
       bondLength: normalizedOptions.bondLength,
       bondValidationClasses: placement.bondValidationClasses,
       stereo
-    });
+    },
+    cachedAudit
+  );
   if (timingState) {
-    timingState.auditMs = cachedAudit == null ? nowMs() - auditStart : 0;
+    timingState.auditMs = nowMs() - auditStart;
   }
   const qualityReport = createQualityReport({
     audit,

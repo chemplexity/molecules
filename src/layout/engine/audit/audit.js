@@ -60,7 +60,8 @@ function countCrossingFailures(layoutGraph, crossings, bondValidationClasses) {
 }
 
 /**
- * Audits a laid-out coordinate set against the current layout safety checks.
+ * Audits supplied geometry, allowing partial coordinate maps during placement.
+ * Use auditFinalLayout for completeness and finite-coordinate validation.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {object} [options] - Audit options.
@@ -143,6 +144,64 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     inwardRingSubstituentCount: ringSubstituentReadability.inwardSubstituentCount,
     outwardAxisRingSubstituentFailureCount: ringSubstituentReadability.outwardAxisFailureCount,
     fallback
+  };
+}
+
+/**
+ * Validates finished coordinates before reporting geometry audit success.
+ * Missing visible atoms, nonfinite supplied positions (including hidden atoms),
+ * and unknown coordinate keys are failures. Hidden atoms may be omitted.
+ * Invalid entries are excluded from geometry measurements, without mutating the
+ * input map. A cached geometry audit never bypasses coordinate validation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Finished coordinate map.
+ * @param {object} [options] - Geometry audit options.
+ * @param {object|null} [cachedAudit] - Geometry audit for these exact coordinates.
+ * @returns {object} Final audit with coordinate failure counts.
+ */
+export function auditFinalLayout(layoutGraph, coords, options = {}, cachedAudit = null) {
+  let missingCoordinateCount = 0;
+  let nonfiniteCoordinateCount = 0;
+  let unknownCoordinateCount = 0;
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (atom.visible !== false && !coords.has(atomId)) {
+      missingCoordinateCount++;
+    }
+  }
+  for (const [atomId, position] of coords) {
+    if (!layoutGraph.atoms.has(atomId)) {
+      unknownCoordinateCount++;
+    }
+    if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y)) {
+      nonfiniteCoordinateCount++;
+    }
+  }
+  const coordinateFailureCount = missingCoordinateCount + nonfiniteCoordinateCount + unknownCoordinateCount;
+  const validCoords =
+    coordinateFailureCount === 0
+      ? coords
+      : new Map([...coords].filter(([atomId, position]) => layoutGraph.atoms.has(atomId) && Number.isFinite(position?.x) && Number.isFinite(position?.y)));
+  const audit = coordinateFailureCount === 0 && cachedAudit ? cachedAudit : auditLayout(layoutGraph, validCoords, options);
+  const reasons = [...audit.fallback.reasons];
+  if (missingCoordinateCount > 0) {
+    reasons.push('missing-coordinates');
+  }
+  if (nonfiniteCoordinateCount > 0) {
+    reasons.push('nonfinite-coordinates');
+  }
+  if (unknownCoordinateCount > 0) {
+    reasons.push('unknown-coordinate-atoms');
+  }
+  return {
+    ...audit,
+    ok: audit.ok && coordinateFailureCount === 0,
+    missingCoordinateCount,
+    nonfiniteCoordinateCount,
+    unknownCoordinateCount,
+    fallback: {
+      mode: coordinateFailureCount > 0 ? 'generic-scaffold' : audit.fallback.mode,
+      reasons
+    }
   };
 }
 

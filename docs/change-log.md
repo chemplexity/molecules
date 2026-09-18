@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-17
+
+- Reject incomplete or invalid final coordinates in layout quality reports while preserving partial placement audits.
+
 ## 2026-09-16
 
 - Make candidate safety checks reject bond crossings consistently with the final layout audit, preserving valid ring-projection exceptions.
