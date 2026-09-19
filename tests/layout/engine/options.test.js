@@ -14,6 +14,7 @@ describe('layout/engine/options', () => {
     assert.equal(options.existingCoords.size, 0);
     assert.equal(options.finalLandscapeOrientation, false);
     assert.equal(options.timing, false);
+    assert.equal(options.cleanupMode, 'deterministic');
     assert.equal(options.touchedAtoms, null);
     assert.equal(options.touchedBonds, null);
   });
@@ -66,6 +67,10 @@ describe('layout/engine/options', () => {
   });
 
   it('rejects invalid option values', () => {
+    assert.equal(normalizeOptions({ cleanupMode: 'time-limited' }).cleanupMode, 'time-limited');
+    assert.equal(normalizeOptions({ cleanupMode: 'deterministic' }).cleanupMode, 'deterministic');
+    assert.throws(() => normalizeOptions({ cleanupMode: true }), TypeError);
+    assert.throws(() => normalizeOptions({ cleanupMode: 'fast' }), TypeError);
     assert.throws(() => normalizeOptions(null), TypeError);
     assert.throws(() => normalizeOptions({ bondLength: 0 }), RangeError);
     assert.throws(() => normalizeOptions({ fixedCoords: { a0: { x: 0, y: 0 } } }), TypeError);

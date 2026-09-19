@@ -9,6 +9,7 @@ function buildEngineOptions(options = {}) {
     suppressH: options.suppressH ?? true,
     bondLength: options.bondLength ?? 1.5,
     maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6,
+    cleanupMode: options.cleanupMode ?? 'deterministic',
     finalLandscapeOrientation: options.finalLandscapeOrientation ?? true
   };
 }
@@ -63,6 +64,7 @@ function buildRefinementFixedCoords(molecule, existingCoords, options = {}) {
  * @param {boolean} [options.suppressH] - Whether to hide hydrogens before layout.
  * @param {number} [options.bondLength] - Requested target bond length in angstroms.
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
+ * @param {'deterministic'|'time-limited'} [options.cleanupMode] - Deterministic bounded cleanup by default; time-limited permits clock-dependent stage skipping.
  * @param {number} [options.maxPasses] - Legacy alias for `maxCleanupPasses`.
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
@@ -96,6 +98,7 @@ export function generateCoords(molecule, options = {}) {
  * @param {boolean} [options.suppressH] - Whether to hide hydrogens before layout.
  * @param {number} [options.bondLength] - Requested target bond length in angstroms.
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
+ * @param {'deterministic'|'time-limited'} [options.cleanupMode] - Deterministic bounded cleanup by default; time-limited permits clock-dependent stage skipping.
  * @param {number} [options.maxPasses] - Legacy alias for `maxCleanupPasses`.
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {Map<string, {x: number, y: number}>} [options.fixedCoords] - Atom coordinates that should stay fixed during refinement.

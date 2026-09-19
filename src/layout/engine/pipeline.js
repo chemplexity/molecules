@@ -475,9 +475,16 @@ function cleanupStageBudgetLimitMs(layoutGraph, familySummary) {
   return Math.max(CLEANUP_STAGE_BUDGET_LIMITS.minMs, Math.min(CLEANUP_STAGE_BUDGET_LIMITS.maxMs, rawLimit));
 }
 
+/**
+ * Creates an optional wall-clock gate without changing bounded stage searches.
+ * @param {object} layoutGraph - Graph with normalized cleanup mode.
+ * @param {object} familySummary - Family traits for the interactive time limit.
+ * @param {number} startMs - Cleanup start time for telemetry.
+ * @returns {object} Mutable stage budget; disabled in deterministic mode.
+ */
 function createCleanupStageBudget(layoutGraph, familySummary, startMs) {
   return {
-    enabled: true,
+    enabled: layoutGraph.options.cleanupMode === 'time-limited',
     startMs,
     limitMs: cleanupStageBudgetLimitMs(layoutGraph, familySummary),
     checkCount: 0,
@@ -495,6 +502,7 @@ function finalizeCleanupStageBudgetTelemetry(budget, endMs) {
   const elapsedMs = Math.max(0, endMs - budget.startMs);
   return {
     enabled: budget.enabled === true,
+    mode: budget.enabled === true ? 'time-limited' : 'deterministic',
     limitMs: budget.limitMs,
     elapsedMs,
     checkCount: budget.checkCount ?? 0,
@@ -16196,6 +16204,8 @@ function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, p
       cleanupPostHookNudges: cleanup.postHookNudges,
       cleanupFastPath: cleanup.cleanPlacementFastPath === true || cleanup.largeDirtyFallbackFastPath === true,
       cleanupLargeDirtyFallbackFastPath: cleanup.largeDirtyFallbackFastPath === true,
+      cleanupMode: normalizedOptions.cleanupMode,
+      cleanupStageBudget,
       audit,
       ...(placementTelemetry
         ? {

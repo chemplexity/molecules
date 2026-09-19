@@ -107,6 +107,8 @@ export function createEmptyPipelineResult(molecule, normalizedOptions, profile, 
       cleanupJunctionSnaps: cleanup.junctionSnaps,
       cleanupStereoReflections: cleanup.stereoReflections,
       cleanupPostHookNudges: cleanup.postHookNudges,
+      cleanupMode: normalizedOptions.cleanupMode,
+      cleanupStageBudget: null,
       audit,
       ...(normalizedOptions.auditTelemetry
         ? {

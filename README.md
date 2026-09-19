@@ -124,6 +124,14 @@ generateCoords(mol);
 // atom.x and atom.y are now set in Ångströms
 ```
 
+Cleanup defaults to `cleanupMode: 'deterministic'`: existing candidate and iteration
+limits apply, but elapsed time does not skip cleanup stages. For interactive use,
+`cleanupMode: 'time-limited'` enables the previous elapsed-time stage budget;
+depictions can then vary with machine load. This is not a total layout timeout.
+Engine results expose `metadata.cleanupMode` and `metadata.cleanupStageBudget`
+(including skipped stages, or `null` when no stage budget was needed), even with
+timing telemetry disabled.
+
 ## Valence Validation
 
 ```js

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-18
+
+- Make cleanup scheduling deterministic by default, with explicit time-limited mode and skipped-stage reporting.
+
 ## 2026-09-17
 
 - Reject incomplete or invalid final coordinates in layout quality reports while preserving partial placement audits.
