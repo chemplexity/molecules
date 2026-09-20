@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-19
+
+- Make default and explicit hydrogen suppression consistent in engine generation/refinement without changing input hydrogen visibility.
+
 ## 2026-09-18
 
 - Make cleanup scheduling deterministic by default, with explicit time-limited mode and skipped-stage reporting.
