@@ -15,6 +15,7 @@ const METAL_H_CANDIDATE_GRID_STEPS = 24;
 const METAL_H_MIN_NEIGHBOR_SEPARATION = Math.PI / 4;
 const METAL_H_LINEAR_AVOIDANCE_LIMIT = Math.PI / 7.2;
 const METAL_H_TRIGONAL_SEPARATION = (2 * Math.PI) / 3;
+const suppressedHydrogens = new WeakSet();
 
 /**
  * Returns whether an atom should keep directly attached hydrogens explicit in 2D skeletal rendering.
@@ -76,10 +77,34 @@ export function hideHydrogensFor2d(molecule) {
   }
   for (const atom of molecule.atoms.values()) {
     if (atom.name === 'H') {
-      atom.visible = isMetalBoundHydrogen(atom, molecule);
+      const keepVisible = isMetalBoundHydrogen(atom, molecule);
+      if (keepVisible) {
+        suppressedHydrogens.delete(atom);
+      } else if (atom.visible !== false) {
+        suppressedHydrogens.add(atom);
+      }
+      atom.visible = keepVisible;
     }
   }
   return molecule;
+}
+
+/**
+ * Restores only hydrogens hidden by skeletal suppression on these atom objects.
+ * Hydrogens already hidden before suppression retain their manual visibility.
+ * @param {object|null|undefined} molecule - Molecule-like graph.
+ * @returns {Set<string>} Restored IDs, whose coincident suppressed coordinates are not layout hints.
+ */
+export function restoreSuppressedHydrogensFor2d(molecule) {
+  const restoredIds = new Set();
+  for (const atom of molecule?.atoms?.values() ?? []) {
+    if (atom.name === 'H' && suppressedHydrogens.has(atom)) {
+      atom.visible = true;
+      suppressedHydrogens.delete(atom);
+      restoredIds.add(atom.id);
+    }
+  }
+  return restoredIds;
 }
 
 /**

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-20
+
+- Restore hydrogens when disabling layout suppression, preserving hydrogens hidden beforehand and rebuilding their refinement positions.
+
 ## 2026-09-19
 
 - Make default and explicit hydrogen suppression consistent in engine generation/refinement without changing input hydrogen visibility.

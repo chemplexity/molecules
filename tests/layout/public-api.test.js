@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../src/io/smiles.js';
-import { generateCoords } from '../../src/layout/public-api.js';
+import { generateCoords, refineExistingCoords } from '../../src/layout/public-api.js';
 import { angleOf, angularDifference, centroid, sub } from '../../src/layout/engine/geometry/vec2.js';
 
 function bondAngleAtAtom(molecule, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
@@ -12,6 +12,38 @@ function bondAngleAtAtom(molecule, centerAtomId, firstNeighborAtomId, secondNeig
 }
 
 describe('layout/public-api', () => {
+  for (const update of [generateCoords, refineExistingCoords]) {
+    it(`${update.name} reverses repeated suppression without revealing manually hidden hydrogens`, () => {
+      const molecule = parseSMILES('CC');
+      const hydrogens = [...molecule.atoms.values()].filter(atom => atom.name === 'H');
+      const manuallyHidden = hydrogens[0];
+      manuallyHidden.visible = false;
+      for (let cycle = 0; cycle < 2; cycle++) {
+        generateCoords(molecule, { suppressH: true });
+        update(molecule, { suppressH: true });
+        assert.ok(hydrogens.every(atom => atom.visible === false));
+        const coords = update(molecule, { suppressH: false });
+        assert.equal(manuallyHidden.visible, false);
+        for (const atom of hydrogens.slice(1)) {
+          assert.equal(atom.visible, true);
+          assert.ok(coords.has(atom.id));
+          const parent = atom.getNeighbors(molecule)[0];
+          assert.ok(Math.hypot(atom.x - parent.x, atom.y - parent.y) > 0.5, 'restored H must not remain coincident');
+        }
+      }
+    });
+
+    it(`${update.name} restores all six ethane hydrogens like a fresh unsuppressed molecule`, () => {
+      const molecule = parseSMILES('CC');
+      generateCoords(molecule, { suppressH: true });
+      update(molecule, { suppressH: false });
+      const fresh = parseSMILES('CC');
+      generateCoords(fresh, { suppressH: false });
+      assert.deepEqual([...molecule.atoms.values()].map(atom => atom.visible), [...fresh.atoms.values()].map(atom => atom.visible));
+      assert.equal([...molecule.atoms.values()].filter(atom => atom.name === 'H' && atom.visible).length, 6);
+    });
+  }
+
   it('keeps metal hydrogens explicit when generating suppressed-h coordinates', () => {
     const molecule = parseSMILES('[FeH]');
 

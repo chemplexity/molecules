@@ -2,7 +2,7 @@
 
 import { applyCoords } from './engine/apply.js';
 import { generateCoords as generateEngineCoords, refineCoords as refineEngineCoords } from './engine/api.js';
-import { hideHydrogensFor2d } from './hydrogen-display.js';
+import { hideHydrogensFor2d, restoreSuppressedHydrogensFor2d } from './hydrogen-display.js';
 
 function buildEngineOptions(options = {}) {
   return {
@@ -77,6 +77,8 @@ export function generateCoords(molecule, options = {}) {
   const engineOptions = buildEngineOptions(options);
   if (engineOptions.suppressH) {
     hideHydrogensFor2d(molecule);
+  } else {
+    restoreSuppressedHydrogensFor2d(molecule);
   }
   const result = generateEngineCoords(molecule, engineOptions);
   applyCoords(molecule, result, {
@@ -113,10 +115,16 @@ export function refineExistingCoords(molecule, options = {}) {
     return new Map();
   }
   const engineOptions = buildEngineOptions(options);
+  let restoredHydrogenIds = new Set();
   if (engineOptions.suppressH) {
     hideHydrogensFor2d(molecule);
+  } else {
+    restoredHydrogenIds = restoreSuppressedHydrogensFor2d(molecule);
   }
   const existingCoords = readPlacedCoords(molecule, { suppressH: engineOptions.suppressH });
+  for (const atomId of restoredHydrogenIds) {
+    existingCoords.delete(atomId);
+  }
   if (existingCoords.size === 0) {
     return existingCoords;
   }
