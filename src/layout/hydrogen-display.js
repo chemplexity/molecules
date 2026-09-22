@@ -67,7 +67,8 @@ export function collect2dHydrogenLabelCounts(molecule) {
 }
 
 /**
- * Hides ordinary hydrogens for skeletal 2D rendering while keeping metal hydrides explicit.
+ * Hides heavy-atom-bound ordinary hydrogens for skeletal rendering while keeping
+ * metal hydrides and hydrogen-only components explicit.
  * @param {object|null|undefined} molecule - Molecule-like graph.
  * @returns {object|null|undefined} The input molecule.
  */
@@ -77,7 +78,7 @@ export function hideHydrogensFor2d(molecule) {
   }
   for (const atom of molecule.atoms.values()) {
     if (atom.name === 'H') {
-      const keepVisible = isMetalBoundHydrogen(atom, molecule);
+      const keepVisible = isMetalBoundHydrogen(atom, molecule) || atom.getNeighbors(molecule).every(neighbor => neighbor.name === 'H');
       if (keepVisible) {
         suppressedHydrogens.delete(atom);
       } else if (atom.visible !== false) {

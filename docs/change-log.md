@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-09-21
+
+- Place hydrogen-only components and keep them visible in skeletal layouts.
+- Stabilize browser-test module loading with a persistent local server and require completed app initialization in the boot check.
+
 ## 2026-09-20
 
 - Restore hydrogens when disabling layout suppression, preserving hydrogens hidden beforehand and rebuilding their refinement positions.

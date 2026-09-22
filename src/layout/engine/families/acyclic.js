@@ -1287,7 +1287,9 @@ function backboneCandidateAtomIds(layoutGraph, atomIdsToPlace) {
       return atom ? atom.element !== 'H' : true;
     })
   );
-  if (!layoutGraph) {
+  // Hydrogen-only components still need a backbone seed; heavy-atom preference
+  // must not turn a nonempty component into an empty candidate set.
+  if (!layoutGraph || heavyAtomIds.size === 0) {
     return heavyAtomIds.size >= 2 ? heavyAtomIds : atomIdsToPlace;
   }
 

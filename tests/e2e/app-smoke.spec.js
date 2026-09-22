@@ -27,12 +27,30 @@ test('app boot does not hit unsupported module URLs', async ({ page }) => {
 
   await page.goto('/index.html');
   await expect(page.locator('#smiles-input')).toBeVisible();
+  await page.waitForFunction(() => typeof window.openOptionsModal === 'function' && typeof window.toggleMode === 'function');
 
   const unsupportedRequests = failedRequests.filter(request => request.url.startsWith('node:'));
+  const failedLocalModules = failedRequests.filter(request => request.url.startsWith('http://127.0.0.1:4173/') && request.url.includes('.js'));
   const unsupportedConsoleErrors = consoleErrors.filter(message => /unsupported url|node:perf_hooks/i.test(message));
 
   expect(unsupportedRequests).toEqual([]);
+  expect(failedLocalModules).toEqual([]);
   expect(unsupportedConsoleErrors).toEqual([]);
+});
+
+test('static test server serves concurrent modules and HEAD requests reliably', async ({ request }) => {
+  const paths = ['/src/app/core/undo.js', '/src/app/ui/options-modal.js', '/src/app/render/scene-2d.js', '/src/app/bootstrap/app-entry.js'];
+  const responses = await Promise.all(Array.from({ length: 64 }, (_, index) => request.get(paths[index % paths.length])));
+  for (const response of responses) {
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toBe('text/javascript');
+    expect((await response.body()).length).toBeGreaterThan(0);
+  }
+  const head = await request.head('/index.html');
+  expect(head.status()).toBe(200);
+  expect(head.headers()['content-type']).toBe('text/html');
+  expect((await head.body()).length).toBe(0);
+  expect((await request.get('/missing-test-resource.js')).status()).toBe(404);
 });
 
 test('cleaning 2d honors the active Global Bond Length option', async ({ page }) => {

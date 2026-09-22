@@ -12,6 +12,36 @@ function bondAngleAtAtom(molecule, centerAtomId, firstNeighborAtomId, secondNeig
 }
 
 describe('layout/public-api', () => {
+  for (const suppressH of [false, true]) {
+    for (const bondLength of [0.75, 1.5, 3]) {
+      it(`places hydrogen-only bonds with suppressH=${suppressH} at length ${bondLength}`, () => {
+        const molecule = parseSMILES('[H][H]');
+        const coords = generateCoords(molecule, { suppressH, bondLength });
+        assert.equal(coords.size, 2);
+        const [first, second] = [...molecule.atoms.values()];
+        assert.equal(first.visible, true);
+        assert.equal(second.visible, true);
+        assert.ok(Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - bondLength) < 1e-9);
+        refineExistingCoords(molecule, { suppressH, bondLength });
+        assert.ok(Math.abs(Math.hypot(first.x - second.x, first.y - second.y) - bondLength) < 1e-9);
+      });
+    }
+  }
+
+  it('places standalone hydrogen ions and hydrogen components beside ordinary molecules', () => {
+    for (const smiles of ['[H+]', '[H+].[H-]', 'CC.[H][H]']) {
+      const molecule = parseSMILES(smiles);
+      generateCoords(molecule);
+      const visible = [...molecule.atoms.values()].filter(atom => atom.visible);
+      assert.ok(visible.every(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y)));
+      const standaloneHydrogens = visible.filter(atom => atom.name === 'H');
+      assert.ok(standaloneHydrogens.length > 0);
+      if (smiles.startsWith('CC')) {
+        assert.equal(standaloneHydrogens.length, 2);
+      }
+    }
+  });
+
   for (const update of [generateCoords, refineExistingCoords]) {
     it(`${update.name} reverses repeated suppression without revealing manually hidden hydrogens`, () => {
       const molecule = parseSMILES('CC');
