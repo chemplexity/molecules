@@ -154,6 +154,9 @@ export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
   if (fixedAtomIds.length === 0) {
     return { coords, anchored: false };
   }
+  if (fixedAtomIds.every(atomId => coords.get(atomId).x === fixedCoords.get(atomId).x && coords.get(atomId).y === fixedCoords.get(atomId).y)) {
+    return { coords, anchored: true };
+  }
   if (fixedAtomIds.length === 1) {
     const atomId = fixedAtomIds[0];
     const current = coords.get(atomId);

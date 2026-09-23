@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-22
+
+- Seed multi-anchor acyclic layouts from fixed positions, retain fully fixed components, and protect explicit anchors during cleanup.
+
 ## 2026-09-21
 
 - Place hydrogen-only components and keep them visible in skeletal layouts.

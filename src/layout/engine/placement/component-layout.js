@@ -777,7 +777,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
   const bondValidationClasses = new Map();
   const displayAssignments = [];
   const cleanupRigidSubtreesByAtomId = new Map();
-  const frozenAtomIds = new Set();
+  const frozenAtomIds = new Set(layoutGraph.options.preserveFixed === false ? [] : layoutGraph.fixedCoords.keys());
   const placedFamilies = [];
   const macrocycleRings = findMacrocycleRings(layoutGraph.rings);
   let placedComponentCount = 0;

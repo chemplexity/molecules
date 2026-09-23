@@ -215,6 +215,20 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   const family = options.forceFamily ?? (heuristicFamily === 'organometallic' ? heuristicFamily : scaffoldPlan.rootScaffold.family);
   const useDirectLargeBridgedRoot = !options.forceFamily && scaffoldPlan.mixedMode && scaffoldPlan.rootScaffold.family === 'bridged' && (scaffoldPlan.rootScaffold.atomCount ?? 0) > 60;
 
+  // A fully specified component is already placed. Retain it before invoking
+  // template construction or alignment; downstream audits report bad geometry.
+  if (layoutGraph.options.preserveFixed !== false && atomIds.length >= 3 && atomIds.every(atomId => layoutGraph.options.fixedCoords.has(atomId))) {
+    return {
+      family,
+      supported: true,
+      atomIds,
+      coords: new Map(atomIds.map(atomId => [atomId, { ...layoutGraph.fixedCoords.get(atomId) }])),
+      placementMode: 'fixed-input',
+      templateId: null,
+      bondValidationClasses: assignBondValidationClass(layoutGraph, atomIds, 'planar')
+    };
+  }
+
   if (scaffoldPlan.mixedMode && !options.forceFamily && !useDirectLargeBridgedRoot) {
     return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength, options.mixedOptions ?? null);
   }

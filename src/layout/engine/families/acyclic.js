@@ -1437,6 +1437,19 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   if (atomCount === 0) {
     return coords;
   }
+  // Multiple explicit anchors define the input geometry, not a best-fit target
+  // for a freely generated backbone. Grow only the unplaced branches from them.
+  const explicitAnchors = [...atomIdsToPlace].filter(atomId => layoutGraph?.options.fixedCoords.has(atomId));
+  if (layoutGraph?.options.preserveFixed !== false && explicitAnchors.length >= 3) {
+    for (const atomId of atomIdsToPlace) {
+      const position = layoutGraph.fixedCoords.get(atomId);
+      if (position) {
+        coords.set(atomId, { ...position });
+      }
+    }
+    placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, [...coords.keys()], bondLength, layoutGraph);
+    return enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
+  }
   if (atomCount === 1) {
     coords.set([...atomIdsToPlace][0], { x: 0, y: 0 });
     return coords;
