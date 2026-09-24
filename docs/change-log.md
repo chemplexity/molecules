@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-23
+
+- Preserve partial isolated-ring anchors while solving free atoms to maintain ring closure and bond lengths.
+
 ## 2026-09-22
 
 - Seed multi-anchor acyclic layouts from fixed positions, retain fully fixed components, and protect explicit anchors during cleanup.
