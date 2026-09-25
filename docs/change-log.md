@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-24
+
+- Honor `freezeChiralCenters` during refinement by protecting chiral-center positions, with explicit fixed coordinates taking precedence.
+
 ## 2026-09-23
 
 - Preserve partial isolated-ring anchors while solving free atoms to maintain ring closure and bond lengths.

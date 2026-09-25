@@ -169,7 +169,10 @@ export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
       if (!position) {
         continue;
       }
-      transformed.set(currentAtomId, { x: position.x + dx, y: position.y + dy });
+      // Copy the anchor target exactly; subtract/add translation can round it.
+      transformed.set(currentAtomId, currentAtomId === atomId
+        ? { ...target }
+        : { x: position.x + dx, y: position.y + dy });
     }
     return { coords: transformed, anchored: true };
   }

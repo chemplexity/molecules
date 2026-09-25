@@ -32,16 +32,25 @@ function readPlacedCoords(molecule, { suppressH = false } = {}) {
 
 /**
  * Builds fixed-coordinate anchors for refinement from explicit fixed coords
- * plus the current ring atom positions when ring freezing is requested.
+ * plus current chiral-center and ring positions when their freezing is requested.
  * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph to inspect.
  * @param {Map<string, {x: number, y: number}>} existingCoords - Current placed coordinates.
  * @param {object} [options] - Refinement options.
  * @param {Map<string, {x: number, y: number}>} [options.fixedCoords] - Explicit fixed coordinates.
  * @param {boolean} [options.freezeRings] - Whether ring atom coordinates should be protected during refinement.
+ * @param {boolean} [options.freezeChiralCenters] - Freeze existing x/y positions of tetrahedral chiral centers, assigned or unassigned, without freezing their neighbors or display bonds.
  * @returns {Map<string, {x: number, y: number}>} Fixed-coordinate anchors for the engine.
  */
 function buildRefinementFixedCoords(molecule, existingCoords, options = {}) {
   const fixedCoords = options.fixedCoords instanceof Map ? new Map(options.fixedCoords) : new Map();
+  if (options.freezeChiralCenters === true) {
+    for (const atom of molecule.atoms.values()) {
+      const position = existingCoords.get(atom.id);
+      if (position && !fixedCoords.has(atom.id) && atom.isChiralCenter(molecule)) {
+        fixedCoords.set(atom.id, { ...position });
+      }
+    }
+  }
   if (options.freezeRings !== true || typeof molecule?.getRings !== 'function') {
     return fixedCoords;
   }
@@ -105,6 +114,7 @@ export function generateCoords(molecule, options = {}) {
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {Map<string, {x: number, y: number}>} [options.fixedCoords] - Atom coordinates that should stay fixed during refinement.
  * @param {boolean} [options.freezeRings] - Whether current ring atom coordinates should stay fixed during refinement.
+ * @param {boolean} [options.freezeChiralCenters] - Freeze current x/y positions of assigned and unassigned tetrahedral chiral centers; explicit fixedCoords take precedence.
  * @param {Set<number>} [options.touchedAtoms] - Atom ids that should be treated as locally edited during refinement.
  * @param {Set<number>} [options.touchedBonds] - Bond ids that should be treated as locally edited during refinement.
  * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
@@ -154,7 +164,7 @@ export function refineExistingCoords(molecule, options = {}) {
  * @param {number} [options.maxPasses] - Configuration sub-option.
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {boolean} [options.freezeRings] - Configuration sub-option.
- * @param {boolean} [options.freezeChiralCenters] - Configuration sub-option.
+ * @param {boolean} [options.freezeChiralCenters] - Freeze chiral-center positions from the generation step during subsequent refinement, not their neighbors or wedge/dash choices.
  * @param {boolean} [options.allowBranchReflect] - Configuration sub-option.
  * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
  * @returns {void} Coordinates are written directly onto the atoms in `mol`.

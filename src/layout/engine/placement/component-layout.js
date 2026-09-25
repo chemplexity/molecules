@@ -847,7 +847,10 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       continue;
     }
 
-    const aligned = layoutGraph.options.preserveFixed === false ? { coords: placement.coords, anchored: false } : alignCoordsToFixed(placement.coords, placement.atomIds, componentGraph.fixedCoords);
+    // Explicit constraints outrank inferred old-position hints when selecting
+    // the alignment frame, including during localized touched-atom refinement.
+    const alignmentAnchors = placement.atomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)) ? layoutGraph.fixedCoords : componentGraph.fixedCoords;
+    const aligned = layoutGraph.options.preserveFixed === false ? { coords: placement.coords, anchored: false } : alignCoordsToFixed(placement.coords, placement.atomIds, alignmentAnchors);
 
     componentPlacements.push({
       componentId: component.id,
