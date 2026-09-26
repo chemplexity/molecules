@@ -1494,7 +1494,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     }
   };
 
-  if (exactRingRootDescriptor || pendantRingReflectionDescriptor) {
+  if (layoutGraph.options.allowBranchReflect !== false && (exactRingRootDescriptor || pendantRingReflectionDescriptor)) {
     evaluateCandidatePositions(reflectedRigidDescriptorPositions(coords, descriptor));
   }
   if (compactRingAnchoredTrigonalHeteroRootDescriptor) {

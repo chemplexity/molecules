@@ -10,6 +10,7 @@ function buildEngineOptions(options = {}) {
     bondLength: options.bondLength ?? 1.5,
     maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6,
     cleanupMode: options.cleanupMode ?? 'deterministic',
+    allowBranchReflect: options.allowBranchReflect ?? true,
     finalLandscapeOrientation: options.finalLandscapeOrientation ?? true
   };
 }
@@ -71,6 +72,7 @@ function buildRefinementFixedCoords(molecule, existingCoords, options = {}) {
  * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph to lay out.
  * @param {object} [options] - Layout options forwarded through the public layout API.
  * @param {boolean} [options.suppressH] - Whether to hide hydrogens before layout.
+ * @param {boolean} [options.allowBranchReflect] - Permit optional branch-reflection refinements (default true) after initial placement, without disabling required E/Z correction.
  * @param {number} [options.bondLength] - Requested target bond length in angstroms.
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
  * @param {'deterministic'|'time-limited'} [options.cleanupMode] - Deterministic bounded cleanup by default; time-limited permits clock-dependent stage skipping.
@@ -115,6 +117,7 @@ export function generateCoords(molecule, options = {}) {
  * @param {Map<string, {x: number, y: number}>} [options.fixedCoords] - Atom coordinates that should stay fixed during refinement.
  * @param {boolean} [options.freezeRings] - Whether current ring atom coordinates should stay fixed during refinement.
  * @param {boolean} [options.freezeChiralCenters] - Freeze current x/y positions of assigned and unassigned tetrahedral chiral centers; explicit fixedCoords take precedence.
+ * @param {boolean} [options.allowBranchReflect] - Allow optional branch-mirroring refinement moves (default true); does not lock initial placement or disable required E/Z correction.
  * @param {Set<number>} [options.touchedAtoms] - Atom ids that should be treated as locally edited during refinement.
  * @param {Set<number>} [options.touchedBonds] - Bond ids that should be treated as locally edited during refinement.
  * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
@@ -165,7 +168,7 @@ export function refineExistingCoords(molecule, options = {}) {
  * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {boolean} [options.freezeRings] - Configuration sub-option.
  * @param {boolean} [options.freezeChiralCenters] - Freeze chiral-center positions from the generation step during subsequent refinement, not their neighbors or wedge/dash choices.
- * @param {boolean} [options.allowBranchReflect] - Configuration sub-option.
+ * @param {boolean} [options.allowBranchReflect] - Allow optional branch mirroring during refinement (default true); generation and required E/Z correction remain enabled.
  * @param {boolean} [options.preserveStereoDisplay] - Preserve existing renderer-facing wedge/dash choices while syncing stereo display.
  * @returns {void} Coordinates are written directly onto the atoms in `mol`.
  */

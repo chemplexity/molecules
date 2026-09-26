@@ -2267,9 +2267,10 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       const preserveExactHypervalentFan = hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       const finalists = [];
       if (
-        isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId) ||
-        isExactTrigonalRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId, baseAnchorDistortion) ||
-        subtree.exactTrigonalRingBranchAxisReflection === true
+        layoutGraph.options.allowBranchReflect !== false &&
+        (isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId) ||
+          isExactTrigonalRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId, baseAnchorDistortion) ||
+          subtree.exactTrigonalRingBranchAxisReflection === true)
       ) {
         const newPositions = new Map();
         for (const subtreeAtomId of subtreeAtomIds) {

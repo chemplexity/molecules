@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-25
+
+- Honor `allowBranchReflect` for optional branch-mirroring refinements while retaining required E/Z correction.
+
 ## 2026-09-24
 
 - Honor `freezeChiralCenters` during refinement by protecting chiral-center positions, with explicit fixed coordinates taking precedence.

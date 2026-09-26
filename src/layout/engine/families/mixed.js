@@ -11386,6 +11386,9 @@ function buildDirectAttachmentLocalRootRotationRefinementCandidates(layoutGraph,
  * @returns {Array<Map<string, {x: number, y: number}>>} Mirrored candidate coordinate maps.
  */
 function buildDirectAttachedChildRootMirrorCandidates(layoutGraph, coords, parentAtomId, attachmentAtomId) {
+  if (layoutGraph.options.allowBranchReflect === false) {
+    return [];
+  }
   const parentPosition = coords.get(parentAtomId);
   const attachmentPosition = coords.get(attachmentAtomId);
   if (!parentPosition || !attachmentPosition) {
@@ -14942,6 +14945,9 @@ function buildExactRingAnchorCarbonylReliefCandidates(layoutGraph, coords, child
  * @returns {Map<string, {x: number, y: number}>|null} Reflected coordinates, or null when unsafe.
  */
 function buildExactConjugatedNitrogenRingSubstituentFlipCandidate(layoutGraph, coords, anchorAtomId, childAtomId, subtreeAtomIds, bondLength, baseAudit) {
+  if (layoutGraph.options.allowBranchReflect === false) {
+    return null;
+  }
   const anchorPosition = coords.get(anchorAtomId);
   const childPosition = coords.get(childAtomId);
   if (!anchorPosition || !childPosition || distance(anchorPosition, childPosition) <= 1e-9) {
@@ -16389,6 +16395,9 @@ function reflectPointAcrossAxis(point, origin, axisUnit) {
 }
 
 function buildMirroredParentSideSubtreeCandidates(layoutGraph, coords, transformedCoords, candidateMeta = null) {
+  if (layoutGraph.options.allowBranchReflect === false) {
+    return [];
+  }
   const parentAtomId = candidateMeta?.parentAtomId ?? null;
   const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
   if (!parentAtomId || !attachmentAtomId) {
@@ -20536,6 +20545,9 @@ function compareTerminalCarbonylRingContactCandidates(candidate, incumbent, clea
 }
 
 function buildTerminalCarbonylRingFaceFlipCandidates(layoutGraph, coords, contact) {
+  if (layoutGraph.options.allowBranchReflect === false) {
+    return [];
+  }
   if (!contact.intrusion) {
     return [];
   }

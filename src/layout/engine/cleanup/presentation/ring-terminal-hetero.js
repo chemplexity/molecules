@@ -714,6 +714,9 @@ function compareProtectedSupportReflectionCandidates(candidate, incumbent) {
  * @returns {Map<string, {x: number, y: number}>|null} Reflected coordinate candidate, or null.
  */
 function terminalMultipleBondProtectedSupportReflectionCoords(layoutGraph, coords, descriptor, bondLength, frozenAtomIds) {
+  if (layoutGraph.options.allowBranchReflect === false) {
+    return null;
+  }
   const leafAtomId = descriptor.leafTargets.length === 1 ? descriptor.leafTargets[0].leafAtomId : null;
   if (!leafAtomId) {
     return null;

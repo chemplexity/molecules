@@ -1907,7 +1907,7 @@ export function runTerminalCarbonRingLeafRetidy(layoutGraph, inputCoords, option
       tetrahedralDistortionPenalty: measureTetrahedralDistortion(layoutGraph, inputCoords).totalDeviation
     };
 
-    for (const shouldReflect of [false, true]) {
+    for (const shouldReflect of layoutGraph.options.allowBranchReflect === false ? [false] : [false, true]) {
       const reflectedCoords = shouldReflect
         ? reflectSubtreeAcrossBond(inputCoords, descriptor.subtreeAtomIds, descriptor.parentAtomId, descriptor.rootAtomId, new Set([descriptor.parentAtomId, descriptor.rootAtomId]))
         : inputCoords;
@@ -4671,7 +4671,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         }
         return materializeCandidateScoreCoords(bestScore);
       };
-      if (needsPeripheralFocusClearanceRescue) {
+      if (needsPeripheralFocusClearanceRescue && layoutGraph.options.allowBranchReflect !== false) {
         const reflectedCoords = reflectSubtreeAcrossBond(currentCoords, descriptor.subtreeAtomIds, descriptor.anchorAtomId, descriptor.rootAtomId, new Set([descriptor.rootAtomId]));
         let rescueScore = buildPeripheralFocusRescueScore(reflectedCoords, 1);
         const reflectedUnifiedCleanup = runUnifiedCleanup(layoutGraph, reflectedCoords, {
@@ -4726,7 +4726,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
             for (const rotation of exactRootAnchoredOutwardRotations(layoutGraph, currentCoords, inputDescriptor)) {
               pushRootAnchoredSeed(rotation, { exactRootOutward: true });
             }
-            if (needsPeripheralFocusClearanceRescue || needsTerminalMultipleBondRootReflection) {
+            if (layoutGraph.options.allowBranchReflect !== false && (needsPeripheralFocusClearanceRescue || needsTerminalMultipleBondRootReflection)) {
               seeds.push({ kind: 'reflected-subtree', reflectAnchor: true });
             }
             for (const rotation of rotationAngles) {
@@ -4758,7 +4758,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           if (searchContext.attachedCarbonylRingChildren.length > 0) {
             const compositeRotations = [0, ...ATTACHED_RING_ROTATION_TIDY_ANGLES];
             for (const childDescriptor of searchContext.attachedCarbonylRingChildren) {
-              for (const reflectAnchor of [false, true]) {
+              for (const reflectAnchor of layoutGraph.options.allowBranchReflect === false ? [false] : [false, true]) {
                 for (const anchorRotation of compositeRotations) {
                   for (const ringRotation of compositeRotations) {
                     if (!reflectAnchor && Math.abs(anchorRotation) <= 1e-9 && Math.abs(ringRotation) <= 1e-9) {

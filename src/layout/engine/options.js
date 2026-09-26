@@ -62,6 +62,7 @@ export function normalizeLargeMoleculeThreshold(threshold = null) {
  * Returns a normalized option bag.
  * @param {object} [options] - Caller-supplied options.
  * @param {'deterministic'|'time-limited'} [options.cleanupMode] - Deterministic bounded work by default; opt into elapsed-time stage skipping.
+ * @param {boolean} [options.allowBranchReflect] - Permit optional branch-reflection refinement candidates (default true); initial placement and required stereo correction are unaffected.
  * @returns {object} The normalized option bag.
  */
 export function normalizeOptions(options = {}) {
@@ -77,6 +78,10 @@ export function normalizeOptions(options = {}) {
     throw new RangeError(`maxCleanupPasses must be a non-negative integer, got ${JSON.stringify(maxCleanupPasses)}.`);
   }
   const timing = options.timing ?? false;
+  const allowBranchReflect = options.allowBranchReflect ?? true;
+  if (typeof allowBranchReflect !== 'boolean') {
+    throw new TypeError('allowBranchReflect must be a boolean.');
+  }
   const cleanupMode = options.cleanupMode ?? 'deterministic';
   if (cleanupMode !== 'deterministic' && cleanupMode !== 'time-limited') {
     throw new TypeError('cleanupMode must be "deterministic" or "time-limited".');
@@ -102,6 +107,7 @@ export function normalizeOptions(options = {}) {
     profile: resolveProfile(options.profile),
     largeMoleculeThreshold: normalizeLargeMoleculeThreshold(options.largeMoleculeThreshold),
     maxCleanupPasses,
+    allowBranchReflect,
     cleanupMode,
     finalLandscapeOrientation,
     timing,
