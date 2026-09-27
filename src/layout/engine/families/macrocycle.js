@@ -3,7 +3,8 @@
 import { auditLayout } from '../audit/audit.js';
 import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, rotate, scale, sub, vec, wrapAngle } from '../geometry/vec2.js';
-import { apothemForRegularPolygon } from '../geometry/polygon.js';
+import { apothemForRegularPolygon, placeRegularPolygon } from '../geometry/polygon.js';
+import { placeConstrainedRing } from '../geometry/constrained-ring.js';
 import { ellipsePerimeterPoints, macrocycleAspectRatio, solveEllipseScale } from '../geometry/ellipse.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { placeTemplateCoords } from '../templates/placement.js';
@@ -931,6 +932,8 @@ function macrocycleSeedCandidates(primaryRing, aspectRatio) {
 /**
  * Places a macrocycle on a horizontally stretched ellipse with bond lengths
  * scaled to the target average edge length.
+ * Single-ring systems with at least three fixed anchors instead solve free
+ * perimeter positions using bounded distance projection before branch placement.
  * @param {object[]} rings - Ring descriptors in the macrocycle system.
  * @param {number} bondLength - Target bond length.
  * @param {{center?: {x: number, y: number}, layoutGraph?: object, templateId?: string|null}} [options] - Placement options.
@@ -944,6 +947,15 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
 
   const templateAtomIds = [...new Set(rings.flatMap(ring => ring.atomIds))];
   const templateCoords = options.layoutGraph ? placeTemplateCoords(options.layoutGraph, options.templateId, templateAtomIds, bondLength) : null;
+  if (rings.length === 1 && options.layoutGraph?.options.preserveFixed !== false && primaryRing.atomIds.filter(id => options.layoutGraph?.fixedCoords.has(id)).length >= 3) {
+    const seed = templateCoords ?? placeRegularPolygon(primaryRing.atomIds, options.center ?? vec(0, 0), bondLength);
+    const coords = placeConstrainedRing(options.layoutGraph, primaryRing, seed, bondLength);
+    return {
+      coords,
+      ringCenters: buildRingCentersFromCoords(rings, coords),
+      placementMode: 'constrained-ring'
+    };
+  }
   if (templateCoords) {
     return {
       coords: templateCoords,

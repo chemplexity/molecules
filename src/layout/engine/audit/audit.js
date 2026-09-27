@@ -150,7 +150,9 @@ export function auditLayout(layoutGraph, coords, options = {}) {
 /**
  * Validates finished coordinates before reporting geometry audit success.
  * Missing visible atoms, nonfinite supplied positions (including hidden atoms),
- * and unknown coordinate keys are failures. Hidden atoms may be omitted.
+ * and unknown coordinate keys are failures. Hidden atoms may be omitted unless
+ * explicitly fixed. With preservation enabled, missing/nonfinite fixed positions
+ * or displacement above 1e-8 times the target bond length are failures.
  * Invalid entries are excluded from geometry measurements, without mutating the
  * input map. A cached geometry audit never bypasses coordinate validation.
  * @param {object} layoutGraph - Layout graph shell.
@@ -163,6 +165,16 @@ export function auditFinalLayout(layoutGraph, coords, options = {}, cachedAudit 
   let missingCoordinateCount = 0;
   let nonfiniteCoordinateCount = 0;
   let unknownCoordinateCount = 0;
+  let fixedCoordinateViolationCount = 0;
+  const fixedTolerance = (options.bondLength ?? layoutGraph.options.bondLength) * 1e-8;
+  if (layoutGraph.options.preserveFixed !== false) {
+    for (const [atomId, target] of layoutGraph.fixedCoords) {
+      const position = coords.get(atomId);
+      if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y) || Math.hypot(position.x - target.x, position.y - target.y) > fixedTolerance) {
+        fixedCoordinateViolationCount++;
+      }
+    }
+  }
   for (const [atomId, atom] of layoutGraph.atoms) {
     if (atom.visible !== false && !coords.has(atomId)) {
       missingCoordinateCount++;
@@ -192,14 +204,18 @@ export function auditFinalLayout(layoutGraph, coords, options = {}, cachedAudit 
   if (unknownCoordinateCount > 0) {
     reasons.push('unknown-coordinate-atoms');
   }
+  if (fixedCoordinateViolationCount > 0) {
+    reasons.push('fixed-coordinate-violations');
+  }
   return {
     ...audit,
-    ok: audit.ok && coordinateFailureCount === 0,
+    ok: audit.ok && coordinateFailureCount === 0 && fixedCoordinateViolationCount === 0,
+    fixedCoordinateViolationCount,
     missingCoordinateCount,
     nonfiniteCoordinateCount,
     unknownCoordinateCount,
     fallback: {
-      mode: coordinateFailureCount > 0 ? 'generic-scaffold' : audit.fallback.mode,
+      mode: coordinateFailureCount > 0 || fixedCoordinateViolationCount > 0 ? 'generic-scaffold' : audit.fallback.mode,
       reasons
     }
   };

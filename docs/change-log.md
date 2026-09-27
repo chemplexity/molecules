@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-09-26
+
+- Preserve fixed anchors and ring closure when placing partially constrained single-ring macrocycles.
+- Make final layout audits reject violated fixed-coordinate constraints instead of reporting success for otherwise valid geometry.
+
 ## 2026-09-25
 
 - Honor `allowBranchReflect` for optional branch-mirroring refinements while retaining required E/Z correction.
