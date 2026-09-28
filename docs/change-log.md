@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-27
+
+- Preserve fixed anchors and shared-edge bond lengths when placing partially constrained fused rings.
+
 ## 2026-09-26
 
 - Preserve fixed anchors and ring closure when placing partially constrained single-ring macrocycles.

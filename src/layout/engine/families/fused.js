@@ -2,6 +2,7 @@
 
 import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
+import { placeConstrainedRingSystem } from '../geometry/constrained-ring.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, scale, sub, wrapAngle } from '../geometry/vec2.js';
 import { computeFusedAxis, orientCoordsHorizontally, rebuildRingCenters } from '../scaffold/orientation.js';
@@ -978,6 +979,8 @@ function regularizeConstructedFusedCoords(rings, inputCoords, bondLength, option
 
 /**
  * Places a fused ring system by growing regular polygons across shared edges.
+ * With three or more explicit anchors, jointly solves all unique ring edges
+ * while retaining those anchors before component alignment and branch placement.
  * @param {object[]} rings - Ring descriptors in the target fused system.
  * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
  * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
@@ -986,6 +989,21 @@ function regularizeConstructedFusedCoords(rings, inputCoords, bondLength, option
  * @returns {{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>}} Placement result.
  */
 export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, options = {}) {
+  const placement = buildFusedSeed(rings, ringAdj, ringConnectionByPair, bondLength, options);
+  const coords = placeConstrainedRingSystem(options.layoutGraph, rings, placement.coords, bondLength);
+  return coords ? { ...placement, coords, ringCenters: rebuildRingCenters(rings, coords), placementMode: 'constrained-ring-system' } : placement;
+}
+
+/**
+ * Builds the template/constructed seed before joint fixed-ring constraint solving.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, number[]>} ringAdj - Ring adjacency.
+ * @param {Map<string, object>} ringConnectionByPair - Ring connections.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} options - Family placement options.
+ * @returns {object} Seed placement with coordinates and ring centers.
+ */
+function buildFusedSeed(rings, ringAdj, ringConnectionByPair, bondLength, options) {
   const templateAtomIds = [...new Set(rings.flatMap(ring => ring.atomIds))];
   const templateCoords = options.layoutGraph ? placeTemplateCoords(options.layoutGraph, options.templateId, templateAtomIds, bondLength) : null;
   const coords = new Map();

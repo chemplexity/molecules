@@ -15,13 +15,43 @@ import { auditLayout } from '../audit/audit.js';
  * @returns {Map<string, {x: number, y: number}>|null} Constrained ring, or null when inapplicable.
  */
 export function placeConstrainedRing(layoutGraph, ring, seed, bondLength) {
+  return placeConstrainedRingSystem(layoutGraph, [ring], seed, bondLength);
+}
+
+/**
+ * Solves shared ring edges together with fixed atoms pinned from initialization.
+ * Uses four starts and at most 512 projection sweeps; each unique perimeter edge
+ * is visited once per sweep, including edges shared by multiple rings.
+ * @param {object} layoutGraph - Layout graph containing explicit constraints.
+ * @param {object[]} rings - Rings with perimeter-ordered atom IDs.
+ * @param {Map<string, {x: number, y: number}>} seed - Complete system seed.
+ * @param {number} bondLength - Target length for every perimeter edge.
+ * @returns {Map<string, {x: number, y: number}>|null} Constrained coordinates or null when inapplicable.
+ */
+export function placeConstrainedRingSystem(layoutGraph, rings, seed, bondLength) {
   if (!layoutGraph || layoutGraph.options.preserveFixed === false) {
     return null;
   }
-  const ids = ring.atomIds;
+  const ids = [...new Set(rings.flatMap(ring => ring.atomIds))];
   const fixedIds = ids.filter(id => layoutGraph.fixedCoords.has(id));
   if (fixedIds.length < 3) {
     return null;
+  }
+  if (ids.some(id => !seed.has(id))) {
+    return null;
+  }
+  const edges = [];
+  const seenEdges = new Set();
+  for (const ring of rings) {
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const a = ring.atomIds[index];
+      const b = ring.atomIds[(index + 1) % ring.atomIds.length];
+      const key = JSON.stringify([a, b].sort());
+      if (!seenEdges.has(key)) {
+        seenEdges.add(key);
+        edges.push([a, b]);
+      }
+    }
   }
   const fixed = new Set(fixedIds);
   const aligned = alignCoordsToFixed(seed, ids, layoutGraph.fixedCoords).coords;
@@ -37,10 +67,9 @@ export function placeConstrainedRing(layoutGraph, ring, seed, bondLength) {
       }));
       for (let iteration = 0; iteration < 512; iteration++) {
         let maxCorrection = 0;
-        for (let step = 0; step < ids.length; step++) {
-          const index = reverse ? ids.length - 1 - step : step;
-          const aId = ids[index];
-          const bId = ids[(index + 1) % ids.length];
+        for (let step = 0; step < edges.length; step++) {
+          const index = reverse ? edges.length - 1 - step : step;
+          const [aId, bId] = edges[index];
           const a = coords.get(aId);
           const b = coords.get(bId);
           const movable = Number(!fixed.has(aId)) + Number(!fixed.has(bId));
