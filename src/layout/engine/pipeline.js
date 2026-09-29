@@ -2887,7 +2887,7 @@ function maybeRetouchFinalCompactBridgedWholeComponentKamadaKawai(molecule, layo
     movedAtomIds: [],
     audit: currentAudit
   });
-  if (!compactBridgedWholeComponentKamadaKawaiIsEligible(layoutGraph, currentAudit)) {
+  if ((layoutGraph.options.preserveFixed !== false && [...layoutGraph.fixedCoords.keys()].some(id => finalCoords.has(id))) || [...(placement.frozenAtomIds ?? [])].some(id => finalCoords.has(id)) || !compactBridgedWholeComponentKamadaKawaiIsEligible(layoutGraph, currentAudit)) {
     return unchanged();
   }
 
@@ -3152,6 +3152,11 @@ function maybeRepairCompactBridgedOverlapKamadaKawaiClosures(molecule, layoutGra
 function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, finalCoords, placement, bondLength) {
   const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
   const unchanged = () => ({ changed: false, coords: finalCoords, movedAtomIds: [], audit: currentAudit });
+  // This rescue rebuilds the whole component without a constrained seed.
+  // Leave anchored inputs to the local, fixed-aware relaxation instead.
+  if ((layoutGraph.options.preserveFixed !== false && [...layoutGraph.fixedCoords.keys()].some(id => finalCoords.has(id))) || [...(placement.frozenAtomIds ?? [])].some(id => finalCoords.has(id))) {
+    return unchanged();
+  }
   if (
     !compactBridgedWholeComponentKamadaKawaiStructureIsEligible(layoutGraph) ||
     (currentAudit.severeOverlapCount ?? 0) < 1 ||
@@ -13504,15 +13509,18 @@ function relaxExactBridgedSingleOverlapCandidate(layoutGraph, coords, descriptor
 
   const initialUnit = { x: 3 / Math.sqrt(13), y: 2 / Math.sqrt(13) };
   const initialOffset = bondLength * FINAL_BRIDGED_SINGLE_OVERLAP_RELAXATION_INITIAL_OFFSET_FACTOR;
-  candidateCoords.set(descriptor.centerAtomId, {
-    x: centerPosition.x + initialUnit.x * initialOffset,
-    y: centerPosition.y + initialUnit.y * initialOffset
-  });
-  candidateCoords.set(descriptor.ringAtomId, {
-    x: ringPosition.x - initialUnit.x * initialOffset,
-    y: ringPosition.y - initialUnit.y * initialOffset
-  });
-
+  if (!layoutGraph.fixedCoords?.has(descriptor.centerAtomId)) {
+    candidateCoords.set(descriptor.centerAtomId, {
+      x: centerPosition.x + initialUnit.x * initialOffset,
+      y: centerPosition.y + initialUnit.y * initialOffset
+    });
+  }
+  if (!layoutGraph.fixedCoords?.has(descriptor.ringAtomId)) {
+    candidateCoords.set(descriptor.ringAtomId, {
+      x: ringPosition.x - initialUnit.x * initialOffset,
+      y: ringPosition.y - initialUnit.y * initialOffset
+    });
+  }
   const movableAtomIds = [...candidateCoords.keys()].filter(atomId => !layoutGraph.fixedCoords?.has(atomId));
   const movableAtomIdSet = new Set(movableAtomIds);
   const heavyAtomIds = visibleHeavyAtomIdsForCoords(layoutGraph, candidateCoords);

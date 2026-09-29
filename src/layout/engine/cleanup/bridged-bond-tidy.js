@@ -121,8 +121,10 @@ export function runBridgedBondTidy(layoutGraph, inputCoords, options = {}) {
         continue;
       }
 
-      const firstShare = secondMobility / totalMobility;
-      const secondShare = firstMobility / totalMobility;
+      // A zero-mobility endpoint must never inherit the other endpoint's share.
+      // Keep the established weighting when both endpoints are movable.
+      const firstShare = firstMobility === 0 ? 0 : secondMobility === 0 ? 1 : secondMobility / totalMobility;
+      const secondShare = secondMobility === 0 ? 0 : firstMobility === 0 ? 1 : firstMobility / totalMobility;
       const firstDelta = scale(direction, excess * firstShare * MOVEMENT_DAMPING);
       const secondDelta = scale(direction, -excess * secondShare * MOVEMENT_DAMPING);
 

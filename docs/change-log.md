@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-28
+
+- Preserve bridged-ring anchors through projected placement, bond tidying, and later overlap repair.
+
 ## 2026-09-27
 
 - Preserve fixed anchors and shared-edge bond lengths when placing partially constrained fused rings.

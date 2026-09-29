@@ -1,5 +1,6 @@
 /** @module families/bridged */
 
+import { placeConstrainedRingSystem } from '../geometry/constrained-ring.js';
 import { BRIDGED_KK_LIMITS, BRIDGED_VALIDATION } from '../constants.js';
 import { cloneCoords } from '../geometry/transforms.js';
 import { auditLayout } from '../audit/audit.js';
@@ -7,7 +8,7 @@ import { circumradiusForRegularPolygon } from '../geometry/polygon.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { orientBridgedSeed, projectBridgePaths } from './bridge-projection.js';
-import { assignBondValidationClass } from '../placement/bond-validation.js';
+import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { placeRemainingBranches } from '../placement/branch-placement.js';
 import { placeTemplateCoords } from '../templates/placement.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
@@ -5181,12 +5182,43 @@ function buildAromaticCappedFiveFiveFourBridgedCoords(layoutGraph, rings, atomId
 /**
  * Places a bridged or caged ring system using matched template coordinates
  * when available, then falls back to a Kamada-Kawai seed for unmatched cases.
+ * Three or more fixed ring atoms trigger a joint constrained solve, retaining
+ * the seed's planar/projected validation class and solving only free atoms.
  * @param {object[]} rings - Ring descriptors in the bridged system.
  * @param {number} bondLength - Target bond length.
  * @param {{layoutGraph?: object, templateId?: string|null}} [options] - Placement options.
  * @returns {{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}|null} Placement result.
  */
 export function layoutBridgedFamily(rings, bondLength, options = {}) {
+  const placement = buildBridgedSeed(rings, bondLength, options);
+  if (!placement) {
+    return null;
+  }
+  if (options.layoutGraph.options.preserveFixed === false || options.layoutGraph.fixedCoords.size < 3) {
+    return placement;
+  }
+  const validationClass = resolvePlacementValidationClass('bridged', placement.placementMode, options.templateId);
+  const bondValidationClasses = assignBondValidationClass(options.layoutGraph, placement.coords.keys(), validationClass);
+  const constrained = placeConstrainedRingSystem(options.layoutGraph, rings, placement.coords, bondLength, {
+    seedBondLimits: validationClass === 'bridged' ? BRIDGED_VALIDATION : undefined,
+    bondValidationClasses
+  });
+  if (!constrained) {
+    return placement;
+  }
+  const coords = new Map([...placement.coords, ...constrained]);
+  const ringCenters = new Map(rings.map(ring => [ring.id, centroid(ring.atomIds.map(id => coords.get(id)))]));
+  return { ...placement, coords, ringCenters, bondValidationClasses, placementMode: 'constrained-ring-system' };
+}
+
+/**
+ * Builds a bridged template or projected seed before joint constraint solving.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} options - Family placement options.
+ * @returns {object|null} Seed placement, or null when unavailable.
+ */
+function buildBridgedSeed(rings, bondLength, options) {
   if (rings.length === 0 || !options.layoutGraph) {
     return null;
   }
