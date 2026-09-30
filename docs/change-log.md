@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-09-29
+
+- Rebuild evaluation-context atom lists when replacing coordinates so added atoms and their overlaps are not missed.
+
 ## 2026-09-28
 
 - Preserve bridged-ring anchors through projected placement, bond tidying, and later overlap repair.

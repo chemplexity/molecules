@@ -122,11 +122,24 @@ export class LayoutEvaluationContext {
     return context;
   }
 
+  /**
+   * Creates evaluation scratch for a new coordinate state. Atom membership is
+   * coordinate-dependent, so lists and spatial grids must be rebuilt unless the
+   * caller supplies replacements valid for the new state. Graph-only display
+   * counts may be reused; the graph is assumed unchanged and contexts read-only.
+   * @param {Map<string, {x: number, y: number}>} coords - Replacement coordinates.
+   * @param {object} [options] - Optional scratch validated for the replacement state.
+   * @param {string[]} [options.layoutAtomIds] - Replacement layout atom IDs.
+   * @param {string[]} [options.visibleHeavyAtomIds] - Replacement heavy atom IDs.
+   * @param {object} [options.displayAtomCounts] - Replacement graph display counts.
+   * @param {object} [options.atomGrid] - Spatial grid for the replacement coordinates.
+   * @returns {LayoutEvaluationContext} Independent evaluation context.
+   */
   withCoords(coords, options = {}) {
     return new LayoutEvaluationContext(this.layoutGraph, coords, {
       bondLength: this.bondLength,
-      layoutAtomIds: options.layoutAtomIds ?? this._layoutAtomIds,
-      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? this._visibleHeavyAtomIds,
+      layoutAtomIds: options.layoutAtomIds ?? null,
+      visibleHeavyAtomIds: options.visibleHeavyAtomIds ?? null,
       displayAtomCounts: options.displayAtomCounts ?? this._displayAtomCounts,
       atomGrid: options.atomGrid ?? null
     });
