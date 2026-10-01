@@ -5182,7 +5182,7 @@ function buildAromaticCappedFiveFiveFourBridgedCoords(layoutGraph, rings, atomId
 /**
  * Places a bridged or caged ring system using matched template coordinates
  * when available, then falls back to a Kamada-Kawai seed for unmatched cases.
- * Three or more fixed ring atoms trigger a joint constrained solve, retaining
+ * Two or more fixed ring atoms trigger a joint constrained solve, retaining
  * the seed's planar/projected validation class and solving only free atoms.
  * @param {object[]} rings - Ring descriptors in the bridged system.
  * @param {number} bondLength - Target bond length.
@@ -5194,12 +5194,13 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   if (!placement) {
     return null;
   }
-  if (options.layoutGraph.options.preserveFixed === false || options.layoutGraph.fixedCoords.size < 3) {
+  if (options.layoutGraph.options.preserveFixed === false || options.layoutGraph.fixedCoords.size < 2) {
     return placement;
   }
   const validationClass = resolvePlacementValidationClass('bridged', placement.placementMode, options.templateId);
   const bondValidationClasses = assignBondValidationClass(options.layoutGraph, placement.coords.keys(), validationClass);
   const constrained = placeConstrainedRingSystem(options.layoutGraph, rings, placement.coords, bondLength, {
+    minFixedAtoms: 2,
     seedBondLimits: validationClass === 'bridged' ? BRIDGED_VALIDATION : undefined,
     bondValidationClasses
   });

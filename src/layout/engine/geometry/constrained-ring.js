@@ -4,6 +4,54 @@ import { alignCoordsToFixed, reflectAcrossLine } from './transforms.js';
 import { auditLayout } from '../audit/audit.js';
 
 /**
+ * Seeds the two free ring paths as equal-edge circular arcs on opposite sides
+ * of the anchor chord, avoiding global scaling of a large ring to a short chord.
+ * @param {string[]} ids - Ring perimeter order.
+ * @param {string[]} fixedIds - Two anchor IDs.
+ * @param {Map<string, {x: number, y: number}>} fixedCoords - Anchor coordinates.
+ * @param {number} bondLength - Edge length.
+ * @returns {Map<string, {x: number, y: number}>|null} Feasible arc seed or null.
+ */
+function twoAnchorRingSeed(ids, fixedIds, fixedCoords, bondLength) {
+  const firstIndex = ids.indexOf(fixedIds[0]);
+  const ordered = [...ids.slice(firstIndex), ...ids.slice(0, firstIndex)];
+  const split = ordered.indexOf(fixedIds[1]);
+  const first = fixedCoords.get(fixedIds[0]);
+  const second = fixedCoords.get(fixedIds[1]);
+  const chord = Math.hypot(second.x - first.x, second.y - first.y);
+  if (chord <= bondLength * 1e-12 || chord > Math.min(split, ids.length - split) * bondLength) {
+    return null;
+  }
+  const coords = new Map();
+  const paths = [ordered.slice(0, split + 1), [ordered[0], ...ordered.slice(split).reverse()]];
+  for (const [side, path] of paths.entries()) {
+    const edges = path.length - 1;
+    let low = 0;
+    let high = 2 * Math.PI / edges;
+    for (let iteration = 0; iteration < 64 && edges > 1; iteration++) {
+      const angle = (low + high) / 2;
+      const span = bondLength * Math.sin(edges * angle / 2) / Math.sin(angle / 2);
+      if (span > chord) {
+        low = angle;
+      } else {
+        high = angle;
+      }
+    }
+    const turn = edges === 1 ? 0 : (side === 0 ? 1 : -1) * (low + high) / 2;
+    const initial = Math.atan2(second.y - first.y, second.x - first.x) - (edges - 1) * turn / 2;
+    let position = { ...first };
+    coords.set(path[0], position);
+    for (let index = 1; index < edges; index++) {
+      const angle = initial + (index - 1) * turn;
+      position = { x: position.x + bondLength * Math.cos(angle), y: position.y + bondLength * Math.sin(angle) };
+      coords.set(path[index], position);
+    }
+    coords.set(path[edges], { ...second });
+  }
+  return coords;
+}
+
+/**
  * Places a partially anchored isolated ring using bounded distance projection.
  * Fixed positions seed the solve and are never moved; only free endpoints absorb
  * bond corrections. Two mirrored starts and both sweep orders reduce foldovers.
@@ -28,6 +76,7 @@ export function placeConstrainedRing(layoutGraph, ring, seed, bondLength) {
  * @param {Map<string, {x: number, y: number}>} seed - Complete system seed.
  * @param {number} bondLength - Target length for every perimeter edge.
  * @param {object} [options] - Constraint-solving options.
+ * @param {number} [options.minFixedAtoms] - Minimum anchor count (default three); macrocycles and bridged systems opt into two-anchor solving.
  * @param {{minBondLengthFactor: number, maxBondLengthFactor: number}} [options.seedBondLimits] - Add projected seed-length and bounded-interval candidates.
  * @param {Map<string, string>} [options.bondValidationClasses] - Placement-specific validation classes used to rank candidates.
  * @returns {Map<string, {x: number, y: number}>|null} Constrained coordinates or null when inapplicable.
@@ -38,7 +87,7 @@ export function placeConstrainedRingSystem(layoutGraph, rings, seed, bondLength,
   }
   const ids = [...new Set(rings.flatMap(ring => ring.atomIds))];
   const fixedIds = ids.filter(id => layoutGraph.fixedCoords.has(id));
-  if (fixedIds.length < 3) {
+  if (fixedIds.length < Math.max(2, options.minFixedAtoms ?? 3)) {
     return null;
   }
   if (ids.some(id => !seed.has(id))) {
@@ -62,7 +111,8 @@ export function placeConstrainedRingSystem(layoutGraph, rings, seed, bondLength,
     }
   }
   const fixed = new Set(fixedIds);
-  const aligned = alignCoordsToFixed(seed, ids, layoutGraph.fixedCoords).coords;
+  const arcSeed = rings.length === 1 && fixedIds.length === 2 ? twoAnchorRingSeed(ids, fixedIds, layoutGraph.fixedCoords, bondLength) : null;
+  const aligned = arcSeed ?? alignCoordsToFixed(seed, ids, layoutGraph.fixedCoords).coords;
   const first = layoutGraph.fixedCoords.get(fixedIds[0]);
   const second = layoutGraph.fixedCoords.get(fixedIds[1]);
   let best = null;

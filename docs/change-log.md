@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-09-30
+
+- Maintain bridged-ring bond lengths and avoid overlaps when only two anchors are fixed.
+- Preserve two fixed macrocycle anchors while maintaining ring closure, bond lengths, and separation between the ring paths.
+
 ## 2026-09-29
 
 - Rebuild evaluation-context atom lists when replacing coordinates so added atoms and their overlaps are not missed.
