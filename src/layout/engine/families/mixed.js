@@ -6588,6 +6588,9 @@ function ringLinkerExitAngle(layoutGraph, coords, ringSystem, attachmentAtomId, 
 /**
  * Returns whether a detected ring linker is a short single-bond connector suited
  * to the dedicated mixed-family linker placement path.
+ * Placed fused cores need not be aromatic: their ring-based exit direction also
+ * supports outward short-linker candidates from saturated fused scaffolds.
+ * Bridged/spiro connections and unsupported linker bond/atom types stay excluded.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} firstRingSystem - Already placed ring-system descriptor.
  * @param {object} secondRingSystem - Pending ring-system descriptor.
@@ -6602,7 +6605,7 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
     if (family === 'isolated-ring') {
       return ringSystemIsAromatic(ringSystem);
     }
-    if (!allowFused || family !== 'fused' || !ringSystemIsAromatic(ringSystem)) {
+    if (!allowFused || family !== 'fused') {
       return false;
     }
     const connectionKinds = ringSystemConnectionKinds(layoutGraph, ringSystem);

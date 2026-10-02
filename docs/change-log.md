@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-01
+
+- Route short ring linkers outward from non-aromatic fused cores to prevent crossed branches and inward substituents.
+
 ## 2026-09-30
 
 - Maintain bridged-ring bond lengths and avoid overlaps when only two anchors are fixed.
