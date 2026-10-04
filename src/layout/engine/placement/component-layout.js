@@ -7,7 +7,7 @@ import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { layoutLargeMoleculeFamily } from '../families/large-molecule.js';
 import { layoutOrganometallicFamily } from '../families/organometallic.js';
 import { rigidDescriptorKey } from '../cleanup/rigid-rotation.js';
-import { assignBondValidationClass, mergeBondValidationClasses } from './bond-validation.js';
+import { assignBondValidationClass, assignPreservedBondValidationClasses, mergeBondValidationClasses } from './bond-validation.js';
 import { exceedsLargeComponentThreshold } from '../topology/large-blocks.js';
 import { findMacrocycleRings } from '../topology/macrocycles.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
@@ -806,7 +806,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       for (const atomId of preserved.atomIds) {
         frozenAtomIds.add(atomId);
       }
-      assignBondValidationClass(layoutGraph, component.atomIds, 'planar', bondValidationClasses, { overwrite: false });
+      assignPreservedBondValidationClasses(layoutGraph, component, bondValidationClasses);
       continue;
     }
 

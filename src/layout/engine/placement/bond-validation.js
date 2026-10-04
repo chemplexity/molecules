@@ -2,6 +2,7 @@
 
 import { BRIDGED_VALIDATION } from '../constants.js';
 import { getTemplateById } from '../templates/library.js';
+import { buildScaffoldPlan } from '../model/scaffold-plan.js';
 
 /**
  * Returns whether a bond lies fully inside the requested atom set.
@@ -71,6 +72,33 @@ export function assignBondValidationClass(layoutGraph, atomIds, validationClass,
       continue;
     }
     targetMap.set(bond.id, validationClass);
+  }
+  return targetMap;
+}
+
+/**
+ * Reconstructs validation classes for a component whose coordinates are retained.
+ * Matched templates keep their declared geometry; unmatched bridged scaffolds
+ * use projected validation. Only bonds internal to those ring systems receive
+ * that class, leaving branches and ordinary planar scaffolds strictly planar.
+ * Reuses the topology/template scaffold plan without generating coordinates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{atomIds: string[]}} component - Preserved connected component.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} [targetMap] - Output map.
+ * @returns {Map<string, 'planar'|'bridged'|'haptic'>} Updated validation classes.
+ */
+export function assignPreservedBondValidationClasses(layoutGraph, component, targetMap = new Map()) {
+  assignBondValidationClass(layoutGraph, component.atomIds, 'planar', targetMap, { overwrite: false });
+  for (const candidate of buildScaffoldPlan(layoutGraph, component).candidates) {
+    if (candidate.type !== 'ring-system') {
+      continue;
+    }
+    const validationClass = candidate.templateId
+      ? resolvePlacementValidationClass(candidate.family, 'template', candidate.templateId)
+      : candidate.family === 'bridged' ? 'bridged' : 'planar';
+    if (validationClass !== 'planar') {
+      assignBondValidationClass(layoutGraph, candidate.atomIds, validationClass, targetMap);
+    }
   }
   return targetMap;
 }
