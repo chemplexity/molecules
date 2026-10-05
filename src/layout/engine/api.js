@@ -65,20 +65,32 @@ function augmentExistingCoordsWithHiddenHydrogens(molecule, existingCoords, hidd
   return addedAny ? augmentedCoords : existingCoords;
 }
 
+/**
+ * Restores hydrogen suppression without removing explicitly preserved anchors.
+ * A hidden atom may still require a coordinate; visibility and fixed placement
+ * are independent. Retain the pipeline's solved position rather than rewriting
+ * an anchor after validation, so genuine constraint failures remain reported.
+ * @param {object} result - Validated pipeline result.
+ * @param {Set<string>} hiddenHydrogenAtomIds - Originally suppressed hydrogens.
+ * @returns {object} Result with ordinary hidden coordinates omitted.
+ */
 function stripHiddenHydrogenCoords(result, hiddenHydrogenAtomIds) {
   if (!(hiddenHydrogenAtomIds instanceof Set) || hiddenHydrogenAtomIds.size === 0 || !result) {
     return result;
   }
   let removedAny = false;
+  const layoutGraph = result.layoutGraph;
   const coords = result.coords instanceof Map ? new Map(result.coords) : result.coords;
   for (const atomId of hiddenHydrogenAtomIds) {
+    if (layoutGraph?.options.preserveFixed !== false && layoutGraph?.fixedCoords.has(atomId)) {
+      continue;
+    }
     if (coords instanceof Map) {
       removedAny = coords.delete(atomId) || removedAny;
     }
   }
 
   let restoredAnyVisibility = false;
-  const layoutGraph = result.layoutGraph;
   if (layoutGraph?.atoms instanceof Map) {
     for (const atom of layoutGraph.atoms.values()) {
       if (atom?.element !== 'H' || atom.visible === false) {

@@ -234,6 +234,45 @@ function chooseTransformedFragment(layoutGraph, coords, anchorAtomIds, targetAnc
   return bestTransform;
 }
 
+/**
+ * Packs one monodentate ligand into a remaining generic coordination slot.
+ * Tests its rigid pose and radial reflection; strict ties retain the original
+ * slot and pose. The caller limits this to six ligands (42 poses in total).
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Local ligand coordinates.
+ * @param {string[]} anchorAtomIds - Single ligand anchor.
+ * @param {object[]} specs - Available coordination slots, updated in place.
+ * @param {number} index - First unused slot.
+ * @param {{x: number, y: number}} metalPosition - Provisional metal center.
+ * @param {Map<string, {x: number, y: number}>} existingCoords - Placed ligands.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Best rigid ligand pose.
+ */
+function packMonodentateLigand(layoutGraph, coords, anchorAtomIds, specs, index, metalPosition, existingCoords, bondLength) {
+  let bestCoords;
+  let bestScore = Infinity;
+  let bestIndex = index;
+  for (let slotIndex = index; slotIndex < specs.length; slotIndex++) {
+    const angle = specs[slotIndex].angle;
+    const target = add(metalPosition, fromAngle(angle, bondLength));
+    const base = transformFragment(coords, anchorAtomIds, target, angle);
+    const mirrored = new Map([...base].map(([atomId, position]) => {
+      const local = rotate(sub(position, target), -angle);
+      return [atomId, add(target, rotate({ x: local.x, y: -local.y }, angle))];
+    }));
+    for (const candidate of [base, mirrored]) {
+      const score = scoreFragmentAgainstExisting(layoutGraph, candidate, existingCoords, bondLength);
+      if (score < bestScore - 1e-9) {
+        bestCoords = candidate;
+        bestScore = score;
+        bestIndex = slotIndex;
+      }
+    }
+  }
+  [specs[index], specs[bestIndex]] = [specs[bestIndex], specs[index]];
+  return bestCoords;
+}
+
 function sortRecordsByCanonicalId(records) {
   return [...records].sort((firstRecord, secondRecord) => {
     const firstId = firstRecord.atomIds[0] ?? '';
@@ -1210,7 +1249,18 @@ function layoutMetalFrameworkRescue(layoutGraph, participantAtomIds, metalAtomId
   };
 }
 
-function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength) {
+/**
+ * Constructs ligand-first placement, optionally packing generic monodentate ligands.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} participantAtomIds - Component atoms.
+ * @param {string[]} metalAtomIds - Metal centers.
+ * @param {object[]} fragmentRecords - Ligand fragments and anchors.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<object, object>} ligandLayouts - Shared local-layout cache.
+ * @param {boolean} [packLigands] - Search remaining slots and radial mirrors (default false).
+ * @returns {object|null} Placement with validation classes, or unsupported.
+ */
+function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength, ligandLayouts, packLigands = false) {
   const metalCoords = new Map();
   if (metalAtomIds.length === 1) {
     metalCoords.set(metalAtomIds[0], { x: 0, y: 0 });
@@ -1246,14 +1296,18 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
     const specs = arrangementSpecsForRecords(layoutGraph, metalAtomId, records);
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
-      const ligandLayout = layoutLigandFragment(layoutGraph, record, bondLength);
+      const ligandLayout = ligandLayouts.get(record) ?? layoutLigandFragment(layoutGraph, record, bondLength);
+      ligandLayouts.set(record, ligandLayout);
       if (!ligandLayout.supported || ligandLayout.coords.size === 0 || record.anchorAtomIds.length === 0) {
         return null;
       }
 
+      const packedCoords = packLigands
+        ? packMonodentateLigand(layoutGraph, ligandLayout.coords, record.anchorAtomIds, specs, index, provisionalMetalPosition, fragmentCoords, bondLength)
+        : null;
       const spec = specs[index] ?? { angle: 0, displayType: null };
       const targetAnchorCenter = add(provisionalMetalPosition, fromAngle(spec.angle, bondLength));
-      const transformed = chooseTransformedFragment(layoutGraph, ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle, fragmentCoords, bondLength);
+      const transformed = packedCoords ?? chooseTransformedFragment(layoutGraph, ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle, fragmentCoords, bondLength);
       for (const [atomId, position] of transformed) {
         fragmentCoords.set(atomId, position);
       }
@@ -1390,7 +1444,8 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
     return cleanPolyoxoWheelPlacement;
   }
 
-  const ligandFirstPlacement = layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);
+  const ligandLayouts = new Map();
+  const ligandFirstPlacement = layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength, ligandLayouts);
   if (!ligandFirstPlacement) {
     return null;
   }
@@ -1398,6 +1453,28 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
   const ligandFirstAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, ligandFirstPlacement, bondLength);
   let bestPlacement = ligandFirstPlacement;
   let bestAudit = ligandFirstAudit;
+
+  // One bounded alternative, only for crowded generic monodentate fans. Keep
+  // named coordination geometries, chelates, haptic ligands and fixed poses out.
+  if (
+    (bestAudit.severeOverlapCount > 0 || bestAudit.visibleHeavyBondCrossingCount > 0) &&
+    metalAtomIds.length === 1 && participantAtomIds.length <= 128 &&
+    fragmentRecords.length >= 3 && fragmentRecords.length <= 6 &&
+    fragmentRecords.every(record => record.anchorAtomIds.length === 1 && record.anchorMetalIds.length === 1) &&
+    coordinationGeometryKind(layoutGraph, metalAtomIds[0], fragmentRecords) === 'generic' &&
+    !(layoutGraph.options.preserveFixed !== false && participantAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)))
+  ) {
+    const packedPlacement = layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength, ligandLayouts, true);
+    const packedAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, packedPlacement, bondLength);
+    if (
+      packedAudit?.ok && packedAudit.visibleHeavyBondCrossingCount === 0 &&
+      packedAudit.labelOverlapCount <= bestAudit.labelOverlapCount &&
+      packedAudit.maxBondLengthDeviation <= bestAudit.maxBondLengthDeviation + 1e-9
+    ) {
+      bestPlacement = packedPlacement;
+      bestAudit = packedAudit;
+    }
+  }
 
   if (hasDirectMetalFramework(layoutGraph, metalAtomIds) && shouldTryMetalFrameworkRescue(metalAtomIds, fragmentRecords, bestAudit)) {
     const frameworkRescuePlacement = layoutMetalFrameworkRescue(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength);

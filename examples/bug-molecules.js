@@ -647,5 +647,6 @@ export const bugMolecules = [
   '[Na+].CO[C@H]1[C@H](O)[C@@H](CO)O[C@@H](O[C@H]2[C@H](O)[C@@H](CO)O[C@@H](O[C@@H]3[C@@H](C)O[C@@H](O[C@@H]4[C@@H](O)[C@@H](CO[C@H]4O[C@H]5CC[C@@]6(C)[C@@H](CC[C@@H]7C6=C[C@H](O)[C@@]89[C@H](CC[C@@]78C)[C@@](C)(OC9=O)C(=O)CCC(C)C)C5(C)C)OS(=O)(=O)[O-])[C@H](O)[C@H]3O)[C@@H]2O)[C@@H]1O',
   'ONC(=O)CCCCCCNC(=O)c1ccc(cc1)C(O)(c2ccc(F)cc2F)c3ccc(F)cc3F',
   'COC(C)C1=NC2=C(C(CC(C)(C)C2)O[Si](C)(C)C(C)(C)C)C2=C1C(OC21CCOCC1)C1=CC=C(C=C1)C(F)(F)F',
-  '[H][H]'
+  '[H][H]',
+  'CCCCC=CC1=CC=CC2=C1C=C(C2[Zr](Cl)(Cl)(C1C2=C(C=C1C1=CC=CC=C1)C(C=CCCCC)=CC=C2)[SiH](C)C)C1=CC=CC=C1'
 ];

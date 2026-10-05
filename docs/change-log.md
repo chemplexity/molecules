@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-10-04
+
+- Separate bulky ligands in crowded metal complexes without changing coordination angles or bond lengths.
+- Keep explicitly fixed hidden-hydrogen coordinates in layout results so returned anchors agree with validation, without changing hydrogen visibility.
+
 ## 2026-10-03
 
 - Prevent false bond-length and crossing failures when refining unchanged projected cages, while keeping planar rings and branches strictly validated.
