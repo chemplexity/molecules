@@ -1,5 +1,6 @@
 /** @module cleanup/hypervalent-angle-tidy */
 
+import { packPhosphazeneRingFans } from './phosphazene-ring-fans.js';
 import { auditLayout } from '../audit/audit.js';
 import { add, angleOf, angularDifference, distance, fromAngle, rotate, sub, wrapAngleUnsigned } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
@@ -4382,6 +4383,14 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
   }
 
   nudges += relievePairedHypervalentTetrahedralAnchors(layoutGraph, coords);
+
+  const packedFanCoords = packPhosphazeneRingFans(layoutGraph, coords, layoutGraph.options.bondLength, candidate => measureOrthogonalHypervalentDeviation(layoutGraph, candidate));
+  if (packedFanCoords) {
+    for (const [atomId, position] of packedFanCoords) {
+      coords.set(atomId, position);
+    }
+    nudges++;
+  }
 
   return { coords, nudges };
 }

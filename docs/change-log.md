@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-05
+
+- Remove overlaps and crossings between crowded phosphazene ring fans while preserving bond lengths and improving phosphorus angles.
+
 ## 2026-10-04
 
 - Separate bulky ligands in crowded metal complexes without changing coordination angles or bond lengths.
