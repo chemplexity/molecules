@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-06
+
+- Prevent crossings between crowded aromatic-ring branches by reconsidering ring mirrors after substituent placement, without changing bond lengths.
+
 ## 2026-10-05
 
 - Remove overlaps and crossings between crowded phosphazene ring fans while preserving bond lengths and improving phosphorus angles.

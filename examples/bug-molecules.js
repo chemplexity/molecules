@@ -648,5 +648,6 @@ export const bugMolecules = [
   'ONC(=O)CCCCCCNC(=O)c1ccc(cc1)C(O)(c2ccc(F)cc2F)c3ccc(F)cc3F',
   'COC(C)C1=NC2=C(C(CC(C)(C)C2)O[Si](C)(C)C(C)(C)C)C2=C1C(OC21CCOCC1)C1=CC=C(C=C1)C(F)(F)F',
   '[H][H]',
-  'CCCCC=CC1=CC=CC2=C1C=C(C2[Zr](Cl)(Cl)(C1C2=C(C=C1C1=CC=CC=C1)C(C=CCCCC)=CC=C2)[SiH](C)C)C1=CC=CC=C1'
+  'CCCCC=CC1=CC=CC2=C1C=C(C2[Zr](Cl)(Cl)(C1C2=C(C=C1C1=CC=CC=C1)C(C=CCCCC)=CC=C2)[SiH](C)C)C1=CC=CC=C1',
+  'Oc1cccc(c1)c2c3C=Cc([nH]3)c(c4cccc(O)c4)c5ccc(n5)c(c6cccc(O)c6)c7ccc([nH]7)c(c8cccc(O)c8)c9nc2C(O)(c%10cc(cc(c%10)C(F)(F)F)C(F)(F)F)C9(O)c%11cc(cc(c%11)C(F)(F)F)C(F)(F)F'
 ];

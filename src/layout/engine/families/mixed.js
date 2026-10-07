@@ -8,6 +8,7 @@ import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { alignCoordsToFixed, reflectAcrossLine } from '../geometry/transforms.js';
 import { nonSharedPath } from '../geometry/ring-path.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
+import { selectAttachedRingMirrors } from '../placement/attached-ring-mirrors.js';
 import { auditCandidateSafety, auditLayout } from '../audit/audit.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { runRingPresentationCleanup } from '../cleanup/presentation/ring-presentation.js';
@@ -23283,6 +23284,11 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   placeMixedBranches(layoutGraph, adjacency, bondLength, state, primaryNonRingAtomIds);
   if ((state.pendingRingSystems?.length ?? 0) > 0) {
     attachPendingRingSystems(layoutGraph, adjacency, bondLength, state);
+  }
+  const ringMirrors = selectAttachedRingMirrors(layoutGraph, coords, bondValidationClasses, bondLength);
+  if (ringMirrors.mirrors > 0) {
+    overwriteCoordMap(coords, ringMirrors.coords);
+    markMixedBranchPlacementContextDirty(state);
   }
   if ((pendingRingAttachmentResnapAtomIds?.size ?? 0) > 0) {
     const localRestoreFocusAtomIds = realignPendingRingAttachmentVisibleTrigonalRoots(layoutGraph, coords, pendingRingAttachmentResnapAtomIds, bondLength);
