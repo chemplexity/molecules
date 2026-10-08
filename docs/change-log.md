@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-07
+
+- Prevent stretched cage bonds during fused-ring regularization by solving connected bridge closures together while preserving the fused core.
+
 ## 2026-10-06
 
 - Prevent crossings between crowded aromatic-ring branches by reconsidering ring mirrors after substituent placement, without changing bond lengths.

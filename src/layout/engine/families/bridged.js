@@ -26,6 +26,8 @@ const BRIDGED_PROJECTION_SAME_FAILURE_MAX_BASELINE_DEVIATION_FACTOR = 0.5;
 const BRIDGED_PROJECTION_SAME_FAILURE_MAX_REGRESSION_FACTOR = 1.0;
 const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]);
 const FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
+const FUSED_CORE_BRIDGE_REPAIR_LIMIT = 8;
+const FUSED_CORE_BRIDGE_TARGET_LIMITS = Object.freeze({ minBondLengthFactor: 0.75, maxBondLengthFactor: 1.25 });
 const FUSED_CYCLOHEXANE_BRANCH_SLOT_BLOCKER_FACTOR = 0.65;
 const FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR = 0.55;
 const SATURATED_BRIDGED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
@@ -3536,6 +3538,11 @@ function shouldAcceptFusedCyclohexaneCoords(candidateAudit, incumbentAudit, cand
   if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
     return false;
   }
+  // A lower ring-shape score must not turn mild bond failures into a
+  // catastrophically stretched closure while leaving the failure count tied.
+  if (candidateAudit.bondLengthFailureCount > 0 && candidateAudit.maxBondLengthDeviation > incumbentAudit.maxBondLengthDeviation + 1e-9) {
+    return false;
+  }
   if (candidateAudit.ok === true && incumbentAudit.ok !== true) {
     return true;
   }
@@ -3733,6 +3740,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
   if (!bestAudit || !Number.isFinite(bestScore)) {
     return coords;
   }
+  let bridgeRepairAttempts = 0;
 
   for (const pair of pairs) {
     const fusedTargetCandidates = exactFusedAromaticCyclohexanePairTargetCandidates(pair, coords, bondLength);
@@ -3741,7 +3749,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
     }
     for (const { targets: fusedTargets } of fusedTargetCandidates) {
       for (const heightFactor of FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS) {
-        const candidateCoords = cloneCoords(coords);
+        let candidateCoords = cloneCoords(coords);
         for (const [atomId, position] of fusedTargets) {
           if (!layoutGraph.fixedCoords.has(atomId)) {
             candidateCoords.set(atomId, position);
@@ -3749,7 +3757,32 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
         }
         translateSingleAnchorSideComponentsWithFusedCore(layoutGraph, pair, coords, candidateCoords);
         addVariableBridgePathTargets(layoutGraph, rings, pair, coords, candidateCoords, bondLength, heightFactor);
-        const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+        let candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+        if (
+          candidateAudit.bondLengthFailureCount > 0 &&
+          candidateAudit.maxBondLengthDeviation > bestAudit.maxBondLengthDeviation + 1e-9 &&
+          bridgeRepairAttempts < FUSED_CORE_BRIDGE_REPAIR_LIMIT &&
+          atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+          rings.length <= 8 &&
+          coords.size === atomIds.length &&
+          layoutGraph.fixedCoords.size === 0 &&
+          !containsMetalAtom(layoutGraph, atomIds) &&
+          !atomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality || (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => bond.stereo))
+        ) {
+          bridgeRepairAttempts++;
+          const repaired = repairFusedCoreBridgeTargets(layoutGraph, rings, atomIds, fusedTargets, candidateCoords, bondLength);
+          const repairedAudit = repaired && auditBridgedPlacementCandidate(layoutGraph, atomIds, repaired, bondLength);
+          if (
+            repairedAudit?.ok === true &&
+            repairedAudit.maxBondLengthDeviation <= bestAudit.maxBondLengthDeviation + 1e-9 &&
+            repairedAudit.severeOverlapCount <= bestAudit.severeOverlapCount &&
+            repairedAudit.visibleHeavyBondCrossingCount <= bestAudit.visibleHeavyBondCrossingCount &&
+            repairedAudit.labelOverlapCount <= bestAudit.labelOverlapCount
+          ) {
+            candidateCoords = repaired;
+            candidateAudit = repairedAudit;
+          }
+        }
         const candidateScore = fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, candidateCoords, bondLength);
         if (shouldAcceptFusedCyclohexaneCoords(candidateAudit, bestAudit, candidateScore, bestScore)) {
           bestCoords = candidateCoords;
@@ -3761,6 +3794,34 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
   }
 
   return bestCoords;
+}
+
+/**
+ * Solves coupled bridge closures while keeping the proposed fused core fixed.
+ * Independent path targets can break bonds into neighboring bridge rings. Reuse
+ * the bounded constrained-ring solver (four starts per mode, 512 sweeps) to
+ * consider all shared edges together. The 25% target interval is deliberately
+ * tighter than bridged validation; no bond-validation class is changed.
+ * The caller limits this to eight attempts on unanchored, non-stereo compact
+ * cages with no already-placed external branches, and audits every result.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Cage rings.
+ * @param {string[]} atomIds - Cage atom IDs.
+ * @param {Map<string, {x: number, y: number}>} fusedTargets - Proposed fused-core positions.
+ * @param {Map<string, {x: number, y: number}>} coords - Complete proposed cage coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Coupled bridge candidate.
+ */
+function repairFusedCoreBridgeTargets(layoutGraph, rings, atomIds, fusedTargets, coords, bondLength) {
+  const anchoredGraph = {
+    ...layoutGraph,
+    options: { ...layoutGraph.options, preserveFixed: true },
+    fixedCoords: new Map([...fusedTargets.keys()].map(atomId => [atomId, coords.get(atomId)]))
+  };
+  return placeConstrainedRingSystem(anchoredGraph, rings, coords, bondLength, {
+    seedBondLimits: FUSED_CORE_BRIDGE_TARGET_LIMITS,
+    bondValidationClasses: assignBondValidationClass(layoutGraph, atomIds, 'bridged')
+  });
 }
 
 function shouldAcceptAromaticRegularizedCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
