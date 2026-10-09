@@ -362,6 +362,35 @@ function buildStereoHydrogenRenderState(smiles) {
 }
 
 describe('create2DSceneRenderer', () => {
+  it('materializes all lead hydrogens when preserving a force-converted heavy layout', () => {
+    const { renderer } = makeRenderer();
+    const mol = parseSMILES('C[PbH3]');
+    const lead = [...mol.atoms.values()].find(atom => atom.name === 'Pb');
+    const carbon = [...mol.atoms.values()].find(atom => atom.name === 'C');
+    carbon.x = -1.5;
+    carbon.y = 0;
+    lead.x = 0;
+    lead.y = 0;
+    const hydrogens = lead.getNeighbors(mol).filter(atom => atom.name === 'H');
+    hydrogens.forEach((atom, index) => {
+      atom.x = index === 0 ? 0 : 300 + index;
+      atom.y = index === 0 ? 0 : 400;
+    });
+    renderer.render2d(mol, { preserveGeometry: true });
+    assert.equal(hydrogens.length, 3);
+    for (const hydrogen of hydrogens) {
+      assert.equal(hydrogen.visible, true);
+      approxEqual(Math.hypot(hydrogen.x - lead.x, hydrogen.y - lead.y), 1.5);
+    }
+    for (let i = 0; i < hydrogens.length; i++) {
+      for (let j = i + 1; j < hydrogens.length; j++) {
+        assert.ok(Math.hypot(hydrogens[i].x - hydrogens[j].x, hydrogens[i].y - hydrogens[j].y) > 0.5);
+      }
+    }
+    assert.deepEqual({ x: lead.x, y: lead.y }, { x: 0, y: 0 });
+    assert.deepEqual({ x: carbon.x, y: carbon.y }, { x: -1.5, y: 0 });
+  });
+
   it('renders a 2D scene, updates state, and clears selection by default', () => {
     const { renderer, records, state } = makeRenderer();
     const atom = makeAtom('a1', 0, 0);

@@ -4644,6 +4644,60 @@ test('delete key is a no-op for a hovered force C-H bond while draw mode is acti
   await expect(page.locator('#smiles-input')).toHaveValue(beforeAttempt);
 });
 
+for (const sourceAtomId of ['C1', 'O14']) {
+  test(`switching a force-added lead trihydride from ${sourceAtomId} to 2d keeps three distinct short hydrogen bonds`, async ({ page }) => {
+    await page.goto('/index.html');
+    await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    await page.locator('#toggle-btn').click();
+    await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+    await page.locator('#periodic-table-btn').click();
+    await page.locator('[data-periodic-element="Pb"]').click();
+    await expect(page.locator('#draw-bond-btn')).toHaveClass(/active/);
+    const source = (await forceAtomScreenPoints(page)).find(atom => atom.id === sourceAtomId);
+    const direction = sourceAtomId === 'C1' ? -1 : 1;
+    await page.mouse.move(source.cx, source.cy);
+    await page.mouse.down();
+    await page.mouse.move(source.cx + direction * 160, source.cy + direction * 100, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.locator('#smiles-input')).toHaveValue(/PbH3/);
+    const hydride = await page.evaluate(() => {
+      const nodes = [...document.querySelectorAll('circle.node')].map(node => node.__data__);
+      const lead = nodes.find(node => node.name === 'Pb');
+      const hydrogenIds = [...document.querySelectorAll('line.link')]
+        .map(line => line.__data__)
+        .flatMap(link => {
+          if (link.source.id === lead.id && link.target.name === 'H') {
+            return [link.target.id];
+          }
+          if (link.target.id === lead.id && link.source.name === 'H') {
+            return [link.source.id];
+          }
+          return [];
+        });
+      return { leadId: lead.id, hydrogenIds: [...new Set(hydrogenIds)] };
+    });
+    expect(hydride.hydrogenIds).toHaveLength(3);
+    await page.locator('#toggle-btn').click();
+    const positions = await page.evaluate(({ leadId, hydrogenIds }) => {
+      const point = id => {
+        const group = document.querySelector(`g[data-atom-id="${id}"]`);
+        const transform = group?.transform.baseVal.consolidate()?.matrix;
+        return transform ? { x: transform.e, y: transform.f } : null;
+      };
+      return { lead: point(leadId), hydrogens: hydrogenIds.map(point) };
+    }, hydride);
+    for (const hydrogen of positions.hydrogens) {
+      expect(hydrogen).not.toBeNull();
+      expect(Math.hypot(hydrogen.x - positions.lead.x, hydrogen.y - positions.lead.y)).toBeCloseTo(90, 3);
+    }
+    for (let i = 0; i < 3; i++) {
+      for (let j = i + 1; j < 3; j++) {
+        expect(Math.hypot(positions.hydrogens[i].x - positions.hydrogens[j].x, positions.hydrogens[i].y - positions.hydrogens[j].y)).toBeGreaterThan(30);
+      }
+    }
+  });
+}
+
 test('drawing a new force bond keeps the force scene visible', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -5980,9 +6034,7 @@ test('H changes the opposite hovered force stereobond endpoint to hydrogen', asy
   await page.keyboard.press('H');
 
   await expect(page.locator('#smiles-input')).not.toHaveValue('C[C@H](F)Cl');
-  await expect
-    .poll(() => page.evaluate(() => Array.from(document.querySelectorAll('circle.node')).find(node => node.__data__?.id === 'F4')?.__data__?.name ?? null))
-    .toBe('H');
+  await expect.poll(() => page.evaluate(() => Array.from(document.querySelectorAll('circle.node')).find(node => node.__data__?.id === 'F4')?.__data__?.name ?? null)).toBe('H');
 });
 
 test('switching C[C@H](F)Cl from 2D to force preserves the displayed stereo bond', async ({ page }) => {

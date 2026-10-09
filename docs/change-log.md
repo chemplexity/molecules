@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-10-08
+
+- Keep metal-bound hydrogens visible and correctly positioned when switching edited molecules from force layout to 2D.
+- Prevent cage bond-repair regressions by preserving sound layouts and ranking bridge repairs before replacement.
+
 ## 2026-10-07
 
 - Prevent stretched cage bonds during fused-ring regularization by solving connected bridge closures together while preserving the fused core.

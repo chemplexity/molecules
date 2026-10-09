@@ -52,11 +52,57 @@ function seedFixture() {
 }
 
 describe('coupled bridge closure around a fused aromatic core', () => {
+  for (const [name, sourceIndex, maxDeviations] of [
+    ['stereochemical morphinan dimer', 382, [0.29700001, 0.59400001, 1.18800001]],
+    ['amide-substituted morphinan', 34041, [0.29324334, 0.41152695, 0.82305388]]
+  ]) {
+    for (const [scaleIndex, bondLength] of [0.75, 1.5, 3].entries()) {
+      it(`preserves the existing sound ${name} layout at scale ${bondLength}`, () => {
+        const fixture = AUDIT_CORPUS.find(entry => entry.sourceIndex === sourceIndex);
+        const result = generateCoords(parseSMILES(fixture.smiles), { bondLength });
+        const audit = result.metadata.audit;
+        assert.equal(audit.ok, true);
+        assert.equal(audit.bondLengthFailureCount, 0);
+        assert.equal(audit.severeOverlapCount, 0);
+        assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+        assert.equal(audit.ringSubstituentReadabilityFailureCount, 0);
+        assert.equal(audit.missingCoordinateCount, 0);
+        assert.equal(audit.nonfiniteCoordinateCount, 0);
+        assert.equal(audit.stereoContradiction, false);
+        // Preserve measured pre-repair geometry at each scale: the pipeline's
+        // absolute tolerances can select different poses at the smallest size.
+        assert.ok(audit.maxBondLengthDeviation <= maxDeviations[scaleIndex]);
+      });
+    }
+  }
+
   for (const bondLength of [0.75, 1.5, 3]) {
     it(`preserves cage bonds at scale ${bondLength}`, () => {
       assertClean(generateCoords(parseSMILES(CAGE), { bondLength }), bondLength);
     });
   }
+
+  it('retains the substantial strain reduction for a mildly strained phenol cage', () => {
+    const fixture = AUDIT_CORPUS.find(entry => entry.sourceIndex === 32719);
+    const audit = generateCoords(parseSMILES(fixture.smiles)).metadata.audit;
+    assert.equal(audit.ok, true);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.ok(audit.maxBondLengthDeviation <= fixture.expected.maxBondLengthDeviation);
+  });
+
+  it('does not introduce contacts while selecting a repaired ammonium cage pose', () => {
+    const fixture = AUDIT_CORPUS.find(entry => entry.sourceIndex === 32378);
+    const audit = generateCoords(parseSMILES(fixture.smiles)).metadata.audit;
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    // This preserves the pre-repair geometry; the stricter opt-in corpus
+    // ceiling is an outstanding issue and is deliberately not changed here.
+    assert.ok(audit.maxBondLengthDeviation <= 0.55816242);
+  });
 
   for (const [name, smiles] of [
     ['short phenol tail', `O${CAGE.slice(CAGE.indexOf('C1=CC='))}`],

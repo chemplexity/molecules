@@ -3538,11 +3538,6 @@ function shouldAcceptFusedCyclohexaneCoords(candidateAudit, incumbentAudit, cand
   if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
     return false;
   }
-  // A lower ring-shape score must not turn mild bond failures into a
-  // catastrophically stretched closure while leaving the failure count tied.
-  if (candidateAudit.bondLengthFailureCount > 0 && candidateAudit.maxBondLengthDeviation > incumbentAudit.maxBondLengthDeviation + 1e-9) {
-    return false;
-  }
   if (candidateAudit.ok === true && incumbentAudit.ok !== true) {
     return true;
   }
@@ -3720,7 +3715,10 @@ export function regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, a
 /**
  * Rebuilds fused aromatic/cyclohexane bridged cores on exact regular-ring
  * geometry when a generic bridged placement has strained the publication-style
- * ring shapes.
+ * ring shapes. Preserve the usual winner whenever it passes its audit. Only
+ * otherwise consider coupled closure repairs. For merely mild bond strain,
+ * require at least a halving of mean deviation to justify replacing the seed.
+ * Repairing losing poses early can displace a sound cage layout.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object[]} rings - Ring descriptors in the bridged system.
  * @param {string[]} atomIds - Atom IDs included in the bridged placement.
@@ -3740,7 +3738,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
   if (!bestAudit || !Number.isFinite(bestScore)) {
     return coords;
   }
-  let bridgeRepairAttempts = 0;
+  const bridgeRepairCandidates = [];
 
   for (const pair of pairs) {
     const fusedTargetCandidates = exactFusedAromaticCyclohexanePairTargetCandidates(pair, coords, bondLength);
@@ -3749,7 +3747,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
     }
     for (const { targets: fusedTargets } of fusedTargetCandidates) {
       for (const heightFactor of FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS) {
-        let candidateCoords = cloneCoords(coords);
+        const candidateCoords = cloneCoords(coords);
         for (const [atomId, position] of fusedTargets) {
           if (!layoutGraph.fixedCoords.has(atomId)) {
             candidateCoords.set(atomId, position);
@@ -3757,31 +3755,9 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
         }
         translateSingleAnchorSideComponentsWithFusedCore(layoutGraph, pair, coords, candidateCoords);
         addVariableBridgePathTargets(layoutGraph, rings, pair, coords, candidateCoords, bondLength, heightFactor);
-        let candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
-        if (
-          candidateAudit.bondLengthFailureCount > 0 &&
-          candidateAudit.maxBondLengthDeviation > bestAudit.maxBondLengthDeviation + 1e-9 &&
-          bridgeRepairAttempts < FUSED_CORE_BRIDGE_REPAIR_LIMIT &&
-          atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
-          rings.length <= 8 &&
-          coords.size === atomIds.length &&
-          layoutGraph.fixedCoords.size === 0 &&
-          !containsMetalAtom(layoutGraph, atomIds) &&
-          !atomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality || (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => bond.stereo))
-        ) {
-          bridgeRepairAttempts++;
-          const repaired = repairFusedCoreBridgeTargets(layoutGraph, rings, atomIds, fusedTargets, candidateCoords, bondLength);
-          const repairedAudit = repaired && auditBridgedPlacementCandidate(layoutGraph, atomIds, repaired, bondLength);
-          if (
-            repairedAudit?.ok === true &&
-            repairedAudit.maxBondLengthDeviation <= bestAudit.maxBondLengthDeviation + 1e-9 &&
-            repairedAudit.severeOverlapCount <= bestAudit.severeOverlapCount &&
-            repairedAudit.visibleHeavyBondCrossingCount <= bestAudit.visibleHeavyBondCrossingCount &&
-            repairedAudit.labelOverlapCount <= bestAudit.labelOverlapCount
-          ) {
-            candidateCoords = repaired;
-            candidateAudit = repairedAudit;
-          }
+        const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+        if (candidateAudit.maxBondLengthDeviation > bondLength && bridgeRepairCandidates.length < FUSED_CORE_BRIDGE_REPAIR_LIMIT) {
+          bridgeRepairCandidates.push({ fusedTargets, coords: candidateCoords });
         }
         const candidateScore = fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, candidateCoords, bondLength);
         if (shouldAcceptFusedCyclohexaneCoords(candidateAudit, bestAudit, candidateScore, bestScore)) {
@@ -3793,6 +3769,40 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
     }
   }
 
+  if (
+    bestAudit.ok !== true &&
+    atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+    rings.length <= 8 &&
+    coords.size === atomIds.length &&
+    layoutGraph.fixedCoords.size === 0 &&
+    !containsMetalAtom(layoutGraph, atomIds) &&
+    !atomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality || (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => bond.stereo))
+  ) {
+    let bestRepair = null;
+    let bestRepairAudit = null;
+    let bestRepairScore = Infinity;
+    for (const candidate of bridgeRepairCandidates) {
+      const repaired = repairFusedCoreBridgeTargets(layoutGraph, rings, atomIds, candidate.fusedTargets, candidate.coords, bondLength);
+      const repairedAudit = repaired && auditBridgedPlacementCandidate(layoutGraph, atomIds, repaired, bondLength);
+      if (
+        repairedAudit?.ok === true &&
+        repairedAudit.maxBondLengthDeviation <= bestAudit.maxBondLengthDeviation + 1e-9 &&
+        repairedAudit.severeOverlapCount <= bestAudit.severeOverlapCount &&
+        repairedAudit.visibleHeavyBondCrossingCount <= bestAudit.visibleHeavyBondCrossingCount &&
+        repairedAudit.labelOverlapCount <= bestAudit.labelOverlapCount
+      ) {
+        const score = Math.min(...pairs.map(pair => fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, repaired, bondLength)).filter(value => value != null));
+        if (score < bestRepairScore - 1e-9) {
+          bestRepair = repaired;
+          bestRepairAudit = repairedAudit;
+          bestRepairScore = score;
+        }
+      }
+    }
+    if (bestRepair && (bestAudit.maxBondLengthDeviation > bondLength || bestAudit.severeOverlapCount > 0 || bestRepairAudit.meanBondLengthDeviation <= bestAudit.meanBondLengthDeviation * 0.5)) {
+      return bestRepair;
+    }
+  }
   return bestCoords;
 }
 
@@ -3802,8 +3812,10 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
  * the bounded constrained-ring solver (four starts per mode, 512 sweeps) to
  * consider all shared edges together. The 25% target interval is deliberately
  * tighter than bridged validation; no bond-validation class is changed.
- * The caller limits this to eight attempts on unanchored, non-stereo compact
- * cages with no already-placed external branches, and audits every result.
+ * The caller tries at most eight strained poses, only if normal selection has
+ * no audit-clean winner, on unanchored, non-stereo compact cages with no placed
+ * external branches. Every result must pass the audit without worsening the
+ * winner's bond deviation, overlaps, crossings, or label contacts.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object[]} rings - Cage rings.
  * @param {string[]} atomIds - Cage atom IDs.

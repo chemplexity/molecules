@@ -21,7 +21,7 @@ import {
 } from '../../layout/mol2d-helpers.js';
 import { ringFillDomId } from '../../core/support/style.js';
 import { buildRingFillShape } from '../../layout/ring-fill-shape.js';
-import { collect2dHydrogenLabelCounts, hideHydrogensFor2d } from '../../layout/hydrogen-display.js';
+import { collect2dHydrogenLabelCounts, hideHydrogensFor2d, materializeMetalHydrideCoords } from '../../layout/hydrogen-display.js';
 import { DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE, synthesizeDisplayedStereoHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 import { drawResonanceElectronFlow2d, resonanceArrowOccupiedAnglesForAtom } from './resonance-arrows.js';
 
@@ -1114,6 +1114,13 @@ export function create2DSceneRenderer(ctx) {
     }
   }
 
+  /**
+   * Builds the skeletal scene, seating explicit metal hydrides even when the
+   * caller preserves heavy-atom coordinates during a force-to-2D transition.
+   * @param {object} mol - Molecule to render.
+   * @param {object} [options] - Geometry, analysis, and viewport preservation options.
+   * @returns {void}
+   */
   function render2d(mol, options = {}) {
     const {
       recomputeResonance = true,
@@ -1200,6 +1207,9 @@ export function create2DSceneRenderer(ctx) {
       }
     }
 
+    // Preserved heavy-atom geometry can arrive with collapsed or force-space
+    // hydrogens. Seat explicit hydrides before computing bounds and drawing.
+    materializeMetalHydrideCoords(mol, { bondLength: layoutBondLength });
     const projectedFitCoords = projectHiddenStereoHydrogens(mol, hiddenStereoBondLength(), stereoMap);
     const fitPoints = fitPointsFor2dView(mol, projectedFitCoords);
     if (fitPoints.length === 0) {
