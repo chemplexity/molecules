@@ -55,6 +55,7 @@ import {
 } from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily, regularizeBridgedRingSystemGeometry, scoreBridgedSmallRingGeometry } from './bridged.js';
+import { placeConstrainedRingSystem } from '../geometry/constrained-ring.js';
 import { isBetterBridgedRescueForFusedSystem, layoutFusedCageKamadaKawai, layoutFusedFamily, shouldShortCircuitToFusedCageKk, shouldTryBridgedRescueForFusedSystem } from './fused.js';
 import { layoutIsolatedRingFamily } from './isolated-ring.js';
 import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily, layoutMacrocycleKamadaKawaiRescue } from './macrocycle.js';
@@ -4352,7 +4353,18 @@ function ringCentersForCoords(rings, coords) {
   return ringCenters;
 }
 
-function measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, coords, bondLength) {
+/**
+ * Previews ring-exit clearance. Candidate ranking retains its neighbor-based
+ * slot estimate; bounded exit repair can request the readability validator's
+ * outward direction, which also detects blocked exits on concave rings.
+ * @param {object} layoutGraph - Layout graph.
+ * @param {object} ringSystem - Ring system to inspect.
+ * @param {Map<string, {x: number, y: number}>} coords - Scaffold coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {boolean} [useOutwardDirection] - Inspect the actual ring-outward exit; defaults to false.
+ * @returns {object} Branch-slot blocker count and minimum blocker distance.
+ */
+function measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, coords, bondLength, useOutwardDirection = false) {
   const ringSystemAtomIds = new Set(ringSystem.atomIds);
   let blockerCount = 0;
   let minBlockerDistance = Infinity;
@@ -4387,7 +4399,8 @@ function measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, coords, bo
     if (ringNeighborPositions.length !== 2) {
       continue;
     }
-    const targetAngle = angleOf(sub(anchorPosition, centroid(ringNeighborPositions)));
+    const outwardAngles = useOutwardDirection ? computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null) : [];
+    const targetAngle = outwardAngles.length === 1 ? outwardAngles[0] : angleOf(sub(anchorPosition, centroid(ringNeighborPositions)));
     const targetPosition = add(anchorPosition, fromAngle(targetAngle, bondLength));
     for (const blockerAtomId of ringSystem.atomIds) {
       if (blockerAtomId === anchorAtomId || ringNeighborIds.includes(blockerAtomId)) {
@@ -6169,6 +6182,7 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
   if (family === 'bridged') {
     const connectionKinds = new Set(connections.map(connection => connection.kind).filter(Boolean));
     let bestPlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
+    const initialBridgedPlacement = bestPlacement;
     let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
     if (bestPlacement?.placementMode === 'template' && bestAudit?.ok === true && templateId !== 'n-methyl-amino-diaza-tricyclo-core') {
       return bestPlacement;
@@ -6193,13 +6207,7 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
         bestAudit = hybridRescueAudit;
       }
 
-      const fusedCageRescuePlacement = wrapRingSystemPlacementResult(
-        layoutGraph,
-        ringSystem,
-        family,
-        layoutFusedCageKamadaKawai(rings, bondLength, { layoutGraph, templateId }),
-        templateId
-      );
+      const fusedCageRescuePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutFusedCageKamadaKawai(rings, bondLength, { layoutGraph, templateId }), templateId);
       const fusedCageRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, fusedCageRescuePlacement, bondLength);
       if (isBetterRingSystemPlacement(fusedCageRescuePlacement, bestPlacement, fusedCageRescueAudit, bestAudit, true)) {
         bestPlacement = fusedCageRescuePlacement;
@@ -6242,6 +6250,46 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
           bestPlacement = regularizedPlacement;
           bestAudit = regularizedAudit;
         }
+      }
+    }
+
+    // A planar-looking hybrid can bury an exit that was clear in the original
+    // projected seed. Try one bounded joint solve of that seed (four starts per
+    // mode, 512 sweeps), retaining two seed anchors solely to fix its rigid pose.
+    // Do not expand this search to fixed, stereochemical, or metal scaffolds.
+    // Require a clean audit, fewer blocked exits, and no worse bond deviation;
+    // valid internal projected crossings are not planar crossing failures.
+    if (
+      !templateId &&
+      bestAudit?.ok === true &&
+      initialBridgedPlacement?.coords?.size === ringSystem.atomIds.length &&
+      connectionKinds.has('fused') &&
+      connectionKinds.has('bridged') &&
+      ringSystem.atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
+      rings.length <= 6 &&
+      layoutGraph.fixedCoords.size === 0 &&
+      !ringSystem.atomIds.some(id => isMetalAtom(layoutGraph.atoms.get(id)) || layoutGraph.atoms.get(id)?.chirality || (layoutGraph.bondsByAtomId.get(id) ?? []).some(bond => bond.stereo)) &&
+      measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, bestPlacement.coords, bondLength, true).ringBranchSlotBlockerCount > 0
+    ) {
+      const seed = initialBridgedPlacement.coords;
+      const fixedCoords = new Map([...seed].slice(0, 2));
+      const coords = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, seed, bondLength, {
+        minFixedAtoms: 2,
+        seedBondLimits: { minBondLengthFactor: 0.75, maxBondLengthFactor: 1.25 },
+        bondValidationClasses: assignBondValidationClass(layoutGraph, ringSystem.atomIds, 'bridged')
+      });
+      const alternative = coords && { ...initialBridgedPlacement, coords, ringCenters: ringCentersForCoords(rings, coords) };
+      const audit = auditRingSystemPlacement(layoutGraph, ringSystem, alternative, bondLength);
+      if (
+        audit?.ok === true &&
+        audit.visibleHeavyBondCrossingFailureCount <= bestAudit.visibleHeavyBondCrossingFailureCount &&
+        audit.labelOverlapCount <= bestAudit.labelOverlapCount &&
+        audit.maxBondLengthDeviation <= bestAudit.maxBondLengthDeviation + 1e-9 &&
+        measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, coords, bondLength, true).ringBranchSlotBlockerCount <
+          measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, bestPlacement.coords, bondLength, true).ringBranchSlotBlockerCount
+      ) {
+        bestPlacement = alternative;
+        bestAudit = audit;
       }
     }
 

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-09
+
+- Keep substituents readable on compact bridged cages by checking outward clearance and refining blocked scaffold candidates.
+
 ## 2026-10-08
 
 - Keep metal-bound hydrogens visible and correctly positioned when switching edited molecules from force layout to 2D.
