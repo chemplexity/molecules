@@ -6020,6 +6020,59 @@ function isBetterMacrocycleKamadaKawaiRescue(candidateAudit, incumbentAudit) {
   return isBetterRingSystemPlacement({ placementMode: 'macrocycle-kamada-kawai-rescue' }, { placementMode: 'macrocycle-incumbent' }, candidateAudit, incumbentAudit, true);
 }
 
+/**
+ * Reconsiders a compact projected macrocycle whose embedded rings cross and
+ * block branch exits. Runs one seeded KK candidate and one constrained solve
+ * (four starts per mode, at most 512 sweeps), before external branches grow.
+ * Only a clean scaffold with fewer crossings and blocked exits, without worse
+ * maximum bond deviation or label contacts, may replace the incumbent.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Macrocyclic ring system.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {number} bondLength - Target bond length.
+ * @param {string|null} templateId - Matched template identifier.
+ * @param {object} placement - Incumbent scaffold.
+ * @param {object} audit - Incumbent scaffold audit.
+ * @returns {object|null} Improved scaffold or null.
+ */
+function repairBlockedMacrocycleScaffold(layoutGraph, ringSystem, rings, bondLength, templateId, placement, audit) {
+  if (
+    templateId ||
+    audit?.ok !== true ||
+    !(audit.visibleHeavyBondCrossingCount > 0) ||
+    !(audit.ringBranchSlotBlockerCount > 0) ||
+    ringSystem.atomIds.length > 64 ||
+    rings.length > 6 ||
+    layoutGraph.fixedCoords.size > 0 ||
+    ringSystem.atomIds.some(id => isMetalAtom(layoutGraph.atoms.get(id)))
+  ) {
+    return null;
+  }
+  const seed = layoutMacrocycleKamadaKawaiRescue(rings, bondLength, { layoutGraph, referenceCoords: placement.coords, seedMode: 'seeded', scaleFactors: [1] });
+  if (!seed?.coords || seed.coords.size !== ringSystem.atomIds.length) {
+    return null;
+  }
+  // These internal seed anchors fix rigid pose only; user anchors are excluded.
+  const fixedCoords = new Map([...seed.coords].slice(0, 2));
+  const coords = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, seed.coords, bondLength, {
+    minFixedAtoms: 2,
+    seedBondLimits: { minBondLengthFactor: 0.85, maxBondLengthFactor: 1.15 },
+    bondValidationClasses: assignBondValidationClass(layoutGraph, ringSystem.atomIds, 'bridged')
+  });
+  if (!coords) {
+    return null;
+  }
+  const candidate = wrapRingSystemPlacementResult(layoutGraph, ringSystem, 'macrocycle', { ...seed, coords, ringCenters: ringCentersForCoords(rings, coords) }, templateId);
+  const candidateAudit = auditRingSystemPlacement(layoutGraph, ringSystem, candidate, bondLength);
+  return candidateAudit?.ok === true &&
+    candidateAudit.visibleHeavyBondCrossingCount < audit.visibleHeavyBondCrossingCount &&
+    candidateAudit.ringBranchSlotBlockerCount < audit.ringBranchSlotBlockerCount &&
+    candidateAudit.maxBondLengthDeviation <= audit.maxBondLengthDeviation + 1e-9 &&
+    candidateAudit.labelOverlapCount <= audit.labelOverlapCount
+    ? candidate
+    : null;
+}
+
 function shouldTryMacrocycleMixedRootKamadaKawaiRescue(layoutGraph, scaffoldPlan, audit, options = null) {
   if (options?.disableMacrocycleKamadaKawaiRootRetry === true || !audit || !scaffoldPlan?.rootScaffold) {
     return false;
@@ -6177,7 +6230,7 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
         }
       }
     }
-    return bestPlacement;
+    return repairBlockedMacrocycleScaffold(layoutGraph, ringSystem, rings, bondLength, templateId, bestPlacement, bestAudit) ?? bestPlacement;
   }
   if (family === 'bridged') {
     const connectionKinds = new Set(connections.map(connection => connection.kind).filter(Boolean));

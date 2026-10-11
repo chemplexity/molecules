@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-10-11
+
+- Repair compressed fused-cage bonds while preserving aromatic geometry, allowing carbonyl overlap cleanup to finish.
+
+## 2026-10-10
+
+- Clear crossed branches on compact multi-ring macrocycles by jointly refining the scaffold while improving maximum bond-length deviation.
+
 ## 2026-10-09
 
 - Keep substituents readable on compact bridged cages by checking outward clearance and refining blocked scaffold candidates.

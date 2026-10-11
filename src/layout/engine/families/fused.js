@@ -10,6 +10,7 @@ import { nonSharedPath } from '../geometry/ring-path.js';
 import { placeTemplateCoords } from '../templates/placement.js';
 import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
+import { isMetalAtom } from '../topology/metal-centers.js';
 
 const FUSED_RESCUE_LIMITS = Object.freeze({
   compactTricyclicMaxAtomCount: 9,
@@ -783,13 +784,65 @@ function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLen
           damping: 0.2
         })
       : regularizedCoords;
-  const orientedCoords = orientCoordsHorizontally(retensionedCoords, computeFusedAxis(rebuildRingCenters(rings, retensionedCoords)));
+  const repairedCoords = repairProjectedPericondensedBonds(options.layoutGraph, rings, retensionedCoords, bondLength);
+  const orientedCoords = orientCoordsHorizontally(repairedCoords, computeFusedAxis(rebuildRingCenters(rings, repairedCoords)));
 
   return {
     coords: orientedCoords,
     ringCenters: rebuildRingCenters(rings, orientedCoords),
     placementMode: 'pericondensed'
   };
+}
+
+/**
+ * Repairs residual projected cage bond failures after polygon averaging.
+ * Pins the existing aromatic core and jointly solves the surrounding closures;
+ * no user anchors or aromatic coordinates may move. One solve reuses four
+ * starts per mode and at most 512 sweeps, bounded to 24 atoms and eight rings.
+ * Requires clean geometry with no worse crossings, labels, or maximum bond
+ * deviation. Placement validation classes are not changed by this repair.
+ * @param {object|undefined} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Pericondensed ring descriptors.
+ * @param {Map<string, {x: number, y: number}>} coords - Existing scaffold.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Repaired or unchanged coordinates.
+ */
+function repairProjectedPericondensedBonds(layoutGraph, rings, coords, bondLength) {
+  if (!layoutGraph || layoutGraph.fixedCoords.size > 0 || coords.size > BRIDGED_KK_LIMITS.fastAtomLimit || rings.length > 8) {
+    return coords;
+  }
+  const ringIds = new Set(rings.map(ring => ring.id));
+  if (!layoutGraph.ringConnections.some(connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId))) {
+    return coords;
+  }
+  const atomIds = [...coords.keys()];
+  if (atomIds.some(id => isMetalAtom(layoutGraph.atoms.get(id)))) {
+    return coords;
+  }
+  const fixedCoords = new Map([...coords].filter(([id]) => layoutGraph.atoms.get(id)?.aromatic));
+  if (fixedCoords.size < 2 || fixedCoords.size === coords.size) {
+    return coords;
+  }
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  const audit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
+  if (audit.bondLengthFailureCount === 0 || audit.severeOverlapCount > 0 || audit.labelOverlapCount > 0) {
+    return coords;
+  }
+  const candidate = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, coords, bondLength, {
+    minFixedAtoms: 2,
+    seedBondLimits: { minBondLengthFactor: 0.75, maxBondLengthFactor: 1.25 },
+    bondValidationClasses
+  });
+  if (!candidate) {
+    return coords;
+  }
+  const candidateAudit = auditLayout(layoutGraph, candidate, { bondLength, bondValidationClasses });
+  return candidateAudit.ok === true &&
+    candidateAudit.visibleHeavyBondCrossingCount <= audit.visibleHeavyBondCrossingCount &&
+    candidateAudit.labelOverlapCount <= audit.labelOverlapCount &&
+    candidateAudit.maxBondLengthDeviation <= audit.maxBondLengthDeviation + 1e-9
+    ? candidate
+    : coords;
 }
 
 /**
