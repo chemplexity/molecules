@@ -446,7 +446,7 @@ export function orientBridgedSeed(seedCoords, bridgeheadAtomIds) {
  * @param {string[]} atomIds - Bridged component atom IDs.
  * @param {Map<string, {x: number, y: number}>} seedCoords - Seed coordinate map, usually from KK.
  * @param {number} bondLength - Target bond length.
- * @returns {{coords: Map<string, {x: number, y: number}>, bridgeheadAtomIds: [string, string]|null, pathCount: number}} Projected coordinates and summary.
+ * @returns {{coords: Map<string, {x: number, y: number}>, bridgeheadAtomIds: [string, string]|null, pathCount: number, translatedSideAtomCount: number}} Projected coordinates and summary.
  */
 export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength) {
   const defaultBridgeheadAtomIds = pickBridgeheads(layoutGraph, atomIds);
@@ -454,7 +454,8 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     return {
       coords: new Map(seedCoords),
       bridgeheadAtomIds: null,
-      pathCount: 0
+      pathCount: 0,
+      translatedSideAtomCount: 0
     };
   }
   const bridgeheadAtomIds = selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtomIds);
@@ -469,14 +470,16 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     return {
       coords,
       bridgeheadAtomIds,
-      pathCount: paths.length
+      pathCount: paths.length,
+      translatedSideAtomCount: 0
     };
   }
   if (paths.length > maxProjectedPathCount) {
     return {
       coords,
       bridgeheadAtomIds,
-      pathCount: paths.length
+      pathCount: paths.length,
+      translatedSideAtomCount: 0
     };
   }
 
@@ -505,10 +508,12 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
   });
   const exactThetaCoords = buildExactThetaProjectionCoords(sortedPaths, bridgeheadAtomIds, oriented.coords, bondLength);
   if (exactThetaCoords) {
+    const translatedSideAtomCount = translateProjectionSideComponents(layoutGraph, atomIds, paths, oriented.coords, exactThetaCoords);
     return {
       coords: exactThetaCoords,
       bridgeheadAtomIds,
-      pathCount: paths.length
+      pathCount: paths.length,
+      translatedSideAtomCount
     };
   }
   for (let pathIndex = 0; pathIndex < sortedPaths.length; pathIndex++) {
@@ -584,9 +589,65 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     }
   }
 
+  const translatedSideAtomCount = translateProjectionSideComponents(layoutGraph, atomIds, paths, oriented.coords, coords);
   return {
     coords,
     bridgeheadAtomIds,
-    pathCount: paths.length
+    pathCount: paths.length,
+    translatedSideAtomCount
   };
+}
+
+/**
+ * Carries singly attached side components with their projected junction. Atoms
+ * outside all bridge paths (including spiro leaf rings) otherwise retain their
+ * old positions while their anchor moves, stretching the connecting bonds.
+ * Multi-anchor components and fixed side atoms are not translated.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Atoms included in this projection.
+ * @param {string[][]} paths - Projected bridge paths.
+ * @param {Map<string, {x: number, y: number}>} original - Oriented seed coordinates.
+ * @param {Map<string, {x: number, y: number}>} projected - Coordinates to update.
+ * @returns {number} Number of translated side atoms.
+ */
+function translateProjectionSideComponents(layoutGraph, atomIds, paths, original, projected) {
+  const pathAtoms = new Set(paths.flat());
+  const adjacency = buildAdjacency(layoutGraph, atomIds);
+  const visited = new Set(pathAtoms);
+  let translatedSideAtomCount = 0;
+  for (const atomId of atomIds) {
+    if (visited.has(atomId)) {
+      continue;
+    }
+    const component = [atomId];
+    const anchors = new Set();
+    visited.add(atomId);
+    for (let index = 0; index < component.length; index++) {
+      for (const neighbor of adjacency.get(component[index]) ?? []) {
+        if (pathAtoms.has(neighbor)) {
+          anchors.add(neighbor);
+        } else if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          component.push(neighbor);
+        }
+      }
+    }
+    if (anchors.size !== 1 || component.some(id => layoutGraph.fixedCoords.has(id))) {
+      continue;
+    }
+    const anchor = [...anchors][0];
+    const before = original.get(anchor);
+    const after = projected.get(anchor);
+    if (!before || !after || Math.hypot(after.x - before.x, after.y - before.y) <= 1e-12) {
+      continue;
+    }
+    for (const id of component) {
+      const position = original.get(id);
+      if (position && projected.has(id)) {
+        projected.set(id, { x: position.x + after.x - before.x, y: position.y + after.y - before.y });
+        translatedSideAtomCount++;
+      }
+    }
+  }
+  return translatedSideAtomCount;
 }

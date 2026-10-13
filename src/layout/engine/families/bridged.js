@@ -3997,7 +3997,7 @@ function retouchMarginalStretchedBridgedRingBonds(layoutGraph, atomIds, coords, 
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string[]} atomIds - Atom IDs included in the bridged placement.
  * @param {Map<string, {x: number, y: number}>} kkCoords - Raw KK coordinates.
- * @param {{coords: Map<string, {x: number, y: number}>, bridgeheadAtomIds: [string, string]|null}} projected - Projected bridge-path result.
+ * @param {{coords: Map<string, {x: number, y: number}>, bridgeheadAtomIds: [string, string]|null, translatedSideAtomCount?: number}} projected - Projected bridge-path result.
  * @param {number} bondLength - Target bond length.
  * @returns {Map<string, {x: number, y: number}>} Selected coordinate map.
  */
@@ -4011,6 +4011,20 @@ function selectBridgedProjectionCoords(layoutGraph, atomIds, kkCoords, projected
   const baselineCoords = projected.bridgeheadAtomIds ? orientBridgedSeed(kkCoords, projected.bridgeheadAtomIds).coords : new Map(kkCoords);
   const baselineAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, baselineCoords, bondLength);
   if (baselineAudit?.ok === true) {
+    return baselineCoords;
+  }
+  // Carrying an off-path spiro ring preserves its bonds but may crowd the
+  // projected core. Prefer a non-overlapping seed with only mild bond strain;
+  // existing regularization can repair that without trapping the side ring.
+  if (
+    projected.translatedSideAtomCount > 0 &&
+    projectedAudit?.severeOverlapCount > 0 &&
+    baselineAudit?.severeOverlapCount === 0 &&
+    baselineAudit.severeBondLengthFailureCount === 0 &&
+    baselineAudit.visibleHeavyBondCrossingFailureCount <= projectedAudit.visibleHeavyBondCrossingFailureCount &&
+    baselineAudit.labelOverlapCount <= projectedAudit.labelOverlapCount &&
+    compareBridgedProjectionAudits(baselineAudit, projectedAudit) < 0
+  ) {
     return baselineCoords;
   }
   if (hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, bondLength)) {

@@ -6312,11 +6312,15 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
     // Do not expand this search to fixed, stereochemical, or metal scaffolds.
     // Require a clean audit, fewer blocked exits, and no worse bond deviation;
     // valid internal projected crossings are not planar crossing failures.
+    // Non-aromatic spiro/bridged systems also try one unprojected KK seed:
+    // flattening a decorated bridge into the center lane can block its exits.
+    // Retension that seed within 2% of ideal lengths, using an ideal-length
+    // artificial anchor edge so existing KK strain is not pinned in place.
     if (
       !templateId &&
       bestAudit?.ok === true &&
       initialBridgedPlacement?.coords?.size === ringSystem.atomIds.length &&
-      connectionKinds.has('fused') &&
+      (connectionKinds.has('fused') || (connectionKinds.has('spiro') && !rings.some(ring => ring.aromatic))) &&
       connectionKinds.has('bridged') &&
       ringSystem.atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit &&
       rings.length <= 6 &&
@@ -6324,11 +6328,30 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
       !ringSystem.atomIds.some(id => isMetalAtom(layoutGraph.atoms.get(id)) || layoutGraph.atoms.get(id)?.chirality || (layoutGraph.bondsByAtomId.get(id) ?? []).some(bond => bond.stereo)) &&
       measureRingSystemBranchSlotBlockers(layoutGraph, ringSystem, bestPlacement.coords, bondLength, true).ringBranchSlotBlockerCount > 0
     ) {
-      const seed = initialBridgedPlacement.coords;
+      const spiroOnly = !connectionKinds.has('fused');
+      const seed = spiroOnly
+        ? layoutKamadaKawai(layoutGraph.sourceMolecule, ringSystem.atomIds, {
+            bondLength,
+            threshold: BRIDGED_KK_LIMITS.threshold,
+            innerThreshold: BRIDGED_KK_LIMITS.threshold,
+            maxIterations: BRIDGED_KK_LIMITS.baseMaxIterations,
+            maxInnerIterations: BRIDGED_KK_LIMITS.baseMaxInnerIterations
+          }).coords
+        : initialBridgedPlacement.coords;
       const fixedCoords = new Map([...seed].slice(0, 2));
+      if (spiroOnly) {
+        const edge = [...layoutGraph.bonds.values()].find(bond => bond.kind === 'covalent' && seed.has(bond.a) && seed.has(bond.b));
+        if (edge) {
+          const first = seed.get(edge.a);
+          const second = seed.get(edge.b);
+          fixedCoords.clear();
+          fixedCoords.set(edge.a, first);
+          fixedCoords.set(edge.b, add(first, fromAngle(angleOf(sub(second, first)), bondLength)));
+        }
+      }
       const coords = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, seed, bondLength, {
         minFixedAtoms: 2,
-        seedBondLimits: { minBondLengthFactor: 0.75, maxBondLengthFactor: 1.25 },
+        seedBondLimits: spiroOnly ? { minBondLengthFactor: 0.98, maxBondLengthFactor: 1.02 } : { minBondLengthFactor: 0.75, maxBondLengthFactor: 1.25 },
         bondValidationClasses: assignBondValidationClass(layoutGraph, ringSystem.atomIds, 'bridged')
       });
       const alternative = coords && { ...initialBridgedPlacement, coords, ringCenters: ringCentersForCoords(rings, coords) };

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-12
+
+- Preserve attached spiro-ring bonds during cage projection and improve blocked substituent exits on compact bridged cages.
+
 ## 2026-10-11
 
 - Repair compressed fused-cage bonds while preserving aromatic geometry, allowing carbonyl overlap cleanup to finish.
