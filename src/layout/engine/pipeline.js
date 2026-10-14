@@ -8213,6 +8213,9 @@ function finalTerminalCarbonLeafContactDescriptor(layoutGraph, coords, atomId, o
     return null;
   }
   const movedAtomIds = collectFinalTerminalCarbonLeafSubtreeAtomIds(layoutGraph, atomId, anchorAtomId, coords);
+  if (layoutGraph.options.preserveFixed !== false && movedAtomIds.some(movedAtomId => layoutGraph.fixedCoords?.has(movedAtomId))) {
+    return null;
+  }
   const movedHeavyAtomIds = movedAtomIds.filter(movedAtomId => layoutGraph.atoms.get(movedAtomId)?.element !== 'H');
   if (movedHeavyAtomIds.length !== 1 || movedHeavyAtomIds[0] !== atomId) {
     return null;
@@ -8874,17 +8877,21 @@ function maybeRetouchFinalTerminalCarbonLeafSevereContacts(layoutGraph, finalCoo
     for (const overlap of findSevereOverlaps(layoutGraph, currentCoords, bondLength)) {
       for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
         const descriptor = finalTerminalCarbonLeafContactDescriptor(layoutGraph, currentCoords, atomId, passDescriptorOptions);
-        if (!descriptor) {
+        if (!descriptor || descriptor.movedAtomIds.some(movedAtomId => placement.frozenAtomIds?.has(movedAtomId))) {
           continue;
         }
         descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
       }
     }
     for (const descriptor of finalTerminalCarbonLeafNearContactDescriptors(layoutGraph, currentCoords, bondLength, passDescriptorOptions)) {
-      descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
+      if (!descriptor.movedAtomIds.some(movedAtomId => placement.frozenAtomIds?.has(movedAtomId))) {
+        descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
+      }
     }
     for (const descriptor of finalTerminalCarbonLeafCrossingDescriptors(layoutGraph, currentCoords, passDescriptorOptions)) {
-      descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
+      if (!descriptor.movedAtomIds.some(movedAtomId => placement.frozenAtomIds?.has(movedAtomId))) {
+        descriptorByKey.set(`${descriptor.anchorAtomId}:${descriptor.leafAtomId}`, descriptor);
+      }
     }
     if (descriptorByKey.size === 0) {
       break;

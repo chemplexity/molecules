@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-13
+
+- Preserve fixed branch coordinates through mixed-scaffold placement and final readability retouches.
+
 ## 2026-10-12
 
 - Preserve attached spiro-ring bonds during cage projection and improve blocked substituent exits on compact bridged cages.

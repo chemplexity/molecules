@@ -546,11 +546,27 @@ function shouldTryCompactOrganometallicRingRescue(layoutGraph, component, family
   );
 }
 
+/**
+ * Checks whether a compact mixed scaffold has freedom for a family retry.
+ * Fully fixed heavy geometry must be audited as supplied, not replaced with a
+ * freer scaffold that merely fits a subset of the anchors.
+ * @param {object} layoutGraph - Layout graph and explicit constraints.
+ * @param {object} component - Connected component.
+ * @param {object} familyPlacement - Current placement.
+ * @returns {boolean} Whether a compact family retry is eligible.
+ */
 function shouldTryCompactMixedRingRescue(layoutGraph, component, familyPlacement) {
   if (!familyPlacement?.supported || familyPlacement.family !== 'mixed') {
     return false;
   }
   if (componentContainsMetal(layoutGraph, component)) {
+    return false;
+  }
+  if (
+    layoutGraph.options.preserveFixed !== false &&
+    component.atomIds.some(atomId => layoutGraph.ringAtomIdSet.has(atomId)) &&
+    component.atomIds.every(atomId => layoutGraph.atoms.get(atomId)?.element === 'H' || layoutGraph.options.fixedCoords.has(atomId))
+  ) {
     return false;
   }
   const atomCount = component.heavyAtomCount ?? component.atomIds.length;

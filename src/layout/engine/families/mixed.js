@@ -816,6 +816,13 @@ function sharedJunctionTerminalLeafTargetAngle(layoutGraph, coords, anchorAtomId
   return straightJunctionClearance >= SHARED_JUNCTION_STRAIGHT_CLEARANCE_LIMIT - 1e-6 ? straightJunctionAngle : null;
 }
 
+/**
+ * Snaps free terminal leaves at shared ring junctions without moving anchors.
+ * @param {object} layoutGraph - Layout graph and fixed-coordinate constraints.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinates to update.
+ * @param {number} bondLength - Target bond length.
+ * @returns {void}
+ */
 function snapExactSharedJunctionTerminalLeaves(layoutGraph, coords, bondLength) {
   for (const anchorAtomId of coords.keys()) {
     if (!layoutGraph.ringAtomIdSet.has(anchorAtomId)) {
@@ -826,6 +833,9 @@ function snapExactSharedJunctionTerminalLeaves(layoutGraph, coords, bondLength) 
         continue;
       }
       const childAtomId = childAtom.id;
+      if (layoutGraph.options.preserveFixed !== false && layoutGraph.fixedCoords.has(childAtomId)) {
+        continue;
+      }
       const targetAngle = sharedJunctionTerminalLeafTargetAngle(layoutGraph, coords, anchorAtomId, childAtomId);
       if (targetAngle == null) {
         continue;
@@ -1638,7 +1648,8 @@ function compareTerminalCarbonRingLeafCrossingEscapeCandidates(candidate, incumb
  * appear only after a neighboring attached ring has been placed. The rescue is
  * deliberately local: it moves the terminal leaf subtree around its ring
  * anchor, requires audit-clean candidates, and only accepts a move that reduces
- * crossings involving that leaf bond.
+ * crossings involving that leaf bond. Fixed atoms exclude both leaf and side
+ * subtrees from candidate moves.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
  * @param {number} bondLength - Target bond length.
@@ -1674,11 +1685,17 @@ function resolveTerminalCarbonRingLeafBondCrossings(layoutGraph, coords, bondLen
     }
     let bestCandidate = incumbent;
     const leafMovedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, leafAtomId, anchorAtomId).filter(atomId => coords.has(atomId));
+    if (layoutGraph.options.preserveFixed !== false && leafMovedAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+      continue;
+    }
     const originalLeafPosition = coords.get(leafAtomId);
     const clearanceThreshold = bondLength * TERMINAL_CARBON_RING_LEAF_CROSSING_CLEARANCE_FACTOR;
     const candidateBases = [{ coords, sideRotationMagnitude: 0 }];
 
     for (const sideDescriptor of terminalCarbonRingLeafCrossingAttachedSideDescriptors(layoutGraph, coords, anchorAtomId, leafAtomId)) {
+      if (layoutGraph.options.preserveFixed !== false && sideDescriptor.subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+        continue;
+      }
       for (const sideRotationOffset of TERMINAL_CARBON_RING_LEAF_CROSSING_ATTACHED_SIDE_OFFSETS) {
         const sideCoords = rotateAtomIdsAroundPivot(coords, sideDescriptor.subtreeAtomIds, sideDescriptor.anchorAtomId, sideRotationOffset);
         if (!sideCoords) {
@@ -1959,7 +1976,11 @@ function ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtom
   }
 
   const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, anchorAtomId).filter(atomId => coords.has(atomId));
-  if (movedAtomIds.length === 0 || heavyAtomCountInIds(layoutGraph, movedAtomIds) > 4) {
+  if (
+    movedAtomIds.length === 0 ||
+    (layoutGraph.options.preserveFixed !== false && movedAtomIds.some(atomId => layoutGraph.fixedCoords?.has(atomId))) ||
+    heavyAtomCountInIds(layoutGraph, movedAtomIds) > 4
+  ) {
     return null;
   }
 
@@ -2176,7 +2197,12 @@ function ringSubstituentBoundedReadabilityDescriptor(layoutGraph, coords, anchor
   }
 
   const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId).filter(atomId => coords.has(atomId));
-  if (movedAtomIds.length === 0 || movedAtomIds.includes(anchorAtomId) || heavyAtomCountInIds(layoutGraph, movedAtomIds) > maxMovedHeavyAtoms) {
+  if (
+    movedAtomIds.length === 0 ||
+    movedAtomIds.includes(anchorAtomId) ||
+    (layoutGraph.options.preserveFixed !== false && movedAtomIds.some(atomId => layoutGraph.fixedCoords?.has(atomId))) ||
+    heavyAtomCountInIds(layoutGraph, movedAtomIds) > maxMovedHeavyAtoms
+  ) {
     return null;
   }
 
@@ -18801,10 +18827,28 @@ function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan,
       }
     };
   }
-  const rootCoords = orientSingleAttachmentBenzeneRoot(layoutGraph, rootRingSystem, rootLayout.coords, participantAtomIds);
+  const hasFullyFixedRoot = layoutGraph.options.preserveFixed !== false && rootRingSystem.atomIds.every(atomId => layoutGraph.options.fixedCoords.has(atomId));
+  const rootCoords = hasFullyFixedRoot
+    ? new Map(rootRingSystem.atomIds.map(atomId => [atomId, { ...layoutGraph.fixedCoords.get(atomId) }]))
+    : orientSingleAttachmentBenzeneRoot(layoutGraph, rootRingSystem, rootLayout.coords, participantAtomIds);
   for (const [atomId, position] of rootCoords) {
     coords.set(atomId, position);
     placedAtomIds.add(atomId);
+  }
+  // A fully anchored root already defines the constraint frame. Seed its fixed
+  // non-ring branches before growth so they are obstacles/anchors, not children
+  // to regenerate and later fit back with a whole-component transform.
+  if (hasFullyFixedRoot) {
+    for (const atomId of participantAtomIds) {
+      if (layoutGraph.atomToRingSystemId.has(atomId)) {
+        continue;
+      }
+      const position = layoutGraph.fixedCoords.get(atomId);
+      if (position) {
+        coords.set(atomId, { ...position });
+        placedAtomIds.add(atomId);
+      }
+    }
   }
   const placedRingSystemIds = new Set([rootRingSystem.id]);
   assignBondValidationClass(layoutGraph, rootRingSystem.atomIds, rootLayout.validationClass, bondValidationClasses);
