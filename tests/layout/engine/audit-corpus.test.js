@@ -289,6 +289,10 @@ describe('layout/engine/audit-corpus', () => {
     assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
     assert.equal(audit.labelOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(
+      audit.maxBondLengthDeviation <= entry.expected.maxBondLengthDeviation + 1e-9,
+      `expected the organometallic closure deviation to stay within ${entry.expected.maxBondLengthDeviation}, got ${audit.maxBondLengthDeviation}`
+    );
     assert.equal(audit.stereoContradiction, false);
     assert.equal(audit.ok, true);
     assert.equal(audit.fallback.mode, null);

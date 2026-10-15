@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-14
+
+- Reduce residual bond strain in bridged organometallic ring closures during final relaxation.
+
 ## 2026-10-13
 
 - Preserve fixed branch coordinates through mixed-scaffold placement and final readability retouches.
