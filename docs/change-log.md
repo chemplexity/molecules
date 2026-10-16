@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-16
+
+- Keep omitted suppressed hydrogens from triggering peptide regeneration and bond distortion during refinement.
+
 ## 2026-10-15
 
 - Preserve molecule partitions during alternate-root layout retries so long peptides retain coordinates for every heavy atom; rank coordinate completeness ahead of geometric quality.

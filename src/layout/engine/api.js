@@ -139,6 +139,9 @@ function buildRefinementMetadata(result, options) {
 /**
  * Validates defaults before hydrogen preparation and isolates visibility edits.
  * Preserve callback options that are consumed directly by the pipeline.
+ * During refinement, an omitted suppressed hydrogen must not become a new
+ * placement participant and invalidate otherwise complete existing geometry.
+ * Explicit hydrogen anchors and available hydrogen hints still participate.
  * @param {object} molecule - Caller-owned molecule.
  * @param {object} options - Caller-supplied options.
  * @returns {object} Prepared molecule, options, and hidden-hydrogen IDs.
@@ -154,7 +157,8 @@ function prepareEngineInput(molecule, options) {
   const engineOptions = options.existingCoords instanceof Map ? buildEngineRunOptions(workingMolecule, normalizedOptions, hiddenHydrogenAtomIds) : normalizedOptions;
   for (const atomId of hiddenHydrogenAtomIds) {
     const atom = workingMolecule.atoms.get(atomId);
-    if (!isStereoHydrogen(workingMolecule, atom)) {
+    const omittedDuringRefinement = engineOptions.existingCoords.size > 0 && !engineOptions.existingCoords.has(atomId) && !engineOptions.fixedCoords.has(atomId);
+    if (!omittedDuringRefinement && !isStereoHydrogen(workingMolecule, atom)) {
       atom.visible = true;
     }
   }
