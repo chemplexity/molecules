@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-15
+
+- Preserve molecule partitions during alternate-root layout retries so long peptides retain coordinates for every heavy atom; rank coordinate completeness ahead of geometric quality.
+
 ## 2026-10-14
 
 - Reduce residual bond strain in bridged organometallic ring closures during final relaxation.

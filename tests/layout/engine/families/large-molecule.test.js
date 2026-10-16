@@ -3,18 +3,22 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { generateCoords } from '../../../../src/layout/engine/api.js';
+import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { layoutLargeMoleculeFamily } from '../../../../src/layout/engine/families/large-molecule.js';
 import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js';
 import { layoutAtomSlice } from '../../../../src/layout/engine/placement/atom-slice.js';
 import { makeLargeExplicitHydrogenPeptide, makeLargePolyaryl } from '../support/molecules.js';
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 
 const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
 const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
 
 const SULFATED_GLYCOSIDE_SMILES =
   'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
+const VERY_LONG_PEPTIDE_SMILES =
+  'N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C(C)CC)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](C)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CO)C(=O)N[C@@H](CO)C(=O)N[C@@H](C)C(=O)N[C@@H](C)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C)C(=O)N[C@@H](C(C)O)C(=O)N[C@@H](C(C)CC)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C(C)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](CO)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](C)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](C)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC(=O)N)C(=O)NCC(=O)O';
 
 /**
  * Returns the area of the current placed coordinate bounds.
@@ -27,6 +31,51 @@ function boundsArea(coords) {
 }
 
 describe('layout/engine/families/large-molecule', () => {
+  it('places every heavy atom in each alternate-root candidate for a densely partitioned peptide', () => {
+    const graph = createLayoutGraph(parseSMILES(VERY_LONG_PEPTIDE_SMILES), { suppressH: true, bondLength: 1.5 });
+    const candidates = [];
+    let visitedBlocks = new Set();
+    let placedAtomIds = new Set();
+    const result = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength, {
+      sliceLayouter(layoutGraph, block, bondLength) {
+        if (visitedBlocks.has(block.id)) {
+          candidates.push(placedAtomIds);
+          visitedBlocks = new Set();
+          placedAtomIds = new Set();
+        }
+        visitedBlocks.add(block.id);
+        const placement = layoutAtomSlice(layoutGraph, block, bondLength);
+        for (const [atomId, position] of placement.coords) {
+          if (Number.isFinite(position.x) && Number.isFinite(position.y)) {
+            placedAtomIds.add(atomId);
+          }
+        }
+        return placement;
+      }
+    });
+    candidates.push(placedAtomIds);
+
+    assert.equal(result.rootRetryAttemptCount, 1, 'expected the alternate-root retry to be exercised');
+    assert.equal(candidates.length, 2);
+    for (const [index, atomIds] of candidates.entries()) {
+      const missing = [...graph.atoms].filter(([atomId, atom]) => atom.element !== 'H' && !atomIds.has(atomId));
+      assert.equal(missing.length, 0, `candidate ${index} is missing ${missing.length} heavy atoms`);
+    }
+  });
+
+  it('keeps alternate-root retries from dropping most of a very long peptide', () => {
+    const result = runPipeline(parseSMILES(VERY_LONG_PEPTIDE_SMILES), { suppressH: true, bondLength: 1.5 });
+    const visibleAtomIds = [...result.layoutGraph.atoms].filter(([, atom]) => atom.visible !== false && !(atom.element === 'H' && !atom.visible)).map(([atomId]) => atomId);
+
+    assert.ok(bugMolecules.includes(VERY_LONG_PEPTIDE_SMILES), 'expected the long peptide regression molecule to be registered');
+    assert.equal(result.metadata.audit.missingCoordinateCount, 0, `expected all visible atoms to have coordinates, got ${result.metadata.audit.missingCoordinateCount} missing`);
+    assert.ok(
+      visibleAtomIds.every(atomId => Number.isFinite(result.coords.get(atomId)?.x) && Number.isFinite(result.coords.get(atomId)?.y)),
+      'expected finite coordinates for every visible atom'
+    );
+    assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
   it('partitions and stitches a multi-block organic component', () => {
     const graph = createLayoutGraph(makeLargePolyaryl(), {
       largeMoleculeThreshold: {

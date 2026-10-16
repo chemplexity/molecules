@@ -1070,19 +1070,41 @@ function orderedOverlapRotationSteps(movableBounds, fixedBounds, anchorPosition)
   return cross > 0 ? OVERLAP_RESOLUTION_ROTATION_STEPS_POSITIVE_FIRST : OVERLAP_RESOLUTION_ROTATION_STEPS_NEGATIVE_FIRST;
 }
 
-function auditLargeMoleculePlacement(layoutGraph, placement, bondLength) {
-  return auditLayout(layoutGraph, placement.coords, {
+/**
+ * Audits a large-molecule candidate and records whether it covers every
+ * participant atom expected by the component.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} placement - Candidate block placement.
+ * @param {number} bondLength - Target bond length.
+ * @param {string[]} participantAtomIds - Visible atoms expected in the result.
+ * @returns {object} Geometry audit augmented with missing-coordinate count.
+ */
+function auditLargeMoleculePlacement(layoutGraph, placement, bondLength, participantAtomIds) {
+  const audit = auditLayout(layoutGraph, placement.coords, {
     bondLength,
     bondValidationClasses: placement.bondValidationClasses
   });
+  return {
+    ...audit,
+    missingCoordinateCount: participantAtomIds.reduce((count, atomId) => count + (placement.coords.has(atomId) ? 0 : 1), 0)
+  };
 }
 
+/**
+ * Prefers more complete candidates before comparing their geometry quality.
+ * @param {object} candidateAudit - Candidate geometry and completeness audit.
+ * @param {object} incumbentAudit - Current best geometry and completeness audit.
+ * @returns {boolean} Whether the candidate should replace the incumbent.
+ */
 function isBetterLargeMoleculePlacement(candidateAudit, incumbentAudit) {
   if (!candidateAudit) {
     return false;
   }
   if (!incumbentAudit) {
     return true;
+  }
+  if ((candidateAudit.missingCoordinateCount ?? 0) !== (incumbentAudit.missingCoordinateCount ?? 0)) {
+    return (candidateAudit.missingCoordinateCount ?? 0) < (incumbentAudit.missingCoordinateCount ?? 0);
   }
   if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
     return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
@@ -1551,7 +1573,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   if (useExtremeLargeFallbackFastPath) {
     return primaryPlacement;
   }
-  const primaryAudit = auditLargeMoleculePlacement(layoutGraph, primaryPlacement, bondLength);
+  const primaryAudit = auditLargeMoleculePlacement(layoutGraph, primaryPlacement, bondLength, participantAtomIds);
   let densePartitionRetryAttemptCount = 0;
   if (shouldRetryWithDensePartition(primaryPlacement, primaryAudit, layoutGraph, component, threshold, options)) {
     densePartitionRetryAttemptCount = 1;
@@ -1564,7 +1586,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       partitionThreshold: retryThreshold
     });
     if (densePartitionPlacement) {
-      const densePartitionAudit = auditLargeMoleculePlacement(layoutGraph, densePartitionPlacement, bondLength);
+      const densePartitionAudit = auditLargeMoleculePlacement(layoutGraph, densePartitionPlacement, bondLength, participantAtomIds);
       if (isBetterLargeMoleculePlacement(densePartitionAudit, primaryAudit)) {
         return {
           ...densePartitionPlacement,
@@ -1595,13 +1617,16 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     rootRetryAttemptCount++;
     const alternatePlacement = layoutLargeMoleculeFamily(layoutGraph, component, bondLength, {
       ...options,
+      // Root descriptors belong to this partition. Repartitioning at the base
+      // threshold can orphan the root and silently skip the remaining blocks.
+      partitionThreshold: threshold,
       disableAlternateRootRetry: true,
       rootBlock: alternateRootBlock
     });
     if (!alternatePlacement) {
       continue;
     }
-    const alternateAudit = auditLargeMoleculePlacement(layoutGraph, alternatePlacement, bondLength);
+    const alternateAudit = auditLargeMoleculePlacement(layoutGraph, alternatePlacement, bondLength, participantAtomIds);
     if (isBetterLargeMoleculePlacement(alternateAudit, bestAudit)) {
       bestPlacement = alternatePlacement;
       bestAudit = alternateAudit;
