@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-19
+
+- Correct supported medium-ring E/Z geometry without stretching ring closures.
+
 ## 2026-10-16
 
 - Keep omitted suppressed hydrogens from triggering peptide regeneration and bond distortion during refinement.

@@ -1,8 +1,9 @@
 /** @module stereo/enforcement */
 
 import { countVisibleHeavyBondCrossings, findSevereOverlaps, measureDivalentContinuationDistortion, measureLayoutCost } from '../audit/invariants.js';
+import { auditLayout } from '../audit/audit.js';
 import { actualAlkeneStereo, hasEnforceableCyclicEZContext, highestPriorityAlkeneSubstituentIdForLayoutGraph, isSupportedAnnotatedDoubleBond, smallestQualifyingStereoRing } from './ez.js';
-import { cloneCoords, rotateAround } from '../geometry/transforms.js';
+import { cloneCoords, reflectAcrossLine, rotateAround } from '../geometry/transforms.js';
 import { wrapAngle } from '../geometry/vec2.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
@@ -394,6 +395,57 @@ function buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLen
   };
 }
 
+/**
+ * Tries the two alkene endpoints as ring hinges. Reflecting an endpoint and
+ * its external branches across its ring-neighbor chord preserves both ring
+ * bonds, unlike reflecting a whole ring half across the alkene axis.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {object} bond - Supported cyclic alkene bond.
+ * @param {object[]} stereoBonds - Supported annotated bonds.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, {x: number, y: number}>} protectedCoords - Immovable positions.
+ * @returns {object|null} Best geometry-safe hinge candidate.
+ */
+function buildCyclicHingeCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, protectedCoords) {
+  if (!bond.inRing) {
+    return null;
+  }
+  const ring = smallestQualifyingStereoRing(layoutGraph, bond);
+  if (!ring) {
+    return null;
+  }
+  const target = layoutGraph.sourceMolecule.getEZStereo(bond.id);
+  const matchedBefore = countMatchedStereo(layoutGraph, coords, stereoBonds);
+  let best = null;
+  for (const centerId of [bond.a, bond.b]) {
+    const neighbors = (layoutGraph.bondsByAtomId.get(centerId) ?? []).filter(edge => edge.inRing).map(edge => (edge.a === centerId ? edge.b : edge.a));
+    if (neighbors.length !== 2 || !neighbors.every(id => coords.has(id))) {
+      continue;
+    }
+    const blocked = new Set(ring.atomIds.filter(id => id !== centerId));
+    const moved = expandRingSideAtoms(layoutGraph, new Set([centerId]), blocked);
+    const candidateCoords = cloneCoords(coords);
+    for (const atomId of moved) {
+      if (coords.has(atomId)) {
+        candidateCoords.set(atomId, reflectAcrossLine(coords.get(atomId), coords.get(neighbors[0]), coords.get(neighbors[1])));
+      }
+    }
+    const preservesMatchedStereo = stereoBonds.every(other => {
+      const requested = layoutGraph.sourceMolecule.getEZStereo(other.id);
+      return actualAlkeneStereo(layoutGraph, coords, other) !== requested || actualAlkeneStereo(layoutGraph, candidateCoords, other) === requested;
+    });
+    if (!preservesMatchedStereo || actualAlkeneStereo(layoutGraph, candidateCoords, bond) !== target || !auditLayout(layoutGraph, candidateCoords, { bondLength }).ok) {
+      continue;
+    }
+    const candidate = buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, moved, protectedCoords);
+    if (candidate && candidate.matchedStereoCount > matchedBefore && candidate.heavyBondCrossingCount === 0 && isBetterStereoCandidate(candidate, best)) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
 function isBetterStereoCandidate(candidate, incumbent) {
   if (!candidate) {
     return false;
@@ -687,6 +739,14 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
       const targetStereo = layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null;
       const actualStereo = actualAlkeneStereo(layoutGraph, coords, bond);
       if (!targetStereo || actualStereo == null || actualStereo === targetStereo) {
+        continue;
+      }
+
+      const hingeCandidate = buildCyclicHingeCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, protectedCoords);
+      if (hingeCandidate) {
+        coords = hingeCandidate.coords;
+        reflections++;
+        changed = true;
         continue;
       }
 
