@@ -7211,6 +7211,25 @@ function finalPeptideRoutingDefectClusters(severeOverlaps, visibleHeavyBondCross
   return clusters;
 }
 
+/**
+ * Counts defects whose relative geometry a rigid subtree rotation can change.
+ * Moving all or none of a defect's atoms preserves that defect. Prioritizing
+ * hinges that split several defects keeps a bounded paired search from being
+ * exhausted by unrelated branches or large complementary subtree choices.
+ * @param {object} descriptor - Routing descriptor with subtree atom IDs.
+ * @param {object} cluster - Severe overlaps and heavy-bond crossings.
+ * @returns {number} Number of defects split by the rotation.
+ */
+function finalPeptideRoutingAffectedDefectCount(descriptor, cluster) {
+  const moved = new Set(descriptor.subtreeAtomIds);
+  const overlapCount = cluster.severeOverlaps.filter(overlap => moved.has(overlap.firstAtomId) !== moved.has(overlap.secondAtomId)).length;
+  const crossingCount = cluster.visibleHeavyBondCrossings.filter(crossing => {
+    const atomIds = [...crossing.firstAtomIds, ...crossing.secondAtomIds];
+    return atomIds.some(atomId => moved.has(atomId)) && !atomIds.every(atomId => moved.has(atomId));
+  }).length;
+  return overlapCount + crossingCount;
+}
+
 function maybeResolveFinalPeptidePairedCrossings(layoutGraph, coords, placement, bondLength, currentAudit) {
   if ((currentAudit.visibleHeavyBondCrossingFailureCount ?? 0) === 0) {
     return { changed: false, coords, movedAtomIds: [], audit: currentAudit, probes: 0 };
@@ -7241,6 +7260,8 @@ function maybeResolveFinalPeptidePairedCrossings(layoutGraph, coords, placement,
   pairedSearch: for (const defectCluster of defectClusters) {
     const focusBondIds = finalPeptideRoutingFocusBondIds(layoutGraph, defectCluster);
     const descriptors = finalPeptideRoutingDescriptors(layoutGraph, coords, placement, focusBondIds);
+    const affectedDefectCounts = new Map(descriptors.map(descriptor => [descriptor, finalPeptideRoutingAffectedDefectCount(descriptor, defectCluster)]));
+    descriptors.sort((first, second) => affectedDefectCounts.get(second) - affectedDefectCounts.get(first) || first.movedHeavyAtomCount - second.movedHeavyAtomCount);
     let clusterProbes = 0;
     for (const firstDescriptor of descriptors) {
       for (const firstRotation of FINAL_PEPTIDE_PAIRED_CROSSING_ROTATIONS) {

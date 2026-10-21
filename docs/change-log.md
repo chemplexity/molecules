@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-20
+
+- Prioritize coupled peptide defects in paired-rotation routing to clear trapped overlaps and crossings within the existing search budget.
+
 ## 2026-10-19
 
 - Correct supported medium-ring E/Z geometry without stretching ring closures.
