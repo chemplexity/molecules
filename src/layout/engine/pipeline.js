@@ -16600,6 +16600,7 @@ export function runPipeline(molecule, options = {}) {
       const postRoutingLargeDirtyResidualRetouch = timeFinalRetouch('postRoutingLargeDirtyResidualRetouch', () =>
         runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
           bondLength: normalizedOptions.bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
           residualOnly: true
         })
       );
@@ -16827,7 +16828,8 @@ export function runPipeline(molecule, options = {}) {
   if (placement.placedFamilies.includes('large-molecule') || familySummary.primaryFamily === 'large-molecule') {
     const largeMoleculeResidualRetouch = timeFinalRetouch('largeMoleculeResidualRetouch', () =>
       runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
-        bondLength: normalizedOptions.bondLength
+        bondLength: normalizedOptions.bondLength,
+        frozenAtomIds: placement.frozenAtomIds
       })
     );
     if (largeMoleculeResidualRetouch.changed) {
@@ -18623,6 +18625,7 @@ export function runPipeline(molecule, options = {}) {
       const lateLargeMoleculeResidualRetouch = timeFinalRetouch('lateLargeMoleculeResidualRetouch', () =>
         runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
           bondLength: normalizedOptions.bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
           residualOnly: true
         })
       );
@@ -18711,6 +18714,7 @@ export function runPipeline(molecule, options = {}) {
       const finalLargeMoleculeResidualRetouch = timeFinalRetouch('finalLargeMoleculeResidualRetouch', () =>
         runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
           bondLength: normalizedOptions.bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
           residualOnly: true
         })
       );

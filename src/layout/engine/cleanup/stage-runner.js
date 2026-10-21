@@ -135,6 +135,20 @@ function resolveParentStageResult(stageResults, baselineStage, parentStage, best
   return null;
 }
 
+function movesFixedAtoms(layoutGraph, parentCoords, candidateCoords) {
+  if (!layoutGraph || layoutGraph.options?.preserveFixed === false || !(layoutGraph.fixedCoords?.size > 0)) {
+    return false;
+  }
+  for (const atomId of layoutGraph.fixedCoords.keys()) {
+    const before = parentCoords.get(atomId);
+    const after = candidateCoords.get(atomId);
+    if (before && after && (before.x !== after.x || before.y !== after.y)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Executes a cleanup-stage DAG while tracking the current incumbent and stage sidecars.
  * @param {object[]} stages - Ordered stage descriptors.
@@ -209,7 +223,7 @@ export function runStageGraph(stages, baselineStage, context, seedState = null) 
     }
 
     const prevBestStage = bestStage;
-    const accepted = !stage.comparatorFn || stage.comparatorFn(stageResult, bestStage, context, stageResults);
+    const accepted = !movesFixedAtoms(context.layoutGraph, parentStageResult.coords, stageResult.coords) && (!stage.comparatorFn || stage.comparatorFn(stageResult, bestStage, context, stageResults));
     stageExecution.accepted = accepted;
     if (accepted) {
       bestStage = stageResult;
