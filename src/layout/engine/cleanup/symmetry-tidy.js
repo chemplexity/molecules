@@ -7,6 +7,10 @@ import { angleOf, angularDifference, centroidForAtomIds, rotate, sub } from '../
 const IDEMPOTENT_AXIS_EPSILON = 1e-12;
 const LOCAL_AXIS_SNAP_ANGLE_EPSILON = Math.PI / 720;
 
+function isFixedAtom(layoutGraph, atomId) {
+  return layoutGraph?.options?.preserveFixed !== false && layoutGraph?.fixedCoords?.has(atomId) === true;
+}
+
 /**
  * Returns the qualifying fused ring-junction pairs that should be snapped to an axis.
  * @param {object} layoutGraph - Layout graph shell.
@@ -41,6 +45,9 @@ function collectJunctionTargets(layoutGraph) {
     }
     const component = componentByAtomId.get(connection.sharedAtomIds[0]);
     if (!component) {
+      continue;
+    }
+    if (component.atomIds.some(atomId => isFixedAtom(layoutGraph, atomId))) {
       continue;
     }
     if (!targets.has(component.id)) {
@@ -330,6 +337,9 @@ export function tidySymmetry(inputCoords, options = {}) {
 
   for (const [atomId, position] of junctionSnap.coords) {
     const nextPosition = { ...position };
+    if (isFixedAtom(options.layoutGraph, atomId)) {
+      continue;
+    }
     if (Math.abs(nextPosition.x) <= epsilon) {
       const snappedPosition = { ...nextPosition, x: 0 };
       if (!wouldAxisSnapDistortLocalGeometry(options.layoutGraph, coords, atomId, snappedPosition)) {
