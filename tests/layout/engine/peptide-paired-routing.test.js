@@ -46,6 +46,8 @@ describe('peptide paired routing', () => {
       const anchors = structuredClone(result.coords);
       const anchored = generateCoords(molecule, { bondLength, existingCoords: result.coords, fixedCoords: anchors });
       assert.deepEqual(anchored.coords, anchors);
+      assert.equal(anchored.metadata.audit.fixedCoordinateViolationCount, 0);
+      assert.equal(anchored.metadata.audit.ok, true);
       assert.deepEqual(result.coords, anchors);
     });
   }

@@ -626,6 +626,45 @@ function buildInitialCoordsMap(options) {
   return coords;
 }
 
+/**
+ * Returns whether component placement has already reproduced a complete,
+ * fully fixed layout exactly. Such geometry has no legal cleanup move and must
+ * be audited as supplied instead of entering stages that can rotate a whole
+ * component while preserving only its internal shape.
+ * @param {object} layoutGraph - Layout graph with normalized fixed coordinates.
+ * @param {object} placement - Completed component-placement summary.
+ * @returns {boolean} Whether the fixed placement is ready for final auditing.
+ */
+function isCompleteFullyFixedPlacement(layoutGraph, placement) {
+  if (
+    layoutGraph.options.preserveFixed === false ||
+    layoutGraph.fixedCoords.size === 0 ||
+    placement.unplacedComponentCount !== 0 ||
+    !(placement.coords instanceof Map) ||
+    placement.coords.size === 0
+  ) {
+    return false;
+  }
+  for (const [atomId, position] of placement.coords) {
+    const fixedPosition = layoutGraph.fixedCoords.get(atomId);
+    if (!fixedPosition || position.x !== fixedPosition.x || position.y !== fixedPosition.y) {
+      return false;
+    }
+  }
+  for (const [atomId, fixedPosition] of layoutGraph.fixedCoords) {
+    const position = placement.coords.get(atomId);
+    if (!position || position.x !== fixedPosition.x || position.y !== fixedPosition.y) {
+      return false;
+    }
+  }
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (atom.visible !== false && !placement.coords.has(atomId)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function repackFinalDisconnectedComponents(layoutGraph, coords, placement, policy, bondLength) {
   if ((layoutGraph.components?.length ?? 0) <= 1) {
     return coords;
@@ -16355,6 +16394,17 @@ export function runPipeline(molecule, options = {}) {
     ringCount: layoutGraph.rings.length,
     ringSystemCount: layoutGraph.ringSystems.length
   });
+  if (isCompleteFullyFixedPlacement(layoutGraph, placement)) {
+    const placementStage = {
+      name: 'placement',
+      coords: placement.coords,
+      audit: auditCleanupStage(layoutGraph, placement.coords, placement, normalizedOptions.bondLength)
+    };
+    const cleanup = buildCleanPlacementFastPathResult(layoutGraph, placementStage, normalizedOptions.auditTelemetry === true);
+    const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, placement.coords, timingState);
+    onStep?.('Final Result', 'Complete fully fixed 2D layout audited without movable cleanup stages.', cloneCoords(placement.coords), { stage: 'complete' });
+    return buildPipelineResult(molecule, placement.coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
+  }
   const cleanup = runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState, onStep, onStageAcceptance);
   const timeFinalRetouch = (name, fn) => timeNamedTimingBucket(timingState, 'finalRetouchMs', 'finalRetouchBreakdownMs', name, fn);
   for (const [atomId, position] of cleanup.coords) {

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-21
+
+- Preserve complete fully fixed layouts through final auditing.
+
 ## 2026-10-20
 
 - Prioritize coupled peptide defects in paired-rotation routing to clear trapped overlaps and crossings within the existing search budget.
