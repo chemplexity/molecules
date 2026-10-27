@@ -1,6 +1,6 @@
 /** @module core/Bond */
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from '../utils/uuid.js';
 import { cloneVisualStyle, normalizeBondStyle } from './support/style.js';
 
 /** @typedef {'covalent'|'dative'|'coordinate'|'ionic'|'haptic'|'unknown'} BondKind */

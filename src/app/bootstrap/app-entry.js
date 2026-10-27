@@ -1,4 +1,4 @@
-import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
+import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm';
 import { finalizeAppBootstrap } from './app-bootstrap.js';
 import { createFinalizeAppBootstrapDeps } from './deps/finalize-bootstrap-deps.js';
 import { initializeAppRuntime } from './app-runtime.js';

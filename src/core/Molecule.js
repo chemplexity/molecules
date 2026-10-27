@@ -1,6 +1,6 @@
 /** @module core/Molecule */
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from '../utils/uuid.js';
 import { Atom, getImplicitHydrogenChargeAdjustment } from './Atom.js';
 import { Bond } from './Bond.js';
 import { normalizeRingAtomIds, normalizeRingFillStyle, ringAtomKey } from './support/style.js';

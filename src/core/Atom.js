@@ -1,6 +1,6 @@
 /** @module core/Atom */
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from '../utils/uuid.js';
 import elements from '../data/elements.js';
 import { cloneVisualStyle, normalizeAtomStyle } from './support/style.js';
 

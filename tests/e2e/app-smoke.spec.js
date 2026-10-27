@@ -799,6 +799,7 @@ test('exiting force reaction preview keeps compact Global Bond Length layouts fr
 });
 
 async function loadSmiles(page, smiles) {
+  await waitForAppReady(page);
   const input = page.locator('#smiles-input');
   await input.fill(smiles);
   await input.press('Enter');

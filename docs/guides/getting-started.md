@@ -2,9 +2,16 @@
 
 ## Installation
 
+Requires Node.js 24.15+. Use a repository checkout; the npm package named `molecules` is unrelated.
+
 ```sh
-npm install molecules
+git clone https://github.com/chemplexity/molecules.git
+cd molecules
+npm install
+npm run build
 ```
+
+Run the examples below as `.mjs` files in the repository root. The package name resolves to this checkout’s ESM build.
 
 ## Quick Start
 

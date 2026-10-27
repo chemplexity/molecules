@@ -15,12 +15,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: npm
 
       - name: Install dependencies
@@ -41,21 +41,23 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Test packed package
+        run: npm run test:package
+
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: molecules-${{ github.ref_name }}
           path: |
             dist/
             es/
-            lib/
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
-            dist/molecules.umd.js
-            dist/molecules.umd.js.map
-            dist/molecules.umd.min.js
-            dist/molecules.umd.min.js.map
+            dist/molecules.js
+            dist/molecules.js.map
+            dist/molecules.min.js
+            dist/molecules.min.js.map

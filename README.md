@@ -1,175 +1,74 @@
 # molecules.js
 
-A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + `d3.js` [here](https://chemplexity.github.io/molecules/index.html).
+A JavaScript cheminformatics library with an interactive demo for editing and analyzing molecular structures.
 
-![Imgur](http://i.imgur.com/idP2r6Q.jpg)
+[**Open the demo →**](https://chemplexity.github.io/molecules/index.html)
 
-## Features
+[Quick start](#quick-start)
 
-- **I/O** — parse and serialise SMILES and InChI formats
-- **2D layout** — coordinate generation and refinement for skeletal-structure rendering
-- **Aromaticity** — Hückel π-electron perception for arbitrary ring systems
-- **SMARTS** — substructure search and built-in functional group detection
-- **SMIRKS** — reaction transform parsing and application with built-in reaction templates
-- **Graph matrices** — adjacency, degree, distance, Laplacian, Randić, reciprocal
-- **Topological indices** — Wiener, Balaban, Randić, Zagreb, Harary, Schultz, and more
-- **Physicochemical properties** — logP, TPSA, H-bond donors/acceptors, Lipinski Ro5
-- **Spectral descriptors** — adjacency/Laplacian spectra, Estrada index, graph entropy
-- **Valence validation** — detect over- and under-bonded atoms
+[Documentation](docs/README.md)
 
-## Installation
+## Structure editing and analysis
+
+![Aspirin in the demo, with physicochemical descriptors and a highlighted carboxylic acid group](docs/assets/demo-workbench.png)
+
+- Load SMILES, InChI, or molecules from the built-in catalog.
+- Draw atoms, bonds, chains, and rings; edit charges and stereobonds; undo and redo.
+- Inspect topological indices, logP, TPSA, hydrogen bonding, Lipinski rules, and approximate QED.
+- Highlight functional groups and supported descriptor contributions.
+- Style structures, copy SVG/PNG, and save or reopen molecule JSON.
+
+## Force-directed graphs
+
+![Aspirin displayed as a force-directed molecular graph](docs/assets/demo-force-layout.png)
+
+Switch between skeletal 2D structures and force-directed graphs. Both views support pan, zoom, rotation, and atom selection.
+
+## Reactions and resonance
+
+![Cyclohexanol oxidation preview showing the reactant and product](docs/assets/demo-reaction.png)
+
+Preview SMIRKS reaction templates with reagent and condition annotations. Enumerate resonance contributors and inspect electron-flow arrows. Additional overlays show electronegativity, bond lengths, and atom numbering.
+
+## Library capabilities
+
+- **Formats:** SMILES, canonical SMILES, InChI, JSON, and sequence-to-molecule utilities.
+- **Matching:** SMARTS, VF2 subgraph search, aromaticity perception, and Morgan ranking.
+- **Transformations:** atom-mapped SMIRKS, reaction templates, and resonance enumeration.
+- **2D layout:** generation and refinement for chains, fused/spiro/bridged rings, macrocycles, and organometallic structures; deterministic cleanup by default.
+- **Analysis:** graph matrices, topological and spectral descriptors, physicochemical estimates, and valence validation.
+
+## Quick start
+
+Requires **Node.js 24.15+**. Use a checkout of this repository. The npm package named `molecules` is an unrelated project.
 
 ```sh
-npm install molecules
+git clone https://github.com/chemplexity/molecules.git
+cd molecules
+npm install
 ```
 
-## Quick Start
+Save this as `example.mjs` in the repository root and run `node example.mjs`:
 
 ```js
-import { parseSMILES, toCanonicalSMILES, toInChI, molecularFormula, wienerIndex, adjacencyMatrix, distanceMatrix } from 'molecules';
+import { parseSMILES, generateCoords, tpsa, findSMARTS } from './src/index.js';
 
-const mol = parseSMILES('CC(=O)O'); // acetic acid
+const aspirin = parseSMILES('CC(=O)Oc1ccccc1C(=O)O');
+generateCoords(aspirin);
 
-console.log(molecularFormula(mol)); // C2H4O2
-console.log(toCanonicalSMILES(mol)); // canonical SMILES
-console.log(toInChI(mol)); // InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)
-
-const A = adjacencyMatrix(mol);
-const D = distanceMatrix(A);
-console.log(wienerIndex(D)); // 10
+console.log(tpsa(aspirin)); // 63.6 Å²
+console.log([...findSMARTS(aspirin, '[CX3](=O)[OX2H1]')].length); // 1
 ```
 
-## Parsing and Serialisation
+The library uses ESM and declares no runtime npm dependencies. `npm run build` generates shared ESM modules in `es/` and standalone bundles in `dist/`; the example above runs directly from source.
 
-```js
-import { parseSMILES, toSMILES, toCanonicalSMILES, parseINCHI, toInChI, toJSON, fromJSON } from 'molecules';
+## Run the demo locally
 
-const mol = parseSMILES('[C@@H](F)(Cl)Br');
+From a checkout of this repository:
 
-toSMILES(mol); // preserves input atom order
-toCanonicalSMILES(mol); // stable, Morgan-ranked identifier
-toInChI(mol); // full InChI with stereo (/t, /b) and isotope (/i) layers
-
-const mol2 = parseINCHI('InChI=1S/C6H6/c1-2-4-6-5-3-1/h1-6H');
+```sh
+npm install
+node tests/e2e/server.mjs
 ```
 
-## SMARTS and Functional Groups
-
-```js
-import { parseSMILES, findSMARTS, matchesSMARTS, functionalGroups } from 'molecules';
-
-const mol = parseSMILES('CC(=O)O');
-
-// Detect all built-in functional groups
-const groups = functionalGroups(mol);
-// { carboxylicAcid: [[...]], carbonyl: [[...]], alkene: [], ... }
-
-// Custom SMARTS query
-const hits = findSMARTS('[CX3](=O)[OX2H1]', mol);
-console.log(matchesSMARTS('[CX3](=O)[OX2H1]', mol)); // true
-```
-
-## SMIRKS Reaction Transforms
-
-```js
-import { parseSMILES, parseSMIRKS, applySMIRKS, reactionTemplates } from 'molecules';
-
-// Apply a built-in reaction template
-const alcohol = parseSMILES('CCO');
-const product = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
-
-// Apply a custom SMIRKS transform
-const mol = parseSMILES('CCl');
-const hydrolysed = applySMIRKS(mol, '[C:1][Cl,Br,I:2]>>[C:1][OH:2]');
-```
-
-Built-in templates include `alcoholOxidation`, `carbonylReduction`,
-`alkeneHydrogenation`, `alkynePartialReduction`, `esterHydrolysis`,
-`amideHydrolysis`, `halideHydrolysis`, `dehalogenation`, and more.
-
-## Descriptors
-
-```js
-import {
-  // Physicochemical
-  logP,
-  tpsa,
-  hBondDonors,
-  hBondAcceptors,
-  lipinskiRuleOfFive,
-  // Topological
-  wienerIndex,
-  balabanIndex,
-  randicIndex,
-  zagreb1,
-  zagreb2,
-  hararyIndex,
-  szegedIndex,
-  hosoyaIndex,
-  eccentricConnectivityIndex,
-  // Spectral
-  spectralRadius,
-  estradaIndex,
-  graphEntropy
-} from 'molecules';
-```
-
-## 2D Coordinates
-
-```js
-import { parseSMILES, generateCoords } from 'molecules';
-
-const mol = parseSMILES('c1ccccc1');
-generateCoords(mol);
-// atom.x and atom.y are now set in Ångströms
-```
-
-Cleanup defaults to `cleanupMode: 'deterministic'`: existing candidate and iteration
-limits apply, but elapsed time does not skip cleanup stages. For interactive use,
-`cleanupMode: 'time-limited'` enables the previous elapsed-time stage budget;
-depictions can then vary with machine load. This is not a total layout timeout.
-Engine results expose `metadata.cleanupMode` and `metadata.cleanupStageBudget`
-(including skipped stages, or `null` when no stage budget was needed), even with
-timing telemetry disabled.
-
-## Valence Validation
-
-```js
-import { parseSMILES, validateValence } from 'molecules';
-
-const warnings = validateValence(parseSMILES('C(C)(C)(C)(C)C'));
-// [{ atomId, element, actual, expected, message }]
-```
-
-## Sub-path Imports
-
-```js
-import { Molecule, Atom, Bond } from 'molecules/core';
-import { parseSMILES, toCanonicalSMILES, toInChI } from 'molecules/io';
-import { wienerIndex, logP, lipinskiRuleOfFive } from 'molecules/descriptors';
-import { adjacencyMatrix, distanceMatrix } from 'molecules/matrices';
-import { perceiveAromaticity, morganRanks } from 'molecules/algorithms';
-import { validateValence } from 'molecules/validation';
-```
-
-## Molecule Catalog
-
-A curated catalog of common molecules organised into named collections (amino acids, nucleobases, lipids, polycyclic aromatic hydrocarbons, and more).
-
-```js
-import { moleculeCatalog, findMolecules, getMoleculeCatalogById } from 'molecules/data';
-
-// All collections
-console.log(moleculeCatalog.length); // number of collections
-
-// Search across all collections by name, alias, or tag
-const hits = findMolecules('adenine'); // [{ molecule, collection }]
-
-// Look up a collection by id
-const nucleobases = getMoleculeCatalogById('nucleobases');
-console.log(nucleobases.molecules.map(m => m.name));
-```
-
-## Documentation
-
-Full API documentation and guides are in [`docs/`](docs/).
+Open **http://127.0.0.1:4173**. No build step required; the demo loads D3 7.9.0 from jsDelivr.

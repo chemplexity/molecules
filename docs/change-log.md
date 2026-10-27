@@ -2,6 +2,9 @@
 
 ## 2026-10-21
 
+- Share ESM implementations across package entry points, verify packed installs in CI, and use Web Crypto UUIDs without a browser shim; pin the demo's D3 version.
+- Refresh the README and development tooling, require Node.js 24.15+, and update CI actions.
+- Switch package and browser bundles to ESM only; remove CommonJS and UMD outputs.
 - Preserve complete fully fixed layouts through final auditing.
 
 ## 2026-10-20
