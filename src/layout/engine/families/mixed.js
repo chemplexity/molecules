@@ -4367,6 +4367,38 @@ function auditRingSystemPlacement(layoutGraph, ringSystem, placement, bondLength
   };
 }
 
+/**
+ * Replaces an incomplete macrocycle seed with the best complete general
+ * ring-system candidate. Complete macrocycles retain their dedicated placer.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Ring-system descriptor.
+ * @param {object[]} rings - Rings belonging to the system.
+ * @param {number} bondLength - Target depiction bond length.
+ * @param {string|null} templateId - Optional matched template identifier.
+ * @param {object|null} incumbentPlacement - Primary macrocycle placement.
+ * @returns {object|null} Best complete fallback, or the incumbent when none exists.
+ */
+function rescueIncompleteMacrocycleRingSystem(layoutGraph, ringSystem, rings, bondLength, templateId, incumbentPlacement) {
+  if (!incumbentPlacement?.coords || incumbentPlacement.coords.size === ringSystem.atomIds.length) {
+    return incumbentPlacement;
+  }
+
+  let bestPlacement = incumbentPlacement;
+  let bestAudit = null;
+  const candidates = [
+    wrapRingSystemPlacementResult(layoutGraph, ringSystem, 'bridged', layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }), templateId),
+    wrapRingSystemPlacementResult(layoutGraph, ringSystem, 'bridged', layoutFusedCageKamadaKawai(rings, bondLength, { layoutGraph, templateId }), templateId)
+  ];
+  for (const candidatePlacement of candidates) {
+    const candidateAudit = auditRingSystemPlacement(layoutGraph, ringSystem, candidatePlacement, bondLength);
+    if (isBetterRingSystemPlacement(candidatePlacement, bestPlacement, candidateAudit, bestAudit, true)) {
+      bestPlacement = candidatePlacement;
+      bestAudit = candidateAudit;
+    }
+  }
+  return bestAudit ? bestPlacement : incumbentPlacement;
+}
+
 function ringCentersForCoords(rings, coords) {
   const ringCenters = new Map();
   for (const ring of rings) {
@@ -6204,7 +6236,7 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
   }
   if (family === 'macrocycle') {
     const macrocyclePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutMacrocycleFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
-    let bestPlacement = macrocyclePlacement;
+    let bestPlacement = rescueIncompleteMacrocycleRingSystem(layoutGraph, ringSystem, rings, bondLength, templateId, macrocyclePlacement);
     let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
     if (shouldTryMetalChelateMacrocycleBridgedRescue(layoutGraph, ringSystem, rings, templateId, bestAudit)) {
       const { placement: bridgedChelatePlacement, audit: bridgedChelateAudit } = selectMetalChelateMacrocycleBridgedPlacement(layoutGraph, ringSystem, rings, family, bondLength, templateId);

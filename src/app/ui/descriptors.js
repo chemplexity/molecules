@@ -1,6 +1,7 @@
 /** @module app/ui/descriptors */
 
 import { molecularFormula, molecularMass } from '../../descriptors/molecular.js';
+import { toJSON } from '../../io/json.js';
 import { allMatrices } from '../../matrices/index.js';
 import {
   abcIndex,
@@ -65,6 +66,34 @@ const PC_DESCRIPTIONS = {
   QED: 'Quantitative Estimate of Drug-likeness (Bickerton 2012). Weighted geometric mean of MW, logP, HBD, HBA, TPSA, RotBonds, ArRings desirabilities. Approximate implementation.'
 };
 
+const TOPOLOGICAL_DESCRIPTIONS = {
+  'Atoms (total)': 'Total number of atoms, including implicit hydrogens.',
+  'Heavy atoms': 'Number of non-hydrogen atoms. Graph indices below are computed on this hydrogen-suppressed graph.',
+  Bonds: 'Number of explicit bonds in the molecular graph.',
+  'Wiener Index (W)': 'Sum of shortest-path distances between all atom pairs (Wiener, 1947). Measures molecular size and compactness; branching lowers it. Correlates with boiling point.',
+  'Hyper-Wiener (WW)': 'Wiener variant that also sums squared distances, weighting distant atom pairs more heavily. More sensitive to branching than W.',
+  'Harary Index (H)': 'Sum of reciprocal distances between all atom pairs. Emphasises nearby atoms; higher for compact, densely connected molecules.',
+  'Balaban Index (J)': 'Average distance-sum connectivity, normalised by ring count (Balaban, 1982). Highly discriminating for branching and largely independent of molecular size.',
+  'Randić Index (χ)': 'Sum of (deg·deg)^−½ over bonds (Randić, 1975). Measures branching; widely used in QSAR for boiling point, solubility, and surface area.',
+  'Zagreb M1': 'Sum of squared atom degrees (Gutman & Trinajstić, 1972). Reflects branching and the total π-electron energy.',
+  'Zagreb M2': 'Sum of degree products over bonds. Captures branching through how highly connected atoms are linked to each other.',
+  'Platt Index (F)': 'Total number of bonds adjacent to each bond (Platt, 1947). Measures local bond connectivity; correlates with physical properties of alkanes.',
+  'Szeged Index (Sz)': 'Sum over bonds of the number of atoms closer to each end (Gutman, 1994). Equals the Wiener index for acyclic molecules, so it extends W to rings.',
+  'Atom-Bond Connectivity (ABC)': 'Degree-based bond sum (Estrada, 1998) designed to model the stability of linear and branched alkanes and their heats of formation.',
+  'Geometric-Arithmetic (GA)': 'Sum over bonds of the geometric/arithmetic mean ratio of atom degrees. Measures how evenly connectivity is distributed across bonds.',
+  'Harmonic Index': 'Sum over bonds of 2/(deg+deg). A connectivity measure related to Randić χ, sensitive to branching.',
+  'Sum-Connectivity (χs)': 'Sum over bonds of (deg+deg)^−½ (Zhou & Trinajstić, 2009). Randić variant that correlates closely with π-electron energy and physical properties.',
+  'Eccentric Connectivity (ξ)': 'Sum of atom degree × eccentricity (greatest distance to any other atom). Combines connectivity with molecular shape; used in activity prediction.',
+  'Wiener Polarity (Wp)':
+    'Number of atom pairs exactly three bonds apart (Wiener, 1947), i.e. the torsion-defining paths. Used alongside W to predict alkane boiling points; it does not measure electrical polarity.',
+  'Schultz Index (MTI)': 'Molecular Topological Index (Schultz, 1989): distances weighted by the sum of atom degrees. Combines size, shape, and branching.',
+  'Gutman Index (Gut)': 'Distances weighted by the product of atom degrees. Like Schultz MTI, it blends molecular size with branching.',
+  'Forgotten Index (F₃)': 'Sum of cubed atom degrees (Furtula & Gutman, 2015). Strongly emphasises highly branched atoms; correlates with entropy and acentric factor.',
+  'Narumi-Katayama (NK)': 'Product of all atom degrees. A simple multiplicative measure of branching.',
+  'Hosoya Index (Z)':
+    'Number of ways to choose non-adjacent bonds (matchings) (Hosoya, 1971). Correlates with boiling point and π-electron properties. Computed automatically for ≤18 heavy atoms; larger molecules use the Compute button.'
+};
+
 function escapeAttr(value) {
   return String(value).replace(/"/g, '&quot;');
 }
@@ -92,6 +121,11 @@ function detailHighlightGroups(detail, molecule, label = '') {
 }
 
 const HOSOYA_MAX_HEAVY_ATOMS = 18;
+const HOSOYA_LABEL = 'Hosoya Index (Z)';
+const HOSOYA_COMPUTE_TITLE = `Hosoya Z counts every set of non-adjacent bonds, so its cost grows exponentially with molecule size. It is computed automatically only up to ${HOSOYA_MAX_HEAVY_ATOMS} heavy atoms; larger molecules can take seconds to minutes. The calculation runs in the background and can be cancelled.`;
+
+// Single in-flight or finished Hosoya calculation, keyed by the heavy-atom bond graph.
+let hosoyaJob = null;
 
 /**
  * Computes the rows displayed by the topological descriptor panel.
@@ -100,7 +134,7 @@ const HOSOYA_MAX_HEAVY_ATOMS = 18;
  * @returns {Array<[string, number|null]>} Label/value rows.
  */
 export function topologicalDescriptorRows(molecule, extraH = 0) {
-  const heavyCount = [...molecule.atoms.values()].filter(atom => atom.name !== 'H').length;
+  const heavyCount = heavyAtomCount(molecule);
   let rows = [
     ['Atoms (total)', molecule.atoms.size + extraH],
     ['Heavy atoms', heavyCount],
@@ -136,7 +170,7 @@ export function topologicalDescriptorRows(molecule, extraH = 0) {
         ['Gutman Index (Gut)', gutmanIndex(degree, distance)],
         ['Forgotten Index (F₃)', forgottenIndex(degree)],
         ['Narumi-Katayama (NK)', narumiKatayamaIndex(degree)],
-        ['Hosoya Index (Z)', heavyCount <= HOSOYA_MAX_HEAVY_ATOMS ? hosoyaIndex(molecule) : null]
+        [HOSOYA_LABEL, heavyCount <= HOSOYA_MAX_HEAVY_ATOMS ? hosoyaIndex(molecule) : null]
       ]);
     }
   } catch {
@@ -157,8 +191,81 @@ export function updateDescriptors(molecule, extraH = 0) {
   }
 
   const rows = topologicalDescriptorRows(molecule, extraH);
-  tbody.innerHTML = rows.map(([label, val]) => `<tr><td>${label}</td><td>${fmtVal(val)}</td></tr>`).join('');
+  const deferHosoya = heavyAtomCount(molecule) > HOSOYA_MAX_HEAVY_ATOMS && typeof Worker !== 'undefined';
+  const hosoyaKey = deferHosoya ? hosoyaGraphKey(molecule) : null;
+  if (hosoyaJob && hosoyaJob.key !== hosoyaKey) {
+    cancelHosoyaJob();
+  }
+  tbody.innerHTML = rows
+    .map(([label, val]) => {
+      const desc = TOPOLOGICAL_DESCRIPTIONS[label];
+      const descAttr = desc ? ` data-desc="${escapeAttr(desc)}"` : '';
+      const valueCell = label === HOSOYA_LABEL && deferHosoya ? '<td data-hosoya></td>' : `<td>${fmtVal(val)}</td>`;
+      return `<tr${descAttr}><td>${label}</td>${valueCell}</tr>`;
+    })
+    .join('');
+  if (deferHosoya) {
+    renderHosoyaCell(tbody, molecule, hosoyaKey);
+  }
   updatePhysicochemical(molecule);
+}
+
+function heavyAtomCount(molecule) {
+  return [...molecule.atoms.values()].filter(atom => atom.name !== 'H').length;
+}
+
+function hosoyaGraphKey(molecule) {
+  const isHeavy = id => molecule.atoms.get(id)?.name !== 'H';
+  return [...molecule.bonds.values()]
+    .filter(bond => bond.atoms.every(isHeavy))
+    .map(bond => [...bond.atoms].sort().join('-'))
+    .sort()
+    .join(',');
+}
+
+function cancelHosoyaJob() {
+  hosoyaJob?.worker?.terminate();
+  hosoyaJob = null;
+}
+
+function renderHosoyaCell(tbody, molecule, key) {
+  const cell = tbody.querySelector('td[data-hosoya]');
+  if (!cell) {
+    return;
+  }
+  if (hosoyaJob?.value != null) {
+    cell.textContent = fmtVal(hosoyaJob.value);
+    return;
+  }
+  const running = !!hosoyaJob?.worker;
+  cell.innerHTML = `<button type="button" class="hosoya-compute${running ? ' running' : ''}" title="${escapeAttr(HOSOYA_COMPUTE_TITLE)}">${running ? 'Cancel' : 'Compute'}</button>`;
+  cell.querySelector('button').addEventListener('click', () => {
+    if (hosoyaJob?.worker) {
+      cancelHosoyaJob();
+    } else {
+      startHosoyaJob(tbody, molecule, key);
+    }
+    renderHosoyaCell(tbody, molecule, key);
+  });
+}
+
+function startHosoyaJob(tbody, molecule, key) {
+  const worker = new Worker(new URL('./hosoya-worker.js', import.meta.url), { type: 'module' });
+  const job = { key, worker, value: null };
+  hosoyaJob = job;
+  const finish = value => {
+    worker.terminate();
+    if (hosoyaJob !== job) {
+      return;
+    }
+    hosoyaJob = value == null ? null : { key, worker: null, value };
+    if (tbody.isConnected) {
+      renderHosoyaCell(tbody, molecule, key);
+    }
+  };
+  worker.onmessage = event => finish(event.data);
+  worker.onerror = () => finish(null);
+  worker.postMessage(toJSON(molecule));
 }
 
 /**

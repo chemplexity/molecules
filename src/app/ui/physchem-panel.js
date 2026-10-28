@@ -130,6 +130,16 @@ export function initPhyschemPanel(context) {
         return;
       }
     }
+    trackTooltip(event, tr);
+  });
+
+  const descriptorTable = context.dom.getDescriptorTableElement?.();
+  if (descriptorTable) {
+    descriptorTable.addEventListener('mousemove', event => trackTooltip(event, event.target.closest('tr[data-desc]')));
+    descriptorTable.addEventListener('mouseleave', hideTooltip);
+  }
+
+  function trackTooltip(event, tr) {
     const td = event.target.closest('td');
     const onTooltipCell = !!(tr && td && td === tr.cells[0]);
     if (!onTooltipCell) {
@@ -154,7 +164,7 @@ export function initPhyschemPanel(context) {
         showTooltip();
       }, tooltipDelayMs);
     }
-  });
+  }
 
   pcTable.addEventListener('click', event => {
     syncLockedRow();

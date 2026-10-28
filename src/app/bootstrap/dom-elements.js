@@ -76,6 +76,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const optionsCancelButton = document.getElementById('options-cancel-btn');
   const optionsApplyButton = document.getElementById('options-apply-btn');
   const physchemTable = document.getElementById('pc-table');
+  const descriptorTable = document.getElementById('descriptor-table');
   const svgPlot = document.querySelector('.svg-plot');
   const labelToggle = document.getElementById('label-toggle');
   const eraseCursor = document.getElementById('erase-cursor');
@@ -171,6 +172,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getOptionsCancelButtonElement: () => optionsCancelButton,
     getOptionsApplyButtonElement: () => optionsApplyButton,
     getPhyschemTableElement: () => physchemTable,
+    getDescriptorTableElement: () => descriptorTable,
     getSvgPlotElement: () => svgPlot,
     getLabelToggleElement: () => labelToggle,
     getEraseCursorElement: () => eraseCursor,

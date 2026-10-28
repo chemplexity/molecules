@@ -822,7 +822,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       for (const atomId of preserved.atomIds) {
         frozenAtomIds.add(atomId);
       }
-      assignPreservedBondValidationClasses(layoutGraph, component, bondValidationClasses);
+      assignPreservedBondValidationClasses(layoutGraph, component, bondValidationClasses, preserved.coords);
       continue;
     }
 

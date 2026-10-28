@@ -438,7 +438,8 @@ export function finalizeAppBootstrap(ctx) {
   const physchemPanel = ctx.factories.initPhyschemPanel(
     ctx.factories.createPhyschemPanelDeps({
       dom: {
-        getTableElement: () => ctx.dom.getPhyschemTableElement()
+        getTableElement: () => ctx.dom.getPhyschemTableElement(),
+        getDescriptorTableElement: () => ctx.dom.getDescriptorTableElement()
       },
       tooltip: ctx.dom.tooltip,
       highlights: {

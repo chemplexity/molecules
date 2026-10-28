@@ -153,4 +153,39 @@ describe('initPhyschemPanel', () => {
       ]
     ]);
   });
+
+  it('shows topological descriptor tooltips after the hover delay', async () => {
+    const row = makeRow({ label: 'Wiener Index (W)', desc: 'Sum of distances' });
+    const descriptorListeners = new Map();
+    const tooltip = makeTooltip();
+
+    initPhyschemPanel({
+      dom: {
+        getTableElement: () => ({
+          querySelectorAll: () => [],
+          addEventListener() {}
+        }),
+        getDescriptorTableElement: () => ({
+          addEventListener(type, handler) {
+            descriptorListeners.set(type, handler);
+          }
+        })
+      },
+      tooltip,
+      tooltipDelayMs: 0,
+      highlights: {
+        setHighlight() {},
+        restorePersistentHighlight() {},
+        setPersistentHighlightFallback() {}
+      }
+    });
+
+    descriptorListeners.get('mousemove')({ target: row.cells[0], clientX: 10, clientY: 20 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(tooltip.state.opacity, '0.95');
+    assert.match(tooltip.state.html, /Sum of distances/);
+
+    descriptorListeners.get('mouseleave')();
+    assert.equal(tooltip.state.opacity, '0');
+  });
 });

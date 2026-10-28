@@ -932,6 +932,26 @@ body:has(#ring-template-btn.active) .ring-template-bond-hover-target {
   color: #555;
 }
 
+#descriptor-table .hosoya-compute {
+  padding: 1px 8px;
+  border: 1px solid #ccd8dc;
+  border-radius: 6px;
+  background: #fff;
+  color: #35515b;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#descriptor-table .hosoya-compute:hover {
+  background: #f3f8fa;
+  border-color: #9fc8d1;
+}
+
+#descriptor-table .hosoya-compute.running {
+  border-color: #e0b4b4;
+  color: #8a3b3b;
+}
+
 #pc-table tr[data-highlight] {
   cursor: pointer;
 }

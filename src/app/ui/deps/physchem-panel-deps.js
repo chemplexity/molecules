@@ -9,7 +9,8 @@
 export function createPhyschemPanelDeps(deps) {
   return {
     dom: {
-      getTableElement: deps.dom.getTableElement
+      getTableElement: deps.dom.getTableElement,
+      getDescriptorTableElement: deps.dom.getDescriptorTableElement
     },
     tooltip: deps.tooltip,
     tooltipDelayMs: deps.tooltipDelayMs,

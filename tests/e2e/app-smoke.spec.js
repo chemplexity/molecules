@@ -798,6 +798,22 @@ test('exiting force reaction preview keeps compact Global Bond Length layouts fr
   }
 });
 
+test('Hosoya index above the auto limit computes on demand and can be cancelled', async ({ page }) => {
+  await page.goto('/index.html');
+  const hosoyaCell = page.locator('#descriptor-body tr', { hasText: 'Hosoya Index (Z)' }).locator('td').nth(1);
+
+  await loadSmiles(page, 'CC(C)CCCC(C)C1CCC2C1(CCC3C2CC=C4C3(CCC(C4)O)C)C');
+  const computeButton = hosoyaCell.getByRole('button', { name: 'Compute' });
+  await expect(computeButton).toHaveAttribute('title', /exponentially/);
+  await computeButton.click();
+  await expect(hosoyaCell).toHaveText('605223');
+
+  await loadSmiles(page, 'C'.repeat(40));
+  await hosoyaCell.getByRole('button', { name: 'Compute' }).click();
+  await hosoyaCell.getByRole('button', { name: 'Cancel' }).click();
+  await expect(hosoyaCell.getByRole('button', { name: 'Compute' })).toBeVisible();
+});
+
 async function loadSmiles(page, smiles) {
   await waitForAppReady(page);
   const input = page.locator('#smiles-input');

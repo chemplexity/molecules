@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-10-27
+
+- Route hybrid macrocycles through complete bridged placement so every heavy atom retains coordinates through refinement.
+- Show hover tooltips describing what each topological graph index measures in the demo's descriptor panel.
+- Offer an on-demand, cancellable Hosoya index calculation in a Web Worker for molecules above the 18-heavy-atom auto-compute limit.
+
 ## 2026-10-21
 
 - Share ESM implementations across package entry points, verify packed installs in CI, and use Web Crypto UUIDs without a browser shim; pin the demo's D3 version.
