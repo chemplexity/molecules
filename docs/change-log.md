@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-28
+
+- Retension compact bridged imide cages so attached scaffolds keep sound internal bond geometry through 2D layout and refinement.
+
 ## 2026-10-27
 
 - Route hybrid macrocycles through complete bridged placement so every heavy atom retains coordinates through refinement.

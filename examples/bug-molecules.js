@@ -1,4 +1,5 @@
 export const bugMolecules = [
+  'Cl.FC(F)(F)c1ccc(nc1)N2CCN(CCCCN3C(=O)C4C5CCCC(CC5)C4C3=O)CC2',
   String.raw`CO[C@H](<C[C@H]1OC(=O)C[C@H](O)CCCC(=O)C[C@H](C)C2=COC(=N2)C2=COC(=N2)C2=COC(\C=C\C[C@@H](OC)[C@@H]1C)=N2>)[C@H](C)CCC(=O)[C@H](C)[C@@H](<OC(C)=O>)[C@H](C)\C=C\N(C)CO`,
   'CCC[C@H](<NC(=O)[C@@H](NC(=O)[C@H](Cc1ccc(O)cc1)NC(=O)C)C(C)C>)C(=O)NCC(=O)N[C@@H](Cc2c[nH]cn2)C(=O)N[C@@H](Cc3ccccc3)C(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](Cc4c[nH]c5cCcccc45)C(=O)N[C@@H](<CC(=O)O>)C(=O)N[C@@H](<CCCN=C(N)N>)C(=O)N[C@@H](Cc6ccccc6)C(=O)NCC(=O)ON',
   'CC(=C)[C@@H]1CC[C@@]2(CC[C@]3(C)[C@H](<CC[C@@H]4[C@@]5(C)CC=C(c6ccc(cc6)C7(CC7)C(=O)O)C(C)(C)[C@@H]5CC[C@@]34C>)[C@@H]12)C(=O)O',
