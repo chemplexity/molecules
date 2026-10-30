@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-29
+
+- Mirror misplaced parent-side aromatic branches so ortho-substituted amides retain readable ring exits.
+
 ## 2026-10-28
 
 - Retension compact bridged imide cages so attached scaffolds keep sound internal bond geometry through 2D layout and refinement.

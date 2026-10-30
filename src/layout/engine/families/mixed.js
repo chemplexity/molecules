@@ -16662,6 +16662,17 @@ function reflectPointAcrossAxis(point, origin, axisUnit) {
   };
 }
 
+/**
+ * Builds parent-side branch mirrors for a direct-attached ring candidate.
+ * Each eligible neighboring subtree is reflected across its bond to the
+ * attachment parent, and deeper branches also retain their existing one-bond
+ * mirror candidates. The parent and child attachment geometry stays fixed.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Already placed coordinates.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Candidate attached-block coordinates.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Direct-attachment metadata.
+ * @returns {Array<{transformedCoords: Map<string, {x: number, y: number}>, meta: object}>} Mirrored candidates.
+ */
 function buildMirroredParentSideSubtreeCandidates(layoutGraph, coords, transformedCoords, candidateMeta = null) {
   if (layoutGraph.options.allowBranchReflect === false) {
     return [];
@@ -16686,6 +16697,32 @@ function buildMirroredParentSideSubtreeCandidates(layoutGraph, coords, transform
     const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
     if (!anchorAtom || anchorAtom.element === 'H' || anchorAtomId === attachmentAtomId || anchorAtom.chirality || !candidateCoords.has(anchorAtomId)) {
       continue;
+    }
+
+    const supportsDirectParentAxisMirror = layoutGraph.atoms.get(parentAtomId)?.element === 'N' && supportsExactDirectAttachmentParentPreferredAngle(layoutGraph, parentAtomId, attachmentAtomId);
+    const parentSideSubtreeAtomIds = supportsDirectParentAxisMirror ? collectCovalentSubtreeAtomIds(layoutGraph, anchorAtomId, parentAtomId) : [];
+    if (supportsDirectParentAxisMirror && !parentSideSubtreeAtomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality)) {
+      const placedParentSideSubtreeAtomIds = parentSideSubtreeAtomIds.filter(atomId => candidateCoords.has(atomId));
+      const parentAxisVector = sub(candidateCoords.get(anchorAtomId), candidateCoords.get(parentAtomId));
+      const parentAxisLength = Math.hypot(parentAxisVector.x, parentAxisVector.y);
+      if (placedParentSideSubtreeAtomIds.length > 0 && parentAxisLength > IMPROVEMENT_EPSILON) {
+        const parentAxisUnit = {
+          x: parentAxisVector.x / parentAxisLength,
+          y: parentAxisVector.y / parentAxisLength
+        };
+        const mirroredCoords = new Map(transformedCoords);
+        for (const atomId of placedParentSideSubtreeAtomIds) {
+          mirroredCoords.set(atomId, reflectPointAcrossAxis(candidateCoords.get(atomId), candidateCoords.get(parentAtomId), parentAxisUnit));
+        }
+        candidates.push({
+          transformedCoords: mirroredCoords,
+          meta: {
+            ...candidateMeta,
+            mirroredParentSubtreeAnchorAtomId: parentAtomId,
+            mirroredParentSubtreeRootAtomId: anchorAtomId
+          }
+        });
+      }
     }
 
     for (const anchorBond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
@@ -19473,7 +19510,11 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
       }
       const uniqueExpandedCandidates = dedupeAttachedBlockCandidatesByMeta(expandedCandidates);
       const shouldProbeMirroredParentSubtrees =
-        (directAttachmentTrigonalSensitivity.omittedHydrogen || shouldExpandForExactAromaticRingExit) &&
+        (directAttachmentTrigonalSensitivity.omittedHydrogen ||
+          shouldExpandForExactAromaticRingExit ||
+          (layoutGraph.atoms.get(attachment.parentAtomId)?.element === 'N' &&
+            supportsExactDirectAttachmentParentPreferredAngle(layoutGraph, attachment.parentAtomId, attachment.attachmentAtomId) &&
+            (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0)) &&
         !layoutGraph.atoms.get(attachment.parentAtomId)?.chirality &&
         !layoutGraph.atoms.get(attachment.attachmentAtomId)?.chirality;
       const expandedCandidatePool = shouldProbeMirroredParentSubtrees
