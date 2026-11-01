@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-10-31
+
+- Keep previously attached branches rigid when balancing linked ring systems.
+
 ## 2026-10-29
 
 - Mirror misplaced parent-side aromatic branches so ortho-substituted amides retain readable ring exits.

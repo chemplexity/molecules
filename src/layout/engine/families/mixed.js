@@ -6940,6 +6940,57 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
 }
 
 /**
+ * Collects the already placed ring block and its branches that may move with a
+ * local ring rotation. Branches attached directly at the rotation pivot stay
+ * fixed; branches attached to other ring atoms move rigidly so their root bonds
+ * are not stretched. Traversal cannot cross back through the rotated ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current placed coordinates.
+ * @param {object} ringSystem - Already placed ring-system descriptor.
+ * @param {string} pivotAtomId - Ring attachment atom used as the rotation pivot.
+ * @returns {Set<string>} Already placed atom IDs that rotate with the ring block.
+ */
+function collectPlacedRingRotationAtomIds(layoutGraph, coords, ringSystem, pivotAtomId) {
+  const ringAtomIds = new Set(ringSystem.atomIds);
+  const movedAtomIds = new Set(ringSystem.atomIds.filter(atomId => coords.has(atomId)));
+  const pendingAtomIds = [];
+
+  for (const ringAtomId of ringSystem.atomIds) {
+    if (ringAtomId === pivotAtomId) {
+      continue;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(ringAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === ringAtomId ? bond.b : bond.a;
+      if (!ringAtomIds.has(neighborAtomId) && coords.has(neighborAtomId)) {
+        pendingAtomIds.push(neighborAtomId);
+      }
+    }
+  }
+
+  while (pendingAtomIds.length > 0) {
+    const atomId = pendingAtomIds.pop();
+    if (movedAtomIds.has(atomId) || ringAtomIds.has(atomId) || !coords.has(atomId)) {
+      continue;
+    }
+    movedAtomIds.add(atomId);
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!movedAtomIds.has(neighborAtomId) && !ringAtomIds.has(neighborAtomId) && coords.has(neighborAtomId)) {
+        pendingAtomIds.push(neighborAtomId);
+      }
+    }
+  }
+
+  return movedAtomIds;
+}
+
+/**
  * Builds candidate coordinates for a short ring-to-ring linker plus the attached ring system.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -6997,6 +7048,58 @@ function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, 
     }
   }
   return candidateCoords;
+}
+
+/**
+ * Propagates a selected placed-ring rotation into already placed side branches.
+ * This is evaluated only after the normal linked-ring scorer has selected its
+ * pose, so propagation cannot change which orientation wins.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current placed coordinates.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Selected linked-ring coordinates.
+ * @param {object} ringSystem - Already placed ring-system descriptor.
+ * @param {string} pivotAtomId - Linker atom used as the rotation pivot.
+ * @param {number} rotationOffset - Selected placed-ring rotation offset.
+ * @returns {Map<string, {x: number, y: number}>} Selected coordinates with rigid branch propagation.
+ */
+function propagateSelectedPlacedRingRotation(layoutGraph, coords, transformedCoords, ringSystem, pivotAtomId, rotationOffset) {
+  const pivotPosition = coords.get(pivotAtomId);
+  const propagatedCoords = new Map(transformedCoords);
+  if (!pivotPosition || Math.abs(rotationOffset) <= 1e-9) {
+    return propagatedCoords;
+  }
+  for (const atomId of collectPlacedRingRotationAtomIds(layoutGraph, coords, ringSystem, pivotAtomId)) {
+    const position = coords.get(atomId);
+    if (position) {
+      propagatedCoords.set(atomId, add(pivotPosition, rotate(sub(position, pivotPosition), rotationOffset)));
+    }
+  }
+  return propagatedCoords;
+}
+
+/**
+ * Returns whether rigid placed-branch propagation is a strict bond-quality win
+ * without damaging the selected pose's existing audit or trigonal geometry.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Propagated full coordinates.
+ * @param {object} candidateAudit - Propagated coordinate audit.
+ * @param {Map<string, {x: number, y: number}>} baseCoords - Selected unpropagated full coordinates.
+ * @param {object} baseAudit - Selected coordinate audit.
+ * @returns {boolean} True when propagation is a safe strict improvement.
+ */
+function linkedRingPropagationAuditDoesNotRegress(layoutGraph, candidateCoords, candidateAudit, baseCoords, baseAudit) {
+  const candidateTrigonal = measureTrigonalDistortion(layoutGraph, candidateCoords);
+  const baseTrigonal = measureTrigonalDistortion(layoutGraph, baseCoords);
+  return (
+    candidateAudit.bondLengthFailureCount < baseAudit.bondLengthFailureCount &&
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
+    candidateAudit.visibleHeavyBondCrossingFailureCount <= baseAudit.visibleHeavyBondCrossingFailureCount &&
+    candidateAudit.labelOverlapCount <= baseAudit.labelOverlapCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount &&
+    candidateAudit.maxBondLengthDeviation <= baseAudit.maxBondLengthDeviation + IMPROVEMENT_EPSILON &&
+    candidateTrigonal.totalDeviation <= baseTrigonal.totalDeviation + IMPROVEMENT_EPSILON &&
+    candidateTrigonal.maxDeviation <= baseTrigonal.maxDeviation + IMPROVEMENT_EPSILON
+  );
 }
 
 function normalizeRotationOffset(offset) {
@@ -19168,6 +19271,7 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
     if ((!defaultOverlapFree || defaultCandidatesNeedBranchScoring || defaultCandidatesBlockExactTerminalMultipleSlot) && allowExpandedRingLinkerRotations) {
       const allowPlacedBlockBalancing =
         linker.chainAtomIds.length === 1 &&
+        (layoutGraph.options.preserveFixed === false || firstRingSystem.atomIds.every(atomId => atomId === linker.firstAttachmentAtomId || !layoutGraph.fixedCoords.has(atomId))) &&
         (ringSystemHasExactLeafSensitiveTrigonalCenter(layoutGraph, firstRingSystem) ||
           ringSystemHasExactLeafSensitiveTrigonalCenter(layoutGraph, pendingRingSystem.ringSystem) ||
           defaultCandidatesBlockExactTerminalMultipleSlot);
@@ -19209,11 +19313,39 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
         scoreCache: attachedBlockScoreCache
       }
     );
-    const bestCandidateCoords = bestCandidate?.transformedCoords ?? null;
+    let bestCandidateCoords = bestCandidate?.transformedCoords ?? null;
 
     if (!bestCandidateCoords) {
       remaining.push(pendingRingSystem);
       continue;
+    }
+    if (Math.abs(bestCandidate.meta?.placedRingRotationOffset ?? 0) > 1e-9) {
+      const propagatedAtomIds = collectPlacedRingRotationAtomIds(layoutGraph, coords, firstRingSystem, linker.firstAttachmentAtomId);
+      const canMovePropagatedAtoms =
+        layoutGraph.options.preserveFixed === false || [...propagatedAtomIds].every(atomId => atomId === linker.firstAttachmentAtomId || !layoutGraph.fixedCoords.has(atomId));
+      if (canMovePropagatedAtoms) {
+        const propagatedCoords = propagateSelectedPlacedRingRotation(
+          layoutGraph,
+          coords,
+          bestCandidateCoords,
+          firstRingSystem,
+          linker.firstAttachmentAtomId,
+          bestCandidate.meta.placedRingRotationOffset
+        );
+        const baseFullCoords = new Map(coords);
+        for (const [atomId, position] of bestCandidateCoords) {
+          baseFullCoords.set(atomId, position);
+        }
+        const propagatedFullCoords = new Map(coords);
+        for (const [atomId, position] of propagatedCoords) {
+          propagatedFullCoords.set(atomId, position);
+        }
+        const baseAudit = auditLayout(layoutGraph, baseFullCoords, { bondLength, bondValidationClasses });
+        const propagatedAudit = auditLayout(layoutGraph, propagatedFullCoords, { bondLength, bondValidationClasses });
+        if (linkedRingPropagationAuditDoesNotRegress(layoutGraph, propagatedFullCoords, propagatedAudit, baseFullCoords, baseAudit)) {
+          bestCandidateCoords = propagatedCoords;
+        }
+      }
     }
     for (const [atomId, position] of bestCandidateCoords) {
       coords.set(atomId, position);
