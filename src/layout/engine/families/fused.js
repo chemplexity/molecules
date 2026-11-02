@@ -180,6 +180,75 @@ function isBetterFusedCageCandidate(candidateAudit, incumbentAudit) {
 }
 
 /**
+ * Retensions an overlap-dirty compact cage around one idealized perimeter
+ * edge. Atom-graph KK can satisfy relaxed bridged bond limits while folding
+ * nonbonded ring atoms together; the bounded joint ring solver supplies the
+ * missing pair-clearance candidate without changing validation tolerances.
+ * Synthetic anchors fix only the candidate pose. User-fixed and metal cages
+ * remain with their constraint-aware placement paths.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the cage.
+ * @param {string[]} atomIds - Cage atom IDs.
+ * @param {Map<string, {x: number, y: number}>} coords - Incumbent cage coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} audit - Incumbent bridged-validation audit.
+ * @returns {Map<string, {x: number, y: number}>} Repaired or unchanged coordinates.
+ */
+function repairCompactFusedCageOverlaps(layoutGraph, rings, atomIds, coords, bondLength, audit) {
+  if (
+    !layoutGraph ||
+    layoutGraph.fixedCoords.size > 0 ||
+    atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit ||
+    rings.length < 4 ||
+    rings.length > 8 ||
+    (audit?.severeOverlapCount ?? 0) === 0 ||
+    (audit?.bondLengthFailureCount ?? 0) > 0 ||
+    (audit?.visibleHeavyBondCrossingFailureCount ?? 0) > 0 ||
+    atomIds.some(atomId => isMetalAtom(layoutGraph.atoms.get(atomId)))
+  ) {
+    return coords;
+  }
+
+  const atomIdSet = new Set(atomIds);
+  const perimeterBonds = [...layoutGraph.bonds.values()]
+    .filter(bond => bond.kind === 'covalent' && atomIdSet.has(bond.a) && atomIdSet.has(bond.b) && coords.has(bond.a) && coords.has(bond.b))
+    .sort((firstBond, secondBond) => {
+      const deviation = bond => Math.abs(distance(coords.get(bond.a), coords.get(bond.b)) - bondLength);
+      return deviation(secondBond) - deviation(firstBond) || String(firstBond.id).localeCompare(String(secondBond.id), 'en', { numeric: true });
+    });
+  const anchorBond = perimeterBonds[0];
+  if (!anchorBond) {
+    return coords;
+  }
+  const first = coords.get(anchorBond.a);
+  const second = coords.get(anchorBond.b);
+  if (distance(first, second) <= bondLength * 1e-12) {
+    return coords;
+  }
+
+  const fixedCoords = new Map([
+    [anchorBond.a, first],
+    [anchorBond.b, add(first, fromAngle(angleOf(sub(second, first)), bondLength))]
+  ]);
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  const candidate = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, coords, bondLength, {
+    minFixedAtoms: 2,
+    seedBondLimits: { minBondLengthFactor: 0.98, maxBondLengthFactor: 1.02 },
+    bondValidationClasses
+  });
+  if (!candidate) {
+    return coords;
+  }
+  const candidateAudit = auditLayout(layoutGraph, candidate, { bondLength, bondValidationClasses });
+  return candidateAudit.ok === true &&
+    candidateAudit.visibleHeavyBondCrossingCount <= audit.visibleHeavyBondCrossingCount &&
+    candidateAudit.labelOverlapCount <= audit.labelOverlapCount &&
+    candidateAudit.maxBondLengthDeviation <= audit.maxBondLengthDeviation + 1e-9
+    ? candidate
+    : coords;
+}
+
+/**
  * Returns a stable key for an unordered atom pair.
  * @param {string} firstAtomId - First atom ID.
  * @param {string} secondAtomId - Second atom ID.
@@ -378,6 +447,12 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
       bestCoords = orientedCoords;
       bestAudit = candidateAudit;
     }
+  }
+
+  const repairedCoords = repairCompactFusedCageOverlaps(options.layoutGraph, rings, atomIds, bestCoords, bondLength, bestAudit);
+  if (repairedCoords !== bestCoords) {
+    bestCoords = repairedCoords;
+    bestAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, bestCoords, bondLength);
   }
 
   if (shouldPolishDenseFusedCageCandidate(atomIds.length, rings.length, bestAudit)) {

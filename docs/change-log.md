@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-11-01
+
+- Retension compact projected cages so fused heterorings keep sound bond geometry.
+- Retension compact fused cages so crowded branches retain clear internal geometry.
+
 ## 2026-10-31
 
 - Keep previously attached branches rigid when balancing linked ring systems.

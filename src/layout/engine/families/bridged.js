@@ -28,6 +28,7 @@ const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.95, 0.
 const FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
 const FUSED_CORE_BRIDGE_REPAIR_LIMIT = 8;
 const FUSED_CORE_BRIDGE_TARGET_LIMITS = Object.freeze({ minBondLengthFactor: 0.75, maxBondLengthFactor: 1.25 });
+const COMPACT_BRIDGED_REPAIR_TARGET_LIMITS = Object.freeze({ minBondLengthFactor: 0.98, maxBondLengthFactor: 1.02 });
 const FUSED_CYCLOHEXANE_BRANCH_SLOT_BLOCKER_FACTOR = 0.65;
 const FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR = 0.55;
 const SATURATED_BRIDGED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
@@ -402,6 +403,92 @@ function isCompactSharedPathSpiroFiveRingSystem(layoutGraph, rings, atomIds) {
 
 function shouldTryStrictCompactBridgedBondRescue(layoutGraph, rings, atomIds, audit) {
   return Boolean(audit && audit.bondLengthFailureCount > 0 && isCompactSharedPathSpiroFiveRingSystem(layoutGraph, rings, atomIds));
+}
+
+/**
+ * Retensions a compact projected cage around its most distorted perimeter
+ * bond. The synthetic two-atom anchor gives the bounded ring solver a stable
+ * scale and orientation without relaxing validation or moving user anchors.
+ * The candidate is accepted only when it becomes audit-clean without adding
+ * raw crossings, label contacts, or maximum bond strain.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Cage rings.
+ * @param {string[]} atomIds - Cage atom IDs.
+ * @param {Map<string, {x: number, y: number}>} coords - Complete projected cage coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Original or repaired coordinates.
+ */
+function repairStrainedCompactBridgedSeed(layoutGraph, rings, atomIds, coords, bondLength) {
+  const incumbentAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const connectionKinds = new Set(
+    (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)).map(connection => connection.kind)
+  );
+  if (
+    !incumbentAudit ||
+    incumbentAudit.bondLengthFailureCount === 0 ||
+    incumbentAudit.severeOverlapCount > 0 ||
+    incumbentAudit.visibleHeavyBondCrossingFailureCount > 0 ||
+    atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit ||
+    rings.length !== 4 ||
+    rings.some(ring => ring.atomIds.length !== 5) ||
+    !['bridged', 'fused', 'spiro'].every(kind => connectionKinds.has(kind)) ||
+    layoutGraph.fixedCoords.size > 0 ||
+    containsMetalAtom(layoutGraph, atomIds) ||
+    atomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality || (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => bond.stereo))
+  ) {
+    return coords;
+  }
+
+  const perimeterEdges = [];
+  const seenEdges = new Set();
+  for (const ring of rings) {
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const firstAtomId = ring.atomIds[index];
+      const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      const key = [firstAtomId, secondAtomId].sort().join(':');
+      if (!seenEdges.has(key)) {
+        seenEdges.add(key);
+        perimeterEdges.push({ firstAtomId, secondAtomId, key });
+      }
+    }
+  }
+  perimeterEdges.sort((firstEdge, secondEdge) => {
+    const firstDeviation = Math.abs(distance(coords.get(firstEdge.firstAtomId), coords.get(firstEdge.secondAtomId)) - bondLength);
+    const secondDeviation = Math.abs(distance(coords.get(secondEdge.firstAtomId), coords.get(secondEdge.secondAtomId)) - bondLength);
+    return secondDeviation - firstDeviation || firstEdge.key.localeCompare(secondEdge.key);
+  });
+  const anchorEdge = perimeterEdges[0];
+  if (!anchorEdge) {
+    return coords;
+  }
+
+  const firstPosition = coords.get(anchorEdge.firstAtomId);
+  const secondPosition = coords.get(anchorEdge.secondAtomId);
+  const anchoredGraph = {
+    ...layoutGraph,
+    options: { ...layoutGraph.options, preserveFixed: true },
+    fixedCoords: new Map([
+      [anchorEdge.firstAtomId, firstPosition],
+      [anchorEdge.secondAtomId, add(firstPosition, fromAngle(angleOf(sub(secondPosition, firstPosition)), bondLength))]
+    ])
+  };
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  const repaired = placeConstrainedRingSystem(anchoredGraph, rings, coords, bondLength, {
+    minFixedAtoms: 2,
+    seedBondLimits: COMPACT_BRIDGED_REPAIR_TARGET_LIMITS,
+    bondValidationClasses
+  });
+  const repairedAudit = repaired && auditBridgedPlacementCandidate(layoutGraph, atomIds, repaired, bondLength, bondValidationClasses);
+  if (
+    repairedAudit?.ok === true &&
+    (repairedAudit.visibleHeavyBondCrossingCount ?? 0) <= (incumbentAudit.visibleHeavyBondCrossingCount ?? 0) &&
+    repairedAudit.labelOverlapCount <= incumbentAudit.labelOverlapCount &&
+    repairedAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9
+  ) {
+    return repaired;
+  }
+  return coords;
 }
 
 function fitRegularRingTargets(ring, coords, bondLength) {
@@ -5425,6 +5512,7 @@ function buildBridgedSeed(rings, bondLength, options) {
     }
   }
   selectedCoords = regularizeBridgedRingSystemGeometry(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = repairStrainedCompactBridgedSeed(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
 
   const ringCenters = new Map();
   for (const ring of rings) {
