@@ -13,6 +13,7 @@ import { findMacrocycleRings } from '../topology/macrocycles.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
 import { layoutAtomSlice } from './atom-slice.js';
 import { packComponentPlacements } from './fragment-packing.js';
+import { fitTwoAnchorHinge } from './two-anchor-hinge.js';
 import { buildComponentFixedCoords, buildRefinementContext, canPreserveComponentPlacement, preserveComponentPlacement } from './refinement.js';
 
 function isLargeComponent(layoutGraph, component) {
@@ -865,8 +866,45 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
 
     // Explicit constraints outrank inferred old-position hints when selecting
     // the alignment frame, including during localized touched-atom refinement.
-    const alignmentAnchors = placement.atomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)) ? layoutGraph.fixedCoords : componentGraph.fixedCoords;
-    const aligned = layoutGraph.options.preserveFixed === false ? { coords: placement.coords, anchored: false } : alignCoordsToFixed(placement.coords, placement.atomIds, alignmentAnchors);
+    const hasExplicitAlignmentAnchors = placement.atomIds.some(atomId => layoutGraph.fixedCoords.has(atomId));
+    const alignmentAnchors = hasExplicitAlignmentAnchors ? layoutGraph.fixedCoords : componentGraph.fixedCoords;
+    let aligned =
+      layoutGraph.options.preserveFixed === false
+        ? { coords: placement.coords, anchored: false }
+        : alignCoordsToFixed(placement.coords, placement.atomIds, alignmentAnchors, {
+            allowScale: hasExplicitAlignmentAnchors
+          });
+    if (hasExplicitAlignmentAnchors) {
+      const hingeAligned = fitTwoAnchorHinge(layoutGraph, placement, aligned);
+      if (
+        hingeAligned === aligned &&
+        layoutGraph.options.preserveFixed !== false &&
+        placement.family === 'mixed' &&
+        !containsMetal &&
+        placement.atomIds.length <= 128 &&
+        placement.atomIds.filter(id => layoutGraph.fixedCoords.has(id)).length === 2 &&
+        auditLayout(layoutGraph, aligned.coords, { bondValidationClasses: placement.bondValidationClasses }).bondLengthFailureCount > 0
+      ) {
+        // Constraint-aware seeding may pick a different ring pose before the
+        // final two-anchor fit. Try one free family seed, but accept it only
+        // through the same exact-anchor, sound-bond hinge gate.
+        const freeGraph = {
+          ...layoutGraph,
+          fixedCoords: new Map(),
+          options: { ...layoutGraph.options, fixedCoords: new Map(), existingCoords: new Map() }
+        };
+        const freePlacement = layoutComponent(freeGraph, component, macrocycleRings);
+        if (freePlacement.supported) {
+          const freeAligned = fitTwoAnchorHinge(layoutGraph, freePlacement, aligned);
+          if (freeAligned !== aligned) {
+            placement = freePlacement;
+            aligned = freeAligned;
+          }
+        }
+      } else {
+        aligned = hingeAligned;
+      }
+    }
 
     componentPlacements.push({
       componentId: component.id,

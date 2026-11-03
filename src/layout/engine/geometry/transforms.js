@@ -47,9 +47,10 @@ export function reflectAcrossLine(point, lineFirst, lineSecond) {
  * @param {string} firstAtomId - First fixed anchor atom id.
  * @param {string} secondAtomId - Second fixed anchor atom id.
  * @param {Map<string, {x: number, y: number}>} fixedCoords - Fixed target coordinates.
+ * @param {boolean} [allowScale] - Whether the transform may uniformly scale geometry. Defaults to true.
  * @returns {Map<string, {x: number, y: number}>} Transformed coordinates.
  */
-function applyTwoAnchorTransform(sourceCoords, atomIds, firstAtomId, secondAtomId, fixedCoords) {
+function applyTwoAnchorTransform(sourceCoords, atomIds, firstAtomId, secondAtomId, fixedCoords, allowScale = true) {
   const currentFirst = sourceCoords.get(firstAtomId);
   const currentSecond = sourceCoords.get(secondAtomId);
   const targetFirst = fixedCoords.get(firstAtomId);
@@ -59,7 +60,7 @@ function applyTwoAnchorTransform(sourceCoords, atomIds, firstAtomId, secondAtomI
   const currentLength = Math.hypot(currentVector.x, currentVector.y);
   const targetLength = Math.hypot(targetVector.x, targetVector.y);
   const rotation = angleOf(targetVector) - angleOf(currentVector);
-  const uniformScale = targetLength / currentLength;
+  const uniformScale = allowScale ? targetLength / currentLength : 1;
   const transformed = new Map(sourceCoords);
   for (const atomId of atomIds) {
     const position = sourceCoords.get(atomId);
@@ -140,16 +141,20 @@ export function cloneCoords(coords) {
 }
 
 /**
- * Aligns a component's coordinates to one or two fixed atoms when available.
- * For one fixed atom, a pure translation is applied. For two or more fixed
- * atoms, the component receives a uniform scale, rotation, and translation
- * anchored on the first two canonical fixed atoms.
+ * Aligns a component's coordinates to one or two reference atoms when
+ * available. For one reference atom, a pure translation is applied. For two
+ * or more reference atoms, the component receives a rotation and translation,
+ * plus an optional uniform scale for exact fixed-anchor constraints. Inferred
+ * refinement hints disable scaling so alignment cannot distort sound bonds.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string[]} atomIds - Component atom IDs.
  * @param {Map<string, {x: number, y: number}>} fixedCoords - Fixed-coordinate map.
+ * @param {object} [options] - Alignment behavior.
+ * @param {boolean} [options.allowScale] - Permit uniform scaling between the selected references. Defaults to true.
  * @returns {{coords: Map<string, {x: number, y: number}>, anchored: boolean}} Aligned coordinates and anchor flag.
  */
-export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
+export function alignCoordsToFixed(coords, atomIds, fixedCoords, options = {}) {
+  const allowScale = options.allowScale ?? true;
   const fixedAtomIds = atomIds.filter(atomId => fixedCoords.has(atomId) && coords.has(atomId));
   if (fixedAtomIds.length === 0) {
     return { coords, anchored: false };
@@ -170,9 +175,7 @@ export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
         continue;
       }
       // Copy the anchor target exactly; subtract/add translation can round it.
-      transformed.set(currentAtomId, currentAtomId === atomId
-        ? { ...target }
-        : { x: position.x + dx, y: position.y + dy });
+      transformed.set(currentAtomId, currentAtomId === atomId ? { ...target } : { x: position.x + dx, y: position.y + dy });
     }
     return { coords: transformed, anchored: true };
   }
@@ -187,10 +190,10 @@ export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
   const currentLength = Math.hypot(currentVector.x, currentVector.y);
   const targetLength = Math.hypot(targetVector.x, targetVector.y);
   if (currentLength <= 1e-12 || targetLength <= 1e-12) {
-    return alignCoordsToFixed(coords, [firstAtomId], fixedCoords);
+    return alignCoordsToFixed(coords, [firstAtomId], fixedCoords, options);
   }
 
-  const transformed = applyTwoAnchorTransform(coords, atomIds, firstAtomId, secondAtomId, fixedCoords);
+  const transformed = applyTwoAnchorTransform(coords, atomIds, firstAtomId, secondAtomId, fixedCoords, allowScale);
   if (fixedAtomIds.length < 3) {
     return { coords: transformed, anchored: true };
   }
@@ -203,7 +206,7 @@ export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
     }
     mirroredSource.set(atomId, reflectAcrossLine(position, currentFirst, currentSecond));
   }
-  const mirroredTransformed = applyTwoAnchorTransform(mirroredSource, atomIds, firstAtomId, secondAtomId, fixedCoords);
+  const mirroredTransformed = applyTwoAnchorTransform(mirroredSource, atomIds, firstAtomId, secondAtomId, fixedCoords, allowScale);
   const directResidual = fixedResidualScore(transformed, fixedAtomIds, fixedCoords);
   const mirroredResidual = fixedResidualScore(mirroredTransformed, fixedAtomIds, fixedCoords);
   return { coords: mirroredResidual < directResidual ? mirroredTransformed : transformed, anchored: true };

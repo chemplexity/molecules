@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-11-02
+
+- Fit compatible endpoint anchors with rigid branch rotations instead of stretching ring-containing layouts.
+- Keep acyclic bond geometry rigid when aligning refinement results to prior coordinates.
+- Stabilize compact bridged-cage seeding so crowded substituents retain clear exits.
+
 ## 2026-11-01
 
 - Retension compact projected cages so fused heterorings keep sound bond geometry.

@@ -4808,9 +4808,11 @@ function compactSharedPathFourFiveRingAtomIds(layoutGraph, rings, fallbackAtomId
  * Returns a stable atom order for bridged KK seeding. The order produced by
  * flattening SSSR ring atom lists can start dense tetracyclic cages in a
  * crossed state; the ring-system ordering is generated once from the whole
- * fused component and gives KK a less biased initial circle, while compact
- * 5-5-4 cages use their small ring as the initial seed and aromatic-capped
- * bridged cores seed from the fused cap.
+ * fused component and gives KK a less biased initial circle. Compact fully
+ * bridged 5-ring cages retain their topology-derived ring order so external
+ * branch ranks cannot change the core seed, while compact 5-5-4 cages use
+ * their small ring as the initial seed and aromatic-capped bridged cores seed
+ * from the fused cap.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object[]} rings - Rings being placed as one bridged component.
  * @param {string|null} [templateId] - Matched template ID, when placement is templated.
@@ -4890,7 +4892,25 @@ function bridgedPlacementAtomIds(layoutGraph, rings, templateId = null) {
   if (shouldKeepFallbackOrderForNitrogenRichBridgedFusedSystem(layoutGraph, rings, fallbackAtomIds)) {
     return fallbackAtomIds;
   }
+  if (shouldKeepFallbackOrderForCompactAllBridgedFiveRingSystem(layoutGraph, rings, fallbackAtomIds)) {
+    return fallbackAtomIds;
+  }
   return [...owningRingSystem.atomIds];
+}
+
+function shouldKeepFallbackOrderForCompactAllBridgedFiveRingSystem(layoutGraph, rings, fallbackAtomIds) {
+  if (
+    rings.length !== 4 ||
+    fallbackAtomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit ||
+    rings.some(ring => ring.aromatic || ring.atomIds.length !== 5) ||
+    containsMetalAtom(layoutGraph, fallbackAtomIds)
+  ) {
+    return false;
+  }
+
+  const ringIds = new Set(rings.map(ring => ring.id));
+  const internalConnections = (layoutGraph.ringConnections ?? []).filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
+  return internalConnections.length >= 4 && internalConnections.every(connection => connection.kind === 'bridged');
 }
 
 function shouldKeepFallbackOrderForNitrogenRichBridgedFusedSystem(layoutGraph, rings, fallbackAtomIds) {

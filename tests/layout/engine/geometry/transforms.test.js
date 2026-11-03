@@ -40,6 +40,26 @@ describe('layout/engine/geometry/transforms', () => {
     assert.ok(Math.abs(result.coords.get('a1').y - 3) < 1e-9);
   });
 
+  it('keeps source distances unchanged when aligning to inferred coordinate hints', () => {
+    const coords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 0 }]
+    ]);
+    const result = alignCoordsToFixed(
+      coords,
+      ['a0', 'a1'],
+      new Map([
+        ['a0', { x: 4, y: 2 }],
+        ['a1', { x: 4, y: 5 }]
+      ]),
+      { allowScale: false }
+    );
+
+    assert.deepEqual(result.coords.get('a0'), { x: 4, y: 2 });
+    assert.ok(Math.abs(result.coords.get('a1').x - 4) < 1e-9);
+    assert.ok(Math.abs(result.coords.get('a1').y - 3.5) < 1e-9);
+  });
+
   it('chooses the mirrored handedness when extra fixed atoms prove it matches existing geometry better', () => {
     const coords = new Map([
       ['a0', { x: 0, y: 0 }],
