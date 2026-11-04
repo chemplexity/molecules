@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-03
+
+- Route coordinate-bound metal branches into clear ring-outward lanes to prevent planar crossings.
+
 ## 2026-11-02
 
 - Fit compatible endpoint anchors with rigid branch rotations instead of stretching ring-containing layouts.

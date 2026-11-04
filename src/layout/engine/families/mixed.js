@@ -203,6 +203,9 @@ const ATTACHED_BLOCK_INWARD_READABILITY_PENALTY = 360;
 const ATTACHED_BLOCK_HEAVY_BOND_CROSSING_PENALTY = 500;
 const ATTACHED_BLOCK_TERMINAL_LABEL_CLEARANCE_FACTOR = 0.75;
 const EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT = 50;
+const METAL_RING_ANCHOR_ORIENTATION_MAX_LAYOUT_HEAVY_ATOMS = 160;
+const METAL_RING_ANCHOR_ORIENTATION_MAX_MOVED_HEAVY_ATOMS = 12;
+const METAL_RING_ANCHOR_ORIENTATION_MAX_BRANCHES = 4;
 const LARGE_DIRECT_ATTACHMENT_OVERLAP_EXPANSION_HEAVY_ATOM_LIMIT = 96;
 const SMALL_DIRECT_ATTACHMENT_OVERLAP_RING_ATOM_LIMIT = 8;
 const SHARED_JUNCTION_LOCAL_OUTWARD_SPREAD_LIMIT = Math.PI / 6;
@@ -15362,6 +15365,166 @@ function exactRingAnchorSubstituentAuditDoesNotRegress(candidateAudit, baseAudit
 }
 
 /**
+ * Filters an atom-ID collection to visible heavy atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Candidate atom IDs.
+ * @returns {string[]} Visible heavy-atom IDs.
+ */
+function visibleHeavyAtomIds(layoutGraph, atomIds) {
+  return atomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && atom.element !== 'H' && atom.visible !== false;
+  });
+}
+
+/**
+ * Checks the hard geometry invariants for a metal ring-anchor orientation.
+ * @param {object} candidateAudit - Candidate geometry audit.
+ * @param {object} baseAudit - Incumbent geometry audit.
+ * @returns {boolean} Whether the candidate is safe to rank.
+ */
+function metalRingAnchorOrientationAuditIsSafe(candidateAudit, baseAudit) {
+  return (
+    candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount &&
+    candidateAudit.maxBondLengthDeviation <= baseAudit.maxBondLengthDeviation + IMPROVEMENT_EPSILON &&
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount &&
+    candidateAudit.visibleHeavyBondCrossingCount <= baseAudit.visibleHeavyBondCrossingCount &&
+    candidateAudit.labelOverlapCount <= baseAudit.labelOverlapCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount &&
+    !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false))
+  );
+}
+
+/**
+ * Orders safe metal ring-anchor orientation candidates by audit quality.
+ * @param {object} candidate - Candidate pose and audit.
+ * @param {object} incumbent - Current best pose and audit.
+ * @returns {number} Negative when the candidate is better.
+ */
+function compareMetalRingAnchorOrientationCandidates(candidate, incumbent) {
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok ? -1 : 1;
+  }
+  for (const key of [
+    'visibleHeavyBondCrossingFailureCount',
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'labelOverlapCount',
+    'ringSubstituentReadabilityFailureCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (Math.abs(candidate.audit.severeOverlapPenalty - incumbent.audit.severeOverlapPenalty) > IMPROVEMENT_EPSILON) {
+    return candidate.audit.severeOverlapPenalty - incumbent.audit.severeOverlapPenalty;
+  }
+  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation;
+  }
+  return candidate.rotationMagnitude - incumbent.rotationMagnitude;
+}
+
+/**
+ * Selects one of the two exact outward lanes for a small metal branch attached
+ * to a ring atom. Both poses are rigid rotations around the coordinate anchor;
+ * audit ranking prevents the nearest seed lane from winning when it crosses the
+ * ring perimeter.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinates.
+ * @param {string[]} subtreeAtomIds - Metal branch atoms moved as one rigid group.
+ * @param {{x: number, y: number}} anchorPosition - Fixed ring-anchor position.
+ * @param {number} currentChildAngle - Current metal-branch angle.
+ * @param {number[]} targetChildAngles - Exact outward candidate angles.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Placement validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, rotationMagnitude: number}|null} Best safe exact-lane candidate.
+ */
+function selectMetalRingAnchorOrientation(layoutGraph, coords, subtreeAtomIds, anchorPosition, currentChildAngle, targetChildAngles, bondValidationClasses, bondLength) {
+  const layoutHeavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? visibleHeavyAtomIds(layoutGraph, [...layoutGraph.atoms.keys()]).length;
+  if (
+    layoutHeavyAtomCount > METAL_RING_ANCHOR_ORIENTATION_MAX_LAYOUT_HEAVY_ATOMS ||
+    visibleHeavyAtomIds(layoutGraph, subtreeAtomIds).length > METAL_RING_ANCHOR_ORIENTATION_MAX_MOVED_HEAVY_ATOMS ||
+    (layoutGraph.options.preserveFixed !== false && subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)))
+  ) {
+    return null;
+  }
+
+  const baseAudit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
+  let bestCandidate = null;
+  for (const targetChildAngle of targetChildAngles) {
+    const rotationAngle = wrapAngle(targetChildAngle - currentChildAngle);
+    if (Math.abs(rotationAngle) <= IMPROVEMENT_EPSILON) {
+      continue;
+    }
+    const candidateCoords = new Map(coords);
+    for (const atomId of subtreeAtomIds) {
+      candidateCoords.set(atomId, add(anchorPosition, rotate(sub(coords.get(atomId), anchorPosition), rotationAngle)));
+    }
+    const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses });
+    if (!metalRingAnchorOrientationAuditIsSafe(candidateAudit, baseAudit)) {
+      continue;
+    }
+    const candidate = {
+      coords: candidateCoords,
+      audit: candidateAudit,
+      rotationMagnitude: Math.abs(rotationAngle)
+    };
+    if (!bestCandidate || compareMetalRingAnchorOrientationCandidates(candidate, bestCandidate) < 0) {
+      bestCandidate = candidate;
+    }
+  }
+  return bestCandidate;
+}
+
+/**
+ * Chooses the clean outward lane for small covalent branches on metals that
+ * are coordinate-bound to ring atoms. Coordinate bonds are intentionally not
+ * part of the generic covalent ring-substituent snap, so they need their own
+ * placement-owned orientation pass.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinates.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Placement validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether a metal branch was reoriented.
+ */
+function orientCoordinateMetalRingBranches(layoutGraph, coords, bondValidationClasses, bondLength) {
+  let changed = false;
+  const coordinateBonds = [...layoutGraph.bonds.values()]
+    .filter(bond => bond?.kind === 'coordinate')
+    .sort((firstBond, secondBond) => compareCanonicalIds(firstBond.a, secondBond.a, layoutGraph.canonicalAtomRank) || compareCanonicalIds(firstBond.b, secondBond.b, layoutGraph.canonicalAtomRank))
+    .slice(0, METAL_RING_ANCHOR_ORIENTATION_MAX_BRANCHES);
+
+  for (const bond of coordinateBonds) {
+    const firstIsMetal = isMetalAtom(layoutGraph.sourceMolecule.atoms.get(bond.a) ?? layoutGraph.atoms.get(bond.a));
+    const secondIsMetal = isMetalAtom(layoutGraph.sourceMolecule.atoms.get(bond.b) ?? layoutGraph.atoms.get(bond.b));
+    if (firstIsMetal === secondIsMetal) {
+      continue;
+    }
+    const metalAtomId = firstIsMetal ? bond.a : bond.b;
+    const anchorAtomId = firstIsMetal ? bond.b : bond.a;
+    if (!layoutGraph.ringAtomIdSet.has(anchorAtomId) || !coords.has(anchorAtomId) || !coords.has(metalAtomId)) {
+      continue;
+    }
+    const targetAngles = computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+    if (targetAngles.length < 2) {
+      continue;
+    }
+    const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, metalAtomId, anchorAtomId).filter(atomId => atomId !== anchorAtomId && coords.has(atomId));
+    const anchorPosition = coords.get(anchorAtomId);
+    const currentMetalAngle = angleOf(sub(coords.get(metalAtomId), anchorPosition));
+    const selectedOrientation = selectMetalRingAnchorOrientation(layoutGraph, coords, subtreeAtomIds, anchorPosition, currentMetalAngle, targetAngles, bondValidationClasses, bondLength);
+    if (!selectedOrientation) {
+      continue;
+    }
+    overwriteCoordMap(coords, selectedOrientation.coords);
+    changed = true;
+  }
+  return { changed };
+}
+
+/**
  * Runs attached-ring touchup while keeping one terminal hetero ring leaf fixed
  * on its exact local trigonal slot.
  * @param {object} layoutGraph - Layout graph shell.
@@ -23843,6 +24006,10 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   const exactRingAnchorSubstituentSnap = snapExactRingAnchorSubstituentAngles(layoutGraph, coords, participantAtomIds, bondLength);
   if (exactRingAnchorSubstituentSnap.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const coordinateMetalRingBranchOrientation = orientCoordinateMetalRingBranches(layoutGraph, coords, bondValidationClasses, bondLength);
+  if (coordinateMetalRingBranchOrientation.changed) {
     markMixedBranchPlacementContextDirty(state);
   }
   const compactAcyclicRingSidechainShortening = shortenDistortedCompactAcyclicRingSidechains(layoutGraph, coords, bondValidationClasses, bondLength);
