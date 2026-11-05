@@ -2,15 +2,108 @@
 
 import { auditLayout } from '../audit/audit.js';
 import { alignCoordsToFixed, rotateAround } from '../geometry/transforms.js';
+import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { inspectEZStereo } from '../stereo/ez.js';
+import { pickWedgeAssignments } from '../stereo/wedge-selection.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
+
+const TWO_ANCHOR_HINGE_MAX_ROTATION = Math.PI / 6;
+const TWO_ANCHOR_HYPERVALENT_HINGE_MAX_ROTATION = Math.PI / 2;
+
+/**
+ * Returns the largest rigid turn allowed for an exact two-anchor hinge.
+ * Hypervalent centers may be quarter-turned by later specialist presentation,
+ * so copied final anchors need the same bounded pose available during placement.
+ * @param {object} graph - Layout graph shell.
+ * @param {string} pivotId - Candidate hinge pivot atom ID.
+ * @returns {number} Maximum absolute rotation in radians.
+ */
+function twoAnchorHingeMaxRotation(graph, pivotId) {
+  const pivot = graph.atoms.get(pivotId);
+  return ['P', 'S', 'As', 'Se'].includes(pivot?.element) && pivot.heavyDegree >= 4 ? TWO_ANCHOR_HYPERVALENT_HINGE_MAX_ROTATION : TWO_ANCHOR_HINGE_MAX_ROTATION;
+}
+
+/**
+ * Restores supported alkene geometry before rigidly aligning a component to
+ * two compatible explicit anchors. Stereo enforcement normally protects fixed
+ * atoms, but opposite endpoint anchors can freeze both candidate sides even
+ * when their requested frame came from a clean stereo-rescued pose. This
+ * bounded retry temporarily removes only the absolute constraints, performs
+ * the existing stereo search once, and accepts an exact rigid alignment only
+ * when the complete geometry and stereo audit is clean and no baseline metric
+ * worsens.
+ * @param {object} graph - Layout graph with explicit constraints.
+ * @param {object} placement - Family placement and validation classes.
+ * @param {object} aligned - Existing two-anchor aligned result.
+ * @returns {object} Original alignment or a clean stereo-safe alignment.
+ */
+export function fitTwoAnchorStereo(graph, placement, aligned) {
+  const ids = placement.atomIds;
+  const anchors = ids.filter(id => graph.fixedCoords.has(id));
+  const baselineEZ = inspectEZStereo(graph, aligned.coords);
+  if (anchors.length !== 2 || ids.length > 128 || graph.options.preserveFixed === false || ids.some(id => isMetalAtom(graph.sourceMolecule.atoms.get(id))) || baselineEZ.violationCount === 0) {
+    return aligned;
+  }
+
+  const unconstrainedGraph = {
+    ...graph,
+    fixedCoords: new Map(),
+    options: { ...graph.options, fixedCoords: new Map() }
+  };
+  const enforced = enforceAcyclicEZStereo(unconstrainedGraph, placement.coords, { bondLength: graph.options.bondLength });
+  if ((enforced.reflections ?? 0) === 0) {
+    return aligned;
+  }
+
+  const fixed = new Map(anchors.map(id => [id, graph.fixedCoords.get(id)]));
+  const candidate = alignCoordsToFixed(enforced.coords, ids, fixed, { allowScale: false });
+  if (
+    anchors.some(id => {
+      const position = candidate.coords.get(id);
+      const target = fixed.get(id);
+      return !position || Math.hypot(position.x - target.x, position.y - target.y) > graph.options.bondLength * 1e-8;
+    })
+  ) {
+    return aligned;
+  }
+  for (const [id, position] of fixed) {
+    candidate.coords.set(id, { ...position });
+  }
+
+  const candidateEZ = inspectEZStereo(graph, candidate.coords);
+  const baselineWedges = pickWedgeAssignments(graph, aligned.coords);
+  const candidateWedges = pickWedgeAssignments(graph, candidate.coords);
+  const auditOptions = { bondValidationClasses: placement.bondValidationClasses };
+  const baselineAudit = auditLayout(graph, aligned.coords, auditOptions);
+  const candidateAudit = auditLayout(graph, candidate.coords, {
+    ...auditOptions,
+    stereo: {
+      ezViolationCount: candidateEZ.violationCount,
+      chiralCenterCount: candidateWedges.chiralCenterCount,
+      unassignedCenterCount: candidateWedges.unassignedCenterCount
+    }
+  });
+  if (
+    !candidateAudit.ok ||
+    candidateEZ.violationCount >= baselineEZ.violationCount ||
+    candidateWedges.assignedCenterCount < baselineWedges.assignedCenterCount ||
+    candidateAudit.labelOverlapCount > baselineAudit.labelOverlapCount ||
+    candidateAudit.visibleHeavyBondCrossingCount > baselineAudit.visibleHeavyBondCrossingCount ||
+    candidateAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + graph.options.bondLength * 1e-9
+  ) {
+    return aligned;
+  }
+  return candidate;
+}
 
 /**
  * Fits two explicit anchors by rotating one rigid branch instead of scaling
  * the component. Only compact, sound-bond seeds with a bond-dirty similarity
  * alignment qualify. Each non-ring single bond contributes at most four
  * analytic circle-intersection poses (two pivots and two solutions), capped
- * at 128 audited candidates and a 30-degree turn. Accept only clean geometry
+ * at 128 audited candidates, a 30-degree general turn, and a 90-degree turn
+ * around hypervalent pivots whose final presentation may use a quarter-turn.
+ * Accept only clean geometry
  * with no added labels
  * or E/Z violations; infeasible chords retain the original constrained result.
  * @param {object} graph - Layout graph with explicit constraints.
@@ -85,7 +178,7 @@ export function fitTwoAnchorHinge(graph, placement, aligned) {
         }
         const rawAngle = Math.atan2(stationary.y - pivot.y, stationary.x - pivot.x) + sign * Math.acos(Math.max(-1, Math.min(1, cosine))) - Math.atan2(moving.y - pivot.y, moving.x - pivot.x);
         const angle = Math.atan2(Math.sin(rawAngle), Math.cos(rawAngle));
-        if (Math.abs(angle) > Math.PI / 6 || Math.abs(angle) >= bestAngle) {
+        if (Math.abs(angle) > twoAnchorHingeMaxRotation(graph, pivotId) || Math.abs(angle) >= bestAngle) {
           continue;
         }
         const coords = new Map(placement.coords);

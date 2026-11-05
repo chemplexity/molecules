@@ -2727,8 +2727,13 @@ function rotateLigandSubtreeAroundCenter(layoutGraph, coords, centerAtomId, liga
     return { coords, rotationMagnitude: 0 };
   }
 
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId);
+  if (layoutGraph.options.preserveFixed !== false && [...subtreeAtomIds].some(subtreeAtomId => layoutGraph.fixedCoords.has(subtreeAtomId))) {
+    return { coords, rotationMagnitude: 0 };
+  }
+
   const nextCoords = new Map(coords);
-  for (const subtreeAtomId of collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)) {
+  for (const subtreeAtomId of subtreeAtomIds) {
     const currentPosition = coords.get(subtreeAtomId);
     if (!currentPosition) {
       continue;
@@ -4180,6 +4185,27 @@ export function measureRingAnchoredHypervalentBranchDeviation(layoutGraph, coord
 }
 
 /**
+ * Returns whether a hypervalent tidy result retains every applicable explicit
+ * fixed coordinate. Fixed constraints outrank specialist presentation, so a
+ * pass that moves any requested anchor must be rejected as a whole.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @returns {boolean} Whether all present fixed atoms remain exact.
+ */
+function retainsHypervalentFixedCoordinates(layoutGraph, coords) {
+  if (layoutGraph.options.preserveFixed === false) {
+    return true;
+  }
+  for (const [atomId, target] of layoutGraph.fixedCoords) {
+    const position = coords.get(atomId);
+    if (position && Math.hypot(position.x - target.x, position.y - target.y) > 1e-9) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Nudges supported hypervalent centers back toward orthogonal presentation
  * while preserving bond lengths by rigidly rotating movable terminal ligands.
  * @param {object} layoutGraph - Layout graph shell.
@@ -4390,6 +4416,13 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       coords.set(atomId, position);
     }
     nudges++;
+  }
+
+  if (!retainsHypervalentFixedCoordinates(layoutGraph, coords)) {
+    return {
+      coords: new Map([...inputCoords].map(([atomId, position]) => [atomId, { ...position }])),
+      nudges: 0
+    };
   }
 
   return { coords, nudges };

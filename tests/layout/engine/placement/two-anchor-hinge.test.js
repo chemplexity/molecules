@@ -6,15 +6,29 @@ import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 
 const FIXTURES = [
   { name: 'fused aryl phosphate', smiles: 'CN(C)CCC1=CNC2=C1C(=CC=C2)OP(=O)(O)O', anchors: ['C1', 'O19'], adjacent: ['C1', 'N2'] },
-  { name: 'linked aromatic cyclohexene', smiles: 'Oc1c(c(O)cc(c1)CCCCC)C2C=C(/CCC2C(=C)C)C', anchors: ['O1', 'C23'], adjacent: ['O1', 'C2'] }
+  { name: 'linked aromatic cyclohexene', smiles: 'Oc1c(c(O)cc(c1)CCCCC)C2C=C(/CCC2C(=C)C)C', anchors: ['O1', 'C23'], adjacent: ['O1', 'C2'] },
+  {
+    name: 'fused heterocyclic sulfonamide',
+    smiles: 'CCCC1=NN(C)C2=C1NC(=NC2=O)C1=C(OCC)C=CC(=C1)S(=O)(=O)N1CCN(C)CC1',
+    anchors: ['C1', 'C31'],
+    adjacent: ['C1', 'C2']
+  },
+  {
+    name: 'stereogenic prostaglandin-like chain',
+    smiles: 'CC(C)OC(=O)CCC\\C=C/C[C@H]1[C@@H](O)C[C@@H](O)[C@@H]1\\C=C\\[C@@H](O)COC1=CC=CC(=C1)C(F)(F)F',
+    anchors: ['C1', 'F38'],
+    adjacent: ['C1', 'C2'],
+    expectedStereo: { ez: 2, chiral: 5 }
+  }
 ];
 
 /**
  * Checks semantic geometry and explicit constraints after a two-anchor fit.
  * @param {object} result - Generated or refined result.
  * @param {Map<string, object>} fixedCoords - Requested anchor coordinates.
+ * @param {{ez: number, chiral: number}|null} [expectedStereo] - Expected supported stereo counts.
  */
-function assertClean(result, fixedCoords) {
+function assertClean(result, fixedCoords, expectedStereo = null) {
   const audit = result.metadata.audit;
   assert.equal(audit.ok, true);
   for (const key of [
@@ -29,7 +43,14 @@ function assertClean(result, fixedCoords) {
     assert.equal(audit[key], 0, key);
   }
   assert.equal(audit.stereoContradiction, false);
-  assert.equal(inspectEZStereo(result.layoutGraph, result.coords).violationCount, 0);
+  const ez = inspectEZStereo(result.layoutGraph, result.coords);
+  assert.equal(ez.violationCount, 0);
+  if (expectedStereo) {
+    assert.equal(ez.supportedCheckCount, expectedStereo.ez);
+    assert.equal(result.metadata.stereo.chiralCenterCount, expectedStereo.chiral);
+    assert.equal(result.metadata.stereo.assignedCenterCount, expectedStereo.chiral);
+    assert.equal(result.metadata.stereo.unassignedCenterCount, 0);
+  }
   for (const [id, atom] of result.layoutGraph.atoms) {
     if (atom.element === 'H') {
       continue;
@@ -49,13 +70,13 @@ describe('two-anchor rigid branch fitting', () => {
       for (const mode of ['anchors', 'adjacent']) {
         it(`keeps ${fixture.name} clean with ${mode} at scale ${bondLength}`, () => {
           const generated = generateCoords(parseSMILES(fixture.smiles), { bondLength });
-          assertClean(generated, new Map());
+          assertClean(generated, new Map(), fixture.expectedStereo);
           const fixedCoords = new Map(fixture[mode].map(id => [id, { ...generated.coords.get(id) }]));
           const before = structuredClone(fixedCoords);
           const result = generateCoords(parseSMILES(fixture.smiles), { bondLength, fixedCoords, auditTelemetry: true });
           const refined = refineCoords(parseSMILES(fixture.smiles), { bondLength, fixedCoords, existingCoords: result.coords });
-          assertClean(result, fixedCoords);
-          assertClean(refined, fixedCoords);
+          assertClean(result, fixedCoords, fixture.expectedStereo);
+          assertClean(refined, fixedCoords, fixture.expectedStereo);
           assert.deepEqual(fixedCoords, before);
           if (mode === 'anchors') {
             for (const [id, target] of fixedCoords) {
@@ -76,7 +97,7 @@ describe('two-anchor rigid branch fitting', () => {
       );
       const first = generateCoords(parseSMILES(fixture.smiles), { fixedCoords });
       const second = generateCoords(parseSMILES(fixture.smiles), { fixedCoords });
-      assertClean(first, fixedCoords);
+      assertClean(first, fixedCoords, fixture.expectedStereo);
       assert.deepEqual(first.coords, second.coords);
     });
 

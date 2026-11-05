@@ -13,8 +13,9 @@ import { findMacrocycleRings } from '../topology/macrocycles.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
 import { layoutAtomSlice } from './atom-slice.js';
 import { packComponentPlacements } from './fragment-packing.js';
-import { fitTwoAnchorHinge } from './two-anchor-hinge.js';
+import { fitTwoAnchorHinge, fitTwoAnchorStereo } from './two-anchor-hinge.js';
 import { buildComponentFixedCoords, buildRefinementContext, canPreserveComponentPlacement, preserveComponentPlacement } from './refinement.js';
+import { inspectEZStereo } from '../stereo/ez.js';
 
 function isLargeComponent(layoutGraph, component) {
   return exceedsLargeComponentThreshold(layoutGraph, component);
@@ -875,6 +876,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
             allowScale: hasExplicitAlignmentAnchors
           });
     if (hasExplicitAlignmentAnchors) {
+      aligned = fitTwoAnchorStereo(layoutGraph, placement, aligned);
       const hingeAligned = fitTwoAnchorHinge(layoutGraph, placement, aligned);
       if (
         hingeAligned === aligned &&
@@ -883,11 +885,12 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
         !containsMetal &&
         placement.atomIds.length <= 128 &&
         placement.atomIds.filter(id => layoutGraph.fixedCoords.has(id)).length === 2 &&
-        auditLayout(layoutGraph, aligned.coords, { bondValidationClasses: placement.bondValidationClasses }).bondLengthFailureCount > 0
+        (auditLayout(layoutGraph, aligned.coords, { bondValidationClasses: placement.bondValidationClasses }).bondLengthFailureCount > 0 ||
+          inspectEZStereo(layoutGraph, aligned.coords).violationCount > 0)
       ) {
-        // Constraint-aware seeding may pick a different ring pose before the
-        // final two-anchor fit. Try one free family seed, but accept it only
-        // through the same exact-anchor, sound-bond hinge gate.
+        // Constraint-aware seeding may pick a different ring or stereo pose
+        // before the final two-anchor fit. Try one free family seed, but accept
+        // it only through the same exact-anchor, audited fitting gates.
         const freeGraph = {
           ...layoutGraph,
           fixedCoords: new Map(),
@@ -895,7 +898,8 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
         };
         const freePlacement = layoutComponent(freeGraph, component, macrocycleRings);
         if (freePlacement.supported) {
-          const freeAligned = fitTwoAnchorHinge(layoutGraph, freePlacement, aligned);
+          const stereoFreeAligned = fitTwoAnchorStereo(layoutGraph, freePlacement, aligned);
+          const freeAligned = fitTwoAnchorHinge(layoutGraph, freePlacement, stereoFreeAligned);
           if (freeAligned !== aligned) {
             placement = freePlacement;
             aligned = freeAligned;

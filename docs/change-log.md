@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-11-04
+
+- Preserve supported alkene geometry when aligning compatible endpoint anchors.
+- Preserve compatible endpoint anchors through bounded rigid fitting and hypervalent presentation.
+
 ## 2026-11-03
 
 - Route coordinate-bound metal branches into clear ring-outward lanes to prevent planar crossings.
