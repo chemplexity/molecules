@@ -1,6 +1,6 @@
 /** @module placement/bond-validation */
 
-import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION } from '../constants.js';
+import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, FUSED_RESCUE_LIMITS } from '../constants.js';
 import { getTemplateById } from '../templates/library.js';
 import { buildScaffoldPlan } from '../model/scaffold-plan.js';
 
@@ -77,28 +77,56 @@ export function assignBondValidationClass(layoutGraph, atomIds, validationClass,
 }
 
 /**
- * Detects preserved projected geometry from the bounded fallback used when a
- * hybrid macrocycle's dedicated placer cannot cover its entire ring system.
- * Multiple planar failures are required so an isolated malformed bond cannot
- * turn an otherwise planar macrocycle into relaxed projected geometry.
+ * Returns whether a fused scaffold can use the same bounded bridged fallback
+ * considered by fresh mixed-family placement.
+ * @param {object} candidate - Fused ring-system scaffold candidate.
+ * @returns {boolean} True when the fused topology is eligible.
+ */
+function supportsProjectedFusedFallback(candidate) {
+  if (candidate.family !== 'fused' || candidate.templateId) {
+    return false;
+  }
+  const atomCount = candidate.atomCount ?? candidate.atomIds.length;
+  const ringCount = candidate.ringCount ?? candidate.ringIds.length;
+  return (
+    (atomCount <= FUSED_RESCUE_LIMITS.compactTricyclicMaxAtomCount && ringCount >= 3) ||
+    (atomCount <= FUSED_RESCUE_LIMITS.compactTetracyclicMaxAtomCount && ringCount >= 4) ||
+    (atomCount <= FUSED_RESCUE_LIMITS.compactCageMaxAtomCount && ringCount >= FUSED_RESCUE_LIMITS.compactCageMinRingCount) ||
+    ringCount >= FUSED_RESCUE_LIMITS.largeCageMinRingCount ||
+    ringCount >= Math.ceil(atomCount / 2)
+  );
+}
+
+/**
+ * Detects preserved projected geometry from bounded placement fallbacks. This
+ * covers hybrid macrocycles whose dedicated placer cannot cover the whole ring
+ * system and compact fused cages whose planar placement was replaced by a
+ * bridged/KK candidate. Multiple planar failures are required so an isolated
+ * malformed bond cannot relax an otherwise planar scaffold. Fused candidates
+ * must also contain both compression and extension, distinguishing a projected
+ * cage pose from uniform scaling of an ordinary fused layout.
  * @param {object} layoutGraph - Layout graph shell.
- * @param {object} candidate - Macrocycle scaffold candidate.
+ * @param {object} candidate - Ring-system scaffold candidate.
  * @param {Map<string, {x: number, y: number}>|null} coords - Preserved coordinates.
  * @returns {boolean} True when bridged validation reconstructs the fallback mode.
  */
-function hasProjectedHybridMacrocycleGeometry(layoutGraph, candidate, coords) {
-  if (!coords || candidate.family !== 'macrocycle' || candidate.templateId) {
+function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
+  if (!coords || candidate.templateId) {
     return false;
   }
   const ringIds = new Set(candidate.ringIds);
   const connectionKinds = new Set(layoutGraph.ringConnections.filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)).map(connection => connection.kind));
-  if (connectionKinds.size < 2) {
+  const projectedHybridMacrocycle = candidate.family === 'macrocycle' && connectionKinds.size >= 2;
+  const projectedFusedFallback = supportsProjectedFusedFallback(candidate);
+  if (!projectedHybridMacrocycle && !projectedFusedFallback) {
     return false;
   }
 
   const atomIds = new Set(candidate.atomIds);
   const bondLength = layoutGraph.options.bondLength;
   let planarFailureCount = 0;
+  let compressedPlanarFailureCount = 0;
+  let stretchedPlanarFailureCount = 0;
   let totalDeviation = 0;
   let sampleCount = 0;
   for (const bond of layoutGraph.bonds.values()) {
@@ -116,11 +144,21 @@ function hasProjectedHybridMacrocycleGeometry(layoutGraph, candidate, coords) {
     }
     if (ratio < AUDIT_PLANAR_VALIDATION.minBondLengthFactor || ratio > AUDIT_PLANAR_VALIDATION.maxBondLengthFactor) {
       planarFailureCount++;
+      if (ratio < AUDIT_PLANAR_VALIDATION.minBondLengthFactor) {
+        compressedPlanarFailureCount++;
+      } else {
+        stretchedPlanarFailureCount++;
+      }
     }
     totalDeviation += Math.abs(ratio - 1);
     sampleCount++;
   }
-  return planarFailureCount >= 2 && sampleCount > 0 && totalDeviation / sampleCount <= BRIDGED_VALIDATION.maxMeanDeviation;
+  return (
+    planarFailureCount >= 2 &&
+    sampleCount > 0 &&
+    totalDeviation / sampleCount <= BRIDGED_VALIDATION.maxMeanDeviation &&
+    (!projectedFusedFallback || (compressedPlanarFailureCount > 0 && stretchedPlanarFailureCount > 0))
+  );
 }
 
 /**
@@ -143,7 +181,7 @@ export function assignPreservedBondValidationClasses(layoutGraph, component, tar
     }
     const validationClass = candidate.templateId
       ? resolvePlacementValidationClass(candidate.family, 'template', candidate.templateId)
-      : candidate.family === 'bridged' || hasProjectedHybridMacrocycleGeometry(layoutGraph, candidate, coords)
+      : candidate.family === 'bridged' || hasProjectedFallbackGeometry(layoutGraph, candidate, coords)
         ? 'bridged'
         : 'planar';
     if (validationClass !== 'planar') {

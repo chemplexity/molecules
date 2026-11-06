@@ -28,7 +28,52 @@ describe('preserved projected-cage validation', () => {
     }
   }
 
-  for (const smiles of ['C1CCCCC1', 'c1ccccc1', 'C1CCC2CCCCC2C1']) {
+  for (const suppressH of [true, false]) {
+    it(`retains a mixed fused-cage projection with suppressH=${suppressH}`, () => {
+      const molecule = parseSMILES('CC12N=CN3C4CC4C1C23C(=NO)C#C');
+      const generated = generateCoords(molecule, { bondLength: 0.75, suppressH });
+      assert.equal(generated.metadata.audit.ok, true);
+      assert.equal(generated.metadata.audit.visibleHeavyBondCrossingCount, 3);
+
+      const existingCoords = new Map([...generated.coords].map(([id, position]) => [id, { x: 10 - position.y, y: position.x - 4 }]));
+      const before = structuredClone(existingCoords);
+      const result = refineCoords(molecule, { existingCoords, bondLength: 0.75, suppressH });
+
+      assert.deepEqual(existingCoords, before);
+      assert.deepEqual(result.coords, before);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.qualityReport.ok, true);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 3);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      for (const atom of molecule.atoms.values()) {
+        if (atom.name === 'H') {
+          continue;
+        }
+        const position = result.coords.get(atom.id);
+        assert.ok(position && Number.isFinite(position.x) && Number.isFinite(position.y), `expected finite coordinates for ${atom.id}`);
+      }
+    });
+  }
+
+  for (const bondLength of [0.75, 1.5, 3]) {
+    it(`reconstructs projected validation for a compact fused-cage fallback at ${bondLength}`, () => {
+      const molecule = parseSMILES('C1(C2(C3(C4(C1C5(C2C3C45)))))');
+      const generated = generateCoords(molecule, { bondLength });
+      assert.equal(generated.metadata.audit.ok, true);
+
+      const existingCoords = new Map(generated.coords);
+      const result = refineCoords(molecule, { existingCoords, bondLength });
+
+      assert.deepEqual(result.coords, existingCoords);
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+    });
+  }
+
+  for (const smiles of ['C1CCCCC1', 'c1ccccc1', 'C1CCC2CCCCC2C1', 'C1CCC2C(C1)CCC1CCCCC12']) {
     it(`does not relax deformed planar geometry: ${smiles}`, () => {
       const molecule = parseSMILES(smiles);
       const generated = generateCoords(molecule);
@@ -46,6 +91,28 @@ describe('preserved projected-cage validation', () => {
     const result = refineCoords(molecule, { existingCoords });
     assert.equal(result.metadata.audit.ok, false);
     assert.ok(result.metadata.audit.bondLengthFailureCount > 0);
+  });
+
+  it('still rejects a distorted compact fused cage outside projected limits', () => {
+    const molecule = parseSMILES('CC12N=CN3C4CC4C1C23C(=NO)C#C');
+    const generated = generateCoords(molecule, { bondLength: 0.75 });
+    const existingCoords = new Map([...generated.coords].map(([id, position]) => [id, { x: position.x * 1.5, y: position.y * 1.5 }]));
+    const result = refineCoords(molecule, { existingCoords, bondLength: 0.75 });
+    assert.equal(result.metadata.audit.ok, false);
+    assert.ok(result.metadata.audit.bondLengthFailureCount > 0);
+  });
+
+  it('limits reconstructed fused-cage validation to the cage interior', () => {
+    const molecule = parseSMILES('CC12N=CN3C4CC4C1C23C(=NO)C#C');
+    const generated = generateCoords(molecule, { bondLength: 0.75 });
+    const graph = createLayoutGraph(molecule, { bondLength: 0.75 });
+    const classes = assignPreservedBondValidationClasses(graph, graph.components[0], new Map(), generated.coords);
+    const ringAtomIds = new Set(graph.ringSystems[0].atomIds);
+
+    for (const bond of graph.bonds.values()) {
+      const expected = ringAtomIds.has(bond.a) && ringAtomIds.has(bond.b) ? 'bridged' : 'planar';
+      assert.equal(classes.get(bond.id), expected);
+    }
   });
 
   it('restricts projected classes to cage interiors, not branches or planar rings', () => {

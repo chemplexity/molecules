@@ -105,6 +105,19 @@ export const BRIDGED_VALIDATION = Object.freeze({
   maxSevereOverlapCount: 0
 });
 
+/** Size and quality bounds for fused systems that may use bridged/KK rescue. */
+export const FUSED_RESCUE_LIMITS = Object.freeze({
+  compactTricyclicMaxAtomCount: 9,
+  compactTetracyclicMaxAtomCount: 16,
+  compactCageMaxAtomCount: 20,
+  compactCageMinRingCount: 6,
+  largeCageMinRingCount: 10,
+  kkMaxComponentSize: 128,
+  maxRescueOverlapPenalty: 2,
+  giantCageMinAtomCount: 48,
+  giantCageMinRingCount: 24
+});
+
 /** Relaxed validation for multi-center haptic metal-ligand depiction bonds. */
 export const HAPTIC_VALIDATION = Object.freeze({
   minBondLengthFactor: 0.05,

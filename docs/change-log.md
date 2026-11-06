@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-05
+
+- Preserve projected fused-cage validation when refining unchanged coordinates.
+
 ## 2026-11-04
 
 - Preserve supported alkene geometry when aligning compatible endpoint anchors.

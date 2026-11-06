@@ -1,6 +1,6 @@
 /** @module families/fused */
 
-import { BRIDGED_KK_LIMITS } from '../constants.js';
+import { BRIDGED_KK_LIMITS, FUSED_RESCUE_LIMITS } from '../constants.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { placeConstrainedRingSystem } from '../geometry/constrained-ring.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
@@ -11,18 +11,6 @@ import { placeTemplateCoords } from '../templates/placement.js';
 import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
-
-const FUSED_RESCUE_LIMITS = Object.freeze({
-  compactTricyclicMaxAtomCount: 9,
-  compactTetracyclicMaxAtomCount: 16,
-  compactCageMaxAtomCount: 20,
-  compactCageMinRingCount: 6,
-  largeCageMinRingCount: 10,
-  kkMaxComponentSize: 128,
-  maxRescueOverlapPenalty: 2,
-  giantCageMinAtomCount: 48,
-  giantCageMinRingCount: 24
-});
 
 const DENSE_FUSED_CAGE_POLISH = Object.freeze({
   iterations: 80,
