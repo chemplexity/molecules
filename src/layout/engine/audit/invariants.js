@@ -2777,9 +2777,9 @@ export function buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, options 
  * @param {number} bondLength - Target bond length.
  * @param {Iterable<string>} focusAtomIds - Atoms whose local neighborhood should be rescored.
  * @param {{atomGrid?: AtomGrid|null}} [options] - Optional reused spatial grid built from coords.
- * @returns {number} Focused exploratory placement cost.
+ * @returns {{overlapCount: number, overlapPenalty: number, crossingPenalty: number, bondDeviation: {total: number, max: number, sampleCount: number}, cost: number}} Focused exploratory placement state.
  */
-export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, options = {}) {
+export function measureFocusedPlacementState(layoutGraph, coords, bondLength, focusAtomIds, options = {}) {
   const seen = new Set();
   const uniqueFocusAtomIds = [];
   for (const atomId of focusAtomIds) {
@@ -2789,7 +2789,13 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
     }
   }
   if (uniqueFocusAtomIds.length === 0) {
-    return 0;
+    return {
+      overlapCount: 0,
+      overlapPenalty: 0,
+      crossingPenalty: 0,
+      bondDeviation: { total: 0, max: 0, sampleCount: 0 },
+      cost: 0
+    };
   }
 
   const crossingPenalty = compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, uniqueFocusAtomIds);
@@ -2799,6 +2805,7 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
   const atomGrid = options.atomGrid ?? (coords.size >= FOCUSED_PLACEMENT_COST_GRID_MIN_COORDS ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   const atomGridHasVisibleAtoms = atomGrid?.visibleAtomIdsOnly === true;
   const focusOrderByAtomId = new Map(uniqueFocusAtomIds.map((atomId, index) => [atomId, index]));
+  let overlapCount = 0;
   let overlapPenalty = 0;
 
   for (const firstAtomId of uniqueFocusAtomIds) {
@@ -2828,6 +2835,7 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
       }
       const distance = Math.hypot(dx, dy);
       const deficit = threshold - distance;
+      overlapCount++;
       overlapPenalty += deficit * deficit * 100;
     };
     if (atomGrid) {
@@ -2862,7 +2870,27 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
     }
   }
 
-  return overlapPenalty + crossingPenalty + (sampleCount === 0 ? 0 : (totalDeviation / sampleCount) * 10 + maxDeviation * 5);
+  const bondPenalty = sampleCount === 0 ? 0 : (totalDeviation / sampleCount) * 10 + maxDeviation * 5;
+  return {
+    overlapCount,
+    overlapPenalty,
+    crossingPenalty,
+    bondDeviation: { total: totalDeviation, max: maxDeviation, sampleCount },
+    cost: overlapPenalty + crossingPenalty + bondPenalty
+  };
+}
+
+/**
+ * Computes the scalar cost for a focused exploratory placement.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {Iterable<string>} focusAtomIds - Atoms whose local neighborhood should be rescored.
+ * @param {{atomGrid?: AtomGrid|null}} [options] - Optional reused spatial grid built from coords.
+ * @returns {number} Focused exploratory placement cost.
+ */
+export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, options = {}) {
+  return measureFocusedPlacementState(layoutGraph, coords, bondLength, focusAtomIds, options).cost;
 }
 
 function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomIds) {

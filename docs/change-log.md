@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-06
+
+- Keep crowded bridged-ring branches clear when regularizing saturated cage geometry.
+
 ## 2026-11-05
 
 - Preserve projected fused-cage validation when refining unchanged coordinates.

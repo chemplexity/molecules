@@ -1607,9 +1607,17 @@ function visibleHeavyParticipantAtomIds(layoutGraph, componentAtomIds) {
   });
 }
 
-function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength) {
+/**
+ * Previews unplaced heavy branches against a saturated bridged-ring candidate.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Ring atoms already included in the candidate.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate ring coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{overlapCount: number, deficitSum: number, penalty: number}} Preview overlap measurements.
+ */
+function measureFusedCyclohexaneBranchPreview(layoutGraph, atomIds, coords, bondLength) {
   if (!layoutGraph || !(coords instanceof Map) || atomIds.length === 0) {
-    return 0;
+    return { overlapCount: 0, deficitSum: 0, penalty: 0 };
   }
 
   const ringAtomIds = new Set(atomIds);
@@ -1617,16 +1625,18 @@ function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bond
     atomIds.map(atomId => layoutGraph.componentByAtomId?.get(atomId)).find(Boolean) ??
     layoutGraph.components.find(candidateComponent => atomIds.some(atomId => candidateComponent.atomIds.includes(atomId)));
   if (!component) {
-    return 0;
+    return { overlapCount: 0, deficitSum: 0, penalty: 0 };
   }
   const participantAtomIds = visibleHeavyParticipantAtomIds(layoutGraph, component.atomIds);
   const hasUnplacedBranchAtom = participantAtomIds.some(atomId => !ringAtomIds.has(atomId) && !coords.has(atomId));
   if (!hasUnplacedBranchAtom) {
-    return 0;
+    return { overlapCount: 0, deficitSum: 0, penalty: 0 };
   }
 
   const previewCoords = cloneCoords(coords);
-  placeRemainingBranches(componentAdjacency(layoutGraph, component.atomIds), layoutGraph.canonicalAtomRank, previewCoords, new Set(participantAtomIds), atomIds, bondLength, layoutGraph, null, 0, {});
+  placeRemainingBranches(componentAdjacency(layoutGraph, component.atomIds), layoutGraph.canonicalAtomRank, previewCoords, new Set(participantAtomIds), atomIds, bondLength, layoutGraph, null, 0, {
+    prioritizeSevereOverlapCount: true
+  });
 
   const threshold = bondLength * FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR;
   let overlapCount = 0;
@@ -1657,7 +1667,23 @@ function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bond
       }
     }
   }
-  return overlapCount * 10000 + deficitSum * 1000;
+  return {
+    overlapCount,
+    deficitSum,
+    penalty: overlapCount * 10000 + deficitSum * 1000
+  };
+}
+
+/**
+ * Returns the scalar branch-preview penalty used by fused-ring shape scoring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Ring atoms already included in the candidate.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate ring coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Weighted branch-preview penalty.
+ */
+function fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength) {
+  return measureFusedCyclohexaneBranchPreview(layoutGraph, atomIds, coords, bondLength).penalty;
 }
 
 function fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLength) {
@@ -1852,6 +1878,9 @@ function shouldAcceptSaturatedBridgedRingJunctionBalance(candidateAudit, incumbe
   }
   if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
     return false;
+  }
+  if (candidateScore.branchOverlapCount !== incumbentScore.branchOverlapCount) {
+    return candidateScore.branchOverlapCount < incumbentScore.branchOverlapCount;
   }
   const maxAllowedBondDeviation = bondLength * SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR;
   if (candidateScore.maxBondDeviation > maxAllowedBondDeviation || candidateAudit.maxBondLengthDeviation > maxAllowedBondDeviation) {
@@ -3705,18 +3734,19 @@ function addSaturatedBridgePathTargets(layoutGraph, rings, coreRing, candidateCo
  * @param {object} coreRing - Six-member saturated core ring.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
  * @param {number} bondLength - Target bond length.
- * @returns {number|null} Candidate score, or null for incomplete coordinates.
+ * @returns {{branchOverlapCount: number, branchDeficitSum: number, totalScore: number}|null} Candidate score, or null for incomplete coordinates.
  */
 function saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength) {
   const ringScore = regularRingShapeScore(coreRing, coords, bondLength);
   if (!ringScore) {
     return null;
   }
-  return (
-    ringScore.totalScore +
-    measureFusedCyclohexaneBranchSlotBlockers({ cyclohexaneRing: coreRing }, coords, bondLength) * 10 +
-    fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength) * 0.01
-  );
+  const branchPreview = measureFusedCyclohexaneBranchPreview(layoutGraph, atomIds, coords, bondLength);
+  return {
+    branchOverlapCount: branchPreview.overlapCount,
+    branchDeficitSum: branchPreview.deficitSum,
+    totalScore: ringScore.totalScore + measureFusedCyclohexaneBranchSlotBlockers({ cyclohexaneRing: coreRing }, coords, bondLength) * 10 + branchPreview.penalty * 0.01
+  };
 }
 
 /**
@@ -3724,8 +3754,8 @@ function saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords
  * than the incumbent bridged fallback.
  * @param {object|null} candidateAudit - Candidate audit summary.
  * @param {object|null} incumbentAudit - Incumbent audit summary.
- * @param {number|null} candidateScore - Candidate shape score.
- * @param {number|null} incumbentScore - Incumbent shape score.
+ * @param {{branchOverlapCount: number, branchDeficitSum: number, totalScore: number}|null} candidateScore - Candidate shape score.
+ * @param {{branchOverlapCount: number, branchDeficitSum: number, totalScore: number}|null} incumbentScore - Incumbent shape score.
  * @returns {boolean} True when the candidate should replace the incumbent.
  */
 function shouldAcceptSaturatedBridgedCyclohexaneCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
@@ -3738,13 +3768,16 @@ function shouldAcceptSaturatedBridgedCyclohexaneCoords(candidateAudit, incumbent
   if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
     return false;
   }
+  if (process.env.DEBUG_SATURATED_BRIDGE === '1') {
+    console.error({ candidateScore, incumbentScore, candidateAudit, incumbentAudit });
+  }
   if (candidateAudit.ok === true && incumbentAudit.ok !== true) {
     return true;
   }
   if (candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount) {
     return true;
   }
-  return candidateScore < incumbentScore - 1e-9;
+  return candidateScore.totalScore < incumbentScore.totalScore - 1e-9;
 }
 
 /**
@@ -3768,8 +3801,14 @@ export function regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, a
 
   let bestCoords = coords;
   let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
-  let bestScore = Math.min(...coreRings.map(coreRing => saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength)).filter(score => score != null));
-  if (!bestAudit || !Number.isFinite(bestScore)) {
+  const initialScores = coreRings.map(coreRing => saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength)).filter(score => score != null);
+  let bestScore = initialScores.reduce((best, score) => {
+    if (!best || score.branchOverlapCount < best.branchOverlapCount) {
+      return score;
+    }
+    return score.branchOverlapCount === best.branchOverlapCount && score.totalScore < best.totalScore ? score : best;
+  }, null);
+  if (!bestAudit || !bestScore) {
     return coords;
   }
 

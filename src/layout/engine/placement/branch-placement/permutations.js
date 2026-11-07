@@ -1,7 +1,7 @@
 /** @module placement/branch-placement/permutations */
 
 import { angleOf, angularDifference, fromAngle, sub } from '../../geometry/vec2.js';
-import { buildAtomGrid, measureFocusedPlacementCost, measureLayoutCost } from '../../audit/invariants.js';
+import { buildAtomGrid, measureFocusedPlacementState, measureLayoutState } from '../../audit/invariants.js';
 import { compareCanonicalAtomIds } from '../../topology/canonical-order.js';
 import {
   ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT,
@@ -1181,23 +1181,40 @@ function futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focus
  * @param {Map<string, string[]>|null} [adjacency] - Component adjacency map for pending attached-ring previews.
  * @param {Set<string>|null} [atomIdsToPlace] - Eligible atom IDs for the current placement slice.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
- * @returns {number} Local readability penalty.
+ * @returns {{overlapCount: number, cost: number}} Local overlap and readability score.
  */
-function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = [], atomGrid = null, adjacency = null, atomIdsToPlace = null, branchConstraints = null) {
-  const layoutCost = !layoutGraph
-    ? 0
+function arrangementScore(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = [], atomGrid = null, adjacency = null, atomIdsToPlace = null, branchConstraints = null) {
+  const layoutState = !layoutGraph
+    ? { overlapCount: 0, cost: 0 }
     : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
-      ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, { atomGrid })
-      : measureLayoutCost(layoutGraph, coords, bondLength);
-  return (
-    layoutCost +
+      ? measureFocusedPlacementState(layoutGraph, coords, bondLength, focusAtomIds, { atomGrid })
+      : measureLayoutState(layoutGraph, coords, bondLength);
+  const cost =
+    layoutState.cost +
     tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) * SMALL_RING_EXTERIOR_GAP_WEIGHT +
     arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds, atomGrid) * TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT +
-    futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds, adjacency, atomIdsToPlace, branchConstraints, atomGrid) * FUTURE_ATTACHED_RING_PREVIEW_WEIGHT
-  );
+    futureAttachedRingPreviewPenalty(layoutGraph, coords, bondLength, focusAtomIds, adjacency, atomIdsToPlace, branchConstraints, atomGrid) * FUTURE_ATTACHED_RING_PREVIEW_WEIGHT;
+  return { overlapCount: layoutState.overlapCount, cost };
+}
+
+/**
+ * Compares branch arrangements by hard overlap count before soft readability cost.
+ * @param {{overlapCount: number, cost: number}} candidateScore - Candidate arrangement score.
+ * @param {{overlapCount: number, cost: number}|null|undefined} bestScore - Current winning score.
+ * @param {boolean} [prioritizeOverlapCount] - Whether severe contacts outrank the scalar geometry cost.
+ * @returns {boolean} Whether the candidate should replace the current winner.
+ */
+function arrangementScoreIsBetter(candidateScore, bestScore, prioritizeOverlapCount = false) {
+  if (!bestScore) {
+    return true;
+  }
+  if (prioritizeOverlapCount && candidateScore.overlapCount !== bestScore.overlapCount) {
+    return candidateScore.overlapCount < bestScore.overlapCount;
+  }
+  return candidateScore.cost < bestScore.cost - ARRANGEMENT_COST_TIE_EPSILON;
 }
 
 function evaluateAnglePermutations(
@@ -1284,7 +1301,7 @@ function evaluateAnglePermutations(
       }
 
       const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords, atomIdsToPlace);
-      const cost = arrangementCost(
+      const score = arrangementScore(
         layoutGraph,
         tempCoords,
         bondLength,
@@ -1295,9 +1312,9 @@ function evaluateAnglePermutations(
         atomIdsToPlace,
         branchConstraints
       );
-      if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
+      if (arrangementScoreIsBetter(score, bestPlacement?.score, placementContext?.prioritizeSevereOverlapCount === true)) {
         bestPlacement = {
-          cost,
+          score,
           coords: tempCoords,
           placementState: tempPlacementState,
           newlyPlacedAtomIds
@@ -1343,10 +1360,10 @@ function evaluateLocalAnglePermutations(canonicalAtomRank, coords, placementStat
       // that were already in coords, e.g. ring atoms that were pre-placed).
       const newlyPlacedAtomIds = assignedPlacements.map(p => p.childAtomId).filter(id => !coords.has(id));
       const candidateAtomGrid = buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, tempCoords, newlyPlacedAtomIds);
-      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidateAtomGrid);
-      if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
+      const score = arrangementScore(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidateAtomGrid);
+      if (arrangementScoreIsBetter(score, bestPlacement?.score)) {
         bestPlacement = {
-          cost,
+          score,
           coords: tempCoords,
           placementState: tempPlacementState,
           assignedPlacements
