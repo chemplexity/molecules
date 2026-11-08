@@ -1373,7 +1373,7 @@ function placeChildren(
  * @param {object|null} [layoutGraph] - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {number} [depth] - Recursive depth guard for pathological graphs.
- * @param {{placementState?: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null, ringPolygonsByAnchor?: Map<string, Array<Array<{x: number, y: number}>>>, needsResync?: boolean}|null} [placementContext] - Optional reusable branch-placement context.
+ * @param {{placementState?: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null, ringPolygonsByAnchor?: Map<string, Array<Array<{x: number, y: number}>>>, needsResync?: boolean, prioritizeSevereOverlapCount?: boolean}|null} [placementContext] - Optional reusable branch-placement context.
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
  */
 export function placeRemainingBranches(

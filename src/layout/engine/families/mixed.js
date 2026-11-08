@@ -3176,6 +3176,32 @@ function hasBridgedExocyclicSlotRegression(layoutGraph, ringSystem, incumbentCoo
   );
 }
 
+/**
+ * Allows a clean bridged-core repair to outrank a softer predicted exit loss.
+ * The completed mixed placement still audits the actual exocyclic branch, so a
+ * slot estimate must not preserve real internal contacts when every hard ring
+ * invariant improves or stays unchanged.
+ * @param {object|null} candidateAudit - Regularized ring-system audit.
+ * @param {object|null} incumbentAudit - Current ring-system audit.
+ * @returns {boolean} True when the predicted slot regression is non-blocking.
+ */
+function resolvesBridgedCoreDefectDespiteSlotRegression(candidateAudit, incumbentAudit) {
+  if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  return (
+    candidateAudit.ok === true &&
+    incumbentAudit.severeOverlapCount > 0 &&
+    candidateAudit.severeOverlapCount === 0 &&
+    candidateAudit.visibleHeavyBondCrossingFailureCount <= incumbentAudit.visibleHeavyBondCrossingFailureCount &&
+    candidateAudit.visibleHeavyBondCrossingCount <= incumbentAudit.visibleHeavyBondCrossingCount &&
+    candidateAudit.bondLengthFailureCount <= incumbentAudit.bondLengthFailureCount &&
+    candidateAudit.labelOverlapCount <= incumbentAudit.labelOverlapCount &&
+    candidateAudit.ringSubstituentReadabilityFailureCount <= incumbentAudit.ringSubstituentReadabilityFailureCount &&
+    candidateAudit.stereoContradiction !== true
+  );
+}
+
 function buildFusedRingBlocks(rings, ringAdj, ringConnectionByPair) {
   const ringById = new Map(rings.map(ring => [ring.id, ring]));
   const visitedRingIds = new Set();
@@ -6430,7 +6456,7 @@ function computeRingSystemLayout(layoutGraph, ringSystem, bondLength, templateId
         const exocyclicSlotRegression =
           (templateId != null || connectionKinds.has('fused')) && hasBridgedExocyclicSlotRegression(layoutGraph, ringSystem, bestPlacement.coords, regularizedCoords, bondLength);
         if (
-          !exocyclicSlotRegression &&
+          (!exocyclicSlotRegression || resolvesBridgedCoreDefectDespiteSlotRegression(regularizedAudit, bestAudit)) &&
           (isBetterRingSystemPlacement(regularizedPlacement, bestPlacement, regularizedAudit, bestAudit, true) ||
             isBetterBridgedSmallRingGeometryRegularization(rings, regularizedPlacement, bestPlacement, regularizedAudit, bestAudit, bondLength))
         ) {

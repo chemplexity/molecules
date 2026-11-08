@@ -1486,7 +1486,7 @@ export function chooseSingleBranchAngleWithLookahead(
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
  * @param {number} [depth] - Current recursion depth.
  * @param {Array<{childAtomId: string, subtreeSize: number}>|null} [childDescriptors] - Optional precomputed child descriptors.
- * @param {{atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null}} [placementContext] - Optional reusable branch-placement context.
+ * @param {{atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null, prioritizeSevereOverlapCount?: boolean}} [placementContext] - Optional reusable branch-placement context.
  * @returns {Array<{childAtomId: string, angle: number}>} Assigned angles for the requested children.
  */
 export function chooseBatchAngleAssignments(

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-07
+
+- Prefer clean bridged-cage geometry over speculative branch-slot penalties when clearing severe internal contacts.
+
 ## 2026-11-06
 
 - Keep crowded bridged-ring branches clear when regularizing saturated cage geometry.
