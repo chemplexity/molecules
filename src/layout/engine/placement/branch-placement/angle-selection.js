@@ -3950,10 +3950,15 @@ export function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentA
     ...fallbackAngleSets
   ];
 
-  return [
-    ...ringEmbeddedBisOxoAngleSetCandidates,
-    ...budgetedAngleSetCandidates.map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints)).filter(angleSet => angleSet.length === unplacedNeighborIds.length)
-  ];
+  const constrainedAngleSetCandidates = budgetedAngleSetCandidates
+    .map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
+    .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
+
+  // A macrocycle budget describes the preferred exterior arc for one branch.
+  // At a multiply substituted anchor, filtering can retain only part of every
+  // sibling set. Keep the original complete sets as a bounded fallback so the
+  // budget can guide placement without making participant coverage impossible.
+  return [...ringEmbeddedBisOxoAngleSetCandidates, ...(constrainedAngleSetCandidates.length > 0 ? constrainedAngleSetCandidates : budgetedAngleSetCandidates)];
 }
 
 /**

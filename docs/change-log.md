@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-08
+
+- Keep multiply substituted macrocycle branches complete when exterior angle budgets are too narrow.
+
 ## 2026-11-07
 
 - Prefer clean bridged-cage geometry over speculative branch-slot penalties when clearing severe internal contacts.
