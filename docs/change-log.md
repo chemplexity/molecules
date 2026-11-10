@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-11-09
+
+- Route paired ester exits around stereochemical bridged macrolide cores without disturbing ring geometry.
+- Consolidate related 2D layout constraint and cage regressions into behavior-owned suites with shared coordinate assertions, and document the test-organization conventions for future changes.
+
 ## 2026-11-08
 
 - Keep multiply substituted macrocycle branches complete when exterior angle budgets are too narrow.

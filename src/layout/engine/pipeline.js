@@ -12,7 +12,7 @@ import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
 import { applyLabelClearance } from './cleanup/label-clearance.js';
 import { visibleHeavyCovalentBonds } from './cleanup/bond-utils.js';
 import { collectCutSubtree } from './cleanup/subtree-utils.js';
-import { resolveMixedAcylBranchSevereContacts, resolveRingSubstituentBoundedReadability, resolveRingSubstituentBranchCrossings } from './families/mixed.js';
+import { resolveMixedAcylBranchSevereContacts, resolveMixedPairedBranchCrossings, resolveRingSubstituentBoundedReadability, resolveRingSubstituentBranchCrossings } from './families/mixed.js';
 import {
   LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION,
   measureRingAdjacentTerminalDivalentContinuationDistortion,
@@ -166,7 +166,9 @@ const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_LAYOUT_HEAVY_ATOMS = 180;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_MOVED_HEAVY_ATOMS = 16;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_CONTACT_MAX_DESCRIPTORS = 10;
 const FINAL_TERMINAL_MULTIPLE_BOND_BRANCH_FAN_SLACK = 1e-8;
-const FINAL_ACYCLIC_BRANCH_CONTACT_ROTATIONS = Object.freeze([5, 6, 8, 10, 12, 15, 20, 25, 30, 35, 45, 60, 90, 120, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
+const FINAL_ACYCLIC_BRANCH_CONTACT_ROTATIONS = Object.freeze(
+  [5, 6, 8, 10, 12, 15, 20, 25, 30, 35, 45, 60, 90, 120, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation])
+);
 const FINAL_ACYCLIC_BRANCH_TERMINAL_LEAF_ROOT_ROTATIONS = Object.freeze([150, 155, 160, 165, 170, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 const FINAL_ACYCLIC_BRANCH_TERMINAL_LEAF_ROTATIONS = Object.freeze(
   [0, ...[10, 15, 20, 30, 45, 50, 60, 75, 90, 120, 140, 150, 170, 180].flatMap(degrees => [degrees, -degrees])].map(degrees => (degrees * Math.PI) / 180)
@@ -1441,7 +1443,9 @@ function finalFusedClosureJunctionDescriptor(layoutGraph, coords, bondValidation
   const stretchedIncidentBond = (atomId, excludedBondId) =>
     (layoutGraph.bondsByAtomId.get(atomId) ?? []).find(bond => {
       const measuredDistance = bondDistance(bond);
-      return bond.id !== excludedBondId && bond.kind === 'covalent' && bond.inRing && bondValidationClasses.get(bond.id) === 'bridged' && measuredDistance != null && measuredDistance > maximumDistance;
+      return (
+        bond.id !== excludedBondId && bond.kind === 'covalent' && bond.inRing && bondValidationClasses.get(bond.id) === 'bridged' && measuredDistance != null && measuredDistance > maximumDistance
+      );
     });
 
   for (const bond of layoutGraph.bonds.values()) {
@@ -1498,8 +1502,26 @@ function maybeRetouchFinalFusedClosureJunction(layoutGraph, coords, placement, b
         for (const firstAxialFactor of FINAL_FUSED_CLOSURE_AXIAL_OFFSET_FACTORS) {
           for (const secondAxialFactor of FINAL_FUSED_CLOSURE_AXIAL_OFFSET_FACTORS) {
             const candidateCoords = cloneCoords(coords);
-            candidateCoords.set(firstAtomId, add(firstPosition, add({ x: normal.x * bondLength * firstNormalFactor, y: normal.y * bondLength * firstNormalFactor }, { x: edgeUnit.x * bondLength * firstAxialFactor, y: edgeUnit.y * bondLength * firstAxialFactor })));
-            candidateCoords.set(secondAtomId, add(secondPosition, add({ x: normal.x * bondLength * secondNormalFactor, y: normal.y * bondLength * secondNormalFactor }, { x: -edgeUnit.x * bondLength * secondAxialFactor, y: -edgeUnit.y * bondLength * secondAxialFactor })));
+            candidateCoords.set(
+              firstAtomId,
+              add(
+                firstPosition,
+                add(
+                  { x: normal.x * bondLength * firstNormalFactor, y: normal.y * bondLength * firstNormalFactor },
+                  { x: edgeUnit.x * bondLength * firstAxialFactor, y: edgeUnit.y * bondLength * firstAxialFactor }
+                )
+              )
+            );
+            candidateCoords.set(
+              secondAtomId,
+              add(
+                secondPosition,
+                add(
+                  { x: normal.x * bondLength * secondNormalFactor, y: normal.y * bondLength * secondNormalFactor },
+                  { x: -edgeUnit.x * bondLength * secondAxialFactor, y: -edgeUnit.y * bondLength * secondAxialFactor }
+                )
+              )
+            );
             const candidateAudit = auditLayout(layoutGraph, candidateCoords, auditOptions);
             if (candidateAudit.ok !== true || candidateAudit.fallback?.mode != null) {
               continue;
@@ -2750,11 +2772,13 @@ function finalBondLengthRelaxationBonds(layoutGraph, coords) {
  */
 function relaxedFinalBondLengthCoords(layoutGraph, inputCoords, bondLength, profile, bondValidationClasses, frozenAtomIds = new Set()) {
   const coords = cloneCoords(inputCoords);
-  const bonds = finalBondLengthRelaxationBonds(layoutGraph, coords).filter(bond =>
-    !profile.intervals || [bond.a, bond.b].every(atomId => {
-      const atom = layoutGraph.atoms.get(atomId);
-      return atom.element !== 'H' && atom.visible !== false;
-    })
+  const bonds = finalBondLengthRelaxationBonds(layoutGraph, coords).filter(
+    bond =>
+      !profile.intervals ||
+      [bond.a, bond.b].every(atomId => {
+        const atom = layoutGraph.atoms.get(atomId);
+        return atom.element !== 'H' && atom.visible !== false;
+      })
   );
   const movableAtomIds = new Set();
   for (const atomId of coords.keys()) {
@@ -2926,7 +2950,11 @@ function maybeRetouchFinalCompactBridgedWholeComponentKamadaKawai(molecule, layo
     movedAtomIds: [],
     audit: currentAudit
   });
-  if ((layoutGraph.options.preserveFixed !== false && [...layoutGraph.fixedCoords.keys()].some(id => finalCoords.has(id))) || [...(placement.frozenAtomIds ?? [])].some(id => finalCoords.has(id)) || !compactBridgedWholeComponentKamadaKawaiIsEligible(layoutGraph, currentAudit)) {
+  if (
+    (layoutGraph.options.preserveFixed !== false && [...layoutGraph.fixedCoords.keys()].some(id => finalCoords.has(id))) ||
+    [...(placement.frozenAtomIds ?? [])].some(id => finalCoords.has(id)) ||
+    !compactBridgedWholeComponentKamadaKawaiIsEligible(layoutGraph, currentAudit)
+  ) {
     return unchanged();
   }
 
@@ -6946,7 +6974,11 @@ function maybeRetouchFinalCrowdedEtherPairedHinge(molecule, layoutGraph, finalCo
         continue;
       }
       const score = Math.abs(centerRotation) + Math.abs(leafRotation);
-      if (!bestCandidate || score < bestCandidate.score - PRESENTATION_METRIC_EPSILON || (Math.abs(score - bestCandidate.score) <= PRESENTATION_METRIC_EPSILON && candidate.totalMove < bestCandidate.totalMove)) {
+      if (
+        !bestCandidate ||
+        score < bestCandidate.score - PRESENTATION_METRIC_EPSILON ||
+        (Math.abs(score - bestCandidate.score) <= PRESENTATION_METRIC_EPSILON && candidate.totalMove < bestCandidate.totalMove)
+      ) {
         bestCandidate = { ...candidate, audit: candidateAudit, score };
       }
     }
@@ -7161,8 +7193,7 @@ function finalPeptideRoutingFocusBondIds(layoutGraph, audit) {
 
 function finalPeptideRoutingDescriptors(layoutGraph, coords, placement, focusBondIds) {
   const descriptors = [];
-  const maxSubtreeHeavyAtoms =
-    layoutGraph.traits.heavyAtomCount >= 400 ? FINAL_ULTRA_LARGE_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS : FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS;
+  const maxSubtreeHeavyAtoms = layoutGraph.traits.heavyAtomCount >= 400 ? FINAL_ULTRA_LARGE_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS : FINAL_PEPTIDE_BRANCH_ROUTING_MAX_SUBTREE_HEAVY_ATOMS;
   for (const bondId of focusBondIds) {
     const bond = layoutGraph.bonds.get(bondId);
     if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
@@ -9952,7 +9983,7 @@ function maybeRetouchFinalCompactBridgedHydroxySidechainContacts(layoutGraph, fi
   const heavyAtomCount = layoutGraph.traits?.heavyAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').length;
   if (
     heavyAtomCount > FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_HEAVY_ATOMS ||
-    (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 && (layoutGraph.traits?.ringCount ?? 0) < 3 ||
+    ((layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 && (layoutGraph.traits?.ringCount ?? 0) < 3) ||
     (baseAudit.severeOverlapCount ?? 0) === 0 ||
     (baseAudit.bondLengthFailureCount ?? 0) > 0 ||
     (baseAudit.labelOverlapCount ?? 0) > 0 ||
@@ -9964,7 +9995,9 @@ function maybeRetouchFinalCompactBridgedHydroxySidechainContacts(layoutGraph, fi
   }
 
   const overlaps = findSevereOverlaps(layoutGraph, finalCoords, bondLength);
-  const descriptorByKey = new Map(finalCompactBridgedHydroxyParentDescriptors(layoutGraph, finalCoords, overlaps).map(descriptor => [`${descriptor.anchorAtomId}:${descriptor.rootAtomId}`, descriptor]));
+  const descriptorByKey = new Map(
+    finalCompactBridgedHydroxyParentDescriptors(layoutGraph, finalCoords, overlaps).map(descriptor => [`${descriptor.anchorAtomId}:${descriptor.rootAtomId}`, descriptor])
+  );
   for (const descriptor of finalAcyclicBranchContactDescriptors(layoutGraph, finalCoords, bondLength, {
     maxMovedHeavyAtoms: FINAL_COMPACT_BRIDGED_HYDROXY_SIDECHAIN_MAX_MOVED_HEAVY_ATOMS
   })
@@ -12090,24 +12123,32 @@ function compactFusedPeripheralRingPathShiftDescriptors(layoutGraph, coords, bon
       ringAtomIds: ringSystem?.atomIds ?? ring.atomIds,
       firstMovedAtomIds,
       secondMovedAtomIds,
-      firstBlockerAtomIds: [...new Set(severeOverlaps.flatMap(overlap => {
-        if (overlap.firstAtomId === orderedPair[0]) {
-          return [overlap.secondAtomId];
-        }
-        if (overlap.secondAtomId === orderedPair[0]) {
-          return [overlap.firstAtomId];
-        }
-        return [];
-      }))],
-      secondBlockerAtomIds: [...new Set(severeOverlaps.flatMap(overlap => {
-        if (overlap.firstAtomId === orderedPair[1]) {
-          return [overlap.secondAtomId];
-        }
-        if (overlap.secondAtomId === orderedPair[1]) {
-          return [overlap.firstAtomId];
-        }
-        return [];
-      }))],
+      firstBlockerAtomIds: [
+        ...new Set(
+          severeOverlaps.flatMap(overlap => {
+            if (overlap.firstAtomId === orderedPair[0]) {
+              return [overlap.secondAtomId];
+            }
+            if (overlap.secondAtomId === orderedPair[0]) {
+              return [overlap.firstAtomId];
+            }
+            return [];
+          })
+        )
+      ],
+      secondBlockerAtomIds: [
+        ...new Set(
+          severeOverlaps.flatMap(overlap => {
+            if (overlap.firstAtomId === orderedPair[1]) {
+              return [overlap.secondAtomId];
+            }
+            if (overlap.secondAtomId === orderedPair[1]) {
+              return [overlap.firstAtomId];
+            }
+            return [];
+          })
+        )
+      ],
       movedAtomIds
     });
   }
@@ -13200,9 +13241,10 @@ function maybeRetouchFinalExactBridgedRingPathOverlaps(layoutGraph, finalCoords,
       continue;
     }
     if (descriptor.kind === 'compactFusedPathShift') {
-      const candidateCoordsIterable = descriptor.firstBlockerAtomIds?.length > 0 && descriptor.secondBlockerAtomIds?.length > 0
-        ? compactFusedPairedPathShiftCandidates(finalCoords, descriptor, bondLength)
-        : compactFusedRingPathShiftCandidates(finalCoords, descriptor, bondLength);
+      const candidateCoordsIterable =
+        descriptor.firstBlockerAtomIds?.length > 0 && descriptor.secondBlockerAtomIds?.length > 0
+          ? compactFusedPairedPathShiftCandidates(finalCoords, descriptor, bondLength)
+          : compactFusedRingPathShiftCandidates(finalCoords, descriptor, bondLength);
       for (const candidateCoords of candidateCoordsIterable) {
         const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, descriptor.ringAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
         const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
@@ -18095,26 +18137,41 @@ export function runPipeline(molecule, options = {}) {
       }
       if ((postAcylAudit.visibleHeavyBondCrossingCount ?? 0) > 0 || (postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0 || (postAcylAudit.inwardRingSubstituentCount ?? 0) > 0) {
         const candidateCoords = cloneCoords(finalCoords);
-        const ringSubstituentBranchRetouch = resolveRingSubstituentBranchCrossings(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
+        let pairedBranchRetouch = false;
+        let ringSubstituentBranchRetouch = resolveRingSubstituentBranchCrossings(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength, {
           fastAcceptClean: true
         });
+        if (!ringSubstituentBranchRetouch.changed && (postAcylAudit.visibleHeavyBondCrossingCount ?? 0) > 0) {
+          ringSubstituentBranchRetouch = resolveMixedPairedBranchCrossings(
+            layoutGraph,
+            {
+              coords: candidateCoords,
+              bondValidationClasses: placement.bondValidationClasses
+            },
+            normalizedOptions.bondLength
+          );
+          pairedBranchRetouch = ringSubstituentBranchRetouch.changed;
+        }
         if (ringSubstituentBranchRetouch.changed) {
           const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
             bondLength: normalizedOptions.bondLength,
             bondValidationClasses: placement.bondValidationClasses
           });
           if (finalAuditCountsDoNotWorsen(candidateAudit, postAcylAudit)) {
+            const currentAudit = postAcylAudit;
             finalCoords = candidateCoords;
             finalCoordsModified = true;
             postAcylAudit = candidateAudit;
             onStep?.(
               'Final Ring Substituent Branch Retouch',
-              'Small ring substituent branches rotated after final cleanup to clear residual inward exits while preserving ring geometry.',
+              pairedBranchRetouch
+                ? 'Paired ring substituent branches rotated after stereo resolution to clear residual crossings while preserving ring geometry.'
+                : 'Small ring substituent branches rotated after final cleanup to clear residual inward exits while preserving ring geometry.',
               cloneCoords(finalCoords),
               {
-                visibleHeavyBondCrossingCountBefore: postAcylAudit.visibleHeavyBondCrossingCount,
+                visibleHeavyBondCrossingCountBefore: currentAudit.visibleHeavyBondCrossingCount,
                 visibleHeavyBondCrossingCountAfter: candidateAudit.visibleHeavyBondCrossingCount,
-                ringSubstituentReadabilityFailureCountBefore: postAcylAudit.ringSubstituentReadabilityFailureCount,
+                ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
                 ringSubstituentReadabilityFailureCountAfter: candidateAudit.ringSubstituentReadabilityFailureCount
               }
             );
@@ -18241,13 +18298,18 @@ export function runPipeline(molecule, options = {}) {
           finalCoords = inwardBridgedRingBranchRetouch.coords;
           finalCoordsModified = true;
           postAcylAudit = inwardBridgedRingBranchRetouch.audit;
-          onStep?.('Final Inward Bridged Ring Branch Retouch', 'A short acyclic branch folded across consecutive hinges to leave a crowded bridged-ring junction without contacting the cage.', cloneCoords(finalCoords), {
-            movedAtomCount: inwardBridgedRingBranchRetouch.movedAtomIds.length,
-            ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
-            ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount,
-            visibleHeavyBondCrossingFailureCountBefore: currentAudit.visibleHeavyBondCrossingFailureCount,
-            visibleHeavyBondCrossingFailureCountAfter: postAcylAudit.visibleHeavyBondCrossingFailureCount
-          });
+          onStep?.(
+            'Final Inward Bridged Ring Branch Retouch',
+            'A short acyclic branch folded across consecutive hinges to leave a crowded bridged-ring junction without contacting the cage.',
+            cloneCoords(finalCoords),
+            {
+              movedAtomCount: inwardBridgedRingBranchRetouch.movedAtomIds.length,
+              ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
+              ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount,
+              visibleHeavyBondCrossingFailureCountBefore: currentAudit.visibleHeavyBondCrossingFailureCount,
+              visibleHeavyBondCrossingFailureCountAfter: postAcylAudit.visibleHeavyBondCrossingFailureCount
+            }
+          );
         }
       }
       if (
@@ -18277,19 +18339,22 @@ export function runPipeline(molecule, options = {}) {
         finalCoords = crowdedRingBranchRouting.coords;
         finalCoordsModified = true;
         postAcylAudit = crowdedRingBranchRouting.audit;
-        onStep?.('Final Crowded Ring Branch Routing', 'Coupled ring-attached branches rotated across consecutive hinges to clear a trapped contact and restore an outward substituent exit.', cloneCoords(finalCoords), {
-          movedAtomCount: crowdedRingBranchRouting.movedAtomIds.length,
-          severeOverlapCountBefore: currentAudit.severeOverlapCount,
-          severeOverlapCountAfter: postAcylAudit.severeOverlapCount,
-          ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
-          ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount
-        });
+        onStep?.(
+          'Final Crowded Ring Branch Routing',
+          'Coupled ring-attached branches rotated across consecutive hinges to clear a trapped contact and restore an outward substituent exit.',
+          cloneCoords(finalCoords),
+          {
+            movedAtomCount: crowdedRingBranchRouting.movedAtomIds.length,
+            severeOverlapCountBefore: currentAudit.severeOverlapCount,
+            severeOverlapCountAfter: postAcylAudit.severeOverlapCount,
+            ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
+            ringSubstituentReadabilityFailureCountAfter: postAcylAudit.ringSubstituentReadabilityFailureCount
+          }
+        );
       }
     });
   }
-  const finalFusedClosureJunction = timeFinalRetouch('finalFusedClosureJunction', () =>
-    maybeRetouchFinalFusedClosureJunction(layoutGraph, finalCoords, placement, normalizedOptions.bondLength)
-  );
+  const finalFusedClosureJunction = timeFinalRetouch('finalFusedClosureJunction', () => maybeRetouchFinalFusedClosureJunction(layoutGraph, finalCoords, placement, normalizedOptions.bondLength));
   if (finalFusedClosureJunction.changed) {
     const currentAudit = auditLayout(layoutGraph, finalCoords, {
       bondLength: normalizedOptions.bondLength,

@@ -318,8 +318,11 @@ const MIXED_ACYL_BRANCH_CONTACT_MAX_PASSES = 3;
 const TERMINAL_CARBON_RING_LEAF_CROSSING_ESCAPE_OFFSETS = Object.freeze(Array.from({ length: 19 }, (_value, index) => ((index + 1) * Math.PI) / 36).flatMap(offset => [offset, -offset]));
 const RING_SUBSTITUENT_BRANCH_CROSSING_ROTATION_OFFSETS = Object.freeze([10, 15, 20, 25, 30, 45, 60, 90, 120, 150, 180].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180]));
 const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS = 32;
+const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_MOVED_HEAVY_ATOMS = 4;
 const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_DESCRIPTOR_COUNT = 4;
 const RING_SUBSTITUENT_BRANCH_CROSSING_MAX_PAIR_DESCRIPTOR_COUNT = 2;
+const MIXED_PAIRED_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS = 64;
+const MIXED_PAIRED_BRANCH_CROSSING_MAX_MOVED_HEAVY_ATOMS = 12;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_MAX_LAYOUT_HEAVY_ATOMS = 140;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_LAYOUT_HEAVY_ATOMS = 700;
 const RING_SUBSTITUENT_BOUNDED_READABILITY_LARGE_MAX_FAILURES = 3;
@@ -1956,7 +1959,18 @@ function resolveTerminalCarbonChainLeafRingContacts(layoutGraph, coords, bondLen
   return { changed };
 }
 
-function ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtomId, rootAtomId) {
+/**
+ * Describes a movable acyclic branch rooted at a ring atom for bounded
+ * crossing relief.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} rootAtomId - First acyclic branch atom ID.
+ * @param {{maxMovedHeavyAtoms?: number}} [options] - Branch-size limit.
+ * @returns {{anchorAtomId: string, rootAtomId: string, movedAtomIds: string[]}|null} Branch descriptor.
+ */
+function ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtomId, rootAtomId, options = {}) {
+  const maxMovedHeavyAtoms = options.maxMovedHeavyAtoms ?? RING_SUBSTITUENT_BRANCH_CROSSING_MAX_MOVED_HEAVY_ATOMS;
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   const rootAtom = layoutGraph.atoms.get(rootAtomId);
   if (
@@ -1982,7 +1996,7 @@ function ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtom
   if (
     movedAtomIds.length === 0 ||
     (layoutGraph.options.preserveFixed !== false && movedAtomIds.some(atomId => layoutGraph.fixedCoords?.has(atomId))) ||
-    heavyAtomCountInIds(layoutGraph, movedAtomIds) > 4
+    heavyAtomCountInIds(layoutGraph, movedAtomIds) > maxMovedHeavyAtoms
   ) {
     return null;
   }
@@ -2495,17 +2509,23 @@ export function resolveRingSubstituentBoundedReadability(layoutGraph, coords, bo
  * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
  * @param {Map<string, 'planar'|'bridged'|'haptic'>} bondValidationClasses - Current validation classes.
  * @param {number} bondLength - Target bond length.
- * @param {{fastAcceptClean?: boolean}} [options] - Optional final-retouch fast acceptance controls.
+ * @param {{fastAcceptClean?: boolean, maxLayoutHeavyAtoms?: number, maxMovedHeavyAtoms?: number, pairedOnly?: boolean, requireVisibleCrossing?: boolean}} [options] - Optional bounded-search controls.
  * @returns {{changed: boolean}} Whether any branch was adjusted.
  */
 export function resolveRingSubstituentBranchCrossings(layoutGraph, coords, bondValidationClasses, bondLength, options = {}) {
   const fastAcceptClean = options.fastAcceptClean === true;
-  if (heavyAtomCountInIds(layoutGraph, [...coords.keys()]) > RING_SUBSTITUENT_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS) {
+  const maxLayoutHeavyAtoms = options.maxLayoutHeavyAtoms ?? RING_SUBSTITUENT_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS;
+  const maxMovedHeavyAtoms = options.maxMovedHeavyAtoms ?? RING_SUBSTITUENT_BRANCH_CROSSING_MAX_MOVED_HEAVY_ATOMS;
+  const pairedOnly = options.pairedOnly === true;
+  if (heavyAtomCountInIds(layoutGraph, [...coords.keys()]) > maxLayoutHeavyAtoms) {
     return { changed: false };
   }
 
   let changed = false;
   let baseAudit = auditMixedPlacement(layoutGraph, { coords, bondValidationClasses }, bondLength);
+  if (options.requireVisibleCrossing === true && (baseAudit.visibleHeavyBondCrossingCount ?? 0) === 0) {
+    return { changed: false };
+  }
   const descriptors = [];
 
   for (const anchorAtomId of coords.keys()) {
@@ -2514,7 +2534,7 @@ export function resolveRingSubstituentBranchCrossings(layoutGraph, coords, bondV
         continue;
       }
       const rootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
-      const descriptor = ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtomId, rootAtomId);
+      const descriptor = ringSubstituentBranchCrossingDescriptor(layoutGraph, coords, anchorAtomId, rootAtomId, { maxMovedHeavyAtoms });
       if (descriptor && ringSubstituentBranchNeedsRelief(layoutGraph, coords, descriptor, bondLength)) {
         descriptors.push(descriptor);
       }
@@ -2531,49 +2551,51 @@ export function resolveRingSubstituentBranchCrossings(layoutGraph, coords, bondV
       compareCanonicalIds(firstDescriptor.rootAtomId, secondDescriptor.rootAtomId, layoutGraph.canonicalAtomRank)
   );
 
-  for (const descriptor of descriptors) {
-    const incumbent = ringSubstituentBranchCandidateScore(layoutGraph, coords, baseAudit, descriptor, bondLength);
-    let bestCandidate = incumbent;
+  if (!pairedOnly) {
+    for (const descriptor of descriptors) {
+      const incumbent = ringSubstituentBranchCandidateScore(layoutGraph, coords, baseAudit, descriptor, bondLength);
+      let bestCandidate = incumbent;
 
-    for (const candidateRecord of buildRingSubstituentBranchCandidateRecords(layoutGraph, coords, descriptor, bondLength)) {
-      if (!candidateRecord.coords) {
-        continue;
-      }
-      const candidateAudit = auditMixedPlacement(layoutGraph, { coords: candidateRecord.coords, bondValidationClasses }, bondLength);
-      if (!ringSubstituentBranchAuditDoesNotRegress(candidateAudit, baseAudit)) {
-        continue;
-      }
-      if (fastAcceptClean && canFastAcceptCleanFinalBranchCandidate(candidateAudit, baseAudit)) {
-        overwriteCoordMap(coords, candidateRecord.coords);
-        return { changed: true };
-      }
-      const candidate = ringSubstituentBranchCandidateScore(
-        layoutGraph,
-        candidateRecord.coords,
-        candidateAudit,
-        descriptor,
-        bondLength,
-        totalRingSubstituentBranchMove(coords, candidateRecord.coords, descriptor.movedAtomIds),
-        candidateRecord.rotationMagnitude
-      );
-      if (
-        (candidate.globalCrossingCount < incumbent.globalCrossingCount ||
-          candidate.localCrossingCount < incumbent.localCrossingCount ||
-          candidate.failingSubstituentCount < incumbent.failingSubstituentCount ||
-          candidate.inwardSubstituentCount < incumbent.inwardSubstituentCount) &&
-        compareRingSubstituentBranchCandidates(candidate, bestCandidate) < 0
-      ) {
-        bestCandidate = candidate;
-        if (isResolvedRingSubstituentBranchCandidate(candidate)) {
-          break;
+      for (const candidateRecord of buildRingSubstituentBranchCandidateRecords(layoutGraph, coords, descriptor, bondLength)) {
+        if (!candidateRecord.coords) {
+          continue;
+        }
+        const candidateAudit = auditMixedPlacement(layoutGraph, { coords: candidateRecord.coords, bondValidationClasses }, bondLength);
+        if (!ringSubstituentBranchAuditDoesNotRegress(candidateAudit, baseAudit)) {
+          continue;
+        }
+        if (fastAcceptClean && canFastAcceptCleanFinalBranchCandidate(candidateAudit, baseAudit)) {
+          overwriteCoordMap(coords, candidateRecord.coords);
+          return { changed: true };
+        }
+        const candidate = ringSubstituentBranchCandidateScore(
+          layoutGraph,
+          candidateRecord.coords,
+          candidateAudit,
+          descriptor,
+          bondLength,
+          totalRingSubstituentBranchMove(coords, candidateRecord.coords, descriptor.movedAtomIds),
+          candidateRecord.rotationMagnitude
+        );
+        if (
+          (candidate.globalCrossingCount < incumbent.globalCrossingCount ||
+            candidate.localCrossingCount < incumbent.localCrossingCount ||
+            candidate.failingSubstituentCount < incumbent.failingSubstituentCount ||
+            candidate.inwardSubstituentCount < incumbent.inwardSubstituentCount) &&
+          compareRingSubstituentBranchCandidates(candidate, bestCandidate) < 0
+        ) {
+          bestCandidate = candidate;
+          if (isResolvedRingSubstituentBranchCandidate(candidate)) {
+            break;
+          }
         }
       }
-    }
 
-    if (bestCandidate.coords !== coords) {
-      overwriteCoordMap(coords, bestCandidate.coords);
-      baseAudit = bestCandidate.audit;
-      changed = true;
+      if (bestCandidate.coords !== coords) {
+        overwriteCoordMap(coords, bestCandidate.coords);
+        baseAudit = bestCandidate.audit;
+        changed = true;
+      }
     }
   }
 
@@ -24145,6 +24167,26 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
     coords,
     bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false })
   };
+}
+
+/**
+ * Tries a bounded coordinated rotation after stereo resolution exposes a safe
+ * joint orientation for two crossed ring substituents. The expanded branch
+ * cap is available only to the paired search; single-branch retouches retain
+ * their smaller default scope.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}} placement - Mixed placement candidate.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether a clean paired orientation was found.
+ */
+export function resolveMixedPairedBranchCrossings(layoutGraph, placement, bondLength) {
+  return resolveRingSubstituentBranchCrossings(layoutGraph, placement.coords, placement.bondValidationClasses, bondLength, {
+    fastAcceptClean: true,
+    maxLayoutHeavyAtoms: MIXED_PAIRED_BRANCH_CROSSING_MAX_LAYOUT_HEAVY_ATOMS,
+    maxMovedHeavyAtoms: MIXED_PAIRED_BRANCH_CROSSING_MAX_MOVED_HEAVY_ATOMS,
+    pairedOnly: true,
+    requireVisibleCrossing: true
+  });
 }
 
 /**
