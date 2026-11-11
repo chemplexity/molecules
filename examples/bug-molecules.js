@@ -675,5 +675,6 @@ export const bugMolecules = [
   '[H][C@]12N=C(O)O[C@]1(C)[C@@]([H])(CC)OC(=O)[C@]([H])(C)C(=O)[C@]([H])(C)[C@@]([H])(O[C@]1([H])O[C@]([H])(C)C[C@]([H])(N(C)C)[C@@]1([H])O)[C@@](C)(C[C@@]([H])(C)C(=O)[C@]2([H])C)OCC=CC1=CC2=CC=CC=C2N=C1',
   '[H][C@@]12CCCCN1C(=O)C(=O)C(C)(C)COC(=O)CCCCCCCCCCCOC2=O',
   '[H][C@]12N(CCCCN3C=C(N=N3)C3=CC(N)=CC=C3)C(=O)O[C@]1(C)[C@@]([H])(CC)OC(=O)[C@@](C)(F)C(=O)[C@]([H])(C)[C@@]([H])(O[C@]1([H])O[C@]([H])(C)C[C@]([H])(N(C)C)[C@@]1([H])O)[C@@](C)(C[C@@]([H])(C)C(=O)[C@]2([H])C)OC',
-  String.raw`CCCCC\C=C\C=C/C(=O)O[C@H]1[C@H](O)[C@@H](C)[C@@](C)(CCC(=C)C=C)[C@@H]2C[C@@H](O)C=C3[C@@H](OC(=O)C)O[C@H](OC(=O)C)[C@@]123`
+  String.raw`CCCCC\C=C\C=C/C(=O)O[C@H]1[C@H](O)[C@@H](C)[C@@](C)(CCC(=C)C=C)[C@@H]2C[C@@H](O)C=C3[C@@H](OC(=O)C)O[C@H](OC(=O)C)[C@@]123`,
+  'CCC(O)C1C2C(N)CN1CC2C(C)N(C)C'
 ];

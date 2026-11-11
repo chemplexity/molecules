@@ -15,6 +15,7 @@ import { isMetalAtom } from '../topology/metal-centers.js';
 import { collectCutSubtree } from '../cleanup/subtree-utils.js';
 
 const COMPACT_BRIDGED_KK_THRESHOLD = 0.02;
+const COMPACT_SHARED_PATH_BRIDGED_KK_THRESHOLD = 0.01;
 const COMPACT_BRIDGED_NONBONDED_COLLAPSE_FACTOR = 0.8;
 const COLLAPSED_FOUR_MEMBERED_BRIDGE_APEX_FACTOR = 0.2;
 const COMPACT_SHARED_BRIDGE_LANE_SPREAD_FACTORS = Object.freeze([1.28, 1.3, 1.32, 1.34, 1.36, 1.38]);
@@ -149,6 +150,22 @@ function compactBridgedKamadaKawaiOptions(atomIds) {
     ...bridgedKamadaKawaiOptions(atomIds),
     threshold: COMPACT_BRIDGED_KK_THRESHOLD,
     innerThreshold: COMPACT_BRIDGED_KK_THRESHOLD
+  };
+}
+
+/**
+ * Returns a tighter solve for two compact five-rings that share a three-atom
+ * bridge path. These seeds can sit just outside the bridged bond limits at the
+ * ordinary compact threshold, after which stylized projection may collapse
+ * several otherwise recoverable cage bonds.
+ * @param {string[]} atomIds - Bridged-system atom IDs.
+ * @returns {object} Bounded KK overrides for a compact shared-path cage.
+ */
+function compactSharedPathBridgedKamadaKawaiOptions(atomIds) {
+  return {
+    ...bridgedKamadaKawaiOptions(atomIds),
+    threshold: COMPACT_SHARED_PATH_BRIDGED_KK_THRESHOLD,
+    innerThreshold: COMPACT_SHARED_PATH_BRIDGED_KK_THRESHOLD
   };
 }
 
@@ -5528,15 +5545,18 @@ function buildBridgedSeed(rings, bondLength, options) {
     kkSeeds.coords = projectBridgePaths(options.layoutGraph, atomIds, buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength), bondLength).coords;
   }
   const useTightBridgeLaneSeed = isAromaticFusedBridgeLaneFirstBridgedSystem(options.layoutGraph, rings, atomIds);
+  const useTightSharedPathSeed = compactSharedPathFiveRingAtomIds(options.layoutGraph, rings, atomIds) != null;
   let kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
     bondLength,
     coords: kkSeeds.coords,
     pinnedAtomIds: kkSeeds.pinnedAtomIds,
     ...(useTightBridgeLaneSeed
       ? compactBridgedKamadaKawaiOptions(atomIds)
-      : shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)
-        ? bridgedProjectionSeededKamadaKawaiOptions(atomIds)
-        : bridgedKamadaKawaiOptions(atomIds))
+      : useTightSharedPathSeed
+        ? compactSharedPathBridgedKamadaKawaiOptions(atomIds)
+        : shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)
+          ? bridgedProjectionSeededKamadaKawaiOptions(atomIds)
+          : bridgedKamadaKawaiOptions(atomIds))
   });
   if (hasCompactBridgedNonbondedCollapse(options.layoutGraph, atomIds, kkResult.coords, bondLength)) {
     kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {

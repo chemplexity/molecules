@@ -241,3 +241,97 @@ import { assertFiniteHeavyCoordinates } from '../support/layout-assertions.js';
     });
   });
 }
+
+{
+  const SUBSTITUTED_AMINO_CAGE = 'CCC(O)C1C2C(N)CN1CC2C(C)N(C)C';
+  const ISOLATED_AMINO_CAGE = 'C1C2C(N)CN1CC2C(C)N(C)C';
+
+  /**
+   * Requires complete, bond-clean projected geometry for an amino cage.
+   * @param {object} result - Generated or refined layout result.
+   * @param {number} expectedProjectedCrossings - Expected accepted raw crossing count.
+   * @returns {void}
+   */
+  function assertCleanAminoCage(result, expectedProjectedCrossings) {
+    const audit = result.metadata.audit;
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, expectedProjectedCrossings);
+    assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.labelOverlapCount, 0);
+    assert.equal(audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(audit.missingCoordinateCount, 0);
+    assert.equal(audit.nonfiniteCoordinateCount, 0);
+    assert.equal(audit.stereoContradiction, false);
+    assert.equal(audit.fallback.mode, null);
+    assertFiniteHeavyCoordinates(result);
+  }
+
+  describe('compact shared-path amino-cage projection', () => {
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const suppressH of [true, false]) {
+        it(`keeps substituted cage bonds sound through refinement at scale ${bondLength} with suppressH=${suppressH}`, () => {
+          const molecule = parseSMILES(SUBSTITUTED_AMINO_CAGE);
+          const sourceBefore = [...molecule.atoms].map(([atomId, atom]) => [atomId, atom.x, atom.y]);
+          const generated = generateCoords(molecule, { bondLength, suppressH, auditTelemetry: true });
+          const generatedBefore = structuredClone(generated.coords);
+          const refined = refineCoords(parseSMILES(SUBSTITUTED_AMINO_CAGE), {
+            bondLength,
+            suppressH,
+            existingCoords: generated.coords,
+            auditTelemetry: true
+          });
+
+          assert.equal(generated.metadata.stageTelemetry.stageAudits.placement.bondLengthFailureCount, 0);
+          assertCleanAminoCage(generated, 1);
+          assertCleanAminoCage(refined, 1);
+          assert.ok(refined.metadata.audit.bondLengthFailureCount <= generated.metadata.audit.bondLengthFailureCount);
+          assert.ok(refined.metadata.audit.severeOverlapCount <= generated.metadata.audit.severeOverlapCount);
+          assert.deepEqual(generated.coords, generatedBefore);
+          assert.deepEqual(
+            [...molecule.atoms].map(([atomId, atom]) => [atomId, atom.x, atom.y]),
+            sourceBefore
+          );
+        });
+      }
+    }
+
+    it('keeps the isolated amino-cage control clean across scales and hydrogen modes', () => {
+      for (const bondLength of [0.75, 1.5, 3]) {
+        for (const suppressH of [true, false]) {
+          const generated = generateCoords(parseSMILES(ISOLATED_AMINO_CAGE), { bondLength, suppressH, auditTelemetry: true });
+          const refined = refineCoords(parseSMILES(ISOLATED_AMINO_CAGE), {
+            bondLength,
+            suppressH,
+            existingCoords: generated.coords,
+            auditTelemetry: true
+          });
+          assertCleanAminoCage(generated, 0);
+          assertCleanAminoCage(refined, 0);
+        }
+      }
+    });
+
+    it('is deterministic across fresh parses', () => {
+      assert.ok(bugMolecules.includes(SUBSTITUTED_AMINO_CAGE));
+      const first = generateCoords(parseSMILES(SUBSTITUTED_AMINO_CAGE), { auditTelemetry: true });
+      const second = generateCoords(parseSMILES(SUBSTITUTED_AMINO_CAGE), { auditTelemetry: true });
+
+      assertCleanAminoCage(first, 1);
+      assert.deepEqual(second.coords, first.coords);
+    });
+
+    it('preserves an explicit cage anchor without mutating the constraint map', () => {
+      const initial = generateCoords(parseSMILES(SUBSTITUTED_AMINO_CAGE));
+      const fixedCoords = new Map([['C6', { ...initial.coords.get('C6') }]]);
+      const before = structuredClone(fixedCoords);
+      const anchored = generateCoords(parseSMILES(SUBSTITUTED_AMINO_CAGE), { fixedCoords, auditTelemetry: true });
+
+      assertCleanAminoCage(anchored, 1);
+      assert.deepEqual(fixedCoords, before);
+      assert.deepEqual(anchored.layoutGraph.fixedCoords, before);
+      assert.deepEqual(anchored.coords.get('C6'), before.get('C6'));
+    });
+  });
+}

@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-10
+
+- Keep compact shared-path amino cages bond-clean through generation and refinement.
+
 ## 2026-11-09
 
 - Route paired ester exits around stereochemical bridged macrolide cores without disturbing ring geometry.
