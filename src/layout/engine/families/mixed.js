@@ -6090,7 +6090,10 @@ function layoutCompactBridgedSeededKamadaKawaiRescue(layoutGraph, ringSystem, ri
 }
 
 /**
- * Retensions a compact bridged cage around its most distorted perimeter bond.
+ * Retensions a compact bridged cage of two to six rings around its most
+ * distorted perimeter bond. Two rings are sufficient when they share a
+ * multi-atom bridge path, so linked-ring mixed layouts must not exclude that
+ * smallest supported bridged topology.
  * The artificial two-atom anchor fixes the candidate pose without preserving
  * the incumbent bond strain; user-fixed, stereochemical, and metal cages are
  * deliberately left to their constraint-aware owners.
@@ -6111,7 +6114,7 @@ function layoutCompactBridgedConstrainedBondRescue(layoutGraph, ringSystem, ring
     (audit?.severeOverlapCount ?? 0) > 0 ||
     (audit?.visibleHeavyBondCrossingFailureCount ?? 0) > 0 ||
     ringSystem.atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit ||
-    rings.length < 3 ||
+    rings.length < 2 ||
     rings.length > 6 ||
     layoutGraph.fixedCoords.size > 0 ||
     ringSystem.atomIds.some(id => isMetalAtom(layoutGraph.atoms.get(id)) || layoutGraph.atoms.get(id)?.chirality || (layoutGraph.bondsByAtomId.get(id) ?? []).some(bond => bond.stereo))

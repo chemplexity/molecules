@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { generateCoords, refineCoords } from '../../../../src/layout/engine/index.js';
 
@@ -8,6 +9,9 @@ const N_METHYL_FUSED_IMIDE = 'CC(=C1[C@H]2C(=C(C1=O)c3ccccc3)CN4C(=O)N(C)C(=O)[C
 const SATURATED_CONTROL = 'CC1[C@H]2C(=C(C1=O)c3ccccc3)CN4C(=O)N(C)C(=O)[C@]24Cc5ccc(cc5)C(F)(F)F';
 const TRIMMED_CONTROL = 'CC(=C1[C@H]2C(=C(C1=O)c3ccccc3)CN4C(=O)N(C)C(=O)[C@]24C)C';
 const CASES = [FUSED_IMIDE, N_METHYL_FUSED_IMIDE, SATURATED_CONTROL, TRIMMED_CONTROL];
+const HETEROARYL_BRIDGED_DIAMINE = 'CC1CCN2CCNC1C2C1=CN(C)C(C)=N1';
+const ISOLATED_DIAMINE_CAGE = 'CC1CCN2CCNC1C2';
+const ISOLATED_HETEROARYL_RING = 'C1=CN(C)C(C)=N1';
 
 function assertCleanCompleteLayout(molecule, result) {
   assert.equal(result.metadata.audit.ok, true);
@@ -80,5 +84,81 @@ describe('mixed linked-ring rigid placed-block balancing', () => {
     const first = generateCoords(parseSMILES(FUSED_IMIDE));
     const second = generateCoords(parseSMILES(FUSED_IMIDE));
     assert.deepEqual(first.coords, second.coords);
+  });
+});
+
+describe('mixed two-ring bridged bond rescue', () => {
+  for (const bondLength of [0.75, 1.5, 3]) {
+    for (const suppressH of [true, false]) {
+      it(`keeps the linked bridged cage sound through refinement at scale ${bondLength} with suppressH=${suppressH}`, () => {
+        const molecule = parseSMILES(HETEROARYL_BRIDGED_DIAMINE);
+        const moleculeBefore = [...molecule.atoms].map(([atomId, atom]) => [atomId, atom.x, atom.y]);
+        const generated = generateCoords(molecule, { bondLength, suppressH, auditTelemetry: true });
+        const generatedBefore = structuredClone(generated.coords);
+        const refinedMolecule = parseSMILES(HETEROARYL_BRIDGED_DIAMINE);
+        const refined = refineCoords(refinedMolecule, {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        assert.equal(generated.metadata.stageTelemetry.stageAudits.placement.bondLengthFailureCount, 0);
+        assertCleanCompleteLayout(molecule, generated);
+        assertCleanCompleteLayout(refinedMolecule, refined);
+        assert.equal(generated.metadata.audit.visibleHeavyBondCrossingCount, 1);
+        assert.equal(refined.metadata.audit.visibleHeavyBondCrossingCount, 1);
+        assert.equal(generated.metadata.audit.fallback.mode, null);
+        assert.equal(refined.metadata.audit.fallback.mode, null);
+        assert.deepEqual(generated.coords, generatedBefore);
+        assert.deepEqual(
+          [...molecule.atoms].map(([atomId, atom]) => [atomId, atom.x, atom.y]),
+          moleculeBefore
+        );
+      });
+    }
+  }
+
+  it('keeps the isolated cage and heteroaryl controls clean across scales and hydrogen modes', () => {
+    for (const smiles of [ISOLATED_DIAMINE_CAGE, ISOLATED_HETEROARYL_RING]) {
+      for (const bondLength of [0.75, 1.5, 3]) {
+        for (const suppressH of [true, false]) {
+          const generatedMolecule = parseSMILES(smiles);
+          const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+          const refinedMolecule = parseSMILES(smiles);
+          const refined = refineCoords(refinedMolecule, {
+            bondLength,
+            suppressH,
+            existingCoords: generated.coords,
+            auditTelemetry: true
+          });
+
+          assertCleanCompleteLayout(generatedMolecule, generated);
+          assertCleanCompleteLayout(refinedMolecule, refined);
+        }
+      }
+    }
+  });
+
+  it('is cataloged once and deterministic across fresh parses', () => {
+    assert.equal(bugMolecules.filter(smiles => smiles === HETEROARYL_BRIDGED_DIAMINE).length, 1);
+    const first = generateCoords(parseSMILES(HETEROARYL_BRIDGED_DIAMINE), { auditTelemetry: true });
+    const second = generateCoords(parseSMILES(HETEROARYL_BRIDGED_DIAMINE), { auditTelemetry: true });
+
+    assertCleanCompleteLayout(first.molecule, first);
+    assert.deepEqual(second.coords, first.coords);
+  });
+
+  it('preserves an explicit cage anchor without mutating the constraint map', () => {
+    const initial = generateCoords(parseSMILES(HETEROARYL_BRIDGED_DIAMINE));
+    const fixedCoords = new Map([['C2', { ...initial.coords.get('C2') }]]);
+    const before = structuredClone(fixedCoords);
+    const molecule = parseSMILES(HETEROARYL_BRIDGED_DIAMINE);
+    const anchored = generateCoords(molecule, { fixedCoords, auditTelemetry: true });
+
+    assertCleanCompleteLayout(molecule, anchored);
+    assert.deepEqual(fixedCoords, before);
+    assert.deepEqual(anchored.layoutGraph.fixedCoords, before);
+    assert.deepEqual(anchored.coords.get('C2'), before.get('C2'));
   });
 });

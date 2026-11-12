@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-11
+
+- Retension compact two-ring bridged cores before attaching linked ring systems.
+
 ## 2026-11-10
 
 - Keep compact shared-path amino cages bond-clean through generation and refinement.
