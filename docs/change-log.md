@@ -1,7 +1,13 @@
 # Change Log
 
+## 2026-11-12
+
+- Keep compact bridged polyol bonds sound with explicit hydrogens.
+- Keep dense fused carbon-cage projections independent of hydrogen visibility.
+
 ## 2026-11-11
 
+- Preserve projected metal-macrocycle bond validation during refinement.
 - Retension compact two-ring bridged cores before attaching linked ring systems.
 
 ## 2026-11-10

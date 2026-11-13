@@ -12,6 +12,7 @@ import { buildSliceAdjacency, classifyAtomSliceFamily, createAtomSlice, layoutAt
 import { organometallicArrangementSpecs, organometallicGeometryKind } from './organometallic-geometry.js';
 
 const TRIGONAL_ANCHOR_ANGLE = (2 * Math.PI) / 3;
+const CLUSTER_LIGAND_SLOT_COUNT = 12;
 
 function isMetalAtom(layoutGraph, atomId) {
   return isMetalSourceAtom(layoutGraph.sourceMolecule.atoms.get(atomId));
@@ -256,10 +257,12 @@ function packMonodentateLigand(layoutGraph, coords, anchorAtomIds, specs, index,
     const angle = specs[slotIndex].angle;
     const target = add(metalPosition, fromAngle(angle, bondLength));
     const base = transformFragment(coords, anchorAtomIds, target, angle);
-    const mirrored = new Map([...base].map(([atomId, position]) => {
-      const local = rotate(sub(position, target), -angle);
-      return [atomId, add(target, rotate({ x: local.x, y: -local.y }, angle))];
-    }));
+    const mirrored = new Map(
+      [...base].map(([atomId, position]) => {
+        const local = rotate(sub(position, target), -angle);
+        return [atomId, add(target, rotate({ x: local.x, y: -local.y }, angle))];
+      })
+    );
     for (const candidate of [base, mirrored]) {
       const score = scoreFragmentAgainstExisting(layoutGraph, candidate, existingCoords, bondLength);
       if (score < bestScore - 1e-9) {
@@ -374,6 +377,9 @@ function isBetterOrganometallicPlacement(candidateAudit, incumbentAudit) {
   if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
     return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
   }
+  if (candidateAudit.labelOverlapCount !== incumbentAudit.labelOverlapCount) {
+    return candidateAudit.labelOverlapCount < incumbentAudit.labelOverlapCount;
+  }
   return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation - 1e-9;
 }
 
@@ -406,6 +412,19 @@ function scoreClusterLigandPosition(position, existingCoords, frameworkCentroid,
   return (Number.isFinite(minDistance) ? minDistance : 0) + centroidDistance * 0.25;
 }
 
+function clusterLigandPositionHasClearance(position, existingCoords, anchorIds, bondLength) {
+  const anchorIdSet = new Set(anchorIds);
+  for (const [atomId, otherPosition] of existingCoords) {
+    if (anchorIdSet.has(atomId)) {
+      continue;
+    }
+    if (distance(position, otherPosition) < bondLength * SEVERE_OVERLAP_FACTOR) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function angularDistance(firstAngle, secondAngle) {
   let difference = Math.abs(firstAngle - secondAngle);
   while (difference > Math.PI) {
@@ -414,20 +433,33 @@ function angularDistance(firstAngle, secondAngle) {
   return difference;
 }
 
-function placeSingleAnchorClusterLigands(recordGroup, metalPosition, frameworkCentroid, bondLength) {
+function placeSingleAnchorClusterLigands(recordGroup, metalPosition, frameworkCentroid, bondLength, existingCoords = new Map(), anchorId = null) {
   const outward = normalize(sub(metalPosition, frameworkCentroid));
   const baseDirection = Math.hypot(outward.x, outward.y) <= 1e-12 ? { x: 1, y: 0 } : outward;
   const orderedRecords = sortRecordsByCanonicalId(recordGroup);
   const placements = [];
-  const centerIndex = (orderedRecords.length - 1) / 2;
+  const occupiedCoords = new Map(existingCoords);
+  const baseAngle = angleOf(baseDirection);
+  const slotAngles = Array.from({ length: CLUSTER_LIGAND_SLOT_COUNT }, (_, index) => baseAngle + index * ((Math.PI * 2) / CLUSTER_LIGAND_SLOT_COUNT));
 
-  for (let index = 0; index < orderedRecords.length; index++) {
-    const step = index - centerIndex;
-    const direction = rotate(baseDirection, step * ORGANOMETALLIC_RESCUE_LIMITS.singleAnchorSpreadStep);
-    placements.push({
-      atomId: orderedRecords[index].atomIds[0],
-      position: add(metalPosition, scale(direction, bondLength))
-    });
+  for (const record of orderedRecords) {
+    let bestCandidate = null;
+    for (let slotIndex = 0; slotIndex < slotAngles.length; slotIndex++) {
+      const position = add(metalPosition, fromAngle(slotAngles[slotIndex], bondLength));
+      const anchorIds = anchorId ? [anchorId] : [];
+      const hasClearance = clusterLigandPositionHasClearance(position, occupiedCoords, anchorIds, bondLength);
+      const score = scoreClusterLigandPosition(position, occupiedCoords, frameworkCentroid, anchorIds) + (hasClearance ? 1e6 : 0);
+      if (!bestCandidate || score > bestCandidate.score + 1e-9) {
+        bestCandidate = { position, score, slotIndex };
+      }
+    }
+    if (!bestCandidate) {
+      continue;
+    }
+    const atomId = record.atomIds[0];
+    placements.push({ atomId, position: bestCandidate.position });
+    occupiedCoords.set(atomId, bestCandidate.position);
+    slotAngles.splice(bestCandidate.slotIndex, 1);
   }
 
   return placements;
@@ -445,7 +477,8 @@ function placeDoubleAnchorClusterLigands(recordGroup, anchorIds, frameworkCoords
   const edgeVector = sub(secondAnchorPosition, firstAnchorPosition);
   const edgeLength = distance(firstAnchorPosition, secondAnchorPosition);
   const perpendicular = normalize(perpLeft(edgeVector));
-  const offsetLength = Math.sqrt(Math.max(bondLength ** 2 - edgeLength ** 2 / 4, 0));
+  const exactOffsetLength = Math.sqrt(Math.max(bondLength ** 2 - edgeLength ** 2 / 4, 0));
+  const offsetLength = exactOffsetLength > 1e-9 ? exactOffsetLength : bondLength;
   const firstCandidate = add(midpoint, scale(perpendicular, offsetLength));
   const secondCandidate = add(midpoint, scale(perpendicular, -offsetLength));
   const orderedRecords = sortRecordsByCanonicalId(recordGroup);
@@ -642,7 +675,7 @@ function snapTerminalMetalTrigonalAnchors(layoutGraph, coords, metalAtomIds, bon
 }
 
 function shouldTryMetalFrameworkRescue(metalAtomIds, fragmentRecords, incumbentAudit) {
-  if (!incumbentAudit || incumbentAudit.bondLengthFailureCount <= 0) {
+  if (!incumbentAudit || (incumbentAudit.bondLengthFailureCount <= 0 && incumbentAudit.severeOverlapCount <= 0 && incumbentAudit.labelOverlapCount <= 0)) {
     return false;
   }
   if (metalAtomIds.length < ORGANOMETALLIC_RESCUE_LIMITS.frameworkMinMetalCount || fragmentRecords.length === 0) {
@@ -854,7 +887,7 @@ function layoutOctahedralMetalClusterRescue(layoutGraph, participantAtomIds, met
     const anchorIds = key.split('|').filter(Boolean);
     const orderedRecords = sortRecordsByCanonicalId(recordGroup);
     if (anchorIds.length === 1) {
-      const placements = placeSingleAnchorClusterLigands(orderedRecords, coords.get(anchorIds[0]), frameworkCentroid, bondLength);
+      const placements = placeSingleAnchorClusterLigands(orderedRecords, coords.get(anchorIds[0]), frameworkCentroid, bondLength, coords, anchorIds[0]);
       for (const placement of placements) {
         coords.set(placement.atomId, placement.position);
       }
@@ -1234,7 +1267,7 @@ function layoutMetalFrameworkRescue(layoutGraph, participantAtomIds, metalAtomId
     const anchorIds = key.split('|').filter(Boolean);
     const placements =
       anchorIds.length === 1
-        ? placeSingleAnchorClusterLigands(recordGroup, metalFramework.coords.get(anchorIds[0]), frameworkCentroid, bondLength)
+        ? placeSingleAnchorClusterLigands(recordGroup, metalFramework.coords.get(anchorIds[0]), frameworkCentroid, bondLength, coords, anchorIds[0])
         : placeDoubleAnchorClusterLigands(recordGroup, anchorIds, metalFramework.coords, coords, frameworkCentroid, bondLength);
     for (const placement of placements) {
       coords.set(placement.atomId, placement.position);
@@ -1302,9 +1335,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
         return null;
       }
 
-      const packedCoords = packLigands
-        ? packMonodentateLigand(layoutGraph, ligandLayout.coords, record.anchorAtomIds, specs, index, provisionalMetalPosition, fragmentCoords, bondLength)
-        : null;
+      const packedCoords = packLigands ? packMonodentateLigand(layoutGraph, ligandLayout.coords, record.anchorAtomIds, specs, index, provisionalMetalPosition, fragmentCoords, bondLength) : null;
       const spec = specs[index] ?? { angle: 0, displayType: null };
       const targetAnchorCenter = add(provisionalMetalPosition, fromAngle(spec.angle, bondLength));
       const transformed = packedCoords ?? chooseTransformedFragment(layoutGraph, ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle, fragmentCoords, bondLength);
@@ -1458,8 +1489,10 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
   // named coordination geometries, chelates, haptic ligands and fixed poses out.
   if (
     (bestAudit.severeOverlapCount > 0 || bestAudit.visibleHeavyBondCrossingCount > 0) &&
-    metalAtomIds.length === 1 && participantAtomIds.length <= 128 &&
-    fragmentRecords.length >= 3 && fragmentRecords.length <= 6 &&
+    metalAtomIds.length === 1 &&
+    participantAtomIds.length <= 128 &&
+    fragmentRecords.length >= 3 &&
+    fragmentRecords.length <= 6 &&
     fragmentRecords.every(record => record.anchorAtomIds.length === 1 && record.anchorMetalIds.length === 1) &&
     coordinationGeometryKind(layoutGraph, metalAtomIds[0], fragmentRecords) === 'generic' &&
     !(layoutGraph.options.preserveFixed !== false && participantAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId)))
@@ -1467,7 +1500,8 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
     const packedPlacement = layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomIds, metalAtomIds, fragmentRecords, bondLength, ligandLayouts, true);
     const packedAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, packedPlacement, bondLength);
     if (
-      packedAudit?.ok && packedAudit.visibleHeavyBondCrossingCount === 0 &&
+      packedAudit?.ok &&
+      packedAudit.visibleHeavyBondCrossingCount === 0 &&
       packedAudit.labelOverlapCount <= bestAudit.labelOverlapCount &&
       packedAudit.maxBondLengthDeviation <= bestAudit.maxBondLengthDeviation + 1e-9
     ) {

@@ -3,6 +3,7 @@
 import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, FUSED_RESCUE_LIMITS } from '../constants.js';
 import { getTemplateById } from '../templates/library.js';
 import { buildScaffoldPlan } from '../model/scaffold-plan.js';
+import { isMetalAtom } from '../topology/metal-centers.js';
 
 /**
  * Returns whether a bond lies fully inside the requested atom set.
@@ -104,7 +105,10 @@ function supportsProjectedFusedFallback(candidate) {
  * bridged/KK candidate. Multiple planar failures are required so an isolated
  * malformed bond cannot relax an otherwise planar scaffold. Fused candidates
  * must also contain both compression and extension, distinguishing a projected
- * cage pose from uniform scaling of an ordinary fused layout.
+ * cage pose from uniform scaling of an ordinary fused layout. Multi-ring metal
+ * macrocycles may also retain projected covalent geometry even when their
+ * coordination-ring basis has only one connection kind; donor links themselves
+ * are excluded from the covalent geometry evidence.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} candidate - Ring-system scaffold candidate.
  * @param {Map<string, {x: number, y: number}>|null} coords - Preserved coordinates.
@@ -116,7 +120,8 @@ function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
   }
   const ringIds = new Set(candidate.ringIds);
   const connectionKinds = new Set(layoutGraph.ringConnections.filter(connection => ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)).map(connection => connection.kind));
-  const projectedHybridMacrocycle = candidate.family === 'macrocycle' && connectionKinds.size >= 2;
+  const projectedMetalMacrocycle = candidate.family === 'macrocycle' && candidate.ringIds.length >= 3 && candidate.atomIds.some(id => isMetalAtom(layoutGraph.sourceMolecule.atoms.get(id)));
+  const projectedHybridMacrocycle = candidate.family === 'macrocycle' && (connectionKinds.size >= 2 || projectedMetalMacrocycle);
   const projectedFusedFallback = supportsProjectedFusedFallback(candidate);
   if (!projectedHybridMacrocycle && !projectedFusedFallback) {
     return false;
@@ -131,6 +136,12 @@ function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
   let sampleCount = 0;
   for (const bond of layoutGraph.bonds.values()) {
     if (!isInternalBond(bond, atomIds)) {
+      continue;
+    }
+    // Coordination links do not participate in the covalent bond-length audit.
+    // Their projected donor radii must not veto reconstruction of the organic
+    // macrocycle's validation class.
+    if (projectedMetalMacrocycle && (bond.kind !== 'covalent' || [bond.a, bond.b].some(id => layoutGraph.atoms.get(id)?.element === 'H'))) {
       continue;
     }
     const first = coords.get(bond.a);
@@ -157,7 +168,7 @@ function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
     planarFailureCount >= 2 &&
     sampleCount > 0 &&
     totalDeviation / sampleCount <= BRIDGED_VALIDATION.maxMeanDeviation &&
-    (!projectedFusedFallback || (compressedPlanarFailureCount > 0 && stretchedPlanarFailureCount > 0))
+    (!(projectedFusedFallback || projectedMetalMacrocycle) || (compressedPlanarFailureCount > 0 && stretchedPlanarFailureCount > 0))
   );
 }
 

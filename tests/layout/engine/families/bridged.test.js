@@ -1,9 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
 import { layoutBridgedFamily } from '../../../../src/layout/engine/families/bridged.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
+import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../../../src/layout/engine/audit/invariants.js';
@@ -15,6 +17,8 @@ import { makeAdamantane, makeBicyclo222, makeNorbornane, makeUnmatchedBridgedCag
 
 const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
 const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+const BRIDGED_POLYOL = 'CC1NCC2OC1C1OCC(C)(CO1)C2O';
+const RING_OPENED_POLYOL = 'CC1NCC(O)C1OCC(C)(CO)O';
 
 /**
  * Asserts that a bridged-family placement stays finite and free of severe overlaps,
@@ -322,6 +326,70 @@ describe('layout/engine/families/bridged', () => {
     assert.equal(audit.severeOverlapCount, 0);
     assert.ok(audit.bondLengthFailureCount <= 1, `expected compact bridged ether cage to avoid multiple stretched ring bonds, got ${audit.bondLengthFailureCount}`);
     assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.5, `expected compact bridged ether cage bond deviation to stay bounded, got ${audit.maxBondLengthDeviation.toFixed(3)}`);
+  });
+
+  for (const bondLength of [0.75, 1.5, 3]) {
+    for (const suppressH of [true, false]) {
+      it(`keeps bridged polyol bonds sound at scale ${bondLength} with suppressH=${suppressH}`, () => {
+        const generatedMolecule = parseSMILES(BRIDGED_POLYOL);
+        const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+        const repeated = generateCoords(parseSMILES(BRIDGED_POLYOL), { bondLength, suppressH, auditTelemetry: true });
+        const generatedCoordsBeforeRefine = structuredClone(generated.coords);
+        const refinedMolecule = parseSMILES(BRIDGED_POLYOL);
+        const refined = refineCoords(refinedMolecule, {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        assert.deepEqual(repeated.coords, generated.coords);
+        assert.deepEqual(generated.coords, generatedCoordsBeforeRefine);
+        for (const [molecule, result] of [
+          [generatedMolecule, generated],
+          [refinedMolecule, refined]
+        ]) {
+          assert.equal(result.metadata.audit.ok, true);
+          assert.equal(result.metadata.audit.severeOverlapCount, 0);
+          assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+          assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+          assert.equal(result.metadata.audit.fallback.mode, null);
+          for (const atom of molecule.atoms.values()) {
+            if (atom.name === 'H') {
+              continue;
+            }
+            const position = result.coords.get(atom.id);
+            assert.ok(position);
+            assert.equal(Number.isFinite(position.x), true);
+            assert.equal(Number.isFinite(position.y), true);
+          }
+        }
+      });
+    }
+  }
+
+  it('keeps the constrained bridged-polyol rescue bounded to its cage', () => {
+    assert.equal(bugMolecules.filter(smiles => smiles === BRIDGED_POLYOL).length, 1);
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const suppressH of [true, false]) {
+        const generated = generateCoords(parseSMILES(RING_OPENED_POLYOL), { bondLength, suppressH });
+        const refined = refineCoords(parseSMILES(RING_OPENED_POLYOL), {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords
+        });
+        assert.equal(generated.metadata.audit.ok, true);
+        assert.equal(refined.metadata.audit.ok, true);
+      }
+    }
+
+    const baseline = generateCoords(parseSMILES(BRIDGED_POLYOL), { suppressH: false });
+    const fixedCoords = new Map([['C2', { ...baseline.coords.get('C2') }]]);
+    const fixedCoordsBefore = structuredClone(fixedCoords);
+    const anchored = generateCoords(parseSMILES(BRIDGED_POLYOL), { suppressH: false, fixedCoords });
+    assert.deepEqual(fixedCoords, fixedCoordsBefore);
+    assert.deepEqual(anchored.coords.get('C2'), fixedCoordsBefore.get('C2'));
+    assert.equal(anchored.metadata.audit.fixedCoordinateViolationCount, 0);
   });
 
   it('seeds compact 5-5-4 bridged ether cages from the small ring', () => {

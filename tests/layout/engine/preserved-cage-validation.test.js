@@ -5,6 +5,46 @@ import { generateCoords, refineCoords } from '../../../src/layout/engine/api.js'
 import { createLayoutGraph } from '../../../src/layout/engine/model/layout-graph.js';
 import { assignPreservedBondValidationClasses } from '../../../src/layout/engine/placement/bond-validation.js';
 import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
+import { AUDIT_CORPUS } from './support/audit-corpus.js';
+
+describe('preserved projected metal-macrocycle validation', () => {
+  for (const sourceIndex of [21728, 10515]) {
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const suppressH of [true, false]) {
+        it(`retains cobalt corrin ${sourceIndex} at ${bondLength} with suppressH=${suppressH}`, () => {
+          const smiles = AUDIT_CORPUS.find(entry => entry.sourceIndex === sourceIndex).smiles;
+          const generated = generateCoords(parseSMILES(smiles), { bondLength, suppressH });
+          assert.equal(generated.metadata.audit.ok, true);
+          const existingCoords = new Map([...generated.coords].map(([id, point]) => [id, { x: 10 - point.y, y: point.x - 4 }]));
+          const before = structuredClone(existingCoords);
+          const refined = refineCoords(parseSMILES(smiles), { bondLength, suppressH, existingCoords });
+          assert.deepEqual(existingCoords, before);
+          for (const result of [generated, refined]) {
+            const audit = result.metadata.audit;
+            assert.equal(audit.ok, true);
+            assert.equal(audit.bondLengthFailureCount, 0);
+            assert.equal(audit.severeOverlapCount, 0);
+            assert.equal(audit.visibleHeavyBondCrossingFailureCount, 0);
+            assert.equal(audit.stereoContradiction, false);
+            assert.equal(audit.missingCoordinateCount, 0);
+            assert.equal(audit.nonfiniteCoordinateCount, 0);
+          }
+
+          const malformed = structuredClone(existingCoords);
+          const graph = createLayoutGraph(parseSMILES(smiles), { bondLength, suppressH });
+          const classes = assignPreservedBondValidationClasses(graph, graph.components[0], new Map(), malformed);
+          const branchBond = [...graph.bonds.values()].find(bond => bond.kind === 'covalent' && !bond.inRing && graph.atoms.get(bond.a).element !== 'H' && graph.atoms.get(bond.b).element !== 'H');
+          assert.equal(classes.get(branchBond.id), 'planar');
+          malformed.set(branchBond.b, { x: 1000, y: -1000 });
+          assert.equal(auditLayout(graph, malformed, { bondLength, bondValidationClasses: classes }).ok, false);
+          const distorted = new Map([...before].map(([id, point]) => [id, { x: point.x * 2, y: point.y * 2 }]));
+          const distortedClasses = assignPreservedBondValidationClasses(graph, graph.components[0], new Map(), distorted);
+          assert.equal(auditLayout(graph, distorted, { bondLength, bondValidationClasses: distortedClasses }).ok, false);
+        });
+      }
+    }
+  }
+});
 
 describe('preserved projected-cage validation', () => {
   for (const smiles of ['C1CC2CCC1C2', 'C1CC2CCC1CC2', 'C12C3C4C1C5C4C3C25', 'C1C2CC3CC1CC(C2)C3', 'C1CCC2CCC1C2']) {

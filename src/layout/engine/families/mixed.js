@@ -6090,13 +6090,15 @@ function layoutCompactBridgedSeededKamadaKawaiRescue(layoutGraph, ringSystem, ri
 }
 
 /**
- * Retensions a compact bridged cage of two to six rings around its most
- * distorted perimeter bond. Two rings are sufficient when they share a
- * multi-atom bridge path, so linked-ring mixed layouts must not exclude that
- * smallest supported bridged topology.
- * The artificial two-atom anchor fixes the candidate pose without preserving
- * the incumbent bond strain; user-fixed, stereochemical, and metal cages are
- * deliberately left to their constraint-aware owners.
+ * Retensions a compact bridged cage of two to six rings using at most four
+ * deterministic perimeter anchors. The most distorted bond is tried first;
+ * up to three near-ideal bonds provide stable pose anchors when pinning the
+ * malformed bond would fold labels or branch exits into the repaired cage.
+ * Two rings are sufficient when they share a multi-atom bridge path, so
+ * linked-ring mixed layouts must not exclude that smallest supported topology.
+ * Artificial two-atom anchors fix candidate poses without preserving incumbent
+ * strain; user-fixed, stereochemical, and metal cages stay with their
+ * constraint-aware owners.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} ringSystem - Compact bridged ring system.
  * @param {object[]} rings - Ring descriptors.
@@ -6128,41 +6130,61 @@ function layoutCompactBridgedConstrainedBondRescue(layoutGraph, ringSystem, ring
       const deviation = bond => Math.abs(distance(placement.coords.get(bond.a), placement.coords.get(bond.b)) - bondLength);
       return deviation(secondBond) - deviation(firstBond) || String(firstBond.id).localeCompare(String(secondBond.id), 'en', { numeric: true });
     });
-  const anchorBond = perimeterBonds[0];
-  if (!anchorBond) {
+  if (perimeterBonds.length === 0) {
     return null;
   }
-  const first = placement.coords.get(anchorBond.a);
-  const second = placement.coords.get(anchorBond.b);
-  if (distance(first, second) <= bondLength * 1e-12) {
-    return null;
-  }
-  const fixedCoords = new Map([
-    [anchorBond.a, first],
-    [anchorBond.b, add(first, fromAngle(angleOf(sub(second, first)), bondLength))]
-  ]);
   const bondValidationClasses = assignBondValidationClass(layoutGraph, ringSystem.atomIds, 'bridged');
-  const coords = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, placement.coords, bondLength, {
-    minFixedAtoms: 2,
-    seedBondLimits: { minBondLengthFactor: 0.98, maxBondLengthFactor: 1.02 },
-    bondValidationClasses
-  });
-  if (!coords) {
-    return null;
+  const anchorCandidates = [
+    perimeterBonds[0],
+    ...perimeterBonds
+      .slice(1)
+      .sort((firstBond, secondBond) => {
+        const deviation = bond => Math.abs(distance(placement.coords.get(bond.a), placement.coords.get(bond.b)) - bondLength);
+        return deviation(firstBond) - deviation(secondBond) || String(firstBond.id).localeCompare(String(secondBond.id), 'en', { numeric: true });
+      })
+      .slice(0, 3)
+  ];
+  let bestCandidate = null;
+  let bestCandidateAudit = null;
+  for (const anchorBond of anchorCandidates) {
+    const first = placement.coords.get(anchorBond.a);
+    const second = placement.coords.get(anchorBond.b);
+    if (distance(first, second) <= bondLength * 1e-12) {
+      continue;
+    }
+    const fixedCoords = new Map([
+      [anchorBond.a, first],
+      [anchorBond.b, add(first, fromAngle(angleOf(sub(second, first)), bondLength))]
+    ]);
+    const coords = placeConstrainedRingSystem({ ...layoutGraph, options: { ...layoutGraph.options, preserveFixed: true }, fixedCoords }, rings, placement.coords, bondLength, {
+      minFixedAtoms: 2,
+      seedBondLimits: { minBondLengthFactor: 0.98, maxBondLengthFactor: 1.02 },
+      bondValidationClasses
+    });
+    if (!coords) {
+      continue;
+    }
+    const candidate = {
+      ...placement,
+      coords,
+      ringCenters: ringCentersForCoords(rings, coords),
+      placementMode: placement.placementMode ? `${placement.placementMode}-constrained-bond-rescue` : 'constrained-bond-rescue'
+    };
+    const candidateAudit = auditRingSystemPlacement(layoutGraph, ringSystem, candidate, bondLength);
+    if (
+      candidateAudit?.ok !== true ||
+      candidateAudit.visibleHeavyBondCrossingFailureCount > audit.visibleHeavyBondCrossingFailureCount ||
+      candidateAudit.labelOverlapCount > audit.labelOverlapCount ||
+      candidateAudit.ringBranchSlotBlockerCount > audit.ringBranchSlotBlockerCount
+    ) {
+      continue;
+    }
+    if (!bestCandidate || isBetterRingSystemPlacement(candidate, bestCandidate, candidateAudit, bestCandidateAudit, true)) {
+      bestCandidate = candidate;
+      bestCandidateAudit = candidateAudit;
+    }
   }
-  const candidate = {
-    ...placement,
-    coords,
-    ringCenters: ringCentersForCoords(rings, coords),
-    placementMode: placement.placementMode ? `${placement.placementMode}-constrained-bond-rescue` : 'constrained-bond-rescue'
-  };
-  const candidateAudit = auditRingSystemPlacement(layoutGraph, ringSystem, candidate, bondLength);
-  return candidateAudit?.ok === true &&
-    candidateAudit.visibleHeavyBondCrossingFailureCount <= audit.visibleHeavyBondCrossingFailureCount &&
-    candidateAudit.labelOverlapCount <= audit.labelOverlapCount &&
-    candidateAudit.ringBranchSlotBlockerCount <= audit.ringBranchSlotBlockerCount
-    ? candidate
-    : null;
+  return bestCandidate;
 }
 
 function shouldTryBridgedRingSystemRescue(ringSystem, templateId, audit) {

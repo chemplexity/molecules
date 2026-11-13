@@ -3296,12 +3296,60 @@ function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, f
   };
 }
 
+/**
+ * Carries explicit hydrogens rigidly with heavy atoms replaced by a whole-cage
+ * candidate. The dense-cage solver works on the heavy graph, so retaining the
+ * old hydrogen coordinates would leave otherwise valid C-H vectors detached.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} sourceCoords - Coordinates before heavy-atom replacement.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates containing the replacement heavy positions.
+ * @param {string[]} heavyAtomIds - Heavy atom IDs replaced by the candidate.
+ * @returns {Map<string, {x: number, y: number}>} Candidate coordinates with attached hydrogens translated by their parent deltas.
+ */
+function carryAttachedHydrogensWithDenseCageCandidate(layoutGraph, sourceCoords, candidateCoords, heavyAtomIds) {
+  const coords = cloneCoords(candidateCoords);
+  for (const heavyAtomId of heavyAtomIds) {
+    const sourcePosition = sourceCoords.get(heavyAtomId);
+    const candidatePosition = candidateCoords.get(heavyAtomId);
+    if (!sourcePosition || !candidatePosition) {
+      continue;
+    }
+    const dx = candidatePosition.x - sourcePosition.x;
+    const dy = candidatePosition.y - sourcePosition.y;
+    for (const bond of layoutGraph.bondsByAtomId.get(heavyAtomId) ?? []) {
+      const otherAtomId = bond.a === heavyAtomId ? bond.b : bond.a;
+      if (layoutGraph.atoms.get(otherAtomId)?.element !== 'H') {
+        continue;
+      }
+      const hydrogenPosition = sourceCoords.get(otherAtomId);
+      if (!hydrogenPosition) {
+        continue;
+      }
+      coords.set(otherAtomId, {
+        x: hydrogenPosition.x + dx,
+        y: hydrogenPosition.y + dy
+      });
+    }
+  }
+  return coords;
+}
+
+/**
+ * Re-solves a dense three-connected carbon cage on its heavy-atom graph and
+ * carries any attached hydrogens with their parent atoms. Hydrogen visibility
+ * therefore does not change candidate eligibility or leave stale C-H vectors.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} finalCoords - Current coordinates.
+ * @param {object} placement - Placement result containing validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], audit: object, bondValidationClasses?: Map<string, string>}} Guarded dense-cage result.
+ */
 function maybeRetouchFinalDenseCarbonCageKamadaKawai(molecule, layoutGraph, finalCoords, placement, bondLength) {
   const currentAudit = auditFinalRetouchCoords(molecule, layoutGraph, finalCoords, placement, bondLength);
   const unchanged = () => ({ changed: false, coords: finalCoords, movedAtomIds: [], audit: currentAudit });
   const heavyAtoms = [...layoutGraph.atoms.values()].filter(atom => atom.element !== 'H' && atom.visible !== false && finalCoords.has(atom.id));
   if (
-    layoutGraph.options?.suppressH !== true ||
     layoutGraph.components.length !== 1 ||
     (layoutGraph.traits?.containsMetal ?? false) ||
     heavyAtoms.length < FINAL_DENSE_CARBON_CAGE_KK_MIN_HEAVY_ATOMS ||
@@ -3341,9 +3389,10 @@ function maybeRetouchFinalDenseCarbonCageKamadaKawai(molecule, layoutGraph, fina
     const intervalAudit = auditFinalRetouchCoords(molecule, layoutGraph, intervalCoords, placement, bondLength, candidateBondValidationClasses);
     if (finalAuditCountsDoNotWorsen(intervalAudit, candidateAudit) && intervalAudit.bondLengthFailureCount < candidateAudit.bondLengthFailureCount) {
       candidateCoords = intervalCoords;
-      candidateAudit = intervalAudit;
     }
   }
+  candidateCoords = carryAttachedHydrogensWithDenseCageCandidate(layoutGraph, finalCoords, candidateCoords, heavyAtomIds);
+  candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
   if (
     candidateAudit?.ok !== true ||
     candidateAudit.fallback?.mode != null ||

@@ -29,7 +29,7 @@ const RING_SIDECHAIN_FAN_ROTATIONS = Object.freeze([15, 30, 45, 60, 75, 90, 105,
 const COORDINATE_LABEL_CLEARANCE_MAX_LAYOUT_HEAVY_ATOMS = 80;
 const COORDINATE_LABEL_CLEARANCE_MAX_PASSES = 4;
 const COORDINATE_LABEL_CLEARANCE_TRANSLATIONS = Object.freeze([0.1, 0.15, 0.2, 0.25]);
-const COORDINATE_LABEL_CLEARANCE_TRANSLATION_ANGLES = Object.freeze([0, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180].map(degrees => (degrees * Math.PI) / 180));
+const COORDINATE_LABEL_CLEARANCE_TRANSLATION_ANGLES = Object.freeze([0, 15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180].map(degrees => (degrees * Math.PI) / 180));
 const COORDINATE_LABEL_CLEARANCE_ROTATIONS = Object.freeze([15, 30, 45, 60, 75, 90, 120, 150, 180].map(degrees => (degrees * Math.PI) / 180).flatMap(rotation => [rotation, -rotation]));
 
 function otherBondAtomId(bond, atomId) {
@@ -929,6 +929,24 @@ export function runOrganometallicCoordinateLabelClearanceRetouch(layoutGraph, co
     for (const labelOverlap of findLabelOverlaps(layoutGraph, currentCoords, bondLength)) {
       for (const ligandAtomId of [labelOverlap.firstAtomId, labelOverlap.secondAtomId]) {
         const metalAnchorIds = coordinateMetalNeighborIds(layoutGraph, ligandAtomId);
+        if (metalAnchorIds.length >= 2) {
+          const blockerAtomId = labelOverlap.firstAtomId === ligandAtomId ? labelOverlap.secondAtomId : labelOverlap.firstAtomId;
+          const ligandPosition = currentCoords.get(ligandAtomId);
+          const blockerPosition = currentCoords.get(blockerAtomId);
+          if (!ligandPosition || !blockerPosition) {
+            continue;
+          }
+          const awayAngle = angleOf(sub(ligandPosition, blockerPosition));
+          for (const translationFactor of COORDINATE_LABEL_CLEARANCE_TRANSLATIONS) {
+            const move = bondLength * translationFactor;
+            for (const angleOffset of COORDINATE_LABEL_CLEARANCE_TRANSLATION_ANGLES) {
+              const candidateCoords = new Map(currentCoords);
+              candidateCoords.set(ligandAtomId, add(ligandPosition, scale(fromAngle(awayAngle + angleOffset), move)));
+              considerCandidate(candidateCoords, ligandAtomId, move);
+            }
+          }
+          continue;
+        }
         if (metalAnchorIds.length !== 1 || (layoutGraph.atoms.get(ligandAtomId)?.heavyDegree ?? 0) !== 1) {
           continue;
         }

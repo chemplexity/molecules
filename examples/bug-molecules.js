@@ -676,5 +676,7 @@ export const bugMolecules = [
   '[H][C@@]12CCCCN1C(=O)C(=O)C(C)(C)COC(=O)CCCCCCCCCCCOC2=O',
   '[H][C@]12N(CCCCN3C=C(N=N3)C3=CC(N)=CC=C3)C(=O)O[C@]1(C)[C@@]([H])(CC)OC(=O)[C@@](C)(F)C(=O)[C@]([H])(C)[C@@]([H])(O[C@]1([H])O[C@]([H])(C)C[C@]([H])(N(C)C)[C@@]1([H])O)[C@@](C)(C[C@@]([H])(C)C(=O)[C@]2([H])C)OC',
   String.raw`CCCCC\C=C\C=C/C(=O)O[C@H]1[C@H](O)[C@@H](C)[C@@](C)(CCC(=C)C=C)[C@@H]2C[C@@H](O)C=C3[C@@H](OC(=O)C)O[C@H](OC(=O)C)[C@@]123`,
-  'CCC(O)C1C2C(N)CN1CC2C(C)N(C)C'
+  'CCC(O)C1C2C(N)CN1CC2C(C)N(C)C',
+  'C12C3C4C5C1C6C7C2C8C3C9C4C1C5C6C2C7C8C9C12',
+  'CC1NCC2OC1C1OCC(C)(CO1)C2O'
 ];

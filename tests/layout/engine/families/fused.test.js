@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
+import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
 import { findSevereOverlaps, measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { AUDIT_PLANAR_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
@@ -11,6 +12,9 @@ import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { layoutFusedCageKamadaKawai, layoutFusedFamily, shouldShortCircuitToFusedCageKk, shouldTryBridgedRescueForFusedSystem } from '../../../../src/layout/engine/families/fused.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeNaphthalene } from '../support/molecules.js';
+
+const DENSE_FUSED_CARBON_CAGE = 'C12C3C4C5C1C6C7C2C8C3C9C4C1C5C6C2C7C8C9C12';
+const SMALL_DENSE_FUSED_CAGE = 'C1(C2(C3(C4(C1C5(C2C3C45)))))';
 
 /**
  * Builds fused-ring adjacency and connection lookup maps from a layout graph.
@@ -136,7 +140,7 @@ describe('layout/engine/families/fused', () => {
   });
 
   it('rescues compact fused cages whose pericondensed placement collapses nonbonded atoms', () => {
-    const smiles = 'C1(C2(C3(C4(C1C5(C2C3C45)))))';
+    const smiles = SMALL_DENSE_FUSED_CAGE;
     assert.ok(bugMolecules.includes(smiles), 'expected compact fused-cage regression molecule to be registered');
 
     const result = runPipeline(parseSMILES(smiles), {
@@ -154,6 +158,75 @@ describe('layout/engine/families/fused', () => {
       distance(result.coords.get('C1'), result.coords.get('C3')) > result.layoutGraph.options.bondLength * 0.5,
       'expected collapsed nonbonded cage atoms to be separated by the fused-cage rescue'
     );
+  });
+
+  for (const bondLength of [0.75, 1.5, 3]) {
+    for (const suppressH of [true, false]) {
+      it(`keeps dense fused carbon cages clean at scale ${bondLength} with suppressH=${suppressH}`, () => {
+        const generatedMolecule = parseSMILES(DENSE_FUSED_CARBON_CAGE);
+        const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+        const generatedBefore = structuredClone(generated.coords);
+        const refinedMolecule = parseSMILES(DENSE_FUSED_CARBON_CAGE);
+        const refined = refineCoords(refinedMolecule, {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        for (const [molecule, result] of [
+          [generatedMolecule, generated],
+          [refinedMolecule, refined]
+        ]) {
+          assert.equal(result.metadata.audit.ok, true);
+          assert.equal(result.metadata.audit.severeOverlapCount, 0);
+          assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+          assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+          assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 8);
+          assert.equal(result.metadata.audit.fallback.mode, null);
+          for (const atom of molecule.atoms.values()) {
+            if (atom.name === 'H') {
+              continue;
+            }
+            const position = result.coords.get(atom.id);
+            assert.ok(position);
+            assert.equal(Number.isFinite(position.x), true);
+            assert.equal(Number.isFinite(position.y), true);
+          }
+          for (const [atomId, atom] of result.layoutGraph.atoms) {
+            if (atom.element !== 'H' || !result.coords.has(atomId)) {
+              continue;
+            }
+            const parentBond = result.layoutGraph.bondsByAtomId.get(atomId)?.[0];
+            const parentAtomId = parentBond?.a === atomId ? parentBond.b : parentBond?.a;
+            assert.ok(parentAtomId);
+            assert.ok(Math.abs(distance(result.coords.get(atomId), result.coords.get(parentAtomId)) - bondLength) < 1e-8);
+          }
+        }
+        assert.deepEqual(generated.coords, generatedBefore);
+      });
+    }
+  }
+
+  it('keeps dense-cage hydrogen handling deterministic without disturbing smaller cages or fixed anchors', () => {
+    assert.equal(bugMolecules.filter(smiles => smiles === DENSE_FUSED_CARBON_CAGE).length, 1);
+    const first = generateCoords(parseSMILES(DENSE_FUSED_CARBON_CAGE), { suppressH: false });
+    const second = generateCoords(parseSMILES(DENSE_FUSED_CARBON_CAGE), { suppressH: false });
+    assert.deepEqual(second.coords, first.coords);
+
+    for (const suppressH of [true, false]) {
+      const control = generateCoords(parseSMILES(SMALL_DENSE_FUSED_CAGE), { suppressH });
+      assert.equal(control.metadata.audit.ok, true);
+      assert.equal(control.metadata.audit.severeOverlapCount, 0);
+      assert.equal(control.metadata.audit.bondLengthFailureCount, 0);
+    }
+
+    const fixedCoords = new Map([['C1', { ...first.coords.get('C1') }]]);
+    const before = structuredClone(fixedCoords);
+    const anchored = generateCoords(parseSMILES(DENSE_FUSED_CARBON_CAGE), { suppressH: false, fixedCoords });
+    assert.deepEqual(fixedCoords, before);
+    assert.deepEqual(anchored.coords.get('C1'), before.get('C1'));
+    assert.equal(anchored.metadata.audit.fixedCoordinateViolationCount, 0);
   });
 
   it('short-circuits only giant dense no-template fused cages to the cage KK path', () => {
