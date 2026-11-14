@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-13
+
+- Preserve bridged-cage bond integrity during linked-ring overlap retouching.
+
 ## 2026-11-12
 
 - Keep compact bridged polyol bonds sound with explicit hydrogens.

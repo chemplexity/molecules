@@ -12,6 +12,10 @@ const CASES = [FUSED_IMIDE, N_METHYL_FUSED_IMIDE, SATURATED_CONTROL, TRIMMED_CON
 const HETEROARYL_BRIDGED_DIAMINE = 'CC1CCN2CCNC1C2C1=CN(C)C(C)=N1';
 const ISOLATED_DIAMINE_CAGE = 'CC1CCN2CCNC1C2';
 const ISOLATED_HETEROARYL_RING = 'C1=CN(C)C(C)=N1';
+const ISOXAZOLE_BRIDGED_AMMONIUM = 'CC(C1=CN=NO1)C1(O)C2CC1(C)C[NH2+]2';
+const ISOLATED_AMMONIUM_CAGE = 'C1(O)C2CC1(C)C[NH2+]2';
+const ISOLATED_ISOXAZOLE_BRANCH = 'CC(C1=CN=NO1)C';
+const DEHETERO_AMMONIUM_CONTROL = 'CC(C)C1(O)C2CC1(C)C[NH2+]2';
 
 function assertCleanCompleteLayout(molecule, result) {
   assert.equal(result.metadata.audit.ok, true);
@@ -160,5 +164,74 @@ describe('mixed two-ring bridged bond rescue', () => {
     assert.deepEqual(fixedCoords, before);
     assert.deepEqual(anchored.layoutGraph.fixedCoords, before);
     assert.deepEqual(anchored.coords.get('C2'), before.get('C2'));
+  });
+});
+
+describe('pending linked-ring resnap bond integrity', () => {
+  for (const bondLength of [0.75, 1.5, 3]) {
+    for (const suppressH of [true, false]) {
+      it(`keeps the isoxazole-linked ammonium cage sound through refinement at scale ${bondLength} with suppressH=${suppressH}`, () => {
+        const generatedMolecule = parseSMILES(ISOXAZOLE_BRIDGED_AMMONIUM);
+        const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+        const generatedBefore = structuredClone(generated.coords);
+        const refinedMolecule = parseSMILES(ISOXAZOLE_BRIDGED_AMMONIUM);
+        const refined = refineCoords(refinedMolecule, {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        assert.equal(generated.metadata.stageTelemetry.stageAudits.placement.bondLengthFailureCount, 0);
+        assertCleanCompleteLayout(generatedMolecule, generated);
+        assertCleanCompleteLayout(refinedMolecule, refined);
+        assert.equal(generated.metadata.audit.fallback.mode, null);
+        assert.equal(refined.metadata.audit.fallback.mode, null);
+        assert.deepEqual(generated.coords, generatedBefore);
+      });
+    }
+  }
+
+  it('keeps the isolated and dehetero controls clean across scales and hydrogen modes', () => {
+    for (const smiles of [ISOLATED_AMMONIUM_CAGE, ISOLATED_ISOXAZOLE_BRANCH, DEHETERO_AMMONIUM_CONTROL]) {
+      for (const bondLength of [0.75, 1.5, 3]) {
+        for (const suppressH of [true, false]) {
+          const generatedMolecule = parseSMILES(smiles);
+          const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+          const refinedMolecule = parseSMILES(smiles);
+          const refined = refineCoords(refinedMolecule, {
+            bondLength,
+            suppressH,
+            existingCoords: generated.coords,
+            auditTelemetry: true
+          });
+
+          assertCleanCompleteLayout(generatedMolecule, generated);
+          assertCleanCompleteLayout(refinedMolecule, refined);
+        }
+      }
+    }
+  });
+
+  it('is cataloged once and deterministic across fresh parses', () => {
+    assert.equal(bugMolecules.filter(smiles => smiles === ISOXAZOLE_BRIDGED_AMMONIUM).length, 1);
+    const first = generateCoords(parseSMILES(ISOXAZOLE_BRIDGED_AMMONIUM), { auditTelemetry: true });
+    const second = generateCoords(parseSMILES(ISOXAZOLE_BRIDGED_AMMONIUM), { auditTelemetry: true });
+
+    assertCleanCompleteLayout(first.molecule, first);
+    assert.deepEqual(second.coords, first.coords);
+  });
+
+  it('preserves an explicit cage anchor without mutating the constraint map', () => {
+    const initial = generateCoords(parseSMILES(ISOXAZOLE_BRIDGED_AMMONIUM));
+    const fixedCoords = new Map([['C8', { ...initial.coords.get('C8') }]]);
+    const before = structuredClone(fixedCoords);
+    const molecule = parseSMILES(ISOXAZOLE_BRIDGED_AMMONIUM);
+    const anchored = generateCoords(molecule, { fixedCoords, auditTelemetry: true });
+
+    assertCleanCompleteLayout(molecule, anchored);
+    assert.deepEqual(fixedCoords, before);
+    assert.deepEqual(anchored.layoutGraph.fixedCoords, before);
+    assert.deepEqual(anchored.coords.get('C8'), before.get('C8'));
   });
 });

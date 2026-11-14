@@ -23369,8 +23369,16 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
   return { changed };
 }
 
+/**
+ * Retouches severe contacts introduced while resnapping a newly attached ring,
+ * without trading a clean parent scaffold for new bond-length failures.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {number} bondLength - Requested target bond length.
+ * @param {object} state - Mutable mixed-family placement state.
+ * @returns {Set<string>} Atom IDs moved by an accepted retouch.
+ */
 function resolvePendingRingAttachmentResnapOverlaps(layoutGraph, bondLength, state) {
-  const { coords, pendingRingAttachmentResnapAtomIds } = state;
+  const { coords, bondValidationClasses, pendingRingAttachmentResnapAtomIds } = state;
   if ((pendingRingAttachmentResnapAtomIds?.size ?? 0) === 0) {
     return new Set();
   }
@@ -23436,7 +23444,11 @@ function resolvePendingRingAttachmentResnapOverlaps(layoutGraph, bondLength, sta
     return new Set();
   }
 
-  const touchup = runAttachedRingRotationTouchup(layoutGraph, coords, { bondLength });
+  const touchup = runAttachedRingRotationTouchup(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses,
+    protectBondIntegrity: true
+  });
   if ((touchup?.nudges ?? 0) <= 0) {
     return new Set();
   }
