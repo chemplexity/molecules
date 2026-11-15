@@ -16,6 +16,11 @@ const ISOXAZOLE_BRIDGED_AMMONIUM = 'CC(C1=CN=NO1)C1(O)C2CC1(C)C[NH2+]2';
 const ISOLATED_AMMONIUM_CAGE = 'C1(O)C2CC1(C)C[NH2+]2';
 const ISOLATED_ISOXAZOLE_BRANCH = 'CC(C1=CN=NO1)C';
 const DEHETERO_AMMONIUM_CONTROL = 'CC(C)C1(O)C2CC1(C)C[NH2+]2';
+const ETHER_LINKED_AMMONIUM_CORE = 'CC[N+]12CCC(CC1)CC2OC1(CCCN(C1)C)C';
+const ETHER_LINKED_AMMONIUM_FULL = 'CC[N+]12CCC(CC1)CC2OC1(CCCN(C1)C(=O)CC1=CC=CC(OC(C)C)=C1)C1=CC=C(Cl)C(Cl)=C1';
+const ETHER_LINKED_ACYL_CONTROL = 'CC[N+]12CCC(CC1)CC2OC1(CCCN(C1)C(=O)CC1=CC=CC(OC(C)C)=C1)C';
+const ETHER_LINKED_ARYL_CONTROL = 'CC[N+]12CCC(CC1)CC2OC1(CCCN(C1)C)C1=CC=C(Cl)C(Cl)=C1';
+const ISOLATED_QUATERNARY_CAGE = 'CC[N+]12CCC(CC1)CC2';
 
 function assertCleanCompleteLayout(molecule, result) {
   assert.equal(result.metadata.audit.ok, true);
@@ -233,5 +238,109 @@ describe('pending linked-ring resnap bond integrity', () => {
     assert.deepEqual(fixedCoords, before);
     assert.deepEqual(anchored.layoutGraph.fixedCoords, before);
     assert.deepEqual(anchored.coords.get('C8'), before.get('C8'));
+  });
+});
+
+describe('ether-linked saturated ring exit readability', () => {
+  for (const bondLength of [0.75, 1.5, 3]) {
+    for (const suppressH of [true, false]) {
+      it(`keeps the reduced linked core readable through refinement at scale ${bondLength} with suppressH=${suppressH}`, () => {
+        const molecule = parseSMILES(ETHER_LINKED_AMMONIUM_CORE);
+        const moleculeBefore = [...molecule.atoms].map(([atomId, atom]) => [atomId, atom.x, atom.y]);
+        const generated = generateCoords(molecule, { bondLength, suppressH, auditTelemetry: true });
+        const generatedBefore = structuredClone(generated.coords);
+        const refinedMolecule = parseSMILES(ETHER_LINKED_AMMONIUM_CORE);
+        const refined = refineCoords(refinedMolecule, {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        assertCleanCompleteLayout(molecule, generated);
+        assertCleanCompleteLayout(refinedMolecule, refined);
+        assert.equal(generated.metadata.audit.fallback.mode, null);
+        assert.equal(refined.metadata.audit.fallback.mode, null);
+        assert.deepEqual(generated.coords, generatedBefore);
+        assert.deepEqual(
+          [...molecule.atoms].map(([atomId, atom]) => [atomId, atom.x, atom.y]),
+          moleculeBefore
+        );
+      });
+    }
+  }
+
+  it('keeps the full scaffold and single-arm controls readable at the affected scales', () => {
+    for (const smiles of [ETHER_LINKED_AMMONIUM_FULL, ETHER_LINKED_ACYL_CONTROL, ETHER_LINKED_ARYL_CONTROL]) {
+      for (const bondLength of [0.75, 1.5]) {
+        for (const suppressH of [true, false]) {
+          const generatedMolecule = parseSMILES(smiles);
+          const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+          const refinedMolecule = parseSMILES(smiles);
+          const refined = refineCoords(refinedMolecule, {
+            bondLength,
+            suppressH,
+            existingCoords: generated.coords,
+            auditTelemetry: true
+          });
+
+          assertCleanCompleteLayout(generatedMolecule, generated);
+          assertCleanCompleteLayout(refinedMolecule, refined);
+        }
+      }
+    }
+  });
+
+  it('keeps the isolated quaternary cage clean across scales and hydrogen modes', () => {
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const suppressH of [true, false]) {
+        const molecule = parseSMILES(ISOLATED_QUATERNARY_CAGE);
+        const generated = generateCoords(molecule, { bondLength, suppressH, auditTelemetry: true });
+        const refined = refineCoords(parseSMILES(ISOLATED_QUATERNARY_CAGE), {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        assertCleanCompleteLayout(molecule, generated);
+        assertCleanCompleteLayout(refined.molecule, refined);
+      }
+    }
+  });
+
+  it('is cataloged once and deterministic across fresh parses', () => {
+    assert.equal(bugMolecules.filter(smiles => smiles === ETHER_LINKED_AMMONIUM_CORE).length, 1);
+    assert.equal(bugMolecules.filter(smiles => smiles === ETHER_LINKED_AMMONIUM_FULL).length, 1);
+    const first = generateCoords(parseSMILES(ETHER_LINKED_AMMONIUM_CORE), { auditTelemetry: true });
+    const second = generateCoords(parseSMILES(ETHER_LINKED_AMMONIUM_CORE), { auditTelemetry: true });
+
+    assertCleanCompleteLayout(first.molecule, first);
+    assert.deepEqual(second.coords, first.coords);
+  });
+
+  it('preserves an explicit ether anchor without mutating the constraint map', () => {
+    const initial = generateCoords(parseSMILES(ETHER_LINKED_AMMONIUM_CORE));
+    const fixedCoords = new Map([['O11', { ...initial.coords.get('O11') }]]);
+    const before = structuredClone(fixedCoords);
+    const molecule = parseSMILES(ETHER_LINKED_AMMONIUM_CORE);
+    const anchored = generateCoords(molecule, { fixedCoords, auditTelemetry: true });
+
+    assert.equal(anchored.metadata.audit.severeOverlapCount, 0);
+    assert.equal(anchored.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+    assert.equal(anchored.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(anchored.metadata.audit.stereoContradiction, false);
+    for (const atom of molecule.atoms.values()) {
+      if (atom.name === 'H') {
+        continue;
+      }
+      const position = anchored.coords.get(atom.id);
+      assert.ok(position, `expected coordinates for heavy atom ${atom.id}`);
+      assert.equal(Number.isFinite(position.x), true);
+      assert.equal(Number.isFinite(position.y), true);
+    }
+    assert.deepEqual(fixedCoords, before);
+    assert.deepEqual(anchored.layoutGraph.fixedCoords, before);
+    assert.deepEqual(anchored.coords.get('O11'), before.get('O11'));
   });
 });

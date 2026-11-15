@@ -5,6 +5,8 @@ import { getTemplateById } from '../templates/library.js';
 import { buildScaffoldPlan } from '../model/scaffold-plan.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
 
+const PRESERVED_PROJECTED_WHOLE_COMPONENT_MAX_HEAVY_ATOMS = 40;
+
 /**
  * Returns whether a bond lies fully inside the requested atom set.
  * @param {object} bond - Bond descriptor.
@@ -173,6 +175,76 @@ function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
 }
 
 /**
+ * Detects coordinates produced by the bounded whole-component projected
+ * Kamada–Kawai fallback used for compact mixed scaffolds containing a bridged
+ * ring system. Reconstruction requires projected-but-valid heavy bonds,
+ * compression and extension, and multiple planar failures outside a single
+ * ring system so ordinary planar branches are not relaxed accidentally.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{atomIds: string[], heavyAtomCount?: number}} component - Preserved connected component.
+ * @param {Map<string, {x: number, y: number}>|null} coords - Preserved coordinates.
+ * @returns {boolean} True when the whole heavy component needs projected validation.
+ */
+function hasProjectedWholeComponentGeometry(layoutGraph, component, coords) {
+  if (
+    !coords ||
+    layoutGraph.options?.suppressH !== true ||
+    layoutGraph.components.length !== 1 ||
+    (layoutGraph.traits?.containsMetal ?? false) === true ||
+    (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 ||
+    (component.heavyAtomCount ?? 0) <= 0 ||
+    (component.heavyAtomCount ?? 0) > PRESERVED_PROJECTED_WHOLE_COMPONENT_MAX_HEAVY_ATOMS
+  ) {
+    return false;
+  }
+
+  const componentAtomIds = new Set(component.atomIds);
+  const bondLength = layoutGraph.options.bondLength;
+  let compressedPlanarFailureCount = 0;
+  let stretchedPlanarFailureCount = 0;
+  let externalPlanarFailureCount = 0;
+  let totalDeviation = 0;
+  let sampleCount = 0;
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!isInternalBond(bond, componentAtomIds) || bond.kind !== 'covalent') {
+      continue;
+    }
+    const firstAtom = layoutGraph.atoms.get(bond.a);
+    const secondAtom = layoutGraph.atoms.get(bond.b);
+    if (!firstAtom || !secondAtom || firstAtom.element === 'H' || secondAtom.element === 'H') {
+      continue;
+    }
+    const first = coords.get(bond.a);
+    const second = coords.get(bond.b);
+    if (!first || !second) {
+      return false;
+    }
+    const ratio = Math.hypot(second.x - first.x, second.y - first.y) / bondLength;
+    if (!Number.isFinite(ratio) || ratio < BRIDGED_VALIDATION.minBondLengthFactor || ratio > BRIDGED_VALIDATION.maxBondLengthFactor) {
+      return false;
+    }
+    if (ratio < AUDIT_PLANAR_VALIDATION.minBondLengthFactor || ratio > AUDIT_PLANAR_VALIDATION.maxBondLengthFactor) {
+      if (ratio < AUDIT_PLANAR_VALIDATION.minBondLengthFactor) {
+        compressedPlanarFailureCount++;
+      } else {
+        stretchedPlanarFailureCount++;
+      }
+      const firstRingSystemId = layoutGraph.atomToRingSystemId.get(bond.a);
+      const secondRingSystemId = layoutGraph.atomToRingSystemId.get(bond.b);
+      if (firstRingSystemId == null || secondRingSystemId == null || firstRingSystemId !== secondRingSystemId) {
+        externalPlanarFailureCount++;
+      }
+    }
+    totalDeviation += Math.abs(ratio - 1);
+    sampleCount++;
+  }
+
+  return (
+    compressedPlanarFailureCount > 0 && stretchedPlanarFailureCount > 0 && externalPlanarFailureCount >= 2 && sampleCount > 0 && totalDeviation / sampleCount <= BRIDGED_VALIDATION.maxMeanDeviation
+  );
+}
+
+/**
  * Reconstructs validation classes for a component whose coordinates are retained.
  * Matched templates keep their declared geometry; unmatched bridged scaffolds
  * use projected validation. Only bonds internal to those ring systems receive
@@ -198,6 +270,10 @@ export function assignPreservedBondValidationClasses(layoutGraph, component, tar
     if (validationClass !== 'planar') {
       assignBondValidationClass(layoutGraph, candidate.atomIds, validationClass, targetMap);
     }
+  }
+  if (hasProjectedWholeComponentGeometry(layoutGraph, component, coords)) {
+    const heavyAtomIds = component.atomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+    assignBondValidationClass(layoutGraph, heavyAtomIds, 'bridged', targetMap, { overwrite: true });
   }
   return targetMap;
 }

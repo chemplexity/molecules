@@ -7,6 +7,8 @@ import { assignPreservedBondValidationClasses } from '../../../src/layout/engine
 import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
 import { AUDIT_CORPUS } from './support/audit-corpus.js';
 
+const SUBSTITUTED_QUATERNARY_CAGE = 'CC[N+]12CCC(CC1)CC2OC1(CCCN(C1)C(=O)CC1=CC=CC(OC(C)C)=C1)C1=CC=C(Cl)C(Cl)=C1';
+
 describe('preserved projected metal-macrocycle validation', () => {
   for (const sourceIndex of [21728, 10515]) {
     for (const bondLength of [0.75, 1.5, 3]) {
@@ -187,5 +189,118 @@ describe('preserved projected-cage validation', () => {
     const audit = auditLayout(graph, coords, { bondValidationClasses: classes });
     assert.equal(audit.ok, false);
     assert.equal(audit.visibleHeavyBondCrossingFailureCount, 1);
+  });
+});
+
+describe('preserved whole-component projected cage validation', () => {
+  for (const bondLength of [0.75, 1.5, 3]) {
+    it(`preserves the clean substituted cage exactly at bond length ${bondLength}`, () => {
+      const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+        bondLength,
+        suppressH: true,
+        auditTelemetry: true
+      });
+      const existingCoords = structuredClone(generated.coords);
+      const before = structuredClone(existingCoords);
+      const refined = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+        bondLength,
+        suppressH: true,
+        existingCoords,
+        auditTelemetry: true
+      });
+
+      assert.equal(generated.metadata.audit.ok, true);
+      assert.deepEqual(existingCoords, before);
+      assert.deepEqual(refined.coords, before);
+      assert.equal(refined.metadata.audit.ok, true);
+      assert.equal(refined.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(refined.metadata.audit.severeOverlapCount, 0);
+      assert.equal(refined.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+      assert.equal(refined.metadata.audit.stereoContradiction, false);
+      assert.equal(refined.metadata.audit.missingCoordinateCount, 0);
+      assert.equal(refined.metadata.audit.nonfiniteCoordinateCount, 0);
+      assert.equal(refined.metadata.cleanupFastPath, true);
+    });
+  }
+
+  it('reconstructs whole-component projected validation only for the large-scale fallback geometry', () => {
+    const largeGenerated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH: true });
+    const largeGraph = createLayoutGraph(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH: true });
+    const largeClasses = assignPreservedBondValidationClasses(largeGraph, largeGraph.components[0], new Map(), largeGenerated.coords);
+    const externalHeavyBonds = [...largeGraph.bonds.values()].filter(bond => {
+      const firstAtom = largeGraph.atoms.get(bond.a);
+      const secondAtom = largeGraph.atoms.get(bond.b);
+      const firstRingSystemId = largeGraph.atomToRingSystemId.get(bond.a);
+      const secondRingSystemId = largeGraph.atomToRingSystemId.get(bond.b);
+      return (
+        bond.kind === 'covalent' && firstAtom?.element !== 'H' && secondAtom?.element !== 'H' && (firstRingSystemId == null || secondRingSystemId == null || firstRingSystemId !== secondRingSystemId)
+      );
+    });
+    assert.ok(externalHeavyBonds.length > 0);
+    assert.ok(externalHeavyBonds.every(bond => largeClasses.get(bond.id) === 'bridged'));
+
+    const ordinaryGenerated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 1.5, suppressH: true });
+    const ordinaryGraph = createLayoutGraph(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 1.5, suppressH: true });
+    const ordinaryClasses = assignPreservedBondValidationClasses(ordinaryGraph, ordinaryGraph.components[0], new Map(), ordinaryGenerated.coords);
+    const ordinaryExternalBond = [...ordinaryGraph.bonds.values()].find(bond => {
+      const firstAtom = ordinaryGraph.atoms.get(bond.a);
+      const secondAtom = ordinaryGraph.atoms.get(bond.b);
+      const firstRingSystemId = ordinaryGraph.atomToRingSystemId.get(bond.a);
+      const secondRingSystemId = ordinaryGraph.atomToRingSystemId.get(bond.b);
+      return (
+        bond.kind === 'covalent' && firstAtom?.element !== 'H' && secondAtom?.element !== 'H' && (firstRingSystemId == null || secondRingSystemId == null || firstRingSystemId !== secondRingSystemId)
+      );
+    });
+    assert.ok(ordinaryExternalBond);
+    assert.equal(ordinaryClasses.get(ordinaryExternalBond.id), 'planar');
+  });
+
+  it('does not promote malformed or uniformly expanded preserved branches', () => {
+    const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH: true });
+    const graph = createLayoutGraph(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH: true });
+    const malformed = structuredClone(generated.coords);
+    const externalBond = [...graph.bonds.values()].find(bond => {
+      const firstAtom = graph.atoms.get(bond.a);
+      const secondAtom = graph.atoms.get(bond.b);
+      return bond.kind === 'covalent' && !bond.inRing && firstAtom?.element !== 'H' && secondAtom?.element !== 'H' && !graph.ringAtomIdSet.has(bond.a) && !graph.ringAtomIdSet.has(bond.b);
+    });
+    assert.ok(externalBond);
+    const firstPosition = malformed.get(externalBond.a);
+    malformed.set(externalBond.b, { x: firstPosition.x + 10, y: firstPosition.y });
+    const malformedClasses = assignPreservedBondValidationClasses(graph, graph.components[0], new Map(), malformed);
+    assert.equal(malformedClasses.get(externalBond.id), 'planar');
+    assert.equal(auditLayout(graph, malformed, { bondLength: 3, bondValidationClasses: malformedClasses }).ok, false);
+
+    const ordinaryGenerated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 1.5, suppressH: true });
+    const ordinaryGraph = createLayoutGraph(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 1.5, suppressH: true });
+    const expanded = new Map([...ordinaryGenerated.coords].map(([atomId, position]) => [atomId, { x: position.x * 1.2, y: position.y * 1.2 }]));
+    const expandedClasses = assignPreservedBondValidationClasses(ordinaryGraph, ordinaryGraph.components[0], new Map(), expanded);
+    assert.equal(expandedClasses.get(externalBond.id), 'planar');
+    assert.equal(auditLayout(ordinaryGraph, expanded, { bondLength: 1.5, bondValidationClasses: expandedClasses }).ok, false);
+  });
+
+  it('preserves an exact fixed anchor and deterministic refinement output', () => {
+    const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH: true });
+    const existingCoords = structuredClone(generated.coords);
+    const fixedCoords = new Map([['O11', { ...existingCoords.get('O11') }]]);
+    const fixedBefore = structuredClone(fixedCoords);
+    const first = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+      bondLength: 3,
+      suppressH: true,
+      existingCoords,
+      fixedCoords
+    });
+    const second = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+      bondLength: 3,
+      suppressH: true,
+      existingCoords,
+      fixedCoords
+    });
+
+    assert.equal(first.metadata.audit.ok, true);
+    assert.deepEqual(first.coords, existingCoords);
+    assert.deepEqual(second.coords, first.coords);
+    assert.deepEqual(fixedCoords, fixedBefore);
+    assert.deepEqual(first.coords.get('O11'), fixedBefore.get('O11'));
   });
 });

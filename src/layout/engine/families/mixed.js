@@ -92,6 +92,11 @@ const LINKED_RING_SIDE_BALANCE_ROTATION_OFFSETS = [
   Math.PI / 9,
   -(Math.PI / 9)
 ];
+const HETERO_LINKED_RING_SIDE_BALANCE_ROTATION_OFFSETS = Object.freeze([
+  ...LINKED_RING_SIDE_BALANCE_ROTATION_OFFSETS,
+  ...[150, 160, 165, 170, 175].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180]),
+  Math.PI
+]);
 const LINKED_HETERO_RING_OVERLAP_ROTATION_OFFSETS = Object.freeze(
   [5, 8, 10, 12, 15, 18, 20, 22, 24, 26, 28, 30, 35, 40, 45, 60].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180])
 );
@@ -17266,14 +17271,23 @@ function linkedRingSideExitDeviation(layoutGraph, coords, anchorAtomId, linkerAt
   return Math.min(...targetAngles.map(targetAngle => angularDifference(targetAngle, actualAngle)));
 }
 
-function findLinkedRingSideBalanceDescriptors(layoutGraph, coords) {
+/**
+ * Finds divalent acyclic linkers whose two neighbors belong to distinct ring
+ * systems and whose ring sides can be rotated independently around the anchors.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{linkerElements?: Set<string>, preserveFixed?: boolean}} [options] - Linker filtering and fixed-coordinate controls.
+ * @returns {Array<{linkerAtomId: string, linkerElement: string, firstAnchorAtomId: string, secondAnchorAtomId: string, firstSideAtomIds: string[], secondSideAtomIds: string[]}>} Linked-ring side descriptors.
+ */
+function findLinkedRingSideBalanceDescriptors(layoutGraph, coords, options = {}) {
   if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
     return [];
   }
 
+  const linkerElements = options.linkerElements ?? new Set(['C']);
   const descriptors = [];
   for (const [linkerAtomId, linkerAtom] of layoutGraph.atoms) {
-    if (!linkerAtom || linkerAtom.element !== 'C' || linkerAtom.aromatic || linkerAtom.heavyDegree !== 2 || layoutGraph.ringAtomIdSet.has(linkerAtomId) || !coords.has(linkerAtomId)) {
+    if (!linkerAtom || !linkerElements.has(linkerAtom.element) || linkerAtom.aromatic || linkerAtom.heavyDegree !== 2 || layoutGraph.ringAtomIdSet.has(linkerAtomId) || !coords.has(linkerAtomId)) {
       continue;
     }
 
@@ -17310,9 +17324,13 @@ function findLinkedRingSideBalanceDescriptors(layoutGraph, coords) {
     if (firstSideAtomIds.length === 0 || secondSideAtomIds.length === 0 || firstSideAtomIds.includes(secondAnchorAtomId) || secondSideAtomIds.includes(firstAnchorAtomId)) {
       continue;
     }
+    if (options.preserveFixed === true && layoutGraph.options.preserveFixed !== false && [...firstSideAtomIds, ...secondSideAtomIds].some(atomId => layoutGraph.fixedCoords?.has(atomId))) {
+      continue;
+    }
 
     descriptors.push({
       linkerAtomId,
+      linkerElement: linkerAtom.element,
       firstAnchorAtomId,
       secondAnchorAtomId,
       firstSideAtomIds,
@@ -17435,6 +17453,76 @@ function balanceLinkedRingSideExits(layoutGraph, coords, bondLength) {
   }
 
   return { changed };
+}
+
+/**
+ * Rotates the two ring sides of a neutral ether linker together when a
+ * locally valid linked-ring pose leaves one ring exit facing across its ring.
+ * Large rotations are intentionally reserved for this final, audit-guarded
+ * search because the ordinary placement balancer only makes small nudges.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {Map<string, 'planar'|'bridged'|'haptic'>} bondValidationClasses - Current validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether an audit-safe linked-ring pose was applied.
+ */
+export function resolveEtherLinkedRingReadability(layoutGraph, coords, bondValidationClasses, bondLength) {
+  const baseAudit = auditLayout(layoutGraph, coords, { bondLength, bondValidationClasses });
+  if ((baseAudit.ringSubstituentReadabilityFailureCount ?? 0) === 0) {
+    return { changed: false };
+  }
+
+  let bestCoords = null;
+  let bestAudit = baseAudit;
+  let bestEndpointDeviation = Number.POSITIVE_INFINITY;
+  let bestRotationMagnitude = Number.POSITIVE_INFINITY;
+  const descriptors = findLinkedRingSideBalanceDescriptors(layoutGraph, coords, {
+    linkerElements: new Set(['O']),
+    preserveFixed: true
+  });
+  for (const descriptor of descriptors) {
+    const linkerAtom = layoutGraph.atoms.get(descriptor.linkerAtomId);
+    if ((linkerAtom?.charge ?? 0) !== 0) {
+      continue;
+    }
+    for (const firstSideRotation of HETERO_LINKED_RING_SIDE_BALANCE_ROTATION_OFFSETS) {
+      for (const secondSideRotation of HETERO_LINKED_RING_SIDE_BALANCE_ROTATION_OFFSETS) {
+        if (Math.abs(firstSideRotation) <= IMPROVEMENT_EPSILON && Math.abs(secondSideRotation) <= IMPROVEMENT_EPSILON) {
+          continue;
+        }
+        const candidateCoords = buildLinkedRingSideBalanceCoords(coords, descriptor, firstSideRotation, secondSideRotation);
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength, bondValidationClasses });
+        if (
+          (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) >= (baseAudit.ringSubstituentReadabilityFailureCount ?? 0) ||
+          (candidateAudit.ok !== true && !mixedAuditCountsDoNotRegress(candidateAudit, baseAudit))
+        ) {
+          continue;
+        }
+        const firstDeviation = linkedRingSideExitDeviation(layoutGraph, candidateCoords, descriptor.firstAnchorAtomId, descriptor.linkerAtomId) ?? Number.POSITIVE_INFINITY;
+        const secondDeviation = linkedRingSideExitDeviation(layoutGraph, candidateCoords, descriptor.secondAnchorAtomId, descriptor.linkerAtomId) ?? Number.POSITIVE_INFINITY;
+        const endpointDeviation = Math.max(firstDeviation, secondDeviation);
+        const rotationMagnitude = Math.abs(firstSideRotation) + Math.abs(secondSideRotation);
+        const betterAudit = candidateAudit.ok === true && bestAudit.ok !== true;
+        const betterReadability =
+          (candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) < (bestAudit.ringSubstituentReadabilityFailureCount ?? 0) ||
+          ((candidateAudit.ringSubstituentReadabilityFailureCount ?? 0) === (bestAudit.ringSubstituentReadabilityFailureCount ?? 0) &&
+            (endpointDeviation < bestEndpointDeviation - IMPROVEMENT_EPSILON ||
+              (Math.abs(endpointDeviation - bestEndpointDeviation) <= IMPROVEMENT_EPSILON && rotationMagnitude < bestRotationMagnitude)));
+        if (betterAudit || (candidateAudit.ok === bestAudit.ok && betterReadability)) {
+          bestCoords = candidateCoords;
+          bestAudit = candidateAudit;
+          bestEndpointDeviation = endpointDeviation;
+          bestRotationMagnitude = rotationMagnitude;
+        }
+      }
+    }
+  }
+
+  if (!bestCoords) {
+    return { changed: false };
+  }
+  overwriteCoordMap(coords, bestCoords);
+  return { changed: true };
 }
 
 function linkedMethyleneHydrogenNeighborIds(layoutGraph, coords, linkerAtomId) {

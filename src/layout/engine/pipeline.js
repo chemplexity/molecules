@@ -12,7 +12,13 @@ import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
 import { applyLabelClearance } from './cleanup/label-clearance.js';
 import { visibleHeavyCovalentBonds } from './cleanup/bond-utils.js';
 import { collectCutSubtree } from './cleanup/subtree-utils.js';
-import { resolveMixedAcylBranchSevereContacts, resolveMixedPairedBranchCrossings, resolveRingSubstituentBoundedReadability, resolveRingSubstituentBranchCrossings } from './families/mixed.js';
+import {
+  resolveEtherLinkedRingReadability,
+  resolveMixedAcylBranchSevereContacts,
+  resolveMixedPairedBranchCrossings,
+  resolveRingSubstituentBoundedReadability,
+  resolveRingSubstituentBranchCrossings
+} from './families/mixed.js';
 import {
   LINKED_RING_ACYCLIC_ETHER_LINKER_MIN_DEVIATION,
   measureRingAdjacentTerminalDivalentContinuationDistortion,
@@ -661,6 +667,33 @@ function isCompleteFullyFixedPlacement(layoutGraph, placement) {
   }
   for (const [atomId, atom] of layoutGraph.atoms) {
     if (atom.visible !== false && !placement.coords.has(atomId)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Returns whether every component was preserved from a complete existing
+ * coordinate map. A clean preserved layout has no requested relayout work and
+ * can bypass final presentation retouches that would otherwise move frozen
+ * atoms after placement.
+ * @param {object} layoutGraph - Layout graph with normalized existing coordinates.
+ * @param {object} placement - Completed component-placement summary.
+ * @returns {boolean} Whether all visible coordinates were preserved exactly.
+ */
+function isCompleteFullyPreservedPlacement(layoutGraph, placement) {
+  if (placement.unplacedComponentCount !== 0 || placement.preservedComponentCount !== layoutGraph.components.length || !(placement.coords instanceof Map) || placement.coords.size === 0) {
+    return false;
+  }
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (atom.visible !== false && !placement.coords.has(atomId)) {
+      return false;
+    }
+  }
+  for (const [atomId, position] of placement.coords) {
+    const existingPosition = layoutGraph.options.existingCoords.get(atomId);
+    if (!existingPosition || position.x !== existingPosition.x || position.y !== existingPosition.y) {
       return false;
     }
   }
@@ -16496,6 +16529,20 @@ export function runPipeline(molecule, options = {}) {
     onStep?.('Final Result', 'Complete fully fixed 2D layout audited without movable cleanup stages.', cloneCoords(placement.coords), { stage: 'complete' });
     return buildPipelineResult(molecule, placement.coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
   }
+  if (isCompleteFullyPreservedPlacement(layoutGraph, placement)) {
+    const placementAudit = auditCleanupStage(layoutGraph, placement.coords, placement, normalizedOptions.bondLength);
+    if (placementAudit.ok === true && placementAudit.fallback?.mode == null) {
+      const placementStage = {
+        name: 'placement',
+        coords: placement.coords,
+        audit: placementAudit
+      };
+      const cleanup = buildCleanPlacementFastPathResult(layoutGraph, placementStage, normalizedOptions.auditTelemetry === true);
+      const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, placement.coords, timingState);
+      onStep?.('Final Result', 'Complete preserved 2D layout audited without movable cleanup stages.', cloneCoords(placement.coords), { stage: 'complete', preservedFastPath: true });
+      return buildPipelineResult(molecule, placement.coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
+    }
+  }
   const cleanup = runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState, onStep, onStageAcceptance);
   const timeFinalRetouch = (name, fn) => timeNamedTimingBucket(timingState, 'finalRetouchMs', 'finalRetouchBreakdownMs', name, fn);
   for (const [atomId, position] of cleanup.coords) {
@@ -18181,6 +18228,26 @@ export function runPipeline(molecule, options = {}) {
               }
             );
             postAcylAudit = candidateAudit;
+          }
+        }
+      }
+      if ((postAcylAudit.ringSubstituentReadabilityFailureCount ?? 0) > 0) {
+        const candidateCoords = cloneCoords(finalCoords);
+        const etherLinkedRingRetouch = resolveEtherLinkedRingReadability(layoutGraph, candidateCoords, placement.bondValidationClasses, normalizedOptions.bondLength);
+        if (etherLinkedRingRetouch.changed) {
+          const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+            bondLength: normalizedOptions.bondLength,
+            bondValidationClasses: placement.bondValidationClasses
+          });
+          if (candidateAudit.ok === true || finalAuditCountsDoNotWorsen(candidateAudit, postAcylAudit)) {
+            const currentAudit = postAcylAudit;
+            finalCoords = candidateCoords;
+            finalCoordsModified = true;
+            postAcylAudit = candidateAudit;
+            onStep?.('Final Ether-Linked Ring Readability Retouch', 'A blocked ether-linked ring exit was rerouted by an audit-safe paired ring-side rotation.', cloneCoords(finalCoords), {
+              ringSubstituentReadabilityFailureCountBefore: currentAudit.ringSubstituentReadabilityFailureCount,
+              ringSubstituentReadabilityFailureCountAfter: candidateAudit.ringSubstituentReadabilityFailureCount
+            });
           }
         }
       }

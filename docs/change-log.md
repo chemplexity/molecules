@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-11-14
+
+- Preserve clean projected mixed-cage geometry during refinement.
+- Route ether-linked saturated rings through clear exterior exits.
+
 ## 2026-11-13
 
 - Preserve bridged-cage bond integrity during linked-ring overlap retouching.
