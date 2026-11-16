@@ -180,6 +180,8 @@ function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
  * ring system. Reconstruction requires projected-but-valid heavy bonds,
  * compression and extension, and multiple planar failures outside a single
  * ring system so ordinary planar branches are not relaxed accidentally.
+ * Only heavy bonds provide evidence, keeping the result independent of
+ * hydrogen visibility.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{atomIds: string[], heavyAtomCount?: number}} component - Preserved connected component.
  * @param {Map<string, {x: number, y: number}>|null} coords - Preserved coordinates.
@@ -188,7 +190,6 @@ function hasProjectedFallbackGeometry(layoutGraph, candidate, coords) {
 function hasProjectedWholeComponentGeometry(layoutGraph, component, coords) {
   if (
     !coords ||
-    layoutGraph.options?.suppressH !== true ||
     layoutGraph.components.length !== 1 ||
     (layoutGraph.traits?.containsMetal ?? false) === true ||
     (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) <= 0 ||

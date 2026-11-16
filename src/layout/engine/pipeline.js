@@ -2945,13 +2945,15 @@ function maybeRelaxFinalBondLengthFailures(molecule, layoutGraph, finalCoords, p
   };
 }
 
+/**
+ * Returns whether a component can use a heavy-graph whole-component bridged
+ * solve. Hydrogen visibility is deliberately neutral because accepted
+ * candidates carry attached hydrogens with their heavy parents.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @returns {boolean} True for bounded single-component bridged organic graphs.
+ */
 function compactBridgedWholeComponentKamadaKawaiStructureIsEligible(layoutGraph) {
-  return (
-    layoutGraph.options?.suppressH === true &&
-    layoutGraph.components.length === 1 &&
-    (layoutGraph.traits?.containsMetal ?? false) === false &&
-    (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) > 0
-  );
+  return layoutGraph.components.length === 1 && (layoutGraph.traits?.containsMetal ?? false) === false && (layoutGraph.traits?.bridgedRingConnectionCount ?? 0) > 0;
 }
 
 function compactBridgedWholeComponentKamadaKawaiIsEligible(layoutGraph, currentAudit) {
@@ -3008,10 +3010,11 @@ function maybeRetouchFinalCompactBridgedWholeComponentKamadaKawai(molecule, layo
       return null;
     }
 
-    const candidateCoords = cloneCoords(finalCoords);
+    let candidateCoords = cloneCoords(finalCoords);
     for (const atomId of heavyAtomIds) {
       candidateCoords.set(atomId, kkResult.coords.get(atomId));
     }
+    candidateCoords = carryAttachedHydrogensWithHeavyAtomCandidate(layoutGraph, finalCoords, candidateCoords, heavyAtomIds);
     return candidateCoords;
   };
 
@@ -3289,6 +3292,7 @@ function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, f
   for (const atomId of heavyAtomIds) {
     candidateCoords.set(atomId, kkResult.coords.get(atomId));
   }
+  candidateCoords = carryAttachedHydrogensWithHeavyAtomCandidate(layoutGraph, finalCoords, candidateCoords, heavyAtomIds);
   const candidateBondValidationClasses = assignBondValidationClass(layoutGraph, heavyAtomIds, 'bridged', new Map(placement.bondValidationClasses), { overwrite: true });
   let candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
   if ((candidateAudit.severeOverlapCount ?? 0) === 1 && (candidateAudit.bondLengthFailureCount ?? 0) === 0) {
@@ -3331,15 +3335,15 @@ function maybeSeedFinalCompactBridgedOverlapKamadaKawai(molecule, layoutGraph, f
 
 /**
  * Carries explicit hydrogens rigidly with heavy atoms replaced by a whole-cage
- * candidate. The dense-cage solver works on the heavy graph, so retaining the
- * old hydrogen coordinates would leave otherwise valid C-H vectors detached.
+ * candidate. Whole-component cage solvers work on the heavy graph, so retaining
+ * old hydrogen coordinates would leave otherwise valid X-H vectors detached.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} sourceCoords - Coordinates before heavy-atom replacement.
  * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates containing the replacement heavy positions.
  * @param {string[]} heavyAtomIds - Heavy atom IDs replaced by the candidate.
  * @returns {Map<string, {x: number, y: number}>} Candidate coordinates with attached hydrogens translated by their parent deltas.
  */
-function carryAttachedHydrogensWithDenseCageCandidate(layoutGraph, sourceCoords, candidateCoords, heavyAtomIds) {
+function carryAttachedHydrogensWithHeavyAtomCandidate(layoutGraph, sourceCoords, candidateCoords, heavyAtomIds) {
   const coords = cloneCoords(candidateCoords);
   for (const heavyAtomId of heavyAtomIds) {
     const sourcePosition = sourceCoords.get(heavyAtomId);
@@ -3424,7 +3428,7 @@ function maybeRetouchFinalDenseCarbonCageKamadaKawai(molecule, layoutGraph, fina
       candidateCoords = intervalCoords;
     }
   }
-  candidateCoords = carryAttachedHydrogensWithDenseCageCandidate(layoutGraph, finalCoords, candidateCoords, heavyAtomIds);
+  candidateCoords = carryAttachedHydrogensWithHeavyAtomCandidate(layoutGraph, finalCoords, candidateCoords, heavyAtomIds);
   candidateAudit = auditFinalRetouchCoords(molecule, layoutGraph, candidateCoords, placement, bondLength, candidateBondValidationClasses);
   if (
     candidateAudit?.ok !== true ||

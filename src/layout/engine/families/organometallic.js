@@ -13,6 +13,7 @@ import { organometallicArrangementSpecs, organometallicGeometryKind } from './or
 
 const TRIGONAL_ANCHOR_ANGLE = (2 * Math.PI) / 3;
 const CLUSTER_LIGAND_SLOT_COUNT = 12;
+const SIMPLE_CHELATE_DONOR_HALF_ANGLE = Math.PI / 6;
 
 function isMetalAtom(layoutGraph, atomId) {
   return isMetalSourceAtom(layoutGraph.sourceMolecule.atoms.get(atomId));
@@ -233,6 +234,122 @@ function chooseTransformedFragment(layoutGraph, coords, anchorAtomIds, targetAnc
     }
   }
   return bestTransform;
+}
+
+/**
+ * Returns the ordered four-heavy-atom path of a simple bidentate chelate.
+ * Hydrogens may decorate the path, but branches and longer ligands retain the
+ * general ligand-first placement path.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} record - Ligand-fragment record.
+ * @returns {string[]|null} Anchor-to-anchor heavy path, or null when unsupported.
+ */
+function simpleBidentateChelatePath(layoutGraph, record) {
+  if (record.anchorAtomIds.length !== 2 || record.anchorMetalIds.length !== 1) {
+    return null;
+  }
+  const recordAtomIds = new Set(record.atomIds);
+  const heavyAtomIds = record.atomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
+  if (heavyAtomIds.length !== 4) {
+    return null;
+  }
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const [startAtomId, endAtomId] = record.anchorAtomIds;
+  const queue = [[startAtomId]];
+  const visited = new Set([startAtomId]);
+  let path = null;
+  while (queue.length > 0) {
+    const candidatePath = queue.shift();
+    const atomId = candidatePath[candidatePath.length - 1];
+    if (atomId === endAtomId) {
+      path = candidatePath;
+      break;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (bond?.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!heavyAtomIdSet.has(neighborAtomId) || visited.has(neighborAtomId)) {
+        continue;
+      }
+      visited.add(neighborAtomId);
+      queue.push([...candidatePath, neighborAtomId]);
+    }
+  }
+  if (!path || path.length !== 4 || path.some(atomId => !heavyAtomIdSet.has(atomId))) {
+    return null;
+  }
+  for (const atomId of record.atomIds) {
+    if (heavyAtomIdSet.has(atomId)) {
+      continue;
+    }
+    if (layoutGraph.atoms.get(atomId)?.element !== 'H') {
+      return null;
+    }
+    const attachedPathAtomIds = (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+      .filter(bond => bond?.kind === 'covalent')
+      .map(bond => (bond.a === atomId ? bond.b : bond.a))
+      .filter(neighborAtomId => recordAtomIds.has(neighborAtomId) && heavyAtomIdSet.has(neighborAtomId));
+    if (attachedPathAtomIds.length !== 1) {
+      return null;
+    }
+  }
+  return path;
+}
+
+/**
+ * Places a simple four-heavy-atom bidentate ligand into two adjacent donor
+ * slots and bends its intact three-bond path around the outside of the metal.
+ * The five covalent/coordination edges form a clear schematic chelate pocket;
+ * explicit hydrogen offsets follow their heavy parents.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} localCoords - Local ligand coordinates.
+ * @param {object} record - Ligand-fragment record.
+ * @param {string[]} pathAtomIds - Ordered donor-to-donor heavy path.
+ * @param {{x: number, y: number}} metalPosition - Metal center.
+ * @param {number} outwardAngle - Chelate pocket direction.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Jointly routed ligand coordinates.
+ */
+function placeSimpleBidentateChelate(layoutGraph, localCoords, record, pathAtomIds, metalPosition, outwardAngle, bondLength) {
+  const donorRadiusProjection = Math.cos(SIMPLE_CHELATE_DONOR_HALF_ANGLE) * bondLength;
+  const targetAnchorCenter = add(metalPosition, fromAngle(outwardAngle, donorRadiusProjection));
+  const transformed = transformFragment(localCoords, record.anchorAtomIds, targetAnchorCenter, outwardAngle);
+  const outward = fromAngle(outwardAngle, 1);
+  const lateral = perpLeft(outward);
+  const donorOffset = bondLength * Math.sin(SIMPLE_CHELATE_DONOR_HALF_ANGLE);
+  const outerDistance = donorRadiusProjection + bondLength;
+  const targets = [
+    add(add(metalPosition, scale(outward, donorRadiusProjection)), scale(lateral, -donorOffset)),
+    add(add(metalPosition, scale(outward, outerDistance)), scale(lateral, -donorOffset)),
+    add(add(metalPosition, scale(outward, outerDistance)), scale(lateral, donorOffset)),
+    add(add(metalPosition, scale(outward, donorRadiusProjection)), scale(lateral, donorOffset))
+  ];
+  const displacementByPathAtomId = new Map();
+  for (let index = 0; index < pathAtomIds.length; index++) {
+    const atomId = pathAtomIds[index];
+    displacementByPathAtomId.set(atomId, sub(targets[index], transformed.get(atomId)));
+    transformed.set(atomId, targets[index]);
+  }
+  for (const atomId of record.atomIds) {
+    if (displacementByPathAtomId.has(atomId) || !transformed.has(atomId)) {
+      continue;
+    }
+    const parentBond = (layoutGraph.bondsByAtomId.get(atomId) ?? []).find(bond => {
+      if (bond?.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      return displacementByPathAtomId.has(neighborAtomId);
+    });
+    if (!parentBond) {
+      continue;
+    }
+    const parentAtomId = parentBond.a === atomId ? parentBond.b : parentBond.a;
+    transformed.set(atomId, add(transformed.get(atomId), displacementByPathAtomId.get(parentAtomId)));
+  }
+  return transformed;
 }
 
 /**
@@ -1322,6 +1439,20 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
       return firstRecord.component.canonicalSignature.localeCompare(secondRecord.component.canonicalSignature, 'en', { numeric: true });
     });
   }
+  const jointChelatePaths = new Map();
+  const soleMetalRecords = metalAtomIds.length === 1 ? (groupedByMetal.get(metalAtomIds[0]) ?? []) : [];
+  for (const record of soleMetalRecords) {
+    const path = simpleBidentateChelatePath(layoutGraph, record);
+    if (path) {
+      jointChelatePaths.set(record, path);
+    }
+  }
+  const useJointChelateRouting =
+    !packLigands &&
+    soleMetalRecords.length === 3 &&
+    jointChelatePaths.size >= 2 &&
+    soleMetalRecords.every(record => record.anchorAtomIds.length === 1 || jointChelatePaths.has(record)) &&
+    !(layoutGraph.options.preserveFixed !== false && soleMetalRecords.some(record => record.atomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))));
 
   for (const metalAtomId of metalAtomIds) {
     const provisionalMetalPosition = metalCoords.get(metalAtomId);
@@ -1338,7 +1469,12 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
       const packedCoords = packLigands ? packMonodentateLigand(layoutGraph, ligandLayout.coords, record.anchorAtomIds, specs, index, provisionalMetalPosition, fragmentCoords, bondLength) : null;
       const spec = specs[index] ?? { angle: 0, displayType: null };
       const targetAnchorCenter = add(provisionalMetalPosition, fromAngle(spec.angle, bondLength));
-      const transformed = packedCoords ?? chooseTransformedFragment(layoutGraph, ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle, fragmentCoords, bondLength);
+      const chelatePath = useJointChelateRouting ? jointChelatePaths.get(record) : null;
+      const transformed =
+        packedCoords ??
+        (chelatePath
+          ? placeSimpleBidentateChelate(layoutGraph, ligandLayout.coords, record, chelatePath, provisionalMetalPosition, spec.angle, bondLength)
+          : chooseTransformedFragment(layoutGraph, ligandLayout.coords, record.anchorAtomIds, targetAnchorCenter, spec.angle, fragmentCoords, bondLength));
       for (const [atomId, position] of transformed) {
         fragmentCoords.set(atomId, position);
       }
@@ -1361,7 +1497,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
   for (const metalAtomId of metalAtomIds) {
     const records = groupedByMetal.get(metalAtomId) ?? [];
     const geometryKind = coordinationGeometryKind(layoutGraph, metalAtomId, records);
-    if (geometryKind === 'projected-trigonal-bipyramidal') {
+    if (geometryKind === 'projected-trigonal-bipyramidal' || useJointChelateRouting) {
       continue;
     }
     const bondedLigandPositions = [];
@@ -1390,7 +1526,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
 
   return {
     coords,
-    placementMode: 'ligand-first',
+    placementMode: useJointChelateRouting ? 'ligand-first-joint-chelate' : 'ligand-first',
     displayAssignments,
     bondValidationClasses: markHapticMetalBondValidation(layoutGraph, fragmentRecords, buildOrganometallicBondValidationClasses(layoutGraph, participantAtomIds, bondValidationClassMaps))
   };

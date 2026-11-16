@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
-import { generateCoords } from '../../../../src/layout/engine/api.js';
+import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { layoutOrganometallicFamily } from '../../../../src/layout/engine/families/organometallic.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
@@ -20,6 +20,7 @@ import {
 
 const RUN_LAYOUT_STRESS_TESTS = process.env.RUN_LAYOUT_STRESS === '1';
 const stressIt = RUN_LAYOUT_STRESS_TESTS ? it : it.skip;
+const SIMPLE_COBALT_CHELATE_CASES = ['[Co]12(NCCN1)(NCCN2)NCCN', '[Co]123(NCCN1)(NCCN2)NCCN3'];
 
 /**
  * Returns the smaller angle at a center atom between two neighbors.
@@ -132,6 +133,72 @@ describe('layout/engine/families/organometallic', () => {
       Math.max(...separations) < (115 * Math.PI) / 180,
       `expected Pt ligands to stay balanced around the chelate pocket, got ${separations.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')}`
     );
+  });
+
+  it('jointly routes simple cobalt chelates without crossings or donor-length drift', () => {
+    for (const smiles of SIMPLE_COBALT_CHELATE_CASES) {
+      for (const bondLength of [0.75, 1.5, 3]) {
+        for (const suppressH of [true, false]) {
+          const generated = generateCoords(parseSMILES(smiles), {
+            bondLength,
+            suppressH,
+            auditTelemetry: true
+          });
+          const repeated = generateCoords(parseSMILES(smiles), {
+            bondLength,
+            suppressH,
+            auditTelemetry: true
+          });
+          const existingCoords = structuredClone(generated.coords);
+          const before = structuredClone(existingCoords);
+          const refined = refineCoords(parseSMILES(smiles), {
+            bondLength,
+            suppressH,
+            existingCoords,
+            auditTelemetry: true
+          });
+
+          assert.equal(generated.metadata.primaryFamily, 'organometallic');
+          assert.deepEqual(repeated.coords, generated.coords);
+          assert.deepEqual(existingCoords, before);
+          assert.deepEqual(refined.coords, generated.coords);
+          for (const result of [generated, refined]) {
+            assert.equal(result.metadata.audit.ok, true);
+            assert.equal(result.metadata.audit.severeOverlapCount, 0);
+            assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+            assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+            assert.equal(result.metadata.audit.labelOverlapCount, 0);
+            assert.equal(result.metadata.audit.missingCoordinateCount, 0);
+            assert.equal(result.metadata.audit.nonfiniteCoordinateCount, 0);
+          }
+          assert.equal(generated.metadata.placementMode, 'ligand-first-joint-chelate');
+
+          const metalPosition = generated.coords.get('Co1');
+          const metalAtom = generated.layoutGraph.sourceMolecule.atoms.get('Co1');
+          for (const bondId of metalAtom.bonds) {
+            const bond = generated.layoutGraph.sourceMolecule.bonds.get(bondId);
+            const donorAtomId = bond.getOtherAtom('Co1');
+            assert.ok(Math.abs(distance(metalPosition, generated.coords.get(donorAtomId)) - bondLength) < 1e-9);
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps an explicitly fixed cobalt center exact during joint chelate routing', () => {
+    const fixedCoords = new Map([['Co1', { x: 10, y: -4 }]]);
+    const before = structuredClone(fixedCoords);
+    const result = generateCoords(parseSMILES(SIMPLE_COBALT_CHELATE_CASES[1]), {
+      suppressH: false,
+      fixedCoords,
+      auditTelemetry: true
+    });
+
+    assert.deepEqual(fixedCoords, before);
+    assert.deepEqual(result.coords.get('Co1'), before.get('Co1'));
+    assert.equal(result.metadata.placementMode, 'ligand-first-joint-chelate');
+    assert.equal(result.metadata.audit.fixedCoordinateViolationCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
   });
 
   it('keeps generic four-coordinate metals on a neutral diamond fallback', () => {

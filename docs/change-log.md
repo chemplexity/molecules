@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-11-15
+
+- Keep compact bridged-cage rescue independent of hydrogen visibility.
+- Route simple multi-chelate metal complexes through coordinated donor slots.
+
 ## 2026-11-14
 
 - Preserve clean projected mixed-cage geometry during refinement.

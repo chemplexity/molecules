@@ -194,33 +194,57 @@ describe('preserved projected-cage validation', () => {
 
 describe('preserved whole-component projected cage validation', () => {
   for (const bondLength of [0.75, 1.5, 3]) {
-    it(`preserves the clean substituted cage exactly at bond length ${bondLength}`, () => {
-      const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
-        bondLength,
-        suppressH: true,
-        auditTelemetry: true
-      });
-      const existingCoords = structuredClone(generated.coords);
-      const before = structuredClone(existingCoords);
-      const refined = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
-        bondLength,
-        suppressH: true,
-        existingCoords,
-        auditTelemetry: true
-      });
+    for (const suppressH of [true, false]) {
+      it(`preserves the clean substituted cage exactly at bond length ${bondLength} with suppressH=${suppressH}`, () => {
+        const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+          bondLength,
+          suppressH,
+          auditTelemetry: true
+        });
+        const repeated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+          bondLength,
+          suppressH,
+          auditTelemetry: true
+        });
+        const existingCoords = structuredClone(generated.coords);
+        const before = structuredClone(existingCoords);
+        const refined = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+          bondLength,
+          suppressH,
+          existingCoords,
+          auditTelemetry: true
+        });
 
-      assert.equal(generated.metadata.audit.ok, true);
-      assert.deepEqual(existingCoords, before);
-      assert.deepEqual(refined.coords, before);
-      assert.equal(refined.metadata.audit.ok, true);
-      assert.equal(refined.metadata.audit.bondLengthFailureCount, 0);
-      assert.equal(refined.metadata.audit.severeOverlapCount, 0);
-      assert.equal(refined.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
-      assert.equal(refined.metadata.audit.stereoContradiction, false);
-      assert.equal(refined.metadata.audit.missingCoordinateCount, 0);
-      assert.equal(refined.metadata.audit.nonfiniteCoordinateCount, 0);
-      assert.equal(refined.metadata.cleanupFastPath, true);
-    });
+        assert.equal(generated.metadata.audit.ok, true);
+        assert.deepEqual(repeated.coords, generated.coords);
+        assert.deepEqual(existingCoords, before);
+        assert.deepEqual(refined.coords, before);
+        for (const result of [generated, refined]) {
+          assert.equal(result.metadata.audit.ok, true);
+          assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+          assert.equal(result.metadata.audit.severeOverlapCount, 0);
+          assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+          assert.equal(result.metadata.audit.stereoContradiction, false);
+          assert.equal(result.metadata.audit.missingCoordinateCount, 0);
+          assert.equal(result.metadata.audit.nonfiniteCoordinateCount, 0);
+        }
+        assert.equal(refined.metadata.cleanupFastPath, true);
+
+        if (!suppressH) {
+          for (const bond of generated.layoutGraph.bonds.values()) {
+            const firstAtom = generated.layoutGraph.atoms.get(bond.a);
+            const secondAtom = generated.layoutGraph.atoms.get(bond.b);
+            if (bond.kind !== 'covalent' || (firstAtom?.element !== 'H' && secondAtom?.element !== 'H')) {
+              continue;
+            }
+            const first = generated.coords.get(bond.a);
+            const second = generated.coords.get(bond.b);
+            assert.ok(first && second);
+            assert.ok(Math.abs(Math.hypot(second.x - first.x, second.y - first.y) - bondLength) < 1e-9);
+          }
+        }
+      });
+    }
   }
 
   it('reconstructs whole-component projected validation only for the large-scale fallback geometry', () => {
@@ -280,27 +304,29 @@ describe('preserved whole-component projected cage validation', () => {
   });
 
   it('preserves an exact fixed anchor and deterministic refinement output', () => {
-    const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH: true });
-    const existingCoords = structuredClone(generated.coords);
-    const fixedCoords = new Map([['O11', { ...existingCoords.get('O11') }]]);
-    const fixedBefore = structuredClone(fixedCoords);
-    const first = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
-      bondLength: 3,
-      suppressH: true,
-      existingCoords,
-      fixedCoords
-    });
-    const second = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
-      bondLength: 3,
-      suppressH: true,
-      existingCoords,
-      fixedCoords
-    });
+    for (const suppressH of [true, false]) {
+      const generated = generateCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), { bondLength: 3, suppressH });
+      const existingCoords = structuredClone(generated.coords);
+      const fixedCoords = new Map([['O11', { ...existingCoords.get('O11') }]]);
+      const fixedBefore = structuredClone(fixedCoords);
+      const first = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+        bondLength: 3,
+        suppressH,
+        existingCoords,
+        fixedCoords
+      });
+      const second = refineCoords(parseSMILES(SUBSTITUTED_QUATERNARY_CAGE), {
+        bondLength: 3,
+        suppressH,
+        existingCoords,
+        fixedCoords
+      });
 
-    assert.equal(first.metadata.audit.ok, true);
-    assert.deepEqual(first.coords, existingCoords);
-    assert.deepEqual(second.coords, first.coords);
-    assert.deepEqual(fixedCoords, fixedBefore);
-    assert.deepEqual(first.coords.get('O11'), fixedBefore.get('O11'));
+      assert.equal(first.metadata.audit.ok, true);
+      assert.deepEqual(first.coords, existingCoords);
+      assert.deepEqual(second.coords, first.coords);
+      assert.deepEqual(fixedCoords, fixedBefore);
+      assert.deepEqual(first.coords.get('O11'), fixedBefore.get('O11'));
+    }
   });
 });
