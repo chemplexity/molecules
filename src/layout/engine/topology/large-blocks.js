@@ -45,6 +45,30 @@ function componentRingHeavyAtomCount(layoutGraph, component) {
 }
 
 /**
+ * Counts atoms that participate in placement for one component. Explicit
+ * hydrogens contribute when visible; suppressed hydrogens do not. Keeping this
+ * count aligned with large-molecule block partitioning prevents an
+ * explicit-hydrogen-rich component from overwhelming the ordinary mixed
+ * placer while its heavy-atom count remains below the public threshold.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{atomIds: string[]}} component - Connected-component descriptor.
+ * @returns {number} Placement participant count.
+ */
+function componentParticipantAtomCount(layoutGraph, component) {
+  const atoms = layoutGraph.atoms ?? layoutGraph.sourceMolecule?.atoms;
+  let count = 0;
+  for (const atomId of component.atomIds) {
+    const atom = atoms?.get(atomId);
+    const element = atom?.element ?? atom?.name;
+    if (!atom || atom.visible === false || (layoutGraph.options.suppressH && element === 'H')) {
+      continue;
+    }
+    count++;
+  }
+  return count;
+}
+
+/**
  * Returns whether one connected component should use the large-molecule path.
  * In addition to the raw threshold checks, this catches mixed components with
  * a comparatively small ring scaffold and a very large non-ring body, which
@@ -59,7 +83,8 @@ export function exceedsLargeComponentThreshold(layoutGraph, component) {
   }
   const threshold = layoutGraph.options.largeMoleculeThreshold;
   const ringSystemCount = componentRingSystems(layoutGraph, component).length;
-  if (component.heavyAtomCount > threshold.heavyAtomCount || ringSystemCount > threshold.ringSystemCount) {
+  const participantThreshold = Math.max(48, Math.floor(threshold.heavyAtomCount * 0.8));
+  if (component.heavyAtomCount > threshold.heavyAtomCount || componentParticipantAtomCount(layoutGraph, component) > participantThreshold || ringSystemCount > threshold.ringSystemCount) {
     return true;
   }
 

@@ -46,4 +46,35 @@ describe('layout/engine/topology/large-blocks', () => {
 
     assert.equal(exceedsLargeComponentThreshold(layoutGraph, component), true);
   });
+
+  it('routes explicit-hydrogen-rich components by visible participant count', () => {
+    const heavyAtomIds = Array.from({ length: 40 }, (_, index) => `c${index}`);
+    const hydrogenAtomIds = Array.from({ length: 80 }, (_, index) => `h${index}`);
+    const atomIds = [...heavyAtomIds, ...hydrogenAtomIds];
+    const atoms = new Map([
+      ...heavyAtomIds.map(atomId => [atomId, { id: atomId, element: 'C', visible: true }]),
+      ...hydrogenAtomIds.map(atomId => [atomId, { id: atomId, element: 'H', visible: true }])
+    ]);
+    const layoutGraph = {
+      atoms,
+      options: {
+        suppressH: false,
+        largeMoleculeThreshold: {
+          heavyAtomCount: 120,
+          ringSystemCount: 10,
+          blockCount: 16
+        }
+      },
+      sourceMolecule: { atoms },
+      ringSystems: []
+    };
+    const component = {
+      atomIds,
+      heavyAtomCount: heavyAtomIds.length
+    };
+
+    assert.equal(exceedsLargeComponentThreshold(layoutGraph, component), true);
+    layoutGraph.options.suppressH = true;
+    assert.equal(exceedsLargeComponentThreshold(layoutGraph, component), false);
+  });
 });

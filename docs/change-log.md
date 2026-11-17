@@ -1,5 +1,10 @@
 # Change Log
 
+## 2026-11-16
+
+- Route expanded saturated chelate rings into separate outward coordination pockets.
+- Route explicit-hydrogen-rich peptides through participant-aware block placement.
+
 ## 2026-11-15
 
 - Keep compact bridged-cage rescue independent of hydrogen visibility.

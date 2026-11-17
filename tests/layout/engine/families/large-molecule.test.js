@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
-import { generateCoords } from '../../../../src/layout/engine/api.js';
+import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
@@ -19,6 +19,14 @@ const SULFATED_GLYCOSIDE_SMILES =
   'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
 const VERY_LONG_PEPTIDE_SMILES =
   'N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C(C)CC)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](C)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CO)C(=O)N[C@@H](CO)C(=O)N[C@@H](C)C(=O)N[C@@H](C)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C)C(=O)N[C@@H](C(C)O)C(=O)N[C@@H](C(C)CC)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C(C)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](CO)C(=O)N[C@@H](CCC(=O)N)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](Cc1cnc[nH]1)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](C)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](C)C(=O)N[C@@H](CCC(=O)O)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CC(=O)N)C(=O)NCC(=O)O';
+const EXPLICIT_HYDROGEN_PEPTIDE_SMILES =
+  'N[C@@H](C)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CO)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)O';
+const EXPLICIT_HYDROGEN_PEPTIDE_CONTROLS = Object.freeze([
+  'N[C@@H](C)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](CO)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCSC)C(=O)O',
+  'N[C@@H](CCSC)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)N[C@@H](CO)C(=O)O',
+  'N[C@@H](CCCCN)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)N[C@@H](CO)C(=O)O',
+  'N[C@@H](C(C)C)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CC1=CNC2=CC=CC=C12)C(=O)N[C@@H](CO)C(=O)O'
+]);
 
 /**
  * Returns the area of the current placed coordinate bounds.
@@ -74,6 +82,85 @@ describe('layout/engine/families/large-molecule', () => {
       'expected finite coordinates for every visible atom'
     );
     assert.equal(result.metadata.audit.fallback.mode, null);
+  });
+
+  it('routes explicit-hydrogen-rich medium peptides through participant-aware block placement', () => {
+    assert.ok(bugMolecules.includes(EXPLICIT_HYDROGEN_PEPTIDE_SMILES));
+
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const suppressH of [true, false]) {
+        const options = { bondLength, suppressH, auditTelemetry: true };
+        const generated = generateCoords(parseSMILES(EXPLICIT_HYDROGEN_PEPTIDE_SMILES), options);
+        const repeated = generateCoords(parseSMILES(EXPLICIT_HYDROGEN_PEPTIDE_SMILES), options);
+        const refinementInput = new Map([...generated.coords].map(([atomId, position]) => [atomId, { ...position }]));
+        const refinementInputSnapshot = new Map([...refinementInput].map(([atomId, position]) => [atomId, { ...position }]));
+        const refined = refineCoords(parseSMILES(EXPLICIT_HYDROGEN_PEPTIDE_SMILES), {
+          ...options,
+          existingCoords: refinementInput
+        });
+
+        assert.equal(generated.metadata.primaryFamily, suppressH ? 'fused' : 'large-molecule');
+        assert.equal(generated.metadata.audit.ok, true);
+        assert.equal(refined.metadata.audit.ok, true);
+        assert.equal(generated.metadata.audit.fallback.mode, null);
+        assert.equal(refined.metadata.audit.fallback.mode, null);
+        assert.equal(generated.metadata.audit.severeOverlapCount, 0);
+        assert.equal(refined.metadata.audit.severeOverlapCount, 0);
+        assert.equal(generated.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+        assert.equal(refined.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+        assert.equal(generated.metadata.audit.bondLengthFailureCount, 0);
+        assert.equal(refined.metadata.audit.bondLengthFailureCount, 0);
+        assert.equal(generated.metadata.audit.stereoContradiction, false);
+        assert.equal(refined.metadata.audit.stereoContradiction, false);
+        assert.equal(generated.metadata.audit.missingCoordinateCount, 0);
+        assert.equal(refined.metadata.audit.missingCoordinateCount, 0);
+        assert.equal(generated.metadata.audit.nonfiniteCoordinateCount, 0);
+        assert.equal(refined.metadata.audit.nonfiniteCoordinateCount, 0);
+        assert.deepEqual(generated.coords, repeated.coords);
+        assert.deepEqual(refinementInput, refinementInputSnapshot);
+        for (const atom of generated.layoutGraph.atoms.values()) {
+          if (atom.element === 'H') {
+            continue;
+          }
+          assert.ok(Number.isFinite(generated.coords.get(atom.id)?.x) && Number.isFinite(generated.coords.get(atom.id)?.y));
+          assert.ok(Number.isFinite(refined.coords.get(atom.id)?.x) && Number.isFinite(refined.coords.get(atom.id)?.y));
+        }
+      }
+    }
+  });
+
+  it('preserves nearby peptide controls and an explicit anchor after participant-aware routing', () => {
+    for (const smiles of EXPLICIT_HYDROGEN_PEPTIDE_CONTROLS) {
+      for (const suppressH of [true, false]) {
+        const generated = generateCoords(parseSMILES(smiles), { suppressH, auditTelemetry: true });
+        const refined = refineCoords(parseSMILES(smiles), {
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+        assert.equal(generated.metadata.audit.ok, true);
+        assert.equal(refined.metadata.audit.ok, true);
+      }
+    }
+
+    for (const suppressH of [true, false]) {
+      const source = generateCoords(parseSMILES(EXPLICIT_HYDROGEN_PEPTIDE_SMILES), { suppressH, auditTelemetry: true });
+      const anchorAtomId = [...source.layoutGraph.atoms.values()].find(atom => atom.element !== 'H').id;
+      const fixedCoords = new Map([[anchorAtomId, { ...source.coords.get(anchorAtomId) }]]);
+      const fixedSnapshot = new Map([[anchorAtomId, { ...fixedCoords.get(anchorAtomId) }]]);
+      const generated = generateCoords(parseSMILES(EXPLICIT_HYDROGEN_PEPTIDE_SMILES), { suppressH, fixedCoords, auditTelemetry: true });
+      const refined = refineCoords(parseSMILES(EXPLICIT_HYDROGEN_PEPTIDE_SMILES), {
+        suppressH,
+        fixedCoords,
+        existingCoords: generated.coords,
+        auditTelemetry: true
+      });
+      assert.equal(generated.metadata.audit.ok, true);
+      assert.equal(refined.metadata.audit.ok, true);
+      assert.deepEqual(generated.coords.get(anchorAtomId), fixedCoords.get(anchorAtomId));
+      assert.deepEqual(refined.coords.get(anchorAtomId), fixedCoords.get(anchorAtomId));
+      assert.deepEqual(fixedCoords, fixedSnapshot);
+    }
   });
 
   it('partitions and stitches a multi-block organic component', () => {

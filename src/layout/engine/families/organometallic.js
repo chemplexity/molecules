@@ -237,9 +237,9 @@ function chooseTransformedFragment(layoutGraph, coords, anchorAtomIds, targetAnc
 }
 
 /**
- * Returns the ordered four-heavy-atom path of a simple bidentate chelate.
- * Hydrogens may decorate the path, but branches and longer ligands retain the
- * general ligand-first placement path.
+ * Returns the ordered four- to six-heavy-atom path of a simple saturated
+ * bidentate chelate. Hydrogens may decorate the path, but branches,
+ * unsaturation, and longer ligands retain the general ligand-first path.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} record - Ligand-fragment record.
  * @returns {string[]|null} Anchor-to-anchor heavy path, or null when unsupported.
@@ -250,7 +250,7 @@ function simpleBidentateChelatePath(layoutGraph, record) {
   }
   const recordAtomIds = new Set(record.atomIds);
   const heavyAtomIds = record.atomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H');
-  if (heavyAtomIds.length !== 4) {
+  if (heavyAtomIds.length < 4 || heavyAtomIds.length > 6) {
     return null;
   }
   const heavyAtomIdSet = new Set(heavyAtomIds);
@@ -277,8 +277,19 @@ function simpleBidentateChelatePath(layoutGraph, record) {
       queue.push([...candidatePath, neighborAtomId]);
     }
   }
-  if (!path || path.length !== 4 || path.some(atomId => !heavyAtomIdSet.has(atomId))) {
+  if (!path || path.length !== heavyAtomIds.length || path.some(atomId => !heavyAtomIdSet.has(atomId))) {
     return null;
+  }
+  for (let index = 1; index < path.length; index++) {
+    const pathBond = (layoutGraph.bondsByAtomId.get(path[index - 1]) ?? []).find(bond => {
+      if (bond?.kind !== 'covalent') {
+        return false;
+      }
+      return (bond.a === path[index - 1] ? bond.b : bond.a) === path[index];
+    });
+    if (!pathBond || pathBond.order !== 1 || pathBond.aromatic) {
+      return null;
+    }
   }
   for (const atomId of record.atomIds) {
     if (heavyAtomIdSet.has(atomId)) {
@@ -299,10 +310,11 @@ function simpleBidentateChelatePath(layoutGraph, record) {
 }
 
 /**
- * Places a simple four-heavy-atom bidentate ligand into two adjacent donor
- * slots and bends its intact three-bond path around the outside of the metal.
- * The five covalent/coordination edges form a clear schematic chelate pocket;
- * explicit hydrogen offsets follow their heavy parents.
+ * Places a simple compact bidentate ligand into two adjacent donor slots and
+ * bends its intact path around the outside of the metal. Four-atom paths keep
+ * the established compact pocket; longer paths add symmetric outward turns
+ * while keeping every covalent and coordination edge at the target length.
+ * Explicit hydrogen offsets follow their heavy parents.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} localCoords - Local ligand coordinates.
  * @param {object} record - Ligand-fragment record.
@@ -319,13 +331,16 @@ function placeSimpleBidentateChelate(layoutGraph, localCoords, record, pathAtomI
   const outward = fromAngle(outwardAngle, 1);
   const lateral = perpLeft(outward);
   const donorOffset = bondLength * Math.sin(SIMPLE_CHELATE_DONOR_HALF_ANGLE);
-  const outerDistance = donorRadiusProjection + bondLength;
-  const targets = [
-    add(add(metalPosition, scale(outward, donorRadiusProjection)), scale(lateral, -donorOffset)),
-    add(add(metalPosition, scale(outward, outerDistance)), scale(lateral, -donorOffset)),
-    add(add(metalPosition, scale(outward, outerDistance)), scale(lateral, donorOffset)),
-    add(add(metalPosition, scale(outward, donorRadiusProjection)), scale(lateral, donorOffset))
-  ];
+  const firstDonor = add(add(metalPosition, scale(outward, donorRadiusProjection)), scale(lateral, -donorOffset));
+  const routeAnglesByPathLength = {
+    4: [0, Math.PI / 2, Math.PI],
+    5: [0, Math.PI / 6, (5 * Math.PI) / 6, Math.PI],
+    6: [-Math.PI / 6, Math.PI / 6, Math.PI / 2, (5 * Math.PI) / 6, (7 * Math.PI) / 6]
+  };
+  const targets = [firstDonor];
+  for (const routeAngle of routeAnglesByPathLength[pathAtomIds.length]) {
+    targets.push(add(targets[targets.length - 1], fromAngle(outwardAngle + routeAngle, bondLength)));
+  }
   const displacementByPathAtomId = new Map();
   for (let index = 0; index < pathAtomIds.length; index++) {
     const atomId = pathAtomIds[index];

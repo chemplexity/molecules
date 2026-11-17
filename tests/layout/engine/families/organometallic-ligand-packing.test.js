@@ -1,12 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { bugMolecules } from '../../../../examples/bug-molecules.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
-import { generateCoords } from '../../../../src/layout/engine/api.js';
+import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { layoutOrganometallicFamily } from '../../../../src/layout/engine/families/organometallic.js';
 
 const SILANE_FAN = 'CCCCC=CC1=CC=CC2=C1C=C(C2[Zr](Cl)(Cl)(C1C2=C(C=C1C1=CC=CC=C1)C(C=CCCCC)=CC=C2)[SiH](C)C)C1=CC=CC=C1';
+const EXPANDED_COBALT_CHELATES = ['[Co]123(NCCCN1)(NCCCN2)NCCCN3', '[Co]123(NCCCCN1)(NCCCCN2)NCCCCN3'];
+const COBALT_CHELATE_CONTROLS = ['[Co]123(NCCN1)(NCCN2)NCCN3', '[Co]123(NC(C)CN1)(NC(C)CN2)NC(C)CN3', '[Co]123(n1ccccc1)(n2ccccc2)n3ccccc3'];
 
 /**
  * Checks geometry without weakening the planar bond/crossing requirements.
@@ -24,6 +27,62 @@ function assertClean(audit) {
 }
 
 describe('generic organometallic ligand packing', () => {
+  it('routes expanded saturated tris-chelates into separate outward pockets', () => {
+    for (const smiles of EXPANDED_COBALT_CHELATES) {
+      assert.ok(bugMolecules.includes(smiles));
+      for (const bondLength of [0.75, 1.5, 3]) {
+        for (const suppressH of [true, false]) {
+          const options = { bondLength, suppressH, auditTelemetry: true };
+          const generated = generateCoords(parseSMILES(smiles), options);
+          const repeated = generateCoords(parseSMILES(smiles), options);
+          const refinementInput = new Map([...generated.coords].map(([atomId, position]) => [atomId, { ...position }]));
+          const refinementSnapshot = new Map([...refinementInput].map(([atomId, position]) => [atomId, { ...position }]));
+          const refined = refineCoords(parseSMILES(smiles), { ...options, existingCoords: refinementInput });
+
+          assert.equal(generated.metadata.placementMode, 'ligand-first-joint-chelate');
+          assertClean(generated.metadata.audit);
+          assertClean(refined.metadata.audit);
+          assert.equal(generated.metadata.audit.fallback.mode, null);
+          assert.equal(refined.metadata.audit.fallback.mode, null);
+          assert.deepEqual(generated.coords, repeated.coords);
+          assert.deepEqual(refinementInput, refinementSnapshot);
+          for (const atom of generated.layoutGraph.atoms.values()) {
+            if (atom.element === 'H') {
+              continue;
+            }
+            assert.ok(Number.isFinite(generated.coords.get(atom.id)?.x) && Number.isFinite(generated.coords.get(atom.id)?.y));
+            assert.ok(Number.isFinite(refined.coords.get(atom.id)?.x) && Number.isFinite(refined.coords.get(atom.id)?.y));
+          }
+        }
+      }
+    }
+  });
+
+  it('preserves nearby tris-chelate controls and exact metal anchors', () => {
+    for (const smiles of COBALT_CHELATE_CONTROLS) {
+      for (const suppressH of [true, false]) {
+        const generated = generateCoords(parseSMILES(smiles), { suppressH, auditTelemetry: true });
+        const refined = refineCoords(parseSMILES(smiles), { suppressH, auditTelemetry: true, existingCoords: generated.coords });
+        assertClean(generated.metadata.audit);
+        assertClean(refined.metadata.audit);
+      }
+    }
+
+    for (const smiles of EXPANDED_COBALT_CHELATES) {
+      for (const suppressH of [true, false]) {
+        const fixedCoords = new Map([['Co1', { x: 4, y: -2 }]]);
+        const fixedSnapshot = new Map([['Co1', { ...fixedCoords.get('Co1') }]]);
+        const generated = generateCoords(parseSMILES(smiles), { suppressH, fixedCoords, auditTelemetry: true });
+        const refined = refineCoords(parseSMILES(smiles), { suppressH, fixedCoords, existingCoords: generated.coords, auditTelemetry: true });
+        assertClean(generated.metadata.audit);
+        assertClean(refined.metadata.audit);
+        assert.deepEqual(generated.coords.get('Co1'), fixedCoords.get('Co1'));
+        assert.deepEqual(refined.coords.get('Co1'), fixedCoords.get('Co1'));
+        assert.deepEqual(fixedCoords, fixedSnapshot);
+      }
+    }
+  });
+
   for (const element of ['Zr', 'Ti', 'Hf']) {
     for (const bondLength of [0.75, 1.5, 3]) {
       it(`separates bulky ${element} ligands at scale ${bondLength} before and after cleanup`, () => {
@@ -38,16 +97,19 @@ describe('generic organometallic ligand packing', () => {
         // Slot reassignment must preserve the original regular fivefold fan.
         const metal = [...graph.atoms.values()].find(atom => atom.element === element);
         const center = placement.coords.get(metal.id);
-        const angles = graph.sourceMolecule.atoms.get(metal.id).bonds.map(bondId => {
-          const neighborId = graph.sourceMolecule.bonds.get(bondId).getOtherAtom(metal.id);
-          const point = placement.coords.get(neighborId);
-          assert.ok(Math.abs(Math.hypot(point.x - center.x, point.y - center.y) - bondLength) < 1e-9);
-          return Math.atan2(point.y - center.y, point.x - center.x);
-        }).sort((first, second) => first - second);
+        const angles = graph.sourceMolecule.atoms
+          .get(metal.id)
+          .bonds.map(bondId => {
+            const neighborId = graph.sourceMolecule.bonds.get(bondId).getOtherAtom(metal.id);
+            const point = placement.coords.get(neighborId);
+            assert.ok(Math.abs(Math.hypot(point.x - center.x, point.y - center.y) - bondLength) < 1e-9);
+            return Math.atan2(point.y - center.y, point.x - center.x);
+          })
+          .sort((first, second) => first - second);
         assert.equal(angles.length, 5);
         for (let index = 0; index < angles.length; index++) {
           const gap = (angles[(index + 1) % angles.length] - angles[index] + 2 * Math.PI) % (2 * Math.PI);
-          assert.ok(Math.abs(gap - 2 * Math.PI / 5) < 1e-9);
+          assert.ok(Math.abs(gap - (2 * Math.PI) / 5) < 1e-9);
         }
 
         const result = generateCoords(parseSMILES(smiles), { bondLength });
