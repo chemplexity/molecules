@@ -23,6 +23,12 @@ const DENSE_FUSED_CAGE_POLISH = Object.freeze({
   stepScale: 0.15
 });
 
+const COMPACT_COORDINATION_CAGE_RETENSION = Object.freeze([
+  Object.freeze({ iterations: 10, damping: 0.75 }),
+  Object.freeze({ iterations: 20, damping: 0.25 }),
+  Object.freeze({ iterations: 40, damping: 0.2 })
+]);
+
 /**
  * Returns whether a fused system should try the bridged/KK rescue path.
  * Dense fused cages and compact high-ring-count cages often behave more like
@@ -165,6 +171,35 @@ function isBetterFusedCageCandidate(candidateAudit, incumbentAudit) {
     return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
   }
   return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+}
+
+/**
+ * Returns whether a compact coordination cage should retain intermediate
+ * covalent-bond retension candidates. Coordinate edges help KK establish the
+ * cage topology, but a long covalent-only relaxation can pass through a clean
+ * projection before collapsing a metal framework around its donor atom.
+ * User-fixed cages keep the constraint-aware placement path instead.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Cage atom IDs.
+ * @param {object|null} audit - Initial cage-placement audit.
+ * @returns {boolean} True when bounded intermediate candidates are warranted.
+ */
+function shouldRetensionCompactCoordinationCage(layoutGraph, atomIds, audit) {
+  if (!layoutGraph || layoutGraph.fixedCoords.size > 0 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit || (audit?.bondLengthFailureCount ?? 0) === 0) {
+    return false;
+  }
+
+  const atomIdSet = new Set(atomIds);
+  let hasCoordinateBond = false;
+  let hasCovalentBond = false;
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!atomIdSet.has(bond.a) || !atomIdSet.has(bond.b)) {
+      continue;
+    }
+    hasCoordinateBond ||= bond.kind === 'coordinate';
+    hasCovalentBond ||= bond.kind === 'covalent';
+  }
+  return hasCoordinateBond && hasCovalentBond && atomIds.some(atomId => isMetalAtom(layoutGraph.sourceMolecule?.atoms.get(atomId) ?? layoutGraph.atoms.get(atomId)));
 }
 
 /**
@@ -418,6 +453,18 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
 
   let bestCoords = orientCoordsHorizontally(kkResult.coords, computeFusedAxis(rebuildRingCenters(rings, kkResult.coords)));
   let bestAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, bestCoords, bondLength);
+
+  if (shouldRetensionCompactCoordinationCage(options.layoutGraph, atomIds, bestAudit)) {
+    for (const relaxationOptions of COMPACT_COORDINATION_CAGE_RETENSION) {
+      const candidateCoords = relaxConstructedFusedCoords(options.layoutGraph, atomIds, kkResult.coords, bondLength, relaxationOptions);
+      const orientedCoords = orientCoordsHorizontally(candidateCoords, computeFusedAxis(rebuildRingCenters(rings, candidateCoords)));
+      const candidateAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, orientedCoords, bondLength);
+      if (isBetterFusedCageCandidate(candidateAudit, bestAudit)) {
+        bestCoords = orientedCoords;
+        bestAudit = candidateAudit;
+      }
+    }
+  }
 
   const relaxedCoords = relaxConstructedFusedCoords(options.layoutGraph, atomIds, kkResult.coords, bondLength, {
     iterations: 30,

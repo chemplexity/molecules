@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-17
+
+- Retain clean intermediate bond geometry when projecting compact coordination cages.
+
 ## 2026-11-16
 
 - Route expanded saturated chelate rings into separate outward coordination pockets.

@@ -15,6 +15,7 @@ import { makeNaphthalene } from '../support/molecules.js';
 
 const DENSE_FUSED_CARBON_CAGE = 'C12C3C4C5C1C6C7C2C8C3C9C4C1C5C6C2C7C8C9C12';
 const SMALL_DENSE_FUSED_CAGE = 'C1(C2(C3(C4(C1C5(C2C3C45)))))';
+const COMPACT_COPPER_SULFUR_CAGE = '[Cu]12[S@]34[Cu]5[Cu@]13[Cu@]245';
 
 /**
  * Builds fused-ring adjacency and connection lookup maps from a layout graph.
@@ -227,6 +228,65 @@ describe('layout/engine/families/fused', () => {
     assert.deepEqual(fixedCoords, before);
     assert.deepEqual(anchored.coords.get('C1'), before.get('C1'));
     assert.equal(anchored.metadata.audit.fixedCoordinateViolationCount, 0);
+  });
+
+  it('retains clean intermediate covalent geometry for compact coordination cages', () => {
+    assert.equal(bugMolecules.filter(smiles => smiles === COMPACT_COPPER_SULFUR_CAGE).length, 1);
+
+    for (const bondLength of [0.75, 1.5, 3]) {
+      for (const suppressH of [true, false]) {
+        const generatedMolecule = parseSMILES(COMPACT_COPPER_SULFUR_CAGE);
+        const generated = generateCoords(generatedMolecule, { bondLength, suppressH, auditTelemetry: true });
+        const generatedBefore = structuredClone(generated.coords);
+        const refinedMolecule = parseSMILES(COMPACT_COPPER_SULFUR_CAGE);
+        const refined = refineCoords(refinedMolecule, {
+          bondLength,
+          suppressH,
+          existingCoords: generated.coords,
+          auditTelemetry: true
+        });
+
+        for (const [molecule, result] of [
+          [generatedMolecule, generated],
+          [refinedMolecule, refined]
+        ]) {
+          assert.equal(result.metadata.audit.ok, true);
+          assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+          assert.equal(result.metadata.audit.severeOverlapCount, 0);
+          assert.equal(result.metadata.audit.visibleHeavyBondCrossingFailureCount, 0);
+          assert.equal(result.metadata.audit.stereoContradiction, false);
+          assert.equal(result.metadata.audit.fallback.mode, null);
+          for (const atom of molecule.atoms.values()) {
+            if (atom.name === 'H') {
+              continue;
+            }
+            const position = result.coords.get(atom.id);
+            assert.ok(position);
+            assert.equal(Number.isFinite(position.x), true);
+            assert.equal(Number.isFinite(position.y), true);
+          }
+        }
+        assert.deepEqual(generated.coords, generatedBefore);
+      }
+    }
+
+    const first = generateCoords(parseSMILES(COMPACT_COPPER_SULFUR_CAGE), { suppressH: true });
+    const second = generateCoords(parseSMILES(COMPACT_COPPER_SULFUR_CAGE), { suppressH: true });
+    assert.deepEqual(second.coords, first.coords);
+
+    const fixedCoords = new Map([['Cu1', { ...first.coords.get('Cu1') }]]);
+    const fixedBefore = structuredClone(fixedCoords);
+    const anchored = generateCoords(parseSMILES(COMPACT_COPPER_SULFUR_CAGE), { suppressH: true, fixedCoords });
+    assert.deepEqual(fixedCoords, fixedBefore);
+    assert.deepEqual(anchored.coords.get('Cu1'), fixedBefore.get('Cu1'));
+    assert.equal(anchored.metadata.audit.fixedCoordinateViolationCount, 0);
+
+    for (const controlSmiles of ['O1[Ti++]OC2=CC=CC=C12', '[Cu]12S3[Cu]1S[Cu]23']) {
+      const control = generateCoords(parseSMILES(controlSmiles), { suppressH: true, auditTelemetry: true });
+      assert.equal(control.metadata.audit.ok, true);
+      assert.equal(control.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(control.metadata.audit.severeOverlapCount, 0);
+    }
   });
 
   it('short-circuits only giant dense no-template fused cages to the cage KK path', () => {
